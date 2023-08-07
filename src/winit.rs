@@ -1,19 +1,13 @@
 use std::time::Duration;
 
-use smithay::{
-    backend::{
-        renderer::{
-            damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, gles::GlesRenderer,
-        },
-        winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
-    },
-    output::{Mode, Output, PhysicalProperties, Subpixel},
-    reexports::calloop::{
-        timer::{TimeoutAction, Timer},
-        EventLoop,
-    },
-    utils::{Rectangle, Transform},
-};
+use smithay::backend::renderer::damage::OutputDamageTracker;
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
+use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::calloop::EventLoop;
+use smithay::utils::{Rectangle, Transform};
 
 use crate::{CalloopData, Smallvil};
 
@@ -41,7 +35,12 @@ pub fn init_winit(
         },
     );
     let _global = output.create_global::<Smallvil>(&display.handle());
-    output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
+    output.change_current_state(
+        Some(mode),
+        Some(Transform::Flipped180),
+        None,
+        Some((0, 0).into()),
+    );
     output.set_preferred(mode);
 
     state.space.map_output(&output, (0, 0));
@@ -53,18 +52,20 @@ pub fn init_winit(
     let mut full_redraw = 0u8;
 
     let timer = Timer::immediate();
-    event_loop.handle().insert_source(timer, move |_, _, data| {
-        winit_dispatch(
-            &mut backend,
-            &mut winit,
-            data,
-            &output,
-            &mut damage_tracker,
-            &mut full_redraw,
-        )
-        .unwrap();
-        TimeoutAction::ToDuration(Duration::from_millis(16))
-    })?;
+    event_loop
+        .handle()
+        .insert_source(timer, move |_, _, data| {
+            winit_dispatch(
+                &mut backend,
+                &mut winit,
+                data,
+                &output,
+                &mut damage_tracker,
+                &mut full_redraw,
+            )
+            .unwrap();
+            TimeoutAction::ToDuration(Duration::from_millis(16))
+        })?;
 
     Ok(())
 }

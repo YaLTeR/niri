@@ -1,26 +1,22 @@
-use std::{ffi::OsString, os::unix::io::AsRawFd, sync::Arc};
+use std::ffi::OsString;
+use std::os::unix::io::AsRawFd;
+use std::sync::Arc;
 
-use smithay::{
-    desktop::{Space, Window, WindowSurfaceType},
-    input::{pointer::PointerHandle, Seat, SeatState},
-    reexports::{
-        calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
-        wayland_server::{
-            backend::{ClientData, ClientId, DisconnectReason},
-            protocol::wl_surface::WlSurface,
-            Display,
-        },
-    },
-    utils::{Logical, Point},
-    wayland::{
-        compositor::{CompositorClientState, CompositorState},
-        data_device::DataDeviceState,
-        output::OutputManagerState,
-        shell::xdg::XdgShellState,
-        shm::ShmState,
-        socket::ListeningSocketSource,
-    },
-};
+use smithay::desktop::{Space, Window, WindowSurfaceType};
+use smithay::input::pointer::PointerHandle;
+use smithay::input::{Seat, SeatState};
+use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::{EventLoop, Interest, LoopSignal, Mode, PostAction};
+use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Display;
+use smithay::utils::{Logical, Point};
+use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::data_device::DataDeviceState;
+use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::shell::xdg::XdgShellState;
+use smithay::wayland::shm::ShmState;
+use smithay::wayland::socket::ListeningSocketSource;
 
 use crate::CalloopData;
 
@@ -59,8 +55,9 @@ impl Smallvil {
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit");
 
-        // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
-        // You may want to track keyboard hot-plug in real compositor.
+        // Notify clients that we have a keyboard, for the sake of the example we assume that
+        // keyboard is always present. You may want to track keyboard hot-plug in real
+        // compositor.
         seat.add_keyboard(Default::default(), 200, 200).unwrap();
 
         // Notify clients that we have a pointer (mouse)
@@ -99,7 +96,8 @@ impl Smallvil {
         display: &mut Display<Smallvil>,
         event_loop: &mut EventLoop<CalloopData>,
     ) -> OsString {
-        // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
+        // Creates a new listening socket, automatically choosing the next available `wayland`
+        // socket name.
         let listening_socket = ListeningSocketSource::new_auto().unwrap();
 
         // Get the name of the listening socket.
@@ -122,7 +120,8 @@ impl Smallvil {
             })
             .expect("Failed to init the wayland event source.");
 
-        // You also need to add the display itself to the event loop, so that client events will be processed by wayland-server.
+        // You also need to add the display itself to the event loop, so that client events will be
+        // processed by wayland-server.
         handle
             .insert_source(
                 Generic::new(
@@ -145,11 +144,13 @@ impl Smallvil {
         pointer: &PointerHandle<Self>,
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
         let pos = pointer.current_location();
-        self.space.element_under(pos).and_then(|(window, location)| {
-            window
-                .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
-                .map(|(s, p)| (s, p + location))
-        })
+        self.space
+            .element_under(pos)
+            .and_then(|(window, location)| {
+                window
+                    .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
+                    .map(|(s, p)| (s, p + location))
+            })
     }
 }
 

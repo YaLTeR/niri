@@ -7,7 +7,8 @@ mod input;
 mod state;
 mod winit;
 
-use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
+use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::wayland_server::Display;
 pub use state::Smallvil;
 
 pub struct CalloopData {

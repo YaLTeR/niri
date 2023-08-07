@@ -1,21 +1,18 @@
-use crate::{grabs::resize_grab, state::ClientState, Smallvil};
-use smithay::{
-    backend::renderer::utils::on_commit_buffer_handler,
-    delegate_compositor, delegate_shm,
-    reexports::wayland_server::{
-        protocol::{wl_buffer, wl_surface::WlSurface},
-        Client,
-    },
-    wayland::{
-        buffer::BufferHandler,
-        compositor::{
-            get_parent, is_sync_subsurface, CompositorClientState, CompositorHandler, CompositorState,
-        },
-        shm::{ShmHandler, ShmState},
-    },
+use smithay::backend::renderer::utils::on_commit_buffer_handler;
+use smithay::reexports::wayland_server::protocol::wl_buffer;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Client;
+use smithay::wayland::buffer::BufferHandler;
+use smithay::wayland::compositor::{
+    get_parent, is_sync_subsurface, CompositorClientState, CompositorHandler, CompositorState,
 };
+use smithay::wayland::shm::{ShmHandler, ShmState};
+use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell;
+use crate::grabs::resize_grab;
+use crate::state::ClientState;
+use crate::Smallvil;
 
 impl CompositorHandler for Smallvil {
     fn compositor_state(&mut self) -> &mut CompositorState {
@@ -33,7 +30,11 @@ impl CompositorHandler for Smallvil {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            if let Some(window) = self.space.elements().find(|w| w.toplevel().wl_surface() == &root) {
+            if let Some(window) = self
+                .space
+                .elements()
+                .find(|w| w.toplevel().wl_surface() == &root)
+            {
                 window.on_commit();
             }
         };

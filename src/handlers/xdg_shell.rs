@@ -1,31 +1,20 @@
-use smithay::{
-    delegate_xdg_shell,
-    desktop::{Space, Window},
-    input::{
-        pointer::{Focus, GrabStartData as PointerGrabStartData},
-        Seat,
-    },
-    reexports::{
-        wayland_protocols::xdg::shell::server::xdg_toplevel,
-        wayland_server::{
-            protocol::{wl_seat, wl_surface::WlSurface},
-            Resource,
-        },
-    },
-    utils::{Rectangle, Serial},
-    wayland::{
-        compositor::with_states,
-        shell::xdg::{
-            PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
-            XdgToplevelSurfaceData,
-        },
-    },
+use smithay::delegate_xdg_shell;
+use smithay::desktop::{Space, Window};
+use smithay::input::pointer::{Focus, GrabStartData as PointerGrabStartData};
+use smithay::input::Seat;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_server::protocol::wl_seat;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Resource;
+use smithay::utils::{Rectangle, Serial};
+use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::xdg::{
+    PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+    XdgToplevelSurfaceData,
 };
 
-use crate::{
-    grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
-    Smallvil,
-};
+use crate::grabs::{MoveSurfaceGrab, ResizeSurfaceGrab};
+use crate::Smallvil;
 
 impl XdgShellHandler for Smallvil {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {

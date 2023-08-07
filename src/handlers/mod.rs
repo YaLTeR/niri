@@ -1,16 +1,16 @@
 mod compositor;
 mod xdg_shell;
 
-use crate::Smallvil;
-
 //
 // Wl Seat
-//
-
 use smithay::input::{SeatHandler, SeatState};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::wayland::data_device::{ClientDndGrabHandler, DataDeviceHandler, ServerDndGrabHandler};
+use smithay::wayland::data_device::{
+    ClientDndGrabHandler, DataDeviceHandler, ServerDndGrabHandler,
+};
 use smithay::{delegate_data_device, delegate_output, delegate_seat};
+
+use crate::Smallvil;
 
 impl SeatHandler for Smallvil {
     type KeyboardFocus = WlSurface;
