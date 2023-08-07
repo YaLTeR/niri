@@ -39,7 +39,7 @@ pub struct Smallvil {
 }
 
 impl Smallvil {
-    pub fn new(event_loop: &mut EventLoop<CalloopData>, display: &mut Display<Self>) -> Self {
+    pub fn new(event_loop: &EventLoop<CalloopData>, display: &mut Display<Self>) -> Self {
         let start_time = std::time::Instant::now();
 
         let dh = display.handle();
@@ -94,7 +94,7 @@ impl Smallvil {
 
     fn init_wayland_listener(
         display: &mut Display<Smallvil>,
-        event_loop: &mut EventLoop<CalloopData>,
+        event_loop: &EventLoop<CalloopData>,
     ) -> OsString {
         // Creates a new listening socket, automatically choosing the next available `wayland`
         // socket name.

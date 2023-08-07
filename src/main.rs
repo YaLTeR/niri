@@ -24,11 +24,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop: EventLoop<CalloopData> = EventLoop::try_new()?;
 
     let mut display: Display<Smallvil> = Display::new()?;
-    let state = Smallvil::new(&mut event_loop, &mut display);
+    let state = Smallvil::new(&event_loop, &mut display);
 
     let mut data = CalloopData { state, display };
 
-    crate::winit::init_winit(&mut event_loop, &mut data)?;
+    crate::winit::init_winit(&event_loop, &mut data)?;
 
     let mut args = std::env::args().skip(1);
     let flag = args.next();

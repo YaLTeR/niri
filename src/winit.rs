@@ -12,7 +12,7 @@ use smithay::utils::{Rectangle, Transform};
 use crate::{CalloopData, Smallvil};
 
 pub fn init_winit(
-    event_loop: &mut EventLoop<CalloopData>,
+    event_loop: &EventLoop<CalloopData>,
     data: &mut CalloopData,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let display = &mut data.display;
