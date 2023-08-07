@@ -1,0 +1,17 @@
+[package]
+name = "niri"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+bitflags = "2.2.1"
+
+[dependencies.smithay]
+git = "https://github.com/Smithay/smithay"
+default-features = false
+features = [
+    "backend_winit",
+    "wayland_frontend",
+    "desktop",
+]
