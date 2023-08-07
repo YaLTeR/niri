@@ -1,5 +1,3 @@
-#![allow(irrefutable_let_patterns)]
-
 mod handlers;
 
 mod grabs;
