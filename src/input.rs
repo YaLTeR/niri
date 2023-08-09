@@ -160,13 +160,12 @@ impl Niri {
             InputEvent::PointerAxis { event, .. } => {
                 let source = event.source();
 
-                // FIXME: this crashes on keyboard scroll.
-                let horizontal_amount = event
-                    .amount(Axis::Horizontal)
-                    .unwrap_or_else(|| event.amount_discrete(Axis::Horizontal).unwrap() * 3.0);
+                let horizontal_amount = event.amount(Axis::Horizontal).unwrap_or_else(|| {
+                    event.amount_discrete(Axis::Horizontal).unwrap_or(0.0) * 3.0
+                });
                 let vertical_amount = event
                     .amount(Axis::Vertical)
-                    .unwrap_or_else(|| event.amount_discrete(Axis::Vertical).unwrap() * 3.0);
+                    .unwrap_or_else(|| event.amount_discrete(Axis::Vertical).unwrap_or(0.0) * 3.0);
                 let horizontal_amount_discrete = event.amount_discrete(Axis::Horizontal);
                 let vertical_amount_discrete = event.amount_discrete(Axis::Vertical);
 
