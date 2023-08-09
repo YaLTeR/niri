@@ -15,7 +15,11 @@ enum InputAction {
 }
 
 impl Niri {
-    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+    pub fn process_input_event<I: InputBackend>(
+        &mut self,
+        change_vt: &mut dyn FnMut(i32),
+        event: InputEvent<I>,
+    ) {
         trace!("process_input_event");
 
         match event {
@@ -45,7 +49,9 @@ impl Niri {
                             info!("quitting because Esc was pressed");
                             self.stop_signal.stop()
                         }
-                        InputAction::ChangeVt(vt) => todo!(),
+                        InputAction::ChangeVt(vt) => {
+                            (*change_vt)(vt);
+                        }
                     }
                 }
             }

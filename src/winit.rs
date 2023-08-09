@@ -110,7 +110,7 @@ impl Winit {
                         None,
                     );
                 }
-                WinitEvent::Input(event) => niri.process_input_event(event),
+                WinitEvent::Input(event) => niri.process_input_event(&mut |_| (), event),
                 _ => (),
             });
 

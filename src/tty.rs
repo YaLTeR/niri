@@ -117,7 +117,9 @@ impl Tty {
         let input_backend = LibinputInputBackend::new(libinput.clone());
         event_loop
             .insert_source(input_backend, |event, _, data| {
-                data.niri.process_input_event(event)
+                let tty = data.tty.as_mut().unwrap();
+                let mut change_vt = |vt| tty.change_vt(vt);
+                data.niri.process_input_event(&mut change_vt, event);
             })
             .unwrap();
 
@@ -439,5 +441,11 @@ impl Tty {
             Some(gbm.clone()),
         )?;
         Ok(compositor)
+    }
+
+    fn change_vt(&mut self, vt: i32) {
+        if let Err(err) = self.session.change_vt(vt) {
+            error!("error changing VT: {err}");
+        }
     }
 }
