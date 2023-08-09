@@ -11,7 +11,7 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
-use crate::Smallvil;
+use crate::Niri;
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -37,7 +37,7 @@ impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
 }
 
 pub struct ResizeSurfaceGrab {
-    start_data: PointerGrabStartData<Smallvil>,
+    start_data: PointerGrabStartData<Niri>,
     window: Window,
 
     edges: ResizeEdge,
@@ -48,7 +48,7 @@ pub struct ResizeSurfaceGrab {
 
 impl ResizeSurfaceGrab {
     pub fn start(
-        start_data: PointerGrabStartData<Smallvil>,
+        start_data: PointerGrabStartData<Niri>,
         window: Window,
         edges: ResizeEdge,
         initial_window_rect: Rectangle<i32, Logical>,
@@ -72,11 +72,11 @@ impl ResizeSurfaceGrab {
     }
 }
 
-impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
+impl PointerGrab<Niri> for ResizeSurfaceGrab {
     fn motion(
         &mut self,
-        data: &mut Smallvil,
-        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        data: &mut Niri,
+        handle: &mut PointerInnerHandle<'_, Niri>,
         _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
@@ -132,8 +132,8 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
 
     fn relative_motion(
         &mut self,
-        data: &mut Smallvil,
-        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        data: &mut Niri,
+        handle: &mut PointerInnerHandle<'_, Niri>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
@@ -142,8 +142,8 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
 
     fn button(
         &mut self,
-        data: &mut Smallvil,
-        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        data: &mut Niri,
+        handle: &mut PointerInnerHandle<'_, Niri>,
         event: &ButtonEvent,
     ) {
         handle.button(data, event);
@@ -175,14 +175,14 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
 
     fn axis(
         &mut self,
-        data: &mut Smallvil,
-        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        data: &mut Niri,
+        handle: &mut PointerInnerHandle<'_, Niri>,
         details: AxisFrame,
     ) {
         handle.axis(data, details)
     }
 
-    fn start_data(&self) -> &PointerGrabStartData<Smallvil> {
+    fn start_data(&self) -> &PointerGrabStartData<Niri> {
         &self.start_data
     }
 }

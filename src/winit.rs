@@ -4,137 +4,124 @@ use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
+use smithay::desktop::space::SpaceRenderElements;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::calloop::LoopHandle;
 use smithay::utils::{Rectangle, Transform};
 
-use crate::{CalloopData, Smallvil};
+use crate::backend::Backend;
+use crate::{LoopData, Niri};
 
-pub fn init_winit(
-    event_loop: &EventLoop<CalloopData>,
-    data: &mut CalloopData,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let display = &mut data.display;
-    let state = &mut data.state;
-
-    let (mut backend, mut winit) = winit::init()?;
-
-    let mode = Mode {
-        size: backend.window_size().physical_size,
-        refresh: 60_000,
-    };
-
-    let output = Output::new(
-        "winit".to_string(),
-        PhysicalProperties {
-            size: (0, 0).into(),
-            subpixel: Subpixel::Unknown,
-            make: "Smithay".into(),
-            model: "Winit".into(),
-        },
-    );
-    let _global = output.create_global::<Smallvil>(&display.handle());
-    output.change_current_state(
-        Some(mode),
-        Some(Transform::Flipped180),
-        None,
-        Some((0, 0).into()),
-    );
-    output.set_preferred(mode);
-
-    state.space.map_output(&output, (0, 0));
-
-    let mut damage_tracker = OutputDamageTracker::from_output(&output);
-
-    std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
-
-    let mut full_redraw = 0u8;
-
-    let timer = Timer::immediate();
-    event_loop
-        .handle()
-        .insert_source(timer, move |_, _, data| {
-            winit_dispatch(
-                &mut backend,
-                &mut winit,
-                data,
-                &output,
-                &mut damage_tracker,
-                &mut full_redraw,
-            )
-            .unwrap();
-            TimeoutAction::ToDuration(Duration::from_millis(16))
-        })?;
-
-    Ok(())
+pub struct Winit {
+    output: Output,
+    backend: WinitGraphicsBackend<GlesRenderer>,
+    winit_event_loop: WinitEventLoop,
+    damage_tracker: OutputDamageTracker,
 }
 
-pub fn winit_dispatch(
-    backend: &mut WinitGraphicsBackend<GlesRenderer>,
-    winit: &mut WinitEventLoop,
-    data: &mut CalloopData,
-    output: &Output,
-    damage_tracker: &mut OutputDamageTracker,
-    full_redraw: &mut u8,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let display = &mut data.display;
-    let state = &mut data.state;
-
-    let res = winit.dispatch_new_events(|event| match event {
-        WinitEvent::Resized { size, .. } => {
-            output.change_current_state(
-                Some(Mode {
-                    size,
-                    refresh: 60_000,
-                }),
-                None,
-                None,
-                None,
-            );
-        }
-        WinitEvent::Input(event) => state.process_input_event(event),
-        _ => (),
-    });
-
-    if let Err(WinitError::WindowClosed) = res {
-        // Stop the loop
-        state.loop_signal.stop();
-
-        return Ok(());
-    } else {
-        res?;
+impl Backend for Winit {
+    fn seat_name(&self) -> String {
+        "winit".to_owned()
     }
 
-    *full_redraw = full_redraw.saturating_sub(1);
+    fn renderer(&mut self) -> &mut GlesRenderer {
+        self.backend.renderer()
+    }
 
-    let size = backend.window_size().physical_size;
-    let damage = Rectangle::from_loc_and_size((0, 0), size);
+    fn render(
+        &mut self,
+        _niri: &mut Niri,
+        elements: &[SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>],
+    ) {
+        let size = self.backend.window_size().physical_size;
+        let damage = Rectangle::from_loc_and_size((0, 0), size);
 
-    backend.bind()?;
-    smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
-        output,
-        backend.renderer(),
-        1.0,
-        0,
-        [&state.space],
-        &[],
-        damage_tracker,
-        [0.1, 0.1, 0.1, 1.0],
-    )?;
-    backend.submit(Some(&[damage]))?;
+        self.damage_tracker
+            .render_output(self.backend.renderer(), 0, elements, [0.1, 0.1, 0.1, 1.0])
+            .unwrap();
+        self.backend.submit(Some(&[damage])).unwrap();
+    }
+}
 
-    state.space.elements().for_each(|window| {
-        window.send_frame(
+impl Winit {
+    pub fn new(event_loop: LoopHandle<LoopData>) -> Self {
+        let (backend, winit_event_loop) = winit::init().unwrap();
+
+        let mode = Mode {
+            size: backend.window_size().physical_size,
+            refresh: 60_000,
+        };
+
+        let output = Output::new(
+            "winit".to_string(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: "Smithay".into(),
+                model: "Winit".into(),
+            },
+        );
+        output.change_current_state(
+            Some(mode),
+            Some(Transform::Flipped180),
+            None,
+            Some((0, 0).into()),
+        );
+        output.set_preferred(mode);
+
+        let damage_tracker = OutputDamageTracker::from_output(&output);
+
+        let timer = Timer::immediate();
+        event_loop
+            .insert_source(timer, move |_, _, data| {
+                let winit = data.winit.as_mut().unwrap();
+                winit.dispatch(&mut data.niri);
+                TimeoutAction::ToDuration(Duration::from_millis(16))
+            })
+            .unwrap();
+
+        Self {
             output,
-            state.start_time.elapsed(),
-            Some(Duration::ZERO),
-            |_, _| Some(output.clone()),
-        )
-    });
+            backend,
+            winit_event_loop,
+            damage_tracker,
+        }
+    }
 
-    state.space.refresh();
-    display.flush_clients()?;
+    pub fn init(&mut self, niri: &mut Niri) {
+        let _global = self.output.create_global::<Niri>(&niri.display_handle);
+        niri.space.map_output(&self.output, (0, 0));
+        niri.output = Some(self.output.clone());
+    }
 
-    Ok(())
+    fn dispatch(&mut self, niri: &mut Niri) {
+        let res = self
+            .winit_event_loop
+            .dispatch_new_events(|event| match event {
+                WinitEvent::Resized { size, .. } => {
+                    niri.output.as_ref().unwrap().change_current_state(
+                        Some(Mode {
+                            size,
+                            refresh: 60_000,
+                        }),
+                        None,
+                        None,
+                        None,
+                    );
+                }
+                WinitEvent::Input(event) => niri.process_input_event(event),
+                _ => (),
+            });
+
+        if let Err(WinitError::WindowClosed) = res {
+            niri.stop_signal.stop();
+            return;
+        } else {
+            res.unwrap();
+        }
+
+        self.backend.bind().unwrap();
+        niri.redraw(self);
+    }
 }

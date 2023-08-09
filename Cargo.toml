@@ -1,18 +1,33 @@
 [package]
 name = "niri"
 version = "0.1.0"
-edition = "2021"
+description = "A Wayland compositor"
+authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
+edition = "2021"
 
 [dependencies]
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-bitflags = "2.2.1"
+anyhow = { version = "1.0.72", features = ["backtrace"] }
+bitflags = "2.3.3"
+clap = { version = "4.3.21", features = ["derive"] }
+smithay-drm-extras = { version = "0.1.0", path = "../smithay/smithay-drm-extras" }
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay"
 default-features = false
 features = [
+    "backend_drm",
+    "backend_egl",
+    "backend_gbm",
+    "backend_libinput",
+    "backend_session_libseat",
+    "backend_udev",
     "backend_winit",
-    "wayland_frontend",
     "desktop",
+    "renderer_gl",
+    "renderer_multi",
+    "use_system_lib",
+    "wayland_frontend",
 ]

@@ -6,19 +6,19 @@ use smithay::input::pointer::{
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point};
 
-use crate::Smallvil;
+use crate::Niri;
 
 pub struct MoveSurfaceGrab {
-    pub start_data: PointerGrabStartData<Smallvil>,
+    pub start_data: PointerGrabStartData<Niri>,
     pub window: Window,
     pub initial_window_location: Point<i32, Logical>,
 }
 
-impl PointerGrab<Smallvil> for MoveSurfaceGrab {
+impl PointerGrab<Niri> for MoveSurfaceGrab {
     fn motion(
         &mut self,
-        data: &mut Smallvil,
-        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        data: &mut Niri,
+        handle: &mut PointerInnerHandle<'_, Niri>,
         _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
@@ -33,8 +33,8 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
 
     fn relative_motion(
         &mut self,
-        data: &mut Smallvil,
-        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        data: &mut Niri,
+        handle: &mut PointerInnerHandle<'_, Niri>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
@@ -43,8 +43,8 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
 
     fn button(
         &mut self,
-        data: &mut Smallvil,
-        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        data: &mut Niri,
+        handle: &mut PointerInnerHandle<'_, Niri>,
         event: &ButtonEvent,
     ) {
         handle.button(data, event);
@@ -61,14 +61,14 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
 
     fn axis(
         &mut self,
-        data: &mut Smallvil,
-        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        data: &mut Niri,
+        handle: &mut PointerInnerHandle<'_, Niri>,
         details: AxisFrame,
     ) {
         handle.axis(data, details)
     }
 
-    fn start_data(&self) -> &PointerGrabStartData<Smallvil> {
+    fn start_data(&self) -> &PointerGrabStartData<Niri> {
         &self.start_data
     }
 }

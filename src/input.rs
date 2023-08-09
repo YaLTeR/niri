@@ -2,28 +2,52 @@ use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
     KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
 };
-use smithay::input::keyboard::FilterResult;
+use smithay::input::keyboard::{keysyms, FilterResult};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::SERIAL_COUNTER;
 
-use crate::state::Smallvil;
+use crate::niri::Niri;
 
-impl Smallvil {
+enum InputAction {
+    Quit,
+    ChangeVt(i32),
+}
+
+impl Niri {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+        trace!("process_input_event");
+
         match event {
             InputEvent::Keyboard { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time_msec(&event);
 
-                self.seat.get_keyboard().unwrap().input::<(), _>(
+                let action = self.seat.get_keyboard().unwrap().input(
                     self,
                     event.key_code(),
                     event.state(),
                     serial,
                     time,
-                    |_, _, _| FilterResult::Forward,
+                    |_, _, keysym| match keysym.modified_sym() {
+                        keysyms::KEY_Escape => FilterResult::Intercept(InputAction::Quit),
+                        keysym @ keysyms::KEY_XF86Switch_VT_1..=keysyms::KEY_XF86Switch_VT_12 => {
+                            let vt = (keysym - keysyms::KEY_XF86Switch_VT_1 + 1) as i32;
+                            FilterResult::Intercept(InputAction::ChangeVt(vt))
+                        }
+                        _ => FilterResult::Forward,
+                    },
                 );
+
+                if let Some(action) = action {
+                    match action {
+                        InputAction::Quit => {
+                            info!("quitting because Esc was pressed");
+                            self.stop_signal.stop()
+                        }
+                        InputAction::ChangeVt(vt) => todo!(),
+                    }
+                }
             }
             InputEvent::PointerMotion { .. } => {}
             InputEvent::PointerMotionAbsolute { event, .. } => {

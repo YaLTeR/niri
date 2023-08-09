@@ -10,13 +10,13 @@ use smithay::wayland::data_device::{
 };
 use smithay::{delegate_data_device, delegate_output, delegate_seat};
 
-use crate::Smallvil;
+use crate::Niri;
 
-impl SeatHandler for Smallvil {
+impl SeatHandler for Niri {
     type KeyboardFocus = WlSurface;
     type PointerFocus = WlSurface;
 
-    fn seat_state(&mut self) -> &mut SeatState<Smallvil> {
+    fn seat_state(&mut self) -> &mut SeatState<Niri> {
         &mut self.seat_state
     }
 
@@ -29,26 +29,26 @@ impl SeatHandler for Smallvil {
     fn focus_changed(&mut self, _seat: &smithay::input::Seat<Self>, _focused: Option<&WlSurface>) {}
 }
 
-delegate_seat!(Smallvil);
+delegate_seat!(Niri);
 
 //
 // Wl Data Device
 //
 
-impl DataDeviceHandler for Smallvil {
+impl DataDeviceHandler for Niri {
     type SelectionUserData = ();
     fn data_device_state(&self) -> &smithay::wayland::data_device::DataDeviceState {
         &self.data_device_state
     }
 }
 
-impl ClientDndGrabHandler for Smallvil {}
-impl ServerDndGrabHandler for Smallvil {}
+impl ClientDndGrabHandler for Niri {}
+impl ServerDndGrabHandler for Niri {}
 
-delegate_data_device!(Smallvil);
+delegate_data_device!(Niri);
 
 //
 // Wl Output & Xdg Output
 //
 
-delegate_output!(Smallvil);
+delegate_output!(Niri);

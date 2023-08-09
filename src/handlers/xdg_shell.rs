@@ -14,9 +14,9 @@ use smithay::wayland::shell::xdg::{
 };
 
 use crate::grabs::{MoveSurfaceGrab, ResizeSurfaceGrab};
-use crate::Smallvil;
+use crate::Niri;
 
-impl XdgShellHandler for Smallvil {
+impl XdgShellHandler for Niri {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_shell_state
     }
@@ -102,13 +102,13 @@ impl XdgShellHandler for Smallvil {
 }
 
 // Xdg Shell
-delegate_xdg_shell!(Smallvil);
+delegate_xdg_shell!(Niri);
 
 fn check_grab(
-    seat: &Seat<Smallvil>,
+    seat: &Seat<Niri>,
     surface: &WlSurface,
     serial: Serial,
-) -> Option<PointerGrabStartData<Smallvil>> {
+) -> Option<PointerGrabStartData<Niri>> {
     let pointer = seat.get_pointer()?;
 
     // Check that this surface has a click grab.
