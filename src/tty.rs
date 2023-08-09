@@ -115,6 +115,8 @@ impl Tty {
 
                 match event {
                     SessionEvent::PauseSession => {
+                        debug!("pausing session");
+
                         libinput.suspend();
 
                         if let Some(output_device) = &tty.output_device {
@@ -122,14 +124,19 @@ impl Tty {
                         }
                     }
                     SessionEvent::ActivateSession => {
+                        debug!("resuming session");
+
                         if libinput.resume().is_err() {
                             error!("error resuming libinput");
                         }
 
-                        if let Some(output_device) = &tty.output_device {
-                            // FIXME: according to Catacomb, resetting DRM+Compositor is preferrable
-                            // here, but currently not possible due to a bug somewhere.
-                            tty.device_changed(output_device.id, niri);
+                        if let Some(output_device) = &mut tty.output_device {
+                            output_device.drm.activate();
+
+                            if let Err(err) = output_device.drm_compositor.surface().reset_state() {
+                                warn!("error resetting DRM surface state: {err}");
+                            }
+                            output_device.drm_compositor.reset_buffers();
                         }
 
                         niri.redraw(tty);
