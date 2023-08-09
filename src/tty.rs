@@ -33,6 +33,7 @@ use smithay_drm_extras::edid::EdidInfo;
 use crate::backend::Backend;
 use crate::{LoopData, Niri};
 
+const BACKGROUND_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.];
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
@@ -68,28 +69,40 @@ impl Backend for Tty {
         elements: &[SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>],
     ) {
         let output_device = self.output_device.as_mut().unwrap();
-        let res = output_device
-            .drm_compositor
-            .render_frame::<_, _, GlesRenderbuffer>(
-                &mut output_device.gles,
-                elements,
-                [0.1, 0.1, 0.1, 1.],
+        let drm_compositor = &mut output_device.drm_compositor;
+
+        match drm_compositor.render_frame::<_, _, GlesRenderbuffer>(
+            &mut output_device.gles,
+            elements,
+            BACKGROUND_COLOR,
+        ) {
+            Ok(res) => {
+                assert!(!res.needs_sync());
+                if res.damage.is_some() {
+                    match output_device.drm_compositor.queue_frame(()) {
+                        Ok(()) => return,
+                        Err(err) => {
+                            error!("error queueing frame: {err}");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                // Can fail if we switched to a different TTY.
+                error!("error rendering frame: {err}");
+            }
+        }
+
+        // FIXME: render on demand instead of busy looping.
+        niri.event_loop
+            .insert_source(
+                Timer::from_duration(Duration::from_millis(6)),
+                |_, _, data| {
+                    data.niri.redraw(data.tty.as_mut().unwrap());
+                    TimeoutAction::Drop
+                },
             )
             .unwrap();
-        assert!(!res.needs_sync());
-        if res.damage.is_some() {
-            output_device.drm_compositor.queue_frame(()).unwrap();
-        } else {
-            niri.event_loop
-                .insert_source(
-                    Timer::from_duration(Duration::from_millis(6)),
-                    |_, _, data| {
-                        data.niri.redraw(data.tty.as_mut().unwrap());
-                        TimeoutAction::Drop
-                    },
-                )
-                .unwrap();
-        }
     }
 }
 
