@@ -69,7 +69,7 @@ impl Niri {
                 pointer_location.x = pointer_location.x.clamp(0., output_geo.size.w as f64);
                 pointer_location.y = pointer_location.y.clamp(0., output_geo.size.h as f64);
 
-                let under = self.surface_under_pointer(&pointer);
+                let under = self.surface_under(pointer_location);
                 pointer.motion(
                     self,
                     under.clone(),
@@ -101,7 +101,7 @@ impl Niri {
 
                 let pointer = self.seat.get_pointer().unwrap();
 
-                let under = self.surface_under_pointer(&pointer);
+                let under = self.surface_under(pos);
 
                 pointer.motion(
                     self,

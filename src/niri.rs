@@ -5,7 +5,6 @@ use std::time::Duration;
 use smithay::desktop::space::space_render_elements;
 use smithay::desktop::{Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
-use smithay::input::pointer::PointerHandle;
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
@@ -119,11 +118,10 @@ impl Niri {
         }
     }
 
-    pub fn surface_under_pointer(
+    pub fn surface_under(
         &self,
-        pointer: &PointerHandle<Self>,
+        pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
-        let pos = pointer.current_location();
         self.space
             .element_under(pos)
             .and_then(|(window, location)| {
