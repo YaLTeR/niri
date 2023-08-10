@@ -41,6 +41,8 @@ impl Niri {
                     time,
                     |_, mods, keysym| {
                         if event.state() == KeyState::Pressed {
+                            // FIXME: these don't work in the Russian layout. I guess I'll need to
+                            // find a US keymap, then map keys somehow.
                             match keysym.modified_sym() {
                                 keysyms::KEY_E if mods.logo => {
                                     FilterResult::Intercept(InputAction::Quit)

@@ -81,7 +81,12 @@ impl Niri {
 
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&display_handle, seat_name);
         // FIXME: get Xkb and repeat interval from GNOME dconf.
-        seat.add_keyboard(XkbConfig::default(), 400, 30).unwrap();
+        let xkb = XkbConfig {
+            layout: "us,ru",
+            options: Some("grp:win_space_toggle".to_owned()),
+            ..Default::default()
+        };
+        seat.add_keyboard(xkb, 400, 30).unwrap();
         seat.add_pointer();
 
         let space = Space::default();
