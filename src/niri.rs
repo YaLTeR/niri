@@ -12,6 +12,7 @@ use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
@@ -65,7 +66,14 @@ impl Niri {
         let display_handle = display.handle();
 
         let compositor_state = CompositorState::new::<Self>(&display_handle);
-        let xdg_shell_state = XdgShellState::new::<Self>(&display_handle);
+        let xdg_shell_state = XdgShellState::new_with_capabilities::<Self>(
+            &display_handle,
+            [
+                WmCapabilities::Fullscreen,
+                WmCapabilities::Maximize,
+                WmCapabilities::WindowMenu,
+            ],
+        );
         let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
         let mut seat_state = SeatState::new();
