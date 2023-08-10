@@ -12,6 +12,7 @@ use smithay::input::keyboard::XkbConfig;
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -45,6 +46,11 @@ pub struct Niri {
 
     pub seat: Seat<Self>,
     pub output: Option<Output>,
+
+    // Set to `true` if there's a redraw queued on the event loop. Reset to `false` in redraw()
+    // which means that you cannot queue more than one redraw at once.
+    pub redraw_queued: bool,
+    pub waiting_for_vblank: bool,
 }
 
 impl Niri {
@@ -119,6 +125,8 @@ impl Niri {
 
             seat,
             output: None,
+            redraw_queued: false,
+            waiting_for_vblank: false,
         }
     }
 
@@ -135,7 +143,32 @@ impl Niri {
             })
     }
 
-    pub fn redraw(&mut self, backend: &mut dyn Backend) {
+    /// Schedules an immediate redraw if one is not already scheduled.
+    pub fn queue_redraw(&mut self) {
+        if self.redraw_queued || self.waiting_for_vblank {
+            return;
+        }
+
+        self.redraw_queued = true;
+
+        self.event_loop
+            .insert_source(Timer::immediate(), |_, _, data| {
+                let backend: &mut dyn Backend = if let Some(tty) = &mut data.tty {
+                    tty
+                } else {
+                    data.winit.as_mut().unwrap()
+                };
+                data.niri.redraw(backend);
+                TimeoutAction::Drop
+            })
+            .unwrap();
+    }
+
+    fn redraw(&mut self, backend: &mut dyn Backend) {
+        assert!(self.redraw_queued);
+        assert!(!self.waiting_for_vblank);
+        self.redraw_queued = false;
+
         let elements = space_render_elements(
             backend.renderer(),
             [&self.space],

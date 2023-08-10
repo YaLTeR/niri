@@ -89,6 +89,9 @@ impl Niri {
                         utime: event.time(),
                     },
                 );
+
+                // Redraw to update the cursor position.
+                self.queue_redraw();
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
                 let output = self.space.outputs().next().unwrap();
@@ -112,6 +115,9 @@ impl Niri {
                         time: event.time_msec(),
                     },
                 );
+
+                // Redraw to update the cursor position.
+                self.queue_redraw();
             }
             InputEvent::PointerButton { event, .. } => {
                 let pointer = self.seat.get_pointer().unwrap();

@@ -1,6 +1,5 @@
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use anyhow::anyhow;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -17,7 +16,6 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::connector::{
     Interface as ConnectorInterface, State as ConnectorState,
@@ -83,7 +81,7 @@ impl Backend for Tty {
                 assert!(!res.needs_sync());
                 if res.damage.is_some() {
                     match output_device.drm_compositor.queue_frame(()) {
-                        Ok(()) => return,
+                        Ok(()) => niri.waiting_for_vblank = true,
                         Err(err) => {
                             error!("error queueing frame: {err}");
                         }
@@ -95,17 +93,6 @@ impl Backend for Tty {
                 error!("error rendering frame: {err}");
             }
         }
-
-        // FIXME: render on demand instead of busy looping.
-        niri.event_loop
-            .insert_source(
-                Timer::from_duration(Duration::from_millis(6)),
-                |_, _, data| {
-                    data.niri.redraw(data.tty.as_mut().unwrap());
-                    TimeoutAction::Drop
-                },
-            )
-            .unwrap();
     }
 }
 
@@ -157,7 +144,7 @@ impl Tty {
                             output_device.drm_compositor.reset_buffers();
                         }
 
-                        niri.redraw(tty);
+                        niri.queue_redraw();
                     }
                 }
             })
@@ -190,7 +177,7 @@ impl Tty {
                         if let Err(err) = tty.device_added(device_id, path, niri) {
                             warn!("error adding device: {err:?}");
                         }
-                        niri.redraw(tty);
+                        niri.queue_redraw();
                     }
                     UdevEvent::Changed { device_id } => tty.device_changed(device_id, niri),
                     UdevEvent::Removed { device_id } => tty.device_removed(device_id, niri),
@@ -198,7 +185,7 @@ impl Tty {
             })
             .unwrap();
 
-        niri.redraw(self);
+        niri.queue_redraw();
     }
 
     fn device_added(
@@ -250,11 +237,8 @@ impl Tty {
                         //     .windows
                         //     .mark_presented(&output_device.last_render_states, metadata);
 
-                        // Request redraw before the next VBlank.
-                        // let frame_interval = catacomb.windows.output().frame_interval();
-                        // let duration = frame_interval - RENDER_TIME_OFFSET;
-                        // catacomb.backend.schedule_redraw(duration);
-                        data.niri.redraw(tty);
+                        data.niri.waiting_for_vblank = false;
+                        data.niri.queue_redraw();
                     }
                     DrmEvent::Error(error) => error!("DRM error: {error}"),
                 };

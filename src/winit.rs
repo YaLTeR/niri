@@ -115,16 +115,17 @@ impl Winit {
                     );
                 }
                 WinitEvent::Input(event) => niri.process_input_event(&mut |_| (), event),
-                _ => (),
+                WinitEvent::Focus(_) => (),
+                WinitEvent::Refresh => niri.queue_redraw(),
             });
 
-        if let Err(WinitError::WindowClosed) = res {
-            niri.stop_signal.stop();
-            return;
-        } else {
-            res.unwrap();
+        // I want this to stop compiling if more errors are added.
+        #[allow(clippy::single_match)]
+        match res {
+            Err(WinitError::WindowClosed) => {
+                niri.stop_signal.stop();
+            }
+            Ok(()) => (),
         }
-
-        niri.redraw(self);
     }
 }
