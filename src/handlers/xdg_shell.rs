@@ -145,6 +145,14 @@ impl XdgShellHandler for Niri {
         });
         surface.send_pending_configure();
     }
+
+    fn toplevel_destroyed(&mut self, _surface: ToplevelSurface) {
+        self.queue_redraw();
+    }
+
+    fn popup_destroyed(&mut self, _surface: PopupSurface) {
+        self.queue_redraw();
+    }
 }
 
 // Xdg Shell
