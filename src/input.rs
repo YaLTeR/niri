@@ -47,7 +47,7 @@ impl Niri {
                 if let Some(action) = action {
                     match action {
                         InputAction::Quit => {
-                            info!("quitting because Esc was pressed");
+                            info!("quitting because quit bind was pressed");
                             self.stop_signal.stop()
                         }
                         InputAction::ChangeVt(vt) => {
