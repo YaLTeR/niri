@@ -10,7 +10,7 @@ use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::gles::{GlesRenderbuffer, GlesRenderer};
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
@@ -72,7 +72,7 @@ impl Backend for Tty {
         let output_device = self.output_device.as_mut().unwrap();
         let drm_compositor = &mut output_device.drm_compositor;
 
-        match drm_compositor.render_frame::<_, _, GlesRenderbuffer>(
+        match drm_compositor.render_frame::<_, _, GlesTexture>(
             &mut output_device.gles,
             elements,
             BACKGROUND_COLOR,
