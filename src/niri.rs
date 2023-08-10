@@ -195,7 +195,7 @@ impl Niri {
                     size: (16, 16).into(),
                 },
                 CommitCounter::default(),
-                [1., 0.5, 0., 1.],
+                [1., 0.8, 0., 1.],
             )),
         );
 
