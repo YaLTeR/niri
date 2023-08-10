@@ -12,7 +12,6 @@ use smithay::input::keyboard::XkbConfig;
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -151,17 +150,16 @@ impl Niri {
 
         self.redraw_queued = true;
 
-        self.event_loop
-            .insert_source(Timer::immediate(), |_, _, data| {
-                let backend: &mut dyn Backend = if let Some(tty) = &mut data.tty {
-                    tty
-                } else {
-                    data.winit.as_mut().unwrap()
-                };
-                data.niri.redraw(backend);
-                TimeoutAction::Drop
-            })
-            .unwrap();
+        // Timer::immediate() adds a millisecond of delay for some reason.
+        // This should be fixed in calloop v0.11: https://github.com/Smithay/calloop/issues/142
+        self.event_loop.insert_idle(|data| {
+            let backend: &mut dyn Backend = if let Some(tty) = &mut data.tty {
+                tty
+            } else {
+                data.winit.as_mut().unwrap()
+            };
+            data.niri.redraw(backend);
+        });
     }
 
     fn redraw(&mut self, backend: &mut dyn Backend) {
