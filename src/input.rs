@@ -1,6 +1,6 @@
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+    KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
 };
 use smithay::input::keyboard::{keysyms, FilterResult};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
@@ -34,13 +34,22 @@ impl Niri {
                     event.state(),
                     serial,
                     time,
-                    |_, mods, keysym| match keysym.modified_sym() {
-                        keysyms::KEY_E if mods.logo => FilterResult::Intercept(InputAction::Quit),
-                        keysym @ keysyms::KEY_XF86Switch_VT_1..=keysyms::KEY_XF86Switch_VT_12 => {
-                            let vt = (keysym - keysyms::KEY_XF86Switch_VT_1 + 1) as i32;
-                            FilterResult::Intercept(InputAction::ChangeVt(vt))
+                    |_, mods, keysym| {
+                        if event.state() == KeyState::Pressed {
+                            match keysym.modified_sym() {
+                                keysyms::KEY_E if mods.logo => {
+                                    FilterResult::Intercept(InputAction::Quit)
+                                }
+                                keysym @ keysyms::KEY_XF86Switch_VT_1
+                                    ..=keysyms::KEY_XF86Switch_VT_12 => {
+                                    let vt = (keysym - keysyms::KEY_XF86Switch_VT_1 + 1) as i32;
+                                    FilterResult::Intercept(InputAction::ChangeVt(vt))
+                                }
+                                _ => FilterResult::Forward,
+                            }
+                        } else {
+                            FilterResult::Forward
                         }
-                        _ => FilterResult::Forward,
                     },
                 );
 
