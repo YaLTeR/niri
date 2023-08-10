@@ -33,11 +33,12 @@ pub struct LoopData {
     niri: Niri,
     display_handle: DisplayHandle,
 
-    // Last so that it's dropped after the Smithay state in Niri.
-    display: Display<Niri>,
-
     tty: Option<Tty>,
     winit: Option<Winit>,
+
+    // Last so that it's dropped after the Smithay state in Niri and related state in Tty.
+    // Otherwise it will segfault on quit.
+    display: Display<Niri>,
 }
 
 fn main() {
