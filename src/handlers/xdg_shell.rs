@@ -99,6 +99,52 @@ impl XdgShellHandler for Niri {
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
         // TODO popup grabs
     }
+
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        if surface
+            .current_state()
+            .capabilities
+            .contains(xdg_toplevel::WmCapabilities::Maximize)
+        {
+            let wl_surface = surface.wl_surface();
+            let window = self
+                .space
+                .elements()
+                .find(|w| w.toplevel().wl_surface() == wl_surface)
+                .unwrap()
+                .clone();
+            let geometry = self
+                .space
+                .output_geometry(self.output.as_ref().unwrap())
+                .unwrap();
+
+            surface.with_pending_state(|state| {
+                state.states.set(xdg_toplevel::State::Maximized);
+                state.size = Some(geometry.size);
+            });
+            self.space.map_element(window, geometry.loc, true);
+        }
+
+        // The protocol demands us to always reply with a configure,
+        // regardless of we fulfilled the request or not
+        surface.send_configure();
+    }
+
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        if !surface
+            .current_state()
+            .states
+            .contains(xdg_toplevel::State::Maximized)
+        {
+            return;
+        }
+
+        surface.with_pending_state(|state| {
+            state.states.unset(xdg_toplevel::State::Maximized);
+            state.size = None;
+        });
+        surface.send_pending_configure();
+    }
 }
 
 // Xdg Shell
