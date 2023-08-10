@@ -40,6 +40,7 @@ impl Backend for Winit {
         let size = self.backend.window_size().physical_size;
         let damage = Rectangle::from_loc_and_size((0, 0), size);
 
+        self.backend.bind().unwrap();
         self.damage_tracker
             .render_output(self.backend.renderer(), 0, elements, [0.1, 0.1, 0.1, 1.0])
             .unwrap();
@@ -124,7 +125,6 @@ impl Winit {
             res.unwrap();
         }
 
-        self.backend.bind().unwrap();
         niri.redraw(self);
     }
 }
