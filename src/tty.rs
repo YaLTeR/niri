@@ -302,6 +302,7 @@ impl Tty {
         let resources = drm.resource_handles()?;
 
         let mut connector = None;
+        let mut edp_connector = None;
         resources
             .connectors()
             .iter()
@@ -322,10 +323,17 @@ impl Tty {
                 );
             })
             .filter(|conn| conn.state() == ConnectorState::Connected)
-            // FIXME: don't hardcode eDP.
-            .filter(|conn| conn.interface() == ConnectorInterface::EmbeddedDisplayPort)
-            .for_each(|conn| connector = Some(conn));
-        let connector = connector.ok_or_else(|| anyhow!("no compatible connector"))?;
+            .for_each(|conn| {
+                connector = Some(conn.clone());
+
+                if conn.interface() == ConnectorInterface::EmbeddedDisplayPort {
+                    edp_connector = Some(conn);
+                }
+            });
+        // Since we're only using one output at the moment, prefer eDP.
+        let connector = edp_connector
+            .or(connector)
+            .ok_or_else(|| anyhow!("no compatible connector"))?;
         info!(
             "picking connector: {}-{}",
             connector.interface().as_str(),
