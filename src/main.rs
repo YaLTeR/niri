@@ -52,6 +52,8 @@ fn main() {
 
     let cli = Cli::parse();
 
+    let _client = tracy_client::Client::start();
+
     let mut event_loop = EventLoop::try_new().unwrap();
 
     let has_display = env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
@@ -103,6 +105,7 @@ fn main() {
     event_loop
         .run(None, &mut data, move |data| {
             // niri is running.
+            let _span = tracy_client::span!("flush_clients");
             data.display.flush_clients().unwrap();
         })
         .unwrap();

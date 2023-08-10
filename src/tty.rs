@@ -69,6 +69,8 @@ impl Backend for Tty {
             WaylandSurfaceRenderElement<GlesRenderer>,
         >],
     ) {
+        let _span = tracy_client::span!("Tty::render");
+
         let output_device = self.output_device.as_mut().unwrap();
         let drm_compositor = &mut output_device.drm_compositor;
 
@@ -223,6 +225,9 @@ impl Tty {
                 let tty = data.tty.as_mut().unwrap();
                 match event {
                     DrmEvent::VBlank(_crtc) => {
+                        tracy_client::Client::running()
+                            .unwrap()
+                            .message("vblank", 0);
                         info!("vblank {metadata:?}");
 
                         let output_device = tty.output_device.as_mut().unwrap();

@@ -163,6 +163,8 @@ impl Niri {
     }
 
     fn redraw(&mut self, backend: &mut dyn Backend) {
+        let _span = tracy_client::span!("redraw");
+
         assert!(self.redraw_queued);
         assert!(!self.waiting_for_vblank);
         self.redraw_queued = false;

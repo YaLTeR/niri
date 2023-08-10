@@ -37,6 +37,8 @@ impl Backend for Winit {
             WaylandSurfaceRenderElement<GlesRenderer>,
         >],
     ) {
+        let _span = tracy_client::span!("Winit::render");
+
         let size = self.backend.window_size().physical_size;
         let damage = Rectangle::from_loc_and_size((0, 0), size);
 

@@ -24,6 +24,10 @@ impl CompositorHandler for Niri {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        tracy_client::Client::running()
+            .unwrap()
+            .message("client commit", 0);
+
         on_commit_buffer_handler::<Self>(surface);
         if !is_sync_subsurface(surface) {
             let mut root = surface.clone();
