@@ -16,7 +16,6 @@ use smithay::backend::renderer::{Bind, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
-use smithay::desktop::space::SpaceRenderElements;
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
@@ -31,6 +30,7 @@ use smithay::utils::DeviceFd;
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::backend::Backend;
+use crate::niri::OutputRenderElements;
 use crate::{LoopData, Niri};
 
 const BACKGROUND_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.];
@@ -66,7 +66,10 @@ impl Backend for Tty {
     fn render(
         &mut self,
         niri: &mut Niri,
-        elements: &[SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>],
+        elements: &[OutputRenderElements<
+            GlesRenderer,
+            WaylandSurfaceRenderElement<GlesRenderer>,
+        >],
     ) {
         let output_device = self.output_device.as_mut().unwrap();
         let drm_compositor = &mut output_device.drm_compositor;

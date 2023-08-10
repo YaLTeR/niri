@@ -4,13 +4,13 @@ use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
-use smithay::desktop::space::SpaceRenderElements;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::utils::{Rectangle, Transform};
 
 use crate::backend::Backend;
+use crate::niri::OutputRenderElements;
 use crate::{LoopData, Niri};
 
 pub struct Winit {
@@ -32,7 +32,10 @@ impl Backend for Winit {
     fn render(
         &mut self,
         _niri: &mut Niri,
-        elements: &[SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>],
+        elements: &[OutputRenderElements<
+            GlesRenderer,
+            WaylandSurfaceRenderElement<GlesRenderer>,
+        >],
     ) {
         let size = self.backend.window_size().physical_size;
         let damage = Rectangle::from_loc_and_size((0, 0), size);

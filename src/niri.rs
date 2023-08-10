@@ -2,7 +2,11 @@ use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use std::time::Duration;
 
-use smithay::desktop::space::space_render_elements;
+use smithay::backend::renderer::element::render_elements;
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::ImportAll;
+use smithay::desktop::space::{space_render_elements, SpaceRenderElements};
 use smithay::desktop::{Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
 use smithay::input::{Seat, SeatState};
@@ -139,6 +143,29 @@ impl Niri {
             1.,
         )
         .unwrap();
+
+        let mut elements: Vec<_> = elements
+            .into_iter()
+            .map(OutputRenderElements::from)
+            .collect();
+        elements.insert(
+            0,
+            OutputRenderElements::Pointer(SolidColorRenderElement::new(
+                smithay::backend::renderer::element::Id::new(),
+                smithay::utils::Rectangle {
+                    loc: self
+                        .seat
+                        .get_pointer()
+                        .unwrap()
+                        .current_location()
+                        .to_physical_precise_round(1.),
+                    size: (16, 16).into(),
+                },
+                CommitCounter::default(),
+                [1., 0.5, 0., 1.],
+            )),
+        );
+
         backend.render(self, &elements);
 
         let output = self.output.as_ref().unwrap();
@@ -153,6 +180,12 @@ impl Niri {
 
         self.space.refresh();
     }
+}
+
+render_elements! {
+    pub OutputRenderElements<R, E> where R: ImportAll;
+    Space=SpaceRenderElements<R, E>,
+    Pointer = SolidColorRenderElement,
 }
 
 #[derive(Default)]

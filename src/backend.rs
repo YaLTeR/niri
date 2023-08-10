@@ -1,7 +1,7 @@
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::desktop::space::SpaceRenderElements;
 
+use crate::niri::OutputRenderElements;
 use crate::Niri;
 
 pub trait Backend {
@@ -10,6 +10,9 @@ pub trait Backend {
     fn render(
         &mut self,
         niri: &mut Niri,
-        elements: &[SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>],
+        elements: &[OutputRenderElements<
+            GlesRenderer,
+            WaylandSurfaceRenderElement<GlesRenderer>,
+        >],
     );
 }
