@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::process::Command;
 
 use smithay::backend::input::{
@@ -15,6 +16,7 @@ enum InputAction {
     Quit,
     ChangeVt(i32),
     SpawnTerminal,
+    CloseWindow,
 }
 
 impl Niri {
@@ -51,6 +53,9 @@ impl Niri {
                                 keysyms::KEY_t if mods.logo => {
                                     FilterResult::Intercept(InputAction::SpawnTerminal)
                                 }
+                                keysyms::KEY_q if mods.logo => {
+                                    FilterResult::Intercept(InputAction::CloseWindow)
+                                }
                                 _ => FilterResult::Forward,
                             }
                         } else {
@@ -71,6 +76,23 @@ impl Niri {
                         InputAction::SpawnTerminal => {
                             if let Err(err) = Command::new("alacritty").spawn() {
                                 warn!("error spawning alacritty: {err}");
+                            }
+                        }
+                        InputAction::CloseWindow => {
+                            if let Some(focus) = self.seat.get_keyboard().unwrap().current_focus() {
+                                // FIXME: is there a better way of doing this?
+                                for window in self.space.elements() {
+                                    let found = Cell::new(false);
+                                    window.with_surfaces(|surface, _| {
+                                        if surface == &focus {
+                                            found.set(true);
+                                        }
+                                    });
+                                    if found.get() {
+                                        window.toplevel().send_close();
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
