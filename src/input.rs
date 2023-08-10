@@ -34,8 +34,8 @@ impl Niri {
                     event.state(),
                     serial,
                     time,
-                    |_, _, keysym| match keysym.modified_sym() {
-                        keysyms::KEY_Escape => FilterResult::Intercept(InputAction::Quit),
+                    |_, mods, keysym| match keysym.modified_sym() {
+                        keysyms::KEY_E if mods.logo => FilterResult::Intercept(InputAction::Quit),
                         keysym @ keysyms::KEY_XF86Switch_VT_1..=keysyms::KEY_XF86Switch_VT_12 => {
                             let vt = (keysym - keysyms::KEY_XF86Switch_VT_1 + 1) as i32;
                             FilterResult::Intercept(InputAction::ChangeVt(vt))
