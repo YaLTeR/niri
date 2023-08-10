@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
     KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
@@ -12,6 +14,7 @@ use crate::niri::Niri;
 enum InputAction {
     Quit,
     ChangeVt(i32),
+    SpawnTerminal,
 }
 
 impl Niri {
@@ -45,6 +48,9 @@ impl Niri {
                                     let vt = (keysym - keysyms::KEY_XF86Switch_VT_1 + 1) as i32;
                                     FilterResult::Intercept(InputAction::ChangeVt(vt))
                                 }
+                                keysyms::KEY_t if mods.logo => {
+                                    FilterResult::Intercept(InputAction::SpawnTerminal)
+                                }
                                 _ => FilterResult::Forward,
                             }
                         } else {
@@ -61,6 +67,11 @@ impl Niri {
                         }
                         InputAction::ChangeVt(vt) => {
                             (*change_vt)(vt);
+                        }
+                        InputAction::SpawnTerminal => {
+                            if let Err(err) = Command::new("alacritty").spawn() {
+                                warn!("error spawning alacritty: {err}");
+                            }
                         }
                     }
                 }
