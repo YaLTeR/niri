@@ -230,7 +230,7 @@ impl Niri {
 
 render_elements! {
     pub OutputRenderElements<R, E> where R: ImportAll;
-    Space=SpaceRenderElements<R, E>,
+    Space = SpaceRenderElements<R, E>,
     Pointer = SolidColorRenderElement,
 }
 
