@@ -9,7 +9,6 @@ use smithay::wayland::compositor::{
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
-use super::xdg_shell;
 use crate::grabs::resize_grab;
 use crate::niri::ClientState;
 use crate::Niri;
@@ -43,7 +42,7 @@ impl CompositorHandler for Niri {
             }
         };
 
-        xdg_shell::handle_commit(&self.space, surface);
+        self.xdg_handle_commit(surface);
         resize_grab::handle_commit(&mut self.space, surface);
 
         self.queue_redraw();

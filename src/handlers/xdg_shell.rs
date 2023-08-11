@@ -1,5 +1,5 @@
 use smithay::delegate_xdg_shell;
-use smithay::desktop::{Space, Window};
+use smithay::desktop::{PopupKind, Window};
 use smithay::input::pointer::{Focus, GrabStartData as PointerGrabStartData};
 use smithay::input::Seat;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -9,8 +9,8 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Rectangle, Serial};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
-    PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
-    XdgToplevelSurfaceData,
+    PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
+    XdgShellState, XdgToplevelSurfaceData,
 };
 
 use crate::grabs::{MoveSurfaceGrab, ResizeSurfaceGrab};
@@ -26,8 +26,17 @@ impl XdgShellHandler for Niri {
         self.space.map_element(window, (0, 0), false);
     }
 
-    fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
-        // TODO: Popup handling using PopupManager
+    fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
+        surface.with_pending_state(|state| {
+            // NOTE: This is not really necessary as the default geometry
+            // is already set the same way, but for demonstrating how
+            // to set the initial popup geometry this code is left as
+            // an example
+            state.geometry = positioner.get_geometry();
+        });
+        if let Err(err) = self.popups.track_popup(PopupKind::Xdg(surface)) {
+            warn!("error tracking popup: {err:?}");
+        }
     }
 
     fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
@@ -94,6 +103,24 @@ impl XdgShellHandler for Niri {
 
             pointer.set_grab(self, grab, serial, Focus::Clear);
         }
+    }
+
+    fn reposition_request(
+        &mut self,
+        surface: PopupSurface,
+        positioner: PositionerState,
+        token: u32,
+    ) {
+        surface.with_pending_state(|state| {
+            // NOTE: This is again a simplification, a proper compositor would
+            // calculate the geometry of the popup here. For simplicity we just
+            // use the default implementation here that does not take the
+            // window position and output constraints into account.
+            let geometry = positioner.get_geometry();
+            state.geometry = geometry;
+            state.positioner = positioner;
+        });
+        surface.send_repositioned(token);
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
@@ -181,26 +208,48 @@ fn check_grab(
     Some(start_data)
 }
 
-/// Should be called on `WlSurface::commit`
-pub fn handle_commit(space: &Space<Window>, surface: &WlSurface) -> Option<()> {
-    let window = space
-        .elements()
-        .find(|w| w.toplevel().wl_surface() == surface)
-        .cloned()?;
+impl Niri {
+    /// Should be called on `WlSurface::commit`
+    pub fn xdg_handle_commit(&mut self, surface: &WlSurface) {
+        self.popups.commit(surface);
 
-    let initial_configure_sent = with_states(surface, |states| {
-        states
-            .data_map
-            .get::<XdgToplevelSurfaceData>()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .initial_configure_sent
-    });
+        if let Some(window) = self
+            .space
+            .elements()
+            .find(|w| w.toplevel().wl_surface() == surface)
+            .cloned()
+        {
+            let initial_configure_sent = with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .initial_configure_sent
+            });
 
-    if !initial_configure_sent {
-        window.toplevel().send_configure();
+            if !initial_configure_sent {
+                window.toplevel().send_configure();
+            }
+        }
+
+        if let Some(popup) = self.popups.find_popup(surface) {
+            let PopupKind::Xdg(ref popup) = popup;
+            let initial_configure_sent = with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<XdgPopupSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .initial_configure_sent
+            });
+            if !initial_configure_sent {
+                // NOTE: This should never fail as the initial configure is always
+                // allowed.
+                popup.send_configure().expect("initial configure failed");
+            }
+        }
     }
-
-    Some(())
 }

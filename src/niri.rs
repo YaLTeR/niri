@@ -6,7 +6,7 @@ use smithay::backend::renderer::element::render_elements;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::ImportAll;
 use smithay::desktop::space::{space_render_elements, SpaceRenderElements};
-use smithay::desktop::{Space, Window, WindowSurfaceType};
+use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
@@ -42,6 +42,7 @@ pub struct Niri {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Self>,
     pub data_device_state: DataDeviceState,
+    pub popups: PopupManager,
 
     pub seat: Seat<Self>,
     pub output: Option<Output>,
@@ -137,6 +138,7 @@ impl Niri {
             output_manager_state,
             seat_state,
             data_device_state,
+            popups: PopupManager::default(),
 
             seat,
             output: None,
@@ -225,6 +227,7 @@ impl Niri {
         });
 
         self.space.refresh();
+        self.popups.cleanup();
     }
 }
 
