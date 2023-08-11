@@ -228,7 +228,7 @@ impl Tty {
                         tracy_client::Client::running()
                             .unwrap()
                             .message("vblank", 0);
-                        info!("vblank {metadata:?}");
+                        trace!("vblank {metadata:?}");
 
                         let output_device = tty.output_device.as_mut().unwrap();
 
