@@ -7,8 +7,10 @@ use smithay::backend::input::{
 };
 use smithay::input::keyboard::{keysyms, FilterResult};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::SERIAL_COUNTER;
+use smithay::wayland::shell::xdg::XdgShellHandler;
 
 use crate::niri::Niri;
 
@@ -17,6 +19,7 @@ enum InputAction {
     ChangeVt(i32),
     SpawnTerminal,
     CloseWindow,
+    ToggleFullscreen,
 }
 
 impl Niri {
@@ -58,6 +61,9 @@ impl Niri {
                                 keysyms::KEY_q if mods.logo => {
                                     FilterResult::Intercept(InputAction::CloseWindow)
                                 }
+                                keysyms::KEY_f if mods.logo => {
+                                    FilterResult::Intercept(InputAction::ToggleFullscreen)
+                                }
                                 _ => FilterResult::Forward,
                             }
                         } else {
@@ -93,6 +99,32 @@ impl Niri {
                                     if found.get() {
                                         window.toplevel().send_close();
                                         break;
+                                    }
+                                }
+                            }
+                        }
+                        InputAction::ToggleFullscreen => {
+                            if let Some(focus) = self.seat.get_keyboard().unwrap().current_focus() {
+                                // FIXME: is there a better way of doing this?
+                                let window = self.space.elements().find(|window| {
+                                    let found = Cell::new(false);
+                                    window.with_surfaces(|surface, _| {
+                                        if surface == &focus {
+                                            found.set(true);
+                                        }
+                                    });
+                                    found.get()
+                                });
+                                if let Some(window) = window {
+                                    let toplevel = window.toplevel().clone();
+                                    if toplevel
+                                        .current_state()
+                                        .states
+                                        .contains(xdg_toplevel::State::Fullscreen)
+                                    {
+                                        self.unfullscreen_request(toplevel);
+                                    } else {
+                                        self.fullscreen_request(toplevel, None);
                                     }
                                 }
                             }
