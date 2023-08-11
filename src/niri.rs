@@ -225,9 +225,6 @@ impl Niri {
                 |_, _| Some(output.clone()),
             )
         });
-
-        self.space.refresh();
-        self.popups.cleanup();
     }
 }
 

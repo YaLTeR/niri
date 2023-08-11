@@ -105,9 +105,16 @@ fn main() {
 
     event_loop
         .run(None, &mut data, move |data| {
-            // niri is running.
-            let _span = tracy_client::span!("flush_clients");
-            data.display.flush_clients().unwrap();
+            let _span = tracy_client::span!("loop callback");
+
+            // These should be called periodically, before flushing the clients.
+            data.niri.space.refresh();
+            data.niri.popups.cleanup();
+
+            {
+                let _span = tracy_client::span!("flush_clients");
+                data.display.flush_clients().unwrap();
+            }
         })
         .unwrap();
 }
