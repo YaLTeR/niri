@@ -2,20 +2,19 @@ use smithay::delegate_xdg_shell;
 use smithay::desktop::{PopupKind, Window};
 use smithay::input::pointer::{Focus, GrabStartData as PointerGrabStartData};
 use smithay::input::Seat;
-use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::protocol::{wl_output, wl_seat};
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Rectangle, Serial};
 use smithay::wayland::compositor::with_states;
-use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
     XdgShellState, XdgToplevelSurfaceData,
 };
 
 use crate::grabs::{MoveSurfaceGrab, ResizeSurfaceGrab};
+use crate::layout::MonitorSet;
 use crate::Niri;
 
 impl XdgShellHandler for Niri {
@@ -24,8 +23,16 @@ impl XdgShellHandler for Niri {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
+        let wl_surface = surface.wl_surface().clone();
         let window = Window::new(surface);
-        self.space.map_element(window, (0, 0), false);
+
+        // Tell the surface the preferred size and bounds for its likely output.
+        let output = self.monitor_set.active_output().unwrap();
+        MonitorSet::configure_new_window(output, &window);
+
+        // At the moment of creation, xdg toplevels must have no buffer.
+        let existing = self.unmapped_windows.insert(wl_surface, window);
+        assert!(existing.is_none());
     }
 
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
@@ -49,17 +56,12 @@ impl XdgShellHandler for Niri {
         if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
             let pointer = seat.get_pointer().unwrap();
 
-            let window = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
-            let initial_window_location = self.space.element_location(&window).unwrap();
+            let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
+            let initial_window_location = space.element_location(&window).unwrap();
 
             let grab = MoveSurfaceGrab {
                 start_data,
-                window,
+                window: window.clone(),
                 initial_window_location,
             };
 
@@ -81,13 +83,8 @@ impl XdgShellHandler for Niri {
         if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
             let pointer = seat.get_pointer().unwrap();
 
-            let window = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
-            let initial_window_location = self.space.element_location(&window).unwrap();
+            let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
+            let initial_window_location = space.element_location(&window).unwrap();
             let initial_window_size = window.geometry().size;
 
             surface.with_pending_state(|state| {
@@ -98,7 +95,7 @@ impl XdgShellHandler for Niri {
 
             let grab = ResizeSurfaceGrab::start(
                 start_data,
-                window,
+                window.clone(),
                 edges.into(),
                 Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
             );
@@ -126,7 +123,7 @@ impl XdgShellHandler for Niri {
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
-        // TODO popup grabs
+        // FIXME popup grabs
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {
@@ -135,23 +132,17 @@ impl XdgShellHandler for Niri {
             .capabilities
             .contains(xdg_toplevel::WmCapabilities::Maximize)
         {
-            let wl_surface = surface.wl_surface();
-            let window = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
-            let geometry = self
-                .space
-                .output_geometry(self.output.as_ref().unwrap())
-                .unwrap();
+            // let wl_surface = surface.wl_surface();
+            // let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
+            // let geometry = space
+            //     .output_geometry(space.outputs().next().unwrap())
+            //     .unwrap();
 
-            surface.with_pending_state(|state| {
-                state.states.set(xdg_toplevel::State::Maximized);
-                state.size = Some(geometry.size);
-            });
-            self.space.map_element(window, geometry.loc, true);
+            // surface.with_pending_state(|state| {
+            //     state.states.set(xdg_toplevel::State::Maximized);
+            //     state.size = Some(geometry.size);
+            // });
+            // space.map_element(window.clone(), geometry.loc, true);
         }
 
         // The protocol demands us to always reply with a configure,
@@ -185,44 +176,32 @@ impl XdgShellHandler for Niri {
             .capabilities
             .contains(xdg_toplevel::WmCapabilities::Fullscreen)
         {
-            // NOTE: This is only one part of the solution. We can set the
-            // location and configure size here, but the surface should be rendered fullscreen
-            // independently from its buffer size
-            let wl_surface = surface.wl_surface();
+            // // NOTE: This is only one part of the solution. We can set the
+            // // location and configure size here, but the surface should be rendered fullscreen
+            // // independently from its buffer size
+            // let wl_surface = surface.wl_surface();
 
-            let output = wl_output
-                .as_ref()
-                .and_then(Output::from_resource)
-                .or_else(|| {
-                    let w = self
-                        .space
-                        .elements()
-                        .find(|window| {
-                            window
-                                .wl_surface()
-                                .map(|s| s == *wl_surface)
-                                .unwrap_or(false)
-                        })
-                        .cloned();
-                    w.and_then(|w| self.space.outputs_for_element(&w).get(0).cloned())
-                });
+            // let output = wl_output
+            //     .as_ref()
+            //     .and_then(Output::from_resource)
+            //     .or_else(|| {
+            //         self.monitor_set
+            //             .find_window_and_space(wl_surface)
+            //             .and_then(|(_window, space)| space.outputs().next().cloned())
+            //     });
 
-            if let Some(output) = output {
-                let geometry = self.space.output_geometry(&output).unwrap();
+            // if let Some(output) = output {
+            //     let (window, space) =
+            // self.monitor_set.find_window_and_space(wl_surface).unwrap();
+            //     let geometry = space.output_geometry(&output).unwrap();
 
-                surface.with_pending_state(|state| {
-                    state.states.set(xdg_toplevel::State::Fullscreen);
-                    state.size = Some(geometry.size);
-                });
+            //     surface.with_pending_state(|state| {
+            //         state.states.set(xdg_toplevel::State::Fullscreen);
+            //         state.size = Some(geometry.size);
+            //     });
 
-                let window = self
-                    .space
-                    .elements()
-                    .find(|w| w.toplevel().wl_surface() == wl_surface)
-                    .unwrap()
-                    .clone();
-                self.space.map_element(window, geometry.loc, true);
-            }
+            //     space.map_element(window.clone(), geometry.loc, true);
+            // }
         }
 
         // The protocol demands us to always reply with a configure,
@@ -247,12 +226,25 @@ impl XdgShellHandler for Niri {
         surface.send_pending_configure();
     }
 
-    fn toplevel_destroyed(&mut self, _surface: ToplevelSurface) {
-        self.queue_redraw();
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        if self.unmapped_windows.remove(surface.wl_surface()).is_some() {
+            // An unmapped toplevel got destroyed.
+            return;
+        }
+
+        let (window, space) = self
+            .monitor_set
+            .find_window_and_space(surface.wl_surface())
+            .unwrap();
+        let output = space.outputs().next().unwrap().clone();
+        self.monitor_set.remove_window(&window);
+        self.update_focus();
+        self.queue_redraw(output);
     }
 
     fn popup_destroyed(&mut self, _surface: PopupSurface) {
-        self.queue_redraw();
+        // FIXME granular
+        self.queue_redraw_all();
     }
 }
 
@@ -282,31 +274,26 @@ fn check_grab(
     Some(start_data)
 }
 
+pub fn send_initial_configure_if_needed(window: &Window) {
+    let initial_configure_sent = with_states(window.toplevel().wl_surface(), |states| {
+        states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .initial_configure_sent
+    });
+
+    if !initial_configure_sent {
+        window.toplevel().send_configure();
+    }
+}
+
 impl Niri {
     /// Should be called on `WlSurface::commit`
-    pub fn xdg_handle_commit(&mut self, surface: &WlSurface) {
+    pub fn popups_handle_commit(&mut self, surface: &WlSurface) {
         self.popups.commit(surface);
-
-        if let Some(window) = self
-            .space
-            .elements()
-            .find(|w| w.toplevel().wl_surface() == surface)
-            .cloned()
-        {
-            let initial_configure_sent = with_states(surface, |states| {
-                states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .initial_configure_sent
-            });
-
-            if !initial_configure_sent {
-                window.toplevel().send_configure();
-            }
-        }
 
         if let Some(popup) = self.popups.find_popup(surface) {
             let PopupKind::Xdg(ref popup) = popup;

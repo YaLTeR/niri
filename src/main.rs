@@ -6,6 +6,7 @@ mod handlers;
 mod backend;
 mod grabs;
 mod input;
+mod layout;
 mod niri;
 mod tty;
 mod winit;
@@ -108,7 +109,7 @@ fn main() {
             let _span = tracy_client::span!("loop callback");
 
             // These should be called periodically, before flushing the clients.
-            data.niri.space.refresh();
+            data.niri.monitor_set.refresh();
             data.niri.popups.cleanup();
 
             {

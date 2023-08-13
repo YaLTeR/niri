@@ -5,6 +5,7 @@ use smithay::input::pointer::{
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point};
+use smithay::wayland::seat::WaylandFocus;
 
 use crate::Niri;
 
@@ -25,10 +26,13 @@ impl PointerGrab<Niri> for MoveSurfaceGrab {
         // While the grab is active, no client has pointer focus
         handle.motion(data, None, event);
 
-        let delta = event.location - self.start_data.location;
-        let new_location = self.initial_window_location.to_f64() + delta;
-        data.space
-            .map_element(self.window.clone(), new_location.to_i32_round(), true);
+        // let delta = event.location - self.start_data.location;
+        // let new_location = self.initial_window_location.to_f64() + delta;
+        // let (window, space) = data
+        //     .monitor_set
+        //     .find_window_and_space(self.window.wl_surface().as_ref().unwrap())
+        //     .unwrap();
+        // space.map_element(window.clone(), new_location.to_i32_round(), true);
     }
 
     fn relative_motion(

@@ -5,21 +5,35 @@ use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
     KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
 };
-use smithay::input::keyboard::{keysyms, FilterResult};
+use smithay::input::keyboard::{keysyms, FilterResult, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::xdg::XdgShellHandler;
 
 use crate::niri::Niri;
 
-enum InputAction {
+enum Action {
+    None,
     Quit,
     ChangeVt(i32),
     SpawnTerminal,
     CloseWindow,
     ToggleFullscreen,
+    FocusLeft,
+    FocusRight,
+    FocusDown,
+    FocusUp,
+    MoveLeft,
+    MoveRight,
+    MoveDown,
+    MoveUp,
+    ConsumeIntoColumn,
+    ExpelFromColumn,
+    SwitchWorkspaceDown,
+    SwitchWorkspaceUp,
+    MoveToWorkspaceDown,
+    MoveToWorkspaceUp,
 }
 
 pub enum CompositorMod {
@@ -27,11 +41,64 @@ pub enum CompositorMod {
     Alt,
 }
 
+impl From<Action> for FilterResult<Action> {
+    fn from(value: Action) -> Self {
+        match value {
+            Action::None => FilterResult::Forward,
+            action => FilterResult::Intercept(action),
+        }
+    }
+}
+
+fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -> Action {
+    use keysyms::*;
+
+    let modified = keysym.modified_sym();
+    if matches!(modified, KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12) {
+        let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
+        return Action::ChangeVt(vt);
+    }
+
+    let mod_down = match comp_mod {
+        CompositorMod::Super => mods.logo,
+        CompositorMod::Alt => mods.alt,
+    };
+
+    if !mod_down {
+        return Action::None;
+    }
+
+    // FIXME: these don't work in the Russian layout. I guess I'll need to
+    // find a US keymap, then map keys somehow.
+    #[allow(non_upper_case_globals)] // wat
+    match modified {
+        KEY_E => Action::Quit,
+        KEY_t => Action::SpawnTerminal,
+        KEY_q => Action::CloseWindow,
+        KEY_f => Action::ToggleFullscreen,
+        KEY_h | KEY_Left if mods.ctrl => Action::MoveLeft,
+        KEY_l | KEY_Right if mods.ctrl => Action::MoveRight,
+        KEY_j | KEY_Down if mods.ctrl => Action::MoveDown,
+        KEY_k | KEY_Up if mods.ctrl => Action::MoveUp,
+        KEY_h | KEY_Left => Action::FocusLeft,
+        KEY_l | KEY_Right => Action::FocusRight,
+        KEY_j | KEY_Down => Action::FocusDown,
+        KEY_k | KEY_Up => Action::FocusUp,
+        KEY_u if mods.ctrl => Action::MoveToWorkspaceDown,
+        KEY_i if mods.ctrl => Action::MoveToWorkspaceUp,
+        KEY_u => Action::SwitchWorkspaceDown,
+        KEY_i => Action::SwitchWorkspaceUp,
+        KEY_comma => Action::ConsumeIntoColumn,
+        KEY_period => Action::ExpelFromColumn,
+        _ => Action::None,
+    }
+}
+
 impl Niri {
     pub fn process_input_event<I: InputBackend>(
         &mut self,
         change_vt: &mut dyn FnMut(i32),
-        compositor_mod: CompositorMod,
+        comp_mod: CompositorMod,
         event: InputEvent<I>,
     ) {
         let _span = tracy_client::span!("process_input_event");
@@ -50,33 +117,7 @@ impl Niri {
                     time,
                     |_, mods, keysym| {
                         if event.state() == KeyState::Pressed {
-                            let mod_down = match compositor_mod {
-                                CompositorMod::Super => mods.logo,
-                                CompositorMod::Alt => mods.alt,
-                            };
-
-                            // FIXME: these don't work in the Russian layout. I guess I'll need to
-                            // find a US keymap, then map keys somehow.
-                            match keysym.modified_sym() {
-                                keysyms::KEY_E if mod_down => {
-                                    FilterResult::Intercept(InputAction::Quit)
-                                }
-                                keysym @ keysyms::KEY_XF86Switch_VT_1
-                                    ..=keysyms::KEY_XF86Switch_VT_12 => {
-                                    let vt = (keysym - keysyms::KEY_XF86Switch_VT_1 + 1) as i32;
-                                    FilterResult::Intercept(InputAction::ChangeVt(vt))
-                                }
-                                keysyms::KEY_t if mod_down => {
-                                    FilterResult::Intercept(InputAction::SpawnTerminal)
-                                }
-                                keysyms::KEY_q if mod_down => {
-                                    FilterResult::Intercept(InputAction::CloseWindow)
-                                }
-                                keysyms::KEY_f if mod_down => {
-                                    FilterResult::Intercept(InputAction::ToggleFullscreen)
-                                }
-                                _ => FilterResult::Forward,
-                            }
+                            action(comp_mod, keysym, *mods).into()
                         } else {
                             FilterResult::Forward
                         }
@@ -85,22 +126,27 @@ impl Niri {
 
                 if let Some(action) = action {
                     match action {
-                        InputAction::Quit => {
+                        Action::None => unreachable!(),
+                        Action::Quit => {
                             info!("quitting because quit bind was pressed");
                             self.stop_signal.stop()
                         }
-                        InputAction::ChangeVt(vt) => {
+                        Action::ChangeVt(vt) => {
                             (*change_vt)(vt);
                         }
-                        InputAction::SpawnTerminal => {
+                        Action::SpawnTerminal => {
                             if let Err(err) = Command::new("alacritty").spawn() {
                                 warn!("error spawning alacritty: {err}");
                             }
                         }
-                        InputAction::CloseWindow => {
+                        Action::CloseWindow => {
                             if let Some(focus) = self.seat.get_keyboard().unwrap().current_focus() {
                                 // FIXME: is there a better way of doing this?
-                                for window in self.space.elements() {
+                                for window in self
+                                    .monitor_set
+                                    .workspaces()
+                                    .flat_map(|workspace| workspace.space.elements())
+                                {
                                     let found = Cell::new(false);
                                     window.with_surfaces(|surface, _| {
                                         if surface == &focus {
@@ -114,18 +160,22 @@ impl Niri {
                                 }
                             }
                         }
-                        InputAction::ToggleFullscreen => {
+                        Action::ToggleFullscreen => {
                             if let Some(focus) = self.seat.get_keyboard().unwrap().current_focus() {
                                 // FIXME: is there a better way of doing this?
-                                let window = self.space.elements().find(|window| {
-                                    let found = Cell::new(false);
-                                    window.with_surfaces(|surface, _| {
-                                        if surface == &focus {
-                                            found.set(true);
-                                        }
+                                let window = self
+                                    .monitor_set
+                                    .workspaces()
+                                    .flat_map(|workspace| workspace.space.elements())
+                                    .find(|window| {
+                                        let found = Cell::new(false);
+                                        window.with_surfaces(|surface, _| {
+                                            if surface == &focus {
+                                                found.set(true);
+                                            }
+                                        });
+                                        found.get()
                                     });
-                                    found.get()
-                                });
                                 if let Some(window) = window {
                                     let toplevel = window.toplevel().clone();
                                     if toplevel
@@ -140,6 +190,78 @@ impl Niri {
                                 }
                             }
                         }
+                        Action::MoveLeft => {
+                            self.monitor_set.move_left();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::MoveRight => {
+                            self.monitor_set.move_right();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::MoveDown => {
+                            self.monitor_set.move_down();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::MoveUp => {
+                            self.monitor_set.move_up();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::FocusLeft => {
+                            self.monitor_set.focus_left();
+                            self.update_focus();
+                        }
+                        Action::FocusRight => {
+                            self.monitor_set.focus_right();
+                            self.update_focus();
+                        }
+                        Action::FocusDown => {
+                            self.monitor_set.focus_down();
+                            self.update_focus();
+                        }
+                        Action::FocusUp => {
+                            self.monitor_set.focus_up();
+                            self.update_focus();
+                        }
+                        Action::MoveToWorkspaceDown => {
+                            self.monitor_set.move_to_workspace_down();
+                            self.update_focus();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::MoveToWorkspaceUp => {
+                            self.monitor_set.move_to_workspace_up();
+                            self.update_focus();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::SwitchWorkspaceDown => {
+                            self.monitor_set.switch_workspace_down();
+                            self.update_focus();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::SwitchWorkspaceUp => {
+                            self.monitor_set.switch_workspace_up();
+                            self.update_focus();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::ConsumeIntoColumn => {
+                            self.monitor_set.consume_into_column();
+                            self.update_focus();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
+                        Action::ExpelFromColumn => {
+                            self.monitor_set.expel_from_column();
+                            self.update_focus();
+                            // FIXME: granular
+                            self.queue_redraw_all();
+                        }
                     }
                 }
             }
@@ -147,22 +269,33 @@ impl Niri {
                 let serial = SERIAL_COUNTER.next_serial();
 
                 let pointer = self.seat.get_pointer().unwrap();
-                let mut pointer_location = pointer.current_location();
+                let mut pos = pointer.current_location();
 
-                pointer_location += event.delta();
+                pos += event.delta();
 
-                let output = self.space.outputs().next().unwrap();
-                let output_geo = self.space.output_geometry(output).unwrap();
+                let mut min_x = i32::MAX;
+                let mut min_y = i32::MAX;
+                let mut max_x = 0;
+                let mut max_y = 0;
+                for output in self.global_space.outputs() {
+                    // FIXME: smarter clamping.
+                    let geom = self.global_space.output_geometry(output).unwrap();
+                    min_x = min_x.min(geom.loc.x);
+                    min_y = min_y.min(geom.loc.y);
+                    max_x = max_x.max(geom.loc.x + geom.size.w);
+                    max_y = max_y.max(geom.loc.y + geom.size.h);
+                }
 
-                pointer_location.x = pointer_location.x.clamp(0., output_geo.size.w as f64);
-                pointer_location.y = pointer_location.y.clamp(0., output_geo.size.h as f64);
+                pos.x = pos.x.clamp(min_x as f64, max_x as f64);
+                pos.y = pos.y.clamp(min_y as f64, max_y as f64);
 
-                let under = self.surface_under(pointer_location);
+                let under = self.surface_under_and_global_space(pos);
+
                 pointer.motion(
                     self,
                     under.clone(),
                     &MotionEvent {
-                        location: pointer_location,
+                        location: pos,
                         serial,
                         time: event.time_msec(),
                     },
@@ -179,12 +312,14 @@ impl Niri {
                 );
 
                 // Redraw to update the cursor position.
-                self.queue_redraw();
+                // FIXME: redraw only outputs overlapping the cursor.
+                self.queue_redraw_all();
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.space.outputs().next().unwrap();
+                // FIXME: allow mapping tablet to different outputs.
+                let output = self.global_space.outputs().next().unwrap();
 
-                let output_geo = self.space.output_geometry(output).unwrap();
+                let output_geo = self.global_space.output_geometry(output).unwrap();
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
@@ -192,7 +327,7 @@ impl Niri {
 
                 let pointer = self.seat.get_pointer().unwrap();
 
-                let under = self.surface_under(pos);
+                let under = self.surface_under_and_global_space(pos);
 
                 pointer.motion(
                     self,
@@ -205,11 +340,11 @@ impl Niri {
                 );
 
                 // Redraw to update the cursor position.
-                self.queue_redraw();
+                // FIXME: redraw only outputs overlapping the cursor.
+                self.queue_redraw_all();
             }
             InputEvent::PointerButton { event, .. } => {
                 let pointer = self.seat.get_pointer().unwrap();
-                let keyboard = self.seat.get_keyboard().unwrap();
 
                 let serial = SERIAL_COUNTER.next_serial();
 
@@ -218,27 +353,16 @@ impl Niri {
                 let button_state = event.state();
 
                 if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
-                    if let Some((window, _loc)) = self
-                        .space
-                        .element_under(pointer.current_location())
-                        .map(|(w, l)| (w.clone(), l))
+                    if let Some((_space, window, _loc)) =
+                        self.window_under(pointer.current_location())
                     {
-                        self.space.raise_element(&window, true);
-                        keyboard.set_focus(
-                            self,
-                            Some(window.toplevel().wl_surface().clone()),
-                            serial,
-                        );
-                        self.space.elements().for_each(|window| {
-                            window.toplevel().send_pending_configure();
-                        });
+                        self.monitor_set.activate_window(&window);
                     } else {
-                        self.space.elements().for_each(|window| {
-                            window.set_activated(false);
-                            window.toplevel().send_pending_configure();
-                        });
-                        keyboard.set_focus(self, Option::<WlSurface>::None, serial);
+                        let output = self.output_under_cursor().unwrap();
+                        self.monitor_set.activate_output(&output);
                     }
+
+                    self.update_focus();
                 };
 
                 pointer.button(

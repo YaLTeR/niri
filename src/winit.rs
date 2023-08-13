@@ -8,6 +8,8 @@ use smithay::backend::winit::{self, WinitError, WinitEvent, WinitEventLoop, Wini
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::LoopHandle;
+use smithay::reexports::winit::dpi::LogicalSize;
+use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::{Rectangle, Transform};
 
 use crate::backend::Backend;
@@ -34,6 +36,7 @@ impl Backend for Winit {
     fn render(
         &mut self,
         _niri: &mut Niri,
+        _output: &Output,
         elements: &[OutputRenderElements<
             GlesRenderer,
             WaylandSurfaceRenderElement<GlesRenderer>,
@@ -54,7 +57,11 @@ impl Backend for Winit {
 
 impl Winit {
     pub fn new(event_loop: LoopHandle<LoopData>) -> Self {
-        let (backend, winit_event_loop) = winit::init().unwrap();
+        let builder = WindowBuilder::new()
+            .with_inner_size(LogicalSize::new(1280.0, 800.0))
+            // .with_resizable(false)
+            .with_title("niri");
+        let (backend, winit_event_loop) = winit::init_from_builder(builder).unwrap();
 
         let mode = Mode {
             size: backend.window_size().physical_size,
@@ -98,9 +105,6 @@ impl Winit {
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
-        let _global = self.output.create_global::<Niri>(&niri.display_handle);
-        niri.space.map_output(&self.output, (0, 0));
-        niri.output = Some(self.output.clone());
         if let Err(err) = self
             .backend
             .renderer()
@@ -108,6 +112,7 @@ impl Winit {
         {
             warn!("error binding renderer wl_display: {err}");
         }
+        niri.add_output(self.output.clone());
     }
 
     fn dispatch(&mut self, niri: &mut Niri) {
@@ -115,7 +120,7 @@ impl Winit {
             .winit_event_loop
             .dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
-                    niri.output.as_ref().unwrap().change_current_state(
+                    self.output.change_current_state(
                         Some(Mode {
                             size,
                             refresh: 60_000,
@@ -124,12 +129,13 @@ impl Winit {
                         None,
                         None,
                     );
+                    niri.output_resized(self.output.clone());
                 }
                 WinitEvent::Input(event) => {
                     niri.process_input_event(&mut |_| (), CompositorMod::Alt, event)
                 }
                 WinitEvent::Focus(_) => (),
-                WinitEvent::Refresh => niri.queue_redraw(),
+                WinitEvent::Refresh => niri.queue_redraw(self.output.clone()),
             });
 
         // I want this to stop compiling if more errors are added.
@@ -137,6 +143,7 @@ impl Winit {
         match res {
             Err(WinitError::WindowClosed) => {
                 niri.stop_signal.stop();
+                niri.remove_output(&self.output);
             }
             Ok(()) => (),
         }

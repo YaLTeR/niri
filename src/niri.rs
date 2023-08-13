@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use std::time::Duration;
 
-use smithay::backend::renderer::element::render_elements;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
+use smithay::backend::renderer::element::{render_elements, RenderElement};
 use smithay::backend::renderer::ImportAll;
 use smithay::desktop::space::{space_render_elements, SpaceRenderElements};
 use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
@@ -11,12 +12,14 @@ use smithay::input::keyboard::XkbConfig;
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
+use smithay::reexports::calloop::{Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
-use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use smithay::reexports::wayland_server::backend::{
+    ClientData, ClientId, DisconnectReason, GlobalId,
+};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{Logical, Point};
+use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
@@ -25,6 +28,7 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 
 use crate::backend::Backend;
+use crate::layout::MonitorSet;
 use crate::LoopData;
 
 pub struct Niri {
@@ -33,7 +37,18 @@ pub struct Niri {
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
 
-    pub space: Space<Window>,
+    // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
+    // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
+    pub monitor_set: MonitorSet,
+
+    // This space does not actually contain any windows, but all outputs are mapped into it
+    // according to their global position.
+    pub global_space: Space<Window>,
+
+    // Windows which don't have a buffer attached yet.
+    pub unmapped_windows: HashMap<WlSurface, Window>,
+
+    pub output_state: HashMap<Output, OutputState>,
 
     // Smithay state.
     pub compositor_state: CompositorState,
@@ -45,13 +60,17 @@ pub struct Niri {
     pub popups: PopupManager,
 
     pub seat: Seat<Self>,
-    pub output: Option<Output>,
 
     pub pointer_buffer: SolidColorBuffer,
+}
 
-    // Set to `true` if there's a redraw queued on the event loop. Reset to `false` in redraw()
-    // which means that you cannot queue more than one redraw at once.
-    pub redraw_queued: bool,
+pub struct OutputState {
+    pub global: GlobalId,
+    // Set if there's a redraw queued on the event loop. Reset in redraw() which means that you
+    // cannot queue more than one redraw at once.
+    pub queued_redraw: Option<Idle<'static>>,
+    // Set to `true` when the output was redrawn and is waiting for a VBlank. Upon VBlank a redraw
+    // will always be queued, so you cannot queue a redraw while waiting for a VBlank.
     pub waiting_for_vblank: bool,
 }
 
@@ -89,8 +108,6 @@ impl Niri {
         };
         seat.add_keyboard(xkb, 400, 30).unwrap();
         seat.add_pointer();
-
-        let space = Space::default();
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
@@ -130,7 +147,10 @@ impl Niri {
             stop_signal,
             display_handle,
 
-            space,
+            monitor_set: MonitorSet::new(),
+            global_space: Space::default(),
+            output_state: HashMap::new(),
+            unmapped_windows: HashMap::new(),
 
             compositor_state,
             xdg_shell_state,
@@ -141,60 +161,188 @@ impl Niri {
             popups: PopupManager::default(),
 
             seat,
-            output: None,
             pointer_buffer,
-            redraw_queued: false,
-            waiting_for_vblank: false,
         }
     }
 
+    pub fn add_output(&mut self, output: Output) {
+        let x = self
+            .global_space
+            .outputs()
+            .map(|output| self.global_space.output_geometry(output).unwrap())
+            .map(|geom| geom.loc.x + geom.size.w)
+            .max()
+            .unwrap_or(0);
+
+        self.global_space.map_output(&output, (x, 0));
+        self.monitor_set.add_output(output.clone());
+
+        let state = OutputState {
+            global: output.create_global::<Niri>(&self.display_handle),
+            queued_redraw: None,
+            waiting_for_vblank: false,
+        };
+        let rv = self.output_state.insert(output, state);
+        assert!(rv.is_none(), "output was already tracked");
+    }
+
+    pub fn remove_output(&mut self, output: &Output) {
+        let mut state = self.output_state.remove(output).unwrap();
+        self.display_handle.remove_global::<Niri>(state.global);
+
+        if let Some(idle) = state.queued_redraw.take() {
+            idle.cancel();
+        }
+
+        self.monitor_set.remove_output(output);
+        self.global_space.unmap_output(output);
+        // FIXME: reposition outputs so they are adjacent.
+    }
+
+    pub fn output_resized(&mut self, output: Output) {
+        // FIXME resize windows etc
+        self.queue_redraw(output);
+    }
+
+    pub fn output_under(&self, pos: Point<f64, Logical>) -> Option<(&Output, Point<f64, Logical>)> {
+        let output = self.global_space.output_under(pos).next()?;
+        let pos_within_output = pos
+            - self
+                .global_space
+                .output_geometry(output)
+                .unwrap()
+                .loc
+                .to_f64();
+
+        Some((output, pos_within_output))
+    }
+
+    pub fn window_under(
+        &mut self,
+        pos: Point<f64, Logical>,
+    ) -> Option<(&mut Space<Window>, Window, Point<i32, Logical>)> {
+        let (output, pos_within_output) = self.output_under(pos)?;
+        let output = output.clone();
+
+        let space = &mut self.monitor_set.workspace_for_output(&output)?.space;
+        let output_pos = space.output_geometry(&output).unwrap().loc.to_f64();
+
+        let pos_within_space = pos_within_output + output_pos;
+        let (window, loc) = space.element_under(pos_within_space)?;
+        let window = window.clone();
+        Some((space, window, loc))
+    }
+
     pub fn surface_under(
-        &self,
+        &mut self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
-        self.space
-            .element_under(pos)
+        let (output, pos_within_output) = self.output_under(pos)?;
+        let output = output.clone();
+
+        let space = &self.monitor_set.workspace_for_output(&output)?.space;
+        let output_pos = space.output_geometry(&output).unwrap().loc.to_f64();
+
+        let pos_within_space = pos_within_output + output_pos;
+        space
+            .element_under(pos_within_space)
             .and_then(|(window, location)| {
                 window
-                    .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
+                    .surface_under(pos_within_space - location.to_f64(), WindowSurfaceType::ALL)
                     .map(|(s, p)| (s, p + location))
             })
     }
 
+    /// Returns the surface under cursor and its position in the global space.
+    ///
+    /// Pointer needs location in global space, and focused window location compatible with that
+    /// global space. We don't have a global space for all windows, but this function converts the
+    /// window location temporarily to the current global space.
+    pub fn surface_under_and_global_space(
+        &mut self,
+        pos: Point<f64, Logical>,
+    ) -> Option<(WlSurface, Point<i32, Logical>)> {
+        let (output, pos_within_output) = self.output_under(pos)?;
+        let output = output.clone();
+
+        let workspace = &self.monitor_set.workspace_for_output(&output)?;
+        let space = &workspace.space;
+        let output_pos_in_local_space = space.output_geometry(&output).unwrap().loc;
+        let pos_within_space = pos_within_output + output_pos_in_local_space.to_f64();
+
+        let (surface, surface_loc_in_local_space) = space
+            .element_under(pos_within_space)
+            .and_then(|(window, location)| {
+                window
+                    .surface_under(pos_within_space - location.to_f64(), WindowSurfaceType::ALL)
+                    .map(|(s, p)| (s, p + location))
+            })?;
+        let output_pos_in_global_space = self.global_space.output_geometry(&output).unwrap().loc;
+        let surface_loc_in_global_space =
+            surface_loc_in_local_space - output_pos_in_local_space + output_pos_in_global_space;
+
+        Some((surface, surface_loc_in_global_space))
+    }
+
+    pub fn output_under_cursor(&self) -> Option<Output> {
+        let pos = self.seat.get_pointer().unwrap().current_location();
+        self.global_space.output_under(pos).next().cloned()
+    }
+
+    pub fn update_focus(&mut self) {
+        let focus = self
+            .monitor_set
+            .focus()
+            .map(|win| win.toplevel().wl_surface().clone());
+        let keyboard = self.seat.get_keyboard().unwrap();
+        if keyboard.current_focus() != focus {
+            keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
+            // FIXME: can be more granular.
+            self.queue_redraw_all();
+        }
+    }
+
+    /// Schedules an immediate redraw on all outputs if one is not already scheduled.
+    pub fn queue_redraw_all(&mut self) {
+        let outputs: Vec<_> = self.output_state.keys().cloned().collect();
+        for output in outputs {
+            self.queue_redraw(output);
+        }
+    }
+
     /// Schedules an immediate redraw if one is not already scheduled.
-    pub fn queue_redraw(&mut self) {
-        if self.redraw_queued || self.waiting_for_vblank {
+    pub fn queue_redraw(&mut self, output: Output) {
+        let state = self.output_state.get_mut(&output).unwrap();
+
+        if state.queued_redraw.is_some() || state.waiting_for_vblank {
             return;
         }
 
-        self.redraw_queued = true;
-
         // Timer::immediate() adds a millisecond of delay for some reason.
         // This should be fixed in calloop v0.11: https://github.com/Smithay/calloop/issues/142
-        self.event_loop.insert_idle(|data| {
+        let idle = self.event_loop.insert_idle(move |data| {
             let backend: &mut dyn Backend = if let Some(tty) = &mut data.tty {
                 tty
             } else {
                 data.winit.as_mut().unwrap()
             };
-            data.niri.redraw(backend);
+            data.niri.redraw(backend, &output);
         });
+        state.queued_redraw = Some(idle);
     }
 
-    fn redraw(&mut self, backend: &mut dyn Backend) {
+    fn redraw(&mut self, backend: &mut dyn Backend, output: &Output) {
         let _span = tracy_client::span!("redraw");
+        let state = self.output_state.get_mut(output).unwrap();
 
-        assert!(self.redraw_queued);
-        assert!(!self.waiting_for_vblank);
-        self.redraw_queued = false;
+        assert!(state.queued_redraw.take().is_some());
+        assert!(!state.waiting_for_vblank);
 
-        let elements = space_render_elements(
-            backend.renderer(),
-            [&self.space],
-            self.output.as_ref().unwrap(),
-            1.,
-        )
-        .unwrap();
+        let space = &self.monitor_set.workspace_for_output(output).unwrap().space;
+        let elements = space_render_elements(backend.renderer(), [space], output, 1.).unwrap();
+
+        let output_pos = self.global_space.output_geometry(output).unwrap().loc;
+        let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
 
         let mut elements: Vec<_> = elements
             .into_iter()
@@ -204,20 +352,16 @@ impl Niri {
             0,
             OutputRenderElements::Pointer(SolidColorRenderElement::from_buffer(
                 &self.pointer_buffer,
-                self.seat
-                    .get_pointer()
-                    .unwrap()
-                    .current_location()
-                    .to_physical_precise_round(1.),
+                pointer_pos.to_physical_precise_round(1.),
                 1.,
                 1.,
             )),
         );
 
-        backend.render(self, &elements);
+        backend.render(self, output, &elements);
 
-        let output = self.output.as_ref().unwrap();
-        self.space.elements().for_each(|window| {
+        let space = &self.monitor_set.workspace_for_output(output).unwrap().space;
+        space.elements().for_each(|window| {
             window.send_frame(
                 output,
                 self.start_time.elapsed(),
@@ -232,6 +376,23 @@ render_elements! {
     pub OutputRenderElements<R, E> where R: ImportAll;
     Space = SpaceRenderElements<R, E>,
     Pointer = SolidColorRenderElement,
+}
+
+impl<R: ImportAll, E: RenderElement<R>> std::fmt::Debug for OutputRenderElements<R, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputRenderElements::Space(_) => {
+                f.debug_tuple("OutputRenderElements::Space").finish()?
+            }
+            OutputRenderElements::Pointer(element) => f
+                .debug_tuple("OutputRenderElements::Pointer")
+                .field(element)
+                .finish()?,
+            _ => (),
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Default)]

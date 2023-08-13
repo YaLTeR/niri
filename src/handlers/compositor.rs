@@ -1,4 +1,7 @@
-use smithay::backend::renderer::utils::on_commit_buffer_handler;
+use std::collections::hash_map::Entry;
+
+use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
+use smithay::desktop::find_popup_root_surface;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Client;
@@ -9,6 +12,7 @@ use smithay::wayland::compositor::{
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
+use super::xdg_shell;
 use crate::grabs::resize_grab;
 use crate::niri::ClientState;
 use crate::Niri;
@@ -28,24 +32,95 @@ impl CompositorHandler for Niri {
             .message("client commit", 0);
 
         on_commit_buffer_handler::<Self>(surface);
-        if !is_sync_subsurface(surface) {
-            let mut root = surface.clone();
-            while let Some(parent) = get_parent(&root) {
-                root = parent;
+
+        if is_sync_subsurface(surface) {
+            return;
+        }
+
+        let mut root_surface = surface.clone();
+        while let Some(parent) = get_parent(&root_surface) {
+            root_surface = parent;
+        }
+
+        if surface == &root_surface {
+            // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
+            if let Entry::Occupied(entry) = self.unmapped_windows.entry(surface.clone()) {
+                let is_mapped =
+                    with_renderer_surface_state(surface, |state| state.buffer().is_some());
+
+                if is_mapped {
+                    // The toplevel got mapped.
+                    let window = entry.remove();
+                    window.on_commit();
+
+                    let output = self.monitor_set.active_output().unwrap().clone();
+                    self.monitor_set.add_window_to_output(&output, window, true);
+                    self.update_focus();
+
+                    self.queue_redraw(output);
+                    return;
+                }
+
+                // The toplevel remains unmapped.
+                let window = entry.get();
+                xdg_shell::send_initial_configure_if_needed(window);
+                return;
             }
-            if let Some(window) = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().wl_surface() == &root)
-            {
+
+            // This is a commit of a previously-mapped root or a non-toplevel root.
+            if let Some((window, space)) = self.monitor_set.find_window_and_space(surface) {
+                // This is a commit of a previously-mapped toplevel.
+                let output = space.outputs().next().unwrap().clone();
+
                 window.on_commit();
+
+                // This is a commit of a previously-mapped toplevel.
+                let is_mapped =
+                    with_renderer_surface_state(surface, |state| state.buffer().is_some());
+
+                if !is_mapped {
+                    // The toplevel got unmapped.
+                    let window = window.clone();
+                    self.monitor_set.remove_window(&window);
+                    self.unmapped_windows.insert(surface.clone(), window);
+                    self.update_focus();
+
+                    self.queue_redraw(output);
+                    return;
+                }
+
+                // The toplevel remains mapped.
+                resize_grab::handle_commit(&window);
+                self.monitor_set.update_window(&window);
+
+                self.queue_redraw(output);
+                return;
             }
-        };
 
-        self.xdg_handle_commit(surface);
-        resize_grab::handle_commit(&mut self.space, surface);
+            // This is a commit of a non-toplevel root.
+        }
 
-        self.queue_redraw();
+        // This is a commit of a non-root or a non-toplevel root.
+        let root_window_space = self.monitor_set.find_window_and_space(&root_surface);
+        if let Some((window, space)) = root_window_space {
+            let output = space.outputs().next().unwrap().clone();
+            window.on_commit();
+            self.monitor_set.update_window(&window);
+            self.queue_redraw(output);
+            return;
+        }
+
+        // This might be a popup.
+        self.popups_handle_commit(surface);
+        if let Some(popup) = self.popups.find_popup(surface) {
+            if let Ok(root) = find_popup_root_surface(&popup) {
+                let root_window_space = self.monitor_set.find_window_and_space(&root);
+                if let Some((_window, space)) = root_window_space {
+                    let output = space.outputs().next().unwrap().clone();
+                    self.queue_redraw(output);
+                }
+            }
+        }
     }
 }
 

@@ -1,10 +1,11 @@
+use std::collections::{HashMap, HashSet};
 use std::os::fd::FromRawFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::anyhow;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
-use smithay::backend::allocator::Fourcc;
+use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
 use smithay::backend::drm::compositor::DrmCompositor;
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
@@ -17,14 +18,12 @@ use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
-use smithay::reexports::drm::control::connector::{
-    Interface as ConnectorInterface, State as ConnectorState,
-};
-use smithay::reexports::drm::control::{Device, ModeTypeFlags};
+use smithay::reexports::drm::control::{connector, crtc, ModeTypeFlags};
 use smithay::reexports::input::Libinput;
 use smithay::reexports::nix::fcntl::OFlag;
 use smithay::reexports::nix::libc::dev_t;
 use smithay::utils::DeviceFd;
+use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::backend::Backend;
@@ -46,11 +45,19 @@ type GbmDrmCompositor =
 
 struct OutputDevice {
     id: dev_t,
-    path: PathBuf,
     token: RegistrationToken,
     drm: DrmDevice,
+    gbm: GbmDevice<DrmDeviceFd>,
     gles: GlesRenderer,
-    drm_compositor: GbmDrmCompositor,
+    formats: HashSet<DrmFormat>,
+    drm_scanner: DrmScanner,
+    surfaces: HashMap<crtc::Handle, GbmDrmCompositor>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TtyOutputState {
+    device_id: dev_t,
+    crtc: crtc::Handle,
 }
 
 impl Backend for Tty {
@@ -65,6 +72,7 @@ impl Backend for Tty {
     fn render(
         &mut self,
         niri: &mut Niri,
+        output: &Output,
         elements: &[OutputRenderElements<
             GlesRenderer,
             WaylandSurfaceRenderElement<GlesRenderer>,
@@ -72,19 +80,26 @@ impl Backend for Tty {
     ) {
         let _span = tracy_client::span!("Tty::render");
 
-        let output_device = self.output_device.as_mut().unwrap();
-        let drm_compositor = &mut output_device.drm_compositor;
+        let device = self.output_device.as_mut().unwrap();
+        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+        let drm_compositor = device.surfaces.get_mut(&tty_state.crtc).unwrap();
 
         match drm_compositor.render_frame::<_, _, GlesTexture>(
-            &mut output_device.gles,
+            &mut device.gles,
             elements,
             BACKGROUND_COLOR,
         ) {
             Ok(res) => {
                 assert!(!res.needs_sync());
+                // debug!("{:?}", res);
                 if res.damage.is_some() {
-                    match output_device.drm_compositor.queue_frame(()) {
-                        Ok(()) => niri.waiting_for_vblank = true,
+                    match drm_compositor.queue_frame(()) {
+                        Ok(()) => {
+                            niri.output_state
+                                .get_mut(output)
+                                .unwrap()
+                                .waiting_for_vblank = true
+                        }
                         Err(err) => {
                             error!("error queueing frame: {err}");
                         }
@@ -142,13 +157,15 @@ impl Tty {
                         if let Some(output_device) = &mut tty.output_device {
                             output_device.drm.activate();
 
-                            if let Err(err) = output_device.drm_compositor.surface().reset_state() {
-                                warn!("error resetting DRM surface state: {err}");
+                            for drm_compositor in output_device.surfaces.values_mut() {
+                                if let Err(err) = drm_compositor.surface().reset_state() {
+                                    warn!("error resetting DRM surface state: {err}");
+                                }
+                                drm_compositor.reset_buffers();
                             }
-                            output_device.drm_compositor.reset_buffers();
                         }
 
-                        niri.queue_redraw();
+                        niri.queue_redraw_all();
                     }
                 }
             })
@@ -166,7 +183,7 @@ impl Tty {
     pub fn init(&mut self, niri: &mut Niri) {
         let backend = UdevBackend::new(&self.session.seat()).unwrap();
         for (device_id, path) in backend.device_list() {
-            if let Err(err) = self.device_added(device_id, path.to_owned(), niri) {
+            if let Err(err) = self.device_added(device_id, path, niri) {
                 warn!("error adding device: {err:?}");
             }
         }
@@ -178,24 +195,21 @@ impl Tty {
 
                 match event {
                     UdevEvent::Added { device_id, path } => {
-                        if let Err(err) = tty.device_added(device_id, path, niri) {
+                        if let Err(err) = tty.device_added(device_id, &path, niri) {
                             warn!("error adding device: {err:?}");
                         }
-                        niri.queue_redraw();
                     }
                     UdevEvent::Changed { device_id } => tty.device_changed(device_id, niri),
                     UdevEvent::Removed { device_id } => tty.device_removed(device_id, niri),
                 }
             })
             .unwrap();
-
-        niri.queue_redraw();
     }
 
     fn device_added(
         &mut self,
         device_id: dev_t,
-        path: PathBuf,
+        path: &Path,
         niri: &mut Niri,
     ) -> anyhow::Result<()> {
         if path != self.primary_gpu_path {
@@ -207,7 +221,7 @@ impl Tty {
         assert!(self.output_device.is_none());
 
         let open_flags = OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK;
-        let fd = self.session.open(&path, open_flags)?;
+        let fd = self.session.open(path, open_flags)?;
         let device_fd = unsafe { DrmDeviceFd::new(DeviceFd::from_raw_fd(fd)) };
 
         let (drm, drm_notifier) = DrmDevice::new(device_fd.clone(), true)?;
@@ -219,23 +233,22 @@ impl Tty {
         let mut gles = unsafe { GlesRenderer::new(egl_context)? };
         gles.bind_wl_display(&niri.display_handle)?;
 
-        let drm_compositor = self.create_drm_compositor(&drm, &gbm, &gles, niri)?;
-
         let token = niri
             .event_loop
             .insert_source(drm_notifier, move |event, metadata, data| {
                 let tty = data.tty.as_mut().unwrap();
                 match event {
-                    DrmEvent::VBlank(_crtc) => {
+                    DrmEvent::VBlank(crtc) => {
                         tracy_client::Client::running()
                             .unwrap()
                             .message("vblank", 0);
                         trace!("vblank {metadata:?}");
 
-                        let output_device = tty.output_device.as_mut().unwrap();
+                        let device = tty.output_device.as_mut().unwrap();
+                        let drm_compositor = device.surfaces.get_mut(&crtc).unwrap();
 
                         // Mark the last frame as submitted.
-                        if let Err(err) = output_device.drm_compositor.frame_submitted() {
+                        if let Err(err) = drm_compositor.frame_submitted() {
                             error!("error marking frame as submitted: {err}");
                         }
 
@@ -244,103 +257,111 @@ impl Tty {
                         //     .windows
                         //     .mark_presented(&output_device.last_render_states, metadata);
 
-                        data.niri.waiting_for_vblank = false;
-                        data.niri.queue_redraw();
+                        let output = data
+                            .niri
+                            .global_space
+                            .outputs()
+                            .find(|output| {
+                                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                                tty_state.device_id == device.id && tty_state.crtc == crtc
+                            })
+                            .unwrap()
+                            .clone();
+                        data.niri
+                            .output_state
+                            .get_mut(&output)
+                            .unwrap()
+                            .waiting_for_vblank = false;
+                        data.niri.queue_redraw(output);
                     }
                     DrmEvent::Error(error) => error!("DRM error: {error}"),
                 };
             })
             .unwrap();
 
+        let formats = Bind::<Dmabuf>::supported_formats(&gles).unwrap_or_default();
+
         self.output_device = Some(OutputDevice {
             id: device_id,
-            path,
             token,
             drm,
+            gbm,
             gles,
-            drm_compositor,
+            formats,
+            drm_scanner: DrmScanner::new(),
+            surfaces: HashMap::new(),
         });
+
+        self.device_changed(device_id, niri);
 
         Ok(())
     }
 
     fn device_changed(&mut self, device_id: dev_t, niri: &mut Niri) {
-        if let Some(output_device) = &self.output_device {
-            if output_device.id == device_id {
-                debug!("output device changed");
+        let Some(device) = &mut self.output_device else {
+            return;
+        };
+        if device.id != device_id {
+            return;
+        }
+        debug!("output device changed");
 
-                let path = output_device.path.clone();
-                self.device_removed(device_id, niri);
-                if let Err(err) = self.device_added(device_id, path, niri) {
-                    warn!("error adding device: {err:?}");
+        for event in device.drm_scanner.scan_connectors(&device.drm) {
+            match event {
+                DrmScanEvent::Connected {
+                    connector,
+                    crtc: Some(crtc),
+                } => {
+                    if let Err(err) = self.connector_connected(niri, connector, crtc) {
+                        warn!("error connecting connector: {err:?}");
+                    }
                 }
+                DrmScanEvent::Disconnected {
+                    connector,
+                    crtc: Some(crtc),
+                } => self.connector_disconnected(niri, connector, crtc),
+                _ => (),
             }
         }
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
-        if let Some(mut output_device) = self.output_device.take() {
-            if output_device.id != device_id {
-                self.output_device = Some(output_device);
-                return;
-            }
-
-            // FIXME: remove wl_output.
-            niri.event_loop.remove(output_device.token);
-            niri.output = None;
-            output_device.gles.unbind_wl_display();
+        let Some(device) = self.output_device.take() else {
+            return;
+        };
+        if device.id != device_id {
+            // It wasn't the output device, put it back in.
+            self.output_device = Some(device);
+            return;
         }
+
+        let crtcs: Vec<_> = device
+            .drm_scanner
+            .crtcs()
+            .map(|(info, crtc)| (info.clone(), crtc))
+            .collect();
+
+        for (connector, crtc) in crtcs {
+            self.connector_disconnected(niri, connector, crtc);
+        }
+
+        niri.event_loop.remove(device.token);
     }
 
-    fn create_drm_compositor(
+    fn connector_connected(
         &mut self,
-        drm: &DrmDevice,
-        gbm: &GbmDevice<DrmDeviceFd>,
-        gles: &GlesRenderer,
         niri: &mut Niri,
-    ) -> anyhow::Result<GbmDrmCompositor> {
-        let formats = Bind::<Dmabuf>::supported_formats(gles)
-            .ok_or_else(|| anyhow!("no supported formats"))?;
-        let resources = drm.resource_handles()?;
-
-        let mut connector = None;
-        let mut edp_connector = None;
-        resources
-            .connectors()
-            .iter()
-            .filter_map(|conn| match drm.get_connector(*conn, true) {
-                Ok(info) => Some(info),
-                Err(err) => {
-                    warn!("error probing connector: {err}");
-                    None
-                }
-            })
-            .inspect(|conn| {
-                debug!(
-                    "connector: {}-{}, {:?}, {} modes",
-                    conn.interface().as_str(),
-                    conn.interface_id(),
-                    conn.state(),
-                    conn.modes().len(),
-                );
-            })
-            .filter(|conn| conn.state() == ConnectorState::Connected)
-            .for_each(|conn| {
-                connector = Some(conn.clone());
-
-                if conn.interface() == ConnectorInterface::EmbeddedDisplayPort {
-                    edp_connector = Some(conn);
-                }
-            });
-        // Since we're only using one output at the moment, prefer eDP.
-        let connector = edp_connector
-            .or(connector)
-            .ok_or_else(|| anyhow!("no compatible connector"))?;
-        info!(
-            "picking connector: {}-{}",
+        connector: connector::Info,
+        crtc: crtc::Handle,
+    ) -> anyhow::Result<()> {
+        let output_name = format!(
+            "{}-{}",
             connector.interface().as_str(),
             connector.interface_id(),
         );
+        debug!("connecting connector: {output_name}");
+
+        let device = self.output_device.as_mut().unwrap();
 
         let mut mode = connector.modes().get(0);
         connector.modes().iter().for_each(|m| {
@@ -357,57 +378,20 @@ impl Tty {
             }
         });
         let mode = mode.ok_or_else(|| anyhow!("no mode"))?;
-        info!("picking mode: {mode:?}");
+        debug!("picking mode: {mode:?}");
 
-        let surface = connector
-            .encoders()
-            .iter()
-            .filter_map(|enc| match drm.get_encoder(*enc) {
-                Ok(info) => Some(info),
-                Err(err) => {
-                    warn!("error probing encoder: {err}");
-                    None
-                }
-            })
-            .flat_map(|enc| {
-                // Get all CRTCs compatible with the encoder.
-                let mut crtcs = resources.filter_crtcs(enc.possible_crtcs());
-
-                // Sort by maximum number of overlay planes.
-                crtcs.sort_by_cached_key(|crtc| match drm.planes(crtc) {
-                    Ok(planes) => -(planes.overlay.len() as isize),
-                    Err(err) => {
-                        warn!("error probing planes for CRTC: {err}");
-                        0
-                    }
-                });
-
-                crtcs
-            })
-            .find_map(
-                |crtc| match drm.create_surface(crtc, *mode, &[connector.handle()]) {
-                    Ok(surface) => Some(surface),
-                    Err(err) => {
-                        warn!("error creating DRM surface: {err}");
-                        None
-                    }
-                },
-            );
-        let surface = surface.ok_or_else(|| anyhow!("no surface"))?;
+        let surface = device
+            .drm
+            .create_surface(crtc, *mode, &[connector.handle()])?;
 
         // Create GBM allocator.
         let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
-        let allocator = GbmAllocator::new(gbm.clone(), gbm_flags);
+        let allocator = GbmAllocator::new(device.gbm.clone(), gbm_flags);
 
         // Update the output mode.
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
-        let output_name = format!(
-            "{}-{}",
-            connector.interface().as_str(),
-            connector.interface_id(),
-        );
 
-        let (make, model) = EdidInfo::for_connector(drm, connector.handle())
+        let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
             .map(|info| (info.manufacturer, info.model))
             .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
 
@@ -424,25 +408,58 @@ impl Tty {
         output.change_current_state(Some(wl_mode), None, None, Some((0, 0).into()));
         output.set_preferred(wl_mode);
 
-        // FIXME: store this somewhere to remove on disconnect, etc.
-        let _global = output.create_global::<Niri>(&niri.display_handle);
-        niri.space.map_output(&output, (0, 0));
-        niri.output = Some(output.clone());
-        // windows.set_output();
+        output.user_data().insert_if_missing(|| TtyOutputState {
+            device_id: device.id,
+            crtc,
+        });
 
         // Create the compositor.
         let compositor = DrmCompositor::new(
-            OutputModeSource::Auto(output),
+            OutputModeSource::Auto(output.clone()),
             surface,
             None,
             allocator,
-            gbm.clone(),
+            device.gbm.clone(),
             SUPPORTED_COLOR_FORMATS,
-            formats,
-            drm.cursor_size(),
-            Some(gbm.clone()),
+            device.formats.clone(),
+            device.drm.cursor_size(),
+            Some(device.gbm.clone()),
         )?;
-        Ok(compositor)
+
+        let res = device.surfaces.insert(crtc, compositor);
+        assert!(res.is_none(), "crtc must not have already existed");
+
+        niri.add_output(output.clone());
+        niri.queue_redraw(output);
+
+        Ok(())
+    }
+
+    fn connector_disconnected(
+        &mut self,
+        niri: &mut Niri,
+        connector: connector::Info,
+        crtc: crtc::Handle,
+    ) {
+        debug!("disconnecting connector: {connector:?}");
+        let device = self.output_device.as_mut().unwrap();
+
+        if device.surfaces.remove(&crtc).is_none() {
+            debug!("crts wasn't enabled");
+            return;
+        }
+
+        let output = niri
+            .global_space
+            .outputs()
+            .find(|output| {
+                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                tty_state.device_id == device.id && tty_state.crtc == crtc
+            })
+            .unwrap()
+            .clone();
+
+        niri.remove_output(&output);
     }
 
     fn change_vt(&mut self, vt: i32) {

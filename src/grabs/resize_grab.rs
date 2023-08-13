@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use smithay::desktop::{Space, Window};
+use smithay::desktop::Window;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
     PointerInnerHandle, RelativeMotionEvent,
@@ -241,48 +241,48 @@ impl ResizeSurfaceState {
     }
 }
 
-/// Should be called on `WlSurface::commit`
-pub fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> Option<()> {
-    let window = space
-        .elements()
-        .find(|w| w.toplevel().wl_surface() == surface)
-        .cloned()?;
-
-    let mut window_loc = space.element_location(&window)?;
-    let geometry = window.geometry();
-
-    let new_loc: Point<Option<i32>, Logical> = ResizeSurfaceState::with(surface, |state| {
-        state
-            .commit()
-            .and_then(|(edges, initial_rect)| {
-                // If the window is being resized by top or left, its location must be adjusted
-                // accordingly.
-                edges.intersects(ResizeEdge::TOP_LEFT).then(|| {
-                    let new_x = edges
-                        .intersects(ResizeEdge::LEFT)
-                        .then_some(initial_rect.loc.x + (initial_rect.size.w - geometry.size.w));
-
-                    let new_y = edges
-                        .intersects(ResizeEdge::TOP)
-                        .then_some(initial_rect.loc.y + (initial_rect.size.h - geometry.size.h));
-
-                    (new_x, new_y).into()
-                })
-            })
-            .unwrap_or_default()
+pub fn handle_commit(window: &Window) -> Option<()> {
+    // FIXME
+    let surface = window.toplevel().wl_surface();
+    ResizeSurfaceState::with(surface, |state| {
+        state.commit();
     });
 
-    if let Some(new_x) = new_loc.x {
-        window_loc.x = new_x;
-    }
-    if let Some(new_y) = new_loc.y {
-        window_loc.y = new_y;
-    }
+    // let mut window_loc = space.element_location(&window)?;
+    // let geometry = window.geometry();
 
-    if new_loc.x.is_some() || new_loc.y.is_some() {
-        // If TOP or LEFT side of the window got resized, we have to move it
-        space.map_element(window, window_loc, false);
-    }
+    // let new_loc: Point<Option<i32>, Logical> = ResizeSurfaceState::with(surface, |state| {
+    //     state
+    //         .commit()
+    //         .and_then(|(edges, initial_rect)| {
+    //             // If the window is being resized by top or left, its location must be adjusted
+    //             // accordingly.
+    //             edges.intersects(ResizeEdge::TOP_LEFT).then(|| {
+    //                 let new_x = edges
+    //                     .intersects(ResizeEdge::LEFT)
+    //                     .then_some(initial_rect.loc.x + (initial_rect.size.w - geometry.size.w));
+
+    //                 let new_y = edges
+    //                     .intersects(ResizeEdge::TOP)
+    //                     .then_some(initial_rect.loc.y + (initial_rect.size.h - geometry.size.h));
+
+    //                 (new_x, new_y).into()
+    //             })
+    //         })
+    //         .unwrap_or_default()
+    // });
+
+    // if let Some(new_x) = new_loc.x {
+    //     window_loc.x = new_x;
+    // }
+    // if let Some(new_y) = new_loc.y {
+    //     window_loc.y = new_y;
+    // }
+
+    // if new_loc.x.is_some() || new_loc.y.is_some() {
+    //     // If TOP or LEFT side of the window got resized, we have to move it
+    //     space.map_element(window, window_loc, false);
+    // }
 
     Some(())
 }
