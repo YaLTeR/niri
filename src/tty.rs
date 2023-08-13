@@ -28,6 +28,7 @@ use smithay::utils::DeviceFd;
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::backend::Backend;
+use crate::input::CompositorMod;
 use crate::niri::OutputRenderElements;
 use crate::{LoopData, Niri};
 
@@ -111,7 +112,8 @@ impl Tty {
             .insert_source(input_backend, |event, _, data| {
                 let tty = data.tty.as_mut().unwrap();
                 let mut change_vt = |vt| tty.change_vt(vt);
-                data.niri.process_input_event(&mut change_vt, event);
+                data.niri
+                    .process_input_event(&mut change_vt, CompositorMod::Super, event);
             })
             .unwrap();
 

@@ -22,10 +22,16 @@ enum InputAction {
     ToggleFullscreen,
 }
 
+pub enum CompositorMod {
+    Super,
+    Alt,
+}
+
 impl Niri {
     pub fn process_input_event<I: InputBackend>(
         &mut self,
         change_vt: &mut dyn FnMut(i32),
+        compositor_mod: CompositorMod,
         event: InputEvent<I>,
     ) {
         let _span = tracy_client::span!("process_input_event");
@@ -44,10 +50,15 @@ impl Niri {
                     time,
                     |_, mods, keysym| {
                         if event.state() == KeyState::Pressed {
+                            let mod_down = match compositor_mod {
+                                CompositorMod::Super => mods.logo,
+                                CompositorMod::Alt => mods.alt,
+                            };
+
                             // FIXME: these don't work in the Russian layout. I guess I'll need to
                             // find a US keymap, then map keys somehow.
                             match keysym.modified_sym() {
-                                keysyms::KEY_E if mods.logo => {
+                                keysyms::KEY_E if mod_down => {
                                     FilterResult::Intercept(InputAction::Quit)
                                 }
                                 keysym @ keysyms::KEY_XF86Switch_VT_1
@@ -55,13 +66,13 @@ impl Niri {
                                     let vt = (keysym - keysyms::KEY_XF86Switch_VT_1 + 1) as i32;
                                     FilterResult::Intercept(InputAction::ChangeVt(vt))
                                 }
-                                keysyms::KEY_t if mods.logo => {
+                                keysyms::KEY_t if mod_down => {
                                     FilterResult::Intercept(InputAction::SpawnTerminal)
                                 }
-                                keysyms::KEY_q if mods.logo => {
+                                keysyms::KEY_q if mod_down => {
                                     FilterResult::Intercept(InputAction::CloseWindow)
                                 }
-                                keysyms::KEY_f if mods.logo => {
+                                keysyms::KEY_f if mod_down => {
                                     FilterResult::Intercept(InputAction::ToggleFullscreen)
                                 }
                                 _ => FilterResult::Forward,

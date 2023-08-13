@@ -10,6 +10,7 @@ use smithay::reexports::calloop::LoopHandle;
 use smithay::utils::{Rectangle, Transform};
 
 use crate::backend::Backend;
+use crate::input::CompositorMod;
 use crate::niri::OutputRenderElements;
 use crate::{LoopData, Niri};
 
@@ -116,7 +117,9 @@ impl Winit {
                         None,
                     );
                 }
-                WinitEvent::Input(event) => niri.process_input_event(&mut |_| (), event),
+                WinitEvent::Input(event) => {
+                    niri.process_input_event(&mut |_| (), CompositorMod::Alt, event)
+                }
                 WinitEvent::Focus(_) => (),
                 WinitEvent::Refresh => niri.queue_redraw(),
             });
