@@ -3,6 +3,7 @@ use std::time::Duration;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::ImportEgl;
 use smithay::backend::winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -100,6 +101,13 @@ impl Winit {
         let _global = self.output.create_global::<Niri>(&niri.display_handle);
         niri.space.map_output(&self.output, (0, 0));
         niri.output = Some(self.output.clone());
+        if let Err(err) = self
+            .backend
+            .renderer()
+            .bind_wl_display(&niri.display_handle)
+        {
+            warn!("error binding renderer wl_display: {err}");
+        }
     }
 
     fn dispatch(&mut self, niri: &mut Niri) {
