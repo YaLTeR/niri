@@ -31,69 +31,113 @@
 
 use std::cmp::{max, min};
 use std::mem;
+use std::time::Duration;
 
-use smithay::desktop::{Space, Window};
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::AsRenderElements;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::desktop::space::SpaceElement;
+use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
+use smithay::wayland::compositor::{with_states, SurfaceData};
+use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 
 const PADDING: i32 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
 
+pub trait LayoutElement: SpaceElement + PartialEq + Clone {
+    fn request_size(&self, size: Size<i32, Logical>);
+    fn send_pending_configure(&self);
+    fn min_size(&self) -> Size<i32, Logical>;
+    fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
+    fn send_frame<T, F>(
+        &self,
+        output: &Output,
+        time: T,
+        throttle: Option<Duration>,
+        primary_scan_out_output: F,
+    ) where
+        T: Into<Duration>,
+        F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy;
+}
+
 #[derive(Debug)]
-pub enum MonitorSet {
+pub enum MonitorSet<W: LayoutElement> {
     /// At least one output is connected.
     Normal {
-        monitors: Vec<Monitor>,
+        /// Connected monitors.
+        monitors: Vec<Monitor<W>>,
         /// Index of the primary monitor.
         primary_idx: usize,
         /// Index of the active monitor.
         active_monitor_idx: usize,
     },
     /// No outputs are connected, and these are the workspaces.
-    // FIXME: preserve active output id?
-    NoOutputs(Vec<Workspace>),
+    NoOutputs(Vec<Workspace<W>>),
 }
 
 #[derive(Debug)]
-pub struct Monitor {
+pub struct Monitor<W: LayoutElement> {
+    /// Output for this monitor.
     output: Output,
     // Must always contain at least one.
-    workspaces: Vec<Workspace>,
+    workspaces: Vec<Workspace<W>>,
     /// Index of the currently active workspace.
     active_workspace_idx: usize,
 }
 
 #[derive(Debug)]
-pub struct Workspace {
+pub struct Workspace<W: LayoutElement> {
     /// The original output of this workspace.
     ///
     /// Most of the time this will be the workspace's current output, however, after an output
     /// disconnection, it may remain pointing to the disconnected output.
     original_output: OutputId,
 
-    layout: Layout,
+    /// Current output of this workspace.
+    output: Option<Output>,
 
-    // The actual Space with windows in this workspace. Should be synchronized to the layout except
-    // for a brief period during surface commit handling.
-    pub space: Space<Window>,
-}
+    /// Latest known view size for this workspace.
+    ///
+    /// This should be computed from the current workspace output size, or, if all outputs have
+    /// been disconnected, preserved until a new output is connected.
+    view_size: Size<i32, Logical>,
 
-#[derive(Debug)]
-pub struct Layout {
-    columns: Vec<Column>,
+    /// Columns of windows on this workspace.
+    columns: Vec<Column<W>>,
+
     /// Index of the currently active column, if any.
     active_column_idx: usize,
+
+    /// Offset of the view computed from the active column.
+    view_offset: i32,
+}
+
+/// Width of a column.
+#[derive(Debug, Clone, Copy)]
+enum ColumnWidth {
+    /// Proportion of the current view width.
+    Proportion(f64),
+    /// Fixed width in logical pixels.
+    Fixed(i32),
 }
 
 #[derive(Debug)]
-pub struct Column {
-    // Must be non-empty.
-    windows: Vec<Window>,
+struct Column<W: LayoutElement> {
+    /// Windows in this column.
+    ///
+    /// Must be non-empty.
+    windows: Vec<W>,
+
     /// Index of the currently active window.
     active_window_idx: usize,
+
+    /// Desired width of this column.
+    width: ColumnWidth,
 }
 
 impl OutputId {
@@ -102,7 +146,65 @@ impl OutputId {
     }
 }
 
-impl MonitorSet {
+impl LayoutElement for Window {
+    fn request_size(&self, size: Size<i32, Logical>) {
+        let toplevel = &self.toplevel();
+        toplevel.with_pending_state(|state| {
+            state.size = Some(size);
+        });
+        toplevel.send_pending_configure();
+    }
+
+    fn send_pending_configure(&self) {
+        self.toplevel().send_pending_configure();
+    }
+
+    fn min_size(&self) -> Size<i32, Logical> {
+        with_states(self.toplevel().wl_surface(), |state| {
+            state
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .min_size
+        })
+    }
+
+    fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool {
+        self.toplevel().wl_surface() == wl_surface
+    }
+
+    fn send_frame<T, F>(
+        &self,
+        output: &Output,
+        time: T,
+        throttle: Option<Duration>,
+        primary_scan_out_output: F,
+    ) where
+        T: Into<Duration>,
+        F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
+    {
+        self.send_frame(output, time, throttle, primary_scan_out_output);
+    }
+}
+
+impl ColumnWidth {
+    fn resolve(self, view_width: i32) -> i32 {
+        match self {
+            ColumnWidth::Proportion(proportion) => (view_width as f64 * proportion).floor() as i32,
+            ColumnWidth::Fixed(width) => width,
+        }
+    }
+}
+
+impl Default for ColumnWidth {
+    fn default() -> Self {
+        Self::Proportion(0.5)
+    }
+}
+
+impl<W: LayoutElement> MonitorSet<W> {
     pub fn new() -> Self {
         Self::NoOutputs(vec![])
     }
@@ -121,26 +223,18 @@ impl MonitorSet {
                 let mut workspaces = vec![];
                 for i in (0..primary.workspaces.len()).rev() {
                     if primary.workspaces[i].original_output == id {
-                        let mut ws = primary.workspaces.remove(i);
-                        ws.space.unmap_output(&primary.output);
+                        let ws = primary.workspaces.remove(i);
                         workspaces.push(ws);
                     }
                 }
                 workspaces.reverse();
-                if workspaces
-                    .iter()
-                    .all(|ws| ws.space.elements().next().is_some())
-                {
+                if workspaces.iter().all(|ws| ws.has_windows()) {
                     // Make sure there's always an empty workspace.
-                    workspaces.push(Workspace {
-                        original_output: id,
-                        layout: Layout::new(),
-                        space: Space::default(),
-                    });
+                    workspaces.push(Workspace::new(output.clone()));
                 }
 
                 for ws in &mut workspaces {
-                    ws.space.map_output(&output, (0, 0));
+                    ws.set_output(Some(output.clone()));
                 }
 
                 monitors.push(Monitor {
@@ -155,19 +249,11 @@ impl MonitorSet {
                 }
             }
             MonitorSet::NoOutputs(mut workspaces) => {
-                if workspaces.iter().all(|ws| ws.original_output != id) {
-                    workspaces.insert(
-                        0,
-                        Workspace {
-                            original_output: id.clone(),
-                            layout: Layout::new(),
-                            space: Space::default(),
-                        },
-                    );
-                }
+                // We know there are no empty workspaces there, so add one.
+                workspaces.push(Workspace::new(output.clone()));
 
                 for workspace in &mut workspaces {
-                    workspace.space.map_output(&output, (0, 0));
+                    workspace.set_output(Some(output.clone()));
                 }
 
                 let monitor = Monitor {
@@ -199,11 +285,11 @@ impl MonitorSet {
                 let mut workspaces = monitor.workspaces;
 
                 for ws in &mut workspaces {
-                    ws.space.unmap_output(output);
+                    ws.set_output(None);
                 }
 
                 // Get rid of empty workspaces.
-                workspaces.retain(|ws| ws.space.elements().next().is_some());
+                workspaces.retain(|ws| ws.has_windows());
 
                 if monitors.is_empty() {
                     // Removed the last monitor.
@@ -223,9 +309,12 @@ impl MonitorSet {
 
                     let primary = &mut monitors[primary_idx];
                     for ws in &mut workspaces {
-                        ws.space.map_output(&primary.output, (0, 0));
+                        ws.set_output(Some(primary.output.clone()));
                     }
+
+                    let empty = primary.workspaces.remove(primary.workspaces.len() - 1);
                     primary.workspaces.extend(workspaces);
+                    primary.workspaces.push(empty);
 
                     MonitorSet::Normal {
                         monitors,
@@ -240,25 +329,11 @@ impl MonitorSet {
         }
     }
 
-    pub fn configure_new_window(output: &Output, window: &Window) {
-        let output_size = output_size(output);
-        let size = Size::from((
-            (output_size.w - PADDING * 3) / 2,
-            output_size.h - PADDING * 2,
-        ));
-        let bounds = Size::from((output_size.w - PADDING * 2, output_size.h - PADDING * 2));
-
-        window.toplevel().with_pending_state(|state| {
-            state.size = Some(size);
-            state.bounds = Some(bounds);
-        });
-    }
-
     pub fn add_window(
         &mut self,
         monitor_idx: usize,
         workspace_idx: usize,
-        window: Window,
+        window: W,
         activate: bool,
     ) {
         let MonitorSet::Normal {
@@ -272,31 +347,24 @@ impl MonitorSet {
 
         let monitor = &mut monitors[monitor_idx];
         let workspace = &mut monitor.workspaces[workspace_idx];
-        workspace.layout.add_window(window.clone(), activate);
-        workspace.space.map_element(window.clone(), (0, 0), false);
-        workspace.layout.sync_space(&mut workspace.space);
-
-        MonitorSet::configure_new_window(&monitor.output, &window);
-        window.toplevel().send_pending_configure();
 
         if activate {
             *active_monitor_idx = monitor_idx;
             monitor.active_workspace_idx = workspace_idx;
+            // Configure will be sent in add_window().
+            window.set_activate(true);
         }
+
+        workspace.add_window(window.clone(), activate);
 
         if workspace_idx == monitor.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let mut ws = Workspace {
-                original_output: OutputId::new(&monitor.output),
-                layout: Layout::new(),
-                space: Space::default(),
-            };
-            ws.space.map_output(&monitor.output, (0, 0));
+            let ws = Workspace::new(monitor.output.clone());
             monitor.workspaces.push(ws);
         }
     }
 
-    pub fn add_window_to_output(&mut self, output: &Output, window: Window, activate: bool) {
+    pub fn add_window_to_output(&mut self, output: &Output, window: W, activate: bool) {
         let MonitorSet::Normal { monitors, .. } = self else {
             panic!()
         };
@@ -308,38 +376,110 @@ impl MonitorSet {
             .unwrap();
         let workspace_idx = monitor.active_workspace_idx;
 
-        self.add_window(monitor_idx, workspace_idx, window, activate)
+        self.add_window(monitor_idx, workspace_idx, window, activate);
     }
 
-    pub fn remove_window(&mut self, window: &Window) {
+    pub fn remove_window(&mut self, window: &W) {
+        match self {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for (idx, ws) in mon.workspaces.iter_mut().enumerate() {
+                        if ws.has_window(window) {
+                            ws.remove_window(window);
+
+                            // Clean up empty workspaces that are not active and not last.
+                            if !ws.has_windows()
+                                && idx != mon.active_workspace_idx
+                                && idx != mon.workspaces.len() - 1
+                            {
+                                mon.workspaces.remove(idx);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs(workspaces) => {
+                for (idx, ws) in workspaces.iter_mut().enumerate() {
+                    if ws.has_window(window) {
+                        ws.remove_window(window);
+
+                        // Clean up empty workspaces.
+                        if !ws.has_windows() {
+                            workspaces.remove(idx);
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn update_window(&mut self, window: &W) {
+        match self {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.update_window(window);
+                            break;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs(workspaces) => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.update_window(window);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn send_frame(&self, output: &Output, time: Duration) {
+        if let MonitorSet::Normal { monitors, .. } = self {
+            for mon in monitors {
+                if &mon.output == output {
+                    mon.workspaces[mon.active_workspace_idx].send_frame(time);
+                }
+            }
+        }
+    }
+
+    pub fn find_window_and_output(&mut self, wl_surface: &WlSurface) -> Option<(W, Output)> {
+        if let MonitorSet::Normal { monitors, .. } = self {
+            for mon in monitors {
+                for ws in &mut mon.workspaces {
+                    if let Some(window) = ws.find_wl_surface(wl_surface) {
+                        return Some((window.clone(), mon.output.clone()));
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn update_output(&mut self, output: &Output) {
         let MonitorSet::Normal { monitors, .. } = self else {
             panic!()
         };
 
-        let (output, workspace) = monitors
-            .iter_mut()
-            .flat_map(|mon| mon.workspaces.iter_mut().map(|ws| (&mon.output, ws)))
-            .find(|(_, ws)| ws.space.elements().any(|win| win == window))
-            .unwrap();
-
-        workspace
-            .layout
-            .remove_window(window, output_size(output).h);
-        workspace.space.unmap_elem(window);
-        workspace.layout.sync_space(&mut workspace.space);
-
-        // FIXME: remove empty unfocused workspaces.
+        for mon in monitors {
+            if &mon.output == output {
+                for ws in &mut mon.workspaces {
+                    ws.set_view_size(output_size(output));
+                }
+                break;
+            }
+        }
     }
 
-    pub fn update_window(&mut self, window: &Window) {
-        let workspace = self
-            .workspaces()
-            .find(|ws| ws.space.elements().any(|w| w == window))
-            .unwrap();
-        workspace.layout.sync_space(&mut workspace.space);
-    }
-
-    pub fn activate_window(&mut self, window: &Window) {
+    pub fn activate_window(&mut self, window: &W) {
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -351,15 +491,10 @@ impl MonitorSet {
 
         for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                if ws.space.elements().any(|win| win == window) {
+                if ws.has_window(window) {
                     *active_monitor_idx = monitor_idx;
                     mon.active_workspace_idx = workspace_idx;
-
-                    let changed = ws.layout.activate_window(window);
-                    if changed {
-                        ws.layout.sync_space(&mut ws.space);
-                    }
-
+                    ws.activate_window(window);
                     break;
                 }
             }
@@ -396,12 +531,12 @@ impl MonitorSet {
         Some(&monitors[*active_monitor_idx].output)
     }
 
-    fn active_workspace(&mut self) -> Option<&mut Workspace> {
+    fn active_workspace(&mut self) -> Option<&mut Workspace<W>> {
         let monitor = self.active_monitor()?;
         Some(&mut monitor.workspaces[monitor.active_workspace_idx])
     }
 
-    fn active_monitor(&mut self) -> Option<&mut Monitor> {
+    fn active_monitor(&mut self) -> Option<&mut Monitor<W>> {
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -418,68 +553,56 @@ impl MonitorSet {
         let Some(workspace) = self.active_workspace() else {
             return;
         };
-        let changed = workspace.layout.move_left();
-        if changed {
-            workspace.layout.sync_space(&mut workspace.space);
-        }
+        workspace.move_left();
     }
 
     pub fn move_right(&mut self) {
         let Some(workspace) = self.active_workspace() else {
             return;
         };
-        let changed = workspace.layout.move_right();
-        if changed {
-            workspace.layout.sync_space(&mut workspace.space);
-        }
+        workspace.move_right();
     }
 
     pub fn move_down(&mut self) {
         let Some(workspace) = self.active_workspace() else {
             return;
         };
-        let changed = workspace.layout.move_down();
-        if changed {
-            workspace.layout.sync_space(&mut workspace.space);
-        }
+        workspace.move_down();
     }
 
     pub fn move_up(&mut self) {
         let Some(workspace) = self.active_workspace() else {
             return;
         };
-        let changed = workspace.layout.move_up();
-        if changed {
-            workspace.layout.sync_space(&mut workspace.space);
-        }
+        workspace.move_up();
     }
 
     pub fn focus_left(&mut self) {
         let Some(workspace) = self.active_workspace() else {
             return;
         };
-        workspace.layout.focus_left();
+        workspace.focus_left();
     }
 
     pub fn focus_right(&mut self) {
         let Some(workspace) = self.active_workspace() else {
             return;
         };
-        workspace.layout.focus_right();
+        workspace.focus_right();
     }
 
     pub fn focus_down(&mut self) {
         let Some(workspace) = self.active_workspace() else {
             return;
         };
-        workspace.layout.focus_down();
+        workspace.focus_down();
     }
 
     pub fn focus_up(&mut self) {
         let Some(workspace) = self.active_workspace() else {
             return;
         };
-        workspace.layout.focus_up();
+        workspace.focus_up();
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -493,28 +616,27 @@ impl MonitorSet {
         };
 
         let monitor = &mut monitors[*active_monitor_idx];
+        let source_workspace_idx = monitor.active_workspace_idx;
 
-        let new_idx = monitor.active_workspace_idx.saturating_sub(1);
-        if new_idx == monitor.active_workspace_idx {
+        let new_idx = source_workspace_idx.saturating_sub(1);
+        if new_idx == source_workspace_idx {
             return;
         }
 
-        let workspace = &mut monitor.workspaces[monitor.active_workspace_idx];
-        if workspace.layout.columns.is_empty() {
+        let workspace = &mut monitor.workspaces[source_workspace_idx];
+        if workspace.columns.is_empty() {
             return;
         }
 
-        let column = &mut workspace.layout.columns[workspace.layout.active_column_idx];
+        let column = &mut workspace.columns[workspace.active_column_idx];
         let window = column.windows[column.active_window_idx].clone();
-        workspace
-            .layout
-            .remove_window(&window, output_size(&monitor.output).h);
-        workspace.space.unmap_elem(&window);
-        workspace.layout.sync_space(&mut workspace.space);
+        workspace.remove_window(&window);
+
+        if !workspace.has_windows() && source_workspace_idx != monitor.workspaces.len() - 1 {
+            monitor.workspaces.remove(source_workspace_idx);
+        }
 
         self.add_window(*active_monitor_idx, new_idx, window, true);
-
-        // FIXME: remove empty unfocused workspaces.
     }
 
     pub fn move_to_workspace_down(&mut self) {
@@ -528,32 +650,28 @@ impl MonitorSet {
         };
 
         let monitor = &mut monitors[*active_monitor_idx];
+        let source_workspace_idx = monitor.active_workspace_idx;
 
-        let new_idx = min(
-            monitor.active_workspace_idx + 1,
-            monitor.workspaces.len() - 1,
-        );
-
-        if new_idx == monitor.active_workspace_idx {
+        let mut new_idx = min(source_workspace_idx + 1, monitor.workspaces.len() - 1);
+        if new_idx == source_workspace_idx {
             return;
         }
 
-        let workspace = &mut monitor.workspaces[monitor.active_workspace_idx];
-        if workspace.layout.columns.is_empty() {
+        let workspace = &mut monitor.workspaces[source_workspace_idx];
+        if workspace.columns.is_empty() {
             return;
         }
 
-        let column = &mut workspace.layout.columns[workspace.layout.active_column_idx];
+        let column = &mut workspace.columns[workspace.active_column_idx];
         let window = column.windows[column.active_window_idx].clone();
-        workspace
-            .layout
-            .remove_window(&window, output_size(&monitor.output).h);
-        workspace.space.unmap_elem(&window);
-        workspace.layout.sync_space(&mut workspace.space);
+        workspace.remove_window(&window);
+
+        if !workspace.has_windows() {
+            monitor.workspaces.remove(source_workspace_idx);
+            new_idx -= 1;
+        }
 
         self.add_window(*active_monitor_idx, new_idx, window, true);
-
-        // FIXME: remove empty unfocused workspaces.
     }
 
     pub fn switch_workspace_up(&mut self) {
@@ -561,21 +679,40 @@ impl MonitorSet {
             return;
         };
 
-        monitor.active_workspace_idx = monitor.active_workspace_idx.saturating_sub(1);
+        let source_workspace_idx = monitor.active_workspace_idx;
 
-        // FIXME: remove empty unfocused workspaces.
+        let new_idx = source_workspace_idx.saturating_sub(1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        monitor.active_workspace_idx = new_idx;
+
+        if !monitor.workspaces[source_workspace_idx].has_windows()
+            && source_workspace_idx != monitor.workspaces.len() - 1
+        {
+            monitor.workspaces.remove(source_workspace_idx);
+        }
     }
 
     pub fn switch_workspace_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.active_workspace_idx = min(
-            monitor.active_workspace_idx + 1,
-            monitor.workspaces.len() - 1,
-        );
 
-        // FIXME: remove empty unfocused workspaces.
+        let source_workspace_idx = monitor.active_workspace_idx;
+
+        let mut new_idx = min(source_workspace_idx + 1, monitor.workspaces.len() - 1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        if !monitor.workspaces[source_workspace_idx].has_windows() {
+            monitor.workspaces.remove(source_workspace_idx);
+            new_idx -= 1;
+        }
+
+        monitor.active_workspace_idx = new_idx;
     }
 
     pub fn consume_into_column(&mut self) {
@@ -591,12 +728,7 @@ impl MonitorSet {
         let monitor = &mut monitors[*active_monitor_idx];
 
         let workspace = &mut monitor.workspaces[monitor.active_workspace_idx];
-        let changed = workspace
-            .layout
-            .consume_into_column(output_size(&monitor.output).h);
-        if changed {
-            workspace.layout.sync_space(&mut workspace.space);
-        }
+        workspace.consume_into_column();
     }
 
     pub fn expel_from_column(&mut self) {
@@ -610,22 +742,11 @@ impl MonitorSet {
         };
 
         let monitor = &mut monitors[*active_monitor_idx];
-
-        let output_scale = monitor.output.current_scale().integer_scale();
-        let output_transform = monitor.output.current_transform();
-        let output_mode = monitor.output.current_mode().unwrap();
-        let output_size = output_transform
-            .transform_size(output_mode.size)
-            .to_logical(output_scale);
-
         let workspace = &mut monitor.workspaces[monitor.active_workspace_idx];
-        let changed = workspace.layout.expel_from_column(output_size.h);
-        if changed {
-            workspace.layout.sync_space(&mut workspace.space);
-        }
+        workspace.expel_from_column();
     }
 
-    pub fn focus(&self) -> Option<&Window> {
+    pub fn focus(&self) -> Option<&W> {
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -637,65 +758,40 @@ impl MonitorSet {
 
         let monitor = &monitors[*active_monitor_idx];
         let workspace = &monitor.workspaces[monitor.active_workspace_idx];
-        if workspace.layout.columns.is_empty() {
+        if !workspace.has_windows() {
             return None;
         }
 
-        let column = &workspace.layout.columns[workspace.layout.active_column_idx];
+        let column = &workspace.columns[workspace.active_column_idx];
         Some(&column.windows[column.active_window_idx])
     }
 
-    pub fn workspace_for_output(&mut self, output: &Output) -> Option<&mut Workspace> {
+    pub fn workspace_for_output(&self, output: &Output) -> Option<&Workspace<W>> {
         let MonitorSet::Normal { monitors, .. } = self else {
             return None;
         };
 
-        monitors.iter_mut().find_map(|monitor| {
+        monitors.iter().find_map(|monitor| {
             if &monitor.output == output {
-                Some(&mut monitor.workspaces[monitor.active_workspace_idx])
+                Some(&monitor.workspaces[monitor.active_workspace_idx])
             } else {
                 None
             }
         })
     }
 
-    pub fn workspaces(&mut self) -> impl Iterator<Item = &mut Workspace> + '_ {
-        match self {
-            MonitorSet::Normal { monitors, .. } => {
-                monitors.iter_mut().flat_map(|mon| &mut mon.workspaces)
-            }
-            MonitorSet::NoOutputs(_workspaces) => todo!(),
-        }
+    pub fn window_under(
+        &self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<(&W, Point<i32, Logical>)> {
+        let ws = self.workspace_for_output(output).unwrap();
+        ws.window_under(pos_within_output)
     }
 
-    pub fn spaces(&mut self) -> impl Iterator<Item = &Space<Window>> + '_ {
-        self.workspaces().map(|workspace| &workspace.space)
-    }
-
-    pub fn find_window(&mut self, wl_surface: &WlSurface) -> Option<&Window> {
-        self.workspaces()
-            .flat_map(|workspace| workspace.space.elements())
-            .find(|window| window.toplevel().wl_surface() == wl_surface)
-    }
-
-    pub fn find_window_and_space(
-        &mut self,
-        wl_surface: &WlSurface,
-    ) -> Option<(Window, &Space<Window>)> {
-        self.spaces().find_map(|space| {
-            let window = space
-                .elements()
-                .find(|window| window.toplevel().wl_surface() == wl_surface)
-                .cloned();
-            window.map(|window| (window, space))
-        })
-    }
-
-    /// Refreshes the `Space`s.
+    /// Refreshes the `Workspace`s.
     pub fn refresh(&mut self) {
-        for workspace in self.workspaces() {
-            workspace.space.refresh();
-        }
+        // TODO
     }
 
     fn verify_invariants(&self) {
@@ -708,11 +804,11 @@ impl MonitorSet {
             MonitorSet::NoOutputs(workspaces) => {
                 for workspace in workspaces {
                     assert!(
-                        !workspace.layout.has_windows(),
+                        !workspace.has_windows(),
                         "with no outputs there cannot be empty workspaces"
                     );
 
-                    workspace.layout.verify_invariants();
+                    workspace.verify_invariants();
                 }
 
                 return;
@@ -731,13 +827,6 @@ impl MonitorSet {
             let monitor_id = OutputId::new(&monitor.output);
 
             if idx == primary_idx {
-                assert!(
-                    monitor
-                        .workspaces
-                        .iter()
-                        .any(|workspace| workspace.original_output == monitor_id),
-                    "primary monitor must have at least one own workspace"
-                );
             } else {
                 assert!(
                     monitor
@@ -752,76 +841,102 @@ impl MonitorSet {
             // exists.
 
             for workspace in &monitor.workspaces {
-                workspace.layout.verify_invariants();
+                workspace.verify_invariants();
             }
         }
     }
 }
 
-fn output_size(output: &Output) -> Size<i32, Logical> {
-    let output_scale = output.current_scale().integer_scale();
-    let output_transform = output.current_transform();
-    let output_mode = output.current_mode().unwrap();
-    let output_size = output_transform
-        .transform_size(output_mode.size)
-        .to_logical(output_scale);
-    output_size
+impl MonitorSet<Window> {
+    pub fn render_elements(
+        &self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+    ) -> Vec<WaylandSurfaceRenderElement<GlesRenderer>> {
+        let ws = self.workspace_for_output(output).unwrap();
+        ws.render_elements(renderer)
+    }
 }
 
-impl Default for MonitorSet {
+impl<W: LayoutElement> Default for MonitorSet<W> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Layout {
-    fn new() -> Self {
+impl<W: LayoutElement> Workspace<W> {
+    fn new(output: Output) -> Self {
         Self {
+            original_output: OutputId::new(&output),
+            view_size: output_size(&output),
+            output: Some(output),
             columns: vec![],
             active_column_idx: 0,
+            view_offset: 0,
         }
     }
 
-    fn sync_space(&self, space: &mut Space<Window>) {
-        // FIXME: this is really inefficient
-        let mut active_window = None;
+    fn refresh(&self) {
+        // FIXME: proper overlap.
+    }
 
-        let mut x = PADDING;
-        for (column_idx, column) in self.columns.iter().enumerate() {
-            let mut y = PADDING;
-            for (window_idx, window) in column.windows.iter().enumerate() {
-                let active =
-                    column_idx == self.active_column_idx && window_idx == column.active_window_idx;
-                if active {
-                    active_window = Some(window.clone());
-                }
+    fn windows(&self) -> impl Iterator<Item = &W> + '_ {
+        self.columns.iter().flat_map(|col| col.windows.iter())
+    }
 
-                window.set_activated(active);
-                space.map_element(window.clone(), (x, y), false);
-                window.toplevel().send_pending_configure();
-                y += window.geometry().size.h + PADDING;
-            }
-            x += column.size().w + PADDING;
+    fn set_output(&mut self, output: Option<Output>) {
+        if self.output == output {
+            return;
         }
 
-        if let Some(window) = active_window {
-            space.raise_element(&window, false);
+        if let Some(output) = self.output.take() {
+            for win in self.windows() {
+                win.output_leave(&output);
+            }
+        }
+
+        if let Some(output) = output {
+            self.set_view_size(output_size(&output));
+
+            self.output = Some(output);
+
+            for win in self.windows() {
+                self.enter_output_for_window(win);
+            }
+        }
+    }
+
+    fn enter_output_for_window(&self, window: &W) {
+        if let Some(output) = &self.output {
+            // FIXME: proper overlap.
+            window.output_enter(
+                output,
+                Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX)),
+            );
+        }
+    }
+
+    fn set_view_size(&mut self, size: Size<i32, Logical>) {
+        if self.view_size == size {
+            return;
+        }
+
+        self.view_size = size;
+        for col in &mut self.columns {
+            col.update_window_sizes(self.view_size);
         }
     }
 
     fn has_windows(&self) -> bool {
-        self.columns.is_empty()
+        self.windows().next().is_some()
     }
 
-    /// Computes the width of the layout including left and right padding, in Logical coordinates.
-    fn width(&self) -> i32 {
-        let mut total = PADDING;
+    fn has_window(&self, window: &W) -> bool {
+        self.windows().any(|win| win == window)
+    }
 
-        for column in &self.columns {
-            total += column.size().w + PADDING;
-        }
-
-        total
+    fn find_wl_surface(&self, wl_surface: &WlSurface) -> Option<&W> {
+        self.windows().find(|win| win.is_wl_surface(wl_surface))
     }
 
     /// Computes the X position of the windows in the given column, in logical coordinates.
@@ -835,17 +950,25 @@ impl Layout {
         x
     }
 
-    fn add_window(&mut self, window: Window, activate: bool) {
+    fn add_window(&mut self, window: W, activate: bool) {
+        self.enter_output_for_window(&window);
+        // Configure will be sent in Column::new().
+        window.set_activate(activate);
+
+        if activate {
+            for win in self.windows() {
+                win.set_activate(false);
+                win.send_pending_configure();
+            }
+        }
+
         let idx = if self.columns.is_empty() {
             0
         } else {
             self.active_column_idx + 1
         };
 
-        let column = Column {
-            windows: vec![window],
-            active_window_idx: 0,
-        };
+        let column = Column::new(window, self.view_size);
         self.columns.insert(idx, column);
 
         if activate {
@@ -853,11 +976,15 @@ impl Layout {
         }
     }
 
-    fn remove_window(&mut self, window: &Window, total_height: i32) {
+    fn remove_window(&mut self, window: &W) {
+        if let Some(output) = &self.output {
+            window.output_leave(output);
+        }
+
         let column_idx = self
             .columns
             .iter()
-            .position(|col| col.windows.contains(window))
+            .position(|col| col.contains(window))
             .unwrap();
         let column = &mut self.columns[column_idx];
 
@@ -870,51 +997,79 @@ impl Layout {
             }
 
             self.active_column_idx = min(self.active_column_idx, self.columns.len() - 1);
+            let column = &self.columns[self.active_column_idx];
+            let window = &column.windows[column.active_window_idx];
+            window.set_activate(true);
+            window.send_pending_configure();
             return;
         }
 
         column.active_window_idx = min(column.active_window_idx, column.windows.len() - 1);
-
-        // Update window sizes.
-        let window_count = column.windows.len() as i32;
-        let height = (total_height - PADDING * (window_count + 1)) / window_count;
-        let width = column.size().w;
-
-        for window in &mut column.windows {
-            window
-                .toplevel()
-                .with_pending_state(|state| state.size = Some(Size::from((width, height))));
-            window.toplevel().send_pending_configure();
+        if self.active_column_idx == column_idx {
+            let window = &column.windows[column.active_window_idx];
+            window.set_activate(true);
         }
+        column.update_window_sizes(self.view_size);
     }
 
-    fn activate_window(&mut self, window: &Window) -> bool {
+    fn update_window(&mut self, window: &W) {
+        let column = self
+            .columns
+            .iter_mut()
+            .find(|col| col.contains(window))
+            .unwrap();
+        column.update_window_sizes(self.view_size);
+    }
+
+    fn activate_window(&mut self, window: &W) {
+        for win in self.windows() {
+            if win != window {
+                win.set_activate(false);
+                win.send_pending_configure();
+            }
+        }
+        window.set_activate(true);
+        window.send_pending_configure();
+
         let column_idx = self
             .columns
             .iter()
-            .position(|col| col.windows.contains(window))
+            .position(|col| col.contains(window))
             .unwrap();
         let column = &mut self.columns[column_idx];
 
-        let window_idx = column.windows.iter().position(|win| win == window).unwrap();
-
-        if column.active_window_idx != window_idx || self.active_column_idx != column_idx {
-            column.active_window_idx = window_idx;
-            self.active_column_idx = column_idx;
-            true
-        } else {
-            false
-        }
+        column.activate_window(window);
+        self.active_column_idx = column_idx;
     }
 
     fn verify_invariants(&self) {
+        assert!(self.view_size.w > 0);
+        assert!(self.view_size.h > 0);
+
+        assert!(self.columns.is_empty() || self.active_column_idx < self.columns.len());
+
         for column in &self.columns {
             column.verify_invariants();
         }
     }
 
     fn focus_left(&mut self) {
-        self.active_column_idx = self.active_column_idx.saturating_sub(1);
+        let new_idx = self.active_column_idx.saturating_sub(1);
+        if self.active_column_idx == new_idx {
+            return;
+        }
+
+        let column = &self.columns[self.active_column_idx];
+        let window = &column.windows[column.active_window_idx];
+        window.set_activate(false);
+        window.send_pending_configure();
+
+        self.active_column_idx = new_idx;
+
+        let column = &self.columns[self.active_column_idx];
+        let window = &column.windows[column.active_window_idx];
+        window.set_activate(true);
+        window.send_pending_configure();
     }
 
     fn focus_right(&mut self) {
@@ -922,7 +1077,22 @@ impl Layout {
             return;
         }
 
-        self.active_column_idx = min(self.active_column_idx + 1, self.columns.len() - 1);
+        let new_idx = min(self.active_column_idx + 1, self.columns.len() - 1);
+        if self.active_column_idx == new_idx {
+            return;
+        }
+
+        let column = &self.columns[self.active_column_idx];
+        let window = &column.windows[column.active_window_idx];
+        window.set_activate(false);
+        window.send_pending_configure();
+
+        self.active_column_idx = new_idx;
+
+        let column = &self.columns[self.active_column_idx];
+        let window = &column.windows[column.active_window_idx];
+        window.set_activate(true);
+        window.send_pending_configure();
     }
 
     fn focus_down(&mut self) {
@@ -941,104 +1111,217 @@ impl Layout {
         self.columns[self.active_column_idx].focus_up();
     }
 
-    fn move_left(&mut self) -> bool {
+    fn move_left(&mut self) {
         let new_idx = self.active_column_idx.saturating_sub(1);
         if self.active_column_idx == new_idx {
-            return false;
+            return;
         }
 
         self.columns.swap(self.active_column_idx, new_idx);
         self.active_column_idx = new_idx;
-        true
     }
 
-    fn move_right(&mut self) -> bool {
+    fn move_right(&mut self) {
         if self.columns.is_empty() {
-            return false;
+            return;
         }
 
         let new_idx = min(self.active_column_idx + 1, self.columns.len() - 1);
         if self.active_column_idx == new_idx {
-            return false;
+            return;
         }
 
         self.columns.swap(self.active_column_idx, new_idx);
         self.active_column_idx = new_idx;
-        true
     }
 
-    fn move_down(&mut self) -> bool {
+    fn move_down(&mut self) {
         if self.columns.is_empty() {
-            return false;
+            return;
         }
 
-        self.columns[self.active_column_idx].move_down()
+        self.columns[self.active_column_idx].move_down();
     }
 
-    fn move_up(&mut self) -> bool {
+    fn move_up(&mut self) {
         if self.columns.is_empty() {
-            return false;
+            return;
         }
 
-        self.columns[self.active_column_idx].move_up()
+        self.columns[self.active_column_idx].move_up();
     }
 
-    fn consume_into_column(&mut self, total_height: i32) -> bool {
+    fn consume_into_column(&mut self) {
         if self.columns.len() < 2 {
-            return false;
+            return;
         }
 
         if self.active_column_idx == self.columns.len() - 1 {
-            return false;
+            return;
         }
 
         let source_column_idx = self.active_column_idx + 1;
 
         let source_column = &mut self.columns[source_column_idx];
         let window = source_column.windows[0].clone();
-        self.remove_window(&window, total_height);
+        self.remove_window(&window);
 
         let target_column = &mut self.columns[self.active_column_idx];
-
-        let window_count = target_column.windows.len() as i32 + 1;
-        let height = (total_height - PADDING * (window_count + 1)) / window_count;
-        let width = target_column.size().w;
-
-        target_column.windows.push(window);
-
-        for window in &mut target_column.windows {
-            window
-                .toplevel()
-                .with_pending_state(|state| state.size = Some(Size::from((width, height))));
-            window.toplevel().send_pending_configure();
-        }
-        true
+        target_column.add_window(self.view_size, window);
     }
 
-    fn expel_from_column(&mut self, total_height: i32) -> bool {
+    fn expel_from_column(&mut self) {
         if self.columns.is_empty() {
-            return false;
+            return;
         }
 
         let source_column = &mut self.columns[self.active_column_idx];
         if source_column.windows.len() == 1 {
-            return false;
+            return;
         }
 
         let window = source_column.windows[source_column.active_window_idx].clone();
-        self.remove_window(&window, total_height);
+        self.remove_window(&window);
 
-        window.toplevel().with_pending_state(|state| {
-            state.size = Some(Size::from((state.size.unwrap().w, total_height)))
-        });
-        window.toplevel().send_pending_configure();
         self.add_window(window, true);
+    }
 
-        true
+    fn send_frame(&self, time: Duration) {
+        let output = self.output.as_ref().unwrap();
+        for win in self.windows() {
+            win.send_frame(output, time, None, |_, _| Some(output.clone()));
+        }
+    }
+
+    fn view_pos(&self) -> i32 {
+        self.column_x(self.active_column_idx) + self.view_offset - PADDING
+    }
+
+    fn window_under(
+        &self,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<(&W, Point<i32, Logical>)> {
+        let view_pos = self.view_pos();
+
+        let mut pos = pos_within_output;
+        pos.x += view_pos as f64;
+
+        let mut x = PADDING;
+        for col in &self.columns {
+            let mut y = PADDING;
+
+            for win in &col.windows {
+                let geom = win.geometry();
+
+                // x, y point at the top-left of the window geometry.
+                let win_pos = Point::from((x, y)) - geom.loc;
+                if win.is_in_input_region(&(pos - win_pos.to_f64())) {
+                    let mut win_pos_within_output = win_pos;
+                    win_pos_within_output.x -= view_pos;
+                    return Some((win, win_pos_within_output));
+                }
+
+                y += geom.size.h + PADDING;
+            }
+
+            x += col.size().w + PADDING;
+        }
+
+        None
     }
 }
 
-impl Column {
+impl Workspace<Window> {
+    fn render_elements(
+        &self,
+        renderer: &mut GlesRenderer,
+    ) -> Vec<WaylandSurfaceRenderElement<GlesRenderer>> {
+        let mut rv = vec![];
+        let view_pos = self.view_pos();
+
+        let mut x = PADDING;
+        for col in &self.columns {
+            let mut y = PADDING;
+
+            for win in &col.windows {
+                let geom = win.geometry();
+
+                let win_pos = Point::from((x - view_pos, y)) - geom.loc;
+                rv.extend(win.render_elements(
+                    renderer,
+                    win_pos.to_physical(1),
+                    Scale::from(1.),
+                    1.,
+                ));
+                y += win.geometry().size.h + PADDING;
+            }
+
+            x += col.size().w + PADDING;
+        }
+
+        rv
+    }
+}
+
+impl<W: LayoutElement> Column<W> {
+    fn new(window: W, view_size: Size<i32, Logical>) -> Self {
+        let mut rv = Self {
+            windows: vec![],
+            active_window_idx: 0,
+            width: ColumnWidth::default(),
+        };
+
+        rv.add_window(view_size, window);
+
+        rv
+    }
+
+    fn window_count(&self) -> usize {
+        self.windows.len()
+    }
+
+    fn set_width(&mut self, view_size: Size<i32, Logical>, width: ColumnWidth) {
+        self.width = width;
+        self.update_window_sizes(view_size);
+    }
+
+    fn contains(&self, window: &W) -> bool {
+        self.windows.iter().any(|win| win == window)
+    }
+
+    fn activate_window(&mut self, window: &W) {
+        let idx = self.windows.iter().position(|win| win == window).unwrap();
+        self.active_window_idx = idx;
+    }
+
+    fn add_window(&mut self, view_size: Size<i32, Logical>, window: W) {
+        self.windows.push(window);
+        self.update_window_sizes(view_size);
+    }
+
+    fn update_window_sizes(&mut self, view_size: Size<i32, Logical>) {
+        let min_width = self
+            .windows
+            .iter()
+            .filter_map(|win| {
+                let w = win.min_size().w;
+                if w == 0 {
+                    None
+                } else {
+                    Some(w)
+                }
+            })
+            .max()
+            .unwrap_or(1);
+        let width = self.width.resolve(view_size.w - PADDING) - PADDING;
+        let height = (view_size.h - PADDING) / self.window_count() as i32 - PADDING;
+        let size = Size::from((max(width, min_width), max(height, 1)));
+
+        for win in &self.windows {
+            win.request_size(size);
+        }
+    }
+
     /// Computes the size of the column including top and bottom padding.
     fn size(&self) -> Size<i32, Logical> {
         let mut total = Size::from((0, PADDING));
@@ -1052,48 +1335,77 @@ impl Column {
         total
     }
 
-    fn window_y(&self, window_idx: usize) -> i32 {
-        let mut y = PADDING;
-
-        for window in self.windows.iter().take(window_idx) {
-            let size = window.geometry().size;
-            y += size.h + PADDING;
+    fn focus_up(&mut self) {
+        let new_idx = self.active_window_idx.saturating_sub(1);
+        if self.active_window_idx == new_idx {
+            return;
         }
 
-        y
-    }
-
-    fn focus_up(&mut self) {
-        self.active_window_idx = self.active_window_idx.saturating_sub(1);
+        self.windows[self.active_window_idx].set_activate(false);
+        self.windows[self.active_window_idx].send_pending_configure();
+        self.windows[new_idx].set_activate(true);
+        self.windows[new_idx].send_pending_configure();
+        self.active_window_idx = new_idx;
     }
 
     fn focus_down(&mut self) {
-        self.active_window_idx = min(self.active_window_idx + 1, self.windows.len() - 1);
-    }
-
-    fn move_up(&mut self) -> bool {
-        let new_idx = self.active_window_idx.saturating_sub(1);
-        if self.active_window_idx == new_idx {
-            return false;
-        }
-
-        self.windows.swap(self.active_window_idx, new_idx);
-        self.active_window_idx = new_idx;
-        true
-    }
-
-    fn move_down(&mut self) -> bool {
         let new_idx = min(self.active_window_idx + 1, self.windows.len() - 1);
         if self.active_window_idx == new_idx {
-            return false;
+            return;
+        }
+
+        self.windows[self.active_window_idx].set_activate(false);
+        self.windows[self.active_window_idx].send_pending_configure();
+        self.windows[new_idx].set_activate(true);
+        self.windows[new_idx].send_pending_configure();
+        self.active_window_idx = new_idx;
+    }
+
+    fn move_up(&mut self) {
+        let new_idx = self.active_window_idx.saturating_sub(1);
+        if self.active_window_idx == new_idx {
+            return;
         }
 
         self.windows.swap(self.active_window_idx, new_idx);
         self.active_window_idx = new_idx;
-        true
+    }
+
+    fn move_down(&mut self) {
+        let new_idx = min(self.active_window_idx + 1, self.windows.len() - 1);
+        if self.active_window_idx == new_idx {
+            return;
+        }
+
+        self.windows.swap(self.active_window_idx, new_idx);
+        self.active_window_idx = new_idx;
     }
 
     fn verify_invariants(&self) {
         assert!(!self.windows.is_empty(), "columns can't be empty");
+        assert!(self.active_window_idx < self.windows.len());
     }
+}
+
+pub fn output_size(output: &Output) -> Size<i32, Logical> {
+    let output_scale = output.current_scale().integer_scale();
+    let output_transform = output.current_transform();
+    let output_mode = output.current_mode().unwrap();
+
+    output_transform
+        .transform_size(output_mode.size)
+        .to_logical(output_scale)
+}
+
+pub fn configure_new_window(view_size: Size<i32, Logical>, window: &Window) {
+    let width = ColumnWidth::default().resolve(view_size.w - PADDING) - PADDING;
+    let height = view_size.h - PADDING * 2;
+    let size = Size::from((max(width, 1), max(height, 1)));
+
+    let bounds = Size::from((view_size.w - PADDING * 2, view_size.h - PADDING * 2));
+
+    window.toplevel().with_pending_state(|state| {
+        state.size = Some(size);
+        state.bounds = Some(bounds);
+    });
 }

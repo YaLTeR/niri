@@ -1,4 +1,3 @@
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 
@@ -12,9 +11,6 @@ pub trait Backend {
         &mut self,
         niri: &mut Niri,
         output: &Output,
-        elements: &[OutputRenderElements<
-            GlesRenderer,
-            WaylandSurfaceRenderElement<GlesRenderer>,
-        >],
+        elements: &[OutputRenderElements<GlesRenderer>],
     );
 }

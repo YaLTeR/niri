@@ -1,5 +1,5 @@
 use smithay::delegate_xdg_shell;
-use smithay::desktop::{PopupKind, Window};
+use smithay::desktop::{find_popup_root_surface, PopupKind, Window};
 use smithay::input::pointer::{Focus, GrabStartData as PointerGrabStartData};
 use smithay::input::Seat;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -14,7 +14,7 @@ use smithay::wayland::shell::xdg::{
 };
 
 use crate::grabs::{MoveSurfaceGrab, ResizeSurfaceGrab};
-use crate::layout::MonitorSet;
+use crate::layout::{configure_new_window, output_size};
 use crate::Niri;
 
 impl XdgShellHandler for Niri {
@@ -28,7 +28,7 @@ impl XdgShellHandler for Niri {
 
         // Tell the surface the preferred size and bounds for its likely output.
         let output = self.monitor_set.active_output().unwrap();
-        MonitorSet::configure_new_window(output, &window);
+        configure_new_window(output_size(output), &window);
 
         // At the moment of creation, xdg toplevels must have no buffer.
         let existing = self.unmapped_windows.insert(wl_surface, window);
@@ -49,24 +49,26 @@ impl XdgShellHandler for Niri {
     }
 
     fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
-        let seat = Seat::from_resource(&seat).unwrap();
+        // FIXME
 
-        let wl_surface = surface.wl_surface();
+        // let seat = Seat::from_resource(&seat).unwrap();
 
-        if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
-            let pointer = seat.get_pointer().unwrap();
+        // let wl_surface = surface.wl_surface();
 
-            let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
-            let initial_window_location = space.element_location(&window).unwrap();
+        // if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
+        //     let pointer = seat.get_pointer().unwrap();
 
-            let grab = MoveSurfaceGrab {
-                start_data,
-                window: window.clone(),
-                initial_window_location,
-            };
+        //     let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
+        //     let initial_window_location = space.element_location(&window).unwrap();
 
-            pointer.set_grab(self, grab, serial, Focus::Clear);
-        }
+        //     let grab = MoveSurfaceGrab {
+        //         start_data,
+        //         window: window.clone(),
+        //         initial_window_location,
+        //     };
+
+        //     pointer.set_grab(self, grab, serial, Focus::Clear);
+        // }
     }
 
     fn resize_request(
@@ -76,32 +78,34 @@ impl XdgShellHandler for Niri {
         serial: Serial,
         edges: xdg_toplevel::ResizeEdge,
     ) {
-        let seat = Seat::from_resource(&seat).unwrap();
+        // FIXME
 
-        let wl_surface = surface.wl_surface();
+        // let seat = Seat::from_resource(&seat).unwrap();
 
-        if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
-            let pointer = seat.get_pointer().unwrap();
+        // let wl_surface = surface.wl_surface();
 
-            let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
-            let initial_window_location = space.element_location(&window).unwrap();
-            let initial_window_size = window.geometry().size;
+        // if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
+        //     let pointer = seat.get_pointer().unwrap();
 
-            surface.with_pending_state(|state| {
-                state.states.set(xdg_toplevel::State::Resizing);
-            });
+        //     let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
+        //     let initial_window_location = space.element_location(&window).unwrap();
+        //     let initial_window_size = window.geometry().size;
 
-            surface.send_pending_configure();
+        //     surface.with_pending_state(|state| {
+        //         state.states.set(xdg_toplevel::State::Resizing);
+        //     });
 
-            let grab = ResizeSurfaceGrab::start(
-                start_data,
-                window.clone(),
-                edges.into(),
-                Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
-            );
+        //     surface.send_pending_configure();
 
-            pointer.set_grab(self, grab, serial, Focus::Clear);
-        }
+        //     let grab = ResizeSurfaceGrab::start(
+        //         start_data,
+        //         window.clone(),
+        //         edges.into(),
+        //         Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
+        //     );
+
+        //     pointer.set_grab(self, grab, serial, Focus::Clear);
+        // }
     }
 
     fn reposition_request(
@@ -232,19 +236,22 @@ impl XdgShellHandler for Niri {
             return;
         }
 
-        let (window, space) = self
+        let (window, output) = self
             .monitor_set
-            .find_window_and_space(surface.wl_surface())
+            .find_window_and_output(surface.wl_surface())
             .unwrap();
-        let output = space.outputs().next().unwrap().clone();
         self.monitor_set.remove_window(&window);
         self.update_focus();
         self.queue_redraw(output);
     }
 
-    fn popup_destroyed(&mut self, _surface: PopupSurface) {
-        // FIXME granular
-        self.queue_redraw_all();
+    fn popup_destroyed(&mut self, surface: PopupSurface) {
+        if let Ok(root) = find_popup_root_surface(&surface.into()) {
+            let root_window_output = self.monitor_set.find_window_and_output(&root);
+            if let Some((_window, output)) = root_window_output {
+                self.queue_redraw(output);
+            }
+        }
     }
 }
 

@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::process::Command;
 
 use smithay::backend::input::{
@@ -7,9 +6,7 @@ use smithay::backend::input::{
 };
 use smithay::input::keyboard::{keysyms, FilterResult, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::SERIAL_COUNTER;
-use smithay::wayland::shell::xdg::XdgShellHandler;
 
 use crate::niri::Niri;
 
@@ -140,54 +137,13 @@ impl Niri {
                             }
                         }
                         Action::CloseWindow => {
-                            if let Some(focus) = self.seat.get_keyboard().unwrap().current_focus() {
-                                // FIXME: is there a better way of doing this?
-                                for window in self
-                                    .monitor_set
-                                    .workspaces()
-                                    .flat_map(|workspace| workspace.space.elements())
-                                {
-                                    let found = Cell::new(false);
-                                    window.with_surfaces(|surface, _| {
-                                        if surface == &focus {
-                                            found.set(true);
-                                        }
-                                    });
-                                    if found.get() {
-                                        window.toplevel().send_close();
-                                        break;
-                                    }
-                                }
+                            if let Some(window) = self.monitor_set.focus() {
+                                window.toplevel().send_close();
                             }
                         }
                         Action::ToggleFullscreen => {
-                            if let Some(focus) = self.seat.get_keyboard().unwrap().current_focus() {
-                                // FIXME: is there a better way of doing this?
-                                let window = self
-                                    .monitor_set
-                                    .workspaces()
-                                    .flat_map(|workspace| workspace.space.elements())
-                                    .find(|window| {
-                                        let found = Cell::new(false);
-                                        window.with_surfaces(|surface, _| {
-                                            if surface == &focus {
-                                                found.set(true);
-                                            }
-                                        });
-                                        found.get()
-                                    });
-                                if let Some(window) = window {
-                                    let toplevel = window.toplevel().clone();
-                                    if toplevel
-                                        .current_state()
-                                        .states
-                                        .contains(xdg_toplevel::State::Fullscreen)
-                                    {
-                                        self.unfullscreen_request(toplevel);
-                                    } else {
-                                        self.fullscreen_request(toplevel, None);
-                                    }
-                                }
+                            if let Some(window) = self.monitor_set.focus() {
+                                // FIXME
                             }
                         }
                         Action::MoveLeft => {
@@ -353,9 +309,8 @@ impl Niri {
                 let button_state = event.state();
 
                 if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
-                    if let Some((_space, window, _loc)) =
-                        self.window_under(pointer.current_location())
-                    {
+                    if let Some(window) = self.window_under_cursor() {
+                        let window = window.clone();
                         self.monitor_set.activate_window(&window);
                     } else {
                         let output = self.output_under_cursor().unwrap();

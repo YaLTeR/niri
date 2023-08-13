@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
-use std::time::Duration;
 
+use smithay::backend::renderer::element::render_elements;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::{render_elements, RenderElement};
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::ImportAll;
-use smithay::desktop::space::{space_render_elements, SpaceRenderElements};
 use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
 use smithay::input::{Seat, SeatState};
@@ -39,7 +38,7 @@ pub struct Niri {
 
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
     // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
-    pub monitor_set: MonitorSet,
+    pub monitor_set: MonitorSet<Window>,
 
     // This space does not actually contain any windows, but all outputs are mapped into it
     // according to their global position.
@@ -200,7 +199,7 @@ impl Niri {
     }
 
     pub fn output_resized(&mut self, output: Output) {
-        // FIXME resize windows etc
+        self.monitor_set.update_output(&output);
         self.queue_redraw(output);
     }
 
@@ -217,40 +216,11 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
-    pub fn window_under(
-        &mut self,
-        pos: Point<f64, Logical>,
-    ) -> Option<(&mut Space<Window>, Window, Point<i32, Logical>)> {
+    pub fn window_under_cursor(&self) -> Option<&Window> {
+        let pos = self.seat.get_pointer().unwrap().current_location();
         let (output, pos_within_output) = self.output_under(pos)?;
-        let output = output.clone();
-
-        let space = &mut self.monitor_set.workspace_for_output(&output)?.space;
-        let output_pos = space.output_geometry(&output).unwrap().loc.to_f64();
-
-        let pos_within_space = pos_within_output + output_pos;
-        let (window, loc) = space.element_under(pos_within_space)?;
-        let window = window.clone();
-        Some((space, window, loc))
-    }
-
-    pub fn surface_under(
-        &mut self,
-        pos: Point<f64, Logical>,
-    ) -> Option<(WlSurface, Point<i32, Logical>)> {
-        let (output, pos_within_output) = self.output_under(pos)?;
-        let output = output.clone();
-
-        let space = &self.monitor_set.workspace_for_output(&output)?.space;
-        let output_pos = space.output_geometry(&output).unwrap().loc.to_f64();
-
-        let pos_within_space = pos_within_output + output_pos;
-        space
-            .element_under(pos_within_space)
-            .and_then(|(window, location)| {
-                window
-                    .surface_under(pos_within_space - location.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(s, p)| (s, p + location))
-            })
+        let (window, _loc) = self.monitor_set.window_under(output, pos_within_output)?;
+        Some(window)
     }
 
     /// Returns the surface under cursor and its position in the global space.
@@ -263,23 +233,17 @@ impl Niri {
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
         let (output, pos_within_output) = self.output_under(pos)?;
-        let output = output.clone();
+        let (window, win_pos_within_output) =
+            self.monitor_set.window_under(output, pos_within_output)?;
 
-        let workspace = &self.monitor_set.workspace_for_output(&output)?;
-        let space = &workspace.space;
-        let output_pos_in_local_space = space.output_geometry(&output).unwrap().loc;
-        let pos_within_space = pos_within_output + output_pos_in_local_space.to_f64();
-
-        let (surface, surface_loc_in_local_space) = space
-            .element_under(pos_within_space)
-            .and_then(|(window, location)| {
-                window
-                    .surface_under(pos_within_space - location.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(s, p)| (s, p + location))
-            })?;
-        let output_pos_in_global_space = self.global_space.output_geometry(&output).unwrap().loc;
-        let surface_loc_in_global_space =
-            surface_loc_in_local_space - output_pos_in_local_space + output_pos_in_global_space;
+        let (surface, surface_pos_within_output) = window
+            .surface_under(
+                pos_within_output - win_pos_within_output.to_f64(),
+                WindowSurfaceType::ALL,
+            )
+            .map(|(s, pos_within_window)| (s, pos_within_window + win_pos_within_output))?;
+        let output_pos_in_global_space = self.global_space.output_geometry(output).unwrap().loc;
+        let surface_loc_in_global_space = surface_pos_within_output + output_pos_in_global_space;
 
         Some((surface, surface_loc_in_global_space))
     }
@@ -338,8 +302,7 @@ impl Niri {
         assert!(state.queued_redraw.take().is_some());
         assert!(!state.waiting_for_vblank);
 
-        let space = &self.monitor_set.workspace_for_output(output).unwrap().space;
-        let elements = space_render_elements(backend.renderer(), [space], output, 1.).unwrap();
+        let elements = self.monitor_set.render_elements(backend.renderer(), output);
 
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
@@ -360,39 +323,16 @@ impl Niri {
 
         backend.render(self, output, &elements);
 
-        let space = &self.monitor_set.workspace_for_output(output).unwrap().space;
-        space.elements().for_each(|window| {
-            window.send_frame(
-                output,
-                self.start_time.elapsed(),
-                Some(Duration::ZERO),
-                |_, _| Some(output.clone()),
-            )
-        });
+        self.monitor_set
+            .send_frame(output, self.start_time.elapsed());
     }
 }
 
 render_elements! {
-    pub OutputRenderElements<R, E> where R: ImportAll;
-    Space = SpaceRenderElements<R, E>,
+    #[derive(Debug)]
+    pub OutputRenderElements<R> where R: ImportAll;
+    Wayland = WaylandSurfaceRenderElement<R>,
     Pointer = SolidColorRenderElement,
-}
-
-impl<R: ImportAll, E: RenderElement<R>> std::fmt::Debug for OutputRenderElements<R, E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OutputRenderElements::Space(_) => {
-                f.debug_tuple("OutputRenderElements::Space").finish()?
-            }
-            OutputRenderElements::Pointer(element) => f
-                .debug_tuple("OutputRenderElements::Pointer")
-                .field(element)
-                .finish()?,
-            _ => (),
-        }
-
-        Ok(())
-    }
 }
 
 #[derive(Default)]

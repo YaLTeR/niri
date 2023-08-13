@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use smithay::backend::renderer::damage::OutputDamageTracker;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportEgl;
 use smithay::backend::winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
@@ -37,10 +36,7 @@ impl Backend for Winit {
         &mut self,
         _niri: &mut Niri,
         _output: &Output,
-        elements: &[OutputRenderElements<
-            GlesRenderer,
-            WaylandSurfaceRenderElement<GlesRenderer>,
-        >],
+        elements: &[OutputRenderElements<GlesRenderer>],
     ) {
         let _span = tracy_client::span!("Winit::render");
 

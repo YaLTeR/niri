@@ -10,7 +10,6 @@ use smithay::backend::drm::compositor::DrmCompositor;
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
@@ -73,10 +72,7 @@ impl Backend for Tty {
         &mut self,
         niri: &mut Niri,
         output: &Output,
-        elements: &[OutputRenderElements<
-            GlesRenderer,
-            WaylandSurfaceRenderElement<GlesRenderer>,
-        >],
+        elements: &[OutputRenderElements<GlesRenderer>],
     ) {
         let _span = tracy_client::span!("Tty::render");
 

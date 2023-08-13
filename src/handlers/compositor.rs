@@ -68,10 +68,8 @@ impl CompositorHandler for Niri {
             }
 
             // This is a commit of a previously-mapped root or a non-toplevel root.
-            if let Some((window, space)) = self.monitor_set.find_window_and_space(surface) {
+            if let Some((window, output)) = self.monitor_set.find_window_and_output(surface) {
                 // This is a commit of a previously-mapped toplevel.
-                let output = space.outputs().next().unwrap().clone();
-
                 window.on_commit();
 
                 // This is a commit of a previously-mapped toplevel.
@@ -80,7 +78,6 @@ impl CompositorHandler for Niri {
 
                 if !is_mapped {
                     // The toplevel got unmapped.
-                    let window = window.clone();
                     self.monitor_set.remove_window(&window);
                     self.unmapped_windows.insert(surface.clone(), window);
                     self.update_focus();
@@ -101,9 +98,8 @@ impl CompositorHandler for Niri {
         }
 
         // This is a commit of a non-root or a non-toplevel root.
-        let root_window_space = self.monitor_set.find_window_and_space(&root_surface);
-        if let Some((window, space)) = root_window_space {
-            let output = space.outputs().next().unwrap().clone();
+        let root_window_output = self.monitor_set.find_window_and_output(&root_surface);
+        if let Some((window, output)) = root_window_output {
             window.on_commit();
             self.monitor_set.update_window(&window);
             self.queue_redraw(output);
@@ -114,9 +110,8 @@ impl CompositorHandler for Niri {
         self.popups_handle_commit(surface);
         if let Some(popup) = self.popups.find_popup(surface) {
             if let Ok(root) = find_popup_root_surface(&popup) {
-                let root_window_space = self.monitor_set.find_window_and_space(&root);
-                if let Some((_window, space)) = root_window_space {
-                    let output = space.outputs().next().unwrap().clone();
+                let root_window_output = self.monitor_set.find_window_and_output(&root);
+                if let Some((_window, output)) = root_window_output {
                     self.queue_redraw(output);
                 }
             }
