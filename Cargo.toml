@@ -37,3 +37,6 @@ features = [
 [features]
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
 
+[profile.release]
+overflow-checks = true
+
