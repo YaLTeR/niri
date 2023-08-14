@@ -34,6 +34,9 @@ use std::mem;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::utils::{
+    CropRenderElement, Relocate, RelocateRenderElement,
+};
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement;
@@ -52,7 +55,8 @@ const PADDING: i32 = 16;
 pub struct OutputId(String);
 
 pub type WorkspaceRenderElement<R> = WaylandSurfaceRenderElement<R>;
-pub type MonitorRenderElement<R> = WorkspaceRenderElement<R>;
+pub type MonitorRenderElement<R> =
+    RelocateRenderElement<CropRenderElement<WorkspaceRenderElement<R>>>;
 
 pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     fn request_size(&self, size: Size<i32, Logical>);
@@ -92,6 +96,8 @@ pub struct Monitor<W: LayoutElement> {
     workspaces: Vec<Workspace<W>>,
     /// Index of the currently active workspace.
     active_workspace_idx: usize,
+    /// Animation for workspace switching.
+    workspace_idx_anim: Option<Animation>,
 }
 
 #[derive(Debug)]
@@ -237,11 +243,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     ws.set_output(Some(output.clone()));
                 }
 
-                monitors.push(Monitor {
-                    output,
-                    workspaces,
-                    active_workspace_idx: 0,
-                });
+                monitors.push(Monitor::new(output, workspaces));
                 MonitorSet::Normal {
                     monitors,
                     primary_idx,
@@ -256,11 +258,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     workspace.set_output(Some(output.clone()));
                 }
 
-                let monitor = Monitor {
-                    output,
-                    workspaces,
-                    active_workspace_idx: 0,
-                };
+                let monitor = Monitor::new(output, workspaces);
                 MonitorSet::Normal {
                     monitors: vec![monitor],
                     primary_idx: 0,
@@ -481,7 +479,8 @@ impl<W: LayoutElement> MonitorSet<W> {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.has_window(window) {
                     *active_monitor_idx = monitor_idx;
-                    mon.active_workspace_idx = workspace_idx;
+                    // TODO
+                    assert_eq!(mon.active_workspace_idx, workspace_idx);
                     ws.activate_window(window);
                     break;
                 }
@@ -757,16 +756,41 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
 }
 
 impl<W: LayoutElement> Monitor<W> {
+    fn new(output: Output, workspaces: Vec<Workspace<W>>) -> Self {
+        Self {
+            output,
+            workspaces,
+            active_workspace_idx: 0,
+            workspace_idx_anim: None,
+        }
+    }
+
     fn active_workspace(&mut self) -> &mut Workspace<W> {
         &mut self.workspaces[self.active_workspace_idx]
     }
 
+    fn activate_workspace(&mut self, idx: usize) {
+        if self.active_workspace_idx == idx {
+            return;
+        }
+
+        let current_idx = self
+            .workspace_idx_anim
+            .as_ref()
+            .map(|anim| anim.value())
+            .unwrap_or(self.active_workspace_idx as f64);
+
+        self.active_workspace_idx = idx;
+
+        self.workspace_idx_anim = Some(Animation::new(
+            current_idx,
+            idx as f64,
+            Duration::from_millis(250),
+        ));
+    }
+
     pub fn add_window(&mut self, workspace_idx: usize, window: W, activate: bool) {
         let workspace = &mut self.workspaces[workspace_idx];
-
-        if activate {
-            self.active_workspace_idx = workspace_idx;
-        }
 
         workspace.add_window(window.clone(), activate);
 
@@ -775,9 +799,15 @@ impl<W: LayoutElement> Monitor<W> {
             let ws = Workspace::new(self.output.clone());
             self.workspaces.push(ws);
         }
+
+        if activate {
+            self.activate_workspace(workspace_idx);
+        }
     }
 
     fn clean_up_workspaces(&mut self) {
+        assert!(self.workspace_idx_anim.is_none());
+
         for idx in (0..self.workspaces.len() - 1).rev() {
             if self.active_workspace_idx == idx {
                 continue;
@@ -842,8 +872,6 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.remove_window(&window);
 
         self.add_window(new_idx, window, true);
-
-        self.clean_up_workspaces();
     }
 
     pub fn move_to_workspace_down(&mut self) {
@@ -864,18 +892,17 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.remove_window(&window);
 
         self.add_window(new_idx, window, true);
-
-        self.clean_up_workspaces();
     }
 
     pub fn switch_workspace_up(&mut self) {
-        self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
-        self.clean_up_workspaces();
+        self.activate_workspace(self.active_workspace_idx.saturating_sub(1));
     }
 
     pub fn switch_workspace_down(&mut self) {
-        self.active_workspace_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
-        self.clean_up_workspaces();
+        self.activate_workspace(min(
+            self.active_workspace_idx + 1,
+            self.workspaces.len() - 1,
+        ));
     }
 
     pub fn consume_into_column(&mut self) {
@@ -897,6 +924,14 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn advance_animations(&mut self, current_time: Duration) {
+        if let Some(anim) = &mut self.workspace_idx_anim {
+            anim.set_current_time(current_time);
+            if anim.is_done() {
+                self.workspace_idx_anim = None;
+                self.clean_up_workspaces();
+            }
+        }
+
         for ws in &mut self.workspaces {
             ws.advance_animations(current_time);
         }
@@ -907,8 +942,65 @@ impl Monitor<Window> {
     pub fn render_elements(
         &self,
         renderer: &mut GlesRenderer,
-    ) -> Vec<WorkspaceRenderElement<GlesRenderer>> {
-        self.workspaces[self.active_workspace_idx].render_elements(renderer)
+    ) -> Vec<MonitorRenderElement<GlesRenderer>> {
+        let output_transform = self.output.current_transform();
+        let output_mode = self.output.current_mode().unwrap();
+        let output_size = output_transform.transform_size(output_mode.size);
+
+        match &self.workspace_idx_anim {
+            Some(anim) => {
+                let render_idx = anim.value();
+                let below_idx = render_idx.floor() as usize;
+                let above_idx = render_idx.ceil() as usize;
+
+                let offset =
+                    ((render_idx - below_idx as f64) * output_size.h as f64).round() as i32;
+
+                let below = self.workspaces[below_idx].render_elements(renderer);
+                let above = self.workspaces[above_idx].render_elements(renderer);
+
+                let below = below.into_iter().filter_map(|elem| {
+                    Some(RelocateRenderElement::from_element(
+                        CropRenderElement::from_element(
+                            elem,
+                            1.,
+                            Rectangle::from_loc_and_size((0, 0), output_size),
+                        )?,
+                        (0, -offset),
+                        Relocate::Relative,
+                    ))
+                });
+                let above = above.into_iter().filter_map(|elem| {
+                    Some(RelocateRenderElement::from_element(
+                        CropRenderElement::from_element(
+                            elem,
+                            1.,
+                            Rectangle::from_loc_and_size((0, 0), output_size),
+                        )?,
+                        (0, -offset + output_size.h),
+                        Relocate::Relative,
+                    ))
+                });
+                below.chain(above).collect()
+            }
+            None => {
+                let elements = self.workspaces[self.active_workspace_idx].render_elements(renderer);
+                elements
+                    .into_iter()
+                    .filter_map(|elem| {
+                        Some(RelocateRenderElement::from_element(
+                            CropRenderElement::from_element(
+                                elem,
+                                1.,
+                                Rectangle::from_loc_and_size((0, 0), output_size),
+                            )?,
+                            (0, 0),
+                            Relocate::Relative,
+                        ))
+                    })
+                    .collect()
+            }
+        }
     }
 }
 
