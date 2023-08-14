@@ -51,7 +51,6 @@ pub struct OutputId(String);
 
 pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     fn request_size(&self, size: Size<i32, Logical>);
-    fn send_pending_configure(&self);
     fn min_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
     fn send_frame<T, F>(
@@ -148,15 +147,8 @@ impl OutputId {
 
 impl LayoutElement for Window {
     fn request_size(&self, size: Size<i32, Logical>) {
-        let toplevel = &self.toplevel();
-        toplevel.with_pending_state(|state| {
-            state.size = Some(size);
-        });
-        toplevel.send_pending_configure();
-    }
-
-    fn send_pending_configure(&self) {
-        self.toplevel().send_pending_configure();
+        self.toplevel()
+            .with_pending_state(|state| state.size = Some(size));
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
@@ -351,8 +343,6 @@ impl<W: LayoutElement> MonitorSet<W> {
         if activate {
             *active_monitor_idx = monitor_idx;
             monitor.active_workspace_idx = workspace_idx;
-            // Configure will be sent in add_window().
-            window.set_activate(true);
         }
 
         workspace.add_window(window.clone(), activate);
@@ -789,11 +779,6 @@ impl<W: LayoutElement> MonitorSet<W> {
         ws.window_under(pos_within_output)
     }
 
-    /// Refreshes the `Workspace`s.
-    pub fn refresh(&mut self) {
-        // TODO
-    }
-
     fn verify_invariants(&self) {
         let (monitors, &primary_idx, &active_monitor_idx) = match &self {
             MonitorSet::Normal {
@@ -848,13 +833,23 @@ impl<W: LayoutElement> MonitorSet<W> {
 }
 
 impl MonitorSet<Window> {
-    pub fn render_elements(
-        &self,
-        renderer: &mut GlesRenderer,
-        output: &Output,
-    ) -> Vec<WaylandSurfaceRenderElement<GlesRenderer>> {
-        let ws = self.workspace_for_output(output).unwrap();
-        ws.render_elements(renderer)
+    pub fn refresh(&self) {
+        let _span = tracy_client::span!("MonitorSet::refresh");
+
+        match self {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mon.workspaces {
+                        ws.refresh();
+                    }
+                }
+            }
+            MonitorSet::NoOutputs(workspaces) => {
+                for ws in workspaces {
+                    ws.refresh();
+                }
+            }
+        }
     }
 }
 
@@ -874,10 +869,6 @@ impl<W: LayoutElement> Workspace<W> {
             active_column_idx: 0,
             view_offset: 0,
         }
-    }
-
-    fn refresh(&self) {
-        // FIXME: proper overlap.
     }
 
     fn windows(&self) -> impl Iterator<Item = &W> + '_ {
@@ -952,15 +943,6 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn add_window(&mut self, window: W, activate: bool) {
         self.enter_output_for_window(&window);
-        // Configure will be sent in Column::new().
-        window.set_activate(activate);
-
-        if activate {
-            for win in self.windows() {
-                win.set_activate(false);
-                win.send_pending_configure();
-            }
-        }
 
         let idx = if self.columns.is_empty() {
             0
@@ -997,18 +979,10 @@ impl<W: LayoutElement> Workspace<W> {
             }
 
             self.active_column_idx = min(self.active_column_idx, self.columns.len() - 1);
-            let column = &self.columns[self.active_column_idx];
-            let window = &column.windows[column.active_window_idx];
-            window.set_activate(true);
-            window.send_pending_configure();
             return;
         }
 
         column.active_window_idx = min(column.active_window_idx, column.windows.len() - 1);
-        if self.active_column_idx == column_idx {
-            let window = &column.windows[column.active_window_idx];
-            window.set_activate(true);
-        }
         column.update_window_sizes(self.view_size);
     }
 
@@ -1022,15 +996,6 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     fn activate_window(&mut self, window: &W) {
-        for win in self.windows() {
-            if win != window {
-                win.set_activate(false);
-                win.send_pending_configure();
-            }
-        }
-        window.set_activate(true);
-        window.send_pending_configure();
-
         let column_idx = self
             .columns
             .iter()
@@ -1054,22 +1019,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     fn focus_left(&mut self) {
-        let new_idx = self.active_column_idx.saturating_sub(1);
-        if self.active_column_idx == new_idx {
-            return;
-        }
-
-        let column = &self.columns[self.active_column_idx];
-        let window = &column.windows[column.active_window_idx];
-        window.set_activate(false);
-        window.send_pending_configure();
-
-        self.active_column_idx = new_idx;
-
-        let column = &self.columns[self.active_column_idx];
-        let window = &column.windows[column.active_window_idx];
-        window.set_activate(true);
-        window.send_pending_configure();
+        self.active_column_idx = self.active_column_idx.saturating_sub(1);
     }
 
     fn focus_right(&mut self) {
@@ -1077,22 +1027,7 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let new_idx = min(self.active_column_idx + 1, self.columns.len() - 1);
-        if self.active_column_idx == new_idx {
-            return;
-        }
-
-        let column = &self.columns[self.active_column_idx];
-        let window = &column.windows[column.active_window_idx];
-        window.set_activate(false);
-        window.send_pending_configure();
-
-        self.active_column_idx = new_idx;
-
-        let column = &self.columns[self.active_column_idx];
-        let window = &column.windows[column.active_window_idx];
-        window.set_activate(true);
-        window.send_pending_configure();
+        self.active_column_idx = min(self.active_column_idx + 1, self.columns.len() - 1);
     }
 
     fn focus_down(&mut self) {
@@ -1232,7 +1167,17 @@ impl<W: LayoutElement> Workspace<W> {
 }
 
 impl Workspace<Window> {
-    fn render_elements(
+    fn refresh(&self) {
+        for (col_idx, col) in self.columns.iter().enumerate() {
+            for (win_idx, win) in col.windows.iter().enumerate() {
+                let active = self.active_column_idx == col_idx && col.active_window_idx == win_idx;
+                win.set_activated(active);
+                win.toplevel().send_pending_configure();
+            }
+        }
+    }
+
+    pub fn render_elements(
         &self,
         renderer: &mut GlesRenderer,
     ) -> Vec<WaylandSurfaceRenderElement<GlesRenderer>> {
@@ -1336,29 +1281,11 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn focus_up(&mut self) {
-        let new_idx = self.active_window_idx.saturating_sub(1);
-        if self.active_window_idx == new_idx {
-            return;
-        }
-
-        self.windows[self.active_window_idx].set_activate(false);
-        self.windows[self.active_window_idx].send_pending_configure();
-        self.windows[new_idx].set_activate(true);
-        self.windows[new_idx].send_pending_configure();
-        self.active_window_idx = new_idx;
+        self.active_window_idx = self.active_window_idx.saturating_sub(1);
     }
 
     fn focus_down(&mut self) {
-        let new_idx = min(self.active_window_idx + 1, self.windows.len() - 1);
-        if self.active_window_idx == new_idx {
-            return;
-        }
-
-        self.windows[self.active_window_idx].set_activate(false);
-        self.windows[self.active_window_idx].send_pending_configure();
-        self.windows[new_idx].set_activate(true);
-        self.windows[new_idx].send_pending_configure();
-        self.active_window_idx = new_idx;
+        self.active_window_idx = min(self.active_window_idx + 1, self.windows.len() - 1);
     }
 
     fn move_up(&mut self) {
