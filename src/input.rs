@@ -32,6 +32,7 @@ enum Action {
     SwitchWorkspaceUp,
     MoveToWorkspaceDown,
     MoveToWorkspaceUp,
+    ToggleWidth,
 }
 
 pub enum CompositorMod {
@@ -88,6 +89,7 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
         KEY_i => Action::SwitchWorkspaceUp,
         KEY_comma => Action::ConsumeIntoColumn,
         KEY_period => Action::ExpelFromColumn,
+        KEY_r => Action::ToggleWidth,
         _ => Action::None,
     }
 }
@@ -224,6 +226,9 @@ impl Niri {
                             self.update_focus();
                             // FIXME: granular
                             self.queue_redraw_all();
+                        }
+                        Action::ToggleWidth => {
+                            self.monitor_set.toggle_width();
                         }
                     }
                 }

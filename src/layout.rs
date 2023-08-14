@@ -50,6 +50,11 @@ use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 use crate::animation::Animation;
 
 const PADDING: i32 = 16;
+const WIDTH_PROPORTIONS: [ColumnWidth; 3] = [
+    ColumnWidth::Proportion(1. / 3.),
+    ColumnWidth::Proportion(0.5),
+    ColumnWidth::Proportion(2. / 3.),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
@@ -135,6 +140,11 @@ pub struct Workspace<W: LayoutElement> {
 enum ColumnWidth {
     /// Proportion of the current view width.
     Proportion(f64),
+    /// One of the proportion presets.
+    ///
+    /// This is separate from Proportion in order to be able to reliably cycle between preset
+    /// proportions.
+    PresetProportion(usize),
     /// Fixed width in logical pixels.
     Fixed(i32),
 }
@@ -199,6 +209,7 @@ impl ColumnWidth {
     fn resolve(self, view_width: i32) -> i32 {
         match self {
             ColumnWidth::Proportion(proportion) => (view_width as f64 * proportion).floor() as i32,
+            ColumnWidth::PresetProportion(idx) => WIDTH_PROPORTIONS[idx].resolve(view_width),
             ColumnWidth::Fixed(width) => width,
         }
     }
@@ -741,6 +752,13 @@ impl<W: LayoutElement> MonitorSet<W> {
             }
         }
     }
+
+    pub fn toggle_width(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.toggle_width();
+    }
 }
 
 impl MonitorSet<Window> {
@@ -953,6 +971,10 @@ impl<W: LayoutElement> Monitor<W> {
         for ws in &mut self.workspaces {
             ws.advance_animations(current_time);
         }
+    }
+
+    fn toggle_width(&mut self) {
+        self.active_workspace().toggle_width();
     }
 }
 
@@ -1362,6 +1384,14 @@ impl<W: LayoutElement> Workspace<W> {
 
         None
     }
+
+    fn toggle_width(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].toggle_width(self.view_size);
+    }
 }
 
 impl Workspace<Window> {
@@ -1509,6 +1539,21 @@ impl<W: LayoutElement> Column<W> {
     fn verify_invariants(&self) {
         assert!(!self.windows.is_empty(), "columns can't be empty");
         assert!(self.active_window_idx < self.windows.len());
+    }
+
+    fn toggle_width(&mut self, view_size: Size<i32, Logical>) {
+        let idx = match self.width {
+            ColumnWidth::PresetProportion(idx) => (idx + 1) % WIDTH_PROPORTIONS.len(),
+            _ => {
+                let current = self.size().w;
+                WIDTH_PROPORTIONS
+                    .into_iter()
+                    .position(|prop| prop.resolve(view_size.w - PADDING) - PADDING > current)
+                    .unwrap_or(0)
+            }
+        };
+        let width = ColumnWidth::PresetProportion(idx);
+        self.set_width(view_size, width);
     }
 }
 
