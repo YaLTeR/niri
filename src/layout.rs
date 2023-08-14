@@ -777,6 +777,21 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    fn clean_up_workspaces(&mut self) {
+        for idx in (0..self.workspaces.len() - 1).rev() {
+            if self.active_workspace_idx == idx {
+                continue;
+            }
+
+            if !self.workspaces[idx].has_windows() {
+                self.workspaces.remove(idx);
+                if self.active_workspace_idx > idx {
+                    self.active_workspace_idx -= 1;
+                }
+            }
+        }
+    }
+
     pub fn move_left(&mut self) {
         self.active_workspace().move_left();
     }
@@ -826,17 +841,15 @@ impl<W: LayoutElement> Monitor<W> {
         let window = column.windows[column.active_window_idx].clone();
         workspace.remove_window(&window);
 
-        if !workspace.has_windows() && source_workspace_idx != self.workspaces.len() - 1 {
-            self.workspaces.remove(source_workspace_idx);
-        }
-
         self.add_window(new_idx, window, true);
+
+        self.clean_up_workspaces();
     }
 
     pub fn move_to_workspace_down(&mut self) {
         let source_workspace_idx = self.active_workspace_idx;
 
-        let mut new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
+        let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
         if new_idx == source_workspace_idx {
             return;
         }
@@ -850,45 +863,19 @@ impl<W: LayoutElement> Monitor<W> {
         let window = column.windows[column.active_window_idx].clone();
         workspace.remove_window(&window);
 
-        if !workspace.has_windows() {
-            self.workspaces.remove(source_workspace_idx);
-            new_idx -= 1;
-        }
-
         self.add_window(new_idx, window, true);
+
+        self.clean_up_workspaces();
     }
 
     pub fn switch_workspace_up(&mut self) {
-        let source_workspace_idx = self.active_workspace_idx;
-
-        let new_idx = source_workspace_idx.saturating_sub(1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
-        self.active_workspace_idx = new_idx;
-
-        if !self.workspaces[source_workspace_idx].has_windows()
-            && source_workspace_idx != self.workspaces.len() - 1
-        {
-            self.workspaces.remove(source_workspace_idx);
-        }
+        self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
+        self.clean_up_workspaces();
     }
 
     pub fn switch_workspace_down(&mut self) {
-        let source_workspace_idx = self.active_workspace_idx;
-
-        let mut new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
-        if !self.workspaces[source_workspace_idx].has_windows() {
-            self.workspaces.remove(source_workspace_idx);
-            new_idx -= 1;
-        }
-
-        self.active_workspace_idx = new_idx;
+        self.active_workspace_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
+        self.clean_up_workspaces();
     }
 
     pub fn consume_into_column(&mut self) {
