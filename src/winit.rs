@@ -90,7 +90,7 @@ impl Winit {
             .insert_source(timer, move |_, _, data| {
                 let winit = data.winit.as_mut().unwrap();
                 winit.dispatch(&mut data.niri);
-                TimeoutAction::ToDuration(Duration::from_millis(16))
+                TimeoutAction::ToDuration(Duration::from_micros(16667))
             })
             .unwrap();
 
