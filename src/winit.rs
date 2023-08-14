@@ -40,14 +40,15 @@ impl Backend for Winit {
     ) {
         let _span = tracy_client::span!("Winit::render");
 
-        let size = self.backend.window_size().physical_size;
-        let damage = Rectangle::from_loc_and_size((0, 0), size);
-
         self.backend.bind().unwrap();
-        self.damage_tracker
-            .render_output(self.backend.renderer(), 0, elements, [0.1, 0.1, 0.1, 1.0])
+        let age = self.backend.buffer_age().unwrap();
+        let result = self
+            .damage_tracker
+            .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
             .unwrap();
-        self.backend.submit(Some(&[damage])).unwrap();
+        if let Some(damage) = result.damage {
+            self.backend.submit(Some(&damage)).unwrap();
+        }
     }
 }
 
