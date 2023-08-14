@@ -2,10 +2,14 @@
 
 The beginnings of a scrollable-tiling Wayland compositor.
 
+![](https://github.com/YaLTeR/niri/assets/1794388/b734da07-301a-452b-b201-d4789a3eca60)
+
 ## Status
 
 Heavily work in progress.
 The occasional thing works, but likely is in a half-broken state.
+
+https://github.com/YaLTeR/niri/assets/1794388/3713a563-d7a2-4c56-aa0b-b4986b5dc188
 
 ## Idea
 
@@ -15,8 +19,6 @@ Many things don't work as written yet.
 Niri implements scrollable tiling, heavily inspired by [PaperWM].
 Windows are arranged in columns on an infinite strip going to the right.
 Every column takes up as much height as possible, spread between its windows.
-
-![](https://github.com/YaLTeR/niri/assets/1794388/b734da07-301a-452b-b201-d4789a3eca60)
 
 With multiple monitors, every monitor has its own separate window strip.
 Windows can never "overflow" to an adjacent monitor.
