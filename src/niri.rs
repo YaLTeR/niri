@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use smithay::backend::renderer::element::render_elements;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::ImportAll;
 use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
@@ -29,7 +28,7 @@ use smithay::wayland::socket::ListeningSocketSource;
 
 use crate::backend::Backend;
 use crate::frame_clock::FrameClock;
-use crate::layout::MonitorSet;
+use crate::layout::{MonitorRenderElement, MonitorSet};
 use crate::LoopData;
 
 pub struct Niri {
@@ -307,9 +306,9 @@ impl Niri {
         assert!(state.queued_redraw.take().is_some());
         assert!(!state.waiting_for_vblank);
 
-        let ws = self.monitor_set.workspace_for_output_mut(output).unwrap();
-        ws.advance_animations(presentation_time);
-        let elements = ws.render_elements(backend.renderer());
+        let mon = self.monitor_set.monitor_for_output_mut(output).unwrap();
+        mon.advance_animations(presentation_time);
+        let elements = mon.render_elements(backend.renderer());
 
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
@@ -338,7 +337,7 @@ impl Niri {
 render_elements! {
     #[derive(Debug)]
     pub OutputRenderElements<R> where R: ImportAll;
-    Wayland = WaylandSurfaceRenderElement<R>,
+    Wayland = MonitorRenderElement<R>,
     Pointer = SolidColorRenderElement,
 }
 

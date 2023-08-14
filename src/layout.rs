@@ -51,6 +51,9 @@ const PADDING: i32 = 16;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
 
+pub type WorkspaceRenderElement<R> = WaylandSurfaceRenderElement<R>;
+pub type MonitorRenderElement<R> = WorkspaceRenderElement<R>;
+
 pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     fn request_size(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
@@ -342,20 +345,10 @@ impl<W: LayoutElement> MonitorSet<W> {
             panic!()
         };
 
-        let monitor = &mut monitors[monitor_idx];
-        let workspace = &mut monitor.workspaces[workspace_idx];
+        monitors[monitor_idx].add_window(workspace_idx, window, activate);
 
         if activate {
             *active_monitor_idx = monitor_idx;
-            monitor.active_workspace_idx = workspace_idx;
-        }
-
-        workspace.add_window(window.clone(), activate);
-
-        if workspace_idx == monitor.workspaces.len() - 1 {
-            // Insert a new empty workspace.
-            let ws = Workspace::new(monitor.output.clone());
-            monitor.workspaces.push(ws);
         }
     }
 
@@ -526,9 +519,18 @@ impl<W: LayoutElement> MonitorSet<W> {
         Some(&monitors[*active_monitor_idx].output)
     }
 
-    fn active_workspace(&mut self) -> Option<&mut Workspace<W>> {
-        let monitor = self.active_monitor()?;
-        Some(&mut monitor.workspaces[monitor.active_workspace_idx])
+    pub fn workspace_for_output(&self, output: &Output) -> Option<&Workspace<W>> {
+        let MonitorSet::Normal { monitors, .. } = self else {
+            return None;
+        };
+
+        monitors.iter().find_map(|monitor| {
+            if &monitor.output == output {
+                Some(&monitor.workspaces[monitor.active_workspace_idx])
+            } else {
+                None
+            }
+        })
     }
 
     fn active_monitor(&mut self) -> Option<&mut Monitor<W>> {
@@ -544,201 +546,112 @@ impl<W: LayoutElement> MonitorSet<W> {
         Some(&mut monitors[*active_monitor_idx])
     }
 
+    pub fn monitor_for_output_mut(&mut self, output: &Output) -> Option<&mut Monitor<W>> {
+        let MonitorSet::Normal { monitors, .. } = self else {
+            return None;
+        };
+
+        monitors
+            .iter_mut()
+            .find(|monitor| &monitor.output == output)
+    }
+
     pub fn move_left(&mut self) {
-        let Some(workspace) = self.active_workspace() else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-        workspace.move_left();
+        monitor.move_left();
     }
 
     pub fn move_right(&mut self) {
-        let Some(workspace) = self.active_workspace() else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-        workspace.move_right();
+        monitor.move_right();
     }
 
     pub fn move_down(&mut self) {
-        let Some(workspace) = self.active_workspace() else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-        workspace.move_down();
+        monitor.move_down();
     }
 
     pub fn move_up(&mut self) {
-        let Some(workspace) = self.active_workspace() else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-        workspace.move_up();
+        monitor.move_up();
     }
 
     pub fn focus_left(&mut self) {
-        let Some(workspace) = self.active_workspace() else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-        workspace.focus_left();
+        monitor.focus_left();
     }
 
     pub fn focus_right(&mut self) {
-        let Some(workspace) = self.active_workspace() else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-        workspace.focus_right();
+        monitor.focus_right();
     }
 
     pub fn focus_down(&mut self) {
-        let Some(workspace) = self.active_workspace() else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-        workspace.focus_down();
+        monitor.focus_down();
     }
 
     pub fn focus_up(&mut self) {
-        let Some(workspace) = self.active_workspace() else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-        workspace.focus_up();
+        monitor.focus_up();
     }
 
     pub fn move_to_workspace_up(&mut self) {
-        let MonitorSet::Normal {
-            monitors,
-            ref active_monitor_idx,
-            ..
-        } = self
-        else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-
-        let monitor = &mut monitors[*active_monitor_idx];
-        let source_workspace_idx = monitor.active_workspace_idx;
-
-        let new_idx = source_workspace_idx.saturating_sub(1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
-        let workspace = &mut monitor.workspaces[source_workspace_idx];
-        if workspace.columns.is_empty() {
-            return;
-        }
-
-        let column = &mut workspace.columns[workspace.active_column_idx];
-        let window = column.windows[column.active_window_idx].clone();
-        workspace.remove_window(&window);
-
-        if !workspace.has_windows() && source_workspace_idx != monitor.workspaces.len() - 1 {
-            monitor.workspaces.remove(source_workspace_idx);
-        }
-
-        self.add_window(*active_monitor_idx, new_idx, window, true);
+        monitor.move_to_workspace_up();
     }
 
     pub fn move_to_workspace_down(&mut self) {
-        let MonitorSet::Normal {
-            monitors,
-            ref active_monitor_idx,
-            ..
-        } = self
-        else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-
-        let monitor = &mut monitors[*active_monitor_idx];
-        let source_workspace_idx = monitor.active_workspace_idx;
-
-        let mut new_idx = min(source_workspace_idx + 1, monitor.workspaces.len() - 1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
-        let workspace = &mut monitor.workspaces[source_workspace_idx];
-        if workspace.columns.is_empty() {
-            return;
-        }
-
-        let column = &mut workspace.columns[workspace.active_column_idx];
-        let window = column.windows[column.active_window_idx].clone();
-        workspace.remove_window(&window);
-
-        if !workspace.has_windows() {
-            monitor.workspaces.remove(source_workspace_idx);
-            new_idx -= 1;
-        }
-
-        self.add_window(*active_monitor_idx, new_idx, window, true);
+        monitor.move_to_workspace_down();
     }
 
     pub fn switch_workspace_up(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-
-        let source_workspace_idx = monitor.active_workspace_idx;
-
-        let new_idx = source_workspace_idx.saturating_sub(1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
-        monitor.active_workspace_idx = new_idx;
-
-        if !monitor.workspaces[source_workspace_idx].has_windows()
-            && source_workspace_idx != monitor.workspaces.len() - 1
-        {
-            monitor.workspaces.remove(source_workspace_idx);
-        }
+        monitor.switch_workspace_up();
     }
 
     pub fn switch_workspace_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-
-        let source_workspace_idx = monitor.active_workspace_idx;
-
-        let mut new_idx = min(source_workspace_idx + 1, monitor.workspaces.len() - 1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
-        if !monitor.workspaces[source_workspace_idx].has_windows() {
-            monitor.workspaces.remove(source_workspace_idx);
-            new_idx -= 1;
-        }
-
-        monitor.active_workspace_idx = new_idx;
+        monitor.switch_workspace_down();
     }
 
     pub fn consume_into_column(&mut self) {
-        let MonitorSet::Normal {
-            monitors,
-            active_monitor_idx,
-            ..
-        } = self
-        else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-
-        let monitor = &mut monitors[*active_monitor_idx];
-
-        let workspace = &mut monitor.workspaces[monitor.active_workspace_idx];
-        workspace.consume_into_column();
+        monitor.consume_into_column();
     }
 
     pub fn expel_from_column(&mut self) {
-        let MonitorSet::Normal {
-            monitors,
-            active_monitor_idx,
-            ..
-        } = self
-        else {
+        let Some(monitor) = self.active_monitor() else {
             return;
         };
-
-        let monitor = &mut monitors[*active_monitor_idx];
-        let workspace = &mut monitor.workspaces[monitor.active_workspace_idx];
-        workspace.expel_from_column();
+        monitor.expel_from_column();
     }
 
     pub fn focus(&self) -> Option<&W> {
@@ -751,42 +664,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             return None;
         };
 
-        let monitor = &monitors[*active_monitor_idx];
-        let workspace = &monitor.workspaces[monitor.active_workspace_idx];
-        if !workspace.has_windows() {
-            return None;
-        }
-
-        let column = &workspace.columns[workspace.active_column_idx];
-        Some(&column.windows[column.active_window_idx])
-    }
-
-    pub fn workspace_for_output(&self, output: &Output) -> Option<&Workspace<W>> {
-        let MonitorSet::Normal { monitors, .. } = self else {
-            return None;
-        };
-
-        monitors.iter().find_map(|monitor| {
-            if &monitor.output == output {
-                Some(&monitor.workspaces[monitor.active_workspace_idx])
-            } else {
-                None
-            }
-        })
-    }
-
-    pub fn workspace_for_output_mut(&mut self, output: &Output) -> Option<&mut Workspace<W>> {
-        let MonitorSet::Normal { monitors, .. } = self else {
-            return None;
-        };
-
-        monitors.iter_mut().find_map(|monitor| {
-            if &monitor.output == output {
-                Some(&mut monitor.workspaces[monitor.active_workspace_idx])
-            } else {
-                None
-            }
-        })
+        monitors[*active_monitor_idx].focus()
     }
 
     pub fn window_under(
@@ -875,6 +753,175 @@ impl MonitorSet<Window> {
 impl<W: LayoutElement> Default for MonitorSet<W> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<W: LayoutElement> Monitor<W> {
+    fn active_workspace(&mut self) -> &mut Workspace<W> {
+        &mut self.workspaces[self.active_workspace_idx]
+    }
+
+    pub fn add_window(&mut self, workspace_idx: usize, window: W, activate: bool) {
+        let workspace = &mut self.workspaces[workspace_idx];
+
+        if activate {
+            self.active_workspace_idx = workspace_idx;
+        }
+
+        workspace.add_window(window.clone(), activate);
+
+        if workspace_idx == self.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            let ws = Workspace::new(self.output.clone());
+            self.workspaces.push(ws);
+        }
+    }
+
+    pub fn move_left(&mut self) {
+        self.active_workspace().move_left();
+    }
+
+    pub fn move_right(&mut self) {
+        self.active_workspace().move_right();
+    }
+
+    pub fn move_down(&mut self) {
+        self.active_workspace().move_down();
+    }
+
+    pub fn move_up(&mut self) {
+        self.active_workspace().move_up();
+    }
+
+    pub fn focus_left(&mut self) {
+        self.active_workspace().focus_left();
+    }
+
+    pub fn focus_right(&mut self) {
+        self.active_workspace().focus_right();
+    }
+
+    pub fn focus_down(&mut self) {
+        self.active_workspace().focus_down();
+    }
+
+    pub fn focus_up(&mut self) {
+        self.active_workspace().focus_up();
+    }
+
+    pub fn move_to_workspace_up(&mut self) {
+        let source_workspace_idx = self.active_workspace_idx;
+
+        let new_idx = source_workspace_idx.saturating_sub(1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.columns.is_empty() {
+            return;
+        }
+
+        let column = &mut workspace.columns[workspace.active_column_idx];
+        let window = column.windows[column.active_window_idx].clone();
+        workspace.remove_window(&window);
+
+        if !workspace.has_windows() && source_workspace_idx != self.workspaces.len() - 1 {
+            self.workspaces.remove(source_workspace_idx);
+        }
+
+        self.add_window(new_idx, window, true);
+    }
+
+    pub fn move_to_workspace_down(&mut self) {
+        let source_workspace_idx = self.active_workspace_idx;
+
+        let mut new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.columns.is_empty() {
+            return;
+        }
+
+        let column = &mut workspace.columns[workspace.active_column_idx];
+        let window = column.windows[column.active_window_idx].clone();
+        workspace.remove_window(&window);
+
+        if !workspace.has_windows() {
+            self.workspaces.remove(source_workspace_idx);
+            new_idx -= 1;
+        }
+
+        self.add_window(new_idx, window, true);
+    }
+
+    pub fn switch_workspace_up(&mut self) {
+        let source_workspace_idx = self.active_workspace_idx;
+
+        let new_idx = source_workspace_idx.saturating_sub(1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        self.active_workspace_idx = new_idx;
+
+        if !self.workspaces[source_workspace_idx].has_windows()
+            && source_workspace_idx != self.workspaces.len() - 1
+        {
+            self.workspaces.remove(source_workspace_idx);
+        }
+    }
+
+    pub fn switch_workspace_down(&mut self) {
+        let source_workspace_idx = self.active_workspace_idx;
+
+        let mut new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        if !self.workspaces[source_workspace_idx].has_windows() {
+            self.workspaces.remove(source_workspace_idx);
+            new_idx -= 1;
+        }
+
+        self.active_workspace_idx = new_idx;
+    }
+
+    pub fn consume_into_column(&mut self) {
+        self.active_workspace().consume_into_column();
+    }
+
+    pub fn expel_from_column(&mut self) {
+        self.active_workspace().expel_from_column();
+    }
+
+    pub fn focus(&self) -> Option<&W> {
+        let workspace = &self.workspaces[self.active_workspace_idx];
+        if !workspace.has_windows() {
+            return None;
+        }
+
+        let column = &workspace.columns[workspace.active_column_idx];
+        Some(&column.windows[column.active_window_idx])
+    }
+
+    pub fn advance_animations(&mut self, current_time: Duration) {
+        for ws in &mut self.workspaces {
+            ws.advance_animations(current_time);
+        }
+    }
+}
+
+impl Monitor<Window> {
+    pub fn render_elements(
+        &self,
+        renderer: &mut GlesRenderer,
+    ) -> Vec<WorkspaceRenderElement<GlesRenderer>> {
+        self.workspaces[self.active_workspace_idx].render_elements(renderer)
     }
 }
 
@@ -1234,7 +1281,7 @@ impl Workspace<Window> {
     pub fn render_elements(
         &self,
         renderer: &mut GlesRenderer,
-    ) -> Vec<WaylandSurfaceRenderElement<GlesRenderer>> {
+    ) -> Vec<WorkspaceRenderElement<GlesRenderer>> {
         let mut rv = vec![];
         let view_pos = self.view_pos();
 
