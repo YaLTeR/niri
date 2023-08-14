@@ -726,6 +726,21 @@ impl<W: LayoutElement> MonitorSet<W> {
             }
         }
     }
+
+    pub fn advance_animations(&mut self, current_time: Duration) {
+        match self {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    mon.advance_animations(current_time);
+                }
+            }
+            MonitorSet::NoOutputs(workspaces) => {
+                for ws in workspaces {
+                    ws.advance_animations(current_time);
+                }
+            }
+        }
+    }
 }
 
 impl MonitorSet<Window> {
