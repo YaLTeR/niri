@@ -41,10 +41,10 @@ impl Backend for Winit {
         let _span = tracy_client::span!("Winit::render");
 
         self.backend.bind().unwrap();
-        let age = self.backend.buffer_age().unwrap();
+        // Pass age 0 as the damage is artifacting for some reason.
         let result = self
             .damage_tracker
-            .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
+            .render_output(self.backend.renderer(), 0, elements, [0.1, 0.1, 0.1, 1.0])
             .unwrap();
         if let Some(damage) = result.damage {
             self.backend.submit(Some(&damage)).unwrap();
