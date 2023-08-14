@@ -759,6 +759,13 @@ impl<W: LayoutElement> MonitorSet<W> {
         };
         monitor.toggle_width();
     }
+
+    pub fn toggle_full_width(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.toggle_full_width();
+    }
 }
 
 impl MonitorSet<Window> {
@@ -975,6 +982,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     fn toggle_width(&mut self) {
         self.active_workspace().toggle_width();
+    }
+
+    fn toggle_full_width(&mut self) {
+        self.active_workspace().toggle_full_width();
     }
 }
 
@@ -1392,6 +1403,14 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.columns[self.active_column_idx].toggle_width(self.view_size);
     }
+
+    fn toggle_full_width(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].toggle_full_width(self.view_size);
+    }
 }
 
 impl Workspace<Window> {
@@ -1553,6 +1572,17 @@ impl<W: LayoutElement> Column<W> {
             }
         };
         let width = ColumnWidth::PresetProportion(idx);
+        self.set_width(view_size, width);
+    }
+
+    fn toggle_full_width(&mut self, view_size: Size<i32, Logical>) {
+        let width = match self.width {
+            ColumnWidth::Proportion(1.) => {
+                // FIXME: would be good to restore to previous width here.
+                ColumnWidth::default()
+            }
+            _ => ColumnWidth::Proportion(1.),
+        };
         self.set_width(view_size, width);
     }
 }

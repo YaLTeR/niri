@@ -33,6 +33,7 @@ enum Action {
     MoveToWorkspaceDown,
     MoveToWorkspaceUp,
     ToggleWidth,
+    ToggleFullWidth,
 }
 
 pub enum CompositorMod {
@@ -74,7 +75,7 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
         KEY_E => Action::Quit,
         KEY_t => Action::SpawnTerminal,
         KEY_q => Action::CloseWindow,
-        KEY_f => Action::ToggleFullscreen,
+        KEY_F => Action::ToggleFullscreen,
         KEY_h | KEY_Left if mods.ctrl => Action::MoveLeft,
         KEY_l | KEY_Right if mods.ctrl => Action::MoveRight,
         KEY_j | KEY_Down if mods.ctrl => Action::MoveDown,
@@ -90,6 +91,7 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
         KEY_comma => Action::ConsumeIntoColumn,
         KEY_period => Action::ExpelFromColumn,
         KEY_r => Action::ToggleWidth,
+        KEY_f => Action::ToggleFullWidth,
         _ => Action::None,
     }
 }
@@ -229,6 +231,9 @@ impl Niri {
                         }
                         Action::ToggleWidth => {
                             self.monitor_set.toggle_width();
+                        }
+                        Action::ToggleFullWidth => {
+                            self.monitor_set.toggle_full_width();
                         }
                     }
                 }
