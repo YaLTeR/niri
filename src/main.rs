@@ -3,6 +3,7 @@ extern crate tracing;
 
 mod handlers;
 
+mod animation;
 mod backend;
 mod frame_clock;
 mod grabs;

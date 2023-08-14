@@ -302,11 +302,14 @@ impl Niri {
     fn redraw(&mut self, backend: &mut dyn Backend, output: &Output) {
         let _span = tracy_client::span!("redraw");
         let state = self.output_state.get_mut(output).unwrap();
+        let presentation_time = state.frame_clock.next_presentation_time();
 
         assert!(state.queued_redraw.take().is_some());
         assert!(!state.waiting_for_vblank);
 
-        let elements = self.monitor_set.render_elements(backend.renderer(), output);
+        let ws = self.monitor_set.workspace_for_output_mut(output).unwrap();
+        ws.advance_animations(presentation_time);
+        let elements = ws.render_elements(backend.renderer());
 
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();

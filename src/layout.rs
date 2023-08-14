@@ -44,6 +44,8 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{with_states, SurfaceData};
 use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 
+use crate::animation::Animation;
+
 const PADDING: i32 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,6 +116,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Offset of the view computed from the active column.
     view_offset: i32,
+
+    /// Animation of the view offset, if one is currently ongoing.
+    view_offset_anim: Option<Animation>,
 }
 
 /// Width of a column.
@@ -770,6 +775,20 @@ impl<W: LayoutElement> MonitorSet<W> {
         })
     }
 
+    pub fn workspace_for_output_mut(&mut self, output: &Output) -> Option<&mut Workspace<W>> {
+        let MonitorSet::Normal { monitors, .. } = self else {
+            return None;
+        };
+
+        monitors.iter_mut().find_map(|monitor| {
+            if &monitor.output == output {
+                Some(&mut monitor.workspaces[monitor.active_workspace_idx])
+            } else {
+                None
+            }
+        })
+    }
+
     pub fn window_under(
         &self,
         output: &Output,
@@ -868,6 +887,20 @@ impl<W: LayoutElement> Workspace<W> {
             columns: vec![],
             active_column_idx: 0,
             view_offset: 0,
+            view_offset_anim: None,
+        }
+    }
+
+    pub fn advance_animations(&mut self, current_time: Duration) {
+        match &mut self.view_offset_anim {
+            Some(anim) => {
+                anim.set_current_time(current_time);
+                self.view_offset = anim.value().round() as i32;
+                if anim.is_done() {
+                    self.view_offset_anim = None;
+                }
+            }
+            None => (),
         }
     }
 
@@ -918,6 +951,25 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    fn activate_column(&mut self, idx: usize) {
+        if self.active_column_idx == idx {
+            return;
+        }
+
+        let current_x = self.view_pos();
+
+        self.active_column_idx = idx;
+
+        self.view_offset = 0;
+        let new_x = self.view_pos();
+
+        self.view_offset_anim = Some(Animation::new(
+            (current_x - new_x) as f64,
+            0.,
+            Duration::from_millis(250),
+        ));
+    }
+
     fn has_windows(&self) -> bool {
         self.windows().next().is_some()
     }
@@ -954,7 +1006,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns.insert(idx, column);
 
         if activate {
-            self.active_column_idx = idx;
+            self.activate_column(idx);
         }
     }
 
@@ -978,7 +1030,7 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             }
 
-            self.active_column_idx = min(self.active_column_idx, self.columns.len() - 1);
+            self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
             return;
         }
 
@@ -1004,22 +1056,24 @@ impl<W: LayoutElement> Workspace<W> {
         let column = &mut self.columns[column_idx];
 
         column.activate_window(window);
-        self.active_column_idx = column_idx;
+        self.activate_column(column_idx);
     }
 
     fn verify_invariants(&self) {
         assert!(self.view_size.w > 0);
         assert!(self.view_size.h > 0);
 
-        assert!(self.columns.is_empty() || self.active_column_idx < self.columns.len());
+        if !self.columns.is_empty() {
+            assert!(self.active_column_idx < self.columns.len());
 
-        for column in &self.columns {
-            column.verify_invariants();
+            for column in &self.columns {
+                column.verify_invariants();
+            }
         }
     }
 
     fn focus_left(&mut self) {
-        self.active_column_idx = self.active_column_idx.saturating_sub(1);
+        self.activate_column(self.active_column_idx.saturating_sub(1));
     }
 
     fn focus_right(&mut self) {
@@ -1027,7 +1081,7 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        self.active_column_idx = min(self.active_column_idx + 1, self.columns.len() - 1);
+        self.activate_column(min(self.active_column_idx + 1, self.columns.len() - 1));
     }
 
     fn focus_down(&mut self) {
@@ -1053,7 +1107,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         self.columns.swap(self.active_column_idx, new_idx);
-        self.active_column_idx = new_idx;
+        self.activate_column(new_idx);
     }
 
     fn move_right(&mut self) {
@@ -1067,7 +1121,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         self.columns.swap(self.active_column_idx, new_idx);
-        self.active_column_idx = new_idx;
+        self.activate_column(new_idx);
     }
 
     fn move_down(&mut self) {
