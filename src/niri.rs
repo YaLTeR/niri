@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
+use std::time::Duration;
 
 use smithay::backend::renderer::element::render_elements;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
@@ -27,6 +28,7 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 
 use crate::backend::Backend;
+use crate::frame_clock::FrameClock;
 use crate::layout::MonitorSet;
 use crate::LoopData;
 
@@ -71,6 +73,7 @@ pub struct OutputState {
     // Set to `true` when the output was redrawn and is waiting for a VBlank. Upon VBlank a redraw
     // will always be queued, so you cannot queue a redraw while waiting for a VBlank.
     pub waiting_for_vblank: bool,
+    pub frame_clock: FrameClock,
 }
 
 impl Niri {
@@ -164,7 +167,7 @@ impl Niri {
         }
     }
 
-    pub fn add_output(&mut self, output: Output) {
+    pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {
         let x = self
             .global_space
             .outputs()
@@ -180,6 +183,7 @@ impl Niri {
             global: output.create_global::<Niri>(&self.display_handle),
             queued_redraw: None,
             waiting_for_vblank: false,
+            frame_clock: FrameClock::new(refresh_interval),
         };
         let rv = self.output_state.insert(output, state);
         assert!(rv.is_none(), "output was already tracked");

@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::anyhow;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
 use smithay::backend::drm::compositor::DrmCompositor;
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent};
+use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -17,7 +18,9 @@ use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
-use smithay::reexports::drm::control::{connector, crtc, ModeTypeFlags};
+use smithay::reexports::drm::control::{
+    connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags,
+};
 use smithay::reexports::input::Libinput;
 use smithay::reexports::nix::fcntl::OFlag;
 use smithay::reexports::nix::libc::dev_t;
@@ -248,6 +251,16 @@ impl Tty {
                             error!("error marking frame as submitted: {err}");
                         }
 
+                        let presentation_time = match metadata.as_mut().unwrap().time {
+                            DrmEventTime::Monotonic(time) => time,
+                            DrmEventTime::Realtime(_) => {
+                                // Not supported.
+
+                                // This value will be ignored in the frame clock code.
+                                Duration::ZERO
+                            }
+                        };
+
                         // Send presentation time feedback.
                         // catacomb
                         //     .windows
@@ -263,11 +276,9 @@ impl Tty {
                             })
                             .unwrap()
                             .clone();
-                        data.niri
-                            .output_state
-                            .get_mut(&output)
-                            .unwrap()
-                            .waiting_for_vblank = false;
+                        let output_state = data.niri.output_state.get_mut(&output).unwrap();
+                        output_state.waiting_for_vblank = false;
+                        output_state.frame_clock.presented(presentation_time);
                         data.niri.queue_redraw(output);
                     }
                     DrmEvent::Error(error) => error!("DRM error: {error}"),
@@ -425,7 +436,7 @@ impl Tty {
         let res = device.surfaces.insert(crtc, compositor);
         assert!(res.is_none(), "crtc must not have already existed");
 
-        niri.add_output(output.clone());
+        niri.add_output(output.clone(), Some(refresh_interval(*mode)));
         niri.queue_redraw(output);
 
         Ok(())
@@ -463,4 +474,28 @@ impl Tty {
             error!("error changing VT: {err}");
         }
     }
+}
+
+fn refresh_interval(mode: DrmMode) -> Duration {
+    let clock = mode.clock() as u64;
+    let htotal = mode.hsync().2 as u64;
+    let vtotal = mode.vsync().2 as u64;
+
+    let mut numerator = htotal * vtotal * 1_000_000;
+    let mut denominator = clock;
+
+    if mode.flags().contains(ModeFlags::INTERLACE) {
+        denominator *= 2;
+    }
+
+    if mode.flags().contains(ModeFlags::DBLSCAN) {
+        numerator *= 2;
+    }
+
+    if mode.vscan() > 1 {
+        numerator *= mode.vscan() as u64;
+    }
+
+    let refresh_interval = (numerator + denominator / 2) / denominator;
+    Duration::from_nanos(refresh_interval)
 }

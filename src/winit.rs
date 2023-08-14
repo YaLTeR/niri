@@ -110,7 +110,7 @@ impl Winit {
         {
             warn!("error binding renderer wl_display: {err}");
         }
-        niri.add_output(self.output.clone());
+        niri.add_output(self.output.clone(), None);
     }
 
     fn dispatch(&mut self, niri: &mut Niri) {

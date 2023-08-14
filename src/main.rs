@@ -4,11 +4,13 @@ extern crate tracing;
 mod handlers;
 
 mod backend;
+mod frame_clock;
 mod grabs;
 mod input;
 mod layout;
 mod niri;
 mod tty;
+mod utils;
 mod winit;
 
 use std::env;
