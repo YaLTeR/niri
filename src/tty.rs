@@ -90,7 +90,6 @@ impl Backend for Tty {
         ) {
             Ok(res) => {
                 assert!(!res.needs_sync());
-                // debug!("{:?}", res);
                 if res.damage.is_some() {
                     match drm_compositor.queue_frame(()) {
                         Ok(()) => {
