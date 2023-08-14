@@ -794,6 +794,9 @@ impl<W: LayoutElement> Monitor<W> {
 
         workspace.add_window(window.clone(), activate);
 
+        // After adding a new window, workspace becomes this output's own.
+        workspace.original_output = OutputId::new(&self.output);
+
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
             let ws = Workspace::new(self.output.clone());
