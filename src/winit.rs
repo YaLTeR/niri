@@ -9,7 +9,7 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
-use smithay::utils::{Rectangle, Transform};
+use smithay::utils::Transform;
 
 use crate::backend::Backend;
 use crate::input::CompositorMod;
@@ -48,6 +48,7 @@ impl Backend for Winit {
             .unwrap();
         if let Some(damage) = result.damage {
             self.backend.submit(Some(&damage)).unwrap();
+            self.backend.window().request_redraw();
         }
     }
 }
