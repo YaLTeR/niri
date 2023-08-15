@@ -15,7 +15,7 @@ enum Action {
     None,
     Quit,
     ChangeVt(i32),
-    SpawnTerminal,
+    Spawn(String),
     CloseWindow,
     ToggleFullscreen,
     FocusLeft,
@@ -73,7 +73,7 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
     #[allow(non_upper_case_globals)] // wat
     match modified {
         KEY_E => Action::Quit,
-        KEY_t => Action::SpawnTerminal,
+        KEY_t => Action::Spawn("alacritty".to_owned()),
         KEY_q => Action::CloseWindow,
         KEY_F => Action::ToggleFullscreen,
         KEY_h | KEY_Left if mods.ctrl => Action::MoveLeft,
@@ -142,8 +142,8 @@ impl Niri {
                         Action::ChangeVt(vt) => {
                             (*change_vt)(vt);
                         }
-                        Action::SpawnTerminal => {
-                            if let Err(err) = Command::new("alacritty").spawn() {
+                        Action::Spawn(command) => {
+                            if let Err(err) = Command::new(command).spawn() {
                                 warn!("error spawning alacritty: {err}");
                             }
                         }
