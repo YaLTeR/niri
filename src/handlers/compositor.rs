@@ -27,9 +27,7 @@ impl CompositorHandler for Niri {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
-        tracy_client::Client::running()
-            .unwrap()
-            .message("client commit", 0);
+        let _span = tracy_client::span!("CompositorHandler::commit");
 
         on_commit_buffer_handler::<Self>(surface);
 
