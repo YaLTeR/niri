@@ -72,6 +72,7 @@ pub struct Niri {
 
     pub pointer_buffer: SolidColorBuffer,
     pub cursor_image: CursorImageStatus,
+    pub dnd_icon: Option<WlSurface>,
 }
 
 pub struct OutputState {
@@ -176,6 +177,7 @@ impl Niri {
             seat,
             pointer_buffer,
             cursor_image: CursorImageStatus::Default,
+            dnd_icon: None,
         }
     }
 
@@ -332,24 +334,9 @@ impl Niri {
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
 
-        if let CursorImageStatus::Surface(surface) = &mut self.cursor_image {
-            if !surface.alive() {
-                self.cursor_image = CursorImageStatus::Default;
-            }
-        }
-
-        match &self.cursor_image {
-            CursorImageStatus::Hidden => vec![],
-            CursorImageStatus::Default => vec![OutputRenderElements::DefaultPointer(
-                SolidColorRenderElement::from_buffer(
-                    &self.pointer_buffer,
-                    pointer_pos.to_physical_precise_round(1.),
-                    1.,
-                    1.,
-                ),
-            )],
-            CursorImageStatus::Surface(surface) => {
-                let hotspot = with_states(surface, |states| {
+        let hotspot = if let CursorImageStatus::Surface(surface) = &mut self.cursor_image {
+            if surface.alive() {
+                with_states(surface, |states| {
                     states
                         .data_map
                         .get::<Mutex<CursorImageAttributes>>()
@@ -357,12 +344,37 @@ impl Niri {
                         .lock()
                         .unwrap()
                         .hotspot
-                });
-                let pos = (pointer_pos - hotspot.to_f64()).to_physical_precise_round(1.);
-
-                render_elements_from_surface_tree(renderer, surface, pos, 1., 1.)
+                })
+            } else {
+                self.cursor_image = CursorImageStatus::Default;
+                (0, 0).into()
             }
+        } else {
+            (0, 0).into()
+        };
+        let pointer_pos = (pointer_pos - hotspot.to_f64()).to_physical_precise_round(1.);
+
+        let mut pointer_elements = match &self.cursor_image {
+            CursorImageStatus::Hidden => vec![],
+            CursorImageStatus::Default => vec![OutputRenderElements::DefaultPointer(
+                SolidColorRenderElement::from_buffer(&self.pointer_buffer, pointer_pos, 1., 1.),
+            )],
+            CursorImageStatus::Surface(surface) => {
+                render_elements_from_surface_tree(renderer, surface, pointer_pos, 1., 1.)
+            }
+        };
+
+        if let Some(dnd_icon) = &self.dnd_icon {
+            pointer_elements.extend(render_elements_from_surface_tree(
+                renderer,
+                dnd_icon,
+                pointer_pos,
+                1.,
+                1.,
+            ));
         }
+
+        pointer_elements
     }
 
     fn redraw(&mut self, backend: &mut dyn Backend, output: &Output) {

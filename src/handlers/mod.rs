@@ -4,6 +4,7 @@ mod xdg_shell;
 
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
+use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::wayland::data_device::{
@@ -42,8 +43,28 @@ impl DataDeviceHandler for Niri {
         &self.data_device_state
     }
 }
-impl ClientDndGrabHandler for Niri {}
+
+impl ClientDndGrabHandler for Niri {
+    fn started(
+        &mut self,
+        _source: Option<WlDataSource>,
+        icon: Option<WlSurface>,
+        _seat: Seat<Self>,
+    ) {
+        self.dnd_icon = icon;
+        // FIXME: more granular
+        self.queue_redraw_all();
+    }
+
+    fn dropped(&mut self, _seat: Seat<Self>) {
+        self.dnd_icon = None;
+        // FIXME: more granular
+        self.queue_redraw_all();
+    }
+}
+
 impl ServerDndGrabHandler for Niri {}
+
 delegate_data_device!(Niri);
 
 delegate_output!(Niri);
