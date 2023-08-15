@@ -101,7 +101,7 @@ fn main() {
     let res = if let Some(command) = &cli.command {
         std::process::Command::new(command).spawn()
     } else {
-        std::process::Command::new("weston-terminal").spawn()
+        std::process::Command::new("alacritty").spawn()
     };
     if let Err(err) = res {
         warn!("error spawning command: {err}");
