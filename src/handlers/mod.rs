@@ -2,13 +2,13 @@ mod compositor;
 mod layer_shell;
 mod xdg_shell;
 
-//
-// Wl Seat
+use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::wayland::data_device::{
-    set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, ServerDndGrabHandler,
+    set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
+    ServerDndGrabHandler,
 };
 use smithay::{delegate_data_device, delegate_output, delegate_seat};
 
@@ -22,11 +22,10 @@ impl SeatHandler for Niri {
         &mut self.seat_state
     }
 
-    fn cursor_image(
-        &mut self,
-        _seat: &Seat<Self>,
-        _image: smithay::input::pointer::CursorImageStatus,
-    ) {
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
+        self.cursor_image = image;
+        // FIXME: more granular
+        self.queue_redraw_all();
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
@@ -35,27 +34,16 @@ impl SeatHandler for Niri {
         set_data_device_focus(dh, seat, client);
     }
 }
-
 delegate_seat!(Niri);
-
-//
-// Wl Data Device
-//
 
 impl DataDeviceHandler for Niri {
     type SelectionUserData = ();
-    fn data_device_state(&self) -> &smithay::wayland::data_device::DataDeviceState {
+    fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
 }
-
 impl ClientDndGrabHandler for Niri {}
 impl ServerDndGrabHandler for Niri {}
-
 delegate_data_device!(Niri);
-
-//
-// Wl Output & Xdg Output
-//
 
 delegate_output!(Niri);

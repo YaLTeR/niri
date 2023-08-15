@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::surface::{
+    render_elements_from_surface_tree, WaylandSurfaceRenderElement,
+};
 use smithay::backend::renderer::element::{render_elements, AsRenderElements};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportAll;
@@ -12,6 +14,7 @@ use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::XkbConfig;
+use smithay::input::pointer::{CursorImageAttributes, CursorImageStatus};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
@@ -22,8 +25,8 @@ use smithay::reexports::wayland_server::backend::{
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{Logical, Point, Scale, SERIAL_COUNTER};
-use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::utils::{IsAlive, Logical, Point, Scale, SERIAL_COUNTER};
+use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
@@ -68,6 +71,7 @@ pub struct Niri {
     pub seat: Seat<Self>,
 
     pub pointer_buffer: SolidColorBuffer,
+    pub cursor_image: CursorImageStatus,
 }
 
 pub struct OutputState {
@@ -171,6 +175,7 @@ impl Niri {
 
             seat,
             pointer_buffer,
+            cursor_image: CursorImageStatus::Default,
         }
     }
 
@@ -319,16 +324,45 @@ impl Niri {
         state.queued_redraw = Some(idle);
     }
 
-    pub fn pointer_element(&mut self, output: &Output) -> OutputRenderElements<GlesRenderer> {
+    pub fn pointer_element(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+    ) -> Vec<OutputRenderElements<GlesRenderer>> {
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
 
-        OutputRenderElements::Pointer(SolidColorRenderElement::from_buffer(
-            &self.pointer_buffer,
-            pointer_pos.to_physical_precise_round(1.),
-            1.,
-            1.,
-        ))
+        if let CursorImageStatus::Surface(surface) = &mut self.cursor_image {
+            if !surface.alive() {
+                self.cursor_image = CursorImageStatus::Default;
+            }
+        }
+
+        match &self.cursor_image {
+            CursorImageStatus::Hidden => vec![],
+            CursorImageStatus::Default => vec![OutputRenderElements::DefaultPointer(
+                SolidColorRenderElement::from_buffer(
+                    &self.pointer_buffer,
+                    pointer_pos.to_physical_precise_round(1.),
+                    1.,
+                    1.,
+                ),
+            )],
+            CursorImageStatus::Surface(surface) => {
+                let hotspot = with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<CursorImageAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .hotspot
+                });
+                let pos = (pointer_pos - hotspot.to_f64()).to_physical_precise_round(1.);
+
+                render_elements_from_surface_tree(renderer, surface, pos, 1., 1.)
+            }
+        }
     }
 
     fn redraw(&mut self, backend: &mut dyn Backend, output: &Output) {
@@ -354,7 +388,7 @@ impl Niri {
             .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
 
         // The pointer goes on the top.
-        let mut elements = vec![self.pointer_element(output)];
+        let mut elements = self.pointer_element(renderer, output);
 
         // Then the upper layer-shell elements.
         elements.extend(
@@ -423,7 +457,7 @@ render_elements! {
     pub OutputRenderElements<R> where R: ImportAll;
     Monitor = MonitorRenderElement<R>,
     Wayland = WaylandSurfaceRenderElement<R>,
-    Pointer = SolidColorRenderElement,
+    DefaultPointer = SolidColorRenderElement,
 }
 
 #[derive(Default)]
