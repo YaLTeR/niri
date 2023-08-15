@@ -25,7 +25,6 @@ use smithay::utils::{Logical, Point, Scale, SERIAL_COUNTER};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
-use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
