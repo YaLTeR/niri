@@ -7,7 +7,7 @@ license = "GPL-3.0-or-later"
 edition = "2021"
 
 [dependencies]
-anyhow = { version = "1.0.72", features = ["backtrace"] }
+anyhow = { version = "1.0.72" }
 bitflags = "2.3.3"
 clap = { version = "4.3.21", features = ["derive"] }
 keyframe = { version = "1.1.1", default-features = false }
