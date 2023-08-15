@@ -3,13 +3,13 @@ use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
+use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::element::{render_elements, AsRenderElements};
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::ImportAll;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
 };
@@ -25,7 +25,7 @@ use smithay::reexports::wayland_server::backend::{
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{IsAlive, Logical, Point, Scale, SERIAL_COUNTER};
+use smithay::utils::{IsAlive, Logical, Physical, Point, Scale, SERIAL_COUNTER};
 use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
@@ -37,6 +37,7 @@ use smithay::wayland::socket::ListeningSocketSource;
 use crate::backend::Backend;
 use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
+use crate::utils::load_default_cursor;
 use crate::LoopData;
 
 pub struct Niri {
@@ -70,7 +71,7 @@ pub struct Niri {
 
     pub seat: Seat<Self>,
 
-    pub pointer_buffer: SolidColorBuffer,
+    pub pointer_buffer: Option<(TextureBuffer<GlesTexture>, Point<i32, Physical>)>,
     pub cursor_image: CursorImageStatus,
     pub dnd_icon: Option<WlSurface>,
 }
@@ -152,8 +153,6 @@ impl Niri {
             })
             .unwrap();
 
-        let pointer_buffer = SolidColorBuffer::new((16, 16), [1., 0.8, 0., 1.]);
-
         Self {
             start_time,
             event_loop,
@@ -175,7 +174,7 @@ impl Niri {
             popups: PopupManager::default(),
 
             seat,
-            pointer_buffer,
+            pointer_buffer: None,
             cursor_image: CursorImageStatus::Default,
             dnd_icon: None,
         }
@@ -334,6 +333,11 @@ impl Niri {
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
 
+        let (default_buffer, default_hotspot) = self
+            .pointer_buffer
+            .get_or_insert_with(|| load_default_cursor(renderer));
+        let default_hotspot = default_hotspot.to_logical(1);
+
         let hotspot = if let CursorImageStatus::Surface(surface) = &mut self.cursor_image {
             if surface.alive() {
                 with_states(surface, |states| {
@@ -347,17 +351,23 @@ impl Niri {
                 })
             } else {
                 self.cursor_image = CursorImageStatus::Default;
-                (0, 0).into()
+                default_hotspot
             }
         } else {
-            (0, 0).into()
+            default_hotspot
         };
         let pointer_pos = (pointer_pos - hotspot.to_f64()).to_physical_precise_round(1.);
 
         let mut pointer_elements = match &self.cursor_image {
             CursorImageStatus::Hidden => vec![],
             CursorImageStatus::Default => vec![OutputRenderElements::DefaultPointer(
-                SolidColorRenderElement::from_buffer(&self.pointer_buffer, pointer_pos, 1., 1.),
+                TextureRenderElement::from_texture_buffer(
+                    pointer_pos.to_f64(),
+                    default_buffer,
+                    None,
+                    None,
+                    None,
+                ),
             )],
             CursorImageStatus::Surface(surface) => {
                 render_elements_from_surface_tree(renderer, surface, pointer_pos, 1., 1.)
@@ -469,7 +479,7 @@ render_elements! {
     pub OutputRenderElements<R> where R: ImportAll;
     Monitor = MonitorRenderElement<R>,
     Wayland = WaylandSurfaceRenderElement<R>,
-    DefaultPointer = SolidColorRenderElement,
+    DefaultPointer = TextureRenderElement<<R as Renderer>::TextureId>,
 }
 
 #[derive(Default)]

@@ -16,6 +16,7 @@ smithay-drm-extras = { version = "0.1.0", path = "../smithay/smithay-drm-extras"
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tracy-client = { version = "0.15.2", default-features = false }
+xcursor = "0.3.4"
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay"
@@ -40,4 +41,3 @@ profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
 
 [profile.release]
 overflow-checks = true
-
