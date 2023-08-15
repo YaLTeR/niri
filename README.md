@@ -52,6 +52,8 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | Hotkey | Description |
 | ------ | ----------- |
 | <kbd>Mod</kbd><kbd>T</kbd> | Spawn `alacritty` |
+| <kbd>Mod</kbd><kbd>D</kbd> | Spawn `fuzzel` |
+| <kbd>Mod</kbd><kbd>N</kbd> | Spawn `nautilus` |
 | <kbd>Mod</kbd><kbd>Q</kbd> | Close the focused window |
 | <kbd>Mod</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>←</kbd> | Focus the window to the left |
 | <kbd>Mod</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>→</kbd> | Focus the window to the right |

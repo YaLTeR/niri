@@ -74,6 +74,8 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
     match modified {
         KEY_E => Action::Quit,
         KEY_t => Action::Spawn("alacritty".to_owned()),
+        KEY_d => Action::Spawn("fuzzel".to_owned()),
+        KEY_n => Action::Spawn("nautilus".to_owned()),
         KEY_q => Action::CloseWindow,
         KEY_F => Action::ToggleFullscreen,
         KEY_h | KEY_Left if mods.ctrl => Action::MoveLeft,
