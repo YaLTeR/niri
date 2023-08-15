@@ -3,10 +3,13 @@ use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use std::time::Duration;
 
-use smithay::backend::renderer::element::render_elements;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::{render_elements, AsRenderElements};
 use smithay::backend::renderer::ImportAll;
-use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
+use smithay::desktop::{
+    layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
+};
 use smithay::input::keyboard::XkbConfig;
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
@@ -18,10 +21,12 @@ use smithay::reexports::wayland_server::backend::{
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Scale, SERIAL_COUNTER};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::seat::WaylandFocus;
+use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
@@ -53,6 +58,7 @@ pub struct Niri {
     // Smithay state.
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    pub layer_shell_state: WlrLayerShellState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Self>,
@@ -95,6 +101,7 @@ impl Niri {
                 WmCapabilities::WindowMenu,
             ],
         );
+        let layer_shell_state = WlrLayerShellState::new::<Self>(&display_handle);
         let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
         let mut seat_state = SeatState::new();
@@ -155,6 +162,7 @@ impl Niri {
 
             compositor_state,
             xdg_shell_state,
+            layer_shell_state,
             shm_state,
             output_manager_state,
             seat_state,
@@ -203,6 +211,7 @@ impl Niri {
 
     pub fn output_resized(&mut self, output: Output) {
         self.monitor_set.update_output(&output);
+        layer_map_for_output(&output).arrange();
         self.queue_redraw(output);
     }
 
@@ -256,11 +265,23 @@ impl Niri {
         self.global_space.output_under(pos).next().cloned()
     }
 
+    fn layer_surface_focus(&self) -> Option<WlSurface> {
+        let output = self.monitor_set.active_output()?;
+        let layers = layer_map_for_output(output);
+        let surface = layers
+            .layers_on(Layer::Overlay)
+            .chain(layers.layers_on(Layer::Top))
+            .find(|surface| surface.can_receive_keyboard_focus())?;
+
+        Some(surface.wl_surface().clone())
+    }
+
     pub fn update_focus(&mut self) {
-        let focus = self
-            .monitor_set
-            .focus()
-            .map(|win| win.toplevel().wl_surface().clone());
+        let focus = self.layer_surface_focus().or_else(|| {
+            self.monitor_set
+                .focus()
+                .map(|win| win.toplevel().wl_surface().clone())
+        });
         let keyboard = self.seat.get_keyboard().unwrap();
         if keyboard.current_focus() != focus {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
@@ -306,38 +327,100 @@ impl Niri {
         assert!(state.queued_redraw.take().is_some());
         assert!(!state.waiting_for_vblank);
 
+        let renderer = backend.renderer();
+
         let mon = self.monitor_set.monitor_for_output_mut(output).unwrap();
         mon.advance_animations(presentation_time);
-        let elements = mon.render_elements(backend.renderer());
+        // Get monitor elements.
+        let monitor_elements = mon.render_elements(renderer);
 
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
 
-        let mut elements: Vec<_> = elements
-            .into_iter()
-            .map(OutputRenderElements::from)
-            .collect();
-        elements.insert(
-            0,
-            OutputRenderElements::Pointer(SolidColorRenderElement::from_buffer(
+        // Get layer-shell elements.
+        let layer_map = layer_map_for_output(output);
+        let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
+            .layers()
+            .rev()
+            .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
+
+        // The pointer goes on the top.
+        let mut elements = vec![OutputRenderElements::Pointer(
+            SolidColorRenderElement::from_buffer(
                 &self.pointer_buffer,
                 pointer_pos.to_physical_precise_round(1.),
                 1.,
                 1.,
-            )),
+            ),
+        )];
+
+        // Then the upper layer-shell elements.
+        elements.extend(
+            upper
+                .into_iter()
+                .filter_map(|surface| {
+                    layer_map
+                        .layer_geometry(surface)
+                        .map(|geo| (geo.loc, surface))
+                })
+                .flat_map(|(loc, surface)| {
+                    surface
+                        .render_elements(
+                            renderer,
+                            loc.to_physical_precise_round(1.),
+                            Scale::from(1.),
+                            1.,
+                        )
+                        .into_iter()
+                        .map(OutputRenderElements::Wayland)
+                }),
         );
 
+        // Then the regular monitor elements.
+        elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
+
+        // Then the lower layer-shell elements.
+        elements.extend(
+            lower
+                .into_iter()
+                .filter_map(|surface| {
+                    layer_map
+                        .layer_geometry(surface)
+                        .map(|geo| (geo.loc, surface))
+                })
+                .flat_map(|(loc, surface)| {
+                    surface
+                        .render_elements(
+                            renderer,
+                            loc.to_physical_precise_round(1.),
+                            Scale::from(1.),
+                            1.,
+                        )
+                        .into_iter()
+                        .map(OutputRenderElements::Wayland)
+                }),
+        );
+
+        // Hand it over to the backend.
         backend.render(self, output, &elements);
 
-        self.monitor_set
-            .send_frame(output, self.start_time.elapsed());
+        // Send frame callbacks.
+        let frame_callback_time = self.start_time.elapsed();
+        self.monitor_set.send_frame(output, frame_callback_time);
+
+        for surface in layer_map.layers() {
+            surface.send_frame(output, frame_callback_time, None, |_, _| {
+                Some(output.clone())
+            });
+        }
     }
 }
 
 render_elements! {
     #[derive(Debug)]
     pub OutputRenderElements<R> where R: ImportAll;
-    Wayland = MonitorRenderElement<R>,
+    Monitor = MonitorRenderElement<R>,
+    Wayland = WaylandSurfaceRenderElement<R>,
     Pointer = SolidColorRenderElement,
 }
 

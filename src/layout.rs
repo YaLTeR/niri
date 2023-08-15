@@ -566,6 +566,16 @@ impl<W: LayoutElement> MonitorSet<W> {
             .find(|monitor| &monitor.output == output)
     }
 
+    pub fn outputs(&self) -> impl Iterator<Item = &Output> + '_ {
+        let monitors = if let MonitorSet::Normal { monitors, .. } = self {
+            &monitors[..]
+        } else {
+            &[][..]
+        };
+
+        monitors.iter().map(|mon| &mon.output)
+    }
+
     pub fn move_left(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;

@@ -112,6 +112,9 @@ impl CompositorHandler for Niri {
                 }
             }
         }
+
+        // This might be a layer-shell surface.
+        self.layer_shell_handle_commit(surface);
     }
 }
 
