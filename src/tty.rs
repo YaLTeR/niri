@@ -122,9 +122,10 @@ impl Tty {
 
         let input_backend = LibinputInputBackend::new(libinput.clone());
         event_loop
-            .insert_source(input_backend, |event, _, data| {
+            .insert_source(input_backend, |mut event, _, data| {
                 let tty = data.tty.as_mut().unwrap();
                 let mut change_vt = |vt| tty.change_vt(vt);
+                data.niri.process_libinput_event(&mut event);
                 data.niri
                     .process_input_event(&mut change_vt, CompositorMod::Super, event);
             })

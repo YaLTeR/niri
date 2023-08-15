@@ -5,6 +5,7 @@ use smithay::backend::input::{
     KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     TabletToolEvent, TabletToolTipEvent, TabletToolTipState,
 };
+use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::utils::SERIAL_COUNTER;
@@ -412,6 +413,18 @@ impl Niri {
                 };
             }
             _ => {}
+        }
+    }
+
+    pub fn process_libinput_event(&mut self, event: &mut InputEvent<LibinputInputBackend>) {
+        if let InputEvent::DeviceAdded { device } = event {
+            // According to Mutter code, this setting is specific to touchpads.
+            let is_touchpad = device.config_tap_finger_count() > 0;
+            if is_touchpad {
+                let _ = device.config_tap_set_enabled(true);
+                let _ = device.config_scroll_set_natural_scroll_enabled(true);
+                let _ = device.config_accel_set_speed(0.2);
+            }
         }
     }
 }
