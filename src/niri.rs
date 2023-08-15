@@ -6,6 +6,7 @@ use std::time::Duration;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::{render_elements, AsRenderElements};
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportAll;
 use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
@@ -318,6 +319,18 @@ impl Niri {
         state.queued_redraw = Some(idle);
     }
 
+    pub fn pointer_element(&mut self, output: &Output) -> OutputRenderElements<GlesRenderer> {
+        let output_pos = self.global_space.output_geometry(output).unwrap().loc;
+        let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
+
+        OutputRenderElements::Pointer(SolidColorRenderElement::from_buffer(
+            &self.pointer_buffer,
+            pointer_pos.to_physical_precise_round(1.),
+            1.,
+            1.,
+        ))
+    }
+
     fn redraw(&mut self, backend: &mut dyn Backend, output: &Output) {
         let _span = tracy_client::span!("redraw");
         let state = self.output_state.get_mut(output).unwrap();
@@ -333,9 +346,6 @@ impl Niri {
         // Get monitor elements.
         let monitor_elements = mon.render_elements(renderer);
 
-        let output_pos = self.global_space.output_geometry(output).unwrap().loc;
-        let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
-
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
         let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
@@ -344,14 +354,7 @@ impl Niri {
             .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
 
         // The pointer goes on the top.
-        let mut elements = vec![OutputRenderElements::Pointer(
-            SolidColorRenderElement::from_buffer(
-                &self.pointer_buffer,
-                pointer_pos.to_physical_precise_round(1.),
-                1.,
-                1.,
-            ),
-        )];
+        let mut elements = vec![self.pointer_element(output)];
 
         // Then the upper layer-shell elements.
         elements.extend(
