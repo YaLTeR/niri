@@ -55,8 +55,6 @@ impl CompositorHandler for Niri {
 
                     let output = self.monitor_set.active_output().unwrap().clone();
                     self.monitor_set.add_window_to_output(&output, window, true);
-                    self.update_focus();
-
                     self.queue_redraw(output);
                     return;
                 }
@@ -80,8 +78,6 @@ impl CompositorHandler for Niri {
                     // The toplevel got unmapped.
                     self.monitor_set.remove_window(&window);
                     self.unmapped_windows.insert(surface.clone(), window);
-                    self.update_focus();
-
                     self.queue_redraw(output);
                     return;
                 }

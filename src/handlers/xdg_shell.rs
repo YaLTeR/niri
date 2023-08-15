@@ -241,7 +241,6 @@ impl XdgShellHandler for Niri {
             .find_window_and_output(surface.wl_surface())
             .unwrap();
         self.monitor_set.remove_window(&window);
-        self.update_focus();
         self.queue_redraw(output);
     }
 

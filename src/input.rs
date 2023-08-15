@@ -179,53 +179,43 @@ impl Niri {
                         }
                         Action::FocusLeft => {
                             self.monitor_set.focus_left();
-                            self.update_focus();
                         }
                         Action::FocusRight => {
                             self.monitor_set.focus_right();
-                            self.update_focus();
                         }
                         Action::FocusDown => {
                             self.monitor_set.focus_down();
-                            self.update_focus();
                         }
                         Action::FocusUp => {
                             self.monitor_set.focus_up();
-                            self.update_focus();
                         }
                         Action::MoveToWorkspaceDown => {
                             self.monitor_set.move_to_workspace_down();
-                            self.update_focus();
                             // FIXME: granular
                             self.queue_redraw_all();
                         }
                         Action::MoveToWorkspaceUp => {
                             self.monitor_set.move_to_workspace_up();
-                            self.update_focus();
                             // FIXME: granular
                             self.queue_redraw_all();
                         }
                         Action::SwitchWorkspaceDown => {
                             self.monitor_set.switch_workspace_down();
-                            self.update_focus();
                             // FIXME: granular
                             self.queue_redraw_all();
                         }
                         Action::SwitchWorkspaceUp => {
                             self.monitor_set.switch_workspace_up();
-                            self.update_focus();
                             // FIXME: granular
                             self.queue_redraw_all();
                         }
                         Action::ConsumeIntoColumn => {
                             self.monitor_set.consume_into_column();
-                            self.update_focus();
                             // FIXME: granular
                             self.queue_redraw_all();
                         }
                         Action::ExpelFromColumn => {
                             self.monitor_set.expel_from_column();
-                            self.update_focus();
                             // FIXME: granular
                             self.queue_redraw_all();
                         }
@@ -333,8 +323,6 @@ impl Niri {
                         let output = self.output_under_cursor().unwrap();
                         self.monitor_set.activate_output(&output);
                     }
-
-                    self.update_focus();
                 };
 
                 pointer.button(

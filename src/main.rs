@@ -114,6 +114,7 @@ fn main() {
             // These should be called periodically, before flushing the clients.
             data.niri.monitor_set.refresh();
             data.niri.popups.cleanup();
+            data.niri.update_focus();
 
             {
                 let _span = tracy_client::span!("flush_clients");
