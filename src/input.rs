@@ -3,6 +3,7 @@ use std::process::Command;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
     KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+    TabletToolEvent, TabletToolTipEvent, TabletToolTipState,
 };
 use smithay::input::keyboard::{keysyms, FilterResult, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
@@ -281,7 +282,6 @@ impl Niri {
                 self.queue_redraw_all();
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                // FIXME: allow mapping tablet to different outputs.
                 let output = self.global_space.outputs().next().unwrap();
 
                 let output_geo = self.global_space.output_geometry(output).unwrap();
@@ -368,6 +368,48 @@ impl Niri {
                 }
 
                 self.seat.get_pointer().unwrap().axis(self, frame);
+            }
+            // FIXME: tablet_tool protocol
+            InputEvent::TabletToolAxis { event, .. } => {
+                // FIXME: allow mapping tablet to different outputs.
+                let output = self.global_space.outputs().next().unwrap();
+
+                let output_geo = self.global_space.output_geometry(output).unwrap();
+
+                let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
+
+                let serial = SERIAL_COUNTER.next_serial();
+
+                let pointer = self.seat.get_pointer().unwrap();
+
+                let under = self.surface_under_and_global_space(pos);
+
+                pointer.motion(
+                    self,
+                    under,
+                    &MotionEvent {
+                        location: pos,
+                        serial,
+                        time: event.time_msec(),
+                    },
+                );
+
+                // Redraw to update the cursor position.
+                // FIXME: redraw only outputs overlapping the cursor.
+                self.queue_redraw_all();
+            }
+            InputEvent::TabletToolTip { event, .. } => {
+                let pointer = self.seat.get_pointer().unwrap();
+
+                if event.tip_state() == TabletToolTipState::Down && !pointer.is_grabbed() {
+                    if let Some(window) = self.window_under_cursor() {
+                        let window = window.clone();
+                        self.monitor_set.activate_window(&window);
+                    } else {
+                        let output = self.output_under_cursor().unwrap();
+                        self.monitor_set.activate_output(&output);
+                    }
+                };
             }
             _ => {}
         }
