@@ -7,7 +7,7 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::reexports::nix::time::{clock_gettime, ClockId};
-use smithay::utils::{Physical, Point, Transform};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Transform};
 use xcursor::parser::parse_xcursor;
 use xcursor::CursorTheme;
 
@@ -16,6 +16,10 @@ static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
 
 pub fn get_monotonic_time() -> Duration {
     Duration::from(clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap())
+}
+
+pub fn center(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
+    rect.loc + rect.size.downscale(2).to_point()
 }
 
 fn load_xcursor() -> anyhow::Result<xcursor::parser::Image> {

@@ -34,6 +34,14 @@ enum Action {
     SwitchWorkspaceUp,
     MoveToWorkspaceDown,
     MoveToWorkspaceUp,
+    FocusMonitorLeft,
+    FocusMonitorRight,
+    FocusMonitorDown,
+    FocusMonitorUp,
+    MoveToMonitorLeft,
+    MoveToMonitorRight,
+    MoveToMonitorDown,
+    MoveToMonitorUp,
     ToggleWidth,
     ToggleFullWidth,
 }
@@ -80,22 +88,35 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
         KEY_n => Action::Spawn("nautilus".to_owned()),
         KEY_q => Action::CloseWindow,
         KEY_F => Action::ToggleFullscreen,
-        KEY_h | KEY_Left if mods.ctrl => Action::MoveLeft,
-        KEY_l | KEY_Right if mods.ctrl => Action::MoveRight,
-        KEY_j | KEY_Down if mods.ctrl => Action::MoveDown,
-        KEY_k | KEY_Up if mods.ctrl => Action::MoveUp,
-        KEY_h | KEY_Left => Action::FocusLeft,
-        KEY_l | KEY_Right => Action::FocusRight,
-        KEY_j | KEY_Down => Action::FocusDown,
-        KEY_k | KEY_Up => Action::FocusUp,
-        KEY_u if mods.ctrl => Action::MoveToWorkspaceDown,
-        KEY_i if mods.ctrl => Action::MoveToWorkspaceUp,
-        KEY_u => Action::SwitchWorkspaceDown,
-        KEY_i => Action::SwitchWorkspaceUp,
         KEY_comma => Action::ConsumeIntoColumn,
         KEY_period => Action::ExpelFromColumn,
         KEY_r => Action::ToggleWidth,
         KEY_f => Action::ToggleFullWidth,
+        // Move to monitor.
+        KEY_H | KEY_Left if mods.shift && mods.ctrl => Action::MoveToMonitorLeft,
+        KEY_L | KEY_Right if mods.shift && mods.ctrl => Action::MoveToMonitorRight,
+        KEY_J | KEY_Down if mods.shift && mods.ctrl => Action::MoveToMonitorDown,
+        KEY_K | KEY_Up if mods.shift && mods.ctrl => Action::MoveToMonitorUp,
+        // Focus monitor.
+        KEY_H | KEY_Left if mods.shift => Action::FocusMonitorLeft,
+        KEY_L | KEY_Right if mods.shift => Action::FocusMonitorRight,
+        KEY_J | KEY_Down if mods.shift => Action::FocusMonitorDown,
+        KEY_K | KEY_Up if mods.shift => Action::FocusMonitorUp,
+        // Move.
+        KEY_h | KEY_Left if mods.ctrl => Action::MoveLeft,
+        KEY_l | KEY_Right if mods.ctrl => Action::MoveRight,
+        KEY_j | KEY_Down if mods.ctrl => Action::MoveDown,
+        KEY_k | KEY_Up if mods.ctrl => Action::MoveUp,
+        // Focus.
+        KEY_h | KEY_Left => Action::FocusLeft,
+        KEY_l | KEY_Right => Action::FocusRight,
+        KEY_j | KEY_Down => Action::FocusDown,
+        KEY_k | KEY_Up => Action::FocusUp,
+        // Workspaces.
+        KEY_u if mods.ctrl => Action::MoveToWorkspaceDown,
+        KEY_i if mods.ctrl => Action::MoveToWorkspaceUp,
+        KEY_u => Action::SwitchWorkspaceDown,
+        KEY_i => Action::SwitchWorkspaceUp,
         _ => Action::None,
     }
 }
@@ -228,6 +249,54 @@ impl Niri {
                         }
                         Action::ToggleFullWidth => {
                             self.monitor_set.toggle_full_width();
+                        }
+                        Action::FocusMonitorLeft => {
+                            if let Some(output) = self.output_left() {
+                                self.monitor_set.focus_output(&output);
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                        Action::FocusMonitorRight => {
+                            if let Some(output) = self.output_right() {
+                                self.monitor_set.focus_output(&output);
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                        Action::FocusMonitorDown => {
+                            if let Some(output) = self.output_down() {
+                                self.monitor_set.focus_output(&output);
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                        Action::FocusMonitorUp => {
+                            if let Some(output) = self.output_up() {
+                                self.monitor_set.focus_output(&output);
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                        Action::MoveToMonitorLeft => {
+                            if let Some(output) = self.output_left() {
+                                self.monitor_set.move_to_output(&output);
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                        Action::MoveToMonitorRight => {
+                            if let Some(output) = self.output_right() {
+                                self.monitor_set.move_to_output(&output);
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                        Action::MoveToMonitorDown => {
+                            if let Some(output) = self.output_down() {
+                                self.monitor_set.move_to_output(&output);
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                        Action::MoveToMonitorUp => {
+                            if let Some(output) = self.output_up() {
+                                self.monitor_set.move_to_output(&output);
+                                self.move_cursor_to_output(&output);
+                            }
                         }
                     }
                 }

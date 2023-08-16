@@ -15,7 +15,7 @@ use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::XkbConfig;
-use smithay::input::pointer::{CursorImageAttributes, CursorImageStatus};
+use smithay::input::pointer::{CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
@@ -26,7 +26,7 @@ use smithay::reexports::wayland_server::backend::{
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{IsAlive, Logical, Physical, Point, Scale, SERIAL_COUNTER};
+use smithay::utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, SERIAL_COUNTER};
 use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
@@ -38,7 +38,7 @@ use smithay::wayland::socket::ListeningSocketSource;
 use crate::backend::Backend;
 use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
-use crate::utils::load_default_cursor;
+use crate::utils::{center, get_monotonic_time, load_default_cursor};
 use crate::LoopData;
 
 pub struct Niri {
@@ -266,6 +266,94 @@ impl Niri {
     pub fn output_under_cursor(&self) -> Option<Output> {
         let pos = self.seat.get_pointer().unwrap().current_location();
         self.global_space.output_under(pos).next().cloned()
+    }
+
+    pub fn output_left(&self) -> Option<Output> {
+        let active = self.monitor_set.active_output()?;
+        let active_geo = self.global_space.output_geometry(active).unwrap();
+        let extended_geo = Rectangle::from_loc_and_size(
+            (i32::MIN / 2, active_geo.loc.y),
+            (i32::MAX, active_geo.size.h),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).x < center(active_geo).x && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(active_geo).x - center(*geo).x)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_right(&self) -> Option<Output> {
+        let active = self.monitor_set.active_output()?;
+        let active_geo = self.global_space.output_geometry(active).unwrap();
+        let extended_geo = Rectangle::from_loc_and_size(
+            (i32::MIN / 2, active_geo.loc.y),
+            (i32::MAX, active_geo.size.h),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).x > center(active_geo).x && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(*geo).x - center(active_geo).x)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_up(&self) -> Option<Output> {
+        let active = self.monitor_set.active_output()?;
+        let active_geo = self.global_space.output_geometry(active).unwrap();
+        let extended_geo = Rectangle::from_loc_and_size(
+            (active_geo.loc.x, i32::MIN / 2),
+            (active_geo.size.w, i32::MAX),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).y < center(active_geo).y && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(active_geo).y - center(*geo).y)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_down(&self) -> Option<Output> {
+        let active = self.monitor_set.active_output()?;
+        let active_geo = self.global_space.output_geometry(active).unwrap();
+        let extended_geo = Rectangle::from_loc_and_size(
+            (active_geo.loc.x, i32::MIN / 2),
+            (active_geo.size.w, i32::MAX),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(active_geo).y < center(*geo).y && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(*geo).y - center(active_geo).y)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
+        let under = self.surface_under_and_global_space(location);
+        self.seat.get_pointer().unwrap().motion(
+            self,
+            under,
+            &MotionEvent {
+                location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time: get_monotonic_time().as_millis() as u32,
+            },
+        );
+        // FIXME: granular
+        self.queue_redraw_all();
+    }
+
+    pub fn move_cursor_to_output(&mut self, output: &Output) {
+        let geo = self.global_space.output_geometry(output).unwrap();
+        self.move_cursor(center(geo).to_f64());
     }
 
     fn layer_surface_focus(&self) -> Option<WlSurface> {

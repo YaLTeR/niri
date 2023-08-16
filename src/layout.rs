@@ -776,6 +776,48 @@ impl<W: LayoutElement> MonitorSet<W> {
         };
         monitor.toggle_full_width();
     }
+
+    pub fn focus_output(&mut self, output: &Output) {
+        if let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = self
+        {
+            for (idx, mon) in monitors.iter().enumerate() {
+                if &mon.output == output {
+                    *active_monitor_idx = idx;
+                    return;
+                }
+            }
+        }
+    }
+
+    pub fn move_to_output(&mut self, output: &Output) {
+        if let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = self
+        {
+            let new_idx = monitors
+                .iter()
+                .position(|mon| &mon.output == output)
+                .unwrap();
+
+            let current = &mut monitors[*active_monitor_idx];
+            let ws = current.active_workspace();
+            if !ws.has_windows() {
+                return;
+            }
+            let column = &ws.columns[ws.active_column_idx];
+            let window = column.windows[column.active_window_idx].clone();
+            ws.remove_window(&window);
+
+            let workspace_idx = monitors[new_idx].active_workspace_idx;
+            self.add_window(new_idx, workspace_idx, window, true);
+        }
+    }
 }
 
 impl MonitorSet<Window> {
