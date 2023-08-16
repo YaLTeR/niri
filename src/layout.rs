@@ -46,7 +46,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{with_states, SurfaceData};
-use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
 
@@ -191,13 +191,8 @@ impl LayoutElement for Window {
 
     fn min_size(&self) -> Size<i32, Logical> {
         with_states(self.toplevel().wl_surface(), |state| {
-            state
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .min_size
+            let curr = state.cached_state.current::<SurfaceCachedState>();
+            curr.min_size
         })
     }
 
