@@ -6,7 +6,6 @@ mod handlers;
 mod animation;
 mod backend;
 mod frame_clock;
-mod grabs;
 mod input;
 mod layout;
 mod niri;

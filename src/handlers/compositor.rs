@@ -13,7 +13,6 @@ use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell;
-use crate::grabs::resize_grab;
 use crate::niri::ClientState;
 use crate::Niri;
 
@@ -81,7 +80,6 @@ impl CompositorHandler for Niri {
                 }
 
                 // The toplevel remains mapped.
-                resize_grab::handle_commit(&window);
                 self.monitor_set.update_window(&window);
 
                 self.queue_redraw(output);

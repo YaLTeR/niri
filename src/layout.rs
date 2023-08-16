@@ -1847,7 +1847,7 @@ impl<W: LayoutElement> Column<W> {
 
     fn toggle_full_width(&mut self, view_size: Size<i32, Logical>) {
         let width = match self.width {
-            ColumnWidth::Proportion(1.) => {
+            ColumnWidth::Proportion(x) if x == 1. => {
                 // FIXME: would be good to restore to previous width here.
                 ColumnWidth::default()
             }

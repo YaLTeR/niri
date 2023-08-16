@@ -1,20 +1,17 @@
 use smithay::delegate_xdg_shell;
 use smithay::desktop::{find_popup_root_surface, PopupKind, Window};
-use smithay::input::pointer::{Focus, GrabStartData as PointerGrabStartData};
-use smithay::input::Seat;
 use smithay::output::Output;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
+use smithay::reexports::wayland_server::protocol::wl_output;
+use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::protocol::{wl_output, wl_seat};
-use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Rectangle, Serial};
+use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
     XdgShellState, XdgToplevelSurfaceData,
 };
 
-use crate::grabs::{MoveSurfaceGrab, ResizeSurfaceGrab};
 use crate::layout::{configure_new_window, output_size};
 use crate::Niri;
 
@@ -36,77 +33,26 @@ impl XdgShellHandler for Niri {
         assert!(existing.is_none());
     }
 
-    fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
-        surface.with_pending_state(|state| {
-            // NOTE: This is not really necessary as the default geometry
-            // is already set the same way, but for demonstrating how
-            // to set the initial popup geometry this code is left as
-            // an example
-            state.geometry = positioner.get_geometry();
-        });
+    fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
+        // FIXME: adjust the geometry so the popup doesn't overflow at least off the top and bottom
+        // screen edges, and ideally off the view size.
         if let Err(err) = self.popups.track_popup(PopupKind::Xdg(surface)) {
             warn!("error tracking popup: {err:?}");
         }
     }
 
-    fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
+    fn move_request(&mut self, _surface: ToplevelSurface, _seat: WlSeat, _serial: Serial) {
         // FIXME
-
-        // let seat = Seat::from_resource(&seat).unwrap();
-
-        // let wl_surface = surface.wl_surface();
-
-        // if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
-        //     let pointer = seat.get_pointer().unwrap();
-
-        //     let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
-        //     let initial_window_location = space.element_location(&window).unwrap();
-
-        //     let grab = MoveSurfaceGrab {
-        //         start_data,
-        //         window: window.clone(),
-        //         initial_window_location,
-        //     };
-
-        //     pointer.set_grab(self, grab, serial, Focus::Clear);
-        // }
     }
 
     fn resize_request(
         &mut self,
-        surface: ToplevelSurface,
-        seat: wl_seat::WlSeat,
-        serial: Serial,
-        edges: xdg_toplevel::ResizeEdge,
+        _surface: ToplevelSurface,
+        _seat: WlSeat,
+        _serial: Serial,
+        _edges: ResizeEdge,
     ) {
         // FIXME
-
-        // let seat = Seat::from_resource(&seat).unwrap();
-
-        // let wl_surface = surface.wl_surface();
-
-        // if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
-        //     let pointer = seat.get_pointer().unwrap();
-
-        //     let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
-        //     let initial_window_location = space.element_location(&window).unwrap();
-        //     let initial_window_size = window.geometry().size;
-
-        //     surface.with_pending_state(|state| {
-        //         state.states.set(xdg_toplevel::State::Resizing);
-        //     });
-
-        //     surface.send_pending_configure();
-
-        //     let grab = ResizeSurfaceGrab::start(
-        //         start_data,
-        //         window.clone(),
-        //         edges.into(),
-        //         Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
-        //     );
-
-        //     pointer.set_grab(self, grab, serial, Focus::Clear);
-        // }
     }
 
     fn reposition_request(
@@ -115,11 +61,9 @@ impl XdgShellHandler for Niri {
         positioner: PositionerState,
         token: u32,
     ) {
+        // FIXME: adjust the geometry so the popup doesn't overflow at least off the top and bottom
+        // screen edges, and ideally off the view size.
         surface.with_pending_state(|state| {
-            // NOTE: This is again a simplification, a proper compositor would
-            // calculate the geometry of the popup here. For simplicity we just
-            // use the default implementation here that does not take the
-            // window position and output constraints into account.
             let geometry = positioner.get_geometry();
             state.geometry = geometry;
             state.positioner = positioner;
@@ -127,48 +71,20 @@ impl XdgShellHandler for Niri {
         surface.send_repositioned(token);
     }
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
         // FIXME popup grabs
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {
-        if surface
-            .current_state()
-            .capabilities
-            .contains(xdg_toplevel::WmCapabilities::Maximize)
-        {
-            // let wl_surface = surface.wl_surface();
-            // let (window, space) = self.monitor_set.find_window_and_space(wl_surface).unwrap();
-            // let geometry = space
-            //     .output_geometry(space.outputs().next().unwrap())
-            //     .unwrap();
-
-            // surface.with_pending_state(|state| {
-            //     state.states.set(xdg_toplevel::State::Maximized);
-            //     state.size = Some(geometry.size);
-            // });
-            // space.map_element(window.clone(), geometry.loc, true);
-        }
+        // FIXME
 
         // The protocol demands us to always reply with a configure,
         // regardless of we fulfilled the request or not
         surface.send_configure();
     }
 
-    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
-        if !surface
-            .current_state()
-            .states
-            .contains(xdg_toplevel::State::Maximized)
-        {
-            return;
-        }
-
-        surface.with_pending_state(|state| {
-            state.states.unset(xdg_toplevel::State::Maximized);
-            state.size = None;
-        });
-        surface.send_pending_configure();
+    fn unmaximize_request(&mut self, _surface: ToplevelSurface) {
+        // FIXME
     }
 
     fn fullscreen_request(
@@ -237,31 +153,7 @@ impl XdgShellHandler for Niri {
     }
 }
 
-// Xdg Shell
 delegate_xdg_shell!(Niri);
-
-fn check_grab(
-    seat: &Seat<Niri>,
-    surface: &WlSurface,
-    serial: Serial,
-) -> Option<PointerGrabStartData<Niri>> {
-    let pointer = seat.get_pointer()?;
-
-    // Check that this surface has a click grab.
-    if !pointer.has_grab(serial) {
-        return None;
-    }
-
-    let start_data = pointer.grab_start_data()?;
-
-    let (focus, _) = start_data.focus.as_ref()?;
-    // If the focus was for a different surface, ignore the request.
-    if !focus.id().same_client_as(&surface.id()) {
-        return None;
-    }
-
-    Some(start_data)
-}
 
 pub fn send_initial_configure_if_needed(window: &Window) {
     let initial_configure_sent = with_states(window.toplevel().wl_surface(), |states| {
