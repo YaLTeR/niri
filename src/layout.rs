@@ -1494,29 +1494,53 @@ impl<W: LayoutElement> Workspace<W> {
         &self,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, Point<i32, Logical>)> {
+        if self.columns.is_empty() {
+            return None;
+        }
+
         let view_pos = self.view_pos();
 
         let mut pos = pos_within_output;
         pos.x += view_pos as f64;
+
+        // Prefer the active window since it's drawn on top.
+        let col = &self.columns[self.active_column_idx];
+        let active_win = &col.windows[col.active_window_idx];
+        let geom = active_win.geometry();
+        let mut win_pos = Point::from((
+            self.column_x(self.active_column_idx),
+            col.window_y(col.active_window_idx),
+        )) - geom.loc;
+        if col.is_fullscreen {
+            // FIXME: fullscreen windows are missing left padding
+            win_pos.x -= PADDING;
+        }
+        if active_win.is_in_input_region(&(pos - win_pos.to_f64())) {
+            let mut win_pos_within_output = win_pos;
+            win_pos_within_output.x -= view_pos;
+            return Some((active_win, win_pos_within_output));
+        }
 
         let mut x = PADDING;
         for col in &self.columns {
             let mut y = PADDING;
 
             for win in &col.windows {
-                let geom = win.geometry();
+                if win != active_win {
+                    let geom = win.geometry();
 
-                // x, y point at the top-left of the window geometry.
-                let mut win_pos = Point::from((x, y)) - geom.loc;
-                if col.is_fullscreen {
-                    // FIXME: fullscreen windows are missing left padding
-                    win_pos.x -= PADDING;
-                    win_pos.y -= PADDING;
-                }
-                if win.is_in_input_region(&(pos - win_pos.to_f64())) {
-                    let mut win_pos_within_output = win_pos;
-                    win_pos_within_output.x -= view_pos;
-                    return Some((win, win_pos_within_output));
+                    // x, y point at the top-left of the window geometry.
+                    let mut win_pos = Point::from((x, y)) - geom.loc;
+                    if col.is_fullscreen {
+                        // FIXME: fullscreen windows are missing left padding
+                        win_pos.x -= PADDING;
+                        win_pos.y -= PADDING;
+                    }
+                    if win.is_in_input_region(&(pos - win_pos.to_f64())) {
+                        let mut win_pos_within_output = win_pos;
+                        win_pos_within_output.x -= view_pos;
+                        return Some((win, win_pos_within_output));
+                    }
                 }
 
                 y += geom.size.h + PADDING;
@@ -1605,29 +1629,54 @@ impl Workspace<Window> {
         &self,
         renderer: &mut GlesRenderer,
     ) -> Vec<WorkspaceRenderElement<GlesRenderer>> {
+        if self.columns.is_empty() {
+            return vec![];
+        }
+
         let mut rv = vec![];
         let view_pos = self.view_pos();
+
+        // Draw the active window on top.
+        let col = &self.columns[self.active_column_idx];
+        let active_win = &col.windows[col.active_window_idx];
+        let geom = active_win.geometry();
+        let mut win_pos = Point::from((
+            self.column_x(self.active_column_idx) - view_pos,
+            col.window_y(col.active_window_idx),
+        )) - geom.loc;
+        if col.is_fullscreen {
+            // FIXME: fullscreen windows are missing left padding
+            win_pos.x -= PADDING;
+        }
+        rv.extend(active_win.render_elements(
+            renderer,
+            win_pos.to_physical(1),
+            Scale::from(1.),
+            1.,
+        ));
 
         let mut x = PADDING;
         for col in &self.columns {
             let mut y = PADDING;
 
             for win in &col.windows {
-                let geom = win.geometry();
+                if win != active_win {
+                    let geom = win.geometry();
 
-                let mut win_pos = Point::from((x - view_pos, y)) - geom.loc;
-                if col.is_fullscreen {
-                    // FIXME: fullscreen windows are missing left padding
-                    win_pos.x -= PADDING;
-                    win_pos.y -= PADDING;
+                    let mut win_pos = Point::from((x - view_pos, y)) - geom.loc;
+                    if col.is_fullscreen {
+                        // FIXME: fullscreen windows are missing left padding
+                        win_pos.x -= PADDING;
+                        win_pos.y -= PADDING;
+                    }
+
+                    rv.extend(win.render_elements(
+                        renderer,
+                        win_pos.to_physical(1),
+                        Scale::from(1.),
+                        1.,
+                    ));
                 }
-
-                rv.extend(win.render_elements(
-                    renderer,
-                    win_pos.to_physical(1),
-                    Scale::from(1.),
-                    1.,
-                ));
                 y += win.geometry().size.h + PADDING;
             }
 
@@ -1784,6 +1833,20 @@ impl<W: LayoutElement> Column<W> {
         assert_eq!(self.windows.len(), 1);
         self.is_fullscreen = is_fullscreen;
         self.update_window_sizes(view_size);
+    }
+
+    fn window_y(&self, window_idx: usize) -> i32 {
+        if self.is_fullscreen {
+            return 0;
+        }
+
+        let mut y = PADDING;
+
+        for win in self.windows.iter().take(window_idx) {
+            y += win.geometry().size.h + PADDING;
+        }
+
+        y
     }
 }
 
