@@ -114,7 +114,7 @@ impl Niri {
         // FIXME: get Xkb and repeat interval from GNOME dconf.
         let xkb = XkbConfig {
             layout: "us,ru",
-            options: Some("grp:win_space_toggle".to_owned()),
+            options: Some("grp:win_space_toggle,compose:ralt,ctrl:nocaps".to_owned()),
             ..Default::default()
         };
         seat.add_keyboard(xkb, 400, 30).unwrap();
