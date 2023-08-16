@@ -39,6 +39,7 @@ use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::tablet_manager::TabletManagerState;
 
 use crate::backend::Backend;
 use crate::frame_clock::FrameClock;
@@ -72,6 +73,7 @@ pub struct Niri {
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Self>,
+    pub tablet_state: TabletManagerState,
     pub data_device_state: DataDeviceState,
     pub popups: PopupManager,
     pub presentation_state: PresentationState,
@@ -114,6 +116,7 @@ impl Niri {
         let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
         let mut seat_state = SeatState::new();
+        let tablet_state = TabletManagerState::new::<Self>(&display_handle);
         let data_device_state = DataDeviceState::new::<Self>(&display_handle);
         let presentation_state =
             PresentationState::new::<Self>(&display_handle, CLOCK_MONOTONIC as u32);
@@ -175,6 +178,7 @@ impl Niri {
             shm_state,
             output_manager_state,
             seat_state,
+            tablet_state,
             data_device_state,
             popups: PopupManager::default(),
             presentation_state,

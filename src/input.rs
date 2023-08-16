@@ -1,14 +1,16 @@
 use std::process::Command;
 
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-    KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
-    TabletToolEvent, TabletToolTipEvent, TabletToolTipState,
+    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
+    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+    PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
+    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::utils::SERIAL_COUNTER;
+use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::niri::Niri;
 use crate::utils::get_monotonic_time;
@@ -457,7 +459,7 @@ impl Niri {
 
                 pointer.motion(
                     self,
-                    under,
+                    under.clone(),
                     &MotionEvent {
                         location: pos,
                         serial,
@@ -465,22 +467,138 @@ impl Niri {
                     },
                 );
 
+                let tablet_seat = self.seat.tablet_seat();
+                let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
+                let tool = tablet_seat.get_tool(&event.tool());
+                if let (Some(tablet), Some(tool)) = (tablet, tool) {
+                    if event.pressure_has_changed() {
+                        tool.pressure(event.pressure());
+                    }
+                    if event.distance_has_changed() {
+                        tool.distance(event.distance());
+                    }
+                    if event.tilt_has_changed() {
+                        tool.tilt(event.tilt());
+                    }
+                    if event.slider_has_changed() {
+                        tool.slider_position(event.slider_position());
+                    }
+                    if event.rotation_has_changed() {
+                        tool.rotation(event.rotation());
+                    }
+                    if event.wheel_has_changed() {
+                        tool.wheel(event.wheel_delta(), event.wheel_delta_discrete());
+                    }
+
+                    tool.motion(
+                        pos,
+                        under,
+                        &tablet,
+                        SERIAL_COUNTER.next_serial(),
+                        event.time_msec(),
+                    );
+                }
+
                 // Redraw to update the cursor position.
                 // FIXME: redraw only outputs overlapping the cursor.
                 self.queue_redraw_all();
             }
             InputEvent::TabletToolTip { event, .. } => {
+                let tool = self.seat.tablet_seat().get_tool(&event.tool());
+
+                if let Some(tool) = tool {
+                    match event.tip_state() {
+                        TabletToolTipState::Down => {
+                            let serial = SERIAL_COUNTER.next_serial();
+                            tool.tip_down(serial, event.time_msec());
+
+                            let pointer = self.seat.get_pointer().unwrap();
+                            if !pointer.is_grabbed() {
+                                if let Some(window) = self.window_under_cursor() {
+                                    let window = window.clone();
+                                    self.monitor_set.activate_window(&window);
+                                } else {
+                                    let output = self.output_under_cursor().unwrap();
+                                    self.monitor_set.activate_output(&output);
+                                }
+                            };
+                        }
+                        TabletToolTipState::Up => {
+                            tool.tip_up(event.time_msec());
+                        }
+                    }
+                }
+            }
+            InputEvent::TabletToolProximity { event, .. } => {
+                // FIXME: allow mapping tablet to different outputs.
+                let output = self.global_space.outputs().next().unwrap();
+
+                let output_geo = self.global_space.output_geometry(output).unwrap();
+
+                let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
+
+                let serial = SERIAL_COUNTER.next_serial();
+
                 let pointer = self.seat.get_pointer().unwrap();
 
-                if event.tip_state() == TabletToolTipState::Down && !pointer.is_grabbed() {
-                    if let Some(window) = self.window_under_cursor() {
-                        let window = window.clone();
-                        self.monitor_set.activate_window(&window);
-                    } else {
-                        let output = self.output_under_cursor().unwrap();
-                        self.monitor_set.activate_output(&output);
+                let under = self.surface_under_and_global_space(pos);
+
+                pointer.motion(
+                    self,
+                    under.clone(),
+                    &MotionEvent {
+                        location: pos,
+                        serial,
+                        time: event.time_msec(),
+                    },
+                );
+
+                let tablet_seat = self.seat.tablet_seat();
+                let tool = tablet_seat.add_tool::<Self>(&self.display_handle, &event.tool());
+                let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
+                if let (Some(under), Some(tablet)) = (under, tablet) {
+                    match event.state() {
+                        ProximityState::In => tool.proximity_in(
+                            pos,
+                            under,
+                            &tablet,
+                            SERIAL_COUNTER.next_serial(),
+                            event.time_msec(),
+                        ),
+                        ProximityState::Out => tool.proximity_out(event.time_msec()),
                     }
-                };
+                }
+            }
+            InputEvent::TabletToolButton { event, .. } => {
+                let tool = self.seat.tablet_seat().get_tool(&event.tool());
+
+                if let Some(tool) = tool {
+                    tool.button(
+                        event.button(),
+                        event.button_state(),
+                        SERIAL_COUNTER.next_serial(),
+                        event.time_msec(),
+                    );
+                }
+            }
+            InputEvent::DeviceAdded { device } => {
+                if device.has_capability(DeviceCapability::TabletTool) {
+                    self.seat
+                        .tablet_seat()
+                        .add_tablet::<Self>(&self.display_handle, &TabletDescriptor::from(&device));
+                }
+            }
+            InputEvent::DeviceRemoved { device } => {
+                if device.has_capability(DeviceCapability::TabletTool) {
+                    let tablet_seat = self.seat.tablet_seat();
+
+                    tablet_seat.remove_tablet(&TabletDescriptor::from(&device));
+
+                    // If there are no tablets in seat we can remove all tools
+                    if tablet_seat.count_tablets() == 0 {
+                        tablet_seat.clear_tools();
+                    }
+                }
             }
             _ => {}
         }

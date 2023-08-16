@@ -11,7 +11,10 @@ use smithay::wayland::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
 };
-use smithay::{delegate_data_device, delegate_output, delegate_presentation, delegate_seat};
+use smithay::{
+    delegate_data_device, delegate_output, delegate_presentation, delegate_seat,
+    delegate_tablet_manager,
+};
 
 use crate::Niri;
 
@@ -36,6 +39,7 @@ impl SeatHandler for Niri {
     }
 }
 delegate_seat!(Niri);
+delegate_tablet_manager!(Niri);
 
 impl DataDeviceHandler for Niri {
     type SelectionUserData = ();
