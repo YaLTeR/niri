@@ -178,8 +178,9 @@ impl Niri {
                             }
                         }
                         Action::ToggleFullscreen => {
-                            if let Some(window) = self.monitor_set.focus() {
-                                // FIXME
+                            let focus = self.monitor_set.focus().cloned();
+                            if let Some(window) = focus {
+                                self.monitor_set.toggle_fullscreen(&window);
                             }
                         }
                         Action::MoveLeft => {

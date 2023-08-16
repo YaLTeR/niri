@@ -2,6 +2,7 @@ use smithay::delegate_xdg_shell;
 use smithay::desktop::{find_popup_root_surface, PopupKind, Window};
 use smithay::input::pointer::{Focus, GrabStartData as PointerGrabStartData};
 use smithay::input::Seat;
+use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::protocol::{wl_output, wl_seat};
@@ -180,32 +181,22 @@ impl XdgShellHandler for Niri {
             .capabilities
             .contains(xdg_toplevel::WmCapabilities::Fullscreen)
         {
-            // // NOTE: This is only one part of the solution. We can set the
-            // // location and configure size here, but the surface should be rendered fullscreen
-            // // independently from its buffer size
-            // let wl_surface = surface.wl_surface();
+            // NOTE: This is only one part of the solution. We can set the
+            // location and configure size here, but the surface should be rendered fullscreen
+            // independently from its buffer size
+            if let Some((window, current_output)) = self
+                .monitor_set
+                .find_window_and_output(surface.wl_surface())
+            {
+                if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
+                    if requested_output != current_output {
+                        self.monitor_set
+                            .move_window_to_output(window.clone(), &requested_output);
+                    }
+                }
 
-            // let output = wl_output
-            //     .as_ref()
-            //     .and_then(Output::from_resource)
-            //     .or_else(|| {
-            //         self.monitor_set
-            //             .find_window_and_space(wl_surface)
-            //             .and_then(|(_window, space)| space.outputs().next().cloned())
-            //     });
-
-            // if let Some(output) = output {
-            //     let (window, space) =
-            // self.monitor_set.find_window_and_space(wl_surface).unwrap();
-            //     let geometry = space.output_geometry(&output).unwrap();
-
-            //     surface.with_pending_state(|state| {
-            //         state.states.set(xdg_toplevel::State::Fullscreen);
-            //         state.size = Some(geometry.size);
-            //     });
-
-            //     space.map_element(window.clone(), geometry.loc, true);
-            // }
+                self.monitor_set.set_fullscreen(&window, true);
+            }
         }
 
         // The protocol demands us to always reply with a configure,
@@ -214,20 +205,12 @@ impl XdgShellHandler for Niri {
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
-        if !surface
-            .current_state()
-            .states
-            .contains(xdg_toplevel::State::Fullscreen)
+        if let Some((window, _)) = self
+            .monitor_set
+            .find_window_and_output(surface.wl_surface())
         {
-            return;
+            self.monitor_set.set_fullscreen(&window, false);
         }
-
-        surface.with_pending_state(|state| {
-            state.states.unset(xdg_toplevel::State::Fullscreen);
-            state.size = None;
-        });
-
-        surface.send_pending_configure();
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {

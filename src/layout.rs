@@ -42,6 +42,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::Window;
 use smithay::output::Output;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{with_states, SurfaceData};
@@ -65,6 +66,7 @@ pub type MonitorRenderElement<R> =
 
 pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     fn request_size(&self, size: Size<i32, Logical>);
+    fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
     fn send_frame<T, F>(
@@ -161,6 +163,9 @@ struct Column<W: LayoutElement> {
 
     /// Desired width of this column.
     width: ColumnWidth,
+
+    /// Whether this column contains a single full-screened window.
+    is_fullscreen: bool,
 }
 
 impl OutputId {
@@ -171,8 +176,17 @@ impl OutputId {
 
 impl LayoutElement for Window {
     fn request_size(&self, size: Size<i32, Logical>) {
-        self.toplevel()
-            .with_pending_state(|state| state.size = Some(size));
+        self.toplevel().with_pending_state(|state| {
+            state.size = Some(size);
+            state.states.unset(xdg_toplevel::State::Fullscreen);
+        });
+    }
+
+    fn request_fullscreen(&self, size: Size<i32, Logical>) {
+        self.toplevel().with_pending_state(|state| {
+            state.size = Some(size);
+            state.states.set(xdg_toplevel::State::Fullscreen);
+        });
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
@@ -421,7 +435,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     for ws in &mut mon.workspaces {
                         if ws.has_window(window) {
                             ws.update_window(window);
-                            break;
+                            return;
                         }
                     }
                 }
@@ -430,7 +444,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                 for ws in workspaces {
                     if ws.has_window(window) {
                         ws.update_window(window);
-                        break;
+                        return;
                     }
                 }
             }
@@ -816,6 +830,67 @@ impl<W: LayoutElement> MonitorSet<W> {
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             self.add_window(new_idx, workspace_idx, window, true);
+        }
+    }
+
+    pub fn move_window_to_output(&mut self, window: W, output: &Output) {
+        self.remove_window(&window);
+
+        if let MonitorSet::Normal { monitors, .. } = self {
+            let new_idx = monitors
+                .iter()
+                .position(|mon| &mon.output == output)
+                .unwrap();
+
+            let workspace_idx = monitors[new_idx].active_workspace_idx;
+            // FIXME: activate only if it was already active and focused.
+            self.add_window(new_idx, workspace_idx, window, true);
+        }
+    }
+
+    pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
+        match self {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.set_fullscreen(window, is_fullscreen);
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs(workspaces) => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.set_fullscreen(window, is_fullscreen);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn toggle_fullscreen(&mut self, window: &W) {
+        match self {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.toggle_fullscreen(window);
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs(workspaces) => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.toggle_fullscreen(window);
+                        return;
+                    }
+                }
+            }
         }
     }
 }
@@ -1432,7 +1507,12 @@ impl<W: LayoutElement> Workspace<W> {
                 let geom = win.geometry();
 
                 // x, y point at the top-left of the window geometry.
-                let win_pos = Point::from((x, y)) - geom.loc;
+                let mut win_pos = Point::from((x, y)) - geom.loc;
+                if col.is_fullscreen {
+                    // FIXME: fullscreen windows are missing left padding
+                    win_pos.x -= PADDING;
+                    win_pos.y -= PADDING;
+                }
                 if win.is_in_input_region(&(pos - win_pos.to_f64())) {
                     let mut win_pos_within_output = win_pos;
                     win_pos_within_output.x -= view_pos;
@@ -1463,6 +1543,51 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.columns[self.active_column_idx].toggle_full_width(self.view_size);
     }
+
+    pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
+        let (mut col_idx, win_idx) = self
+            .columns
+            .iter()
+            .enumerate()
+            .find_map(|(col_idx, col)| {
+                col.windows
+                    .iter()
+                    .position(|w| w == window)
+                    .map(|win_idx| (col_idx, win_idx))
+            })
+            .unwrap();
+
+        let mut col = &mut self.columns[col_idx];
+
+        if is_fullscreen && col.windows.len() > 1 {
+            // This wasn't the only window in its column; extract it into a separate column.
+            let target_window_was_focused =
+                self.active_column_idx == col_idx && col.active_window_idx == win_idx;
+            let window = col.windows.remove(win_idx);
+            col.active_window_idx = min(col.active_window_idx, col.windows.len() - 1);
+            col.update_window_sizes(self.view_size);
+
+            col_idx += 1;
+            self.columns
+                .insert(col_idx, Column::new(window, self.view_size));
+            if self.active_column_idx >= col_idx || target_window_was_focused {
+                self.active_column_idx += 1;
+            }
+            col = &mut self.columns[col_idx];
+        }
+
+        col.set_fullscreen(self.view_size, is_fullscreen);
+    }
+
+    pub fn toggle_fullscreen(&mut self, window: &W) {
+        let col = self
+            .columns
+            .iter_mut()
+            .find(|col| col.windows.contains(window))
+            .unwrap();
+        let value = !col.is_fullscreen;
+        self.set_fullscreen(window, value);
+    }
 }
 
 impl Workspace<Window> {
@@ -1490,7 +1615,13 @@ impl Workspace<Window> {
             for win in &col.windows {
                 let geom = win.geometry();
 
-                let win_pos = Point::from((x - view_pos, y)) - geom.loc;
+                let mut win_pos = Point::from((x - view_pos, y)) - geom.loc;
+                if col.is_fullscreen {
+                    // FIXME: fullscreen windows are missing left padding
+                    win_pos.x -= PADDING;
+                    win_pos.y -= PADDING;
+                }
+
                 rv.extend(win.render_elements(
                     renderer,
                     win_pos.to_physical(1),
@@ -1513,6 +1644,7 @@ impl<W: LayoutElement> Column<W> {
             windows: vec![],
             active_window_idx: 0,
             width: ColumnWidth::default(),
+            is_fullscreen: false,
         };
 
         rv.add_window(view_size, window);
@@ -1539,11 +1671,17 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn add_window(&mut self, view_size: Size<i32, Logical>, window: W) {
+        self.is_fullscreen = false;
         self.windows.push(window);
         self.update_window_sizes(view_size);
     }
 
     fn update_window_sizes(&mut self, view_size: Size<i32, Logical>) {
+        if self.is_fullscreen {
+            self.windows[0].request_fullscreen(view_size);
+            return;
+        }
+
         let min_width = self
             .windows
             .iter()
@@ -1610,6 +1748,10 @@ impl<W: LayoutElement> Column<W> {
     fn verify_invariants(&self) {
         assert!(!self.windows.is_empty(), "columns can't be empty");
         assert!(self.active_window_idx < self.windows.len());
+
+        if self.is_fullscreen {
+            assert_eq!(self.windows.len(), 1);
+        }
     }
 
     fn toggle_width(&mut self, view_size: Size<i32, Logical>) {
@@ -1636,6 +1778,12 @@ impl<W: LayoutElement> Column<W> {
             _ => ColumnWidth::Proportion(1.),
         };
         self.set_width(view_size, width);
+    }
+
+    fn set_fullscreen(&mut self, view_size: Size<i32, Logical>, is_fullscreen: bool) {
+        assert_eq!(self.windows.len(), 1);
+        self.is_fullscreen = is_fullscreen;
+        self.update_window_sizes(view_size);
     }
 }
 
