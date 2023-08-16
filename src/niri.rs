@@ -102,11 +102,7 @@ impl Niri {
         let compositor_state = CompositorState::new::<Self>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<Self>(
             &display_handle,
-            [
-                WmCapabilities::Fullscreen,
-                WmCapabilities::Maximize,
-                WmCapabilities::WindowMenu,
-            ],
+            [WmCapabilities::Fullscreen],
         );
         let layer_shell_state = WlrLayerShellState::new::<Self>(&display_handle);
         let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
