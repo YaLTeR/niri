@@ -73,6 +73,7 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>.</kbd> | Expel the focused window into its own column |
 | <kbd>Mod</kbd><kbd>R</kbd> | Toggle between preset column widths |
 | <kbd>Mod</kbd><kbd>F</kbd> | Maximize column |
+| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd> | Toggle full-screen on the focused window |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>E</kbd> | Exit niri |
 
 [PaperWM]: https://github.com/paperwm/PaperWM
