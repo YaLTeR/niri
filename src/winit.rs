@@ -6,6 +6,7 @@ use smithay::backend::winit::{self, WinitError, WinitEvent, WinitEventLoop, Wini
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::LoopHandle;
+use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
@@ -13,6 +14,7 @@ use smithay::utils::Transform;
 use crate::backend::Backend;
 use crate::input::CompositorMod;
 use crate::niri::OutputRenderElements;
+use crate::utils::get_monotonic_time;
 use crate::{LoopData, Niri};
 
 pub struct Winit {
@@ -33,20 +35,30 @@ impl Backend for Winit {
 
     fn render(
         &mut self,
-        _niri: &mut Niri,
-        _output: &Output,
+        niri: &mut Niri,
+        output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
     ) {
         let _span = tracy_client::span!("Winit::render");
 
         self.backend.bind().unwrap();
         let age = self.backend.buffer_age().unwrap();
-        let result = self
+        let res = self
             .damage_tracker
             .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
             .unwrap();
-        if let Some(damage) = result.damage {
+        if let Some(damage) = res.damage {
             self.backend.submit(Some(&damage)).unwrap();
+
+            let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &res.states);
+            let refresh = output.current_mode().unwrap().refresh as u32;
+            presentation_feedbacks.presented::<_, smithay::utils::Monotonic>(
+                get_monotonic_time(),
+                refresh,
+                0,
+                wp_presentation_feedback::Kind::empty(),
+            );
+
             self.backend.window().request_redraw();
         }
     }

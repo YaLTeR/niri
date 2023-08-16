@@ -7,10 +7,13 @@ use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
-use smithay::backend::renderer::element::{render_elements, AsRenderElements};
+use smithay::backend::renderer::element::{render_elements, AsRenderElements, RenderElementStates};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ImportAll, Renderer};
-use smithay::desktop::utils::send_frames_surface_tree;
+use smithay::desktop::utils::{
+    send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
+    take_presentation_feedback_surface_tree, OutputPresentationFeedback,
+};
 use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
 };
@@ -20,6 +23,7 @@ use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction};
+use smithay::reexports::nix::libc::CLOCK_MONOTONIC;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_server::backend::{
     ClientData, ClientId, DisconnectReason, GlobalId,
@@ -30,6 +34,7 @@ use smithay::utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, SERIAL
 use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
@@ -69,6 +74,7 @@ pub struct Niri {
     pub seat_state: SeatState<Self>,
     pub data_device_state: DataDeviceState,
     pub popups: PopupManager,
+    pub presentation_state: PresentationState,
 
     pub seat: Seat<Self>,
 
@@ -109,6 +115,8 @@ impl Niri {
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&display_handle);
+        let presentation_state =
+            PresentationState::new::<Self>(&display_handle, CLOCK_MONOTONIC as u32);
 
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&display_handle, seat_name);
         // FIXME: get Xkb and repeat interval from GNOME dconf.
@@ -169,6 +177,7 @@ impl Niri {
             seat_state,
             data_device_state,
             popups: PopupManager::default(),
+            presentation_state,
 
             seat,
             pointer_buffer: None,
@@ -544,6 +553,9 @@ impl Niri {
                 }),
         );
 
+        // backend.render() uses this.
+        drop(layer_map);
+
         // Hand it over to the backend.
         backend.render(self, output, &elements);
 
@@ -551,7 +563,7 @@ impl Niri {
         let frame_callback_time = self.start_time.elapsed();
         self.monitor_set.send_frame(output, frame_callback_time);
 
-        for surface in layer_map.layers() {
+        for surface in layer_map_for_output(output).layers() {
             surface.send_frame(output, frame_callback_time, None, |_, _| {
                 Some(output.clone())
             });
@@ -568,6 +580,58 @@ impl Niri {
                 Some(output.clone())
             });
         }
+    }
+
+    pub fn take_presentation_feedbacks(
+        &mut self,
+        output: &Output,
+        render_element_states: &RenderElementStates,
+    ) -> OutputPresentationFeedback {
+        let mut feedback = OutputPresentationFeedback::new(output);
+
+        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+            take_presentation_feedback_surface_tree(
+                surface,
+                &mut feedback,
+                |_, _| Some(output.clone()),
+                |surface, _| {
+                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                },
+            );
+        }
+
+        if let Some(surface) = &self.dnd_icon {
+            take_presentation_feedback_surface_tree(
+                surface,
+                &mut feedback,
+                |_, _| Some(output.clone()),
+                |surface, _| {
+                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                },
+            );
+        }
+
+        for win in self.monitor_set.windows_for_output(output) {
+            win.take_presentation_feedback(
+                &mut feedback,
+                |_, _| Some(output.clone()),
+                |surface, _| {
+                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                },
+            )
+        }
+
+        for surface in layer_map_for_output(output).layers() {
+            surface.take_presentation_feedback(
+                &mut feedback,
+                |_, _| Some(output.clone()),
+                |surface, _| {
+                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                },
+            );
+        }
+
+        feedback
     }
 }
 

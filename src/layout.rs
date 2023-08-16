@@ -560,6 +560,15 @@ impl<W: LayoutElement> MonitorSet<W> {
         })
     }
 
+    pub fn windows_for_output(&self, output: &Output) -> impl Iterator<Item = &W> + '_ {
+        let MonitorSet::Normal { monitors, .. } = self else {
+            panic!()
+        };
+
+        let mon = monitors.iter().find(|mon| &mon.output == output).unwrap();
+        mon.workspaces.iter().flat_map(|ws| ws.windows())
+    }
+
     fn active_monitor(&mut self) -> Option<&mut Monitor<W>> {
         let MonitorSet::Normal {
             monitors,

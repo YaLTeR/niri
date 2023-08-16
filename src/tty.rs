@@ -16,6 +16,7 @@ use smithay::backend::renderer::{Bind, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
+use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
@@ -24,6 +25,7 @@ use smithay::reexports::drm::control::{
 use smithay::reexports::input::Libinput;
 use smithay::reexports::nix::fcntl::OFlag;
 use smithay::reexports::nix::libc::dev_t;
+use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::utils::DeviceFd;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
@@ -42,8 +44,12 @@ pub struct Tty {
     output_device: Option<OutputDevice>,
 }
 
-type GbmDrmCompositor =
-    DrmCompositor<GbmAllocator<DrmDeviceFd>, GbmDevice<DrmDeviceFd>, (), DrmDeviceFd>;
+type GbmDrmCompositor = DrmCompositor<
+    GbmAllocator<DrmDeviceFd>,
+    GbmDevice<DrmDeviceFd>,
+    OutputPresentationFeedback,
+    DrmDeviceFd,
+>;
 
 struct OutputDevice {
     id: dev_t,
@@ -91,7 +97,10 @@ impl Backend for Tty {
             Ok(res) => {
                 assert!(!res.needs_sync());
                 if res.damage.is_some() {
-                    match drm_compositor.queue_frame(()) {
+                    let presentation_feedbacks =
+                        niri.take_presentation_feedbacks(output, &res.states);
+
+                    match drm_compositor.queue_frame(presentation_feedbacks) {
                         Ok(()) => {
                             niri.output_state
                                 .get_mut(output)
@@ -246,11 +255,6 @@ impl Tty {
                         let device = tty.output_device.as_mut().unwrap();
                         let drm_compositor = device.surfaces.get_mut(&crtc).unwrap();
 
-                        // Mark the last frame as submitted.
-                        if let Err(err) = drm_compositor.frame_submitted() {
-                            error!("error marking frame as submitted: {err}");
-                        }
-
                         let presentation_time = match metadata.as_mut().unwrap().time {
                             DrmEventTime::Monotonic(time) => time,
                             DrmEventTime::Realtime(_) => {
@@ -261,10 +265,30 @@ impl Tty {
                             }
                         };
 
-                        // Send presentation time feedback.
-                        // catacomb
-                        //     .windows
-                        //     .mark_presented(&output_device.last_render_states, metadata);
+                        // Mark the last frame as submitted.
+                        match drm_compositor.frame_submitted() {
+                            Ok(Some(mut feedback)) => {
+                                let refresh =
+                                    feedback.output().unwrap().current_mode().unwrap().refresh
+                                        as u32;
+                                // FIXME: ideally should be monotonically increasing for a surface.
+                                let seq = metadata.as_ref().unwrap().sequence as u64;
+                                let flags = wp_presentation_feedback::Kind::Vsync
+                                    | wp_presentation_feedback::Kind::HwClock
+                                    | wp_presentation_feedback::Kind::HwCompletion;
+
+                                feedback.presented::<_, smithay::utils::Monotonic>(
+                                    presentation_time,
+                                    refresh,
+                                    seq,
+                                    flags,
+                                );
+                            }
+                            Ok(None) => (),
+                            Err(err) => {
+                                error!("error marking frame as submitted: {err}");
+                            }
+                        }
 
                         let output = data
                             .niri

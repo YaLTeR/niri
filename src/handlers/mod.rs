@@ -11,7 +11,7 @@ use smithay::wayland::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
 };
-use smithay::{delegate_data_device, delegate_output, delegate_seat};
+use smithay::{delegate_data_device, delegate_output, delegate_presentation, delegate_seat};
 
 use crate::Niri;
 
@@ -68,3 +68,5 @@ impl ServerDndGrabHandler for Niri {}
 delegate_data_device!(Niri);
 
 delegate_output!(Niri);
+
+delegate_presentation!(Niri);
