@@ -10,6 +10,7 @@ use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderE
 use smithay::backend::renderer::element::{render_elements, AsRenderElements};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ImportAll, Renderer};
+use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
 };
@@ -468,6 +469,18 @@ impl Niri {
 
         for surface in layer_map.layers() {
             surface.send_frame(output, frame_callback_time, None, |_, _| {
+                Some(output.clone())
+            });
+        }
+
+        if let Some(surface) = &self.dnd_icon {
+            send_frames_surface_tree(surface, output, frame_callback_time, None, |_, _| {
+                Some(output.clone())
+            });
+        }
+
+        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+            send_frames_surface_tree(surface, output, frame_callback_time, None, |_, _| {
                 Some(output.clone())
             });
         }
