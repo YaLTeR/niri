@@ -68,6 +68,7 @@ pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     fn request_size(&self, size: Size<i32, Logical>);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
+    fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
     fn send_frame<T, F>(
         &self,
@@ -193,6 +194,13 @@ impl LayoutElement for Window {
         with_states(self.toplevel().wl_surface(), |state| {
             let curr = state.cached_state.current::<SurfaceCachedState>();
             curr.min_size
+        })
+    }
+
+    fn max_size(&self) -> Size<i32, Logical> {
+        with_states(self.toplevel().wl_surface(), |state| {
+            let curr = state.cached_state.current::<SurfaceCachedState>();
+            curr.max_size
         })
     }
 
@@ -1739,9 +1747,24 @@ impl<W: LayoutElement> Column<W> {
             })
             .max()
             .unwrap_or(1);
+        let max_width = self
+            .windows
+            .iter()
+            .filter_map(|win| {
+                let w = win.max_size().w;
+                if w == 0 {
+                    None
+                } else {
+                    Some(w)
+                }
+            })
+            .min()
+            .unwrap_or(i32::MAX);
+        let max_width = max(max_width, min_width);
+
         let width = self.width.resolve(view_size.w - PADDING) - PADDING;
         let height = (view_size.h - PADDING) / self.window_count() as i32 - PADDING;
-        let size = Size::from((max(width, min_width), max(height, 1)));
+        let size = Size::from((max(min(width, max_width), min_width), max(height, 1)));
 
         for win in &self.windows {
             win.request_size(size);
