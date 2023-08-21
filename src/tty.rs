@@ -18,7 +18,7 @@ use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
-use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
+use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
     connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags,
 };
@@ -40,6 +40,7 @@ const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888]
 
 pub struct Tty {
     session: LibSeatSession,
+    udev_dispatcher: Dispatcher<'static, UdevBackend, LoopData>,
     primary_gpu_path: PathBuf,
     output_device: Option<OutputDevice>,
 }
@@ -122,9 +123,48 @@ impl Backend for Tty {
 }
 
 impl Tty {
-    pub fn new(event_loop: LoopHandle<LoopData>) -> Self {
+    pub fn new(event_loop: LoopHandle<'static, LoopData>) -> Self {
         let (session, notifier) = LibSeatSession::new().unwrap();
         let seat_name = session.seat();
+
+        let udev_backend = UdevBackend::new(session.seat()).unwrap();
+        let udev_dispatcher =
+            Dispatcher::new(udev_backend, move |event, _, data: &mut LoopData| {
+                let tty = data.tty.as_mut().unwrap();
+                let niri = &mut data.niri;
+
+                match event {
+                    UdevEvent::Added { device_id, path } => {
+                        if !tty.session.is_active() {
+                            debug!("skipping UdevEvent::Added as session is inactive");
+                            return;
+                        }
+
+                        if let Err(err) = tty.device_added(device_id, &path, niri) {
+                            warn!("error adding device: {err:?}");
+                        }
+                    }
+                    UdevEvent::Changed { device_id } => {
+                        if !tty.session.is_active() {
+                            debug!("skipping UdevEvent::Changed as session is inactive");
+                            return;
+                        }
+
+                        tty.device_changed(device_id, niri)
+                    }
+                    UdevEvent::Removed { device_id } => {
+                        if !tty.session.is_active() {
+                            debug!("skipping UdevEvent::Removed as session is inactive");
+                            return;
+                        }
+
+                        tty.device_removed(device_id, niri)
+                    }
+                }
+            });
+        event_loop
+            .register_dispatcher(udev_dispatcher.clone())
+            .unwrap();
 
         let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
         libinput.udev_assign_seat(&seat_name).unwrap();
@@ -140,6 +180,7 @@ impl Tty {
             })
             .unwrap();
 
+        let udev_dispatcher_c = udev_dispatcher.clone();
         event_loop
             .insert_source(notifier, move |event, _, data| {
                 let tty = data.tty.as_mut().unwrap();
@@ -163,17 +204,42 @@ impl Tty {
                         }
 
                         if let Some(output_device) = &mut tty.output_device {
-                            output_device.drm.activate();
+                            // We had an output device, check if it's been removed.
+                            let output_device_id = output_device.id;
+                            if !udev_dispatcher_c
+                                .as_source_ref()
+                                .device_list()
+                                .any(|(device_id, _)| device_id == output_device_id)
+                            {
+                                // The output device, if we had any, has been removed.
+                                tty.device_removed(output_device_id, niri);
+                            } else {
+                                // It hasn't been removed, update its state as usual.
+                                output_device.drm.activate();
 
-                            for drm_compositor in output_device.surfaces.values_mut() {
-                                if let Err(err) = drm_compositor.surface().reset_state() {
-                                    warn!("error resetting DRM surface state: {err}");
+                                // Refresh the connectors.
+                                tty.device_changed(output_device_id, niri);
+
+                                // Refresh the state on unchanged connectors.
+                                let output_device = tty.output_device.as_mut().unwrap();
+                                for drm_compositor in output_device.surfaces.values_mut() {
+                                    if let Err(err) = drm_compositor.surface().reset_state() {
+                                        warn!("error resetting DRM surface state: {err}");
+                                    }
+                                    drm_compositor.reset_buffers();
                                 }
-                                drm_compositor.reset_buffers();
+
+                                niri.queue_redraw_all();
+                            }
+                        } else {
+                            // We didn't have an output device, check if it's been added.
+                            for (device_id, path) in udev_dispatcher_c.as_source_ref().device_list()
+                            {
+                                if let Err(err) = tty.device_added(device_id, path, niri) {
+                                    warn!("error adding device: {err:?}");
+                                }
                             }
                         }
-
-                        niri.queue_redraw_all();
                     }
                 }
             })
@@ -183,35 +249,18 @@ impl Tty {
 
         Self {
             session,
+            udev_dispatcher,
             primary_gpu_path,
             output_device: None,
         }
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
-        let backend = UdevBackend::new(&self.session.seat()).unwrap();
-        for (device_id, path) in backend.device_list() {
+        for (device_id, path) in self.udev_dispatcher.clone().as_source_ref().device_list() {
             if let Err(err) = self.device_added(device_id, path, niri) {
                 warn!("error adding device: {err:?}");
             }
         }
-
-        niri.event_loop
-            .insert_source(backend, move |event, _, data| {
-                let tty = data.tty.as_mut().unwrap();
-                let niri = &mut data.niri;
-
-                match event {
-                    UdevEvent::Added { device_id, path } => {
-                        if let Err(err) = tty.device_added(device_id, &path, niri) {
-                            warn!("error adding device: {err:?}");
-                        }
-                    }
-                    UdevEvent::Changed { device_id } => tty.device_changed(device_id, niri),
-                    UdevEvent::Removed { device_id } => tty.device_removed(device_id, niri),
-                }
-            })
-            .unwrap();
     }
 
     fn device_added(
