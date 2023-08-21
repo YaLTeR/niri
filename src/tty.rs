@@ -217,19 +217,45 @@ impl Tty {
                                 // It hasn't been removed, update its state as usual.
                                 output_device.drm.activate();
 
-                                // Refresh the connectors.
-                                tty.device_changed(output_device_id, niri);
-
-                                // Refresh the state on unchanged connectors.
+                                // HACK: force reset the connectors to make resuming work across
+                                // sleep.
                                 let output_device = tty.output_device.as_mut().unwrap();
-                                for drm_compositor in output_device.surfaces.values_mut() {
-                                    if let Err(err) = drm_compositor.surface().reset_state() {
-                                        warn!("error resetting DRM surface state: {err}");
-                                    }
-                                    drm_compositor.reset_buffers();
+                                let crtcs: Vec<_> = output_device
+                                    .drm_scanner
+                                    .crtcs()
+                                    .map(|(conn, crtc)| (conn.clone(), crtc))
+                                    .collect();
+                                for (conn, crtc) in crtcs {
+                                    tty.connector_disconnected(niri, conn, crtc);
                                 }
 
-                                niri.queue_redraw_all();
+                                let output_device = tty.output_device.as_mut().unwrap();
+                                let _ = output_device
+                                    .drm_scanner
+                                    .scan_connectors(&output_device.drm);
+                                let crtcs: Vec<_> = output_device
+                                    .drm_scanner
+                                    .crtcs()
+                                    .map(|(conn, crtc)| (conn.clone(), crtc))
+                                    .collect();
+                                for (conn, crtc) in crtcs {
+                                    if let Err(err) = tty.connector_connected(niri, conn, crtc) {
+                                        warn!("error connecting connector: {err:?}");
+                                    }
+                                }
+
+                                // // Refresh the connectors.
+                                // tty.device_changed(output_device_id, niri);
+                                //
+                                // // Refresh the state on unchanged connectors.
+                                // for drm_compositor in output_device.surfaces.values_mut() {
+                                //     if let Err(err) = drm_compositor.surface().reset_state() {
+                                //         warn!("error resetting DRM surface state: {err}");
+                                //     }
+                                //     drm_compositor.reset_buffers();
+                                // }
+
+                                // niri.queue_redraw_all();
                             }
                         } else {
                             // We didn't have an output device, check if it's been added.
@@ -406,12 +432,10 @@ impl Tty {
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
-        let Some(device) = self.output_device.take() else {
+        let Some(device) = &mut self.output_device else {
             return;
         };
-        if device.id != device_id {
-            // It wasn't the output device, put it back in.
-            self.output_device = Some(device);
+        if device_id != device.id {
             return;
         }
 
@@ -425,6 +449,7 @@ impl Tty {
             self.connector_disconnected(niri, connector, crtc);
         }
 
+        let device = self.output_device.take().unwrap();
         niri.event_loop.remove(device.token);
     }
 
