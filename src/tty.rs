@@ -246,8 +246,9 @@ impl Tty {
 
                                 // // Refresh the connectors.
                                 // tty.device_changed(output_device_id, niri);
-                                //
+
                                 // // Refresh the state on unchanged connectors.
+                                // let output_device = tty.output_device.as_mut().unwrap();
                                 // for drm_compositor in output_device.surfaces.values_mut() {
                                 //     if let Err(err) = drm_compositor.surface().reset_state() {
                                 //         warn!("error resetting DRM surface state: {err}");
