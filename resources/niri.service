@@ -1,6 +1,7 @@
 [Unit]
 Description=A scrollable-tiling Wayland compositor
 BindsTo=graphical-session.target
+Before=graphical-session.target
 Wants=graphical-session-pre.target
 After=graphical-session-pre.target
 
