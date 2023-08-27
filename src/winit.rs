@@ -12,7 +12,7 @@ use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
 
 use crate::backend::Backend;
-use crate::input::CompositorMod;
+use crate::input::{BackendAction, CompositorMod};
 use crate::niri::OutputRenderElements;
 use crate::utils::get_monotonic_time;
 use crate::{LoopData, Niri};
@@ -129,6 +129,7 @@ impl Winit {
     }
 
     fn dispatch(&mut self, niri: &mut Niri) {
+        let renderer = self.backend.renderer();
         let res = self
             .winit_event_loop
             .dispatch_new_events(|event| match event {
@@ -145,7 +146,18 @@ impl Winit {
                     niri.output_resized(self.output.clone());
                 }
                 WinitEvent::Input(event) => {
-                    niri.process_input_event(&mut |_| (), CompositorMod::Alt, event)
+                    match niri.process_input_event(CompositorMod::Alt, event) {
+                        BackendAction::None => (),
+                        BackendAction::ChangeVt(_) => (),
+                        BackendAction::Screenshot => {
+                            let active = niri.monitor_set.active_output().cloned();
+                            if let Some(active) = active {
+                                if let Err(err) = niri.screenshot(renderer, &active) {
+                                    warn!("error taking screenshot: {err:?}");
+                                }
+                            }
+                        }
+                    }
                 }
                 WinitEvent::Focus(_) => (),
                 WinitEvent::Refresh => niri.queue_redraw(self.output.clone()),

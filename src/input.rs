@@ -20,6 +20,7 @@ enum Action {
     Quit,
     ChangeVt(i32),
     Spawn(String),
+    Screenshot,
     CloseWindow,
     ToggleFullscreen,
     FocusLeft,
@@ -46,6 +47,12 @@ enum Action {
     MoveToMonitorUp,
     ToggleWidth,
     ToggleFullWidth,
+}
+
+pub enum BackendAction {
+    None,
+    ChangeVt(i32),
+    Screenshot,
 }
 
 pub enum CompositorMod {
@@ -88,6 +95,8 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
         KEY_t => Action::Spawn("alacritty".to_owned()),
         KEY_d => Action::Spawn("fuzzel".to_owned()),
         KEY_n => Action::Spawn("nautilus".to_owned()),
+        // Alt + PrtSc = SysRq
+        KEY_Sys_Req | KEY_Print => Action::Screenshot,
         KEY_q => Action::CloseWindow,
         KEY_F => Action::ToggleFullscreen,
         KEY_comma => Action::ConsumeIntoColumn,
@@ -126,10 +135,9 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
 impl Niri {
     pub fn process_input_event<I: InputBackend>(
         &mut self,
-        change_vt: &mut dyn FnMut(i32),
         comp_mod: CompositorMod,
         event: InputEvent<I>,
-    ) {
+    ) -> BackendAction {
         let _span = tracy_client::span!("process_input_event");
         trace!("process_input_event");
 
@@ -167,12 +175,15 @@ impl Niri {
                             self.stop_signal.stop()
                         }
                         Action::ChangeVt(vt) => {
-                            (*change_vt)(vt);
+                            return BackendAction::ChangeVt(vt);
                         }
                         Action::Spawn(command) => {
                             if let Err(err) = Command::new(command).spawn() {
                                 warn!("error spawning alacritty: {err}");
                             }
+                        }
+                        Action::Screenshot => {
+                            return BackendAction::Screenshot;
                         }
                         Action::CloseWindow => {
                             if let Some(window) = self.monitor_set.focus() {
@@ -602,6 +613,8 @@ impl Niri {
             }
             _ => {}
         }
+
+        BackendAction::None
     }
 
     pub fn process_libinput_event(&mut self, event: &mut InputEvent<LibinputInputBackend>) {

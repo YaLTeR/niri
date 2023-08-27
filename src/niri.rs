@@ -2,16 +2,22 @@ use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
+use anyhow::Context;
+use directories::UserDirs;
 use sd_notify::NotifyState;
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
-use smithay::backend::renderer::element::{render_elements, AsRenderElements, RenderElementStates};
+use smithay::backend::renderer::element::{
+    render_elements, AsRenderElements, Element, RenderElement, RenderElementStates,
+};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{ImportAll, Renderer};
+use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
 use smithay::desktop::utils::{
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
     take_presentation_feedback_surface_tree, OutputPresentationFeedback,
@@ -32,7 +38,9 @@ use smithay::reexports::wayland_server::backend::{
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, SERIAL_COUNTER};
+use smithay::utils::{
+    IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform, SERIAL_COUNTER,
+};
 use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
@@ -42,6 +50,7 @@ use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
+use time::OffsetDateTime;
 
 use crate::backend::Backend;
 use crate::dbus::mutter_service_channel::ServiceChannel;
@@ -711,6 +720,89 @@ impl Niri {
         }
 
         feedback
+    }
+
+    pub fn screenshot(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+    ) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("Niri::screenshot");
+
+        let size = output.current_mode().unwrap().size;
+        let output_rect = Rectangle::from_loc_and_size((0, 0), size);
+        let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
+        let fourcc = Fourcc::Abgr8888;
+
+        let texture: GlesTexture = renderer
+            .create_buffer(fourcc, buffer_size)
+            .context("error creating texture")?;
+
+        let elements = self.render(renderer, output);
+
+        renderer.bind(texture).context("error binding texture")?;
+        let mut frame = renderer
+            .render(size, Transform::Normal)
+            .context("error starting frame")?;
+
+        frame
+            .clear([0.1, 0.1, 0.1, 1.], &[output_rect])
+            .context("error clearing")?;
+
+        for element in elements.into_iter().rev() {
+            let src = element.src();
+            let dst = element.geometry(Scale::from(1.));
+            element
+                .draw(&mut frame, src, dst, &[output_rect])
+                .context("error drawing element")?;
+        }
+
+        let sync_point = frame.finish().context("error finishing frame")?;
+        sync_point.wait();
+
+        let mapping = renderer
+            .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), buffer_size), fourcc)
+            .context("error copying framebuffer")?;
+        let copy = renderer
+            .map_texture(&mapping)
+            .context("error mapping texture")?;
+        let pixels = copy.to_vec();
+
+        let dirs = UserDirs::new().context("error retrieving home directory")?;
+        let mut path = dirs.picture_dir().map(|p| p.to_owned()).unwrap_or_else(|| {
+            let mut dir = dirs.home_dir().to_owned();
+            dir.push("Pictures");
+            dir
+        });
+        path.push("Screenshots");
+
+        unsafe {
+            // are you kidding me
+            time::util::local_offset::set_soundness(time::util::local_offset::Soundness::Unsound);
+        };
+
+        let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+        let desc = time::macros::format_description!(
+            "Screenshot from [year]-[month]-[day] [hour]-[minute]-[second].png"
+        );
+        let name = now.format(desc).context("error formatting time")?;
+        path.push(name);
+
+        debug!("saving screenshot to {path:?}");
+
+        thread::spawn(move || {
+            if let Err(err) = image::save_buffer(
+                path,
+                &pixels,
+                size.w as u32,
+                size.h as u32,
+                image::ColorType::Rgba8,
+            ) {
+                warn!("error saving screenshot image: {err:?}");
+            }
+        });
+
+        Ok(())
     }
 }
 

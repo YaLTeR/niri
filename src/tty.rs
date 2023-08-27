@@ -31,7 +31,7 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::backend::Backend;
-use crate::input::CompositorMod;
+use crate::input::{BackendAction, CompositorMod};
 use crate::niri::OutputRenderElements;
 use crate::{LoopData, Niri};
 
@@ -173,10 +173,21 @@ impl Tty {
         event_loop
             .insert_source(input_backend, |mut event, _, data| {
                 let tty = data.tty.as_mut().unwrap();
-                let mut change_vt = |vt| tty.change_vt(vt);
-                data.niri.process_libinput_event(&mut event);
-                data.niri
-                    .process_input_event(&mut change_vt, CompositorMod::Super, event);
+                let niri = &mut data.niri;
+
+                niri.process_libinput_event(&mut event);
+                match niri.process_input_event(CompositorMod::Super, event) {
+                    BackendAction::None => (),
+                    BackendAction::ChangeVt(vt) => tty.change_vt(vt),
+                    BackendAction::Screenshot => {
+                        let active = niri.monitor_set.active_output().cloned();
+                        if let Some(active) = active {
+                            if let Err(err) = niri.screenshot(tty.renderer(), &active) {
+                                warn!("error taking screenshot: {err:?}");
+                            }
+                        }
+                    }
+                };
             })
             .unwrap();
 

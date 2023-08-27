@@ -82,6 +82,7 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>R</kbd> | Toggle between preset column widths |
 | <kbd>Mod</kbd><kbd>F</kbd> | Maximize column |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd> | Toggle full-screen on the focused window |
+| <kbd>Mod</kbd><kbd>PrtSc</kbd> | Save a screenshot to `~/Pictures/Screenshots/` |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>E</kbd> | Exit niri |
 
 [PaperWM]: https://github.com/paperwm/PaperWM
