@@ -43,3 +43,14 @@ profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
 
 [profile.release]
 overflow-checks = true
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
+    { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
+    { source = "resources/niri.desktop", dest = "/usr/share/wayland-sessions/", mode = "644" },
+    { source = "resources/niri.service", dest = "/usr/lib/systemd/user/", mode = "644" },
+]
+[package.metadata.generate-rpm.requires]
+alacritty = "*"
+fuzzel = "*"
