@@ -29,8 +29,9 @@ use winit::Winit;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// Command to run upon compositor startup.
     #[arg(last = true)]
-    command: Option<OsString>,
+    command: Vec<OsString>,
 }
 
 pub struct LoopData {
@@ -98,13 +99,10 @@ fn main() {
         winit.init(&mut data.niri);
     }
 
-    let res = if let Some(command) = &cli.command {
-        std::process::Command::new(command).spawn()
-    } else {
-        std::process::Command::new("alacritty").spawn()
-    };
-    if let Err(err) = res {
-        warn!("error spawning command: {err}");
+    if let Some((command, args)) = cli.command.split_first() {
+        if let Err(err) = std::process::Command::new(command).args(args).spawn() {
+            warn!("error spawning command: {err:?}");
+        }
     }
 
     event_loop
