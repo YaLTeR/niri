@@ -18,6 +18,7 @@ tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tracy-client = { version = "0.15.2", default-features = false }
 xcursor = "0.3.4"
+zbus = { version = "3.14.1" }
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay"

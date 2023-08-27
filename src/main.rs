@@ -5,6 +5,7 @@ mod handlers;
 
 mod animation;
 mod backend;
+mod dbus;
 mod frame_clock;
 mod input;
 mod layout;

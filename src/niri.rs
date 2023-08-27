@@ -44,6 +44,7 @@ use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
 
 use crate::backend::Backend;
+use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
 use crate::utils::{center, get_monotonic_time, load_default_cursor};
@@ -85,6 +86,8 @@ pub struct Niri {
     pub pointer_buffer: Option<(TextureBuffer<GlesTexture>, Point<i32, Physical>)>,
     pub cursor_image: CursorImageStatus,
     pub dnd_icon: Option<WlSurface>,
+
+    pub zbus_conn: Option<zbus::blocking::Connection>,
 }
 
 pub struct OutputState {
@@ -151,6 +154,7 @@ impl Niri {
             socket_name.to_string_lossy()
         );
 
+        let mut zbus_conn = None;
         if std::env::var_os("NOTIFY_SOCKET").is_some() {
             // We're starting as a systemd service. Export our variables and tell systemd we're
             // ready.
@@ -165,6 +169,20 @@ impl Niri {
             if let Err(err) = rv {
                 warn!("error spawning shell to import environment into systemd: {err:?}");
             }
+
+            // Set up zbus, make sure it happens before anything might want it.
+            let conn = zbus::blocking::ConnectionBuilder::session()
+                .unwrap()
+                .name("org.gnome.Mutter.ServiceChannel")
+                .unwrap()
+                .serve_at(
+                    "/org/gnome/Mutter/ServiceChannel",
+                    ServiceChannel::new(display_handle.clone()),
+                )
+                .unwrap()
+                .build()
+                .unwrap();
+            zbus_conn = Some(conn);
 
             // Notify systemd we're ready.
             if let Err(err) = sd_notify::notify(false, &[NotifyState::Ready]) {
@@ -210,6 +228,8 @@ impl Niri {
             pointer_buffer: None,
             cursor_image: CursorImageStatus::Default,
             dnd_icon: None,
+
+            zbus_conn,
         }
     }
 
