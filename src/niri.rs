@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use sd_notify::NotifyState;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
@@ -148,6 +150,27 @@ impl Niri {
             "listening on Wayland socket: {}",
             socket_name.to_string_lossy()
         );
+
+        if std::env::var_os("NOTIFY_SOCKET").is_some() {
+            // We're starting as a systemd service. Export our variables and tell systemd we're
+            // ready.
+            let rv = Command::new("/bin/sh")
+                .args([
+                    "-c",
+                    "systemctl --user import-environment WAYLAND_DISPLAY && \
+                     hash dbus-update-activation-environment 2>/dev/null && \
+                     dbus-update-activation-environment WAYLAND_DISPLAY",
+                ])
+                .spawn();
+            if let Err(err) = rv {
+                warn!("error spawning shell to import environment into systemd: {err:?}");
+            }
+
+            // Notify systemd we're ready.
+            if let Err(err) = sd_notify::notify(false, &[NotifyState::Ready]) {
+                warn!("error notifying systemd: {err:?}");
+            };
+        }
 
         let display_source = Generic::new(
             display.backend().poll_fd().as_raw_fd(),

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Make sure there's no already running session.
+if systemctl --user -q is-active niri.service; then
+  echo 'A niri session is already running.'
+  exit 1
+fi
+
+# Reset failed state of all user units.
+systemctl --user reset-failed
+
+# Set the current desktop for xdg-desktop-portal.
+export XDG_CURRENT_DESKTOP=niri
+
+# Ensure the session type is set to Wayland for xdg-autostart apps.
+export XDG_SESSION_TYPE=wayland
+
+# Import the login manager environment.
+systemctl --user import-environment
+
+# DBus activation environment is independent from systemd. While most of
+# dbus-activated services are already using `SystemdService` directive, some
+# still don't and thus we should set the dbus environment with a separate
+# command.
+if hash dbus-update-activation-environment 2>/dev/null; then
+    dbus-update-activation-environment --all
+fi
+
+# Start niri and wait for it to terminate.
+exec systemctl --user --wait start niri.service

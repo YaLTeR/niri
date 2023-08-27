@@ -19,6 +19,7 @@ use std::ffi::OsString;
 use backend::Backend;
 use clap::Parser;
 use niri::Niri;
+use sd_notify::NotifyState;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use tracing_subscriber::EnvFilter;
@@ -121,4 +122,9 @@ fn main() {
             }
         })
         .unwrap();
+
+    // Tell systemd we're stopping.
+    if let Err(err) = sd_notify::notify(false, &[NotifyState::Stopping]) {
+        warn!("error notifying systemd: {err:?}");
+    }
 }
