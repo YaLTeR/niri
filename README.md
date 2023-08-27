@@ -2,7 +2,7 @@
 
 The beginnings of a scrollable-tiling Wayland compositor.
 
-![](https://github.com/YaLTeR/niri/assets/1794388/b734da07-301a-452b-b201-d4789a3eca60)
+![](https://github.com/YaLTeR/niri/assets/1794388/ad4c9841-a798-448d-9df1-26bf7e096cc7)
 
 ## Status
 
