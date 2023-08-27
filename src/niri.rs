@@ -185,7 +185,7 @@ impl Niri {
             zbus_conn = Some(conn);
 
             // Notify systemd we're ready.
-            if let Err(err) = sd_notify::notify(false, &[NotifyState::Ready]) {
+            if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
                 warn!("error notifying systemd: {err:?}");
             };
         }
