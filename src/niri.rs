@@ -166,8 +166,22 @@ impl Niri {
                      dbus-update-activation-environment WAYLAND_DISPLAY",
                 ])
                 .spawn();
-            if let Err(err) = rv {
-                warn!("error spawning shell to import environment into systemd: {err:?}");
+            // Wait for the import process to complete, otherwise services will start too fast
+            // without environment variables available.
+            match rv {
+                Ok(mut child) => match child.wait() {
+                    Ok(status) => {
+                        if !status.success() {
+                            warn!("import environment shell exited with {status}");
+                        }
+                    }
+                    Err(err) => {
+                        warn!("error waiting for import environment shell: {err:?}");
+                    }
+                },
+                Err(err) => {
+                    warn!("error spawning shell to import environment into systemd: {err:?}");
+                }
             }
 
             // Set up zbus, make sure it happens before anything might want it.
