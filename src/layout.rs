@@ -582,6 +582,14 @@ impl<W: LayoutElement> MonitorSet<W> {
         Some(&mut monitors[*active_monitor_idx])
     }
 
+    pub fn monitor_for_output(&self, output: &Output) -> Option<&Monitor<W>> {
+        let MonitorSet::Normal { monitors, .. } = self else {
+            return None;
+        };
+
+        monitors.iter().find(|monitor| &monitor.output == output)
+    }
+
     pub fn monitor_for_output_mut(&mut self, output: &Output) -> Option<&mut Monitor<W>> {
         let MonitorSet::Normal { monitors, .. } = self else {
             return None;

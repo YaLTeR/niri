@@ -542,19 +542,15 @@ impl Niri {
         pointer_elements
     }
 
-    fn redraw(&mut self, backend: &mut dyn Backend, output: &Output) {
-        let _span = tracy_client::span!("redraw");
-        let state = self.output_state.get_mut(output).unwrap();
-        let presentation_time = state.frame_clock.next_presentation_time();
+    fn render(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+    ) -> Vec<OutputRenderElements<GlesRenderer>> {
+        let _span = tracy_client::span!("Niri::render");
 
-        assert!(state.queued_redraw.take().is_some());
-        assert!(!state.waiting_for_vblank);
-
-        let renderer = backend.renderer();
-
-        let mon = self.monitor_set.monitor_for_output_mut(output).unwrap();
-        mon.advance_animations(presentation_time);
         // Get monitor elements.
+        let mon = self.monitor_set.monitor_for_output(output).unwrap();
         let monitor_elements = mon.render_elements(renderer);
 
         // Get layer-shell elements.
@@ -614,13 +610,35 @@ impl Niri {
                 }),
         );
 
-        // backend.render() uses this.
-        drop(layer_map);
+        elements
+    }
+
+    fn redraw(&mut self, backend: &mut dyn Backend, output: &Output) {
+        let _span = tracy_client::span!("Niri::redraw");
+
+        let state = self.output_state.get_mut(output).unwrap();
+        let presentation_time = state.frame_clock.next_presentation_time();
+
+        assert!(state.queued_redraw.take().is_some());
+        assert!(!state.waiting_for_vblank);
+
+        // Advance the animations.
+        let mon = self.monitor_set.monitor_for_output_mut(output).unwrap();
+        mon.advance_animations(presentation_time);
+
+        // Render the elements.
+        let elements = self.render(backend.renderer(), output);
 
         // Hand it over to the backend.
         backend.render(self, output, &elements);
 
-        // Send frame callbacks.
+        // Send the frame callbacks.
+        self.send_frame_callbacks(output);
+    }
+
+    fn send_frame_callbacks(&self, output: &Output) {
+        let _span = tracy_client::span!("Niri::send_frame_callbacks");
+
         let frame_callback_time = self.start_time.elapsed();
         self.monitor_set.send_frame(output, frame_callback_time);
 
