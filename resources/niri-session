@@ -27,4 +27,7 @@ if hash dbus-update-activation-environment 2>/dev/null; then
 fi
 
 # Start niri and wait for it to terminate.
-exec systemctl --user --wait start niri.service
+systemctl --user --wait start niri.service
+
+# Unset environment that we've set.
+systemctl --user unset-environment WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP
