@@ -453,7 +453,6 @@ impl Niri {
 
                 self.seat.get_pointer().unwrap().axis(self, frame);
             }
-            // FIXME: tablet_tool protocol
             InputEvent::TabletToolAxis { event, .. } => {
                 // FIXME: allow mapping tablet to different outputs.
                 let output = self.global_space.outputs().next().unwrap();
