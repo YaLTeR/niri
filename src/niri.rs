@@ -44,6 +44,7 @@ use smithay::utils::{
 use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
@@ -86,6 +87,7 @@ pub struct Niri {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Self>,
     pub tablet_state: TabletManagerState,
+    pub pointer_gestures_state: PointerGesturesState,
     pub data_device_state: DataDeviceState,
     pub popups: PopupManager,
     pub presentation_state: PresentationState,
@@ -131,6 +133,7 @@ impl Niri {
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
         let mut seat_state = SeatState::new();
         let tablet_state = TabletManagerState::new::<Self>(&display_handle);
+        let pointer_gestures_state = PointerGesturesState::new::<Self>(&display_handle);
         let data_device_state = DataDeviceState::new::<Self>(&display_handle);
         let presentation_state =
             PresentationState::new::<Self>(&display_handle, CLOCK_MONOTONIC as u32);
@@ -243,6 +246,7 @@ impl Niri {
             output_manager_state,
             seat_state,
             tablet_state,
+            pointer_gestures_state,
             data_device_state,
             popups: PopupManager::default(),
             presentation_state,

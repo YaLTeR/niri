@@ -2,13 +2,18 @@ use std::process::Command;
 
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
-    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+    GestureBeginEvent, GestureEndEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
+    PointerAxisEvent, PointerButtonEvent, PointerMotionEvent, ProximityState,
+    TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
+    TabletToolTipState,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, KeysymHandle, ModifiersState};
-use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
+use smithay::input::pointer::{
+    AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
+    GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
+    GestureSwipeUpdateEvent, MotionEvent, RelativeMotionEvent,
+};
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
@@ -610,7 +615,108 @@ impl Niri {
                     }
                 }
             }
-            _ => {}
+            InputEvent::GestureSwipeBegin { event } => {
+                let serial = SERIAL_COUNTER.next_serial();
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_swipe_begin(
+                    self,
+                    &GestureSwipeBeginEvent {
+                        serial,
+                        time: event.time_msec(),
+                        fingers: event.fingers(),
+                    },
+                );
+            }
+            InputEvent::GestureSwipeUpdate { event } => {
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_swipe_update(
+                    self,
+                    &GestureSwipeUpdateEvent {
+                        time: event.time_msec(),
+                        delta: smithay::backend::input::GestureSwipeUpdateEvent::delta(&event),
+                    },
+                );
+            }
+            InputEvent::GestureSwipeEnd { event } => {
+                let serial = SERIAL_COUNTER.next_serial();
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_swipe_end(
+                    self,
+                    &GestureSwipeEndEvent {
+                        serial,
+                        time: event.time_msec(),
+                        cancelled: event.cancelled(),
+                    },
+                );
+            }
+            InputEvent::GesturePinchBegin { event } => {
+                let serial = SERIAL_COUNTER.next_serial();
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_pinch_begin(
+                    self,
+                    &GesturePinchBeginEvent {
+                        serial,
+                        time: event.time_msec(),
+                        fingers: event.fingers(),
+                    },
+                );
+            }
+            InputEvent::GesturePinchUpdate { event } => {
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_pinch_update(
+                    self,
+                    &GesturePinchUpdateEvent {
+                        time: event.time_msec(),
+                        delta: smithay::backend::input::GesturePinchUpdateEvent::delta(&event),
+                        scale: smithay::backend::input::GesturePinchUpdateEvent::scale(&event),
+                        rotation: smithay::backend::input::GesturePinchUpdateEvent::rotation(
+                            &event,
+                        ),
+                    },
+                );
+            }
+            InputEvent::GesturePinchEnd { event } => {
+                let serial = SERIAL_COUNTER.next_serial();
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_pinch_end(
+                    self,
+                    &GesturePinchEndEvent {
+                        serial,
+                        time: event.time_msec(),
+                        cancelled: event.cancelled(),
+                    },
+                );
+            }
+            InputEvent::GestureHoldBegin { event } => {
+                let serial = SERIAL_COUNTER.next_serial();
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_hold_begin(
+                    self,
+                    &GestureHoldBeginEvent {
+                        serial,
+                        time: event.time_msec(),
+                        fingers: event.fingers(),
+                    },
+                );
+            }
+            InputEvent::GestureHoldEnd { event } => {
+                let serial = SERIAL_COUNTER.next_serial();
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_hold_end(
+                    self,
+                    &GestureHoldEndEvent {
+                        serial,
+                        time: event.time_msec(),
+                        cancelled: event.cancelled(),
+                    },
+                );
+            }
+            InputEvent::TouchDown { .. } => (),
+            InputEvent::TouchMotion { .. } => (),
+            InputEvent::TouchUp { .. } => (),
+            InputEvent::TouchCancel { .. } => (),
+            InputEvent::TouchFrame { .. } => (),
+            InputEvent::Special(_) => (),
         }
 
         BackendAction::None

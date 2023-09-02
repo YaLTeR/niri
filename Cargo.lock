@@ -1847,7 +1847,7 @@ checksum = "62bb4feee49fdd9f707ef802e22365a35de4b7b299de4763d44bfea899442ff9"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay#e241ccbbc4dfc6ce38e33856d9d159e436db3b5e"
+source = "git+https://github.com/YaLTeR/smithay.git?branch=pointer-gestures#07b89166679ae280acff8aff93d0ecbbbbbcef5c"
 dependencies = [
  "appendlist",
  "bitflags 2.4.0",
