@@ -31,15 +31,15 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::input::{BackendAction, CompositorMod};
-use crate::niri::OutputRenderElements;
-use crate::{LoopData, Niri};
+use crate::niri::{Data, OutputRenderElements};
+use crate::Niri;
 
 const BACKGROUND_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.];
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
     session: LibSeatSession,
-    udev_dispatcher: Dispatcher<'static, UdevBackend, LoopData>,
+    udev_dispatcher: Dispatcher<'static, UdevBackend, Data>,
     primary_gpu_path: PathBuf,
     output_device: Option<OutputDevice>,
 }
@@ -69,45 +69,44 @@ struct TtyOutputState {
 }
 
 impl Tty {
-    pub fn new(event_loop: LoopHandle<'static, LoopData>) -> Self {
+    pub fn new(event_loop: LoopHandle<'static, Data>) -> Self {
         let (session, notifier) = LibSeatSession::new().unwrap();
         let seat_name = session.seat();
 
         let udev_backend = UdevBackend::new(session.seat()).unwrap();
-        let udev_dispatcher =
-            Dispatcher::new(udev_backend, move |event, _, data: &mut LoopData| {
-                let tty = data.backend.tty().unwrap();
-                let niri = &mut data.niri;
+        let udev_dispatcher = Dispatcher::new(udev_backend, move |event, _, data: &mut Data| {
+            let tty = data.backend.tty().unwrap();
+            let niri = &mut data.niri;
 
-                match event {
-                    UdevEvent::Added { device_id, path } => {
-                        if !tty.session.is_active() {
-                            debug!("skipping UdevEvent::Added as session is inactive");
-                            return;
-                        }
-
-                        if let Err(err) = tty.device_added(device_id, &path, niri) {
-                            warn!("error adding device: {err:?}");
-                        }
+            match event {
+                UdevEvent::Added { device_id, path } => {
+                    if !tty.session.is_active() {
+                        debug!("skipping UdevEvent::Added as session is inactive");
+                        return;
                     }
-                    UdevEvent::Changed { device_id } => {
-                        if !tty.session.is_active() {
-                            debug!("skipping UdevEvent::Changed as session is inactive");
-                            return;
-                        }
 
-                        tty.device_changed(device_id, niri)
-                    }
-                    UdevEvent::Removed { device_id } => {
-                        if !tty.session.is_active() {
-                            debug!("skipping UdevEvent::Removed as session is inactive");
-                            return;
-                        }
-
-                        tty.device_removed(device_id, niri)
+                    if let Err(err) = tty.device_added(device_id, &path, niri) {
+                        warn!("error adding device: {err:?}");
                     }
                 }
-            });
+                UdevEvent::Changed { device_id } => {
+                    if !tty.session.is_active() {
+                        debug!("skipping UdevEvent::Changed as session is inactive");
+                        return;
+                    }
+
+                    tty.device_changed(device_id, niri)
+                }
+                UdevEvent::Removed { device_id } => {
+                    if !tty.session.is_active() {
+                        debug!("skipping UdevEvent::Removed as session is inactive");
+                        return;
+                    }
+
+                    tty.device_removed(device_id, niri)
+                }
+            }
+        });
         event_loop
             .register_dispatcher(udev_dispatcher.clone())
             .unwrap();

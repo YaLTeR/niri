@@ -13,9 +13,9 @@ use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
 
 use crate::input::{BackendAction, CompositorMod};
-use crate::niri::OutputRenderElements;
+use crate::niri::{Data, OutputRenderElements};
 use crate::utils::get_monotonic_time;
-use crate::{LoopData, Niri};
+use crate::Niri;
 
 pub struct Winit {
     output: Output,
@@ -25,7 +25,7 @@ pub struct Winit {
 }
 
 impl Winit {
-    pub fn new(event_loop: LoopHandle<LoopData>) -> Self {
+    pub fn new(event_loop: LoopHandle<Data>) -> Self {
         let builder = WindowBuilder::new()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)

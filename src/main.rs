@@ -15,11 +15,9 @@ mod utils;
 use std::env;
 use std::ffi::OsString;
 
-use backend::{Backend, Tty, Winit};
 use clap::Parser;
-use niri::Niri;
+use niri::{Data, Niri};
 use smithay::reexports::calloop::EventLoop;
-use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -28,15 +26,6 @@ struct Cli {
     /// Command to run upon compositor startup.
     #[arg(last = true)]
     command: Vec<OsString>,
-}
-
-pub struct LoopData {
-    niri: Niri,
-    backend: Backend,
-
-    // Last so that it's dropped after the Smithay state in Niri and related state in Tty.
-    // Otherwise it will segfault on quit.
-    display: Display<Niri>,
 }
 
 fn main() {
@@ -54,31 +43,7 @@ fn main() {
     let _client = tracy_client::Client::start();
 
     let mut event_loop = EventLoop::try_new().unwrap();
-
-    let has_display = env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
-
-    let backend = if has_display {
-        Backend::Winit(Winit::new(event_loop.handle()))
-    } else {
-        Backend::Tty(Tty::new(event_loop.handle()))
-    };
-
-    let mut display = Display::new().unwrap();
-    let niri = Niri::new(
-        event_loop.handle(),
-        event_loop.get_signal(),
-        &mut display,
-        backend.seat_name(),
-    );
-
-    let mut data = LoopData {
-        niri,
-        display,
-
-        backend,
-    };
-
-    data.backend.init(&mut data.niri);
+    let mut data = Data::new(event_loop.handle(), event_loop.get_signal());
 
     if let Some((command, args)) = cli.command.split_first() {
         if let Err(err) = std::process::Command::new(command).args(args).spawn() {

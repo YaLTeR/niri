@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
+use std::{env, thread};
 
 use anyhow::Context;
 use directories::UserDirs;
@@ -53,16 +53,15 @@ use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
 use time::OffsetDateTime;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, Tty, Winit};
 use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
 use crate::utils::{center, get_monotonic_time, load_default_cursor};
-use crate::LoopData;
 
 pub struct Niri {
     pub start_time: std::time::Instant,
-    pub event_loop: LoopHandle<'static, LoopData>,
+    pub event_loop: LoopHandle<'static, Data>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
 
@@ -113,9 +112,38 @@ pub struct OutputState {
     pub frame_clock: FrameClock,
 }
 
+pub struct Data {
+    pub display: Display<Niri>,
+    pub backend: Backend,
+    pub niri: Niri,
+}
+
+impl Data {
+    pub fn new(event_loop: LoopHandle<'static, Self>, stop_signal: LoopSignal) -> Self {
+        let has_display =
+            env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
+
+        let mut backend = if has_display {
+            Backend::Winit(Winit::new(event_loop.clone()))
+        } else {
+            Backend::Tty(Tty::new(event_loop.clone()))
+        };
+
+        let mut display = Display::new().unwrap();
+        let mut niri = Niri::new(event_loop, stop_signal, &mut display, backend.seat_name());
+        backend.init(&mut niri);
+
+        Self {
+            display,
+            backend,
+            niri,
+        }
+    }
+}
+
 impl Niri {
     pub fn new(
-        event_loop: LoopHandle<'static, LoopData>,
+        event_loop: LoopHandle<'static, Data>,
         stop_signal: LoopSignal,
         display: &mut Display<Self>,
         seat_name: String,
