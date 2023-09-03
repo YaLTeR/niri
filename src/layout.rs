@@ -46,6 +46,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{with_states, SurfaceData};
+use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
@@ -79,6 +80,14 @@ pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     ) where
         T: Into<Duration>,
         F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy;
+    fn send_dmabuf_feedback<'a, P, F>(
+        &self,
+        output: &Output,
+        primary_scan_out_output: P,
+        select_dmabuf_feedback: F,
+    ) where
+        P: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
+        F: Fn(&WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy;
 }
 
 #[derive(Debug)]
@@ -219,6 +228,18 @@ impl LayoutElement for Window {
         F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
     {
         self.send_frame(output, time, throttle, primary_scan_out_output);
+    }
+
+    fn send_dmabuf_feedback<'a, P, F>(
+        &self,
+        output: &Output,
+        primary_scan_out_output: P,
+        select_dmabuf_feedback: F,
+    ) where
+        P: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
+        F: Fn(&WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
+    {
+        self.send_dmabuf_feedback(output, primary_scan_out_output, select_dmabuf_feedback);
     }
 }
 
@@ -459,6 +480,16 @@ impl<W: LayoutElement> MonitorSet<W> {
             for mon in monitors {
                 if &mon.output == output {
                     mon.workspaces[mon.active_workspace_idx].send_frame(time);
+                }
+            }
+        }
+    }
+
+    pub fn send_dmabuf_feedback(&self, output: &Output, feedback: &DmabufFeedback) {
+        if let MonitorSet::Normal { monitors, .. } = self {
+            for mon in monitors {
+                if &mon.output == output {
+                    mon.workspaces[mon.active_workspace_idx].send_dmabuf_feedback(feedback);
                 }
             }
         }
@@ -1503,6 +1534,13 @@ impl<W: LayoutElement> Workspace<W> {
         let output = self.output.as_ref().unwrap();
         for win in self.windows() {
             win.send_frame(output, time, None, |_, _| Some(output.clone()));
+        }
+    }
+
+    fn send_dmabuf_feedback(&self, feedback: &DmabufFeedback) {
+        let output = self.output.as_ref().unwrap();
+        for win in self.windows() {
+            win.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
         }
     }
 

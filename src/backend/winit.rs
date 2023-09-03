@@ -11,6 +11,7 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
+use smithay::wayland::dmabuf::DmabufFeedback;
 
 use crate::niri::OutputRenderElements;
 use crate::utils::get_monotonic_time;
@@ -129,7 +130,7 @@ impl Winit {
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
-    ) {
+    ) -> Option<&DmabufFeedback> {
         let _span = tracy_client::span!("Winit::render");
 
         self.backend.bind().unwrap();
@@ -152,6 +153,8 @@ impl Winit {
 
             self.backend.window().request_redraw();
         }
+
+        None
     }
 
     pub fn toggle_debug_tint(&mut self) {

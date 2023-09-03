@@ -25,9 +25,10 @@ use smithay::reexports::drm::control::{
 use smithay::reexports::input::Libinput;
 use smithay::reexports::nix::fcntl::OFlag;
 use smithay::reexports::nix::libc::dev_t;
+use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::utils::DeviceFd;
-use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState};
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState, DmabufFeedback};
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
@@ -59,7 +60,7 @@ struct OutputDevice {
     gles: GlesRenderer,
     formats: HashSet<DrmFormat>,
     drm_scanner: DrmScanner,
-    surfaces: HashMap<crtc::Handle, GbmDrmCompositor>,
+    surfaces: HashMap<crtc::Handle, (GbmDrmCompositor, DmabufFeedback)>,
     dmabuf_state: DmabufState,
     dmabuf_global: DmabufGlobal,
 }
@@ -274,7 +275,7 @@ impl Tty {
                         trace!("vblank {metadata:?}");
 
                         let device = tty.output_device.as_mut().unwrap();
-                        let drm_compositor = device.surfaces.get_mut(&crtc).unwrap();
+                        let drm_compositor = &mut device.surfaces.get_mut(&crtc).unwrap().0;
 
                         let presentation_time = match metadata.as_mut().unwrap().time {
                             DrmEventTime::Monotonic(time) => time,
@@ -479,6 +480,20 @@ impl Tty {
             crtc,
         });
 
+        let planes = surface.planes().unwrap();
+        let scanout_formats = surface
+            .supported_formats(planes.primary.handle)
+            .unwrap()
+            .into_iter()
+            .chain(
+                planes
+                    .overlay
+                    .into_iter()
+                    .flat_map(|p| surface.supported_formats(p.handle).unwrap()),
+            )
+            .collect::<HashSet<_>>();
+        let scanout_formats = scanout_formats.intersection(&device.formats).copied();
+
         // Create the compositor.
         let compositor = DrmCompositor::new(
             OutputModeSource::Auto(output.clone()),
@@ -492,7 +507,12 @@ impl Tty {
             Some(device.gbm.clone()),
         )?;
 
-        let res = device.surfaces.insert(crtc, compositor);
+        let dmabuf_feedback = DmabufFeedbackBuilder::new(device.id, device.formats.clone())
+            .add_preference_tranche(device.id, Some(TrancheFlags::Scanout), scanout_formats)
+            .build()
+            .unwrap();
+
+        let res = device.surfaces.insert(crtc, (compositor, dmabuf_feedback));
         assert!(res.is_none(), "crtc must not have already existed");
 
         niri.add_output(output.clone(), Some(refresh_interval(*mode)));
@@ -541,12 +561,12 @@ impl Tty {
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
-    ) {
+    ) -> Option<&DmabufFeedback> {
         let _span = tracy_client::span!("Tty::render");
 
         let device = self.output_device.as_mut().unwrap();
         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-        let drm_compositor = device.surfaces.get_mut(&tty_state.crtc).unwrap();
+        let (drm_compositor, dmabuf_feedback) = device.surfaces.get_mut(&tty_state.crtc).unwrap();
 
         match drm_compositor.render_frame::<_, _, GlesTexture>(
             &mut device.gles,
@@ -564,7 +584,9 @@ impl Tty {
                             niri.output_state
                                 .get_mut(output)
                                 .unwrap()
-                                .waiting_for_vblank = true
+                                .waiting_for_vblank = true;
+
+                            return Some(dmabuf_feedback);
                         }
                         Err(err) => {
                             error!("error queueing frame: {err}");
@@ -577,6 +599,8 @@ impl Tty {
                 error!("error rendering frame: {err}");
             }
         }
+
+        None
     }
 
     pub fn change_vt(&mut self, vt: i32) {
@@ -593,7 +617,7 @@ impl Tty {
 
     pub fn toggle_debug_tint(&mut self) {
         if let Some(device) = self.output_device.as_mut() {
-            for (_, compositor) in &mut device.surfaces {
+            for (_, (compositor, _)) in &mut device.surfaces {
                 compositor.set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
             }
         }

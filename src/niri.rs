@@ -19,8 +19,9 @@ use smithay::backend::renderer::element::{
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
 use smithay::desktop::utils::{
-    send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
-    take_presentation_feedback_surface_tree, OutputPresentationFeedback,
+    send_dmabuf_feedback_surface_tree, send_frames_surface_tree,
+    surface_presentation_feedback_flags_from_states, take_presentation_feedback_surface_tree,
+    OutputPresentationFeedback,
 };
 use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
@@ -43,6 +44,7 @@ use smithay::utils::{
 };
 use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
+use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
@@ -378,7 +380,7 @@ impl Niri {
 
     pub fn remove_output(&mut self, output: &Output) {
         let mut state = self.output_state.remove(output).unwrap();
-        self.display_handle.remove_global::<Niri>(state.global);
+        self.display_handle.remove_global::<State>(state.global);
 
         if let Some(idle) = state.queued_redraw.take() {
             idle.cancel();
@@ -698,10 +700,43 @@ impl Niri {
         let elements = self.render(backend.renderer(), output);
 
         // Hand it over to the backend.
-        backend.render(self, output, &elements);
+        let dmabuf_feedback = backend.render(self, output, &elements);
+
+        // Send the dmabuf feedbacks.
+        if let Some(feedback) = dmabuf_feedback {
+            self.send_dmabuf_feedbacks(output, feedback);
+        }
 
         // Send the frame callbacks.
         self.send_frame_callbacks(output);
+    }
+
+    fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
+        let _span = tracy_client::span!("Niri::send_dmabuf_feedbacks");
+
+        self.monitor_set.send_dmabuf_feedback(output, feedback);
+
+        for surface in layer_map_for_output(output).layers() {
+            surface.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
+        }
+
+        if let Some(surface) = &self.dnd_icon {
+            send_dmabuf_feedback_surface_tree(
+                surface,
+                output,
+                |_, _| Some(output.clone()),
+                |_, _| feedback,
+            );
+        }
+
+        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+            send_dmabuf_feedback_surface_tree(
+                surface,
+                output,
+                |_, _| Some(output.clone()),
+                |_, _| feedback,
+            );
+        }
     }
 
     fn send_frame_callbacks(&self, output: &Output) {

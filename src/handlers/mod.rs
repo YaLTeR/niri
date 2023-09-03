@@ -92,7 +92,7 @@ impl DmabufHandler for State {
         match self.backend.renderer().import_dmabuf(&dmabuf, None) {
             Ok(_texture) => Ok(()),
             Err(err) => {
-                warn!("error importing dmabuf: {err:?}");
+                debug!("error importing dmabuf: {err:?}");
                 Err(ImportError::Failed)
             }
         }
