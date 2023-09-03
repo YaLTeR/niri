@@ -466,7 +466,8 @@ impl Tty {
             self.connector_disconnected(niri, connector, crtc);
         }
 
-        let device = self.output_device.take().unwrap();
+        let mut device = self.output_device.take().unwrap();
+        device.gles.unbind_wl_display();
         niri.event_loop.remove(device.token);
     }
 
