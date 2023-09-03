@@ -2,6 +2,8 @@ mod compositor;
 mod layer_shell;
 mod xdg_shell;
 
+use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::renderer::ImportDma;
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
@@ -11,9 +13,10 @@ use smithay::wayland::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
 };
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::{
-    delegate_data_device, delegate_output, delegate_pointer_gestures, delegate_presentation,
-    delegate_seat, delegate_tablet_manager,
+    delegate_data_device, delegate_dmabuf, delegate_output, delegate_pointer_gestures,
+    delegate_presentation, delegate_seat, delegate_tablet_manager,
 };
 
 use crate::niri::State;
@@ -75,3 +78,24 @@ delegate_data_device!(State);
 delegate_output!(State);
 
 delegate_presentation!(State);
+
+impl DmabufHandler for State {
+    fn dmabuf_state(&mut self) -> &mut DmabufState {
+        self.backend.tty().dmabuf_state()
+    }
+
+    fn dmabuf_imported(
+        &mut self,
+        _global: &DmabufGlobal,
+        dmabuf: Dmabuf,
+    ) -> Result<(), ImportError> {
+        match self.backend.renderer().import_dmabuf(&dmabuf, None) {
+            Ok(_texture) => Ok(()),
+            Err(err) => {
+                warn!("error importing dmabuf: {err:?}");
+                Err(ImportError::Failed)
+            }
+        }
+    }
+}
+delegate_dmabuf!(State);

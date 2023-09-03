@@ -2,13 +2,16 @@ use std::collections::hash_map::Entry;
 
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
 use smithay::desktop::find_popup_root_surface;
+use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::Client;
+use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
-    get_parent, is_sync_subsurface, CompositorClientState, CompositorHandler, CompositorState,
+    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
+    BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
 };
+use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
@@ -22,6 +25,39 @@ impl CompositorHandler for State {
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
         &client.get_data::<ClientState>().unwrap().compositor_state
+    }
+
+    fn new_surface(&mut self, surface: &WlSurface) {
+        add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
+            let maybe_dmabuf = with_states(surface, |surface_data| {
+                surface_data
+                    .cached_state
+                    .pending::<SurfaceAttributes>()
+                    .buffer
+                    .as_ref()
+                    .and_then(|assignment| match assignment {
+                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).ok(),
+                        _ => None,
+                    })
+            });
+            if let Some(dmabuf) = maybe_dmabuf {
+                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
+                    let client = surface.client().unwrap();
+                    let res = state
+                        .niri
+                        .event_loop
+                        .insert_source(source, move |_, _, data| {
+                            data.state
+                                .client_compositor_state(&client)
+                                .blocker_cleared(&mut data.state, &data.display.handle());
+                            Ok(())
+                        });
+                    if res.is_ok() {
+                        add_blocker(surface, blocker);
+                    }
+                }
+            }
+        })
     }
 
     fn commit(&mut self, surface: &WlSurface) {
