@@ -1,6 +1,7 @@
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 
+use crate::input::CompositorMod;
 use crate::niri::OutputRenderElements;
 use crate::Niri;
 
@@ -49,19 +50,47 @@ impl Backend {
         }
     }
 
-    pub fn tty(&mut self) -> Option<&mut Tty> {
-        if let Self::Tty(v) = self {
-            Some(v)
-        } else {
-            None
+    pub fn mod_key(&self) -> CompositorMod {
+        match self {
+            Backend::Tty(_) => CompositorMod::Super,
+            Backend::Winit(_) => CompositorMod::Alt,
         }
     }
 
-    pub fn winit(&mut self) -> Option<&mut Winit> {
-        if let Self::Winit(v) = self {
-            Some(v)
+    pub fn change_vt(&mut self, vt: i32) {
+        match self {
+            Backend::Tty(tty) => tty.change_vt(vt),
+            Backend::Winit(_) => (),
+        }
+    }
+
+    pub fn suspend(&mut self) {
+        match self {
+            Backend::Tty(tty) => tty.suspend(),
+            Backend::Winit(_) => (),
+        }
+    }
+
+    pub fn toggle_debug_tint(&mut self) {
+        match self {
+            Backend::Tty(tty) => tty.toggle_debug_tint(),
+            Backend::Winit(winit) => winit.toggle_debug_tint(),
+        }
+    }
+
+    pub fn tty(&mut self) -> &mut Tty {
+        if let Self::Tty(v) = self {
+            v
         } else {
-            None
+            panic!("backend is not Tty");
+        }
+    }
+
+    pub fn winit(&mut self) -> &mut Winit {
+        if let Self::Winit(v) = self {
+            v
+        } else {
+            panic!("backend is not Winit")
         }
     }
 }

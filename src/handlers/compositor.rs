@@ -13,12 +13,11 @@ use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell;
-use crate::niri::ClientState;
-use crate::Niri;
+use crate::niri::{ClientState, State};
 
-impl CompositorHandler for Niri {
+impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
-        &mut self.compositor_state
+        &mut self.niri.compositor_state
     }
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
@@ -41,7 +40,7 @@ impl CompositorHandler for Niri {
 
         if surface == &root_surface {
             // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
-            if let Entry::Occupied(entry) = self.unmapped_windows.entry(surface.clone()) {
+            if let Entry::Occupied(entry) = self.niri.unmapped_windows.entry(surface.clone()) {
                 let is_mapped =
                     with_renderer_surface_state(surface, |state| state.buffer().is_some());
 
@@ -50,9 +49,11 @@ impl CompositorHandler for Niri {
                     let window = entry.remove();
                     window.on_commit();
 
-                    let output = self.monitor_set.active_output().unwrap().clone();
-                    self.monitor_set.add_window_to_output(&output, window, true);
-                    self.queue_redraw(output);
+                    let output = self.niri.monitor_set.active_output().unwrap().clone();
+                    self.niri
+                        .monitor_set
+                        .add_window_to_output(&output, window, true);
+                    self.niri.queue_redraw(output);
                     return;
                 }
 
@@ -63,7 +64,7 @@ impl CompositorHandler for Niri {
             }
 
             // This is a commit of a previously-mapped root or a non-toplevel root.
-            if let Some((window, output)) = self.monitor_set.find_window_and_output(surface) {
+            if let Some((window, output)) = self.niri.monitor_set.find_window_and_output(surface) {
                 // This is a commit of a previously-mapped toplevel.
                 window.on_commit();
 
@@ -73,16 +74,16 @@ impl CompositorHandler for Niri {
 
                 if !is_mapped {
                     // The toplevel got unmapped.
-                    self.monitor_set.remove_window(&window);
-                    self.unmapped_windows.insert(surface.clone(), window);
-                    self.queue_redraw(output);
+                    self.niri.monitor_set.remove_window(&window);
+                    self.niri.unmapped_windows.insert(surface.clone(), window);
+                    self.niri.queue_redraw(output);
                     return;
                 }
 
                 // The toplevel remains mapped.
-                self.monitor_set.update_window(&window);
+                self.niri.monitor_set.update_window(&window);
 
-                self.queue_redraw(output);
+                self.niri.queue_redraw(output);
                 return;
             }
 
@@ -90,21 +91,21 @@ impl CompositorHandler for Niri {
         }
 
         // This is a commit of a non-root or a non-toplevel root.
-        let root_window_output = self.monitor_set.find_window_and_output(&root_surface);
+        let root_window_output = self.niri.monitor_set.find_window_and_output(&root_surface);
         if let Some((window, output)) = root_window_output {
             window.on_commit();
-            self.monitor_set.update_window(&window);
-            self.queue_redraw(output);
+            self.niri.monitor_set.update_window(&window);
+            self.niri.queue_redraw(output);
             return;
         }
 
         // This might be a popup.
         self.popups_handle_commit(surface);
-        if let Some(popup) = self.popups.find_popup(surface) {
+        if let Some(popup) = self.niri.popups.find_popup(surface) {
             if let Ok(root) = find_popup_root_surface(&popup) {
-                let root_window_output = self.monitor_set.find_window_and_output(&root);
+                let root_window_output = self.niri.monitor_set.find_window_and_output(&root);
                 if let Some((_window, output)) = root_window_output {
-                    self.queue_redraw(output);
+                    self.niri.queue_redraw(output);
                 }
             }
         }
@@ -114,15 +115,15 @@ impl CompositorHandler for Niri {
     }
 }
 
-impl BufferHandler for Niri {
+impl BufferHandler for State {
     fn buffer_destroyed(&mut self, _buffer: &wl_buffer::WlBuffer) {}
 }
 
-impl ShmHandler for Niri {
+impl ShmHandler for State {
     fn shm_state(&self) -> &ShmState {
-        &self.shm_state
+        &self.niri.shm_state
     }
 }
 
-delegate_compositor!(Niri);
-delegate_shm!(Niri);
+delegate_compositor!(State);
+delegate_shm!(State);

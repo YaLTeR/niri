@@ -16,8 +16,9 @@ use std::env;
 use std::ffi::OsString;
 
 use clap::Parser;
-use niri::{Data, Niri};
+use niri::{Niri, State};
 use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -26,6 +27,11 @@ struct Cli {
     /// Command to run upon compositor startup.
     #[arg(last = true)]
     command: Vec<OsString>,
+}
+
+struct LoopData {
+    display: Display<State>,
+    state: State,
 }
 
 fn main() {
@@ -43,7 +49,9 @@ fn main() {
     let _client = tracy_client::Client::start();
 
     let mut event_loop = EventLoop::try_new().unwrap();
-    let mut data = Data::new(event_loop.handle(), event_loop.get_signal());
+    let mut display = Display::new().unwrap();
+    let state = State::new(event_loop.handle(), event_loop.get_signal(), &mut display);
+    let mut data = LoopData { display, state };
 
     if let Some((command, args)) = cli.command.split_first() {
         if let Err(err) = std::process::Command::new(command).args(args).spawn() {
@@ -56,9 +64,9 @@ fn main() {
             let _span = tracy_client::span!("loop callback");
 
             // These should be called periodically, before flushing the clients.
-            data.niri.monitor_set.refresh();
-            data.niri.popups.cleanup();
-            data.niri.update_focus();
+            data.state.niri.monitor_set.refresh();
+            data.state.niri.popups.cleanup();
+            data.state.update_focus();
 
             {
                 let _span = tracy_client::span!("flush_clients");

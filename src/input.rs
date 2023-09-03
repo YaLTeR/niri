@@ -17,7 +17,7 @@ use smithay::input::pointer::{
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
-use crate::niri::Niri;
+use crate::niri::State;
 use crate::utils::get_monotonic_time;
 
 enum Action {
@@ -54,14 +54,6 @@ enum Action {
     MoveToMonitorUp,
     ToggleWidth,
     ToggleFullWidth,
-}
-
-pub enum BackendAction {
-    None,
-    ChangeVt(i32),
-    Suspend,
-    Screenshot,
-    ToggleDebugTint,
 }
 
 pub enum CompositorMod {
@@ -148,12 +140,8 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
     }
 }
 
-impl Niri {
-    pub fn process_input_event<I: InputBackend>(
-        &mut self,
-        comp_mod: CompositorMod,
-        event: InputEvent<I>,
-    ) -> BackendAction {
+impl State {
+    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         let _span = tracy_client::span!("process_input_event");
         trace!("process_input_event");
 
@@ -161,14 +149,18 @@ impl Niri {
         // doesn't always trigger due to damage, etc. So run it here right before it might prove
         // important. Besides, animations affect the input, so it's best to have up-to-date values
         // here.
-        self.monitor_set.advance_animations(get_monotonic_time());
+        self.niri
+            .monitor_set
+            .advance_animations(get_monotonic_time());
+
+        let comp_mod = self.backend.mod_key();
 
         match event {
             InputEvent::Keyboard { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time_msec(&event);
 
-                let action = self.seat.get_keyboard().unwrap().input(
+                let action = self.niri.seat.get_keyboard().unwrap().input(
                     self,
                     event.key_code(),
                     event.state(),
@@ -188,16 +180,16 @@ impl Niri {
                         Action::None => unreachable!(),
                         Action::Quit => {
                             info!("quitting because quit bind was pressed");
-                            self.stop_signal.stop()
+                            self.niri.stop_signal.stop()
                         }
                         Action::ChangeVt(vt) => {
-                            return BackendAction::ChangeVt(vt);
+                            self.backend.change_vt(vt);
                         }
                         Action::Suspend => {
-                            return BackendAction::Suspend;
+                            self.backend.suspend();
                         }
                         Action::ToggleDebugTint => {
-                            return BackendAction::ToggleDebugTint;
+                            self.backend.toggle_debug_tint();
                         }
                         Action::Spawn(command) => {
                             if let Err(err) = Command::new(command).spawn() {
@@ -205,132 +197,139 @@ impl Niri {
                             }
                         }
                         Action::Screenshot => {
-                            return BackendAction::Screenshot;
+                            let active = self.niri.monitor_set.active_output().cloned();
+                            if let Some(active) = active {
+                                if let Err(err) =
+                                    self.niri.screenshot(self.backend.renderer(), &active)
+                                {
+                                    warn!("error taking screenshot: {err:?}");
+                                }
+                            }
                         }
                         Action::CloseWindow => {
-                            if let Some(window) = self.monitor_set.focus() {
+                            if let Some(window) = self.niri.monitor_set.focus() {
                                 window.toplevel().send_close();
                             }
                         }
                         Action::ToggleFullscreen => {
-                            let focus = self.monitor_set.focus().cloned();
+                            let focus = self.niri.monitor_set.focus().cloned();
                             if let Some(window) = focus {
-                                self.monitor_set.toggle_fullscreen(&window);
+                                self.niri.monitor_set.toggle_fullscreen(&window);
                             }
                         }
                         Action::MoveLeft => {
-                            self.monitor_set.move_left();
+                            self.niri.monitor_set.move_left();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::MoveRight => {
-                            self.monitor_set.move_right();
+                            self.niri.monitor_set.move_right();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::MoveDown => {
-                            self.monitor_set.move_down();
+                            self.niri.monitor_set.move_down();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::MoveUp => {
-                            self.monitor_set.move_up();
+                            self.niri.monitor_set.move_up();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::FocusLeft => {
-                            self.monitor_set.focus_left();
+                            self.niri.monitor_set.focus_left();
                         }
                         Action::FocusRight => {
-                            self.monitor_set.focus_right();
+                            self.niri.monitor_set.focus_right();
                         }
                         Action::FocusDown => {
-                            self.monitor_set.focus_down();
+                            self.niri.monitor_set.focus_down();
                         }
                         Action::FocusUp => {
-                            self.monitor_set.focus_up();
+                            self.niri.monitor_set.focus_up();
                         }
                         Action::MoveToWorkspaceDown => {
-                            self.monitor_set.move_to_workspace_down();
+                            self.niri.monitor_set.move_to_workspace_down();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::MoveToWorkspaceUp => {
-                            self.monitor_set.move_to_workspace_up();
+                            self.niri.monitor_set.move_to_workspace_up();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::SwitchWorkspaceDown => {
-                            self.monitor_set.switch_workspace_down();
+                            self.niri.monitor_set.switch_workspace_down();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::SwitchWorkspaceUp => {
-                            self.monitor_set.switch_workspace_up();
+                            self.niri.monitor_set.switch_workspace_up();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::ConsumeIntoColumn => {
-                            self.monitor_set.consume_into_column();
+                            self.niri.monitor_set.consume_into_column();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::ExpelFromColumn => {
-                            self.monitor_set.expel_from_column();
+                            self.niri.monitor_set.expel_from_column();
                             // FIXME: granular
-                            self.queue_redraw_all();
+                            self.niri.queue_redraw_all();
                         }
                         Action::ToggleWidth => {
-                            self.monitor_set.toggle_width();
+                            self.niri.monitor_set.toggle_width();
                         }
                         Action::ToggleFullWidth => {
-                            self.monitor_set.toggle_full_width();
+                            self.niri.monitor_set.toggle_full_width();
                         }
                         Action::FocusMonitorLeft => {
-                            if let Some(output) = self.output_left() {
-                                self.monitor_set.focus_output(&output);
+                            if let Some(output) = self.niri.output_left() {
+                                self.niri.monitor_set.focus_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::FocusMonitorRight => {
-                            if let Some(output) = self.output_right() {
-                                self.monitor_set.focus_output(&output);
+                            if let Some(output) = self.niri.output_right() {
+                                self.niri.monitor_set.focus_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::FocusMonitorDown => {
-                            if let Some(output) = self.output_down() {
-                                self.monitor_set.focus_output(&output);
+                            if let Some(output) = self.niri.output_down() {
+                                self.niri.monitor_set.focus_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::FocusMonitorUp => {
-                            if let Some(output) = self.output_up() {
-                                self.monitor_set.focus_output(&output);
+                            if let Some(output) = self.niri.output_up() {
+                                self.niri.monitor_set.focus_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::MoveToMonitorLeft => {
-                            if let Some(output) = self.output_left() {
-                                self.monitor_set.move_to_output(&output);
+                            if let Some(output) = self.niri.output_left() {
+                                self.niri.monitor_set.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::MoveToMonitorRight => {
-                            if let Some(output) = self.output_right() {
-                                self.monitor_set.move_to_output(&output);
+                            if let Some(output) = self.niri.output_right() {
+                                self.niri.monitor_set.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::MoveToMonitorDown => {
-                            if let Some(output) = self.output_down() {
-                                self.monitor_set.move_to_output(&output);
+                            if let Some(output) = self.niri.output_down() {
+                                self.niri.monitor_set.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::MoveToMonitorUp => {
-                            if let Some(output) = self.output_up() {
-                                self.monitor_set.move_to_output(&output);
+                            if let Some(output) = self.niri.output_up() {
+                                self.niri.monitor_set.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
@@ -340,7 +339,7 @@ impl Niri {
             InputEvent::PointerMotion { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();
 
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 let mut pos = pointer.current_location();
 
                 pos += event.delta();
@@ -349,9 +348,9 @@ impl Niri {
                 let mut min_y = i32::MAX;
                 let mut max_x = 0;
                 let mut max_y = 0;
-                for output in self.global_space.outputs() {
+                for output in self.niri.global_space.outputs() {
                     // FIXME: smarter clamping.
-                    let geom = self.global_space.output_geometry(output).unwrap();
+                    let geom = self.niri.global_space.output_geometry(output).unwrap();
                     min_x = min_x.min(geom.loc.x);
                     min_y = min_y.min(geom.loc.y);
                     max_x = max_x.max(geom.loc.x + geom.size.w);
@@ -361,7 +360,7 @@ impl Niri {
                 pos.x = pos.x.clamp(min_x as f64, max_x as f64);
                 pos.y = pos.y.clamp(min_y as f64, max_y as f64);
 
-                let under = self.surface_under_and_global_space(pos);
+                let under = self.niri.surface_under_and_global_space(pos);
 
                 pointer.motion(
                     self,
@@ -385,20 +384,20 @@ impl Niri {
 
                 // Redraw to update the cursor position.
                 // FIXME: redraw only outputs overlapping the cursor.
-                self.queue_redraw_all();
+                self.niri.queue_redraw_all();
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.global_space.outputs().next().unwrap();
+                let output = self.niri.global_space.outputs().next().unwrap();
 
-                let output_geo = self.global_space.output_geometry(output).unwrap();
+                let output_geo = self.niri.global_space.output_geometry(output).unwrap();
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
                 let serial = SERIAL_COUNTER.next_serial();
 
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
 
-                let under = self.surface_under_and_global_space(pos);
+                let under = self.niri.surface_under_and_global_space(pos);
 
                 pointer.motion(
                     self,
@@ -412,10 +411,10 @@ impl Niri {
 
                 // Redraw to update the cursor position.
                 // FIXME: redraw only outputs overlapping the cursor.
-                self.queue_redraw_all();
+                self.niri.queue_redraw_all();
             }
             InputEvent::PointerButton { event, .. } => {
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
 
                 let serial = SERIAL_COUNTER.next_serial();
 
@@ -424,12 +423,12 @@ impl Niri {
                 let button_state = event.state();
 
                 if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
-                    if let Some(window) = self.window_under_cursor() {
+                    if let Some(window) = self.niri.window_under_cursor() {
                         let window = window.clone();
-                        self.monitor_set.activate_window(&window);
+                        self.niri.monitor_set.activate_window(&window);
                     } else {
-                        let output = self.output_under_cursor().unwrap();
-                        self.monitor_set.activate_output(&output);
+                        let output = self.niri.output_under_cursor().unwrap();
+                        self.niri.monitor_set.activate_output(&output);
                     }
                 };
 
@@ -473,21 +472,21 @@ impl Niri {
                     frame = frame.stop(Axis::Vertical);
                 }
 
-                self.seat.get_pointer().unwrap().axis(self, frame);
+                self.niri.seat.get_pointer().unwrap().axis(self, frame);
             }
             InputEvent::TabletToolAxis { event, .. } => {
                 // FIXME: allow mapping tablet to different outputs.
-                let output = self.global_space.outputs().next().unwrap();
+                let output = self.niri.global_space.outputs().next().unwrap();
 
-                let output_geo = self.global_space.output_geometry(output).unwrap();
+                let output_geo = self.niri.global_space.output_geometry(output).unwrap();
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
                 let serial = SERIAL_COUNTER.next_serial();
 
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
 
-                let under = self.surface_under_and_global_space(pos);
+                let under = self.niri.surface_under_and_global_space(pos);
 
                 pointer.motion(
                     self,
@@ -499,7 +498,7 @@ impl Niri {
                     },
                 );
 
-                let tablet_seat = self.seat.tablet_seat();
+                let tablet_seat = self.niri.seat.tablet_seat();
                 let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
                 let tool = tablet_seat.get_tool(&event.tool());
                 if let (Some(tablet), Some(tool)) = (tablet, tool) {
@@ -533,10 +532,10 @@ impl Niri {
 
                 // Redraw to update the cursor position.
                 // FIXME: redraw only outputs overlapping the cursor.
-                self.queue_redraw_all();
+                self.niri.queue_redraw_all();
             }
             InputEvent::TabletToolTip { event, .. } => {
-                let tool = self.seat.tablet_seat().get_tool(&event.tool());
+                let tool = self.niri.seat.tablet_seat().get_tool(&event.tool());
 
                 if let Some(tool) = tool {
                     match event.tip_state() {
@@ -544,14 +543,14 @@ impl Niri {
                             let serial = SERIAL_COUNTER.next_serial();
                             tool.tip_down(serial, event.time_msec());
 
-                            let pointer = self.seat.get_pointer().unwrap();
+                            let pointer = self.niri.seat.get_pointer().unwrap();
                             if !pointer.is_grabbed() {
-                                if let Some(window) = self.window_under_cursor() {
+                                if let Some(window) = self.niri.window_under_cursor() {
                                     let window = window.clone();
-                                    self.monitor_set.activate_window(&window);
+                                    self.niri.monitor_set.activate_window(&window);
                                 } else {
-                                    let output = self.output_under_cursor().unwrap();
-                                    self.monitor_set.activate_output(&output);
+                                    let output = self.niri.output_under_cursor().unwrap();
+                                    self.niri.monitor_set.activate_output(&output);
                                 }
                             };
                         }
@@ -563,17 +562,17 @@ impl Niri {
             }
             InputEvent::TabletToolProximity { event, .. } => {
                 // FIXME: allow mapping tablet to different outputs.
-                let output = self.global_space.outputs().next().unwrap();
+                let output = self.niri.global_space.outputs().next().unwrap();
 
-                let output_geo = self.global_space.output_geometry(output).unwrap();
+                let output_geo = self.niri.global_space.output_geometry(output).unwrap();
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
                 let serial = SERIAL_COUNTER.next_serial();
 
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
 
-                let under = self.surface_under_and_global_space(pos);
+                let under = self.niri.surface_under_and_global_space(pos);
 
                 pointer.motion(
                     self,
@@ -585,8 +584,8 @@ impl Niri {
                     },
                 );
 
-                let tablet_seat = self.seat.tablet_seat();
-                let tool = tablet_seat.add_tool::<Self>(&self.display_handle, &event.tool());
+                let tablet_seat = self.niri.seat.tablet_seat();
+                let tool = tablet_seat.add_tool::<Self>(&self.niri.display_handle, &event.tool());
                 let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
                 if let (Some(under), Some(tablet)) = (under, tablet) {
                     match event.state() {
@@ -602,7 +601,7 @@ impl Niri {
                 }
             }
             InputEvent::TabletToolButton { event, .. } => {
-                let tool = self.seat.tablet_seat().get_tool(&event.tool());
+                let tool = self.niri.seat.tablet_seat().get_tool(&event.tool());
 
                 if let Some(tool) = tool {
                     tool.button(
@@ -615,14 +614,15 @@ impl Niri {
             }
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
-                    self.seat
-                        .tablet_seat()
-                        .add_tablet::<Self>(&self.display_handle, &TabletDescriptor::from(&device));
+                    self.niri.seat.tablet_seat().add_tablet::<Self>(
+                        &self.niri.display_handle,
+                        &TabletDescriptor::from(&device),
+                    );
                 }
             }
             InputEvent::DeviceRemoved { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
-                    let tablet_seat = self.seat.tablet_seat();
+                    let tablet_seat = self.niri.seat.tablet_seat();
 
                     tablet_seat.remove_tablet(&TabletDescriptor::from(&device));
 
@@ -634,7 +634,7 @@ impl Niri {
             }
             InputEvent::GestureSwipeBegin { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_swipe_begin(
                     self,
                     &GestureSwipeBeginEvent {
@@ -645,7 +645,7 @@ impl Niri {
                 );
             }
             InputEvent::GestureSwipeUpdate { event } => {
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_swipe_update(
                     self,
                     &GestureSwipeUpdateEvent {
@@ -656,7 +656,7 @@ impl Niri {
             }
             InputEvent::GestureSwipeEnd { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_swipe_end(
                     self,
                     &GestureSwipeEndEvent {
@@ -668,7 +668,7 @@ impl Niri {
             }
             InputEvent::GesturePinchBegin { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_pinch_begin(
                     self,
                     &GesturePinchBeginEvent {
@@ -679,7 +679,7 @@ impl Niri {
                 );
             }
             InputEvent::GesturePinchUpdate { event } => {
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_pinch_update(
                     self,
                     &GesturePinchUpdateEvent {
@@ -694,7 +694,7 @@ impl Niri {
             }
             InputEvent::GesturePinchEnd { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_pinch_end(
                     self,
                     &GesturePinchEndEvent {
@@ -706,7 +706,7 @@ impl Niri {
             }
             InputEvent::GestureHoldBegin { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_hold_begin(
                     self,
                     &GestureHoldBeginEvent {
@@ -718,7 +718,7 @@ impl Niri {
             }
             InputEvent::GestureHoldEnd { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_hold_end(
                     self,
                     &GestureHoldEndEvent {
@@ -735,8 +735,6 @@ impl Niri {
             InputEvent::TouchFrame { .. } => (),
             InputEvent::Special(_) => (),
         }
-
-        BackendAction::None
     }
 
     pub fn process_libinput_event(&mut self, event: &mut InputEvent<LibinputInputBackend>) {

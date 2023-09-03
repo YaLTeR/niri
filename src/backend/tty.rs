@@ -30,16 +30,15 @@ use smithay::utils::DeviceFd;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
-use crate::input::{BackendAction, CompositorMod};
-use crate::niri::{Data, OutputRenderElements};
-use crate::Niri;
+use crate::niri::OutputRenderElements;
+use crate::{LoopData, Niri};
 
 const BACKGROUND_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.];
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
     session: LibSeatSession,
-    udev_dispatcher: Dispatcher<'static, UdevBackend, Data>,
+    udev_dispatcher: Dispatcher<'static, UdevBackend, LoopData>,
     primary_gpu_path: PathBuf,
     output_device: Option<OutputDevice>,
 }
@@ -69,44 +68,45 @@ struct TtyOutputState {
 }
 
 impl Tty {
-    pub fn new(event_loop: LoopHandle<'static, Data>) -> Self {
+    pub fn new(event_loop: LoopHandle<'static, LoopData>) -> Self {
         let (session, notifier) = LibSeatSession::new().unwrap();
         let seat_name = session.seat();
 
         let udev_backend = UdevBackend::new(session.seat()).unwrap();
-        let udev_dispatcher = Dispatcher::new(udev_backend, move |event, _, data: &mut Data| {
-            let tty = data.backend.tty().unwrap();
-            let niri = &mut data.niri;
+        let udev_dispatcher =
+            Dispatcher::new(udev_backend, move |event, _, data: &mut LoopData| {
+                let tty = data.state.backend.tty();
+                let niri = &mut data.state.niri;
 
-            match event {
-                UdevEvent::Added { device_id, path } => {
-                    if !tty.session.is_active() {
-                        debug!("skipping UdevEvent::Added as session is inactive");
-                        return;
+                match event {
+                    UdevEvent::Added { device_id, path } => {
+                        if !tty.session.is_active() {
+                            debug!("skipping UdevEvent::Added as session is inactive");
+                            return;
+                        }
+
+                        if let Err(err) = tty.device_added(device_id, &path, niri) {
+                            warn!("error adding device: {err:?}");
+                        }
                     }
+                    UdevEvent::Changed { device_id } => {
+                        if !tty.session.is_active() {
+                            debug!("skipping UdevEvent::Changed as session is inactive");
+                            return;
+                        }
 
-                    if let Err(err) = tty.device_added(device_id, &path, niri) {
-                        warn!("error adding device: {err:?}");
+                        tty.device_changed(device_id, niri)
+                    }
+                    UdevEvent::Removed { device_id } => {
+                        if !tty.session.is_active() {
+                            debug!("skipping UdevEvent::Removed as session is inactive");
+                            return;
+                        }
+
+                        tty.device_removed(device_id, niri)
                     }
                 }
-                UdevEvent::Changed { device_id } => {
-                    if !tty.session.is_active() {
-                        debug!("skipping UdevEvent::Changed as session is inactive");
-                        return;
-                    }
-
-                    tty.device_changed(device_id, niri)
-                }
-                UdevEvent::Removed { device_id } => {
-                    if !tty.session.is_active() {
-                        debug!("skipping UdevEvent::Removed as session is inactive");
-                        return;
-                    }
-
-                    tty.device_removed(device_id, niri)
-                }
-            }
-        });
+            });
         event_loop
             .register_dispatcher(udev_dispatcher.clone())
             .unwrap();
@@ -117,43 +117,16 @@ impl Tty {
         let input_backend = LibinputInputBackend::new(libinput.clone());
         event_loop
             .insert_source(input_backend, |mut event, _, data| {
-                let tty = data.backend.tty().unwrap();
-                let niri = &mut data.niri;
-
-                niri.process_libinput_event(&mut event);
-                match niri.process_input_event(CompositorMod::Super, event) {
-                    BackendAction::None => (),
-                    BackendAction::ChangeVt(vt) => tty.change_vt(vt),
-                    BackendAction::Suspend => {
-                        if let Err(err) = suspend() {
-                            warn!("error suspending: {err:?}");
-                        }
-                    }
-                    BackendAction::Screenshot => {
-                        let active = niri.monitor_set.active_output().cloned();
-                        if let Some(active) = active {
-                            if let Err(err) = niri.screenshot(tty.renderer(), &active) {
-                                warn!("error taking screenshot: {err:?}");
-                            }
-                        }
-                    }
-                    BackendAction::ToggleDebugTint => {
-                        if let Some(device) = tty.output_device.as_mut() {
-                            for (_, compositor) in &mut device.surfaces {
-                                compositor
-                                    .set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
-                            }
-                        }
-                    }
-                };
+                data.state.process_libinput_event(&mut event);
+                data.state.process_input_event(event);
             })
             .unwrap();
 
         let udev_dispatcher_c = udev_dispatcher.clone();
         event_loop
             .insert_source(notifier, move |event, _, data| {
-                let tty = data.backend.tty().unwrap();
-                let niri = &mut data.niri;
+                let tty = data.state.backend.tty();
+                let niri = &mut data.state.niri;
 
                 match event {
                     SessionEvent::PauseSession => {
@@ -289,7 +262,7 @@ impl Tty {
         let token = niri
             .event_loop
             .insert_source(drm_notifier, move |event, metadata, data| {
-                let tty = data.backend.tty().unwrap();
+                let tty = data.state.backend.tty();
                 match event {
                     DrmEvent::VBlank(crtc) => {
                         tracy_client::Client::running()
@@ -336,6 +309,7 @@ impl Tty {
                         }
 
                         let output = data
+                            .state
                             .niri
                             .global_space
                             .outputs()
@@ -345,10 +319,10 @@ impl Tty {
                             })
                             .unwrap()
                             .clone();
-                        let output_state = data.niri.output_state.get_mut(&output).unwrap();
+                        let output_state = data.state.niri.output_state.get_mut(&output).unwrap();
                         output_state.waiting_for_vblank = false;
                         output_state.frame_clock.presented(presentation_time);
-                        data.niri.queue_redraw(output);
+                        data.state.niri.queue_redraw(output);
                     }
                     DrmEvent::Error(error) => error!("DRM error: {error}"),
                 };
@@ -589,9 +563,23 @@ impl Tty {
         }
     }
 
-    fn change_vt(&mut self, vt: i32) {
+    pub fn change_vt(&mut self, vt: i32) {
         if let Err(err) = self.session.change_vt(vt) {
             error!("error changing VT: {err}");
+        }
+    }
+
+    pub fn suspend(&self) {
+        if let Err(err) = suspend() {
+            warn!("error suspending: {err:?}");
+        }
+    }
+
+    pub fn toggle_debug_tint(&mut self) {
+        if let Some(device) = self.output_device.as_mut() {
+            for (_, compositor) in &mut device.surfaces {
+                compositor.set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
+            }
         }
     }
 }

@@ -16,62 +16,62 @@ use smithay::{
     delegate_seat, delegate_tablet_manager,
 };
 
-use crate::Niri;
+use crate::niri::State;
 
-impl SeatHandler for Niri {
+impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
     type PointerFocus = WlSurface;
 
-    fn seat_state(&mut self) -> &mut SeatState<Niri> {
-        &mut self.seat_state
+    fn seat_state(&mut self) -> &mut SeatState<State> {
+        &mut self.niri.seat_state
     }
 
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
-        self.cursor_image = image;
+        self.niri.cursor_image = image;
         // FIXME: more granular
-        self.queue_redraw_all();
+        self.niri.queue_redraw_all();
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
-        let dh = &self.display_handle;
+        let dh = &self.niri.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client);
     }
 }
-delegate_seat!(Niri);
-delegate_tablet_manager!(Niri);
-delegate_pointer_gestures!(Niri);
+delegate_seat!(State);
+delegate_tablet_manager!(State);
+delegate_pointer_gestures!(State);
 
-impl DataDeviceHandler for Niri {
+impl DataDeviceHandler for State {
     type SelectionUserData = ();
     fn data_device_state(&self) -> &DataDeviceState {
-        &self.data_device_state
+        &self.niri.data_device_state
     }
 }
 
-impl ClientDndGrabHandler for Niri {
+impl ClientDndGrabHandler for State {
     fn started(
         &mut self,
         _source: Option<WlDataSource>,
         icon: Option<WlSurface>,
         _seat: Seat<Self>,
     ) {
-        self.dnd_icon = icon;
+        self.niri.dnd_icon = icon;
         // FIXME: more granular
-        self.queue_redraw_all();
+        self.niri.queue_redraw_all();
     }
 
     fn dropped(&mut self, _seat: Seat<Self>) {
-        self.dnd_icon = None;
+        self.niri.dnd_icon = None;
         // FIXME: more granular
-        self.queue_redraw_all();
+        self.niri.queue_redraw_all();
     }
 }
 
-impl ServerDndGrabHandler for Niri {}
+impl ServerDndGrabHandler for State {}
 
-delegate_data_device!(Niri);
+delegate_data_device!(State);
 
-delegate_output!(Niri);
+delegate_output!(State);
 
-delegate_presentation!(Niri);
+delegate_presentation!(State);

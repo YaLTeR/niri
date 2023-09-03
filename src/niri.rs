@@ -58,10 +58,11 @@ use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
 use crate::utils::{center, get_monotonic_time, load_default_cursor};
+use crate::LoopData;
 
 pub struct Niri {
     pub start_time: std::time::Instant,
-    pub event_loop: LoopHandle<'static, Data>,
+    pub event_loop: LoopHandle<'static, LoopData>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
 
@@ -84,14 +85,14 @@ pub struct Niri {
     pub layer_shell_state: WlrLayerShellState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
-    pub seat_state: SeatState<Self>,
+    pub seat_state: SeatState<State>,
     pub tablet_state: TabletManagerState,
     pub pointer_gestures_state: PointerGesturesState,
     pub data_device_state: DataDeviceState,
     pub popups: PopupManager,
     pub presentation_state: PresentationState,
 
-    pub seat: Seat<Self>,
+    pub seat: Seat<State>,
 
     pub pointer_buffer: Option<(TextureBuffer<GlesTexture>, Point<i32, Physical>)>,
     pub cursor_image: CursorImageStatus,
@@ -112,14 +113,17 @@ pub struct OutputState {
     pub frame_clock: FrameClock,
 }
 
-pub struct Data {
-    pub display: Display<Niri>,
+pub struct State {
     pub backend: Backend,
     pub niri: Niri,
 }
 
-impl Data {
-    pub fn new(event_loop: LoopHandle<'static, Self>, stop_signal: LoopSignal) -> Self {
+impl State {
+    pub fn new(
+        event_loop: LoopHandle<'static, LoopData>,
+        stop_signal: LoopSignal,
+        display: &mut Display<State>,
+    ) -> Self {
         let has_display =
             env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
 
@@ -129,45 +133,76 @@ impl Data {
             Backend::Tty(Tty::new(event_loop.clone()))
         };
 
-        let mut display = Display::new().unwrap();
-        let mut niri = Niri::new(event_loop, stop_signal, &mut display, backend.seat_name());
+        let mut niri = Niri::new(event_loop, stop_signal, display, backend.seat_name());
         backend.init(&mut niri);
 
-        Self {
-            display,
-            backend,
-            niri,
+        Self { backend, niri }
+    }
+
+    pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
+        let under = self.niri.surface_under_and_global_space(location);
+        self.niri.seat.get_pointer().unwrap().motion(
+            self,
+            under,
+            &MotionEvent {
+                location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time: get_monotonic_time().as_millis() as u32,
+            },
+        );
+        // FIXME: granular
+        self.niri.queue_redraw_all();
+    }
+
+    pub fn move_cursor_to_output(&mut self, output: &Output) {
+        let geo = self.niri.global_space.output_geometry(output).unwrap();
+        self.move_cursor(center(geo).to_f64());
+    }
+
+    pub fn update_focus(&mut self) {
+        let focus = self.niri.layer_surface_focus().or_else(|| {
+            self.niri
+                .monitor_set
+                .focus()
+                .map(|win| win.toplevel().wl_surface().clone())
+        });
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        if keyboard.current_focus() != focus {
+            keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
+            // FIXME: can be more granular.
+            self.niri.queue_redraw_all();
         }
     }
 }
 
 impl Niri {
     pub fn new(
-        event_loop: LoopHandle<'static, Data>,
+        event_loop: LoopHandle<'static, LoopData>,
         stop_signal: LoopSignal,
-        display: &mut Display<Self>,
+        display: &mut Display<State>,
         seat_name: String,
     ) -> Self {
         let start_time = std::time::Instant::now();
 
         let display_handle = display.handle();
 
-        let compositor_state = CompositorState::new::<Self>(&display_handle);
-        let xdg_shell_state = XdgShellState::new_with_capabilities::<Self>(
+        let compositor_state = CompositorState::new::<State>(&display_handle);
+        let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
             &display_handle,
             [WmCapabilities::Fullscreen],
         );
-        let layer_shell_state = WlrLayerShellState::new::<Self>(&display_handle);
-        let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
-        let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
+        let layer_shell_state = WlrLayerShellState::new::<State>(&display_handle);
+        let shm_state = ShmState::new::<State>(&display_handle, vec![]);
+        let output_manager_state =
+            OutputManagerState::new_with_xdg_output::<State>(&display_handle);
         let mut seat_state = SeatState::new();
-        let tablet_state = TabletManagerState::new::<Self>(&display_handle);
-        let pointer_gestures_state = PointerGesturesState::new::<Self>(&display_handle);
-        let data_device_state = DataDeviceState::new::<Self>(&display_handle);
+        let tablet_state = TabletManagerState::new::<State>(&display_handle);
+        let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
+        let data_device_state = DataDeviceState::new::<State>(&display_handle);
         let presentation_state =
-            PresentationState::new::<Self>(&display_handle, CLOCK_MONOTONIC as u32);
+            PresentationState::new::<State>(&display_handle, CLOCK_MONOTONIC as u32);
 
-        let mut seat: Seat<Self> = seat_state.new_wl_seat(&display_handle, seat_name);
+        let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, seat_name);
         // FIXME: get Xkb and repeat interval from GNOME dconf.
         let xkb = XkbConfig {
             layout: "us,ru",
@@ -182,6 +217,7 @@ impl Niri {
         event_loop
             .insert_source(socket_source, move |client, _, data| {
                 if let Err(err) = data
+                    .state
                     .niri
                     .display_handle
                     .insert_client(client, Arc::new(ClientState::default()))
@@ -280,7 +316,7 @@ impl Niri {
         );
         event_loop
             .insert_source(display_source, |_, _, data| {
-                data.display.dispatch_clients(&mut data.niri).unwrap();
+                data.display.dispatch_clients(&mut data.state).unwrap();
                 Ok(PostAction::Continue)
             })
             .unwrap();
@@ -331,7 +367,7 @@ impl Niri {
         self.monitor_set.add_output(output.clone());
 
         let state = OutputState {
-            global: output.create_global::<Niri>(&self.display_handle),
+            global: output.create_global::<State>(&self.display_handle),
             queued_redraw: None,
             waiting_for_vblank: false,
             frame_clock: FrameClock::new(refresh_interval),
@@ -477,26 +513,6 @@ impl Niri {
             .cloned()
     }
 
-    pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
-        let under = self.surface_under_and_global_space(location);
-        self.seat.get_pointer().unwrap().motion(
-            self,
-            under,
-            &MotionEvent {
-                location,
-                serial: SERIAL_COUNTER.next_serial(),
-                time: get_monotonic_time().as_millis() as u32,
-            },
-        );
-        // FIXME: granular
-        self.queue_redraw_all();
-    }
-
-    pub fn move_cursor_to_output(&mut self, output: &Output) {
-        let geo = self.global_space.output_geometry(output).unwrap();
-        self.move_cursor(center(geo).to_f64());
-    }
-
     fn layer_surface_focus(&self) -> Option<WlSurface> {
         let output = self.monitor_set.active_output()?;
         let layers = layer_map_for_output(output);
@@ -506,20 +522,6 @@ impl Niri {
             .find(|surface| surface.can_receive_keyboard_focus())?;
 
         Some(surface.wl_surface().clone())
-    }
-
-    pub fn update_focus(&mut self) {
-        let focus = self.layer_surface_focus().or_else(|| {
-            self.monitor_set
-                .focus()
-                .map(|win| win.toplevel().wl_surface().clone())
-        });
-        let keyboard = self.seat.get_keyboard().unwrap();
-        if keyboard.current_focus() != focus {
-            keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
-            // FIXME: can be more granular.
-            self.queue_redraw_all();
-        }
     }
 
     /// Schedules an immediate redraw on all outputs if one is not already scheduled.
@@ -541,7 +543,7 @@ impl Niri {
         // Timer::immediate() adds a millisecond of delay for some reason.
         // This should be fixed in calloop v0.11: https://github.com/Smithay/calloop/issues/142
         let idle = self.event_loop.insert_idle(move |data| {
-            data.niri.redraw(&mut data.backend, &output);
+            data.state.niri.redraw(&mut data.state.backend, &output);
         });
         state.queued_redraw = Some(idle);
     }

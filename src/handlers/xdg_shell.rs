@@ -13,11 +13,11 @@ use smithay::wayland::shell::xdg::{
 };
 
 use crate::layout::{configure_new_window, output_size};
-use crate::Niri;
+use crate::niri::State;
 
-impl XdgShellHandler for Niri {
+impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
-        &mut self.xdg_shell_state
+        &mut self.niri.xdg_shell_state
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
@@ -25,18 +25,18 @@ impl XdgShellHandler for Niri {
         let window = Window::new(surface);
 
         // Tell the surface the preferred size and bounds for its likely output.
-        let output = self.monitor_set.active_output().unwrap();
+        let output = self.niri.monitor_set.active_output().unwrap();
         configure_new_window(output_size(output), &window);
 
         // At the moment of creation, xdg toplevels must have no buffer.
-        let existing = self.unmapped_windows.insert(wl_surface, window);
+        let existing = self.niri.unmapped_windows.insert(wl_surface, window);
         assert!(existing.is_none());
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
         // FIXME: adjust the geometry so the popup doesn't overflow at least off the top and bottom
         // screen edges, and ideally off the view size.
-        if let Err(err) = self.popups.track_popup(PopupKind::Xdg(surface)) {
+        if let Err(err) = self.niri.popups.track_popup(PopupKind::Xdg(surface)) {
             warn!("error tracking popup: {err:?}");
         }
     }
@@ -101,17 +101,19 @@ impl XdgShellHandler for Niri {
             // location and configure size here, but the surface should be rendered fullscreen
             // independently from its buffer size
             if let Some((window, current_output)) = self
+                .niri
                 .monitor_set
                 .find_window_and_output(surface.wl_surface())
             {
                 if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
                     if requested_output != current_output {
-                        self.monitor_set
+                        self.niri
+                            .monitor_set
                             .move_window_to_output(window.clone(), &requested_output);
                     }
                 }
 
-                self.monitor_set.set_fullscreen(&window, true);
+                self.niri.monitor_set.set_fullscreen(&window, true);
             }
         }
 
@@ -122,38 +124,45 @@ impl XdgShellHandler for Niri {
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
         if let Some((window, _)) = self
+            .niri
             .monitor_set
             .find_window_and_output(surface.wl_surface())
         {
-            self.monitor_set.set_fullscreen(&window, false);
+            self.niri.monitor_set.set_fullscreen(&window, false);
         }
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        if self.unmapped_windows.remove(surface.wl_surface()).is_some() {
+        if self
+            .niri
+            .unmapped_windows
+            .remove(surface.wl_surface())
+            .is_some()
+        {
             // An unmapped toplevel got destroyed.
             return;
         }
 
         let (window, output) = self
+            .niri
             .monitor_set
             .find_window_and_output(surface.wl_surface())
             .unwrap();
-        self.monitor_set.remove_window(&window);
-        self.queue_redraw(output);
+        self.niri.monitor_set.remove_window(&window);
+        self.niri.queue_redraw(output);
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
         if let Ok(root) = find_popup_root_surface(&surface.into()) {
-            let root_window_output = self.monitor_set.find_window_and_output(&root);
+            let root_window_output = self.niri.monitor_set.find_window_and_output(&root);
             if let Some((_window, output)) = root_window_output {
-                self.queue_redraw(output);
+                self.niri.queue_redraw(output);
             }
         }
     }
 }
 
-delegate_xdg_shell!(Niri);
+delegate_xdg_shell!(State);
 
 pub fn send_initial_configure_if_needed(window: &Window) {
     let initial_configure_sent = with_states(window.toplevel().wl_surface(), |states| {
@@ -171,12 +180,12 @@ pub fn send_initial_configure_if_needed(window: &Window) {
     }
 }
 
-impl Niri {
+impl State {
     /// Should be called on `WlSurface::commit`
     pub fn popups_handle_commit(&mut self, surface: &WlSurface) {
-        self.popups.commit(surface);
+        self.niri.popups.commit(surface);
 
-        if let Some(popup) = self.popups.find_popup(surface) {
+        if let Some(popup) = self.niri.popups.find_popup(surface) {
             let PopupKind::Xdg(ref popup) = popup;
             let initial_configure_sent = with_states(surface, |states| {
                 states

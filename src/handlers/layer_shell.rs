@@ -9,11 +9,11 @@ use smithay::wayland::shell::wlr_layer::{
     WlrLayerShellState,
 };
 
-use crate::niri::Niri;
+use crate::niri::State;
 
-impl WlrLayerShellHandler for Niri {
+impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
-        &mut self.layer_shell_state
+        &mut self.niri.layer_shell_state
     }
 
     fn new_layer_surface(
@@ -26,7 +26,7 @@ impl WlrLayerShellHandler for Niri {
         let output = wl_output
             .as_ref()
             .and_then(Output::from_resource)
-            .or_else(|| self.monitor_set.active_output().cloned())
+            .or_else(|| self.niri.monitor_set.active_output().cloned())
             .unwrap();
         let mut map = layer_map_for_output(&output);
         map.map_layer(&LayerSurface::new(surface, namespace))
@@ -35,7 +35,7 @@ impl WlrLayerShellHandler for Niri {
 
     fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
         let output = if let Some((output, mut map, layer)) =
-            self.monitor_set.outputs().find_map(|o| {
+            self.niri.monitor_set.outputs().find_map(|o| {
                 let map = layer_map_for_output(o);
                 let layer = map
                     .layers()
@@ -49,15 +49,16 @@ impl WlrLayerShellHandler for Niri {
             None
         };
         if let Some(output) = output {
-            self.queue_redraw(output);
+            self.niri.queue_redraw(output);
         }
     }
 }
-delegate_layer_shell!(Niri);
+delegate_layer_shell!(State);
 
-impl Niri {
+impl State {
     pub fn layer_shell_handle_commit(&mut self, surface: &WlSurface) {
         let Some(output) = self
+            .niri
             .monitor_set
             .outputs()
             .find(|o| {
@@ -95,6 +96,6 @@ impl Niri {
         }
         drop(map);
 
-        self.queue_redraw(output);
+        self.niri.queue_redraw(output);
     }
 }
