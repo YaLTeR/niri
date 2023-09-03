@@ -29,7 +29,7 @@ struct Cli {
     command: Vec<OsString>,
 }
 
-struct LoopData {
+pub struct LoopData {
     display: Display<State>,
     state: State,
 }
