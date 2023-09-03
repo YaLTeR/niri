@@ -3,7 +3,7 @@ use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
@@ -179,6 +179,11 @@ impl Tty {
                 match niri.process_input_event(CompositorMod::Super, event) {
                     BackendAction::None => (),
                     BackendAction::ChangeVt(vt) => tty.change_vt(vt),
+                    BackendAction::Suspend => {
+                        if let Err(err) = suspend() {
+                            warn!("error suspending: {err:?}");
+                        }
+                    }
                     BackendAction::Screenshot => {
                         let active = niri.monitor_set.active_output().cloned();
                         if let Some(active) = active {
@@ -608,4 +613,11 @@ fn refresh_interval(mode: DrmMode) -> Duration {
 
     let refresh_interval = (numerator + denominator / 2) / denominator;
     Duration::from_nanos(refresh_interval)
+}
+
+fn suspend() -> anyhow::Result<()> {
+    let conn = zbus::blocking::Connection::system().context("error connecting to system bus")?;
+    let manager = logind_zbus::manager::ManagerProxyBlocking::new(&conn)
+        .context("error creating login manager proxy")?;
+    manager.suspend(true).context("error suspending")
 }

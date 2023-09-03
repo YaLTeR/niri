@@ -13,6 +13,7 @@ clap = { version = "4.3.21", features = ["derive"] }
 directories = "5.0.1"
 image = { version = "0.24.7", default-features = false, features = ["png"] }
 keyframe = { version = "1.1.1", default-features = false }
+logind-zbus = "3.1.2"
 profiling = "1.0.9"
 sd-notify = "0.4.1"
 smithay-drm-extras = { version = "0.1.0", path = "../smithay/smithay-drm-extras" }

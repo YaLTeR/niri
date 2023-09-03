@@ -24,6 +24,7 @@ enum Action {
     None,
     Quit,
     ChangeVt(i32),
+    Suspend,
     Spawn(String),
     Screenshot,
     CloseWindow,
@@ -57,6 +58,7 @@ enum Action {
 pub enum BackendAction {
     None,
     ChangeVt(i32),
+    Suspend,
     Screenshot,
 }
 
@@ -78,9 +80,15 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
     use keysyms::*;
 
     let modified = keysym.modified_sym();
-    if matches!(modified, KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12) {
-        let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
-        return Action::ChangeVt(vt);
+
+    #[allow(non_upper_case_globals)] // wat
+    match modified {
+        modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
+            let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
+            return Action::ChangeVt(vt);
+        }
+        KEY_XF86PowerOff => return Action::Suspend,
+        _ => (),
     }
 
     let mod_down = match comp_mod {
@@ -181,6 +189,9 @@ impl Niri {
                         }
                         Action::ChangeVt(vt) => {
                             return BackendAction::ChangeVt(vt);
+                        }
+                        Action::Suspend => {
+                            return BackendAction::Suspend;
                         }
                         Action::Spawn(command) => {
                             if let Err(err) = Command::new(command).spawn() {

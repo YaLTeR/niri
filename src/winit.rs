@@ -149,6 +149,7 @@ impl Winit {
                     match niri.process_input_event(CompositorMod::Alt, event) {
                         BackendAction::None => (),
                         BackendAction::ChangeVt(_) => (),
+                        BackendAction::Suspend => (),
                         BackendAction::Screenshot => {
                             let active = niri.monitor_set.active_output().cloned();
                             if let Some(active) = active {
