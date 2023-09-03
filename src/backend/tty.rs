@@ -12,7 +12,7 @@ use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{Bind, DebugFlags, ImportDma, ImportEgl};
+use smithay::backend::renderer::{Bind, DebugFlags, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
@@ -28,11 +28,11 @@ use smithay::reexports::nix::libc::dev_t;
 use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::utils::DeviceFd;
-use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState, DmabufFeedback};
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState, DmabufFeedback};
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
-use crate::niri::{OutputRenderElements, State};
+use crate::niri::OutputRenderElements;
 use crate::{LoopData, Niri};
 
 const BACKGROUND_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.];
@@ -62,7 +62,7 @@ struct OutputDevice {
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, (GbmDrmCompositor, DmabufFeedback)>,
     dmabuf_state: DmabufState,
-    dmabuf_global: DmabufGlobal,
+    // dmabuf_global: DmabufGlobal,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -335,12 +335,13 @@ impl Tty {
 
         let formats = Bind::<Dmabuf>::supported_formats(&gles).unwrap_or_default();
 
-        let mut dmabuf_state = DmabufState::new();
-        let default_feedback = DmabufFeedbackBuilder::new(device_id, gles.dmabuf_formats())
-            .build()
-            .unwrap();
-        let dmabuf_global = dmabuf_state
-            .create_global_with_default_feedback::<State>(&niri.display_handle, &default_feedback);
+        let dmabuf_state = DmabufState::new();
+        // let default_feedback = DmabufFeedbackBuilder::new(device_id, gles.dmabuf_formats())
+        //     .build()
+        //     .unwrap();
+        // let dmabuf_global = dmabuf_state
+        //     .create_global_with_default_feedback::<State>(&niri.display_handle,
+        // &default_feedback);
 
         self.output_device = Some(OutputDevice {
             id: device_id,
@@ -352,7 +353,7 @@ impl Tty {
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
             dmabuf_state,
-            dmabuf_global,
+            // dmabuf_global,
         });
 
         self.device_changed(device_id, niri);
@@ -407,9 +408,9 @@ impl Tty {
         }
 
         let mut device = self.output_device.take().unwrap();
-        device
-            .dmabuf_state
-            .destroy_global::<State>(&niri.display_handle, device.dmabuf_global);
+        // device
+        //     .dmabuf_state
+        //     .destroy_global::<State>(&niri.display_handle, device.dmabuf_global);
         device.gles.unbind_wl_display();
 
         niri.event_loop.remove(device.token);
