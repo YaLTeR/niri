@@ -99,6 +99,7 @@ pub struct Niri {
     pub dnd_icon: Option<WlSurface>,
 
     pub zbus_conn: Option<zbus::blocking::Connection>,
+    pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
 }
 
 pub struct OutputState {
@@ -167,6 +168,7 @@ impl Niri {
         );
 
         let mut zbus_conn = None;
+        let mut inhibit_power_key_fd = None;
         if std::env::var_os("NOTIFY_SOCKET").is_some() {
             // We're starting as a systemd service. Export our variables and tell systemd we're
             // ready.
@@ -214,6 +216,32 @@ impl Niri {
             if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
                 warn!("error notifying systemd: {err:?}");
             };
+
+            // Inhibit power key handling so we can suspend on it.
+            let zbus_system_conn = zbus::blocking::ConnectionBuilder::system()
+                .unwrap()
+                .build()
+                .unwrap();
+
+            // logind-zbus has a wrong signature for this method, so do it manually.
+            // https://gitlab.com/flukejones/logind-zbus/-/merge_requests/5
+            let message = zbus_system_conn
+                .call_method(
+                    Some("org.freedesktop.login1"),
+                    "/org/freedesktop/login1",
+                    Some("org.freedesktop.login1.Manager"),
+                    "Inhibit",
+                    &("handle-power-key", "niri", "Power key handling", "block"),
+                )
+                .unwrap();
+            match message.body() {
+                Ok(fd) => {
+                    inhibit_power_key_fd = Some(fd);
+                }
+                Err(err) => {
+                    warn!("error inhibiting power key: {err:?}");
+                }
+            }
         }
 
         let display_source = Generic::new(
@@ -257,6 +285,7 @@ impl Niri {
             dnd_icon: None,
 
             zbus_conn,
+            inhibit_power_key_fd,
         }
     }
 
