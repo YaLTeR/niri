@@ -38,8 +38,7 @@ pub struct LoopData {
     niri: Niri,
     display_handle: DisplayHandle,
 
-    tty: Option<Tty>,
-    winit: Option<Winit>,
+    backend: Backend,
 
     // Last so that it's dropped after the Smithay state in Niri and related state in Tty.
     // Otherwise it will segfault on quit.
@@ -64,14 +63,10 @@ fn main() {
 
     let has_display = env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
 
-    let mut winit = None;
-    let mut tty = None;
-    let backend: &mut dyn Backend = if has_display {
-        winit = Some(Winit::new(event_loop.handle()));
-        winit.as_mut().unwrap()
+    let backend = if has_display {
+        Backend::Winit(Winit::new(event_loop.handle()))
     } else {
-        tty = Some(Tty::new(event_loop.handle()));
-        tty.as_mut().unwrap()
+        Backend::Tty(Tty::new(event_loop.handle()))
     };
 
     let mut display = Display::new().unwrap();
@@ -88,16 +83,10 @@ fn main() {
         display_handle,
         display,
 
-        tty,
-        winit,
+        backend,
     };
 
-    if let Some(tty) = data.tty.as_mut() {
-        tty.init(&mut data.niri);
-    }
-    if let Some(winit) = data.winit.as_mut() {
-        winit.init(&mut data.niri);
-    }
+    data.backend.init(&mut data.niri);
 
     if let Some((command, args)) = cli.command.split_first() {
         if let Err(err) = std::process::Command::new(command).args(args).spawn() {

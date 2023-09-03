@@ -12,7 +12,6 @@ use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
 
-use crate::backend::Backend;
 use crate::input::{BackendAction, CompositorMod};
 use crate::niri::OutputRenderElements;
 use crate::utils::get_monotonic_time;
@@ -23,46 +22,6 @@ pub struct Winit {
     backend: WinitGraphicsBackend<GlesRenderer>,
     winit_event_loop: WinitEventLoop,
     damage_tracker: OutputDamageTracker,
-}
-
-impl Backend for Winit {
-    fn seat_name(&self) -> String {
-        "winit".to_owned()
-    }
-
-    fn renderer(&mut self) -> &mut GlesRenderer {
-        self.backend.renderer()
-    }
-
-    fn render(
-        &mut self,
-        niri: &mut Niri,
-        output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
-    ) {
-        let _span = tracy_client::span!("Winit::render");
-
-        self.backend.bind().unwrap();
-        let age = self.backend.buffer_age().unwrap();
-        let res = self
-            .damage_tracker
-            .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
-            .unwrap();
-        if let Some(damage) = res.damage {
-            self.backend.submit(Some(&damage)).unwrap();
-
-            let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &res.states);
-            let refresh = output.current_mode().unwrap().refresh as u32;
-            presentation_feedbacks.presented::<_, smithay::utils::Monotonic>(
-                get_monotonic_time(),
-                refresh,
-                0,
-                wp_presentation_feedback::Kind::empty(),
-            );
-
-            self.backend.window().request_redraw();
-        }
-    }
 }
 
 impl Winit {
@@ -100,7 +59,7 @@ impl Winit {
         let timer = Timer::immediate();
         event_loop
             .insert_source(timer, move |_, _, data| {
-                let winit = data.winit.as_mut().unwrap();
+                let winit = data.backend.winit().unwrap();
                 winit.dispatch(&mut data.niri);
                 TimeoutAction::ToDuration(Duration::from_micros(16667))
             })
@@ -176,6 +135,44 @@ impl Winit {
                 niri.remove_output(&self.output);
             }
             Ok(()) => (),
+        }
+    }
+
+    pub fn seat_name(&self) -> String {
+        "winit".to_owned()
+    }
+
+    pub fn renderer(&mut self) -> &mut GlesRenderer {
+        self.backend.renderer()
+    }
+
+    pub fn render(
+        &mut self,
+        niri: &mut Niri,
+        output: &Output,
+        elements: &[OutputRenderElements<GlesRenderer>],
+    ) {
+        let _span = tracy_client::span!("Winit::render");
+
+        self.backend.bind().unwrap();
+        let age = self.backend.buffer_age().unwrap();
+        let res = self
+            .damage_tracker
+            .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
+            .unwrap();
+        if let Some(damage) = res.damage {
+            self.backend.submit(Some(&damage)).unwrap();
+
+            let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &res.states);
+            let refresh = output.current_mode().unwrap().refresh as u32;
+            presentation_feedbacks.presented::<_, smithay::utils::Monotonic>(
+                get_monotonic_time(),
+                refresh,
+                0,
+                wp_presentation_feedback::Kind::empty(),
+            );
+
+            self.backend.window().request_redraw();
         }
     }
 }

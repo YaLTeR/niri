@@ -30,7 +30,6 @@ use smithay::utils::DeviceFd;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
-use crate::backend::Backend;
 use crate::input::{BackendAction, CompositorMod};
 use crate::niri::OutputRenderElements;
 use crate::{LoopData, Niri};
@@ -69,59 +68,6 @@ struct TtyOutputState {
     crtc: crtc::Handle,
 }
 
-impl Backend for Tty {
-    fn seat_name(&self) -> String {
-        self.session.seat()
-    }
-
-    fn renderer(&mut self) -> &mut GlesRenderer {
-        &mut self.output_device.as_mut().unwrap().gles
-    }
-
-    fn render(
-        &mut self,
-        niri: &mut Niri,
-        output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
-    ) {
-        let _span = tracy_client::span!("Tty::render");
-
-        let device = self.output_device.as_mut().unwrap();
-        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-        let drm_compositor = device.surfaces.get_mut(&tty_state.crtc).unwrap();
-
-        match drm_compositor.render_frame::<_, _, GlesTexture>(
-            &mut device.gles,
-            elements,
-            BACKGROUND_COLOR,
-        ) {
-            Ok(res) => {
-                assert!(!res.needs_sync());
-                if res.damage.is_some() {
-                    let presentation_feedbacks =
-                        niri.take_presentation_feedbacks(output, &res.states);
-
-                    match drm_compositor.queue_frame(presentation_feedbacks) {
-                        Ok(()) => {
-                            niri.output_state
-                                .get_mut(output)
-                                .unwrap()
-                                .waiting_for_vblank = true
-                        }
-                        Err(err) => {
-                            error!("error queueing frame: {err}");
-                        }
-                    }
-                }
-            }
-            Err(err) => {
-                // Can fail if we switched to a different TTY.
-                error!("error rendering frame: {err}");
-            }
-        }
-    }
-}
-
 impl Tty {
     pub fn new(event_loop: LoopHandle<'static, LoopData>) -> Self {
         let (session, notifier) = LibSeatSession::new().unwrap();
@@ -130,7 +76,7 @@ impl Tty {
         let udev_backend = UdevBackend::new(session.seat()).unwrap();
         let udev_dispatcher =
             Dispatcher::new(udev_backend, move |event, _, data: &mut LoopData| {
-                let tty = data.tty.as_mut().unwrap();
+                let tty = data.backend.tty().unwrap();
                 let niri = &mut data.niri;
 
                 match event {
@@ -172,7 +118,7 @@ impl Tty {
         let input_backend = LibinputInputBackend::new(libinput.clone());
         event_loop
             .insert_source(input_backend, |mut event, _, data| {
-                let tty = data.tty.as_mut().unwrap();
+                let tty = data.backend.tty().unwrap();
                 let niri = &mut data.niri;
 
                 niri.process_libinput_event(&mut event);
@@ -207,7 +153,7 @@ impl Tty {
         let udev_dispatcher_c = udev_dispatcher.clone();
         event_loop
             .insert_source(notifier, move |event, _, data| {
-                let tty = data.tty.as_mut().unwrap();
+                let tty = data.backend.tty().unwrap();
                 let niri = &mut data.niri;
 
                 match event {
@@ -344,7 +290,7 @@ impl Tty {
         let token = niri
             .event_loop
             .insert_source(drm_notifier, move |event, metadata, data| {
-                let tty = data.tty.as_mut().unwrap();
+                let tty = data.backend.tty().unwrap();
                 match event {
                     DrmEvent::VBlank(crtc) => {
                         tracy_client::Client::running()
@@ -591,6 +537,57 @@ impl Tty {
             .clone();
 
         niri.remove_output(&output);
+    }
+
+    pub fn seat_name(&self) -> String {
+        self.session.seat()
+    }
+
+    pub fn renderer(&mut self) -> &mut GlesRenderer {
+        &mut self.output_device.as_mut().unwrap().gles
+    }
+
+    pub fn render(
+        &mut self,
+        niri: &mut Niri,
+        output: &Output,
+        elements: &[OutputRenderElements<GlesRenderer>],
+    ) {
+        let _span = tracy_client::span!("Tty::render");
+
+        let device = self.output_device.as_mut().unwrap();
+        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+        let drm_compositor = device.surfaces.get_mut(&tty_state.crtc).unwrap();
+
+        match drm_compositor.render_frame::<_, _, GlesTexture>(
+            &mut device.gles,
+            elements,
+            BACKGROUND_COLOR,
+        ) {
+            Ok(res) => {
+                assert!(!res.needs_sync());
+                if res.damage.is_some() {
+                    let presentation_feedbacks =
+                        niri.take_presentation_feedbacks(output, &res.states);
+
+                    match drm_compositor.queue_frame(presentation_feedbacks) {
+                        Ok(()) => {
+                            niri.output_state
+                                .get_mut(output)
+                                .unwrap()
+                                .waiting_for_vblank = true
+                        }
+                        Err(err) => {
+                            error!("error queueing frame: {err}");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                // Can fail if we switched to a different TTY.
+                error!("error rendering frame: {err}");
+            }
+        }
     }
 
     fn change_vt(&mut self, vt: i32) {
