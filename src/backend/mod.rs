@@ -2,9 +2,13 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 
 use crate::niri::OutputRenderElements;
-use crate::tty::Tty;
-use crate::winit::Winit;
 use crate::Niri;
+
+pub mod tty;
+pub use tty::Tty;
+
+pub mod winit;
+pub use winit::Winit;
 
 pub enum Backend {
     Tty(Tty),

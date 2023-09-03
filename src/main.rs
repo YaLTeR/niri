@@ -10,21 +10,17 @@ mod frame_clock;
 mod input;
 mod layout;
 mod niri;
-mod tty;
 mod utils;
-mod winit;
 
 use std::env;
 use std::ffi::OsString;
 
-use backend::Backend;
+use backend::{Backend, Tty, Winit};
 use clap::Parser;
 use niri::Niri;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use tracing_subscriber::EnvFilter;
-use tty::Tty;
-use winit::Winit;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
