@@ -154,6 +154,7 @@ impl Niri {
         event_loop
             .insert_source(socket_source, move |client, _, data| {
                 if let Err(err) = data
+                    .niri
                     .display_handle
                     .insert_client(client, Arc::new(ClientState::default()))
                 {

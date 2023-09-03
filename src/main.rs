@@ -19,7 +19,7 @@ use backend::{Backend, Tty, Winit};
 use clap::Parser;
 use niri::Niri;
 use smithay::reexports::calloop::EventLoop;
-use smithay::reexports::wayland_server::{Display, DisplayHandle};
+use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -32,8 +32,6 @@ struct Cli {
 
 pub struct LoopData {
     niri: Niri,
-    display_handle: DisplayHandle,
-
     backend: Backend,
 
     // Last so that it's dropped after the Smithay state in Niri and related state in Tty.
@@ -66,7 +64,6 @@ fn main() {
     };
 
     let mut display = Display::new().unwrap();
-    let display_handle = display.handle();
     let niri = Niri::new(
         event_loop.handle(),
         event_loop.get_signal(),
@@ -76,7 +73,6 @@ fn main() {
 
     let mut data = LoopData {
         niri,
-        display_handle,
         display,
 
         backend,
