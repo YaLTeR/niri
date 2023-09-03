@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::{DebugFlags, Renderer};
 use smithay::backend::winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -157,6 +158,9 @@ impl Winit {
                                     warn!("error taking screenshot: {err:?}");
                                 }
                             }
+                        }
+                        BackendAction::ToggleDebugTint => {
+                            renderer.set_debug_flags(renderer.debug_flags() ^ DebugFlags::TINT);
                         }
                     }
                 }

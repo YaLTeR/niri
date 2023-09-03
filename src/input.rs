@@ -25,6 +25,7 @@ enum Action {
     Quit,
     ChangeVt(i32),
     Suspend,
+    ToggleDebugTint,
     Spawn(String),
     Screenshot,
     CloseWindow,
@@ -60,6 +61,7 @@ pub enum BackendAction {
     ChangeVt(i32),
     Suspend,
     Screenshot,
+    ToggleDebugTint,
 }
 
 pub enum CompositorMod {
@@ -110,6 +112,7 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
         KEY_n => Action::Spawn("nautilus".to_owned()),
         // Alt + PrtSc = SysRq
         KEY_Sys_Req | KEY_Print => Action::Screenshot,
+        KEY_T if mods.shift && mods.ctrl => Action::ToggleDebugTint,
         KEY_q => Action::CloseWindow,
         KEY_F => Action::ToggleFullscreen,
         KEY_comma => Action::ConsumeIntoColumn,
@@ -192,6 +195,9 @@ impl Niri {
                         }
                         Action::Suspend => {
                             return BackendAction::Suspend;
+                        }
+                        Action::ToggleDebugTint => {
+                            return BackendAction::ToggleDebugTint;
                         }
                         Action::Spawn(command) => {
                             if let Err(err) = Command::new(command).spawn() {

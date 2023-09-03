@@ -12,7 +12,7 @@ use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{Bind, ImportEgl};
+use smithay::backend::renderer::{Bind, DebugFlags, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
@@ -189,6 +189,14 @@ impl Tty {
                         if let Some(active) = active {
                             if let Err(err) = niri.screenshot(tty.renderer(), &active) {
                                 warn!("error taking screenshot: {err:?}");
+                            }
+                        }
+                    }
+                    BackendAction::ToggleDebugTint => {
+                        if let Some(device) = tty.output_device.as_mut() {
+                            for (_, compositor) in &mut device.surfaces {
+                                compositor
+                                    .set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
                             }
                         }
                     }
