@@ -16,7 +16,6 @@ keyframe = { version = "1.1.1", default-features = false }
 logind-zbus = "3.1.2"
 profiling = "1.0.9"
 sd-notify = "0.4.1"
-smithay-drm-extras = { version = "0.1.0", path = "../smithay/smithay-drm-extras" }
 time = { version = "0.3.28", features = ["formatting", "local-offset", "macros"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
@@ -43,6 +42,10 @@ features = [
     "use_system_lib",
     "wayland_frontend",
 ]
+
+[dependencies.smithay-drm-extras]
+git = "https://github.com/YaLTeR/smithay.git"
+branch = "pointer-gestures"
 
 [features]
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]

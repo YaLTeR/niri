@@ -1920,6 +1920,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
+source = "git+https://github.com/YaLTeR/smithay.git?branch=pointer-gestures#07b89166679ae280acff8aff93d0ecbbbbbcef5c"
 dependencies = [
  "drm",
  "edid-rs",
