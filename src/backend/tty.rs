@@ -320,12 +320,27 @@ impl Tty {
                             .unwrap()
                             .message(&message, 0);
 
+                        let output = data
+                            .state
+                            .niri
+                            .global_space
+                            .outputs()
+                            .find(|output| {
+                                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                                tty_state.device_id == device.id && tty_state.crtc == crtc
+                            })
+                            .unwrap()
+                            .clone();
+                        let output_state = data.state.niri.output_state.get_mut(&output).unwrap();
+
                         // Mark the last frame as submitted.
                         match surface.compositor.frame_submitted() {
                             Ok(Some(mut feedback)) => {
-                                let refresh =
-                                    feedback.output().unwrap().current_mode().unwrap().refresh
-                                        as u32;
+                                let refresh = output_state
+                                    .frame_clock
+                                    .refresh_interval_ns()
+                                    .and_then(|r| u32::try_from(r.get()).ok())
+                                    .unwrap_or(0);
                                 // FIXME: ideally should be monotonically increasing for a surface.
                                 let seq = metadata.as_ref().unwrap().sequence as u64;
                                 let flags = wp_presentation_feedback::Kind::Vsync
@@ -345,18 +360,6 @@ impl Tty {
                             }
                         }
 
-                        let output = data
-                            .state
-                            .niri
-                            .global_space
-                            .outputs()
-                            .find(|output| {
-                                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                                tty_state.device_id == device.id && tty_state.crtc == crtc
-                            })
-                            .unwrap()
-                            .clone();
-                        let output_state = data.state.niri.output_state.get_mut(&output).unwrap();
                         output_state.waiting_for_vblank = false;
                         output_state.frame_clock.presented(presentation_time);
                         data.state.niri.queue_redraw(output);

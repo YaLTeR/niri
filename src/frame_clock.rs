@@ -24,6 +24,10 @@ impl FrameClock {
         }
     }
 
+    pub fn refresh_interval_ns(&self) -> Option<NonZeroU64> {
+        self.refresh_interval_ns
+    }
+
     pub fn presented(&mut self, presentation_time: Duration) {
         if presentation_time.is_zero() {
             // Not interested in these.
