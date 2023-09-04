@@ -63,7 +63,6 @@ use crate::utils::{center, get_monotonic_time, load_default_cursor};
 use crate::LoopData;
 
 pub struct Niri {
-    pub start_time: std::time::Instant,
     pub event_loop: LoopHandle<'static, LoopData>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
@@ -184,8 +183,6 @@ impl Niri {
         display: &mut Display<State>,
         seat_name: String,
     ) -> Self {
-        let start_time = std::time::Instant::now();
-
         let display_handle = display.handle();
 
         let compositor_state = CompositorState::new::<State>(&display_handle);
@@ -324,7 +321,6 @@ impl Niri {
             .unwrap();
 
         Self {
-            start_time,
             event_loop,
             stop_signal,
             display_handle,
