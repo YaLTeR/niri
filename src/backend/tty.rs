@@ -60,7 +60,7 @@ struct OutputDevice {
     gles: GlesRenderer,
     formats: HashSet<DrmFormat>,
     drm_scanner: DrmScanner,
-    surfaces: HashMap<crtc::Handle, (GbmDrmCompositor, DmabufFeedback)>,
+    surfaces: HashMap<crtc::Handle, Surface>,
     dmabuf_state: DmabufState,
     // dmabuf_global: DmabufGlobal,
 }
@@ -69,6 +69,11 @@ struct OutputDevice {
 struct TtyOutputState {
     device_id: dev_t,
     crtc: crtc::Handle,
+}
+
+struct Surface {
+    compositor: GbmDrmCompositor,
+    dmabuf_feedback: DmabufFeedback,
 }
 
 impl Tty {
@@ -275,7 +280,8 @@ impl Tty {
                         trace!("vblank {metadata:?}");
 
                         let device = tty.output_device.as_mut().unwrap();
-                        let drm_compositor = &mut device.surfaces.get_mut(&crtc).unwrap().0;
+                        let drm_compositor =
+                            &mut device.surfaces.get_mut(&crtc).unwrap().compositor;
 
                         let presentation_time = match metadata.as_mut().unwrap().time {
                             DrmEventTime::Monotonic(time) => time,
@@ -513,7 +519,11 @@ impl Tty {
             .build()
             .unwrap();
 
-        let res = device.surfaces.insert(crtc, (compositor, dmabuf_feedback));
+        let surface = Surface {
+            compositor,
+            dmabuf_feedback,
+        };
+        let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
 
         niri.add_output(output.clone(), Some(refresh_interval(*mode)));
@@ -567,7 +577,8 @@ impl Tty {
 
         let device = self.output_device.as_mut().unwrap();
         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-        let (drm_compositor, dmabuf_feedback) = device.surfaces.get_mut(&tty_state.crtc).unwrap();
+        let surface = device.surfaces.get_mut(&tty_state.crtc).unwrap();
+        let drm_compositor = &mut surface.compositor;
 
         match drm_compositor.render_frame::<_, _, GlesTexture>(
             &mut device.gles,
@@ -587,7 +598,7 @@ impl Tty {
                                 .unwrap()
                                 .waiting_for_vblank = true;
 
-                            return Some(dmabuf_feedback);
+                            return Some(&surface.dmabuf_feedback);
                         }
                         Err(err) => {
                             error!("error queueing frame: {err}");
@@ -618,7 +629,8 @@ impl Tty {
 
     pub fn toggle_debug_tint(&mut self) {
         if let Some(device) = self.output_device.as_mut() {
-            for (_, (compositor, _)) in &mut device.surfaces {
+            for surface in device.surfaces.values_mut() {
+                let compositor = &mut surface.compositor;
                 compositor.set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
             }
         }
