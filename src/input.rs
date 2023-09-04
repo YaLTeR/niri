@@ -2,10 +2,10 @@ use std::process::Command;
 
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
-    GestureBeginEvent, GestureEndEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
-    PointerAxisEvent, PointerButtonEvent, PointerMotionEvent, ProximityState,
-    TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
-    TabletToolTipState,
+    GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
+    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+    PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
+    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, KeysymHandle, ModifiersState};
@@ -650,7 +650,7 @@ impl State {
                     self,
                     &GestureSwipeUpdateEvent {
                         time: event.time_msec(),
-                        delta: smithay::backend::input::GestureSwipeUpdateEvent::delta(&event),
+                        delta: event.delta(),
                     },
                 );
             }
@@ -684,11 +684,9 @@ impl State {
                     self,
                     &GesturePinchUpdateEvent {
                         time: event.time_msec(),
-                        delta: smithay::backend::input::GesturePinchUpdateEvent::delta(&event),
-                        scale: smithay::backend::input::GesturePinchUpdateEvent::scale(&event),
-                        rotation: smithay::backend::input::GesturePinchUpdateEvent::rotation(
-                            &event,
-                        ),
+                        delta: event.delta(),
+                        scale: event.scale(),
+                        rotation: event.rotation(),
                     },
                 );
             }
