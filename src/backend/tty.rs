@@ -271,6 +271,10 @@ impl Tty {
         let display = EGLDisplay::new(gbm.clone())?;
         let egl_context = EGLContext::new(&display)?;
 
+        // let capabilities = unsafe { GlesRenderer::supported_capabilities(&egl_context) }?
+        //     .into_iter()
+        //     .filter(|c| *c != Capability::ColorTransformations);
+        // let mut gles = unsafe { GlesRenderer::with_capabilities(egl_context, capabilities)? };
         let mut gles = unsafe { GlesRenderer::new(egl_context)? };
         gles.bind_wl_display(&niri.display_handle)?;
 
