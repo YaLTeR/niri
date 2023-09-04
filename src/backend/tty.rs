@@ -33,6 +33,7 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::niri::OutputRenderElements;
+use crate::utils::get_monotonic_time;
 use crate::{LoopData, Niri};
 
 const BACKGROUND_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.];
@@ -275,14 +276,12 @@ impl Tty {
                 let tty = data.state.backend.tty();
                 match event {
                     DrmEvent::VBlank(crtc) => {
-                        tracy_client::Client::running()
-                            .unwrap()
-                            .message("vblank", 0);
-                        trace!("vblank {metadata:?}");
+                        let now = get_monotonic_time();
 
                         let device = tty.output_device.as_mut().unwrap();
-                        let drm_compositor =
-                            &mut device.surfaces.get_mut(&crtc).unwrap().compositor;
+                        let surface = device.surfaces.get_mut(&crtc).unwrap();
+                        let name = &surface.name;
+                        trace!("vblank on {name} {metadata:?}");
 
                         let presentation_time = match metadata.as_mut().unwrap().time {
                             DrmEventTime::Monotonic(time) => time,
@@ -294,8 +293,21 @@ impl Tty {
                             }
                         };
 
+                        let message = if presentation_time.is_zero() {
+                            format!("vblank on {name}, presentation time unknown")
+                        } else if presentation_time > now {
+                            let diff = presentation_time - now;
+                            format!("vblank on {name}, presentation is {diff:?} later")
+                        } else {
+                            let diff = now - presentation_time;
+                            format!("vblank on {name}, presentation was {diff:?} ago")
+                        };
+                        tracy_client::Client::running()
+                            .unwrap()
+                            .message(&message, 0);
+
                         // Mark the last frame as submitted.
-                        match drm_compositor.frame_submitted() {
+                        match surface.compositor.frame_submitted() {
                             Ok(Some(mut feedback)) => {
                                 let refresh =
                                     feedback.output().unwrap().current_mode().unwrap().refresh
