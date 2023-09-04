@@ -72,6 +72,7 @@ struct TtyOutputState {
 }
 
 struct Surface {
+    name: String,
     compositor: GbmDrmCompositor,
     dmabuf_feedback: DmabufFeedback,
 }
@@ -470,7 +471,7 @@ impl Tty {
             .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
 
         let output = Output::new(
-            output_name,
+            output_name.clone(),
             PhysicalProperties {
                 size: (physical_width as i32, physical_height as i32).into(),
                 subpixel: Subpixel::Unknown,
@@ -520,6 +521,7 @@ impl Tty {
             .unwrap();
 
         let surface = Surface {
+            name: output_name,
             compositor,
             dmabuf_feedback,
         };
