@@ -76,6 +76,10 @@ struct Surface {
     name: String,
     compositor: GbmDrmCompositor,
     dmabuf_feedback: DmabufFeedback,
+    /// Tracy frame that goes from vblank to vblank.
+    vblank_frame: Option<tracy_client::Frame>,
+    /// Frame name for the VBlank frame that unfortunately has to be leaked.
+    vblank_frame_name: tracy_client::FrameName,
 }
 
 impl Tty {
@@ -282,6 +286,12 @@ impl Tty {
                         let surface = device.surfaces.get_mut(&crtc).unwrap();
                         let name = &surface.name;
                         trace!("vblank on {name} {metadata:?}");
+
+                        drop(surface.vblank_frame.take()); // Drop the old one first.
+                        let vblank_frame = tracy_client::Client::running()
+                            .unwrap()
+                            .non_continuous_frame(surface.vblank_frame_name);
+                        surface.vblank_frame = Some(vblank_frame);
 
                         let presentation_time = match metadata.as_mut().unwrap().time {
                             DrmEventTime::Monotonic(time) => time,
@@ -532,10 +542,16 @@ impl Tty {
             .build()
             .unwrap();
 
+        let vblank_frame_name = unsafe {
+            tracy_client::internal::create_frame_name(format!("vblank on {output_name}\0").leak())
+        };
+
         let surface = Surface {
             name: output_name,
             compositor,
             dmabuf_feedback,
+            vblank_frame: None,
+            vblank_frame_name,
         };
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
@@ -626,6 +642,8 @@ impl Tty {
             }
         }
 
+        // We're not expecting a vblank right after this.
+        drop(surface.vblank_frame.take());
         None
     }
 
