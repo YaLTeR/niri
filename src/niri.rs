@@ -742,7 +742,7 @@ impl Niri {
     fn send_frame_callbacks(&self, output: &Output) {
         let _span = tracy_client::span!("Niri::send_frame_callbacks");
 
-        let frame_callback_time = self.start_time.elapsed();
+        let frame_callback_time = get_monotonic_time();
         self.monitor_set.send_frame(output, frame_callback_time);
 
         for surface in layer_map_for_output(output).layers() {
