@@ -621,6 +621,12 @@ impl Tty {
         ) {
             Ok(res) => {
                 assert!(!res.needs_sync());
+
+                // if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
+                //     let _span = tracy_client::span!("wait for sync");
+                //     element.sync.wait();
+                // }
+
                 if res.damage.is_some() {
                     let presentation_feedbacks =
                         niri.take_presentation_feedbacks(output, &res.states);
