@@ -24,8 +24,7 @@ xcursor = "0.3.4"
 zbus = { version = "3.14.1" }
 
 [dependencies.smithay]
-git = "https://github.com/YaLTeR/smithay.git"
-branch = "pointer-gestures"
+git = "https://github.com/Smithay/smithay.git"
 default-features = false
 features = [
     "backend_drm",
@@ -44,8 +43,7 @@ features = [
 ]
 
 [dependencies.smithay-drm-extras]
-git = "https://github.com/YaLTeR/smithay.git"
-branch = "pointer-gestures"
+git = "https://github.com/Smithay/smithay.git"
 
 [features]
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
