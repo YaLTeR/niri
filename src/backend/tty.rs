@@ -338,9 +338,8 @@ impl Tty {
                             Ok(Some(mut feedback)) => {
                                 let refresh = output_state
                                     .frame_clock
-                                    .refresh_interval_ns()
-                                    .and_then(|r| u32::try_from(r.get()).ok())
-                                    .unwrap_or(0);
+                                    .refresh_interval()
+                                    .unwrap_or(Duration::ZERO);
                                 // FIXME: ideally should be monotonically increasing for a surface.
                                 let seq = metadata.as_ref().unwrap().sequence as u64;
                                 let flags = wp_presentation_feedback::Kind::Vsync
@@ -516,19 +515,15 @@ impl Tty {
             crtc,
         });
 
-        let mut planes = surface.planes().unwrap();
+        let mut planes = surface.planes().clone();
         // Disable overlay planes as they cause weird performance issues on my system.
         planes.overlay.clear();
-        let scanout_formats = surface
-            .supported_formats(planes.primary.handle)
-            .unwrap()
-            .into_iter()
-            .chain(
-                planes
-                    .overlay
-                    .iter()
-                    .flat_map(|p| surface.supported_formats(p.handle).unwrap()),
-            )
+        let scanout_formats = planes
+            .primary
+            .formats
+            .iter()
+            .chain(planes.overlay.iter().flat_map(|p| &p.formats))
+            .copied()
             .collect::<HashSet<_>>();
         let scanout_formats = scanout_formats.intersection(&device.formats).copied();
 

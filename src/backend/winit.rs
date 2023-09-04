@@ -143,7 +143,8 @@ impl Winit {
             self.backend.submit(Some(&damage)).unwrap();
 
             let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &res.states);
-            let refresh = output.current_mode().unwrap().refresh as u32;
+            let mode = output.current_mode().unwrap();
+            let refresh = Duration::from_secs_f64(1_000f64 / mode.refresh as f64);
             presentation_feedbacks.presented::<_, smithay::utils::Monotonic>(
                 get_monotonic_time(),
                 refresh,

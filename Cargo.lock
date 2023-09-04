@@ -1858,7 +1858,7 @@ checksum = "62bb4feee49fdd9f707ef802e22365a35de4b7b299de4763d44bfea899442ff9"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/YaLTeR/smithay.git?branch=pointer-gestures#07b89166679ae280acff8aff93d0ecbbbbbcef5c"
+source = "git+https://github.com/YaLTeR/smithay.git?branch=pointer-gestures#6d2e4f9cb25f1846fad5820528f1caa68eff6985"
 dependencies = [
  "appendlist",
  "bitflags 2.4.0",
@@ -1920,7 +1920,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/YaLTeR/smithay.git?branch=pointer-gestures#07b89166679ae280acff8aff93d0ecbbbbbcef5c"
+source = "git+https://github.com/YaLTeR/smithay.git?branch=pointer-gestures#6d2e4f9cb25f1846fad5820528f1caa68eff6985"
 dependencies = [
  "drm",
  "edid-rs",
