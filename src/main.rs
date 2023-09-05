@@ -3,6 +3,7 @@ extern crate tracing;
 
 mod animation;
 mod backend;
+mod config;
 mod dbus;
 mod frame_clock;
 mod handlers;
@@ -13,8 +14,11 @@ mod utils;
 
 use std::env;
 use std::ffi::OsString;
+use std::path::PathBuf;
 
 use clap::Parser;
+use config::Config;
+use miette::Context;
 use niri::{Niri, State};
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
@@ -23,6 +27,9 @@ use tracing_subscriber::EnvFilter;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
+    #[arg(short, long)]
+    config: Option<PathBuf>,
     /// Command to run upon compositor startup.
     #[arg(last = true)]
     command: Vec<OsString>,
@@ -47,9 +54,22 @@ fn main() {
 
     let _client = tracy_client::Client::start();
 
+    let config = match Config::load(cli.config).context("error loading config") {
+        Ok(config) => config,
+        Err(err) => {
+            warn!("{err:?}");
+            Config::default()
+        }
+    };
+
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
-    let state = State::new(event_loop.handle(), event_loop.get_signal(), &mut display);
+    let state = State::new(
+        config,
+        event_loop.handle(),
+        event_loop.get_signal(),
+        &mut display,
+    );
     let mut data = LoopData { display, state };
 
     if let Some((command, args)) = cli.command.split_first() {

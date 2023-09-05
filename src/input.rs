@@ -17,44 +17,9 @@ use smithay::input::pointer::{
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
+use crate::config::{Action, Config, Modifiers};
 use crate::niri::State;
 use crate::utils::get_monotonic_time;
-
-enum Action {
-    None,
-    Quit,
-    ChangeVt(i32),
-    Suspend,
-    ToggleDebugTint,
-    Spawn(String),
-    Screenshot,
-    CloseWindow,
-    ToggleFullscreen,
-    FocusLeft,
-    FocusRight,
-    FocusDown,
-    FocusUp,
-    MoveLeft,
-    MoveRight,
-    MoveDown,
-    MoveUp,
-    ConsumeIntoColumn,
-    ExpelFromColumn,
-    SwitchWorkspaceDown,
-    SwitchWorkspaceUp,
-    MoveToWorkspaceDown,
-    MoveToWorkspaceUp,
-    FocusMonitorLeft,
-    FocusMonitorRight,
-    FocusMonitorDown,
-    FocusMonitorUp,
-    MoveToMonitorLeft,
-    MoveToMonitorRight,
-    MoveToMonitorDown,
-    MoveToMonitorUp,
-    ToggleWidth,
-    ToggleFullWidth,
-}
 
 pub enum CompositorMod {
     Super,
@@ -70,13 +35,17 @@ impl From<Action> for FilterResult<Action> {
     }
 }
 
-fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -> Action {
+fn action(
+    config: &Config,
+    comp_mod: CompositorMod,
+    keysym: KeysymHandle,
+    mods: ModifiersState,
+) -> Action {
     use keysyms::*;
 
-    let modified = keysym.modified_sym();
-
+    // Handle hardcoded binds.
     #[allow(non_upper_case_globals)] // wat
-    match modified {
+    match keysym.modified_sym() {
         modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
             let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
             return Action::ChangeVt(vt);
@@ -85,59 +54,45 @@ fn action(comp_mod: CompositorMod, keysym: KeysymHandle, mods: ModifiersState) -
         _ => (),
     }
 
-    let mod_down = match comp_mod {
-        CompositorMod::Super => mods.logo,
-        CompositorMod::Alt => mods.alt,
+    // Handle configured binds.
+    let mut modifiers = Modifiers::empty();
+    if mods.ctrl {
+        modifiers |= Modifiers::CTRL;
+    }
+    if mods.shift {
+        modifiers |= Modifiers::SHIFT;
+    }
+    if mods.alt {
+        modifiers |= Modifiers::ALT;
+    }
+    if mods.logo {
+        modifiers |= Modifiers::SUPER;
+    }
+
+    let (mod_down, mut comp_mod) = match comp_mod {
+        CompositorMod::Super => (mods.logo, Modifiers::SUPER),
+        CompositorMod::Alt => (mods.alt, Modifiers::ALT),
     };
+    if mod_down {
+        modifiers |= Modifiers::COMPOSITOR;
+    } else {
+        comp_mod = Modifiers::empty();
+    }
 
-    if !mod_down {
+    let Some(&raw) = keysym.raw_syms().first() else {
         return Action::None;
+    };
+    for bind in &config.binds.0 {
+        if bind.key.keysym != raw {
+            continue;
+        }
+
+        if bind.key.modifiers | comp_mod == modifiers {
+            return bind.actions.first().cloned().unwrap_or(Action::None);
+        }
     }
 
-    // FIXME: these don't work in the Russian layout. I guess I'll need to
-    // find a US keymap, then map keys somehow.
-    #[allow(non_upper_case_globals)] // wat
-    match modified {
-        KEY_E => Action::Quit,
-        KEY_t => Action::Spawn("alacritty".to_owned()),
-        KEY_d => Action::Spawn("fuzzel".to_owned()),
-        KEY_n => Action::Spawn("nautilus".to_owned()),
-        // Alt + PrtSc = SysRq
-        KEY_Sys_Req | KEY_Print => Action::Screenshot,
-        KEY_T if mods.shift && mods.ctrl => Action::ToggleDebugTint,
-        KEY_q => Action::CloseWindow,
-        KEY_F => Action::ToggleFullscreen,
-        KEY_comma => Action::ConsumeIntoColumn,
-        KEY_period => Action::ExpelFromColumn,
-        KEY_r => Action::ToggleWidth,
-        KEY_f => Action::ToggleFullWidth,
-        // Move to monitor.
-        KEY_H | KEY_Left if mods.shift && mods.ctrl => Action::MoveToMonitorLeft,
-        KEY_L | KEY_Right if mods.shift && mods.ctrl => Action::MoveToMonitorRight,
-        KEY_J | KEY_Down if mods.shift && mods.ctrl => Action::MoveToMonitorDown,
-        KEY_K | KEY_Up if mods.shift && mods.ctrl => Action::MoveToMonitorUp,
-        // Focus monitor.
-        KEY_H | KEY_Left if mods.shift => Action::FocusMonitorLeft,
-        KEY_L | KEY_Right if mods.shift => Action::FocusMonitorRight,
-        KEY_J | KEY_Down if mods.shift => Action::FocusMonitorDown,
-        KEY_K | KEY_Up if mods.shift => Action::FocusMonitorUp,
-        // Move.
-        KEY_h | KEY_Left if mods.ctrl => Action::MoveLeft,
-        KEY_l | KEY_Right if mods.ctrl => Action::MoveRight,
-        KEY_j | KEY_Down if mods.ctrl => Action::MoveDown,
-        KEY_k | KEY_Up if mods.ctrl => Action::MoveUp,
-        // Focus.
-        KEY_h | KEY_Left => Action::FocusLeft,
-        KEY_l | KEY_Right => Action::FocusRight,
-        KEY_j | KEY_Down => Action::FocusDown,
-        KEY_k | KEY_Up => Action::FocusUp,
-        // Workspaces.
-        KEY_u if mods.ctrl => Action::MoveToWorkspaceDown,
-        KEY_i if mods.ctrl => Action::MoveToWorkspaceUp,
-        KEY_u => Action::SwitchWorkspaceDown,
-        KEY_i => Action::SwitchWorkspaceUp,
-        _ => Action::None,
-    }
+    Action::None
 }
 
 impl State {
@@ -166,9 +121,9 @@ impl State {
                     event.state(),
                     serial,
                     time,
-                    |_, mods, keysym| {
+                    |self_, mods, keysym| {
                         if event.state() == KeyState::Pressed {
-                            action(comp_mod, keysym, *mods).into()
+                            action(&self_.config, comp_mod, keysym, *mods).into()
                         } else {
                             FilterResult::Forward
                         }
@@ -192,8 +147,10 @@ impl State {
                             self.backend.toggle_debug_tint();
                         }
                         Action::Spawn(command) => {
-                            if let Err(err) = Command::new(command).spawn() {
-                                warn!("error spawning alacritty: {err}");
+                            if let Some((command, args)) = command.split_first() {
+                                if let Err(err) = Command::new(command).args(args).spawn() {
+                                    warn!("error spawning {command}: {err}");
+                                }
                             }
                         }
                         Action::Screenshot => {
@@ -211,78 +168,78 @@ impl State {
                                 window.toplevel().send_close();
                             }
                         }
-                        Action::ToggleFullscreen => {
+                        Action::FullscreenWindow => {
                             let focus = self.niri.monitor_set.focus().cloned();
                             if let Some(window) = focus {
                                 self.niri.monitor_set.toggle_fullscreen(&window);
                             }
                         }
-                        Action::MoveLeft => {
+                        Action::MoveColumnLeft => {
                             self.niri.monitor_set.move_left();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::MoveRight => {
+                        Action::MoveColumnRight => {
                             self.niri.monitor_set.move_right();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::MoveDown => {
+                        Action::MoveWindowDown => {
                             self.niri.monitor_set.move_down();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::MoveUp => {
+                        Action::MoveWindowUp => {
                             self.niri.monitor_set.move_up();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::FocusLeft => {
+                        Action::FocusColumnLeft => {
                             self.niri.monitor_set.focus_left();
                         }
-                        Action::FocusRight => {
+                        Action::FocusColumnRight => {
                             self.niri.monitor_set.focus_right();
                         }
-                        Action::FocusDown => {
+                        Action::FocusWindowDown => {
                             self.niri.monitor_set.focus_down();
                         }
-                        Action::FocusUp => {
+                        Action::FocusWindowUp => {
                             self.niri.monitor_set.focus_up();
                         }
-                        Action::MoveToWorkspaceDown => {
+                        Action::MoveWindowToWorkspaceDown => {
                             self.niri.monitor_set.move_to_workspace_down();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::MoveToWorkspaceUp => {
+                        Action::MoveWindowToWorkspaceUp => {
                             self.niri.monitor_set.move_to_workspace_up();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::SwitchWorkspaceDown => {
+                        Action::FocusWorkspaceDown => {
                             self.niri.monitor_set.switch_workspace_down();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::SwitchWorkspaceUp => {
+                        Action::FocusWorkspaceUp => {
                             self.niri.monitor_set.switch_workspace_up();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::ConsumeIntoColumn => {
+                        Action::ConsumeWindowIntoColumn => {
                             self.niri.monitor_set.consume_into_column();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::ExpelFromColumn => {
+                        Action::ExpelWindowFromColumn => {
                             self.niri.monitor_set.expel_from_column();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
-                        Action::ToggleWidth => {
+                        Action::SwitchPresetColumnWidth => {
                             self.niri.monitor_set.toggle_width();
                         }
-                        Action::ToggleFullWidth => {
+                        Action::MaximizeColumn => {
                             self.niri.monitor_set.toggle_full_width();
                         }
                         Action::FocusMonitorLeft => {
@@ -309,25 +266,25 @@ impl State {
                                 self.move_cursor_to_output(&output);
                             }
                         }
-                        Action::MoveToMonitorLeft => {
+                        Action::MoveWindowToMonitorLeft => {
                             if let Some(output) = self.niri.output_left() {
                                 self.niri.monitor_set.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
-                        Action::MoveToMonitorRight => {
+                        Action::MoveWindowToMonitorRight => {
                             if let Some(output) = self.niri.output_right() {
                                 self.niri.monitor_set.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
-                        Action::MoveToMonitorDown => {
+                        Action::MoveWindowToMonitorDown => {
                             if let Some(output) = self.niri.output_down() {
                                 self.niri.monitor_set.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
-                        Action::MoveToMonitorUp => {
+                        Action::MoveWindowToMonitorUp => {
                             if let Some(output) = self.niri.output_up() {
                                 self.niri.monitor_set.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
@@ -740,9 +697,10 @@ impl State {
             // According to Mutter code, this setting is specific to touchpads.
             let is_touchpad = device.config_tap_finger_count() > 0;
             if is_touchpad {
-                let _ = device.config_tap_set_enabled(true);
-                let _ = device.config_scroll_set_natural_scroll_enabled(true);
-                let _ = device.config_accel_set_speed(0.2);
+                let c = &self.config.input.touchpad;
+                let _ = device.config_tap_set_enabled(c.tap);
+                let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
+                let _ = device.config_accel_set_speed(c.accel_speed);
             }
         }
     }

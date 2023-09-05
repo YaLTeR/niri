@@ -56,6 +56,7 @@ use smithay::wayland::tablet_manager::TabletManagerState;
 use time::OffsetDateTime;
 
 use crate::backend::{Backend, Tty, Winit};
+use crate::config::Config;
 use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
@@ -115,12 +116,14 @@ pub struct OutputState {
 }
 
 pub struct State {
+    pub config: Config,
     pub backend: Backend,
     pub niri: Niri,
 }
 
 impl State {
     pub fn new(
+        config: Config,
         event_loop: LoopHandle<'static, LoopData>,
         stop_signal: LoopSignal,
         display: &mut Display<State>,
@@ -134,10 +137,20 @@ impl State {
             Backend::Tty(Tty::new(event_loop.clone()))
         };
 
-        let mut niri = Niri::new(event_loop, stop_signal, display, backend.seat_name());
+        let mut niri = Niri::new(
+            &config,
+            event_loop,
+            stop_signal,
+            display,
+            backend.seat_name(),
+        );
         backend.init(&mut niri);
 
-        Self { backend, niri }
+        Self {
+            config,
+            backend,
+            niri,
+        }
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
@@ -178,6 +191,7 @@ impl State {
 
 impl Niri {
     pub fn new(
+        config: &Config,
         event_loop: LoopHandle<'static, LoopData>,
         stop_signal: LoopSignal,
         display: &mut Display<State>,
@@ -202,11 +216,12 @@ impl Niri {
             PresentationState::new::<State>(&display_handle, CLOCK_MONOTONIC as u32);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, seat_name);
-        // FIXME: get Xkb and repeat interval from GNOME dconf.
         let xkb = XkbConfig {
-            layout: "us,ru",
-            options: Some("grp:win_space_toggle,compose:ralt,ctrl:nocaps".to_owned()),
-            ..Default::default()
+            rules: &config.input.keyboard.xkb.rules,
+            model: &config.input.keyboard.xkb.model,
+            layout: &config.input.keyboard.xkb.layout.as_deref().unwrap_or("us"),
+            variant: &config.input.keyboard.xkb.variant,
+            options: config.input.keyboard.xkb.options.clone(),
         };
         seat.add_keyboard(xkb, 400, 30).unwrap();
         seat.add_pointer();

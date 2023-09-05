@@ -50,7 +50,7 @@ You can also autostart systemd services like [mako] by symlinking them into `$HO
 
 Niri also somewhat-works with xdg-desktop-portal-gnome for Flatpak apps.
 
-## Hotkeys
+## Default Hotkeys
 
 When running on a TTY, the Mod key is <kbd>Super</kbd>.
 When running in a window, the Mod key is <kbd>Alt</kbd>.
@@ -60,11 +60,9 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | Hotkey | Description |
 | ------ | ----------- |
 | <kbd>Mod</kbd><kbd>T</kbd> | Spawn `alacritty` |
-| <kbd>Mod</kbd><kbd>D</kbd> | Spawn `fuzzel` |
-| <kbd>Mod</kbd><kbd>N</kbd> | Spawn `nautilus` |
 | <kbd>Mod</kbd><kbd>Q</kbd> | Close the focused window |
-| <kbd>Mod</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>←</kbd> | Focus the window to the left |
-| <kbd>Mod</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>→</kbd> | Focus the window to the right |
+| <kbd>Mod</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>←</kbd> | Focus the column to the left |
+| <kbd>Mod</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>→</kbd> | Focus the column to the right |
 | <kbd>Mod</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>↓</kbd> | Focus the window below in a column |
 | <kbd>Mod</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>↑</kbd> | Focus the window above in a column |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>←</kbd> | Move the focused column to the left |
@@ -85,6 +83,12 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>PrtSc</kbd> | Save a screenshot to `~/Pictures/Screenshots/` |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd> | Toggle debug tinting of rendered elements |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>E</kbd> | Exit niri |
+
+## Configuration
+
+Niri will load configuration from `$XDG_CONFIG_HOME/.config/niri/config.kdl` or `~/.config/niri/config.kdl`.
+If this fails, it will load [the default configuration file](resources/default-config.kdl).
+Please use the default configuration file as the starting point for your custom configuration.
 
 [PaperWM]: https://github.com/paperwm/PaperWM
 [mako]: https://github.com/emersion/mako
