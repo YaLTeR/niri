@@ -1584,9 +1584,9 @@ impl<W: LayoutElement> Workspace<W> {
             let mut y = PADDING;
 
             for win in &col.windows {
-                if win != active_win {
-                    let geom = win.geometry();
+                let geom = win.geometry();
 
+                if win != active_win {
                     // x, y point at the top-left of the window geometry.
                     let mut win_pos = Point::from((x, y)) - geom.loc;
                     if col.is_fullscreen {
@@ -1718,9 +1718,9 @@ impl Workspace<Window> {
             let mut y = PADDING;
 
             for win in &col.windows {
-                if win != active_win {
-                    let geom = win.geometry();
+                let geom = win.geometry();
 
+                if win != active_win {
                     let mut win_pos = Point::from((x - view_pos, y)) - geom.loc;
                     if col.is_fullscreen {
                         // FIXME: fullscreen windows are missing left padding
@@ -1735,7 +1735,8 @@ impl Workspace<Window> {
                         1.,
                     ));
                 }
-                y += win.geometry().size.h + PADDING;
+
+                y += geom.size.h + PADDING;
             }
 
             x += col.size().w + PADDING;
