@@ -1,12 +1,11 @@
 #[macro_use]
 extern crate tracing;
 
-mod handlers;
-
 mod animation;
 mod backend;
 mod dbus;
 mod frame_clock;
+mod handlers;
 mod input;
 mod layout;
 mod niri;
