@@ -219,7 +219,7 @@ impl Niri {
         let xkb = XkbConfig {
             rules: &config.input.keyboard.xkb.rules,
             model: &config.input.keyboard.xkb.model,
-            layout: &config.input.keyboard.xkb.layout.as_deref().unwrap_or("us"),
+            layout: config.input.keyboard.xkb.layout.as_deref().unwrap_or("us"),
             variant: &config.input.keyboard.xkb.variant,
             options: config.input.keyboard.xkb.options.clone(),
         };
