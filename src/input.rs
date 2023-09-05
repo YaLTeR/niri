@@ -344,7 +344,9 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.niri.global_space.outputs().next().unwrap();
+                let Some(output) = self.niri.global_space.outputs().next() else {
+                    return;
+                };
 
                 let output_geo = self.niri.global_space.output_geometry(output).unwrap();
 
@@ -383,8 +385,7 @@ impl State {
                     if let Some(window) = self.niri.window_under_cursor() {
                         let window = window.clone();
                         self.niri.monitor_set.activate_window(&window);
-                    } else {
-                        let output = self.niri.output_under_cursor().unwrap();
+                    } else if let Some(output) = self.niri.output_under_cursor() {
                         self.niri.monitor_set.activate_output(&output);
                     }
                 };
@@ -433,7 +434,9 @@ impl State {
             }
             InputEvent::TabletToolAxis { event, .. } => {
                 // FIXME: allow mapping tablet to different outputs.
-                let output = self.niri.global_space.outputs().next().unwrap();
+                let Some(output) = self.niri.global_space.outputs().next() else {
+                    return;
+                };
 
                 let output_geo = self.niri.global_space.output_geometry(output).unwrap();
 
@@ -505,8 +508,7 @@ impl State {
                                 if let Some(window) = self.niri.window_under_cursor() {
                                     let window = window.clone();
                                     self.niri.monitor_set.activate_window(&window);
-                                } else {
-                                    let output = self.niri.output_under_cursor().unwrap();
+                                } else if let Some(output) = self.niri.output_under_cursor() {
                                     self.niri.monitor_set.activate_output(&output);
                                 }
                             };
@@ -519,7 +521,9 @@ impl State {
             }
             InputEvent::TabletToolProximity { event, .. } => {
                 // FIXME: allow mapping tablet to different outputs.
-                let output = self.niri.global_space.outputs().next().unwrap();
+                let Some(output) = self.niri.global_space.outputs().next() else {
+                    return;
+                };
 
                 let output_geo = self.niri.global_space.output_geometry(output).unwrap();
 
