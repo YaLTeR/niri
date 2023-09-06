@@ -64,4 +64,3 @@ assets = [
 ]
 [package.metadata.generate-rpm.requires]
 alacritty = "*"
-fuzzel = "*"
