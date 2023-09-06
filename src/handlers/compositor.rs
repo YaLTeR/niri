@@ -2,6 +2,7 @@ use std::collections::hash_map::Entry;
 
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
 use smithay::desktop::find_popup_root_surface;
+use smithay::input::pointer::CursorImageStatus;
 use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -148,6 +149,18 @@ impl CompositorHandler for State {
 
         // This might be a layer-shell surface.
         self.layer_shell_handle_commit(surface);
+
+        // This might be a cursor surface.
+        if matches!(&self.niri.cursor_image, CursorImageStatus::Surface(s) if s == surface) {
+            // FIXME: granular redraws for cursors.
+            self.niri.queue_redraw_all();
+        }
+
+        // This might be a DnD icon surface.
+        if self.niri.dnd_icon.as_ref() == Some(surface) {
+            // FIXME: granular redraws for cursors.
+            self.niri.queue_redraw_all();
+        }
     }
 }
 
