@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 1 * *' # Monthly
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+
+      matrix:
+        configuration: [debug, release]
+
+        include:
+          - configuration: release
+            release-flag: '--release'
+
+    name: test - ${{ matrix.configuration }}
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+
+      - name: Install Rust
+        run: |
+          rustup set auto-self-update check-only
+          rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.configuration }}
+
+      - name: Build
+        run: cargo build ${{ matrix.release-flag }}
+
+      - name: Build Tests
+        run: cargo test --no-run --all ${{ matrix.release-flag }}
+
+      - name: Test
+        run: cargo test --all ${{ matrix.release-flag }} -- --nocapture
+
+  clippy:
+    strategy:
+      fail-fast: false
+
+    name: clippy
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+
+      - name: Install Rust
+        run: |
+          rustup set auto-self-update check-only
+          rustup toolchain install stable --profile minimal --component clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run clippy
+        run: cargo clippy --all --all-targets
+
+  rustfmt:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        run: |
+          rustup set auto-self-update check-only
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set nightly
+
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+
