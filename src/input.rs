@@ -455,16 +455,21 @@ impl State {
                     if let Some(discrete) = horizontal_amount_discrete {
                         frame = frame.discrete(Axis::Horizontal, discrete as i32);
                     }
-                } else if source == AxisSource::Finger {
-                    frame = frame.stop(Axis::Horizontal);
                 }
                 if vertical_amount != 0.0 {
                     frame = frame.value(Axis::Vertical, vertical_amount);
                     if let Some(discrete) = vertical_amount_discrete {
                         frame = frame.discrete(Axis::Vertical, discrete as i32);
                     }
-                } else if source == AxisSource::Finger {
-                    frame = frame.stop(Axis::Vertical);
+                }
+
+                if source == AxisSource::Finger {
+                    if event.amount(Axis::Horizontal) == Some(0.0) {
+                        frame = frame.stop(Axis::Horizontal);
+                    }
+                    if event.amount(Axis::Vertical) == Some(0.0) {
+                        frame = frame.stop(Axis::Vertical);
+                    }
                 }
 
                 self.niri.seat.get_pointer().unwrap().axis(self, frame);
