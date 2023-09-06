@@ -33,6 +33,10 @@ binds {
     Mod+T { spawn "alacritty"; }
     Mod+Q { close-window; }
 
+    // Example volume keys mappings for PipeWire & WirePlumber.
+    /-XF86AudioRaiseVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1+"; }
+    /-XF86AudioLowerVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1-"; }
+
     Mod+H     { focus-column-left; }
     Mod+J     { focus-window-down; }
     Mod+K     { focus-window-up; }
