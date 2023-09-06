@@ -2,8 +2,11 @@ use std::time::Duration;
 
 use keyframe::functions::EaseOutCubic;
 use keyframe::EasingFunction;
+use portable_atomic::{AtomicF64, Ordering};
 
 use crate::utils::get_monotonic_time;
+
+pub static ANIMATION_SLOWDOWN: AtomicF64 = AtomicF64::new(1.);
 
 #[derive(Debug)]
 pub struct Animation {
@@ -23,7 +26,7 @@ impl Animation {
         Self {
             from,
             to,
-            duration: over,
+            duration: over.mul_f64(ANIMATION_SLOWDOWN.load(Ordering::Relaxed)),
             start_time: now,
             current_time: now,
         }

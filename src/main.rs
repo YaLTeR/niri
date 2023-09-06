@@ -20,6 +20,7 @@ use clap::Parser;
 use config::Config;
 use miette::Context;
 use niri::{Niri, State};
+use portable_atomic::Ordering;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
@@ -61,6 +62,7 @@ fn main() {
             Config::default()
         }
     };
+    animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
 
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();

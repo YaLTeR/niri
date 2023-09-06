@@ -1376,6 +1376,7 @@ dependencies = [
  "knuffel",
  "logind-zbus",
  "miette",
+ "portable-atomic",
  "profiling",
  "sd-notify",
  "serde",
@@ -1665,6 +1666,12 @@ dependencies = [
  "pin-project-lite",
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "1.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31114a898e107c51bb1609ffaf55a0e011cf6a4d7f1170d0015a165082c0338b"
 
 [[package]]
 name = "ppv-lite86"

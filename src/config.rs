@@ -13,6 +13,8 @@ pub struct Config {
     pub input: Input,
     #[knuffel(child, default)]
     pub binds: Binds,
+    #[knuffel(child, default)]
+    pub debug: DebugConfig,
 }
 
 // FIXME: Add other devices.
@@ -120,6 +122,20 @@ pub enum Action {
     MoveWindowToMonitorUp,
     SwitchPresetColumnWidth,
     MaximizeColumn,
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq)]
+pub struct DebugConfig {
+    #[knuffel(child, unwrap(argument), default = 1.)]
+    pub animation_slowdown: f64,
+}
+
+impl Default for DebugConfig {
+    fn default() -> Self {
+        Self {
+            animation_slowdown: 1.,
+        }
+    }
 }
 
 impl Config {
@@ -233,6 +249,10 @@ mod tests {
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
                 Mod+Comma { consume-window-into-column; }
             }
+
+            debug {
+                animation-slowdown 2.0
+            }
             "#,
             Config {
                 input: Input {
@@ -286,6 +306,9 @@ mod tests {
                         actions: vec![Action::ConsumeWindowIntoColumn],
                     },
                 ]),
+                debug: DebugConfig {
+                    animation_slowdown: 2.,
+                },
             },
         );
     }
