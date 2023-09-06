@@ -44,6 +44,9 @@ jobs:
       - name: Build
         run: cargo build ${{ matrix.release-flag }}
 
+      - name: Build (with profiling)
+        run: cargo build ${{ matrix.release-flag }} --features profile-with-tracy
+
       - name: Build Tests
         run: cargo test --no-run --all ${{ matrix.release-flag }}
 
