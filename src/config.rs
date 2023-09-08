@@ -128,12 +128,15 @@ pub enum Action {
 pub struct DebugConfig {
     #[knuffel(child, unwrap(argument), default = 1.)]
     pub animation_slowdown: f64,
+    #[knuffel(child)]
+    pub screen_cast_in_non_session_instances: bool,
 }
 
 impl Default for DebugConfig {
     fn default() -> Self {
         Self {
             animation_slowdown: 1.,
+            screen_cast_in_non_session_instances: false,
         }
     }
 }
@@ -308,6 +311,7 @@ mod tests {
                 ]),
                 debug: DebugConfig {
                     animation_slowdown: 2.,
+                    ..Default::default()
                 },
             },
         );

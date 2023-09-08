@@ -8,6 +8,7 @@ use std::{env, thread};
 use anyhow::Context;
 use directories::UserDirs;
 use sd_notify::NotifyState;
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
@@ -16,7 +17,7 @@ use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderE
 use smithay::backend::renderer::element::{
     render_elements, AsRenderElements, Element, RenderElement, RenderElementStates,
 };
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
 use smithay::desktop::utils::{
     send_dmabuf_feedback_surface_tree, send_frames_surface_tree,
@@ -31,7 +32,7 @@ use smithay::input::pointer::{CursorImageAttributes, CursorImageStatus, MotionEv
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::{Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction};
+use smithay::reexports::calloop::{self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::nix::libc::CLOCK_MONOTONIC;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_server::backend::{
@@ -40,7 +41,7 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{
-    IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform, SERIAL_COUNTER,
+    IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
 use smithay::wayland::data_device::DataDeviceState;
@@ -57,9 +58,12 @@ use time::OffsetDateTime;
 
 use crate::backend::{Backend, Tty, Winit};
 use crate::config::Config;
+use crate::dbus::mutter_display_config::DisplayConfig;
+use crate::dbus::mutter_screen_cast::{self, ScreenCast, ToNiriMsg};
 use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
+use crate::pw_utils::{Cast, PipeWire};
 use crate::utils::{center, get_monotonic_time, load_default_cursor};
 use crate::LoopData;
 
@@ -102,6 +106,11 @@ pub struct Niri {
 
     pub zbus_conn: Option<zbus::blocking::Connection>,
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
+    pub screen_cast: ScreenCast,
+
+    // Casts are dropped before PipeWire to prevent a double-free (yay).
+    pub casts: Vec<Cast>,
+    pub pipewire: Option<PipeWire>,
 }
 
 pub struct OutputState {
@@ -137,13 +146,7 @@ impl State {
             Backend::Tty(Tty::new(event_loop.clone()))
         };
 
-        let mut niri = Niri::new(
-            &config,
-            event_loop,
-            stop_signal,
-            display,
-            backend.seat_name(),
-        );
+        let mut niri = Niri::new(&config, event_loop, stop_signal, display, &backend);
         backend.init(&mut niri);
 
         Self {
@@ -195,7 +198,7 @@ impl Niri {
         event_loop: LoopHandle<'static, LoopData>,
         stop_signal: LoopSignal,
         display: &mut Display<State>,
-        seat_name: String,
+        backend: &Backend,
     ) -> Self {
         let display_handle = display.handle();
 
@@ -215,7 +218,7 @@ impl Niri {
         let presentation_state =
             PresentationState::new::<State>(&display_handle, CLOCK_MONOTONIC as u32);
 
-        let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, seat_name);
+        let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         let xkb = XkbConfig {
             rules: &config.input.keyboard.xkb.rules,
             model: &config.input.keyboard.xkb.model,
@@ -245,6 +248,102 @@ impl Niri {
             "listening on Wayland socket: {}",
             socket_name.to_string_lossy()
         );
+
+        let pipewire = match PipeWire::new(&event_loop) {
+            Ok(pipewire) => Some(pipewire),
+            Err(err) => {
+                warn!("error starting PipeWire: {err:?}");
+                None
+            }
+        };
+
+        let (to_niri, from_screen_cast) = calloop::channel::channel();
+        event_loop
+            .insert_source(from_screen_cast, {
+                let to_niri = to_niri.clone();
+                move |event, _, data| match event {
+                    calloop::channel::Event::Msg(msg) => match msg {
+                        ToNiriMsg::StartCast {
+                            session_id,
+                            output,
+                            cursor_mode,
+                            signal_ctx,
+                        } => {
+                            let _span = tracy_client::span!("StartCast");
+
+                            debug!(session_id, "StartCast");
+
+                            let gbm = match data.state.backend.gbm_device() {
+                                Some(gbm) => gbm,
+                                None => {
+                                    debug!("no GBM device available");
+                                    return;
+                                }
+                            };
+
+                            let pw = data.state.niri.pipewire.as_ref().unwrap();
+                            match pw.start_cast(
+                                to_niri.clone(),
+                                gbm,
+                                session_id,
+                                output,
+                                cursor_mode,
+                                signal_ctx,
+                            ) {
+                                Ok(cast) => {
+                                    data.state.niri.casts.push(cast);
+                                }
+                                Err(err) => {
+                                    warn!("error starting screencast: {err:?}");
+
+                                    if let Err(err) =
+                                        to_niri.send(ToNiriMsg::StopCast { session_id })
+                                    {
+                                        warn!("error sending StopCast to niri: {err:?}");
+                                    }
+                                }
+                            }
+                        }
+                        ToNiriMsg::StopCast { session_id } => {
+                            let _span = tracy_client::span!("StopCast");
+
+                            debug!(session_id, "StopCast");
+
+                            for i in (0..data.state.niri.casts.len()).rev() {
+                                let cast = &data.state.niri.casts[i];
+                                if cast.session_id != session_id {
+                                    continue;
+                                }
+
+                                let cast = data.state.niri.casts.swap_remove(i);
+                                if let Err(err) = cast.stream.disconnect() {
+                                    warn!("error disconnecting stream: {err:?}");
+                                }
+                            }
+
+                            let server =
+                                data.state.niri.zbus_conn.as_ref().unwrap().object_server();
+                            let path =
+                                format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
+                            if let Ok(iface) =
+                                server.interface::<_, mutter_screen_cast::Session>(path)
+                            {
+                                let _span = tracy_client::span!("invoking Session::stop");
+
+                                async_io::block_on(async move {
+                                    iface
+                                        .get()
+                                        .stop(&server, iface.signal_context().clone())
+                                        .await
+                                });
+                            }
+                        }
+                    },
+                    calloop::channel::Event::Closed => (),
+                }
+            })
+            .unwrap();
+        let screen_cast = ScreenCast::new(backend.connectors(), to_niri);
 
         let mut zbus_conn = None;
         let mut inhibit_power_key_fd = None;
@@ -278,7 +377,7 @@ impl Niri {
             }
 
             // Set up zbus, make sure it happens before anything might want it.
-            let conn = zbus::blocking::ConnectionBuilder::session()
+            let mut conn = zbus::blocking::ConnectionBuilder::session()
                 .unwrap()
                 .name("org.gnome.Mutter.ServiceChannel")
                 .unwrap()
@@ -286,9 +385,24 @@ impl Niri {
                     "/org/gnome/Mutter/ServiceChannel",
                     ServiceChannel::new(display_handle.clone()),
                 )
-                .unwrap()
-                .build()
                 .unwrap();
+
+            if pipewire.is_some() && !config.debug.screen_cast_in_non_session_instances {
+                conn = conn
+                    .name("org.gnome.Mutter.ScreenCast")
+                    .unwrap()
+                    .serve_at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
+                    .unwrap()
+                    .name("org.gnome.Mutter.DisplayConfig")
+                    .unwrap()
+                    .serve_at(
+                        "/org/gnome/Mutter/DisplayConfig",
+                        DisplayConfig::new(backend.connectors()),
+                    )
+                    .unwrap();
+            }
+
+            let conn = conn.build().unwrap();
             zbus_conn = Some(conn);
 
             // Notify systemd we're ready.
@@ -321,6 +435,23 @@ impl Niri {
                     warn!("error inhibiting power key: {err:?}");
                 }
             }
+        } else if pipewire.is_some() && config.debug.screen_cast_in_non_session_instances {
+            let conn = zbus::blocking::ConnectionBuilder::session()
+                .unwrap()
+                .name("org.gnome.Mutter.ScreenCast")
+                .unwrap()
+                .serve_at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
+                .unwrap()
+                .name("org.gnome.Mutter.DisplayConfig")
+                .unwrap()
+                .serve_at(
+                    "/org/gnome/Mutter/DisplayConfig",
+                    DisplayConfig::new(backend.connectors()),
+                )
+                .unwrap()
+                .build()
+                .unwrap();
+            zbus_conn = Some(conn);
         }
 
         let display_source = Generic::new(
@@ -364,6 +495,9 @@ impl Niri {
 
             zbus_conn,
             inhibit_power_key_fd,
+            screen_cast,
+            pipewire,
+            casts: vec![],
         }
     }
 
@@ -720,6 +854,9 @@ impl Niri {
 
         // Send the frame callbacks.
         self.send_frame_callbacks(output);
+
+        // Render and send to PipeWire screencast streams.
+        self.send_for_screen_cast(backend, output, &elements, presentation_time);
     }
 
     fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
@@ -827,6 +964,63 @@ impl Niri {
         feedback
     }
 
+    fn send_for_screen_cast(
+        &mut self,
+        backend: &mut Backend,
+        output: &Output,
+        elements: &[OutputRenderElements<GlesRenderer>],
+        presentation_time: Duration,
+    ) {
+        let _span = tracy_client::span!("Niri::send_for_screen_cast");
+
+        let size = output.current_mode().unwrap().size;
+
+        for cast in &mut self.casts {
+            if !cast.is_active.get() {
+                continue;
+            }
+
+            if &cast.output != output {
+                continue;
+            }
+
+            let last = cast.last_frame_time;
+            let min = cast.min_time_between_frames.get();
+            if !last.is_zero() && presentation_time - last < min {
+                trace!(
+                    "skipping frame because it is too soon \
+                     last={last:?} now={presentation_time:?} diff={:?} < min={min:?}",
+                    presentation_time - last,
+                );
+                continue;
+            }
+
+            {
+                let mut buffer = match cast.stream.dequeue_buffer() {
+                    Some(buffer) => buffer,
+                    None => {
+                        warn!("no available buffer in pw stream, skipping frame");
+                        continue;
+                    }
+                };
+
+                let data = &mut buffer.datas_mut()[0];
+                let fd = data.as_raw().fd as i32;
+                let dmabuf = cast.dmabufs.borrow()[&fd].clone();
+
+                // FIXME: Hidden / embedded / metadata cursor
+                render_to_dmabuf(backend.renderer(), dmabuf, size, elements).unwrap();
+
+                let maxsize = data.as_raw().maxsize;
+                let chunk = data.chunk_mut();
+                *chunk.size_mut() = maxsize;
+                *chunk.stride_mut() = maxsize as i32 / size.h;
+            }
+
+            cast.last_frame_time = presentation_time;
+        }
+    }
+
     pub fn screenshot(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -835,39 +1029,9 @@ impl Niri {
         let _span = tracy_client::span!("Niri::screenshot");
 
         let size = output.current_mode().unwrap().size;
-        let output_rect = Rectangle::from_loc_and_size((0, 0), size);
-        let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
-        let fourcc = Fourcc::Abgr8888;
-
-        let texture: GlesTexture = renderer
-            .create_buffer(fourcc, buffer_size)
-            .context("error creating texture")?;
-
         let elements = self.render(renderer, output);
 
-        renderer.bind(texture).context("error binding texture")?;
-        let mut frame = renderer
-            .render(size, Transform::Normal)
-            .context("error starting frame")?;
-
-        frame
-            .clear([0.1, 0.1, 0.1, 1.], &[output_rect])
-            .context("error clearing")?;
-
-        for element in elements.into_iter().rev() {
-            let src = element.src();
-            let dst = element.geometry(Scale::from(1.));
-            element
-                .draw(&mut frame, src, dst, &[output_rect])
-                .context("error drawing element")?;
-        }
-
-        let sync_point = frame.finish().context("error finishing frame")?;
-        sync_point.wait();
-
-        let mapping = renderer
-            .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), buffer_size), fourcc)
-            .context("error copying framebuffer")?;
+        let mapping = render_and_download(renderer, size, &elements).context("error rendering")?;
         let copy = renderer
             .map_texture(&mapping)
             .context("error mapping texture")?;
@@ -927,4 +1091,77 @@ pub struct ClientState {
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
+}
+
+fn render_and_download(
+    renderer: &mut GlesRenderer,
+    size: Size<i32, Physical>,
+    elements: &[OutputRenderElements<GlesRenderer>],
+) -> anyhow::Result<GlesMapping> {
+    let _span = tracy_client::span!("render_and_download");
+
+    let output_rect = Rectangle::from_loc_and_size((0, 0), size);
+    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
+    let fourcc = Fourcc::Abgr8888;
+
+    let texture: GlesTexture = renderer
+        .create_buffer(fourcc, buffer_size)
+        .context("error creating texture")?;
+
+    renderer.bind(texture).context("error binding texture")?;
+    let mut frame = renderer
+        .render(size, Transform::Normal)
+        .context("error starting frame")?;
+
+    frame
+        .clear([0.1, 0.1, 0.1, 1.], &[output_rect])
+        .context("error clearing")?;
+
+    for element in elements.iter().rev() {
+        let src = element.src();
+        let dst = element.geometry(Scale::from(1.));
+        element
+            .draw(&mut frame, src, dst, &[output_rect])
+            .context("error drawing element")?;
+    }
+
+    let sync_point = frame.finish().context("error finishing frame")?;
+    sync_point.wait();
+
+    let mapping = renderer
+        .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), buffer_size), fourcc)
+        .context("error copying framebuffer")?;
+    Ok(mapping)
+}
+
+fn render_to_dmabuf(
+    renderer: &mut GlesRenderer,
+    dmabuf: Dmabuf,
+    size: Size<i32, Physical>,
+    elements: &[OutputRenderElements<GlesRenderer>],
+) -> anyhow::Result<()> {
+    let _span = tracy_client::span!("render_to_dmabuf");
+
+    let output_rect = Rectangle::from_loc_and_size((0, 0), size);
+
+    renderer.bind(dmabuf).context("error binding texture")?;
+    let mut frame = renderer
+        .render(size, Transform::Normal)
+        .context("error starting frame")?;
+
+    frame
+        .clear([0.1, 0.1, 0.1, 1.], &[output_rect])
+        .context("error clearing")?;
+
+    for element in elements.iter().rev() {
+        let src = element.src();
+        let dst = element.geometry(Scale::from(1.));
+        element
+            .draw(&mut frame, src, dst, &[output_rect])
+            .context("error drawing element")?;
+    }
+
+    let _sync_point = frame.finish().context("error finishing frame")?;
+
+    Ok(())
 }

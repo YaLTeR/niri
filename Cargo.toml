@@ -16,6 +16,7 @@ keyframe = { version = "1.1.1", default-features = false }
 knuffel = "3.2.0"
 logind-zbus = "3.1.2"
 miette = { version = "5.10.0", features = ["fancy"] }
+pipewire = "0.7.2"
 portable-atomic = { version = "1.4.3", default-features = false, features = ["float"] }
 profiling = "1.0.10"
 sd-notify = "0.4.1"
@@ -26,9 +27,11 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tracy-client = { version = "0.15", default-features = false }
 xcursor = "0.3.4"
 zbus = { version = "3.14.1" }
+async-io = "1.13.0"
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
+# path = "../smithay"
 default-features = false
 features = [
     "backend_drm",
@@ -48,6 +51,7 @@ features = [
 
 [dependencies.smithay-drm-extras]
 git = "https://github.com/Smithay/smithay.git"
+# path = "../smithay/smithay-drm-extras"
 
 [features]
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]

@@ -10,6 +10,7 @@ mod handlers;
 mod input;
 mod layout;
 mod niri;
+mod pw_utils;
 mod utils;
 
 use std::env;

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, Arc};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
@@ -44,6 +45,7 @@ pub struct Tty {
     udev_dispatcher: Dispatcher<'static, UdevBackend, LoopData>,
     primary_gpu_path: PathBuf,
     output_device: Option<OutputDevice>,
+    connectors: Arc<Mutex<HashMap<String, Output>>>,
 }
 
 type GbmDrmCompositor = DrmCompositor<
@@ -236,6 +238,7 @@ impl Tty {
             udev_dispatcher,
             primary_gpu_path,
             output_device: None,
+            connectors: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -549,6 +552,11 @@ impl Tty {
             tracy_client::internal::create_frame_name(format!("vblank on {output_name}\0").leak())
         };
 
+        self.connectors
+            .lock()
+            .unwrap()
+            .insert(output_name.clone(), output.clone());
+
         let surface = Surface {
             name: output_name,
             compositor,
@@ -574,10 +582,10 @@ impl Tty {
         debug!("disconnecting connector: {connector:?}");
         let device = self.output_device.as_mut().unwrap();
 
-        if device.surfaces.remove(&crtc).is_none() {
-            debug!("crts wasn't enabled");
+        let Some(surface) = device.surfaces.remove(&crtc) else {
+            debug!("crtc wasn't enabled");
             return;
-        }
+        };
 
         let output = niri
             .global_space
@@ -590,6 +598,8 @@ impl Tty {
             .clone();
 
         niri.remove_output(&output);
+
+        self.connectors.lock().unwrap().remove(&surface.name);
     }
 
     pub fn seat_name(&self) -> String {
@@ -679,6 +689,14 @@ impl Tty {
 
     pub fn dmabuf_state(&mut self) -> &mut DmabufState {
         &mut self.output_device.as_mut().unwrap().dmabuf_state
+    }
+
+    pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
+        self.connectors.clone()
+    }
+
+    pub fn gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
+        self.output_device.as_ref().map(|d| d.gbm.clone())
     }
 }
 

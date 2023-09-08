@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -21,6 +23,7 @@ pub struct Winit {
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
+    connectors: Arc<Mutex<HashMap<String, Output>>>,
 }
 
 impl Winit {
@@ -52,6 +55,11 @@ impl Winit {
             Some((0, 0).into()),
         );
         output.set_preferred(mode);
+
+        let connectors = Arc::new(Mutex::new(HashMap::from([(
+            "winit".to_owned(),
+            output.clone(),
+        )])));
 
         let damage_tracker = OutputDamageTracker::from_output(&output);
 
@@ -99,6 +107,7 @@ impl Winit {
             output,
             backend,
             damage_tracker,
+            connectors,
         }
     }
 
@@ -161,5 +170,9 @@ impl Winit {
     pub fn toggle_debug_tint(&mut self) {
         let renderer = self.backend.renderer();
         renderer.set_debug_flags(renderer.debug_flags() ^ DebugFlags::TINT);
+    }
+
+    pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
+        self.connectors.clone()
     }
 }

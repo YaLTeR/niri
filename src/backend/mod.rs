@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use smithay::backend::allocator::gbm::GbmDevice;
+use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::wayland::dmabuf::DmabufFeedback;
@@ -76,6 +81,20 @@ impl Backend {
         match self {
             Backend::Tty(tty) => tty.toggle_debug_tint(),
             Backend::Winit(winit) => winit.toggle_debug_tint(),
+        }
+    }
+
+    pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
+        match self {
+            Backend::Tty(tty) => tty.connectors(),
+            Backend::Winit(winit) => winit.connectors(),
+        }
+    }
+
+    pub fn gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
+        match self {
+            Backend::Tty(tty) => tty.gbm_device(),
+            Backend::Winit(_) => None,
         }
     }
 
