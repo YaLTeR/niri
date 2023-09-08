@@ -1385,7 +1385,7 @@ dependencies = [
  "time",
  "tracing",
  "tracing-subscriber",
- "tracy-client 0.16.1",
+ "tracy-client",
  "xcursor",
  "zbus",
 ]
@@ -1729,7 +1729,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "45f10e75d83c7aec79a6aa46f897075890e156b105eebe51cfa0abce51af025f"
 dependencies = [
  "profiling-procmacros",
- "tracy-client 0.15.2",
+ "tracy-client",
 ]
 
 [[package]]
@@ -2035,7 +2035,7 @@ checksum = "f67ad224767faa3c7d8b6d91985b78e70a1324408abcb1cfcc2be4c06bc06043"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay.git#36a0ec69b1a2331b1a2d0e046b026cb85d7d132c"
+source = "git+https://github.com/Smithay/smithay.git#5a8264b3e30edc755b38bcfb8eedf9457208f2a0"
 dependencies = [
  "appendlist",
  "bitflags 2.4.0",
@@ -2097,7 +2097,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#36a0ec69b1a2331b1a2d0e046b026cb85d7d132c"
+source = "git+https://github.com/Smithay/smithay.git#5a8264b3e30edc755b38bcfb8eedf9457208f2a0"
 dependencies = [
  "drm",
  "edid-rs",
@@ -2277,9 +2277,9 @@ checksum = "7cda73e2f1397b1262d6dfdcef8aafae14d1de7748d66822d3bfeeb6d03e5e4b"
 
 [[package]]
 name = "toml_edit"
-version = "0.19.14"
+version = "0.19.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8123f27e969974a3dfba720fdb560be359f57b44302d280ba72e76a74480e8a"
+checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
 dependencies = [
  "indexmap 2.0.0",
  "toml_datetime",
@@ -2353,17 +2353,6 @@ name = "tracy-client"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "434ecabbda9f67eeea1eab44d52f4a20538afa3e2c2770f2efc161142b25b608"
-dependencies = [
- "loom",
- "once_cell",
- "tracy-client-sys",
-]
-
-[[package]]
-name = "tracy-client"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c78458aa3759647e0399e959a06f9f6dc61450a1caaa4f1632a3df8e8c55af7"
 dependencies = [
  "loom",
  "once_cell",
