@@ -2207,7 +2207,7 @@ checksum = "f67ad224767faa3c7d8b6d91985b78e70a1324408abcb1cfcc2be4c06bc06043"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay.git#2d77640d1beea21e0cfbccbeec920db3d6dccfcf"
+source = "git+https://github.com/Smithay/smithay.git#4b72a90fc82d1bc73c0d162a1814d06a3d411a3a"
 dependencies = [
  "appendlist",
  "bitflags 2.4.0",
@@ -2269,7 +2269,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#2d77640d1beea21e0cfbccbeec920db3d6dccfcf"
+source = "git+https://github.com/Smithay/smithay.git#4b72a90fc82d1bc73c0d162a1814d06a3d411a3a"
 dependencies = [
  "drm",
  "edid-rs",
