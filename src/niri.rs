@@ -15,7 +15,7 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::element::{
-    render_elements, AsRenderElements, Element, RenderElement, RenderElementStates,
+    render_elements, AsRenderElements, Element, Kind, RenderElement, RenderElementStates,
 };
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
@@ -737,11 +737,17 @@ impl Niri {
                     None,
                     None,
                     None,
+                    Kind::Cursor,
                 ),
             )],
-            CursorImageStatus::Surface(surface) => {
-                render_elements_from_surface_tree(renderer, surface, pointer_pos, 1., 1.)
-            }
+            CursorImageStatus::Surface(surface) => render_elements_from_surface_tree(
+                renderer,
+                surface,
+                pointer_pos,
+                1.,
+                1.,
+                Kind::Cursor,
+            ),
         };
 
         if let Some(dnd_icon) = &self.dnd_icon {
@@ -751,6 +757,7 @@ impl Niri {
                 pointer_pos,
                 1.,
                 1.,
+                Kind::Unspecified,
             ));
         }
 
