@@ -376,7 +376,7 @@ impl<W: LayoutElement> MonitorSet<W> {
         }
     }
 
-    pub fn add_window(
+    pub fn add_window_by_idx(
         &mut self,
         monitor_idx: usize,
         workspace_idx: usize,
@@ -399,19 +399,31 @@ impl<W: LayoutElement> MonitorSet<W> {
         }
     }
 
-    pub fn add_window_to_output(&mut self, output: &Output, window: W, activate: bool) {
-        let MonitorSet::Normal { monitors, .. } = self else {
-            panic!()
-        };
-
-        let (monitor_idx, monitor) = monitors
-            .iter()
-            .enumerate()
-            .find(|(_, mon)| &mon.output == output)
-            .unwrap();
-        let workspace_idx = monitor.active_workspace_idx;
-
-        self.add_window(monitor_idx, workspace_idx, window, activate);
+    /// Adds a new window to the layout.
+    ///
+    /// Returns an output that the window was added to, if there were any outputs.
+    pub fn add_window(&mut self, window: W, activate: bool) -> Option<&Output> {
+        match self {
+            MonitorSet::Normal {
+                monitors,
+                active_monitor_idx,
+                ..
+            } => {
+                let mon = &mut monitors[*active_monitor_idx];
+                mon.add_window(mon.active_workspace_idx, window, activate);
+                Some(&mon.output)
+            }
+            MonitorSet::NoOutputs(workspaces) => {
+                let ws = if let Some(ws) = workspaces.get_mut(0) {
+                    ws
+                } else {
+                    workspaces.push(Workspace::new_no_outputs());
+                    &mut workspaces[0]
+                };
+                ws.add_window(window, activate);
+                None
+            }
+        }
     }
 
     pub fn remove_window(&mut self, window: &W) {
@@ -880,7 +892,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             ws.remove_window(&window);
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
-            self.add_window(new_idx, workspace_idx, window, true);
+            self.add_window_by_idx(new_idx, workspace_idx, window, true);
         }
     }
 
@@ -895,7 +907,7 @@ impl<W: LayoutElement> MonitorSet<W> {
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             // FIXME: activate only if it was already active and focused.
-            self.add_window(new_idx, workspace_idx, window, true);
+            self.add_window_by_idx(new_idx, workspace_idx, window, true);
         }
     }
 
@@ -1239,6 +1251,18 @@ impl<W: LayoutElement> Workspace<W> {
             original_output: OutputId::new(&output),
             view_size: output_size(&output),
             output: Some(output),
+            columns: vec![],
+            active_column_idx: 0,
+            view_offset: 0,
+            view_offset_anim: None,
+        }
+    }
+
+    fn new_no_outputs() -> Self {
+        Self {
+            output: None,
+            original_output: OutputId(String::new()),
+            view_size: Size::from((1280, 720)),
             columns: vec![],
             active_column_idx: 0,
             view_offset: 0,
