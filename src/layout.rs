@@ -783,7 +783,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             MonitorSet::NoOutputs(workspaces) => {
                 for workspace in workspaces {
                     assert!(
-                        !workspace.has_windows(),
+                        workspace.has_windows(),
                         "with no outputs there cannot be empty workspaces"
                     );
 
