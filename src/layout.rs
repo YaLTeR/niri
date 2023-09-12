@@ -773,6 +773,7 @@ impl<W: LayoutElement> MonitorSet<W> {
         ws.window_under(pos_within_output)
     }
 
+    #[cfg(test)]
     fn verify_invariants(&self) {
         let (monitors, &primary_idx, &active_monitor_idx) = match &self {
             MonitorSet::Normal {
@@ -1438,6 +1439,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.activate_column(column_idx);
     }
 
+    #[cfg(test)]
     fn verify_invariants(&self) {
         assert!(self.view_size.w > 0);
         assert!(self.view_size.h > 0);
@@ -1892,6 +1894,7 @@ impl<W: LayoutElement> Column<W> {
         self.active_window_idx = new_idx;
     }
 
+    #[cfg(test)]
     fn verify_invariants(&self) {
         assert!(!self.windows.is_empty(), "columns can't be empty");
         assert!(self.active_window_idx < self.windows.len());
@@ -1969,4 +1972,251 @@ pub fn configure_new_window(view_size: Size<i32, Logical>, window: &Window) {
         state.size = Some(size);
         state.bounds = Some(bounds);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use smithay::output::{Mode, PhysicalProperties, Subpixel};
+    use smithay::utils::IsAlive;
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct TestWindowInner {
+        id: usize,
+        bbox: Cell<Rectangle<i32, Logical>>,
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestWindow(Rc<TestWindowInner>);
+
+    impl TestWindow {
+        fn new(id: usize, bbox: Rectangle<i32, Logical>) -> Self {
+            Self(Rc::new(TestWindowInner {
+                id,
+                bbox: Cell::new(bbox),
+            }))
+        }
+    }
+
+    impl PartialEq for TestWindow {
+        fn eq(&self, other: &Self) -> bool {
+            self.0.id == other.0.id
+        }
+    }
+
+    impl IsAlive for TestWindow {
+        fn alive(&self) -> bool {
+            true
+        }
+    }
+
+    impl SpaceElement for TestWindow {
+        fn bbox(&self) -> Rectangle<i32, Logical> {
+            self.0.bbox.get()
+        }
+
+        fn is_in_input_region(&self, _point: &Point<f64, Logical>) -> bool {
+            false
+        }
+
+        fn set_activate(&self, _activated: bool) {}
+        fn output_enter(&self, _output: &Output, _overlap: Rectangle<i32, Logical>) {}
+        fn output_leave(&self, _output: &Output) {}
+    }
+
+    impl LayoutElement for TestWindow {
+        fn request_size(&self, _size: Size<i32, Logical>) {}
+
+        fn request_fullscreen(&self, _size: Size<i32, Logical>) {}
+
+        fn min_size(&self) -> Size<i32, Logical> {
+            Size::from((0, 0))
+        }
+
+        fn max_size(&self) -> Size<i32, Logical> {
+            Size::from((0, 0))
+        }
+
+        fn is_wl_surface(&self, _wl_surface: &WlSurface) -> bool {
+            false
+        }
+
+        fn send_frame<T, F>(
+            &self,
+            _output: &Output,
+            _time: T,
+            _throttle: Option<Duration>,
+            _primary_scan_out_output: F,
+        ) where
+            T: Into<Duration>,
+            F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
+        {
+        }
+
+        fn send_dmabuf_feedback<'a, P, F>(
+            &self,
+            _output: &Output,
+            _primary_scan_out_output: P,
+            _select_dmabuf_feedback: F,
+        ) where
+            P: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
+            F: Fn(&WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
+        {
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum Op {
+        AddOutput(usize),
+        RemoveOutput(usize),
+        FocusOutput(usize),
+        AddWindow {
+            id: usize,
+            bbox: Rectangle<i32, Logical>,
+            activate: bool,
+        },
+        CloseWindow(usize),
+        FocusColumnLeft,
+        FocusColumnRight,
+        MoveColumnLeft,
+        MoveColumnRight,
+        ConsumeWindowIntoColumn,
+        ExpelWindowFromColumn,
+        FocusWorkspaceDown,
+        FocusWorkspaceUp,
+        MoveWindowToWorkspaceDown,
+        MoveWindowToWorkspaceUp,
+    }
+
+    impl Op {
+        fn apply(self, monitor_set: &mut MonitorSet<TestWindow>) {
+            match self {
+                Op::AddOutput(id) => {
+                    let name = format!("output{id}");
+                    if monitor_set.outputs().any(|o| o.name() == name) {
+                        return;
+                    }
+
+                    let output = Output::new(
+                        name,
+                        PhysicalProperties {
+                            size: Size::from((1280, 720)),
+                            subpixel: Subpixel::Unknown,
+                            make: String::new(),
+                            model: String::new(),
+                        },
+                    );
+                    output.change_current_state(
+                        Some(Mode {
+                            size: Size::from((1280, 720)),
+                            refresh: 60,
+                        }),
+                        None,
+                        None,
+                        None,
+                    );
+                    monitor_set.add_output(output.clone());
+                }
+                Op::RemoveOutput(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = monitor_set.outputs().find(|o| o.name() == name).cloned()
+                    else {
+                        return;
+                    };
+
+                    monitor_set.remove_output(&output);
+                }
+                Op::FocusOutput(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = monitor_set.outputs().find(|o| o.name() == name).cloned()
+                    else {
+                        return;
+                    };
+
+                    monitor_set.focus_output(&output);
+                }
+                Op::AddWindow { id, bbox, activate } => {
+                    let win = TestWindow::new(id, bbox);
+                    monitor_set.add_window(win, activate);
+                }
+                Op::CloseWindow(id) => {
+                    let dummy = TestWindow::new(id, Rectangle::default());
+                    monitor_set.remove_window(&dummy);
+                }
+                Op::FocusColumnLeft => monitor_set.focus_left(),
+                Op::FocusColumnRight => monitor_set.focus_right(),
+                Op::MoveColumnLeft => monitor_set.move_left(),
+                Op::MoveColumnRight => monitor_set.move_right(),
+                Op::ConsumeWindowIntoColumn => monitor_set.consume_into_column(),
+                Op::ExpelWindowFromColumn => monitor_set.expel_from_column(),
+                Op::FocusWorkspaceDown => monitor_set.switch_workspace_down(),
+                Op::FocusWorkspaceUp => monitor_set.switch_workspace_up(),
+                Op::MoveWindowToWorkspaceDown => monitor_set.move_to_workspace_down(),
+                Op::MoveWindowToWorkspaceUp => monitor_set.move_to_workspace_up(),
+            }
+        }
+    }
+
+    #[test]
+    fn operations() {
+        let every_op = [
+            Op::AddOutput(0),
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::RemoveOutput(0),
+            Op::RemoveOutput(1),
+            Op::RemoveOutput(2),
+            Op::FocusOutput(0),
+            Op::FocusOutput(1),
+            Op::FocusOutput(2),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::CloseWindow(0),
+            Op::CloseWindow(1),
+            Op::CloseWindow(2),
+            Op::FocusColumnLeft,
+            Op::FocusColumnRight,
+            Op::MoveColumnLeft,
+            Op::MoveColumnRight,
+            Op::ConsumeWindowIntoColumn,
+            Op::ExpelWindowFromColumn,
+            Op::FocusWorkspaceDown,
+            Op::FocusWorkspaceUp,
+            Op::MoveWindowToWorkspaceDown,
+            Op::MoveWindowToWorkspaceUp,
+        ];
+
+        for third in every_op {
+            for second in every_op {
+                for first in every_op {
+                    eprintln!("{first:?}, {second:?}, {third:?}");
+
+                    let mut monitor_set = MonitorSet::default();
+                    first.apply(&mut monitor_set);
+                    monitor_set.verify_invariants();
+                    second.apply(&mut monitor_set);
+                    monitor_set.verify_invariants();
+                    third.apply(&mut monitor_set);
+                    monitor_set.verify_invariants();
+                }
+            }
+        }
+    }
 }
