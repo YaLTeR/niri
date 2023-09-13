@@ -1523,7 +1523,19 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        let current_x = self.view_pos();
+
         self.columns.swap(self.active_column_idx, new_idx);
+
+        let new_x = self.column_x(self.active_column_idx) - PADDING;
+        let new_view_offset = compute_new_view_offset(
+            current_x,
+            self.view_size.w,
+            new_x,
+            self.columns[self.active_column_idx].size().w,
+        );
+        self.view_offset = new_view_offset;
+
         self.activate_column(new_idx);
     }
 
@@ -1537,7 +1549,19 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        let current_x = self.view_pos();
+
         self.columns.swap(self.active_column_idx, new_idx);
+
+        let new_x = self.column_x(self.active_column_idx) - PADDING;
+        let new_view_offset = compute_new_view_offset(
+            current_x,
+            self.view_size.w,
+            new_x,
+            self.columns[self.active_column_idx].size().w,
+        );
+        self.view_offset = new_view_offset;
+
         self.activate_column(new_idx);
     }
 
