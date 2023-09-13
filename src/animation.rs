@@ -46,4 +46,8 @@ impl Animation {
         let x = (passed / total).clamp(0., 1.);
         EaseOutCubic.y(x) * (self.to - self.from) + self.from
     }
+
+    pub fn to(&self) -> f64 {
+        self.to
+    }
 }

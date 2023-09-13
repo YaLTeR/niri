@@ -1340,14 +1340,21 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.active_column_idx = idx;
 
-        self.view_offset = 0;
-        let new_x = self.view_pos();
+        let new_x = self.column_x(idx) - PADDING;
+        let new_view_offset = compute_new_view_offset(
+            current_x,
+            self.view_size.w,
+            new_x,
+            self.columns[idx].size().w,
+        );
 
+        let from_view_offset = current_x - new_x;
         self.view_offset_anim = Some(Animation::new(
-            (current_x - new_x) as f64,
-            0.,
+            from_view_offset as f64,
+            new_view_offset as f64,
             Duration::from_millis(250),
         ));
+        self.view_offset = from_view_offset;
     }
 
     fn has_windows(&self) -> bool {
@@ -1419,12 +1426,41 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     fn update_window(&mut self, window: &W) {
-        let column = self
+        let (idx, column) = self
             .columns
             .iter_mut()
-            .find(|col| col.contains(window))
+            .enumerate()
+            .find(|(_, col)| col.contains(window))
             .unwrap();
         column.update_window_sizes(self.view_size);
+
+        if idx == self.active_column_idx {
+            // We might need to move the view to ensure the resized window is still visible.
+            let current_x = self.view_pos();
+            let new_x = self.column_x(idx) - PADDING;
+
+            let new_view_offset = compute_new_view_offset(
+                current_x,
+                self.view_size.w,
+                new_x,
+                self.columns[idx].size().w,
+            );
+
+            let cur_view_offset = self
+                .view_offset_anim
+                .as_ref()
+                .map(|a| a.to().round() as i32)
+                .unwrap_or(self.view_offset);
+            if cur_view_offset != new_view_offset {
+                let from_view_offset = current_x - new_x;
+                self.view_offset_anim = Some(Animation::new(
+                    from_view_offset as f64,
+                    new_view_offset as f64,
+                    Duration::from_millis(250),
+                ));
+                self.view_offset = from_view_offset;
+            }
+        }
     }
 
     fn activate_window(&mut self, window: &W) {
@@ -1972,6 +2008,27 @@ pub fn configure_new_window(view_size: Size<i32, Logical>, window: &Window) {
         state.size = Some(size);
         state.bounds = Some(bounds);
     });
+}
+
+fn compute_new_view_offset(cur_x: i32, view_width: i32, new_x: i32, new_col_width: i32) -> i32 {
+    // If the column is wider than the view, always left-align it.
+    if new_col_width + PADDING * 2 >= view_width {
+        return 0;
+    }
+
+    // If the column is already fully visible, leave the view as is.
+    if new_x >= cur_x && new_x + new_col_width + PADDING * 2 <= cur_x + view_width {
+        return -(new_x - cur_x);
+    }
+
+    // Otherwise, prefer the aligment that results in less motion from the current position.
+    let dist_to_left = cur_x.abs_diff(new_x);
+    let dist_to_right = (cur_x + view_width).abs_diff(new_x + new_col_width + PADDING * 2);
+    if dist_to_left <= dist_to_right {
+        0
+    } else {
+        -(view_width - new_col_width - PADDING * 2)
+    }
 }
 
 #[cfg(test)]
