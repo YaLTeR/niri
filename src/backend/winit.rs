@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -21,6 +23,7 @@ use crate::utils::get_monotonic_time;
 use crate::{LoopData, Niri};
 
 pub struct Winit {
+    config: Rc<RefCell<Config>>,
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
@@ -28,7 +31,7 @@ pub struct Winit {
 }
 
 impl Winit {
-    pub fn new(event_loop: LoopHandle<LoopData>) -> Self {
+    pub fn new(config: Rc<RefCell<Config>>, event_loop: LoopHandle<LoopData>) -> Self {
         let builder = WindowBuilder::new()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
@@ -105,6 +108,7 @@ impl Winit {
             .unwrap();
 
         Self {
+            config,
             output,
             backend,
             damage_tracker,
@@ -137,7 +141,6 @@ impl Winit {
 
     pub fn render(
         &mut self,
-        config: &Config,
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
@@ -151,7 +154,12 @@ impl Winit {
             .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
             .unwrap();
         if let Some(damage) = res.damage {
-            if config.debug.wait_for_frame_completion_before_queueing {
+            if self
+                .config
+                .borrow()
+                .debug
+                .wait_for_frame_completion_before_queueing
+            {
                 let _span = tracy_client::span!("wait for completion");
                 res.sync.wait();
             }

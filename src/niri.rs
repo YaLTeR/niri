@@ -1,6 +1,8 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::process::Command;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
@@ -68,6 +70,8 @@ use crate::utils::{center, get_monotonic_time, load_default_cursor};
 use crate::LoopData;
 
 pub struct Niri {
+    pub config: Rc<RefCell<Config>>,
+
     pub event_loop: LoopHandle<'static, LoopData>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
@@ -125,7 +129,6 @@ pub struct OutputState {
 }
 
 pub struct State {
-    pub config: Config,
     pub backend: Backend,
     pub niri: Niri,
 }
@@ -137,23 +140,21 @@ impl State {
         stop_signal: LoopSignal,
         display: &mut Display<State>,
     ) -> Self {
+        let config = Rc::new(RefCell::new(config));
+
         let has_display =
             env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
 
         let mut backend = if has_display {
-            Backend::Winit(Winit::new(event_loop.clone()))
+            Backend::Winit(Winit::new(config.clone(), event_loop.clone()))
         } else {
-            Backend::Tty(Tty::new(event_loop.clone()))
+            Backend::Tty(Tty::new(config.clone(), event_loop.clone()))
         };
 
-        let mut niri = Niri::new(&config, event_loop, stop_signal, display, &backend);
+        let mut niri = Niri::new(config.clone(), event_loop, stop_signal, display, &backend);
         backend.init(&mut niri);
 
-        Self {
-            config,
-            backend,
-            niri,
-        }
+        Self { backend, niri }
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
@@ -194,13 +195,14 @@ impl State {
 
 impl Niri {
     pub fn new(
-        config: &Config,
+        config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<'static, LoopData>,
         stop_signal: LoopSignal,
         display: &mut Display<State>,
         backend: &Backend,
     ) -> Self {
         let display_handle = display.handle();
+        let config_ = config.borrow();
 
         let compositor_state = CompositorState::new::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
@@ -220,11 +222,11 @@ impl Niri {
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         let xkb = XkbConfig {
-            rules: &config.input.keyboard.xkb.rules,
-            model: &config.input.keyboard.xkb.model,
-            layout: config.input.keyboard.xkb.layout.as_deref().unwrap_or("us"),
-            variant: &config.input.keyboard.xkb.variant,
-            options: config.input.keyboard.xkb.options.clone(),
+            rules: &config_.input.keyboard.xkb.rules,
+            model: &config_.input.keyboard.xkb.model,
+            layout: config_.input.keyboard.xkb.layout.as_deref().unwrap_or("us"),
+            variant: &config_.input.keyboard.xkb.variant,
+            options: config_.input.keyboard.xkb.options.clone(),
         };
         seat.add_keyboard(xkb, 400, 30).unwrap();
         seat.add_pointer();
@@ -387,7 +389,7 @@ impl Niri {
                 )
                 .unwrap();
 
-            if pipewire.is_some() && !config.debug.screen_cast_in_non_session_instances {
+            if pipewire.is_some() && !config_.debug.screen_cast_in_non_session_instances {
                 conn = conn
                     .name("org.gnome.Mutter.ScreenCast")
                     .unwrap()
@@ -435,7 +437,7 @@ impl Niri {
                     warn!("error inhibiting power key: {err:?}");
                 }
             }
-        } else if pipewire.is_some() && config.debug.screen_cast_in_non_session_instances {
+        } else if pipewire.is_some() && config_.debug.screen_cast_in_non_session_instances {
             let conn = zbus::blocking::ConnectionBuilder::session()
                 .unwrap()
                 .name("org.gnome.Mutter.ScreenCast")
@@ -466,7 +468,10 @@ impl Niri {
             })
             .unwrap();
 
+        drop(config_);
         Self {
+            config,
+
             event_loop,
             stop_signal,
             display_handle,
@@ -690,9 +695,7 @@ impl Niri {
         // Timer::immediate() adds a millisecond of delay for some reason.
         // This should be fixed in calloop v0.11: https://github.com/Smithay/calloop/issues/142
         let idle = self.event_loop.insert_idle(move |data| {
-            data.state
-                .niri
-                .redraw(&data.state.config, &mut data.state.backend, &output);
+            data.state.niri.redraw(&mut data.state.backend, &output);
         });
         state.queued_redraw = Some(idle);
     }
@@ -837,7 +840,7 @@ impl Niri {
         elements
     }
 
-    fn redraw(&mut self, config: &Config, backend: &mut Backend, output: &Output) {
+    fn redraw(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
         let state = self.output_state.get_mut(output).unwrap();
@@ -854,7 +857,7 @@ impl Niri {
         let elements = self.render(backend.renderer(), output);
 
         // Hand it over to the backend.
-        let dmabuf_feedback = backend.render(config, self, output, &elements);
+        let dmabuf_feedback = backend.render(self, output, &elements);
 
         // Send the dmabuf feedbacks.
         if let Some(feedback) = dmabuf_feedback {

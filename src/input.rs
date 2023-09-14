@@ -123,7 +123,8 @@ impl State {
                     time,
                     |self_, mods, keysym| {
                         if event.state() == KeyState::Pressed {
-                            action(&self_.config, comp_mod, keysym, *mods).into()
+                            let config = self_.niri.config.borrow();
+                            action(&config, comp_mod, keysym, *mods).into()
                         } else {
                             FilterResult::Forward
                         }
@@ -743,7 +744,7 @@ impl State {
             // According to Mutter code, this setting is specific to touchpads.
             let is_touchpad = device.config_tap_finger_count() > 0;
             if is_touchpad {
-                let c = &self.config.input.touchpad;
+                let c = &self.niri.config.borrow().input.touchpad;
                 let _ = device.config_tap_set_enabled(c.tap);
                 let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
                 let _ = device.config_accel_set_speed(c.accel_speed);

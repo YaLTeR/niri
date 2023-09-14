@@ -1,6 +1,8 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::{Mutex, Arc};
 use std::time::Duration;
 
@@ -42,6 +44,7 @@ const BACKGROUND_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.];
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
+    config: Rc<RefCell<Config>>,
     session: LibSeatSession,
     udev_dispatcher: Dispatcher<'static, UdevBackend, LoopData>,
     primary_gpu_path: PathBuf,
@@ -88,7 +91,7 @@ struct Surface {
 }
 
 impl Tty {
-    pub fn new(event_loop: LoopHandle<'static, LoopData>) -> Self {
+    pub fn new(config: Rc<RefCell<Config>>, event_loop: LoopHandle<'static, LoopData>) -> Self {
         let (session, notifier) = LibSeatSession::new().unwrap();
         let seat_name = session.seat();
 
@@ -237,6 +240,7 @@ impl Tty {
         let primary_gpu_path = udev::primary_gpu(&seat_name).unwrap().unwrap();
 
         Self {
+            config,
             session,
             udev_dispatcher,
             primary_gpu_path,
@@ -627,7 +631,6 @@ impl Tty {
 
     pub fn render(
         &mut self,
-        config: &Config,
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
@@ -647,7 +650,12 @@ impl Tty {
             Ok(res) => {
                 assert!(!res.needs_sync());
 
-                if config.debug.wait_for_frame_completion_before_queueing {
+                if self
+                    .config
+                    .borrow()
+                    .debug
+                    .wait_for_frame_completion_before_queueing
+                {
                     if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
                         let _span = tracy_client::span!("wait for completion");
                         element.sync.wait();
