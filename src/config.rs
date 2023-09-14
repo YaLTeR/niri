@@ -132,6 +132,8 @@ pub struct DebugConfig {
     pub screen_cast_in_non_session_instances: bool,
     #[knuffel(child)]
     pub wait_for_frame_completion_before_queueing: bool,
+    #[knuffel(child)]
+    pub enable_color_transformations_capability: bool,
 }
 
 impl Default for DebugConfig {
@@ -140,6 +142,7 @@ impl Default for DebugConfig {
             animation_slowdown: 1.,
             screen_cast_in_non_session_instances: false,
             wait_for_frame_completion_before_queueing: false,
+            enable_color_transformations_capability: false,
         }
     }
 }

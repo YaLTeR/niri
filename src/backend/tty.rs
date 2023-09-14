@@ -14,7 +14,7 @@ use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture, Capability};
 use smithay::backend::renderer::{Bind, DebugFlags, ImportDma, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
@@ -281,11 +281,21 @@ impl Tty {
         let display = EGLDisplay::new(gbm.clone())?;
         let egl_context = EGLContext::new(&display)?;
 
-        // let capabilities = unsafe { GlesRenderer::supported_capabilities(&egl_context) }?
-        //     .into_iter()
-        //     .filter(|c| *c != Capability::ColorTransformations);
-        // let mut gles = unsafe { GlesRenderer::with_capabilities(egl_context, capabilities)? };
-        let mut gles = unsafe { GlesRenderer::new(egl_context)? };
+        // ColorTransformations is disabled by default as it makes rendering slightly slower.
+        let mut gles = if self
+            .config
+            .borrow()
+            .debug
+            .enable_color_transformations_capability
+        {
+            unsafe { GlesRenderer::new(egl_context)? }
+        } else {
+            let capabilities = unsafe { GlesRenderer::supported_capabilities(&egl_context) }?
+                .into_iter()
+                .filter(|c| *c != Capability::ColorTransformations);
+            unsafe { GlesRenderer::with_capabilities(egl_context, capabilities)? }
+        };
+
         gles.bind_wl_display(&niri.display_handle)?;
 
         let token = niri
