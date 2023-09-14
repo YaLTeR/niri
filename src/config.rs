@@ -130,6 +130,8 @@ pub struct DebugConfig {
     pub animation_slowdown: f64,
     #[knuffel(child)]
     pub screen_cast_in_non_session_instances: bool,
+    #[knuffel(child)]
+    pub wait_for_frame_completion_before_queueing: bool,
 }
 
 impl Default for DebugConfig {
@@ -137,6 +139,7 @@ impl Default for DebugConfig {
         Self {
             animation_slowdown: 1.,
             screen_cast_in_non_session_instances: false,
+            wait_for_frame_completion_before_queueing: false,
         }
     }
 }

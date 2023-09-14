@@ -690,7 +690,9 @@ impl Niri {
         // Timer::immediate() adds a millisecond of delay for some reason.
         // This should be fixed in calloop v0.11: https://github.com/Smithay/calloop/issues/142
         let idle = self.event_loop.insert_idle(move |data| {
-            data.state.niri.redraw(&mut data.state.backend, &output);
+            data.state
+                .niri
+                .redraw(&data.state.config, &mut data.state.backend, &output);
         });
         state.queued_redraw = Some(idle);
     }
@@ -835,7 +837,7 @@ impl Niri {
         elements
     }
 
-    fn redraw(&mut self, backend: &mut Backend, output: &Output) {
+    fn redraw(&mut self, config: &Config, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
         let state = self.output_state.get_mut(output).unwrap();
@@ -852,7 +854,7 @@ impl Niri {
         let elements = self.render(backend.renderer(), output);
 
         // Hand it over to the backend.
-        let dmabuf_feedback = backend.render(self, output, &elements);
+        let dmabuf_feedback = backend.render(config, self, output, &elements);
 
         // Send the dmabuf feedbacks.
         if let Some(feedback) = dmabuf_feedback {

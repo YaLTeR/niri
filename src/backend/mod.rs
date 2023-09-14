@@ -7,6 +7,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::wayland::dmabuf::DmabufFeedback;
 
+use crate::config::Config;
 use crate::input::CompositorMod;
 use crate::niri::OutputRenderElements;
 use crate::Niri;
@@ -46,13 +47,14 @@ impl Backend {
 
     pub fn render(
         &mut self,
+        config: &Config,
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
     ) -> Option<&DmabufFeedback> {
         match self {
-            Backend::Tty(tty) => tty.render(niri, output, elements),
-            Backend::Winit(winit) => winit.render(niri, output, elements),
+            Backend::Tty(tty) => tty.render(config, niri, output, elements),
+            Backend::Winit(winit) => winit.render(config, niri, output, elements),
         }
     }
 

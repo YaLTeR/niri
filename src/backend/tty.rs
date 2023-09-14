@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
-use smithay::backend::drm::compositor::DrmCompositor;
+use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
@@ -33,6 +33,7 @@ use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState,
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
+use crate::config::Config;
 use crate::niri::{OutputRenderElements, State};
 use crate::utils::get_monotonic_time;
 use crate::{LoopData, Niri};
@@ -626,6 +627,7 @@ impl Tty {
 
     pub fn render(
         &mut self,
+        config: &Config,
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
@@ -645,10 +647,12 @@ impl Tty {
             Ok(res) => {
                 assert!(!res.needs_sync());
 
-                // if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
-                //     let _span = tracy_client::span!("wait for sync");
-                //     element.sync.wait();
-                // }
+                if config.debug.wait_for_frame_completion_before_queueing {
+                    if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
+                        let _span = tracy_client::span!("wait for completion");
+                        element.sync.wait();
+                    }
+                }
 
                 if res.damage.is_some() {
                     let presentation_feedbacks =

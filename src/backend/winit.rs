@@ -15,6 +15,7 @@ use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
 use smithay::wayland::dmabuf::DmabufFeedback;
 
+use crate::config::Config;
 use crate::niri::OutputRenderElements;
 use crate::utils::get_monotonic_time;
 use crate::{LoopData, Niri};
@@ -136,6 +137,7 @@ impl Winit {
 
     pub fn render(
         &mut self,
+        config: &Config,
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
@@ -149,6 +151,11 @@ impl Winit {
             .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
             .unwrap();
         if let Some(damage) = res.damage {
+            if config.debug.wait_for_frame_completion_before_queueing {
+                let _span = tracy_client::span!("wait for completion");
+                res.sync.wait();
+            }
+
             self.backend.submit(Some(&damage)).unwrap();
 
             let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &res.states);
