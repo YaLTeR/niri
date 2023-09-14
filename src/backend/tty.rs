@@ -80,8 +80,10 @@ struct Surface {
     dmabuf_feedback: DmabufFeedback,
     /// Tracy frame that goes from vblank to vblank.
     vblank_frame: Option<tracy_client::Frame>,
-    /// Frame name for the VBlank frame that unfortunately has to be leaked.
+    /// Frame name for the VBlank frame.
     vblank_frame_name: tracy_client::FrameName,
+    /// Plot name for the VBlank dispatch offset plot.
+    vblank_plot_name: tracy_client::PlotName,
 }
 
 impl Tty {
@@ -314,9 +316,15 @@ impl Tty {
                             format!("vblank on {name}, presentation time unknown")
                         } else if presentation_time > now {
                             let diff = presentation_time - now;
+                            tracy_client::Client::running()
+                                .unwrap()
+                                .plot(surface.vblank_plot_name, -diff.as_secs_f64() * 1000.);
                             format!("vblank on {name}, presentation is {diff:?} later")
                         } else {
                             let diff = now - presentation_time;
+                            tracy_client::Client::running()
+                                .unwrap()
+                                .plot(surface.vblank_plot_name, diff.as_secs_f64() * 1000.);
                             format!("vblank on {name}, presentation was {diff:?} ago")
                         };
                         tracy_client::Client::running()
@@ -551,6 +559,11 @@ impl Tty {
         let vblank_frame_name = unsafe {
             tracy_client::internal::create_frame_name(format!("vblank on {output_name}\0").leak())
         };
+        let vblank_plot_name = unsafe {
+            tracy_client::internal::create_plot(
+                format!("{output_name} vblank dispatch offset, ms\0").leak(),
+            )
+        };
 
         self.connectors
             .lock()
@@ -563,6 +576,7 @@ impl Tty {
             dmabuf_feedback,
             vblank_frame: None,
             vblank_frame_name,
+            vblank_plot_name,
         };
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
