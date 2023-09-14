@@ -134,6 +134,8 @@ pub struct DebugConfig {
     pub wait_for_frame_completion_before_queueing: bool,
     #[knuffel(child)]
     pub enable_color_transformations_capability: bool,
+    #[knuffel(child)]
+    pub enable_overlay_planes: bool,
 }
 
 impl Default for DebugConfig {
@@ -143,6 +145,7 @@ impl Default for DebugConfig {
             screen_cast_in_non_session_instances: false,
             wait_for_frame_completion_before_queueing: false,
             enable_color_transformations_capability: false,
+            enable_overlay_planes: false,
         }
     }
 }
