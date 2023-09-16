@@ -3,6 +3,14 @@
 
 input {
     keyboard {
+        // Control the repeat rate of the keyboard.
+
+        // Repeat delay in milliseconds.
+        repeat-delay 660
+
+        // Repeat rate in characters per second.
+        repeat-rate 25
+
         xkb {
             // You can set rules, model, layout, variant and options.
             // For more information, see xkeyboard-config(7).

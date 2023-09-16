@@ -228,7 +228,12 @@ impl Niri {
             variant: &config_.input.keyboard.xkb.variant,
             options: config_.input.keyboard.xkb.options.clone(),
         };
-        seat.add_keyboard(xkb, 400, 30).unwrap();
+        seat.add_keyboard(
+            xkb,
+            config_.input.keyboard.repeat_delay as i32,
+            config_.input.keyboard.repeat_rate as i32,
+        )
+        .unwrap();
         seat.add_pointer();
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
