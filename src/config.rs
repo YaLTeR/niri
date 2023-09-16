@@ -110,8 +110,10 @@ pub enum Action {
     ExpelWindowFromColumn,
     FocusWorkspaceDown,
     FocusWorkspaceUp,
+    FocusWorkspace(#[knuffel(argument)] u8),
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
+    MoveWindowToWorkspace(#[knuffel(argument)] u8),
     FocusMonitorLeft,
     FocusMonitorRight,
     FocusMonitorDown,
@@ -260,6 +262,7 @@ mod tests {
                 Mod+Shift+H { focus-monitor-left; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
                 Mod+Comma { consume-window-into-column; }
+                Mod+1 { focus-workspace 1;}
             }
 
             debug {
@@ -316,6 +319,13 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         actions: vec![Action::ConsumeWindowIntoColumn],
+                    },
+                    Bind {
+                        key: Key {
+                            keysym: KEY_1,
+                            modifiers: Modifiers::COMPOSITOR,
+                        },
+                        actions: vec![Action::FocusWorkspace(1)],
                     },
                 ]),
                 debug: DebugConfig {

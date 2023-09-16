@@ -723,6 +723,13 @@ impl<W: LayoutElement> MonitorSet<W> {
         monitor.move_to_workspace_down();
     }
 
+    pub fn move_to_workspace(&mut self, idx: u8) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_to_workspace(idx);
+    }
+
     pub fn switch_workspace_up(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -735,6 +742,13 @@ impl<W: LayoutElement> MonitorSet<W> {
             return;
         };
         monitor.switch_workspace_down();
+    }
+
+    pub fn switch_workspace(&mut self, idx: u8) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.switch_workspace(idx);
     }
 
     pub fn consume_into_column(&mut self) {
@@ -1128,6 +1142,29 @@ impl<W: LayoutElement> Monitor<W> {
         self.add_window(new_idx, window, true);
     }
 
+    pub fn move_to_workspace(&mut self, idx: u8) {
+        let source_workspace_idx = self.active_workspace_idx;
+
+        let new_idx = min(idx.saturating_sub(1) as usize, self.workspaces.len() - 1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.columns.is_empty() {
+            return;
+        }
+
+        let column = &mut workspace.columns[workspace.active_column_idx];
+        let window = column.windows[column.active_window_idx].clone();
+        workspace.remove_window(&window);
+
+        self.add_window(new_idx, window, true);
+
+        // Don't animate this action.
+        self.workspace_idx_anim = None;
+    }
+
     pub fn switch_workspace_up(&mut self) {
         self.activate_workspace(self.active_workspace_idx.saturating_sub(1));
     }
@@ -1137,6 +1174,15 @@ impl<W: LayoutElement> Monitor<W> {
             self.active_workspace_idx + 1,
             self.workspaces.len() - 1,
         ));
+    }
+
+    pub fn switch_workspace(&mut self, idx: u8) {
+        self.activate_workspace(min(
+            idx.saturating_sub(1) as usize,
+            self.workspaces.len() - 1,
+        ));
+        // Don't animate this action.
+        self.workspace_idx_anim = None;
     }
 
     pub fn consume_into_column(&mut self) {
@@ -2169,8 +2215,10 @@ mod tests {
         ExpelWindowFromColumn,
         FocusWorkspaceDown,
         FocusWorkspaceUp,
+        FocusWorkspace(u8),
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
+        MoveWindowToWorkspace(u8),
     }
 
     impl Op {
@@ -2236,8 +2284,10 @@ mod tests {
                 Op::ExpelWindowFromColumn => monitor_set.expel_from_column(),
                 Op::FocusWorkspaceDown => monitor_set.switch_workspace_down(),
                 Op::FocusWorkspaceUp => monitor_set.switch_workspace_up(),
+                Op::FocusWorkspace(idx) => monitor_set.switch_workspace(idx),
                 Op::MoveWindowToWorkspaceDown => monitor_set.move_to_workspace_down(),
                 Op::MoveWindowToWorkspaceUp => monitor_set.move_to_workspace_up(),
+                Op::MoveWindowToWorkspace(idx) => monitor_set.move_to_workspace(idx),
             }
         }
     }
@@ -2280,8 +2330,14 @@ mod tests {
             Op::ExpelWindowFromColumn,
             Op::FocusWorkspaceDown,
             Op::FocusWorkspaceUp,
+            Op::FocusWorkspace(1),
+            Op::FocusWorkspace(2),
+            Op::FocusWorkspace(3),
             Op::MoveWindowToWorkspaceDown,
             Op::MoveWindowToWorkspaceUp,
+            Op::MoveWindowToWorkspace(1),
+            Op::MoveWindowToWorkspace(2),
+            Op::MoveWindowToWorkspace(3),
         ];
 
         for third in every_op {

@@ -217,6 +217,11 @@ impl State {
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
+                        Action::MoveWindowToWorkspace(idx) => {
+                            self.niri.monitor_set.move_to_workspace(idx);
+                            // FIXME: granular
+                            self.niri.queue_redraw_all();
+                        }
                         Action::FocusWorkspaceDown => {
                             self.niri.monitor_set.switch_workspace_down();
                             // FIXME: granular
@@ -224,6 +229,11 @@ impl State {
                         }
                         Action::FocusWorkspaceUp => {
                             self.niri.monitor_set.switch_workspace_up();
+                            // FIXME: granular
+                            self.niri.queue_redraw_all();
+                        }
+                        Action::FocusWorkspace(idx) => {
+                            self.niri.monitor_set.switch_workspace(idx);
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
