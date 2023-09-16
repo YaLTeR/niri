@@ -7,9 +7,9 @@ input {
             // You can set rules, model, layout, variant and options.
             // For more information, see xkeyboard-config(7).
 
-            // For example (remember to uncomment the nodes):
-            /-layout "us,ru"
-            /-options "grp:win_space_toggle,compose:ralt,ctrl:nocaps"
+            // For example:
+            // layout "us,ru"
+            // options "grp:win_space_toggle,compose:ralt,ctrl:nocaps"
         }
     }
 
@@ -18,7 +18,7 @@ input {
     touchpad {
         tap
         natural-scroll
-        /-accel-speed 0.2
+        // accel-speed 0.2
     }
 }
 
@@ -34,6 +34,7 @@ binds {
     Mod+Q { close-window; }
 
     // Example volume keys mappings for PipeWire & WirePlumber.
+    // Remember to uncomment the nodes by removing "/-"!
     /-XF86AudioRaiseVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1+"; }
     /-XF86AudioLowerVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1-"; }
 
