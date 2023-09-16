@@ -3,14 +3,6 @@
 
 input {
     keyboard {
-        // Control the repeat rate of the keyboard.
-
-        // Repeat delay in milliseconds.
-        repeat-delay 660
-
-        // Repeat rate in characters per second.
-        repeat-rate 25
-
         xkb {
             // You can set rules, model, layout, variant and options.
             // For more information, see xkeyboard-config(7).
@@ -19,6 +11,11 @@ input {
             // layout "us,ru"
             // options "grp:win_space_toggle,compose:ralt,ctrl:nocaps"
         }
+
+        // You can set the keyboard repeat parameters. The defaults match wlroots and sway.
+        // Delay is in milliseconds before the repeat starts. Rate is in characters per second.
+        // repeat-delay 600
+        // repeat-rate 25
     }
 
     // Next sections contain libinput settings.

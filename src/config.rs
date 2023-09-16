@@ -30,10 +30,9 @@ pub struct Input {
 pub struct Keyboard {
     #[knuffel(child, default)]
     pub xkb: Xkb,
-    // The default value represents the one used by Xorg.
-    #[knuffel(child, unwrap(argument), default = 660)]
+    // The defaults were chosen to match wlroots and sway.
+    #[knuffel(child, unwrap(argument), default = 600)]
     pub repeat_delay: u16,
-    // The default value represents the one used by Xorg.
     #[knuffel(child, unwrap(argument), default = 25)]
     pub repeat_rate: u8,
 }
@@ -250,7 +249,7 @@ mod tests {
             r#"
             input {
                 keyboard {
-                    repeat-delay 660
+                    repeat-delay 600
                     repeat-rate 25
                     xkb {
                         layout "us,ru"
@@ -285,7 +284,7 @@ mod tests {
                             options: Some("grp:win_space_toggle".to_owned()),
                             ..Default::default()
                         },
-                        repeat_delay: 660,
+                        repeat_delay: 600,
                         repeat_rate: 25,
                     },
                     touchpad: Touchpad {
