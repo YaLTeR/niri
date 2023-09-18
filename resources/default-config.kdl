@@ -79,10 +79,14 @@ binds {
     Mod+Shift+Ctrl+Up    { move-window-to-monitor-up; }
     Mod+Shift+Ctrl+Right { move-window-to-monitor-right; }
 
-    Mod+U      { focus-workspace-down; }
-    Mod+I      { focus-workspace-up; }
-    Mod+Ctrl+U { move-window-to-workspace-down; }
-    Mod+Ctrl+I { move-window-to-workspace-up; }
+    Mod+U              { focus-workspace-down; }
+    Mod+I              { focus-workspace-up; }
+    Mod+Page_Down      { focus-workspace-down; }
+    Mod+Page_Up        { focus-workspace-up; }
+    Mod+Ctrl+U         { move-window-to-workspace-down; }
+    Mod+Ctrl+I         { move-window-to-workspace-up; }
+    Mod+Ctrl+Page_Down { move-window-to-workspace-down; }
+    Mod+Ctrl+Page_Up   { move-window-to-workspace-up; }
 
     Mod+1 { focus-workspace 1; }
     Mod+2 { focus-workspace 2; }
