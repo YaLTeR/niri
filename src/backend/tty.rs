@@ -12,6 +12,7 @@ use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime};
+use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture, Capability};
@@ -279,7 +280,7 @@ impl Tty {
         let gbm = GbmDevice::new(device_fd)?;
 
         let display = EGLDisplay::new(gbm.clone())?;
-        let egl_context = EGLContext::new(&display)?;
+        let egl_context = EGLContext::new_with_priority(&display, ContextPriority::High)?;
 
         // ColorTransformations is disabled by default as it makes rendering slightly slower.
         let mut gles = if self
