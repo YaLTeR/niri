@@ -651,12 +651,14 @@ impl Tty {
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
     ) -> Option<&DmabufFeedback> {
-        let _span = tracy_client::span!("Tty::render");
+        let span = tracy_client::span!("Tty::render");
 
         let device = self.output_device.as_mut().unwrap();
         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
         let surface = device.surfaces.get_mut(&tty_state.crtc).unwrap();
         let drm_compositor = &mut surface.compositor;
+
+        span.emit_text(&surface.name);
 
         match drm_compositor.render_frame::<_, _, GlesTexture>(
             &mut device.gles,
