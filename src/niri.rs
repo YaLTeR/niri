@@ -1060,12 +1060,7 @@ impl Niri {
 
         let size = output.current_mode().unwrap().size;
         let elements = self.render(renderer, output);
-
-        let mapping = render_and_download(renderer, size, &elements).context("error rendering")?;
-        let copy = renderer
-            .map_texture(&mapping)
-            .context("error mapping texture")?;
-        let pixels = copy.to_vec();
+        let pixels = render_to_vec(renderer, size, &elements)?;
 
         let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
@@ -1143,6 +1138,20 @@ fn render_and_download(
         .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), buffer_size), fourcc)
         .context("error copying framebuffer")?;
     Ok(mapping)
+}
+
+fn render_to_vec(
+    renderer: &mut GlesRenderer,
+    size: Size<i32, Physical>,
+    elements: &[OutputRenderElements<GlesRenderer>],
+) -> anyhow::Result<Vec<u8>> {
+    let _span = tracy_client::span!("render_to_vec");
+
+    let mapping = render_and_download(renderer, size, elements).context("error rendering")?;
+    let copy = renderer
+        .map_texture(&mapping)
+        .context("error mapping texture")?;
+    Ok(copy.to_vec())
 }
 
 fn render_to_dmabuf(
