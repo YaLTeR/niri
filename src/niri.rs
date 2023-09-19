@@ -8,7 +8,6 @@ use std::time::Duration;
 use std::{env, thread};
 
 use anyhow::Context;
-use directories::UserDirs;
 use sd_notify::NotifyState;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::Fourcc;
@@ -56,7 +55,6 @@ use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
-use time::OffsetDateTime;
 use zbus::fdo::RequestNameFlags;
 
 use crate::backend::{Backend, Tty, Winit};
@@ -67,7 +65,7 @@ use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
 use crate::pw_utils::{Cast, PipeWire};
-use crate::utils::{center, get_monotonic_time, load_default_cursor};
+use crate::utils::{center, get_monotonic_time, load_default_cursor, make_screenshot_path};
 use crate::LoopData;
 
 pub struct Niri {
@@ -1069,26 +1067,7 @@ impl Niri {
             .context("error mapping texture")?;
         let pixels = copy.to_vec();
 
-        let dirs = UserDirs::new().context("error retrieving home directory")?;
-        let mut path = dirs.picture_dir().map(|p| p.to_owned()).unwrap_or_else(|| {
-            let mut dir = dirs.home_dir().to_owned();
-            dir.push("Pictures");
-            dir
-        });
-        path.push("Screenshots");
-
-        unsafe {
-            // are you kidding me
-            time::util::local_offset::set_soundness(time::util::local_offset::Soundness::Unsound);
-        };
-
-        let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-        let desc = time::macros::format_description!(
-            "Screenshot from [year]-[month]-[day] [hour]-[minute]-[second].png"
-        );
-        let name = now.format(desc).context("error formatting time")?;
-        path.push(name);
-
+        let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
 
         thread::spawn(move || {
