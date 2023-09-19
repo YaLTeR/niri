@@ -57,6 +57,7 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
 use time::OffsetDateTime;
+use zbus::fdo::RequestNameFlags;
 
 use crate::backend::{Backend, Tty, Winit};
 use crate::config::Config;
@@ -384,7 +385,7 @@ impl Niri {
             }
 
             // Set up zbus, make sure it happens before anything might want it.
-            let mut conn = zbus::blocking::ConnectionBuilder::session()
+            let conn = zbus::blocking::ConnectionBuilder::session()
                 .unwrap()
                 .name("org.gnome.Mutter.ServiceChannel")
                 .unwrap()
@@ -392,24 +393,31 @@ impl Niri {
                     "/org/gnome/Mutter/ServiceChannel",
                     ServiceChannel::new(display_handle.clone()),
                 )
+                .unwrap()
+                .build()
                 .unwrap();
 
-            if pipewire.is_some() && !config_.debug.screen_cast_in_non_session_instances {
-                conn = conn
-                    .name("org.gnome.Mutter.ScreenCast")
-                    .unwrap()
-                    .serve_at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
-                    .unwrap()
-                    .name("org.gnome.Mutter.DisplayConfig")
-                    .unwrap()
-                    .serve_at(
+            if pipewire.is_some() {
+                let server = conn.object_server();
+                server
+                    .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
+                    .unwrap();
+                server
+                    .at(
                         "/org/gnome/Mutter/DisplayConfig",
                         DisplayConfig::new(backend.connectors()),
                     )
                     .unwrap();
+
+                let flags = RequestNameFlags::AllowReplacement
+                    | RequestNameFlags::ReplaceExisting
+                    | RequestNameFlags::DoNotQueue;
+                conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
+                    .unwrap();
+                conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
+                    .unwrap();
             }
 
-            let conn = conn.build().unwrap();
             zbus_conn = Some(conn);
 
             // Notify systemd we're ready.
@@ -443,21 +451,28 @@ impl Niri {
                 }
             }
         } else if pipewire.is_some() && config_.debug.screen_cast_in_non_session_instances {
-            let conn = zbus::blocking::ConnectionBuilder::session()
-                .unwrap()
-                .name("org.gnome.Mutter.ScreenCast")
-                .unwrap()
-                .serve_at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
-                .unwrap()
-                .name("org.gnome.Mutter.DisplayConfig")
-                .unwrap()
-                .serve_at(
-                    "/org/gnome/Mutter/DisplayConfig",
-                    DisplayConfig::new(backend.connectors()),
-                )
-                .unwrap()
-                .build()
+            let conn = zbus::blocking::Connection::session().unwrap();
+            {
+                let server = conn.object_server();
+                server
+                    .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
+                    .unwrap();
+                server
+                    .at(
+                        "/org/gnome/Mutter/DisplayConfig",
+                        DisplayConfig::new(backend.connectors()),
+                    )
+                    .unwrap();
+            }
+
+            let flags = RequestNameFlags::AllowReplacement
+                | RequestNameFlags::ReplaceExisting
+                | RequestNameFlags::DoNotQueue;
+            conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
                 .unwrap();
+            conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
+                .unwrap();
+
             zbus_conn = Some(conn);
         }
 
