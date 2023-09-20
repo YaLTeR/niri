@@ -791,6 +791,7 @@ impl Niri {
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
+        include_pointer: bool,
     ) -> Vec<OutputRenderElements<GlesRenderer>> {
         let _span = tracy_client::span!("Niri::render");
 
@@ -806,7 +807,10 @@ impl Niri {
             .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
 
         // The pointer goes on the top.
-        let mut elements = self.pointer_element(renderer, output);
+        let mut elements = vec![];
+        if include_pointer {
+            elements = self.pointer_element(renderer, output);
+        }
 
         // Then the upper layer-shell elements.
         elements.extend(
@@ -872,7 +876,7 @@ impl Niri {
         mon.advance_animations(presentation_time);
 
         // Render the elements.
-        let elements = self.render(backend.renderer(), output);
+        let elements = self.render(backend.renderer(), output, true);
 
         // Hand it over to the backend.
         let dmabuf_feedback = backend.render(self, output, &elements);
@@ -1059,7 +1063,7 @@ impl Niri {
         let _span = tracy_client::span!("Niri::screenshot");
 
         let size = output.current_mode().unwrap().size;
-        let elements = self.render(renderer, output);
+        let elements = self.render(renderer, output, true);
         let pixels = render_to_vec(renderer, size, &elements)?;
 
         let path = make_screenshot_path().context("error making screenshot path")?;
