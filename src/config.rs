@@ -136,7 +136,7 @@ pub struct DebugConfig {
     #[knuffel(child, unwrap(argument), default = 1.)]
     pub animation_slowdown: f64,
     #[knuffel(child)]
-    pub screen_cast_in_non_session_instances: bool,
+    pub dbus_interfaces_in_non_session_instances: bool,
     #[knuffel(child)]
     pub wait_for_frame_completion_before_queueing: bool,
     #[knuffel(child)]
@@ -149,7 +149,7 @@ impl Default for DebugConfig {
     fn default() -> Self {
         Self {
             animation_slowdown: 1.,
-            screen_cast_in_non_session_instances: false,
+            dbus_interfaces_in_non_session_instances: false,
             wait_for_frame_completion_before_queueing: false,
             enable_color_transformations_capability: false,
             enable_overlay_planes: false,

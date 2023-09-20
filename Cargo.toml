@@ -28,6 +28,7 @@ tracy-client = { version = "0.16.2", default-features = false }
 xcursor = "0.3.4"
 zbus = { version = "3.14.1" }
 async-io = "1.13.0"
+async-channel = "1.9.0"
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"

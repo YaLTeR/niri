@@ -1,6 +1,8 @@
 use std::cell::RefCell;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
+use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -15,6 +17,7 @@ use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{
     render_elements, AsRenderElements, Element, Kind, RenderElement, RenderElementStates,
 };
@@ -59,6 +62,7 @@ use zbus::fdo::RequestNameFlags;
 
 use crate::backend::{Backend, Tty, Winit};
 use crate::config::Config;
+use crate::dbus::gnome_shell_screenshot::{self, NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_display_config::DisplayConfig;
 use crate::dbus::mutter_screen_cast::{self, ScreenCast, ToNiriMsg};
 use crate::dbus::mutter_service_channel::ServiceChannel;
@@ -351,6 +355,43 @@ impl Niri {
             .unwrap();
         let screen_cast = ScreenCast::new(backend.connectors(), to_niri);
 
+        let (to_niri, from_screenshot) = calloop::channel::channel();
+        let (to_screenshot, from_niri) = async_channel::unbounded();
+        event_loop
+            .insert_source(from_screenshot, move |event, _, data| match event {
+                calloop::channel::Event::Msg(ScreenshotToNiri::TakeScreenshot {
+                    include_cursor,
+                }) => {
+                    let renderer = data.state.backend.renderer();
+                    let on_done = {
+                        let to_screenshot = to_screenshot.clone();
+                        move |path| {
+                            let msg = NiriToScreenshot::ScreenshotResult(Some(path));
+                            if let Err(err) = to_screenshot.send_blocking(msg) {
+                                warn!("error sending path to screenshot: {err:?}");
+                            }
+                        }
+                    };
+
+                    let res =
+                        data.state
+                            .niri
+                            .screenshot_all_outputs(renderer, include_cursor, on_done);
+
+                    if let Err(err) = res {
+                        warn!("error taking a screenshot: {err:?}");
+
+                        let msg = NiriToScreenshot::ScreenshotResult(None);
+                        if let Err(err) = to_screenshot.send_blocking(msg) {
+                            warn!("error sending None to screenshot: {err:?}");
+                        }
+                    }
+                }
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+        let screenshot = gnome_shell_screenshot::Screenshot::new(to_niri, from_niri);
+
         let mut zbus_conn = None;
         let mut inhibit_power_key_fd = None;
         if std::env::var_os("NOTIFY_SOCKET").is_some() {
@@ -395,25 +436,33 @@ impl Niri {
                 .build()
                 .unwrap();
 
-            if pipewire.is_some() {
+            {
                 let server = conn.object_server();
-                server
-                    .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
-                    .unwrap();
-                server
-                    .at(
-                        "/org/gnome/Mutter/DisplayConfig",
-                        DisplayConfig::new(backend.connectors()),
-                    )
-                    .unwrap();
-
                 let flags = RequestNameFlags::AllowReplacement
                     | RequestNameFlags::ReplaceExisting
                     | RequestNameFlags::DoNotQueue;
-                conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
+
+                server
+                    .at("/org/gnome/Shell/Screenshot", screenshot)
                     .unwrap();
-                conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
+                conn.request_name_with_flags("org.gnome.Shell.Screenshot", flags)
                     .unwrap();
+
+                if pipewire.is_some() {
+                    server
+                        .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
+                        .unwrap();
+                    server
+                        .at(
+                            "/org/gnome/Mutter/DisplayConfig",
+                            DisplayConfig::new(backend.connectors()),
+                        )
+                        .unwrap();
+                    conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
+                        .unwrap();
+                    conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
+                        .unwrap();
+                }
             }
 
             zbus_conn = Some(conn);
@@ -448,28 +497,37 @@ impl Niri {
                     warn!("error inhibiting power key: {err:?}");
                 }
             }
-        } else if pipewire.is_some() && config_.debug.screen_cast_in_non_session_instances {
+        } else if config_.debug.dbus_interfaces_in_non_session_instances {
             let conn = zbus::blocking::Connection::session().unwrap();
-            {
-                let server = conn.object_server();
-                server
-                    .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
-                    .unwrap();
-                server
-                    .at(
-                        "/org/gnome/Mutter/DisplayConfig",
-                        DisplayConfig::new(backend.connectors()),
-                    )
-                    .unwrap();
-            }
-
             let flags = RequestNameFlags::AllowReplacement
                 | RequestNameFlags::ReplaceExisting
                 | RequestNameFlags::DoNotQueue;
-            conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
-                .unwrap();
-            conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
-                .unwrap();
+
+            {
+                let server = conn.object_server();
+
+                server
+                    .at("/org/gnome/Shell/Screenshot", screenshot)
+                    .unwrap();
+                conn.request_name_with_flags("org.gnome.Shell.Screenshot", flags)
+                    .unwrap();
+
+                if pipewire.is_some() {
+                    server
+                        .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
+                        .unwrap();
+                    server
+                        .at(
+                            "/org/gnome/Mutter/DisplayConfig",
+                            DisplayConfig::new(backend.connectors()),
+                        )
+                        .unwrap();
+                    conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
+                        .unwrap();
+                    conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
+                        .unwrap();
+                }
+            }
 
             zbus_conn = Some(conn);
         }
@@ -1079,6 +1137,56 @@ impl Niri {
             ) {
                 warn!("error saving screenshot image: {err:?}");
             }
+        });
+
+        Ok(())
+    }
+
+    pub fn screenshot_all_outputs(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        include_pointer: bool,
+        on_done: impl FnOnce(PathBuf) + Send + 'static,
+    ) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("Niri::screenshot_all_outputs");
+
+        let mut elements = vec![];
+        let mut size = Size::from((0, 0));
+
+        let outputs: Vec<_> = self.global_space.outputs().cloned().collect();
+        for output in outputs {
+            let geom = self.global_space.output_geometry(&output).unwrap();
+            let geom = geom.to_physical(1);
+
+            size.w = max(size.w, geom.loc.x + geom.size.w);
+            size.h = max(size.h, geom.loc.y + geom.size.h);
+
+            let output_elements = self.render(renderer, &output, include_pointer);
+            elements.extend(output_elements.into_iter().map(|elem| {
+                RelocateRenderElement::from_element(elem, geom.loc, Relocate::Relative)
+            }));
+        }
+
+        let pixels = render_to_vec(renderer, size, &elements)?;
+
+        let path = make_screenshot_path().context("error making screenshot path")?;
+        debug!("saving screenshot to {path:?}");
+
+        thread::spawn(move || {
+            let res = image::save_buffer(
+                &path,
+                &pixels,
+                size.w as u32,
+                size.h as u32,
+                image::ColorType::Rgba8,
+            );
+
+            if let Err(err) = res {
+                warn!("error saving screenshot image: {err:?}");
+                return;
+            }
+
+            on_done(path);
         });
 
         Ok(())
