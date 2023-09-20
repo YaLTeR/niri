@@ -937,7 +937,7 @@ impl Niri {
         let elements = self.render(backend.renderer(), output, true);
 
         // Hand it over to the backend.
-        let dmabuf_feedback = backend.render(self, output, &elements);
+        let dmabuf_feedback = backend.render(self, output, &elements, presentation_time);
 
         // Send the dmabuf feedbacks.
         if let Some(feedback) = dmabuf_feedback {

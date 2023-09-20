@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::drm::DrmDeviceFd;
@@ -49,9 +50,10 @@ impl Backend {
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
+        target_presentation_time: Duration,
     ) -> Option<&DmabufFeedback> {
         match self {
-            Backend::Tty(tty) => tty.render(niri, output, elements),
+            Backend::Tty(tty) => tty.render(niri, output, elements, target_presentation_time),
             Backend::Winit(winit) => winit.render(niri, output, elements),
         }
     }

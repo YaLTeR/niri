@@ -56,7 +56,7 @@ pub struct Tty {
 type GbmDrmCompositor = DrmCompositor<
     GbmAllocator<DrmDeviceFd>,
     GbmDevice<DrmDeviceFd>,
-    OutputPresentationFeedback,
+    (OutputPresentationFeedback, Duration),
     DrmDeviceFd,
 >;
 
@@ -89,6 +89,8 @@ struct Surface {
     vblank_frame_name: tracy_client::FrameName,
     /// Plot name for the VBlank dispatch offset plot.
     vblank_plot_name: tracy_client::PlotName,
+    /// Plot name for the presentation target offset plot.
+    presentation_plot_name: tracy_client::PlotName,
 }
 
 impl Tty {
@@ -362,7 +364,7 @@ impl Tty {
 
                         // Mark the last frame as submitted.
                         match surface.compositor.frame_submitted() {
-                            Ok(Some(mut feedback)) => {
+                            Ok(Some((mut feedback, target_presentation_time))) => {
                                 let refresh = output_state
                                     .frame_clock
                                     .refresh_interval()
@@ -379,6 +381,14 @@ impl Tty {
                                     seq,
                                     flags,
                                 );
+
+                                if !presentation_time.is_zero() {
+                                    let diff = presentation_time.as_secs_f64()
+                                        - target_presentation_time.as_secs_f64();
+                                    tracy_client::Client::running()
+                                        .unwrap()
+                                        .plot(surface.presentation_plot_name, diff * 1000.);
+                                }
                             }
                             Ok(None) => (),
                             Err(err) => {
@@ -585,6 +595,11 @@ impl Tty {
                 format!("{output_name} vblank dispatch offset, ms\0").leak(),
             )
         };
+        let presentation_plot_name = unsafe {
+            tracy_client::internal::create_plot(
+                format!("{output_name} presentation target offset, ms\0").leak(),
+            )
+        };
 
         self.connectors
             .lock()
@@ -598,6 +613,7 @@ impl Tty {
             vblank_frame: None,
             vblank_frame_name,
             vblank_plot_name,
+            presentation_plot_name,
         };
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
@@ -650,6 +666,7 @@ impl Tty {
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
+        target_presentation_time: Duration,
     ) -> Option<&DmabufFeedback> {
         let span = tracy_client::span!("Tty::render");
 
@@ -683,8 +700,9 @@ impl Tty {
                 if res.damage.is_some() {
                     let presentation_feedbacks =
                         niri.take_presentation_feedbacks(output, &res.states);
+                    let data = (presentation_feedbacks, target_presentation_time);
 
-                    match drm_compositor.queue_frame(presentation_feedbacks) {
+                    match drm_compositor.queue_frame(data) {
                         Ok(()) => {
                             niri.output_state
                                 .get_mut(output)
