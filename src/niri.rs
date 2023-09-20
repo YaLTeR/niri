@@ -1102,7 +1102,7 @@ impl ClientData for ClientState {
 fn render_and_download(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
-    elements: &[OutputRenderElements<GlesRenderer>],
+    elements: &[impl RenderElement<GlesRenderer>],
 ) -> anyhow::Result<GlesMapping> {
     let _span = tracy_client::span!("render_and_download");
 
@@ -1143,7 +1143,7 @@ fn render_and_download(
 fn render_to_vec(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
-    elements: &[OutputRenderElements<GlesRenderer>],
+    elements: &[impl RenderElement<GlesRenderer>],
 ) -> anyhow::Result<Vec<u8>> {
     let _span = tracy_client::span!("render_to_vec");
 
