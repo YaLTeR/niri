@@ -13,6 +13,8 @@ pub struct Config {
     pub input: Input,
     #[knuffel(children(name = "output"))]
     pub outputs: Vec<Output>,
+    #[knuffel(children(name = "spawn-at-startup"))]
+    pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
@@ -79,6 +81,12 @@ impl Default for Output {
             scale: 1.,
         }
     }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct SpawnAtStartup {
+    #[knuffel(arguments)]
+    pub command: Vec<String>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -286,6 +294,8 @@ mod tests {
                 scale 2.0
             }
 
+            spawn-at-startup "alacritty" "-e" "fish"
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -319,6 +329,9 @@ mod tests {
                 outputs: vec![Output {
                     name: "eDP-1".to_owned(),
                     scale: 2.,
+                }],
+                spawn_at_startup: vec![SpawnAtStartup {
+                    command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
                 }],
                 binds: Binds(vec![
                     Bind {

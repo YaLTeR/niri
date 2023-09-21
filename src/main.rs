@@ -13,9 +13,9 @@ mod niri;
 mod pw_utils;
 mod utils;
 
-use std::env;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::{env, mem};
 
 use clap::Parser;
 use config::Config;
@@ -57,7 +57,7 @@ fn main() {
 
     let _client = tracy_client::Client::start();
 
-    let config = match Config::load(cli.config).context("error loading config") {
+    let mut config = match Config::load(cli.config).context("error loading config") {
         Ok(config) => config,
         Err(err) => {
             warn!("{err:?}");
@@ -65,6 +65,7 @@ fn main() {
         }
     };
     animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
+    let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
 
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
@@ -76,8 +77,15 @@ fn main() {
     );
     let mut data = LoopData { display, state };
 
+    // Spawn commands from cli and auto-start.
     if let Some((command, args)) = cli.command.split_first() {
         spawn(command, args);
+    }
+
+    for elem in spawn_at_startup {
+        if let Some((command, args)) = elem.command.split_first() {
+            spawn(command, args);
+        }
     }
 
     event_loop
