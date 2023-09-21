@@ -29,6 +29,7 @@ xcursor = "0.3.4"
 zbus = { version = "3.14.1" }
 async-io = "1.13.0"
 async-channel = "1.9.0"
+libc = "0.2.148"
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
