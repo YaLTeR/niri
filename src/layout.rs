@@ -1345,10 +1345,10 @@ impl<W: LayoutElement> Workspace<W> {
             }
         }
 
-        if let Some(output) = output {
-            self.set_view_size(output_size(&output));
+        self.output = output;
 
-            self.output = Some(output);
+        if let Some(output) = &self.output {
+            self.set_view_size(output_size(output));
 
             for win in self.windows() {
                 self.enter_output_for_window(win);
