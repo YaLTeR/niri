@@ -1231,6 +1231,7 @@ impl Monitor<Window> {
         &self,
         renderer: &mut GlesRenderer,
     ) -> Vec<MonitorRenderElement<GlesRenderer>> {
+        let output_scale = Scale::from(self.output.current_scale().fractional_scale());
         let output_transform = self.output.current_transform();
         let output_mode = self.output.current_mode().unwrap();
         let output_size = output_transform.transform_size(output_mode.size);
@@ -1251,7 +1252,7 @@ impl Monitor<Window> {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
                             elem,
-                            1.,
+                            output_scale,
                             Rectangle::from_loc_and_size((0, 0), output_size),
                         )?,
                         (0, -offset),
@@ -1262,7 +1263,7 @@ impl Monitor<Window> {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
                             elem,
-                            1.,
+                            output_scale,
                             Rectangle::from_loc_and_size((0, 0), output_size),
                         )?,
                         (0, -offset + output_size.h),
@@ -1279,7 +1280,7 @@ impl Monitor<Window> {
                         Some(RelocateRenderElement::from_element(
                             CropRenderElement::from_element(
                                 elem,
-                                1.,
+                                output_scale,
                                 Rectangle::from_loc_and_size((0, 0), output_size),
                             )?,
                             (0, 0),
@@ -1823,6 +1824,14 @@ impl Workspace<Window> {
             return vec![];
         }
 
+        // FIXME: workspaces should probably cache their last used scale so they can be correctly
+        // rendered even with no outputs connected.
+        let output_scale = self
+            .output
+            .as_ref()
+            .map(|o| Scale::from(o.current_scale().fractional_scale()))
+            .unwrap_or(Scale::from(1.));
+
         let mut rv = vec![];
         let view_pos = self.view_pos();
 
@@ -1840,8 +1849,8 @@ impl Workspace<Window> {
         }
         rv.extend(active_win.render_elements(
             renderer,
-            win_pos.to_physical(1),
-            Scale::from(1.),
+            win_pos.to_physical_precise_round(output_scale),
+            output_scale,
             1.,
         ));
 
@@ -1862,8 +1871,8 @@ impl Workspace<Window> {
 
                     rv.extend(win.render_elements(
                         renderer,
-                        win_pos.to_physical(1),
-                        Scale::from(1.),
+                        win_pos.to_physical_precise_round(output_scale),
+                        output_scale,
                         1.,
                     ));
                 }

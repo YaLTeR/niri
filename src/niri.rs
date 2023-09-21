@@ -799,6 +799,7 @@ impl Niri {
         renderer: &mut GlesRenderer,
         output: &Output,
     ) -> Vec<OutputRenderElements<GlesRenderer>> {
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
 
@@ -825,7 +826,7 @@ impl Niri {
         } else {
             default_hotspot
         };
-        let pointer_pos = (pointer_pos - hotspot.to_f64()).to_physical_precise_round(1.);
+        let pointer_pos = (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
         let mut pointer_elements = match &self.cursor_image {
             CursorImageStatus::Hidden => vec![],
@@ -843,7 +844,7 @@ impl Niri {
                 renderer,
                 surface,
                 pointer_pos,
-                1.,
+                output_scale,
                 1.,
                 Kind::Cursor,
             ),
@@ -854,7 +855,7 @@ impl Niri {
                 renderer,
                 dnd_icon,
                 pointer_pos,
-                1.,
+                output_scale,
                 1.,
                 Kind::Unspecified,
             ));
@@ -870,6 +871,8 @@ impl Niri {
         include_pointer: bool,
     ) -> Vec<OutputRenderElements<GlesRenderer>> {
         let _span = tracy_client::span!("Niri::render");
+
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
 
         // Get monitor elements.
         let mon = self.monitor_set.monitor_for_output(output).unwrap();
@@ -901,8 +904,8 @@ impl Niri {
                     surface
                         .render_elements(
                             renderer,
-                            loc.to_physical_precise_round(1.),
-                            Scale::from(1.),
+                            loc.to_physical_precise_round(output_scale),
+                            output_scale,
                             1.,
                         )
                         .into_iter()
@@ -926,8 +929,8 @@ impl Niri {
                     surface
                         .render_elements(
                             renderer,
-                            loc.to_physical_precise_round(1.),
-                            Scale::from(1.),
+                            loc.to_physical_precise_round(output_scale),
+                            output_scale,
                             1.,
                         )
                         .into_iter()
@@ -1084,6 +1087,7 @@ impl Niri {
         let _span = tracy_client::span!("Niri::send_for_screen_cast");
 
         let size = output.current_mode().unwrap().size;
+        let scale = Scale::from(output.current_scale().fractional_scale());
 
         for cast in &mut self.casts {
             if !cast.is_active.get() {
@@ -1119,7 +1123,7 @@ impl Niri {
                 let dmabuf = cast.dmabufs.borrow()[&fd].clone();
 
                 // FIXME: Hidden / embedded / metadata cursor
-                render_to_dmabuf(backend.renderer(), dmabuf, size, elements).unwrap();
+                render_to_dmabuf(backend.renderer(), dmabuf, size, scale, elements).unwrap();
 
                 let maxsize = data.as_raw().maxsize;
                 let chunk = data.chunk_mut();
@@ -1139,8 +1143,9 @@ impl Niri {
         let _span = tracy_client::span!("Niri::screenshot");
 
         let size = output.current_mode().unwrap().size;
+        let scale = Scale::from(output.current_scale().fractional_scale());
         let elements = self.render(renderer, output, true);
-        let pixels = render_to_vec(renderer, size, &elements)?;
+        let pixels = render_to_vec(renderer, size, scale, &elements)?;
 
         let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
@@ -1174,6 +1179,7 @@ impl Niri {
         let outputs: Vec<_> = self.global_space.outputs().cloned().collect();
         for output in outputs {
             let geom = self.global_space.output_geometry(&output).unwrap();
+            // FIXME: this does not work when outputs can have non-1 scale.
             let geom = geom.to_physical(1);
 
             size.w = max(size.w, geom.loc.x + geom.size.w);
@@ -1185,7 +1191,8 @@ impl Niri {
             }));
         }
 
-        let pixels = render_to_vec(renderer, size, &elements)?;
+        // FIXME: scale.
+        let pixels = render_to_vec(renderer, size, Scale::from(1.), &elements)?;
 
         let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
@@ -1232,6 +1239,7 @@ impl ClientData for ClientState {
 fn render_and_download(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
+    scale: Scale<f64>,
     elements: &[impl RenderElement<GlesRenderer>],
 ) -> anyhow::Result<GlesMapping> {
     let _span = tracy_client::span!("render_and_download");
@@ -1255,7 +1263,7 @@ fn render_and_download(
 
     for element in elements.iter().rev() {
         let src = element.src();
-        let dst = element.geometry(Scale::from(1.));
+        let dst = element.geometry(scale);
         element
             .draw(&mut frame, src, dst, &[output_rect])
             .context("error drawing element")?;
@@ -1273,11 +1281,13 @@ fn render_and_download(
 fn render_to_vec(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
+    scale: Scale<f64>,
     elements: &[impl RenderElement<GlesRenderer>],
 ) -> anyhow::Result<Vec<u8>> {
     let _span = tracy_client::span!("render_to_vec");
 
-    let mapping = render_and_download(renderer, size, elements).context("error rendering")?;
+    let mapping =
+        render_and_download(renderer, size, scale, elements).context("error rendering")?;
     let copy = renderer
         .map_texture(&mapping)
         .context("error mapping texture")?;
@@ -1288,6 +1298,7 @@ fn render_to_dmabuf(
     renderer: &mut GlesRenderer,
     dmabuf: Dmabuf,
     size: Size<i32, Physical>,
+    scale: Scale<f64>,
     elements: &[OutputRenderElements<GlesRenderer>],
 ) -> anyhow::Result<()> {
     let _span = tracy_client::span!("render_to_dmabuf");
@@ -1305,7 +1316,7 @@ fn render_to_dmabuf(
 
     for element in elements.iter().rev() {
         let src = element.src();
-        let dst = element.geometry(Scale::from(1.));
+        let dst = element.geometry(scale);
         element
             .draw(&mut frame, src, dst, &[output_rect])
             .context("error drawing element")?;

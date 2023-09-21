@@ -21,7 +21,7 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
-use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
+use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel, Scale};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
     connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags,
@@ -500,6 +500,15 @@ impl Tty {
         );
         debug!("connecting connector: {output_name}");
 
+        let config = self
+            .config
+            .borrow()
+            .outputs
+            .iter()
+            .find(|o| o.name == output_name)
+            .cloned()
+            .unwrap_or_default();
+
         let device = self.output_device.as_mut().unwrap();
 
         let mut mode = connector.modes().get(0);
@@ -534,6 +543,9 @@ impl Tty {
             .map(|info| (info.manufacturer, info.model))
             .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
 
+        let scale = config.scale.clamp(0.1, 10.);
+        let scale = scale.max(1.).round() as i32;
+
         let output = Output::new(
             output_name.clone(),
             PhysicalProperties {
@@ -544,7 +556,7 @@ impl Tty {
             },
         );
         let wl_mode = Mode::from(*mode);
-        output.change_current_state(Some(wl_mode), None, None, Some((0, 0).into()));
+        output.change_current_state(Some(wl_mode), None, Some(Scale::Integer(scale)), None);
         output.set_preferred(wl_mode);
 
         output.user_data().insert_if_missing(|| TtyOutputState {

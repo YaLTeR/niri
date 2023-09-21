@@ -27,6 +27,14 @@ input {
     }
 }
 
+// You can configure outputs by their name, which you can find with wayland-info(1).
+// The built-in laptop monitor is usually called "eDP-1".
+// Remember to uncommend the node by removing "/-"!
+/-output "eDP-1" {
+    // Scale is a floating-point number, but at the moment only integer values work.
+    scale 2.0
+}
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program

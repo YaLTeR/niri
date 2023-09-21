@@ -8,7 +8,7 @@ use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, Renderer};
 use smithay::backend::winit::{self, WinitError, WinitEvent, WinitGraphicsBackend};
-use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
+use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -38,6 +38,16 @@ impl Winit {
             .with_title("niri");
         let (backend, mut winit_event_loop) = winit::init_from_builder(builder).unwrap();
 
+        let output_config = config
+            .borrow()
+            .outputs
+            .iter()
+            .find(|o| o.name == "winit")
+            .cloned()
+            .unwrap_or_default();
+        let scale = output_config.scale.clamp(0.1, 10.);
+        let scale = scale.max(1.).round() as i32;
+
         let mode = Mode {
             size: backend.window_size().physical_size,
             refresh: 60_000,
@@ -55,8 +65,8 @@ impl Winit {
         output.change_current_state(
             Some(mode),
             Some(Transform::Flipped180),
+            Some(Scale::Integer(scale)),
             None,
-            Some((0, 0).into()),
         );
         output.set_preferred(mode);
 

@@ -11,6 +11,8 @@ use smithay::input::keyboard::Keysym;
 pub struct Config {
     #[knuffel(child, default)]
     pub input: Input,
+    #[knuffel(children(name = "output"))]
+    pub outputs: Vec<Output>,
     #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
@@ -60,6 +62,23 @@ pub struct Touchpad {
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
     pub accel_speed: f64,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct Output {
+    #[knuffel(argument)]
+    pub name: String,
+    #[knuffel(child, unwrap(argument), default = 1.)]
+    pub scale: f64,
+}
+
+impl Default for Output {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            scale: 1.,
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -263,6 +282,10 @@ mod tests {
                 }
             }
 
+            output "eDP-1" {
+                scale 2.0
+            }
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -293,6 +316,10 @@ mod tests {
                         accel_speed: 0.2,
                     },
                 },
+                outputs: vec![Output {
+                    name: "eDP-1".to_owned(),
+                    scale: 2.,
+                }],
                 binds: Binds(vec![
                     Bind {
                         key: Key {
