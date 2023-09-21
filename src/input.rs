@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -19,7 +17,7 @@ use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::config::{Action, Config, Modifiers};
 use crate::niri::State;
-use crate::utils::get_monotonic_time;
+use crate::utils::{get_monotonic_time, spawn};
 
 pub enum CompositorMod {
     Super,
@@ -149,9 +147,7 @@ impl State {
                         }
                         Action::Spawn(command) => {
                             if let Some((command, args)) = command.split_first() {
-                                if let Err(err) = Command::new(command).args(args).spawn() {
-                                    warn!("error spawning {command}: {err}");
-                                }
+                                spawn(command, args);
                             }
                         }
                         Action::Screenshot => {

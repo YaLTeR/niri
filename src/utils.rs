@@ -1,6 +1,9 @@
+use std::ffi::OsStr;
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
@@ -106,4 +109,50 @@ pub fn make_screenshot_path() -> anyhow::Result<PathBuf> {
     path.push(name);
 
     Ok(path)
+}
+
+/// Spawns the command to run independently of the compositor.
+pub fn spawn(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl AsRef<OsStr>>) {
+    let _span = tracy_client::span!();
+
+    let command = command.as_ref();
+
+    let mut process = Command::new(command);
+    process
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    // Double-fork to avoid having to waitpid the child.
+    unsafe {
+        process.pre_exec(|| {
+            match libc::fork() {
+                -1 => return Err(io::Error::last_os_error()),
+                0 => (),
+                _ => libc::_exit(0),
+            }
+
+            Ok(())
+        });
+    }
+
+    let mut child = match process.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            warn!("error spawning {command:?}: {err:?}");
+            return;
+        }
+    };
+
+    match child.wait() {
+        Ok(status) => {
+            if !status.success() {
+                warn!("child did not exit successfully: {status:?}");
+            }
+        }
+        Err(err) => {
+            warn!("error waiting for child: {err:?}");
+        }
+    }
 }

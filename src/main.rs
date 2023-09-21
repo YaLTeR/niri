@@ -25,6 +25,7 @@ use portable_atomic::Ordering;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
+use utils::spawn;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -76,9 +77,7 @@ fn main() {
     let mut data = LoopData { display, state };
 
     if let Some((command, args)) = cli.command.split_first() {
-        if let Err(err) = std::process::Command::new(command).args(args).spawn() {
-            warn!("error spawning command: {err:?}");
-        }
+        spawn(command, args);
     }
 
     event_loop
