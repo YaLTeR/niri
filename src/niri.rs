@@ -36,6 +36,7 @@ use smithay::input::pointer::{CursorImageAttributes, CursorImageStatus, MotionEv
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::nix::libc::CLOCK_MONOTONIC;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
@@ -583,6 +584,8 @@ impl Niri {
     }
 
     pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {
+        let global = output.create_global::<State>(&self.display_handle);
+
         let x = self
             .global_space
             .outputs()
@@ -595,7 +598,7 @@ impl Niri {
         self.monitor_set.add_output(output.clone());
 
         let state = OutputState {
-            global: output.create_global::<State>(&self.display_handle),
+            global,
             queued_redraw: None,
             waiting_for_vblank: false,
             frame_clock: FrameClock::new(refresh_interval),
@@ -605,16 +608,31 @@ impl Niri {
     }
 
     pub fn remove_output(&mut self, output: &Output) {
-        let mut state = self.output_state.remove(output).unwrap();
-        self.display_handle.remove_global::<State>(state.global);
+        self.monitor_set.remove_output(output);
+        self.global_space.unmap_output(output);
+        // FIXME: reposition outputs so they are adjacent.
 
+        let mut state = self.output_state.remove(output).unwrap();
         if let Some(idle) = state.queued_redraw.take() {
             idle.cancel();
         }
 
-        self.monitor_set.remove_output(output);
-        self.global_space.unmap_output(output);
-        // FIXME: reposition outputs so they are adjacent.
+        // Disable the output global and remove some time later to give the clients some time to
+        // process it.
+        let global = state.global;
+        self.display_handle.disable_global::<State>(global.clone());
+        self.event_loop
+            .insert_source(
+                Timer::from_duration(Duration::from_secs(10)),
+                move |_, _, data| {
+                    data.state
+                        .niri
+                        .display_handle
+                        .remove_global::<State>(global.clone());
+                    TimeoutAction::Drop
+                },
+            )
+            .unwrap();
     }
 
     pub fn output_resized(&mut self, output: Output) {
