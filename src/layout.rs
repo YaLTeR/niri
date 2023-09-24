@@ -33,17 +33,20 @@ use std::cmp::{max, min};
 use std::mem;
 use std::time::Duration;
 
+use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
-use smithay::backend::renderer::element::AsRenderElements;
+use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::ImportAll;
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::render_elements;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{with_states, SurfaceData};
 use smithay::wayland::dmabuf::DmabufFeedback;
@@ -52,6 +55,9 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 use crate::animation::Animation;
 
 const PADDING: i32 = 16;
+const FOCUS_RING_PADDING: i32 = 4;
+const FOCUS_RING_ACTIVE_COLOR: [f32; 4] = [0.5, 0.8, 1.0, 1.0];
+const FOCUS_RING_INACTIVE_COLOR: [f32; 4] = [0.3, 0.3, 0.3, 1.0];
 const WIDTH_PROPORTIONS: [ColumnWidth; 3] = [
     ColumnWidth::Proportion(1. / 3.),
     ColumnWidth::Proportion(0.5),
@@ -61,7 +67,12 @@ const WIDTH_PROPORTIONS: [ColumnWidth; 3] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
 
-pub type WorkspaceRenderElement<R> = WaylandSurfaceRenderElement<R>;
+render_elements! {
+    #[derive(Debug)]
+    pub WorkspaceRenderElement<R> where R: ImportAll;
+    Wayland = WaylandSurfaceRenderElement<R>,
+    FocusRing = SolidColorRenderElement,
+}
 pub type MonitorRenderElement<R> =
     RelocateRenderElement<CropRenderElement<WorkspaceRenderElement<R>>>;
 
@@ -139,6 +150,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Index of the currently active column, if any.
     active_column_idx: usize,
+
+    /// The solid color buffer for the focus ring.
+    focus_ring: SolidColorBuffer,
 
     /// Offset of the view computed from the active column.
     view_offset: i32,
@@ -643,16 +657,6 @@ impl<W: LayoutElement> MonitorSet<W> {
         monitors.iter().find(|monitor| &monitor.output == output)
     }
 
-    pub fn monitor_for_output_mut(&mut self, output: &Output) -> Option<&mut Monitor<W>> {
-        let MonitorSet::Normal { monitors, .. } = self else {
-            return None;
-        };
-
-        monitors
-            .iter_mut()
-            .find(|monitor| &monitor.output == output)
-    }
-
     pub fn outputs(&self) -> impl Iterator<Item = &Output> + '_ {
         let monitors = if let MonitorSet::Normal { monitors, .. } = self {
             &monitors[..]
@@ -852,14 +856,18 @@ impl<W: LayoutElement> MonitorSet<W> {
 
     pub fn advance_animations(&mut self, current_time: Duration) {
         match self {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    mon.advance_animations(current_time);
+            MonitorSet::Normal {
+                monitors,
+                active_monitor_idx,
+                ..
+            } => {
+                for (idx, mon) in monitors.iter_mut().enumerate() {
+                    mon.advance_animations(current_time, idx == *active_monitor_idx);
                 }
             }
             MonitorSet::NoOutputs(workspaces) => {
                 for ws in workspaces {
-                    ws.advance_animations(current_time);
+                    ws.advance_animations(current_time, false);
                 }
             }
         }
@@ -1213,7 +1221,7 @@ impl<W: LayoutElement> Monitor<W> {
         Some(&column.windows[column.active_window_idx])
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
         if let Some(anim) = &mut self.workspace_idx_anim {
             anim.set_current_time(current_time);
             if anim.is_done() {
@@ -1223,7 +1231,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         for ws in &mut self.workspaces {
-            ws.advance_animations(current_time);
+            ws.advance_animations(current_time, is_active);
         }
     }
 
@@ -1311,6 +1319,7 @@ impl<W: LayoutElement> Workspace<W> {
             output: Some(output),
             columns: vec![],
             active_column_idx: 0,
+            focus_ring: SolidColorBuffer::new((0, 0), FOCUS_RING_ACTIVE_COLOR),
             view_offset: 0,
             view_offset_anim: None,
             activate_prev_column_on_removal: false,
@@ -1324,13 +1333,14 @@ impl<W: LayoutElement> Workspace<W> {
             view_size: Size::from((1280, 720)),
             columns: vec![],
             active_column_idx: 0,
+            focus_ring: SolidColorBuffer::new((0, 0), FOCUS_RING_ACTIVE_COLOR),
             view_offset: 0,
             view_offset_anim: None,
             activate_prev_column_on_removal: false,
         }
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
         match &mut self.view_offset_anim {
             Some(anim) => {
                 anim.set_current_time(current_time);
@@ -1340,6 +1350,21 @@ impl<W: LayoutElement> Workspace<W> {
                 }
             }
             None => (),
+        }
+
+        // This shall one day become a proper animation.
+        if !self.columns.is_empty() {
+            let col = &self.columns[self.active_column_idx];
+            let active_win = &col.windows[col.active_window_idx];
+            let geom = active_win.geometry();
+            self.focus_ring
+                .resize(geom.size + Size::from((FOCUS_RING_PADDING * 2, FOCUS_RING_PADDING * 2)));
+
+            self.focus_ring.set_color(if is_active {
+                FOCUS_RING_ACTIVE_COLOR
+            } else {
+                FOCUS_RING_INACTIVE_COLOR
+            });
         }
     }
 
@@ -1882,12 +1907,27 @@ impl Workspace<Window> {
             // FIXME: fullscreen windows are missing left padding
             win_pos.x -= PADDING;
         }
+
+        // Draw the window itself.
         rv.extend(active_win.render_elements(
             renderer,
             win_pos.to_physical_precise_round(output_scale),
             output_scale,
             1.,
         ));
+
+        // Draw the focus ring.
+        rv.push(
+            SolidColorRenderElement::from_buffer(
+                &self.focus_ring,
+                (win_pos + geom.loc - Point::from((FOCUS_RING_PADDING, FOCUS_RING_PADDING)))
+                    .to_physical_precise_round(output_scale),
+                output_scale,
+                1.,
+                Kind::Unspecified,
+            )
+            .into(),
+        );
 
         let mut x = PADDING;
         for col in &self.columns {

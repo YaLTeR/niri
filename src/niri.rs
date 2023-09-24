@@ -951,8 +951,7 @@ impl Niri {
         assert!(!state.waiting_for_vblank);
 
         // Advance the animations.
-        let mon = self.monitor_set.monitor_for_output_mut(output).unwrap();
-        mon.advance_animations(presentation_time);
+        self.monitor_set.advance_animations(presentation_time);
 
         // Render the elements.
         let elements = self.render(backend.renderer(), output, true);
