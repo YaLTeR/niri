@@ -1459,12 +1459,21 @@ impl<W: LayoutElement> Workspace<W> {
         let window_idx = column.windows.iter().position(|win| win == window).unwrap();
         column.windows.remove(window_idx);
         if column.windows.is_empty() {
+            // FIXME: activate_column below computes current view position to compute the new view
+            // position, which can include the column we're removing here. This leads to unwanted
+            // view jumps.
             self.columns.remove(column_idx);
             if self.columns.is_empty() {
                 return;
             }
 
-            self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
+            if self.active_column_idx > column_idx {
+                // A column to the left was removed; preserve the current position.
+                self.activate_column(self.active_column_idx - 1);
+            } else {
+                self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
+            }
+
             return;
         }
 
