@@ -39,7 +39,6 @@ struct Cli {
 }
 
 pub struct LoopData {
-    display: Display<State>,
     state: State,
 }
 
@@ -68,14 +67,14 @@ fn main() {
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
 
     let mut event_loop = EventLoop::try_new().unwrap();
-    let mut display = Display::new().unwrap();
+    let display = Display::new().unwrap();
     let state = State::new(
         config,
         event_loop.handle(),
         event_loop.get_signal(),
-        &mut display,
+        display,
     );
-    let mut data = LoopData { display, state };
+    let mut data = LoopData { state };
 
     // Spawn commands from cli and auto-start.
     if let Some((command, args)) = cli.command.split_first() {
@@ -99,7 +98,7 @@ fn main() {
 
             {
                 let _span = tracy_client::span!("flush_clients");
-                data.display.flush_clients().unwrap();
+                data.state.niri.display_handle.flush_clients().unwrap();
             }
         })
         .unwrap();

@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::mem;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -63,11 +63,17 @@ impl PipeWire {
             .register();
         mem::forget(listener);
 
-        let generic = Generic::new(main_loop.fd().as_raw_fd(), Interest::READ, Mode::Level);
+        struct AsFdWrapper(MainLoop);
+        impl AsFd for AsFdWrapper {
+            fn as_fd(&self) -> BorrowedFd<'_> {
+                self.0.fd()
+            }
+        }
+        let generic = Generic::new(AsFdWrapper(main_loop), Interest::READ, Mode::Level);
         event_loop
-            .insert_source(generic, move |_, _, _| {
+            .insert_source(generic, move |_, wrapper, _| {
                 let _span = tracy_client::span!("pipewire iteration");
-                main_loop.iterate(Duration::ZERO);
+                wrapper.0.iterate(Duration::ZERO);
                 Ok(PostAction::Continue)
             })
             .unwrap();

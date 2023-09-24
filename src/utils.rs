@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use directories::UserDirs;
+use nix::time::{clock_gettime, ClockId};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::reexports::nix::time::{clock_gettime, ClockId};
 use smithay::utils::{Logical, Physical, Point, Rectangle, Transform};
 use time::OffsetDateTime;
 use xcursor::parser::parse_xcursor;

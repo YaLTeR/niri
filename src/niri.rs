@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
-use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
@@ -142,7 +141,7 @@ impl State {
         config: Config,
         event_loop: LoopHandle<'static, LoopData>,
         stop_signal: LoopSignal,
-        display: &mut Display<State>,
+        display: Display<State>,
     ) -> Self {
         let config = Rc::new(RefCell::new(config));
 
@@ -163,7 +162,8 @@ impl State {
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
         let under = self.niri.surface_under_and_global_space(location);
-        self.niri.seat.get_pointer().unwrap().motion(
+        let pointer = &self.niri.seat.get_pointer().unwrap();
+        pointer.motion(
             self,
             under,
             &MotionEvent {
@@ -172,6 +172,7 @@ impl State {
                 time: get_monotonic_time().as_millis() as u32,
             },
         );
+        pointer.frame(self);
         // FIXME: granular
         self.niri.queue_redraw_all();
     }
@@ -202,7 +203,7 @@ impl Niri {
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<'static, LoopData>,
         stop_signal: LoopSignal,
-        display: &mut Display<State>,
+        display: Display<State>,
         backend: &Backend,
     ) -> Self {
         let display_handle = display.handle();
@@ -533,14 +534,13 @@ impl Niri {
             zbus_conn = Some(conn);
         }
 
-        let display_source = Generic::new(
-            display.backend().poll_fd().as_raw_fd(),
-            Interest::READ,
-            Mode::Level,
-        );
+        let display_source = Generic::new(display, Interest::READ, Mode::Level);
         event_loop
-            .insert_source(display_source, |_, _, data| {
-                data.display.dispatch_clients(&mut data.state).unwrap();
+            .insert_source(display_source, |_, display, data| {
+                // SAFETY: we don't drop the display.
+                unsafe {
+                    display.get_mut().dispatch_clients(&mut data.state).unwrap();
+                }
                 Ok(PostAction::Continue)
             })
             .unwrap();

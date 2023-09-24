@@ -9,7 +9,7 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.75" }
 bitflags = "2.4.0"
-clap = { version = "4.4.4", features = ["derive"] }
+clap = { version = "4.4.5", features = ["derive"] }
 directories = "5.0.1"
 image = { version = "0.24.7", default-features = false, features = ["png"] }
 keyframe = { version = "1.1.1", default-features = false }
@@ -21,15 +21,17 @@ portable-atomic = { version = "1.4.3", default-features = false, features = ["fl
 profiling = "1.0.11"
 sd-notify = "0.4.1"
 serde = { version = "1.0.188", features = ["derive"] }
-time = { version = "0.3.28", features = ["formatting", "local-offset", "macros"] }
+time = { version = "0.3.29", features = ["formatting", "local-offset", "macros"] }
 tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-tracy-client = { version = "0.16.2", default-features = false }
+tracy-client = { version = "0.16.3", default-features = false }
 xcursor = "0.3.4"
 zbus = { version = "3.14.1" }
 async-io = "1.13.0"
 async-channel = "1.9.0"
 libc = "0.2.148"
+nix = { version = "0.27.1", default-features = false, features = ["time"] }
+log = { version = "0.4.20", features = ["max_level_trace", "release_max_level_debug"] }
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"

@@ -43,7 +43,7 @@ fn action(
 
     // Handle hardcoded binds.
     #[allow(non_upper_case_globals)] // wat
-    match keysym.modified_sym() {
+    match keysym.modified_sym().raw() {
         modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
             let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
             return Action::ChangeVt(vt);
@@ -383,6 +383,8 @@ impl State {
                     },
                 );
 
+                pointer.frame(self);
+
                 // Redraw to update the cursor position.
                 // FIXME: redraw only outputs overlapping the cursor.
                 self.niri.queue_redraw_all();
@@ -411,6 +413,8 @@ impl State {
                         time: event.time_msec(),
                     },
                 );
+
+                pointer.frame(self);
 
                 // Redraw to update the cursor position.
                 // FIXME: redraw only outputs overlapping the cursor.
@@ -479,7 +483,9 @@ impl State {
                     }
                 }
 
-                self.niri.seat.get_pointer().unwrap().axis(self, frame);
+                let pointer = &self.niri.seat.get_pointer().unwrap();
+                pointer.axis(self, frame);
+                pointer.frame(self);
             }
             InputEvent::TabletToolAxis { event, .. } => {
                 // FIXME: allow mapping tablet to different outputs.
@@ -506,6 +512,7 @@ impl State {
                         time: event.time_msec(),
                     },
                 );
+                pointer.frame(self);
 
                 let tablet_seat = self.niri.seat.tablet_seat();
                 let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
@@ -593,6 +600,7 @@ impl State {
                         time: event.time_msec(),
                     },
                 );
+                pointer.frame(self);
 
                 let tablet_seat = self.niri.seat.tablet_seat();
                 let tool = tablet_seat.add_tool::<Self>(&self.niri.display_handle, &event.tool());

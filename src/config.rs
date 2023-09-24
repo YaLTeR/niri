@@ -4,7 +4,8 @@ use std::str::FromStr;
 use bitflags::bitflags;
 use directories::ProjectDirs;
 use miette::{miette, Context, IntoDiagnostic};
-use smithay::input::keyboard::xkb::{keysym_from_name, KEY_NoSymbol, KEYSYM_CASE_INSENSITIVE};
+use smithay::input::keyboard::keysyms::KEY_NoSymbol;
+use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::Keysym;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
@@ -248,7 +249,7 @@ impl FromStr for Key {
         }
 
         let keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
-        if keysym == KEY_NoSymbol {
+        if keysym.raw() == KEY_NoSymbol {
             return Err(miette!("invalid key: {key}"));
         }
 
@@ -258,8 +259,6 @@ impl FromStr for Key {
 
 #[cfg(test)]
 mod tests {
-    use smithay::input::keyboard::xkb::keysyms::*;
-
     use super::*;
 
     #[track_caller]
@@ -336,42 +335,42 @@ mod tests {
                 binds: Binds(vec![
                     Bind {
                         key: Key {
-                            keysym: KEY_t,
+                            keysym: Keysym::t,
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         actions: vec![Action::Spawn(vec!["alacritty".to_owned()])],
                     },
                     Bind {
                         key: Key {
-                            keysym: KEY_q,
+                            keysym: Keysym::q,
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         actions: vec![Action::CloseWindow],
                     },
                     Bind {
                         key: Key {
-                            keysym: KEY_h,
+                            keysym: Keysym::h,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         actions: vec![Action::FocusMonitorLeft],
                     },
                     Bind {
                         key: Key {
-                            keysym: KEY_l,
+                            keysym: Keysym::l,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
                         },
                         actions: vec![Action::MoveWindowToMonitorRight],
                     },
                     Bind {
                         key: Key {
-                            keysym: KEY_comma,
+                            keysym: Keysym::comma,
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         actions: vec![Action::ConsumeWindowIntoColumn],
                     },
                     Bind {
                         key: Key {
-                            keysym: KEY_1,
+                            keysym: Keysym::_1,
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         actions: vec![Action::FocusWorkspace(1)],
