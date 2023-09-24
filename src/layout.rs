@@ -145,6 +145,16 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Animation of the view offset, if one is currently ongoing.
     view_offset_anim: Option<Animation>,
+
+    /// Whether to activate the previous, rather than the next, column upon column removal.
+    ///
+    /// When a new column is created and removed with no focus changes in-between, it is more
+    /// natural to activate the previously-focused column. This variable tracks that.
+    ///
+    /// Since we only create-and-activate columns immediately to the right of the active column (in
+    /// contrast to tabs in Firefox, for example), we can track this as a bool, rather than an
+    /// index of the previous column to activate.
+    activate_prev_column_on_removal: bool,
 }
 
 /// Width of a column.
@@ -1303,6 +1313,7 @@ impl<W: LayoutElement> Workspace<W> {
             active_column_idx: 0,
             view_offset: 0,
             view_offset_anim: None,
+            activate_prev_column_on_removal: false,
         }
     }
 
@@ -1315,6 +1326,7 @@ impl<W: LayoutElement> Workspace<W> {
             active_column_idx: 0,
             view_offset: 0,
             view_offset_anim: None,
+            activate_prev_column_on_removal: false,
         }
     }
 
@@ -1387,6 +1399,9 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.active_column_idx = idx;
 
+        // A different column was activated; reset the flag.
+        self.activate_prev_column_on_removal = false;
+
         let new_x = self.column_x(idx) - PADDING;
         let new_view_offset = compute_new_view_offset(
             current_x,
@@ -1441,6 +1456,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         if activate {
             self.activate_column(idx);
+            self.activate_prev_column_on_removal = true;
         }
     }
 
@@ -1459,6 +1475,12 @@ impl<W: LayoutElement> Workspace<W> {
         let window_idx = column.windows.iter().position(|win| win == window).unwrap();
         column.windows.remove(window_idx);
         if column.windows.is_empty() {
+            if column_idx + 1 == self.active_column_idx {
+                // The previous column, that we were going to activate upon removal of the active
+                // column, has just been itself removed.
+                self.activate_prev_column_on_removal = false;
+            }
+
             // FIXME: activate_column below computes current view position to compute the new view
             // position, which can include the column we're removing here. This leads to unwanted
             // view jumps.
@@ -1467,9 +1489,13 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             }
 
-            if self.active_column_idx > column_idx {
+            if self.active_column_idx > column_idx
+                || (self.active_column_idx == column_idx && self.activate_prev_column_on_removal)
+            {
                 // A column to the left was removed; preserve the current position.
-                self.activate_column(self.active_column_idx - 1);
+                // FIXME: preserve activate_prev_column_on_removal.
+                // Or, the active column was removed, and we needed to activate the previous column.
+                self.activate_column(self.active_column_idx.saturating_sub(1));
             } else {
                 self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
             }
