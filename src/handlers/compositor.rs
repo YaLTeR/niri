@@ -47,11 +47,11 @@ impl CompositorHandler for State {
                     let res = state
                         .niri
                         .event_loop
-                        .insert_source(source, move |_, _, data| {
-                            let display_handle = data.state.niri.display_handle.clone();
-                            data.state
+                        .insert_source(source, move |_, _, state| {
+                            let display_handle = state.niri.display_handle.clone();
+                            state
                                 .client_compositor_state(&client)
-                                .blocker_cleared(&mut data.state, &display_handle);
+                                .blocker_cleared(state, &display_handle);
                             Ok(())
                         });
                     if res.is_ok() {

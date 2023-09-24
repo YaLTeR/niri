@@ -38,10 +38,6 @@ struct Cli {
     command: Vec<OsString>,
 }
 
-pub struct LoopData {
-    state: State,
-}
-
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
 
@@ -68,13 +64,12 @@ fn main() {
 
     let mut event_loop = EventLoop::try_new().unwrap();
     let display = Display::new().unwrap();
-    let state = State::new(
+    let mut state = State::new(
         config,
         event_loop.handle(),
         event_loop.get_signal(),
         display,
     );
-    let mut data = LoopData { state };
 
     // Spawn commands from cli and auto-start.
     if let Some((command, args)) = cli.command.split_first() {
@@ -88,17 +83,17 @@ fn main() {
     }
 
     event_loop
-        .run(None, &mut data, move |data| {
+        .run(None, &mut state, move |state| {
             let _span = tracy_client::span!("loop callback");
 
             // These should be called periodically, before flushing the clients.
-            data.state.niri.monitor_set.refresh();
-            data.state.niri.popups.cleanup();
-            data.state.update_focus();
+            state.niri.monitor_set.refresh();
+            state.niri.popups.cleanup();
+            state.update_focus();
 
             {
                 let _span = tracy_client::span!("flush_clients");
-                data.state.niri.display_handle.flush_clients().unwrap();
+                state.niri.display_handle.flush_clients().unwrap();
             }
         })
         .unwrap();

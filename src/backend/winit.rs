@@ -18,9 +18,9 @@ use smithay::utils::Transform;
 use smithay::wayland::dmabuf::DmabufFeedback;
 
 use crate::config::Config;
-use crate::niri::OutputRenderElements;
+use crate::niri::{OutputRenderElements, State};
 use crate::utils::get_monotonic_time;
-use crate::{LoopData, Niri};
+use crate::Niri;
 
 pub struct Winit {
     config: Rc<RefCell<Config>>,
@@ -31,7 +31,7 @@ pub struct Winit {
 }
 
 impl Winit {
-    pub fn new(config: Rc<RefCell<Config>>, event_loop: LoopHandle<LoopData>) -> Self {
+    pub fn new(config: Rc<RefCell<Config>>, event_loop: LoopHandle<State>) -> Self {
         let builder = WindowBuilder::new()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
@@ -79,10 +79,10 @@ impl Winit {
 
         let timer = Timer::immediate();
         event_loop
-            .insert_source(timer, move |_, _, data| {
+            .insert_source(timer, move |_, _, state| {
                 let res = winit_event_loop.dispatch_new_events(|event| match event {
                     WinitEvent::Resized { size, .. } => {
-                        let winit = data.state.backend.winit();
+                        let winit = state.backend.winit();
                         winit.output.change_current_state(
                             Some(Mode {
                                 size,
@@ -92,24 +92,21 @@ impl Winit {
                             None,
                             None,
                         );
-                        data.state.niri.output_resized(winit.output.clone());
+                        state.niri.output_resized(winit.output.clone());
                     }
-                    WinitEvent::Input(event) => data.state.process_input_event(event),
+                    WinitEvent::Input(event) => state.process_input_event(event),
                     WinitEvent::Focus(_) => (),
-                    WinitEvent::Refresh => data
-                        .state
+                    WinitEvent::Refresh => state
                         .niri
-                        .queue_redraw(data.state.backend.winit().output.clone()),
+                        .queue_redraw(state.backend.winit().output.clone()),
                 });
 
                 // I want this to stop compiling if more errors are added.
                 #[allow(clippy::single_match)]
                 match res {
                     Err(WinitError::WindowClosed) => {
-                        data.state.niri.stop_signal.stop();
-                        data.state
-                            .niri
-                            .remove_output(&data.state.backend.winit().output);
+                        state.niri.stop_signal.stop();
+                        state.niri.remove_output(&state.backend.winit().output);
                     }
                     Ok(()) => (),
                 }

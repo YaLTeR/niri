@@ -30,7 +30,7 @@ use smithay::reexports::gbm::Modifier;
 use zbus::SignalContext;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode, ToNiriMsg};
-use crate::LoopData;
+use crate::niri::State;
 
 pub struct PipeWire {
     _context: Context<MainLoop>,
@@ -50,7 +50,7 @@ pub struct Cast {
 }
 
 impl PipeWire {
-    pub fn new(event_loop: &LoopHandle<'static, LoopData>) -> anyhow::Result<Self> {
+    pub fn new(event_loop: &LoopHandle<'static, State>) -> anyhow::Result<Self> {
         let main_loop = MainLoop::new().context("error creating MainLoop")?;
         let context = Context::new(&main_loop).context("error creating Context")?;
         let core = context.connect(None).context("error creating Core")?;

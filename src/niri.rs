@@ -70,12 +70,11 @@ use crate::frame_clock::FrameClock;
 use crate::layout::{MonitorRenderElement, MonitorSet};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::utils::{center, get_monotonic_time, load_default_cursor, make_screenshot_path};
-use crate::LoopData;
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
 
-    pub event_loop: LoopHandle<'static, LoopData>,
+    pub event_loop: LoopHandle<'static, State>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
 
@@ -139,7 +138,7 @@ pub struct State {
 impl State {
     pub fn new(
         config: Config,
-        event_loop: LoopHandle<'static, LoopData>,
+        event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
     ) -> Self {
@@ -201,7 +200,7 @@ impl State {
 impl Niri {
     pub fn new(
         config: Rc<RefCell<Config>>,
-        event_loop: LoopHandle<'static, LoopData>,
+        event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
         backend: &Backend,
@@ -244,9 +243,8 @@ impl Niri {
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
         event_loop
-            .insert_source(socket_source, move |client, _, data| {
-                if let Err(err) = data
-                    .state
+            .insert_source(socket_source, move |client, _, state| {
+                if let Err(err) = state
                     .niri
                     .display_handle
                     .insert_client(client, Arc::new(ClientState::default()))
@@ -273,7 +271,7 @@ impl Niri {
         event_loop
             .insert_source(from_screen_cast, {
                 let to_niri = to_niri.clone();
-                move |event, _, data| match event {
+                move |event, _, state| match event {
                     calloop::channel::Event::Msg(msg) => match msg {
                         ToNiriMsg::StartCast {
                             session_id,
@@ -285,7 +283,7 @@ impl Niri {
 
                             debug!(session_id, "StartCast");
 
-                            let gbm = match data.state.backend.gbm_device() {
+                            let gbm = match state.backend.gbm_device() {
                                 Some(gbm) => gbm,
                                 None => {
                                     debug!("no GBM device available");
@@ -293,7 +291,7 @@ impl Niri {
                                 }
                             };
 
-                            let pw = data.state.niri.pipewire.as_ref().unwrap();
+                            let pw = state.niri.pipewire.as_ref().unwrap();
                             match pw.start_cast(
                                 to_niri.clone(),
                                 gbm,
@@ -303,7 +301,7 @@ impl Niri {
                                 signal_ctx,
                             ) {
                                 Ok(cast) => {
-                                    data.state.niri.casts.push(cast);
+                                    state.niri.casts.push(cast);
                                 }
                                 Err(err) => {
                                     warn!("error starting screencast: {err:?}");
@@ -321,20 +319,19 @@ impl Niri {
 
                             debug!(session_id, "StopCast");
 
-                            for i in (0..data.state.niri.casts.len()).rev() {
-                                let cast = &data.state.niri.casts[i];
+                            for i in (0..state.niri.casts.len()).rev() {
+                                let cast = &state.niri.casts[i];
                                 if cast.session_id != session_id {
                                     continue;
                                 }
 
-                                let cast = data.state.niri.casts.swap_remove(i);
+                                let cast = state.niri.casts.swap_remove(i);
                                 if let Err(err) = cast.stream.disconnect() {
                                     warn!("error disconnecting stream: {err:?}");
                                 }
                             }
 
-                            let server =
-                                data.state.niri.zbus_conn.as_ref().unwrap().object_server();
+                            let server = state.niri.zbus_conn.as_ref().unwrap().object_server();
                             let path =
                                 format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
                             if let Ok(iface) =
@@ -360,11 +357,11 @@ impl Niri {
         let (to_niri, from_screenshot) = calloop::channel::channel();
         let (to_screenshot, from_niri) = async_channel::unbounded();
         event_loop
-            .insert_source(from_screenshot, move |event, _, data| match event {
+            .insert_source(from_screenshot, move |event, _, state| match event {
                 calloop::channel::Event::Msg(ScreenshotToNiri::TakeScreenshot {
                     include_cursor,
                 }) => {
-                    let renderer = data.state.backend.renderer();
+                    let renderer = state.backend.renderer();
                     let on_done = {
                         let to_screenshot = to_screenshot.clone();
                         move |path| {
@@ -375,10 +372,9 @@ impl Niri {
                         }
                     };
 
-                    let res =
-                        data.state
-                            .niri
-                            .screenshot_all_outputs(renderer, include_cursor, on_done);
+                    let res = state
+                        .niri
+                        .screenshot_all_outputs(renderer, include_cursor, on_done);
 
                     if let Err(err) = res {
                         warn!("error taking a screenshot: {err:?}");
@@ -536,10 +532,10 @@ impl Niri {
 
         let display_source = Generic::new(display, Interest::READ, Mode::Level);
         event_loop
-            .insert_source(display_source, |_, display, data| {
+            .insert_source(display_source, |_, display, state| {
                 // SAFETY: we don't drop the display.
                 unsafe {
-                    display.get_mut().dispatch_clients(&mut data.state).unwrap();
+                    display.get_mut().dispatch_clients(state).unwrap();
                 }
                 Ok(PostAction::Continue)
             })
@@ -624,8 +620,8 @@ impl Niri {
         self.event_loop
             .insert_source(
                 Timer::from_duration(Duration::from_secs(10)),
-                move |_, _, data| {
-                    data.state
+                move |_, _, state| {
+                    state
                         .niri
                         .display_handle
                         .remove_global::<State>(global.clone());
@@ -788,8 +784,8 @@ impl Niri {
 
         // Timer::immediate() adds a millisecond of delay for some reason.
         // This should be fixed in calloop v0.11: https://github.com/Smithay/calloop/issues/142
-        let idle = self.event_loop.insert_idle(move |data| {
-            data.state.niri.redraw(&mut data.state.backend, &output);
+        let idle = self.event_loop.insert_idle(move |state| {
+            state.niri.redraw(&mut state.backend, &output);
         });
         state.queued_redraw = Some(idle);
     }
