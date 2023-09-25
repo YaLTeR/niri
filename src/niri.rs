@@ -782,8 +782,6 @@ impl Niri {
             return;
         }
 
-        // Timer::immediate() adds a millisecond of delay for some reason.
-        // This should be fixed in calloop v0.11: https://github.com/Smithay/calloop/issues/142
         let idle = self.event_loop.insert_idle(move |state| {
             state.niri.redraw(&mut state.backend, &output);
         });
