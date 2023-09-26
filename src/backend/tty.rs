@@ -314,7 +314,7 @@ impl Tty {
                 let tty = state.backend.tty();
                 match event {
                     DrmEvent::VBlank(crtc) => {
-                        let meta = meta.as_ref().expect("VBlank events must have metadata");
+                        let meta = meta.expect("VBlank events must have metadata");
                         tty.on_vblank(&mut state.niri, crtc, meta);
                     }
                     DrmEvent::Error(error) => error!("DRM error: {error}"),
@@ -584,7 +584,7 @@ impl Tty {
         self.connectors.lock().unwrap().remove(&surface.name);
     }
 
-    fn on_vblank(&mut self, niri: &mut Niri, crtc: crtc::Handle, meta: &DrmEventMetadata) {
+    fn on_vblank(&mut self, niri: &mut Niri, crtc: crtc::Handle, meta: DrmEventMetadata) {
         let span = tracy_client::span!("Tty::on_vblank");
 
         let now = get_monotonic_time();
