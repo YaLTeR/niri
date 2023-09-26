@@ -48,6 +48,7 @@ pub struct Tty {
     config: Rc<RefCell<Config>>,
     session: LibSeatSession,
     udev_dispatcher: Dispatcher<'static, UdevBackend, State>,
+    libinput: Libinput,
     primary_gpu_path: PathBuf,
     output_device: Option<OutputDevice>,
     connectors: Arc<Mutex<HashMap<String, Output>>>,
@@ -100,37 +101,7 @@ impl Tty {
 
         let udev_backend = UdevBackend::new(session.seat()).unwrap();
         let udev_dispatcher = Dispatcher::new(udev_backend, move |event, _, state: &mut State| {
-            let tty = state.backend.tty();
-            let niri = &mut state.niri;
-
-            match event {
-                UdevEvent::Added { device_id, path } => {
-                    if !tty.session.is_active() {
-                        debug!("skipping UdevEvent::Added as session is inactive");
-                        return;
-                    }
-
-                    if let Err(err) = tty.device_added(device_id, &path, niri) {
-                        warn!("error adding device: {err:?}");
-                    }
-                }
-                UdevEvent::Changed { device_id } => {
-                    if !tty.session.is_active() {
-                        debug!("skipping UdevEvent::Changed as session is inactive");
-                        return;
-                    }
-
-                    tty.device_changed(device_id, niri)
-                }
-                UdevEvent::Removed { device_id } => {
-                    if !tty.session.is_active() {
-                        debug!("skipping UdevEvent::Removed as session is inactive");
-                        return;
-                    }
-
-                    tty.device_removed(device_id, niri)
-                }
-            }
+            state.backend.tty().on_udev_event(&mut state.niri, event);
         });
         event_loop
             .register_dispatcher(udev_dispatcher.clone())
@@ -147,95 +118,9 @@ impl Tty {
             })
             .unwrap();
 
-        let udev_dispatcher_c = udev_dispatcher.clone();
         event_loop
             .insert_source(notifier, move |event, _, state| {
-                let tty = state.backend.tty();
-                let niri = &mut state.niri;
-
-                match event {
-                    SessionEvent::PauseSession => {
-                        debug!("pausing session");
-
-                        libinput.suspend();
-
-                        if let Some(output_device) = &tty.output_device {
-                            output_device.drm.pause();
-                        }
-                    }
-                    SessionEvent::ActivateSession => {
-                        debug!("resuming session");
-
-                        if libinput.resume().is_err() {
-                            error!("error resuming libinput");
-                        }
-
-                        if let Some(output_device) = &mut tty.output_device {
-                            // We had an output device, check if it's been removed.
-                            let output_device_id = output_device.id;
-                            if !udev_dispatcher_c
-                                .as_source_ref()
-                                .device_list()
-                                .any(|(device_id, _)| device_id == output_device_id)
-                            {
-                                // The output device, if we had any, has been removed.
-                                tty.device_removed(output_device_id, niri);
-                            } else {
-                                // It hasn't been removed, update its state as usual.
-                                output_device.drm.activate();
-
-                                // HACK: force reset the connectors to make resuming work across
-                                // sleep.
-                                let output_device = tty.output_device.as_mut().unwrap();
-                                let crtcs: Vec<_> = output_device
-                                    .drm_scanner
-                                    .crtcs()
-                                    .map(|(conn, crtc)| (conn.clone(), crtc))
-                                    .collect();
-                                for (conn, crtc) in crtcs {
-                                    tty.connector_disconnected(niri, conn, crtc);
-                                }
-
-                                let output_device = tty.output_device.as_mut().unwrap();
-                                let _ = output_device
-                                    .drm_scanner
-                                    .scan_connectors(&output_device.drm);
-                                let crtcs: Vec<_> = output_device
-                                    .drm_scanner
-                                    .crtcs()
-                                    .map(|(conn, crtc)| (conn.clone(), crtc))
-                                    .collect();
-                                for (conn, crtc) in crtcs {
-                                    if let Err(err) = tty.connector_connected(niri, conn, crtc) {
-                                        warn!("error connecting connector: {err:?}");
-                                    }
-                                }
-
-                                // // Refresh the connectors.
-                                // tty.device_changed(output_device_id, niri);
-
-                                // // Refresh the state on unchanged connectors.
-                                // let output_device = tty.output_device.as_mut().unwrap();
-                                // for drm_compositor in output_device.surfaces.values_mut() {
-                                //     if let Err(err) = drm_compositor.surface().reset_state() {
-                                //         warn!("error resetting DRM surface state: {err}");
-                                //     }
-                                //     drm_compositor.reset_buffers();
-                                // }
-
-                                // niri.queue_redraw_all();
-                            }
-                        } else {
-                            // We didn't have an output device, check if it's been added.
-                            for (device_id, path) in udev_dispatcher_c.as_source_ref().device_list()
-                            {
-                                if let Err(err) = tty.device_added(device_id, path, niri) {
-                                    warn!("error adding device: {err:?}");
-                                }
-                            }
-                        }
-                    }
-                }
+                state.backend.tty().on_session_event(&mut state.niri, event);
             })
             .unwrap();
 
@@ -245,6 +130,7 @@ impl Tty {
             config,
             session,
             udev_dispatcher,
+            libinput,
             primary_gpu_path,
             output_device: None,
             connectors: Arc::new(Mutex::new(HashMap::new())),
@@ -255,6 +141,124 @@ impl Tty {
         for (device_id, path) in self.udev_dispatcher.clone().as_source_ref().device_list() {
             if let Err(err) = self.device_added(device_id, path, niri) {
                 warn!("error adding device: {err:?}");
+            }
+        }
+    }
+
+    fn on_udev_event(&mut self, niri: &mut Niri, event: UdevEvent) {
+        match event {
+            UdevEvent::Added { device_id, path } => {
+                if !self.session.is_active() {
+                    debug!("skipping UdevEvent::Added as session is inactive");
+                    return;
+                }
+
+                if let Err(err) = self.device_added(device_id, &path, niri) {
+                    warn!("error adding device: {err:?}");
+                }
+            }
+            UdevEvent::Changed { device_id } => {
+                if !self.session.is_active() {
+                    debug!("skipping UdevEvent::Changed as session is inactive");
+                    return;
+                }
+
+                self.device_changed(device_id, niri)
+            }
+            UdevEvent::Removed { device_id } => {
+                if !self.session.is_active() {
+                    debug!("skipping UdevEvent::Removed as session is inactive");
+                    return;
+                }
+
+                self.device_removed(device_id, niri)
+            }
+        }
+    }
+
+    fn on_session_event(&mut self, niri: &mut Niri, event: SessionEvent) {
+        match event {
+            SessionEvent::PauseSession => {
+                debug!("pausing session");
+
+                self.libinput.suspend();
+
+                if let Some(output_device) = &self.output_device {
+                    output_device.drm.pause();
+                }
+            }
+            SessionEvent::ActivateSession => {
+                debug!("resuming session");
+
+                if self.libinput.resume().is_err() {
+                    error!("error resuming libinput");
+                }
+
+                if let Some(output_device) = &mut self.output_device {
+                    // We had an output device, check if it's been removed.
+                    let output_device_id = output_device.id;
+                    if !self
+                        .udev_dispatcher
+                        .as_source_ref()
+                        .device_list()
+                        .any(|(device_id, _)| device_id == output_device_id)
+                    {
+                        // The output device, if we had any, has been removed.
+                        self.device_removed(output_device_id, niri);
+                    } else {
+                        // It hasn't been removed, update its state as usual.
+                        output_device.drm.activate();
+
+                        // HACK: force reset the connectors to make resuming work across
+                        // sleep.
+                        let output_device = self.output_device.as_mut().unwrap();
+                        let crtcs: Vec<_> = output_device
+                            .drm_scanner
+                            .crtcs()
+                            .map(|(conn, crtc)| (conn.clone(), crtc))
+                            .collect();
+                        for (conn, crtc) in crtcs {
+                            self.connector_disconnected(niri, conn, crtc);
+                        }
+
+                        let output_device = self.output_device.as_mut().unwrap();
+                        let _ = output_device
+                            .drm_scanner
+                            .scan_connectors(&output_device.drm);
+                        let crtcs: Vec<_> = output_device
+                            .drm_scanner
+                            .crtcs()
+                            .map(|(conn, crtc)| (conn.clone(), crtc))
+                            .collect();
+                        for (conn, crtc) in crtcs {
+                            if let Err(err) = self.connector_connected(niri, conn, crtc) {
+                                warn!("error connecting connector: {err:?}");
+                            }
+                        }
+
+                        // // Refresh the connectors.
+                        // self.device_changed(output_device_id, niri);
+
+                        // // Refresh the state on unchanged connectors.
+                        // let output_device = self.output_device.as_mut().unwrap();
+                        // for drm_compositor in output_device.surfaces.values_mut() {
+                        //     if let Err(err) = drm_compositor.surface().reset_state() {
+                        //         warn!("error resetting DRM surface state: {err}");
+                        //     }
+                        //     drm_compositor.reset_buffers();
+                        // }
+
+                        // niri.queue_redraw_all();
+                    }
+                } else {
+                    // We didn't have an output device, check if it's been added.
+                    let udev_dispatcher = self.udev_dispatcher.clone();
+                    for (device_id, path) in udev_dispatcher.as_source_ref().device_list() {
+                        if let Err(err) = self.device_added(device_id, path, niri) {
+                            warn!("error adding device: {err:?}");
+                        }
+                    }
+                }
             }
         }
     }
