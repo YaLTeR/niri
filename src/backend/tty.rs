@@ -571,8 +571,17 @@ impl Tty {
     fn on_vblank(&mut self, niri: &mut Niri, crtc: crtc::Handle, meta: &DrmEventMetadata) {
         let now = get_monotonic_time();
 
-        let device = self.output_device.as_mut().unwrap();
-        let surface = device.surfaces.get_mut(&crtc).unwrap();
+        let Some(device) = self.output_device.as_mut() else {
+            // I've seen it happen.
+            error!("missing output device in vblank callback for crtc {crtc:?}");
+            return;
+        };
+
+        let Some(surface) = device.surfaces.get_mut(&crtc) else {
+            error!("missing surface in vblank callback for crtc {crtc:?}");
+            return;
+        };
+
         let name = &surface.name;
         trace!("vblank on {name} {meta:?}");
 
@@ -611,16 +620,23 @@ impl Tty {
             .unwrap()
             .message(&message, 0);
 
-        let output = niri
+        let Some(output) = niri
             .global_space
             .outputs()
             .find(|output| {
                 let tty_state: &TtyOutputState = output.user_data().get().unwrap();
                 tty_state.device_id == device.id && tty_state.crtc == crtc
             })
-            .unwrap()
-            .clone();
-        let output_state = niri.output_state.get_mut(&output).unwrap();
+            .cloned()
+        else {
+            error!("missing output in global space for {name}");
+            return;
+        };
+
+        let Some(output_state) = niri.output_state.get_mut(&output) else {
+            error!("missing output state for {name}");
+            return;
+        };
 
         // Mark the last frame as submitted.
         match surface.compositor.frame_submitted() {
