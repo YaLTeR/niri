@@ -53,6 +53,7 @@ use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
+use smithay::wayland::primary_selection::PrimarySelectionState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
@@ -103,6 +104,7 @@ pub struct Niri {
     pub tablet_state: TabletManagerState,
     pub pointer_gestures_state: PointerGesturesState,
     pub data_device_state: DataDeviceState,
+    pub primary_selection_state: PrimarySelectionState,
     pub popups: PopupManager,
     pub presentation_state: PresentationState,
 
@@ -243,6 +245,7 @@ impl Niri {
         let tablet_state = TabletManagerState::new::<State>(&display_handle);
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
+        let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
         let presentation_state =
             PresentationState::new::<State>(&display_handle, CLOCK_MONOTONIC as u32);
 
@@ -593,6 +596,7 @@ impl Niri {
             tablet_state,
             pointer_gestures_state,
             data_device_state,
+            primary_selection_state,
             popups: PopupManager::default(),
             presentation_state,
 

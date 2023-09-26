@@ -14,9 +14,10 @@ use smithay::wayland::data_device::{
     ServerDndGrabHandler,
 };
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
+use smithay::wayland::primary_selection::{PrimarySelectionHandler, PrimarySelectionState};
 use smithay::{
     delegate_data_device, delegate_dmabuf, delegate_output, delegate_pointer_gestures,
-    delegate_presentation, delegate_seat, delegate_tablet_manager,
+    delegate_presentation, delegate_primary_selection, delegate_seat, delegate_tablet_manager,
 };
 
 use crate::niri::State;
@@ -74,6 +75,15 @@ impl ClientDndGrabHandler for State {
 impl ServerDndGrabHandler for State {}
 
 delegate_data_device!(State);
+
+impl PrimarySelectionHandler for State {
+    type SelectionUserData = ();
+
+    fn primary_selection_state(&self) -> &PrimarySelectionState {
+        &self.niri.primary_selection_state
+    }
+}
+delegate_primary_selection!(State);
 
 delegate_output!(State);
 
