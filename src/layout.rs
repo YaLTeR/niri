@@ -53,11 +53,9 @@ use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
+use crate::config::{Color, Config};
 
 const PADDING: i32 = 16;
-const FOCUS_RING_PADDING: i32 = 4;
-const FOCUS_RING_ACTIVE_COLOR: [f32; 4] = [0.5, 0.8, 1.0, 1.0];
-const FOCUS_RING_INACTIVE_COLOR: [f32; 4] = [0.3, 0.3, 0.3, 1.0];
 const WIDTH_PROPORTIONS: [ColumnWidth; 3] = [
     ColumnWidth::Proportion(1. / 3.),
     ColumnWidth::Proportion(0.5),
@@ -151,8 +149,8 @@ pub struct Workspace<W: LayoutElement> {
     /// Index of the currently active column, if any.
     active_column_idx: usize,
 
-    /// The solid color buffer for the focus ring.
-    focus_ring: SolidColorBuffer,
+    /// Focus ring buffer and parameters.
+    focus_ring: FocusRing,
 
     /// Offset of the view computed from the active column.
     view_offset: i32,
@@ -169,6 +167,15 @@ pub struct Workspace<W: LayoutElement> {
     /// contrast to tabs in Firefox, for example), we can track this as a bool, rather than an
     /// index of the previous column to activate.
     activate_prev_column_on_removal: bool,
+}
+
+#[derive(Debug)]
+struct FocusRing {
+    buffer: SolidColorBuffer,
+    is_off: bool,
+    width: i32,
+    active_color: Color,
+    inactive_color: Color,
 }
 
 /// Width of a column.
@@ -264,6 +271,52 @@ impl LayoutElement for Window {
         F: Fn(&WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
     {
         self.send_dmabuf_feedback(output, primary_scan_out_output, select_dmabuf_feedback);
+    }
+}
+
+impl FocusRing {
+    fn resize(&mut self, size: Size<i32, Logical>) {
+        let size = size + Size::from((self.width * 2, self.width * 2));
+        self.buffer.resize(size);
+    }
+
+    fn set_active(&mut self, is_active: bool) {
+        self.buffer.set_color(if is_active {
+            self.active_color.into()
+        } else {
+            self.inactive_color.into()
+        });
+    }
+
+    fn render(
+        &self,
+        loc: Point<i32, Logical>,
+        scale: Scale<f64>,
+    ) -> Option<SolidColorRenderElement> {
+        if self.is_off {
+            return None;
+        }
+
+        let offset = Point::from((self.width, self.width));
+        Some(SolidColorRenderElement::from_buffer(
+            &self.buffer,
+            (loc - offset).to_physical_precise_round(scale),
+            scale,
+            1.,
+            Kind::Unspecified,
+        ))
+    }
+}
+
+impl Default for FocusRing {
+    fn default() -> Self {
+        Self {
+            buffer: SolidColorBuffer::new((0, 0), [0., 0., 0., 0.]),
+            is_off: true,
+            width: 0,
+            active_color: Color::default(),
+            inactive_color: Color::default(),
+        }
     }
 }
 
@@ -873,6 +926,21 @@ impl<W: LayoutElement> MonitorSet<W> {
         }
     }
 
+    pub fn update_config(&mut self, config: &Config) {
+        match self {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    mon.update_config(config);
+                }
+            }
+            MonitorSet::NoOutputs(workspaces) => {
+                for ws in workspaces {
+                    ws.update_config(config);
+                }
+            }
+        }
+    }
+
     pub fn toggle_width(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1235,6 +1303,12 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn update_config(&mut self, config: &Config) {
+        for ws in &mut self.workspaces {
+            ws.update_config(config);
+        }
+    }
+
     fn toggle_width(&mut self) {
         self.active_workspace().toggle_width();
     }
@@ -1319,7 +1393,7 @@ impl<W: LayoutElement> Workspace<W> {
             output: Some(output),
             columns: vec![],
             active_column_idx: 0,
-            focus_ring: SolidColorBuffer::new((0, 0), FOCUS_RING_ACTIVE_COLOR),
+            focus_ring: FocusRing::default(),
             view_offset: 0,
             view_offset_anim: None,
             activate_prev_column_on_removal: false,
@@ -1333,7 +1407,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size: Size::from((1280, 720)),
             columns: vec![],
             active_column_idx: 0,
-            focus_ring: SolidColorBuffer::new((0, 0), FOCUS_RING_ACTIVE_COLOR),
+            focus_ring: FocusRing::default(),
             view_offset: 0,
             view_offset_anim: None,
             activate_prev_column_on_removal: false,
@@ -1357,15 +1431,18 @@ impl<W: LayoutElement> Workspace<W> {
             let col = &self.columns[self.active_column_idx];
             let active_win = &col.windows[col.active_window_idx];
             let geom = active_win.geometry();
-            self.focus_ring
-                .resize(geom.size + Size::from((FOCUS_RING_PADDING * 2, FOCUS_RING_PADDING * 2)));
-
-            self.focus_ring.set_color(if is_active {
-                FOCUS_RING_ACTIVE_COLOR
-            } else {
-                FOCUS_RING_INACTIVE_COLOR
-            });
+            self.focus_ring.resize(geom.size);
+            self.focus_ring.set_active(is_active);
         }
+    }
+
+    pub fn update_config(&mut self, config: &Config) {
+        let c = &config.focus_ring;
+        self.focus_ring.is_off = c.off;
+        self.focus_ring.width = c.width.into();
+        self.focus_ring.active_color = c.active_color;
+        self.focus_ring.inactive_color = c.inactive_color;
+        // The focus ring buffer will be updated in a subsequent update_animations call.
     }
 
     fn windows(&self) -> impl Iterator<Item = &W> + '_ {
@@ -1917,16 +1994,10 @@ impl Workspace<Window> {
         ));
 
         // Draw the focus ring.
-        rv.push(
-            SolidColorRenderElement::from_buffer(
-                &self.focus_ring,
-                (win_pos + geom.loc - Point::from((FOCUS_RING_PADDING, FOCUS_RING_PADDING)))
-                    .to_physical_precise_round(output_scale),
-                output_scale,
-                1.,
-                Kind::Unspecified,
-            )
-            .into(),
+        rv.extend(
+            self.focus_ring
+                .render(win_pos + geom.loc, output_scale)
+                .map(Into::into),
         );
 
         let mut x = PADDING;

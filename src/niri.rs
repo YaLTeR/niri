@@ -959,7 +959,8 @@ impl Niri {
         assert!(state.queued_redraw.take().is_some());
         assert!(!state.waiting_for_vblank);
 
-        // Advance the animations.
+        // Update from the config and advance the animations.
+        self.monitor_set.update_config(&self.config.borrow());
         self.monitor_set.advance_animations(presentation_time);
 
         // Render the elements.

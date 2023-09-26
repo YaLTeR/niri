@@ -17,6 +17,8 @@ pub struct Config {
     #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(child, default)]
+    pub focus_ring: FocusRing,
+    #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
     pub debug: DebugConfig,
@@ -88,6 +90,53 @@ impl Default for Output {
 pub struct SpawnAtStartup {
     #[knuffel(arguments)]
     pub command: Vec<String>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct FocusRing {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument), default = 4)]
+    pub width: u16,
+    #[knuffel(child, default = Color::new(0.5, 0.8, 1.0, 1.0))]
+    pub active_color: Color,
+    #[knuffel(child, default = Color::new(0.3, 0.3, 0.3, 1.0))]
+    pub inactive_color: Color,
+}
+
+impl Default for FocusRing {
+    fn default() -> Self {
+        Self {
+            off: false,
+            width: 4,
+            active_color: Color::new(0.5, 0.8, 1.0, 1.0),
+            inactive_color: Color::new(0.3, 0.3, 0.3, 1.0),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct Color {
+    #[knuffel(argument)]
+    pub r: f32,
+    #[knuffel(argument)]
+    pub g: f32,
+    #[knuffel(argument)]
+    pub b: f32,
+    #[knuffel(argument)]
+    pub a: f32,
+}
+
+impl Color {
+    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self { r, g, b, a }
+    }
+}
+
+impl From<Color> for [f32; 4] {
+    fn from(c: Color) -> Self {
+        [c.r, c.g, c.b, c.a]
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -295,6 +344,12 @@ mod tests {
 
             spawn-at-startup "alacritty" "-e" "fish"
 
+            focus-ring {
+                width 5
+                active-color 0.0 0.25 0.5 1.0
+                inactive-color 1.0 0.5 0.25 0.0
+            }
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -332,6 +387,22 @@ mod tests {
                 spawn_at_startup: vec![SpawnAtStartup {
                     command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
                 }],
+                focus_ring: FocusRing {
+                    off: false,
+                    width: 5,
+                    active_color: Color {
+                        r: 0.,
+                        g: 0.25,
+                        b: 0.5,
+                        a: 1.,
+                    },
+                    inactive_color: Color {
+                        r: 1.,
+                        g: 0.5,
+                        b: 0.25,
+                        a: 0.,
+                    },
+                },
                 binds: Binds(vec![
                     Bind {
                         key: Key {
