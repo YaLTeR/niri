@@ -89,7 +89,10 @@ impl DmabufHandler for State {
         _global: &DmabufGlobal,
         dmabuf: Dmabuf,
     ) -> Result<(), ImportError> {
-        match self.backend.renderer().import_dmabuf(&dmabuf, None) {
+        let renderer = self.backend.renderer().expect(
+            "the dmabuf global must be created and destroyed together with the output device",
+        );
+        match renderer.import_dmabuf(&dmabuf, None) {
             Ok(_texture) => Ok(()),
             Err(err) => {
                 debug!("error importing dmabuf: {err:?}");

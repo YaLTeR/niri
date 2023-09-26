@@ -153,10 +153,10 @@ impl State {
                         Action::Screenshot => {
                             let active = self.niri.monitor_set.active_output().cloned();
                             if let Some(active) = active {
-                                if let Err(err) =
-                                    self.niri.screenshot(self.backend.renderer(), &active)
-                                {
-                                    warn!("error taking screenshot: {err:?}");
+                                if let Some(renderer) = self.backend.renderer() {
+                                    if let Err(err) = self.niri.screenshot(renderer, &active) {
+                                        warn!("error taking screenshot: {err:?}");
+                                    }
                                 }
                             }
                         }

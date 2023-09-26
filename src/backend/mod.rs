@@ -38,10 +38,10 @@ impl Backend {
         }
     }
 
-    pub fn renderer(&mut self) -> &mut GlesRenderer {
+    pub fn renderer(&mut self) -> Option<&mut GlesRenderer> {
         match self {
             Backend::Tty(tty) => tty.renderer(),
-            Backend::Winit(winit) => winit.renderer(),
+            Backend::Winit(winit) => Some(winit.renderer()),
         }
     }
 

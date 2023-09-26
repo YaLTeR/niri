@@ -327,7 +327,7 @@ impl Tty {
         let mut dmabuf_state = DmabufState::new();
         let default_feedback = DmabufFeedbackBuilder::new(device_id, gles.dmabuf_formats())
             .build()
-            .unwrap();
+            .context("error building default dmabuf feedback")?;
         let dmabuf_global = dmabuf_state
             .create_global_with_default_feedback::<State>(&niri.display_handle, &default_feedback);
 
@@ -426,11 +426,14 @@ impl Tty {
             .cloned()
             .unwrap_or_default();
 
-        let device = self.output_device.as_mut().unwrap();
+        let device = self
+            .output_device
+            .as_mut()
+            .context("missing output device")?;
 
         let mut mode = connector.modes().get(0);
         connector.modes().iter().for_each(|m| {
-            debug!("mode: {m:?}");
+            trace!("mode: {m:?}");
 
             if m.mode_type().contains(ModeTypeFlags::PREFERRED) {
                 // Pick the highest refresh rate.
@@ -514,7 +517,7 @@ impl Tty {
         let dmabuf_feedback = DmabufFeedbackBuilder::new(device.id, device.formats.clone())
             .add_preference_tranche(device.id, Some(TrancheFlags::Scanout), scanout_formats)
             .build()
-            .unwrap();
+            .context("error building dmabuf feedback")?;
 
         let vblank_frame_name =
             tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
@@ -554,7 +557,10 @@ impl Tty {
         crtc: crtc::Handle,
     ) {
         debug!("disconnecting connector: {connector:?}");
-        let device = self.output_device.as_mut().unwrap();
+        let Some(device) = self.output_device.as_mut() else {
+            error!("missing output device");
+            return;
+        };
 
         let Some(surface) = device.surfaces.remove(&crtc) else {
             debug!("crtc wasn't enabled");
@@ -568,10 +574,12 @@ impl Tty {
                 let tty_state: &TtyOutputState = output.user_data().get().unwrap();
                 tty_state.device_id == device.id && tty_state.crtc == crtc
             })
-            .unwrap()
-            .clone();
-
-        niri.remove_output(&output);
+            .cloned();
+        if let Some(output) = output {
+            niri.remove_output(&output);
+        } else {
+            error!("missing output for crtc {crtc:?}");
+        };
 
         self.connectors.lock().unwrap().remove(&surface.name);
     }
@@ -692,8 +700,8 @@ impl Tty {
         self.session.seat()
     }
 
-    pub fn renderer(&mut self) -> &mut GlesRenderer {
-        &mut self.output_device.as_mut().unwrap().gles
+    pub fn renderer(&mut self) -> Option<&mut GlesRenderer> {
+        self.output_device.as_mut().map(|d| &mut d.gles)
     }
 
     pub fn render(
@@ -705,13 +713,20 @@ impl Tty {
     ) -> Option<&DmabufFeedback> {
         let span = tracy_client::span!("Tty::render");
 
-        let device = self.output_device.as_mut().unwrap();
+        let Some(device) = self.output_device.as_mut() else {
+            error!("missing output device");
+            return None;
+        };
+
         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-        let surface = device.surfaces.get_mut(&tty_state.crtc).unwrap();
-        let drm_compositor = &mut surface.compositor;
+        let Some(surface) = device.surfaces.get_mut(&tty_state.crtc) else {
+            error!("missing surface");
+            return None;
+        };
 
         span.emit_text(&surface.name);
 
+        let drm_compositor = &mut surface.compositor;
         match drm_compositor.render_frame::<_, _, GlesTexture>(
             &mut device.gles,
             elements,
@@ -785,7 +800,10 @@ impl Tty {
     }
 
     pub fn dmabuf_state(&mut self) -> &mut DmabufState {
-        &mut self.output_device.as_mut().unwrap().dmabuf_state
+        let device = self.output_device.as_mut().expect(
+            "the dmabuf global must be created and destroyed together with the output device",
+        );
+        &mut device.dmabuf_state
     }
 
     pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {

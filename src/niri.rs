@@ -361,7 +361,14 @@ impl Niri {
                 calloop::channel::Event::Msg(ScreenshotToNiri::TakeScreenshot {
                     include_cursor,
                 }) => {
-                    let renderer = state.backend.renderer();
+                    let Some(renderer) = state.backend.renderer() else {
+                        let msg = NiriToScreenshot::ScreenshotResult(None);
+                        if let Err(err) = to_screenshot.send_blocking(msg) {
+                            warn!("error sending None to screenshot: {err:?}");
+                        }
+                        return;
+                    };
+
                     let on_done = {
                         let to_screenshot = to_screenshot.clone();
                         move |path| {
@@ -938,6 +945,10 @@ impl Niri {
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
+        let Some(renderer) = backend.renderer() else {
+            return;
+        };
+
         let state = self.output_state.get_mut(output).unwrap();
         let presentation_time = state.frame_clock.next_presentation_time();
 
@@ -948,7 +959,7 @@ impl Niri {
         self.monitor_set.advance_animations(presentation_time);
 
         // Render the elements.
-        let elements = self.render(backend.renderer(), output, true);
+        let elements = self.render(renderer, output, true);
 
         // Hand it over to the backend.
         let dmabuf_feedback = backend.render(self, output, &elements, presentation_time);
@@ -962,7 +973,10 @@ impl Niri {
         self.send_frame_callbacks(output);
 
         // Render and send to PipeWire screencast streams.
-        self.send_for_screen_cast(backend, output, &elements, presentation_time);
+        let renderer = backend
+            .renderer()
+            .expect("renderer must not have disappeared");
+        self.send_for_screen_cast(renderer, output, &elements, presentation_time);
     }
 
     fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
@@ -1072,7 +1086,7 @@ impl Niri {
 
     fn send_for_screen_cast(
         &mut self,
-        backend: &mut Backend,
+        renderer: &mut GlesRenderer,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
         presentation_time: Duration,
@@ -1116,7 +1130,10 @@ impl Niri {
                 let dmabuf = cast.dmabufs.borrow()[&fd].clone();
 
                 // FIXME: Hidden / embedded / metadata cursor
-                render_to_dmabuf(backend.renderer(), dmabuf, size, scale, elements).unwrap();
+                if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
+                    error!("error rendering to dmabuf: {err:?}");
+                    continue;
+                }
 
                 let maxsize = data.as_raw().maxsize;
                 let chunk = data.chunk_mut();
