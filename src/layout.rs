@@ -2514,6 +2514,15 @@ mod tests {
         }
     }
 
+    #[track_caller]
+    fn check_ops(ops: &[Op]) {
+        let mut monitor_set = MonitorSet::default();
+        for op in ops {
+            op.apply(&mut monitor_set);
+            monitor_set.verify_invariants();
+        }
+    }
+
     #[test]
     fn operations() {
         let every_op = [
@@ -2601,10 +2610,6 @@ mod tests {
             Op::AddOutput(2),
         ];
 
-        let mut monitor_set = MonitorSet::default();
-        for op in ops {
-            op.apply(&mut monitor_set);
-            monitor_set.verify_invariants();
-        }
+        check_ops(&ops);
     }
 }
