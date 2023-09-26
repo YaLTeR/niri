@@ -237,7 +237,7 @@ impl Default for DebugConfig {
 }
 
 impl Config {
-    pub fn load(path: Option<PathBuf>) -> miette::Result<Self> {
+    pub fn load(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
         let path = if let Some(path) = path {
             path
         } else {
@@ -255,7 +255,7 @@ impl Config {
 
         let config = Self::parse("config.kdl", &contents).context("error parsing")?;
         debug!("loaded config from {path:?}");
-        Ok(config)
+        Ok((config, path))
     }
 
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {

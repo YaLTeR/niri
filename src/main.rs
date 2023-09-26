@@ -12,6 +12,7 @@ mod layout;
 mod niri;
 mod pw_utils;
 mod utils;
+mod watcher;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -22,10 +23,11 @@ use config::Config;
 use miette::Context;
 use niri::{Niri, State};
 use portable_atomic::Ordering;
-use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::calloop::{self, EventLoop};
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 use utils::spawn;
+use watcher::Watcher;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -52,11 +54,11 @@ fn main() {
 
     let _client = tracy_client::Client::start();
 
-    let mut config = match Config::load(cli.config).context("error loading config") {
-        Ok(config) => config,
+    let (mut config, path) = match Config::load(cli.config).context("error loading config") {
+        Ok((config, path)) => (config, Some(path)),
         Err(err) => {
             warn!("{err:?}");
-            Config::default()
+            (Config::default(), None)
         }
     };
     animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
@@ -70,6 +72,22 @@ fn main() {
         event_loop.get_signal(),
         display,
     );
+
+    // Set up config file watcher.
+    let _watcher = if let Some(path) = path {
+        let (tx, rx) = calloop::channel::sync_channel(1);
+        let watcher = Watcher::new(path.clone(), tx);
+        event_loop
+            .handle()
+            .insert_source(rx, move |event, _, state| match event {
+                calloop::channel::Event::Msg(()) => state.reload_config(path.clone()),
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+        Some(watcher)
+    } else {
+        None
+    };
 
     // Spawn commands from cli and auto-start.
     if let Some((command, args)) = cli.command.split_first() {

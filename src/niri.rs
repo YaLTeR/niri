@@ -197,6 +197,25 @@ impl State {
             self.niri.queue_redraw_all();
         }
     }
+
+    pub fn reload_config(&mut self, path: PathBuf) {
+        let _span = tracy_client::span!("State::reload_config");
+
+        let config = match Config::load(Some(path)) {
+            Ok((config, _)) => config,
+            Err(err) => {
+                warn!("{:?}", err.context("error loading config"));
+                return;
+            }
+        };
+
+        *self.niri.config.borrow_mut() = config;
+        self.niri.queue_redraw_all();
+        // FIXME: apply output scale and whatnot.
+        // FIXME: apply libinput device settings.
+        // FIXME: apply xkb settings.
+        // FIXME: apply xdg decoration settings.
+    }
 }
 
 impl Niri {
