@@ -42,7 +42,7 @@ use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportAll;
 use smithay::desktop::space::SpaceElement;
-use smithay::desktop::Window;
+use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -142,6 +142,12 @@ pub struct Workspace<W: LayoutElement> {
     /// This should be computed from the current workspace output size, or, if all outputs have
     /// been disconnected, preserved until a new output is connected.
     view_size: Size<i32, Logical>,
+
+    /// Latest known working area for this workspace.
+    ///
+    /// This is similar to view size, but takes into account things like layer shell exclusive
+    /// zones.
+    working_area: Rectangle<i32, Logical>,
 
     /// Columns of windows on this workspace.
     columns: Vec<Column<W>>,
@@ -598,16 +604,20 @@ impl<W: LayoutElement> MonitorSet<W> {
         None
     }
 
-    pub fn update_output(&mut self, output: &Output) {
+    pub fn update_output_size(&mut self, output: &Output) {
         let MonitorSet::Normal { monitors, .. } = self else {
             panic!()
         };
 
         for mon in monitors {
             if &mon.output == output {
+                let view_size = output_size(output);
+                let working_area = layer_map_for_output(output).non_exclusive_zone();
+
                 for ws in &mut mon.workspaces {
-                    ws.set_view_size(output_size(output));
+                    ws.set_view_size(view_size, working_area);
                 }
+
                 break;
             }
         }
@@ -1390,6 +1400,7 @@ impl<W: LayoutElement> Workspace<W> {
         Self {
             original_output: OutputId::new(&output),
             view_size: output_size(&output),
+            working_area: Rectangle::from_loc_and_size((0, 0), output_size(&output)),
             output: Some(output),
             columns: vec![],
             active_column_idx: 0,
@@ -1405,6 +1416,7 @@ impl<W: LayoutElement> Workspace<W> {
             output: None,
             original_output: OutputId(String::new()),
             view_size: Size::from((1280, 720)),
+            working_area: Rectangle::from_loc_and_size((0, 0), (1280, 720)),
             columns: vec![],
             active_column_idx: 0,
             focus_ring: FocusRing::default(),
@@ -1463,7 +1475,8 @@ impl<W: LayoutElement> Workspace<W> {
         self.output = output;
 
         if let Some(output) = &self.output {
-            self.set_view_size(output_size(output));
+            let working_area = layer_map_for_output(output).non_exclusive_zone();
+            self.set_view_size(output_size(output), working_area);
 
             for win in self.windows() {
                 self.enter_output_for_window(win);
@@ -1481,14 +1494,16 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    fn set_view_size(&mut self, size: Size<i32, Logical>) {
-        if self.view_size == size {
+    fn set_view_size(&mut self, size: Size<i32, Logical>, working_area: Rectangle<i32, Logical>) {
+        if self.view_size == size && self.working_area == working_area {
             return;
         }
 
         self.view_size = size;
+        self.working_area = working_area;
+
         for col in &mut self.columns {
-            col.update_window_sizes(self.view_size);
+            col.update_window_sizes(self.view_size, self.working_area);
         }
     }
 
@@ -1507,7 +1522,7 @@ impl<W: LayoutElement> Workspace<W> {
         let new_x = self.column_x(idx) - PADDING;
         let new_view_offset = compute_new_view_offset(
             current_x,
-            self.view_size.w,
+            self.working_area.size.w,
             new_x,
             self.columns[idx].size().w,
         );
@@ -1553,7 +1568,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.active_column_idx + 1
         };
 
-        let column = Column::new(window, self.view_size);
+        let column = Column::new(window, self.view_size, self.working_area);
         self.columns.insert(idx, column);
 
         if activate {
@@ -1606,7 +1621,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         column.active_window_idx = min(column.active_window_idx, column.windows.len() - 1);
-        column.update_window_sizes(self.view_size);
+        column.update_window_sizes(self.view_size, self.working_area);
     }
 
     fn update_window(&mut self, window: &W) {
@@ -1616,7 +1631,7 @@ impl<W: LayoutElement> Workspace<W> {
             .enumerate()
             .find(|(_, col)| col.contains(window))
             .unwrap();
-        column.update_window_sizes(self.view_size);
+        column.update_window_sizes(self.view_size, self.working_area);
 
         if idx == self.active_column_idx {
             // We might need to move the view to ensure the resized window is still visible.
@@ -1625,7 +1640,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             let new_view_offset = compute_new_view_offset(
                 current_x,
-                self.view_size.w,
+                self.working_area.size.w,
                 new_x,
                 self.columns[idx].size().w,
             );
@@ -1714,7 +1729,7 @@ impl<W: LayoutElement> Workspace<W> {
         let new_x = self.column_x(self.active_column_idx) - PADDING;
         let new_view_offset = compute_new_view_offset(
             current_x,
-            self.view_size.w,
+            self.working_area.size.w,
             new_x,
             self.columns[self.active_column_idx].size().w,
         );
@@ -1740,7 +1755,7 @@ impl<W: LayoutElement> Workspace<W> {
         let new_x = self.column_x(self.active_column_idx) - PADDING;
         let new_view_offset = compute_new_view_offset(
             current_x,
-            self.view_size.w,
+            self.working_area.size.w,
             new_x,
             self.columns[self.active_column_idx].size().w,
         );
@@ -1781,7 +1796,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.remove_window(&window);
 
         let target_column = &mut self.columns[self.active_column_idx];
-        target_column.add_window(self.view_size, window);
+        target_column.add_window(self.view_size, self.working_area, window);
     }
 
     fn expel_from_column(&mut self) {
@@ -1842,6 +1857,8 @@ impl<W: LayoutElement> Workspace<W> {
         if col.is_fullscreen {
             // FIXME: fullscreen windows are missing left padding
             win_pos.x -= PADDING;
+        } else {
+            win_pos += self.working_area.loc;
         }
         if active_win.is_in_input_region(&(pos - win_pos.to_f64())) {
             let mut win_pos_within_output = win_pos;
@@ -1863,6 +1880,8 @@ impl<W: LayoutElement> Workspace<W> {
                         // FIXME: fullscreen windows are missing left padding
                         win_pos.x -= PADDING;
                         win_pos.y -= PADDING;
+                    } else {
+                        win_pos += self.working_area.loc;
                     }
                     if win.is_in_input_region(&(pos - win_pos.to_f64())) {
                         let mut win_pos_within_output = win_pos;
@@ -1885,7 +1904,7 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        self.columns[self.active_column_idx].toggle_width(self.view_size);
+        self.columns[self.active_column_idx].toggle_width(self.view_size, self.working_area);
     }
 
     fn toggle_full_width(&mut self) {
@@ -1893,7 +1912,7 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        self.columns[self.active_column_idx].toggle_full_width(self.view_size);
+        self.columns[self.active_column_idx].toggle_full_width(self.view_size, self.working_area);
     }
 
     pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
@@ -1917,18 +1936,20 @@ impl<W: LayoutElement> Workspace<W> {
                 self.active_column_idx == col_idx && col.active_window_idx == win_idx;
             let window = col.windows.remove(win_idx);
             col.active_window_idx = min(col.active_window_idx, col.windows.len() - 1);
-            col.update_window_sizes(self.view_size);
+            col.update_window_sizes(self.view_size, self.working_area);
 
             col_idx += 1;
-            self.columns
-                .insert(col_idx, Column::new(window, self.view_size));
+            self.columns.insert(
+                col_idx,
+                Column::new(window, self.view_size, self.working_area),
+            );
             if self.active_column_idx >= col_idx || target_window_was_focused {
                 self.active_column_idx += 1;
             }
             col = &mut self.columns[col_idx];
         }
 
-        col.set_fullscreen(self.view_size, is_fullscreen);
+        col.set_fullscreen(self.view_size, self.working_area, is_fullscreen);
     }
 
     pub fn toggle_fullscreen(&mut self, window: &W) {
@@ -1983,6 +2004,8 @@ impl Workspace<Window> {
         if col.is_fullscreen {
             // FIXME: fullscreen windows are missing left padding
             win_pos.x -= PADDING;
+        } else {
+            win_pos += self.working_area.loc;
         }
 
         // Draw the window itself.
@@ -2013,6 +2036,8 @@ impl Workspace<Window> {
                         // FIXME: fullscreen windows are missing left padding
                         win_pos.x -= PADDING;
                         win_pos.y -= PADDING;
+                    } else {
+                        win_pos += self.working_area.loc;
                     }
 
                     rv.extend(win.render_elements(
@@ -2034,7 +2059,11 @@ impl Workspace<Window> {
 }
 
 impl<W: LayoutElement> Column<W> {
-    fn new(window: W, view_size: Size<i32, Logical>) -> Self {
+    fn new(
+        window: W,
+        view_size: Size<i32, Logical>,
+        working_area: Rectangle<i32, Logical>,
+    ) -> Self {
         let mut rv = Self {
             windows: vec![],
             active_window_idx: 0,
@@ -2042,7 +2071,7 @@ impl<W: LayoutElement> Column<W> {
             is_fullscreen: false,
         };
 
-        rv.add_window(view_size, window);
+        rv.add_window(view_size, working_area, window);
 
         rv
     }
@@ -2051,9 +2080,14 @@ impl<W: LayoutElement> Column<W> {
         self.windows.len()
     }
 
-    fn set_width(&mut self, view_size: Size<i32, Logical>, width: ColumnWidth) {
+    fn set_width(
+        &mut self,
+        view_size: Size<i32, Logical>,
+        working_area: Rectangle<i32, Logical>,
+        width: ColumnWidth,
+    ) {
         self.width = width;
-        self.update_window_sizes(view_size);
+        self.update_window_sizes(view_size, working_area);
     }
 
     fn contains(&self, window: &W) -> bool {
@@ -2065,13 +2099,22 @@ impl<W: LayoutElement> Column<W> {
         self.active_window_idx = idx;
     }
 
-    fn add_window(&mut self, view_size: Size<i32, Logical>, window: W) {
+    fn add_window(
+        &mut self,
+        view_size: Size<i32, Logical>,
+        working_area: Rectangle<i32, Logical>,
+        window: W,
+    ) {
         self.is_fullscreen = false;
         self.windows.push(window);
-        self.update_window_sizes(view_size);
+        self.update_window_sizes(view_size, working_area);
     }
 
-    fn update_window_sizes(&mut self, view_size: Size<i32, Logical>) {
+    fn update_window_sizes(
+        &mut self,
+        view_size: Size<i32, Logical>,
+        working_area: Rectangle<i32, Logical>,
+    ) {
         if self.is_fullscreen {
             self.windows[0].request_fullscreen(view_size);
             return;
@@ -2105,8 +2148,8 @@ impl<W: LayoutElement> Column<W> {
             .unwrap_or(i32::MAX);
         let max_width = max(max_width, min_width);
 
-        let width = self.width.resolve(view_size.w - PADDING) - PADDING;
-        let height = (view_size.h - PADDING) / self.window_count() as i32 - PADDING;
+        let width = self.width.resolve(working_area.size.w - PADDING) - PADDING;
+        let height = (working_area.size.h - PADDING) / self.window_count() as i32 - PADDING;
         let size = Size::from((max(min(width, max_width), min_width), max(height, 1)));
 
         for win in &self.windows {
@@ -2165,22 +2208,32 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
-    fn toggle_width(&mut self, view_size: Size<i32, Logical>) {
+    fn toggle_width(
+        &mut self,
+        view_size: Size<i32, Logical>,
+        working_area: Rectangle<i32, Logical>,
+    ) {
         let idx = match self.width {
             ColumnWidth::PresetProportion(idx) => (idx + 1) % WIDTH_PROPORTIONS.len(),
             _ => {
                 let current = self.size().w;
                 WIDTH_PROPORTIONS
                     .into_iter()
-                    .position(|prop| prop.resolve(view_size.w - PADDING) - PADDING > current)
+                    .position(|prop| {
+                        prop.resolve(working_area.size.w - PADDING) - PADDING > current
+                    })
                     .unwrap_or(0)
             }
         };
         let width = ColumnWidth::PresetProportion(idx);
-        self.set_width(view_size, width);
+        self.set_width(view_size, working_area, width);
     }
 
-    fn toggle_full_width(&mut self, view_size: Size<i32, Logical>) {
+    fn toggle_full_width(
+        &mut self,
+        view_size: Size<i32, Logical>,
+        working_area: Rectangle<i32, Logical>,
+    ) {
         let width = match self.width {
             ColumnWidth::Proportion(x) if x == 1. => {
                 // FIXME: would be good to restore to previous width here.
@@ -2188,13 +2241,18 @@ impl<W: LayoutElement> Column<W> {
             }
             _ => ColumnWidth::Proportion(1.),
         };
-        self.set_width(view_size, width);
+        self.set_width(view_size, working_area, width);
     }
 
-    fn set_fullscreen(&mut self, view_size: Size<i32, Logical>, is_fullscreen: bool) {
+    fn set_fullscreen(
+        &mut self,
+        view_size: Size<i32, Logical>,
+        working_area: Rectangle<i32, Logical>,
+        is_fullscreen: bool,
+    ) {
         assert_eq!(self.windows.len(), 1);
         self.is_fullscreen = is_fullscreen;
-        self.update_window_sizes(view_size);
+        self.update_window_sizes(view_size, working_area);
     }
 
     fn window_y(&self, window_idx: usize) -> i32 {
@@ -2222,12 +2280,15 @@ pub fn output_size(output: &Output) -> Size<i32, Logical> {
         .to_logical(output_scale)
 }
 
-pub fn configure_new_window(view_size: Size<i32, Logical>, window: &Window) {
-    let width = ColumnWidth::default().resolve(view_size.w - PADDING) - PADDING;
-    let height = view_size.h - PADDING * 2;
+pub fn configure_new_window(working_area: Rectangle<i32, Logical>, window: &Window) {
+    let width = ColumnWidth::default().resolve(working_area.size.w - PADDING) - PADDING;
+    let height = working_area.size.h - PADDING * 2;
     let size = Size::from((max(width, 1), max(height, 1)));
 
-    let bounds = Size::from((view_size.w - PADDING * 2, view_size.h - PADDING * 2));
+    let bounds = Size::from((
+        working_area.size.w - PADDING * 2,
+        working_area.size.h - PADDING * 2,
+    ));
 
     window.toplevel().with_pending_state(|state| {
         state.size = Some(size);

@@ -1,4 +1,4 @@
-use smithay::desktop::{find_popup_root_surface, PopupKind, Window};
+use smithay::desktop::{find_popup_root_surface, layer_map_for_output, PopupKind, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
@@ -14,7 +14,7 @@ use smithay::wayland::shell::xdg::{
 };
 use smithay::{delegate_xdg_decoration, delegate_xdg_shell};
 
-use crate::layout::{configure_new_window, output_size};
+use crate::layout::configure_new_window;
 use crate::niri::State;
 
 impl XdgShellHandler for State {
@@ -28,7 +28,8 @@ impl XdgShellHandler for State {
 
         // Tell the surface the preferred size and bounds for its likely output.
         let output = self.niri.monitor_set.active_output().unwrap();
-        configure_new_window(output_size(output), &window);
+        let working_area = layer_map_for_output(output).non_exclusive_zone();
+        configure_new_window(working_area, &window);
 
         // At the moment of creation, xdg toplevels must have no buffer.
         let existing = self.niri.unmapped_windows.insert(wl_surface, window);

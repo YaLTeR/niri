@@ -49,7 +49,7 @@ impl WlrLayerShellHandler for State {
             None
         };
         if let Some(output) = output {
-            self.niri.queue_redraw(output);
+            self.niri.output_resized(output);
         }
     }
 }
@@ -96,6 +96,6 @@ impl State {
         }
         drop(map);
 
-        self.niri.queue_redraw(output);
+        self.niri.output_resized(output);
     }
 }

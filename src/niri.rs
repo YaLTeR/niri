@@ -662,8 +662,8 @@ impl Niri {
     }
 
     pub fn output_resized(&mut self, output: Output) {
-        self.monitor_set.update_output(&output);
         layer_map_for_output(&output).arrange();
+        self.monitor_set.update_output_size(&output);
         self.queue_redraw(output);
     }
 
@@ -916,6 +916,7 @@ impl Niri {
         }
 
         // Then the upper layer-shell elements.
+        // FIXME: hide top layer when a fullscreen surface is showing somehow.
         elements.extend(
             upper
                 .into_iter()
