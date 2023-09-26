@@ -528,6 +528,10 @@ impl<W: LayoutElement> MonitorSet<W> {
                                 && idx != mon.workspaces.len() - 1
                             {
                                 mon.workspaces.remove(idx);
+
+                                if idx < mon.active_workspace_idx {
+                                    mon.active_workspace_idx -= 1;
+                                }
                             }
 
                             break;
@@ -2608,6 +2612,22 @@ mod tests {
             Op::RemoveOutput(2),
             Op::FocusWorkspace(3),
             Op::AddOutput(2),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn test() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::FocusWorkspaceDown,
+            Op::CloseWindow(0),
         ];
 
         check_ops(&ops);
