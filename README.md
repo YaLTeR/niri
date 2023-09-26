@@ -1,8 +1,8 @@
 # niri
 
-The beginnings of a scrollable-tiling Wayland compositor.
+A scrollable-tiling Wayland compositor.
 
-![](https://github.com/YaLTeR/niri/assets/1794388/ad4c9841-a798-448d-9df1-26bf7e096cc7)
+![](https://github.com/YaLTeR/niri/assets/1794388/e35fd9e1-105b-4bd5-94c9-207fd6fb3c18)
 
 ## Status
 
