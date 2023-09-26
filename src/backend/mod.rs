@@ -100,6 +100,13 @@ impl Backend {
         }
     }
 
+    pub fn is_active(&self) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.is_active(),
+            Backend::Winit(_) => true,
+        }
+    }
+
     pub fn tty(&mut self) -> &mut Tty {
         if let Self::Tty(v) = self {
             v

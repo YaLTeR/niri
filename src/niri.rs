@@ -945,6 +945,10 @@ impl Niri {
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
+        if !backend.is_active() {
+            return;
+        }
+
         let Some(renderer) = backend.renderer() else {
             return;
         };

@@ -813,6 +813,14 @@ impl Tty {
     pub fn gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
         self.output_device.as_ref().map(|d| d.gbm.clone())
     }
+
+    pub fn is_active(&self) -> bool {
+        let Some(device) = &self.output_device else {
+            return false;
+        };
+
+        device.drm.is_active()
+    }
 }
 
 fn refresh_interval(mode: DrmMode) -> Duration {
