@@ -597,19 +597,13 @@ impl Tty {
             .build()
             .unwrap();
 
-        let vblank_frame_name = unsafe {
-            tracy_client::internal::create_frame_name(format!("vblank on {output_name}\0").leak())
-        };
-        let vblank_plot_name = unsafe {
-            tracy_client::internal::create_plot(
-                format!("{output_name} vblank dispatch offset, ms\0").leak(),
-            )
-        };
-        let presentation_plot_name = unsafe {
-            tracy_client::internal::create_plot(
-                format!("{output_name} presentation target offset, ms\0").leak(),
-            )
-        };
+        let vblank_frame_name =
+            tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
+        let vblank_plot_name =
+            tracy_client::PlotName::new_leak(format!("{output_name} vblank dispatch offset, ms"));
+        let presentation_plot_name = tracy_client::PlotName::new_leak(format!(
+            "{output_name} presentation target offset, ms"
+        ));
 
         self.connectors
             .lock()
