@@ -19,6 +19,8 @@ pub struct Config {
     #[knuffel(child, default)]
     pub focus_ring: FocusRing,
     #[knuffel(child, default)]
+    pub prefer_no_csd: bool,
+    #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
     pub debug: DebugConfig,
@@ -350,6 +352,8 @@ mod tests {
                 inactive-color 1.0 0.5 0.25 0.0
             }
 
+            prefer-no-csd
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -403,6 +407,7 @@ mod tests {
                         a: 0.,
                     },
                 },
+                prefer_no_csd: true,
                 binds: Binds(vec![
                     Bind {
                         key: Key {

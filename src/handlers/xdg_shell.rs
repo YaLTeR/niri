@@ -1,16 +1,18 @@
-use smithay::delegate_xdg_shell;
 use smithay::desktop::{find_popup_root_surface, PopupKind, Window};
 use smithay::output::Output;
+use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
 use smithay::reexports::wayland_server::protocol::wl_output;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
     XdgShellState, XdgToplevelSurfaceData,
 };
+use smithay::{delegate_xdg_decoration, delegate_xdg_shell};
 
 use crate::layout::{configure_new_window, output_size};
 use crate::niri::State;
@@ -163,6 +165,40 @@ impl XdgShellHandler for State {
 }
 
 delegate_xdg_shell!(State);
+
+impl XdgDecorationHandler for State {
+    fn new_decoration(&mut self, toplevel: ToplevelSurface) {
+        let mode = if self.niri.config.borrow().prefer_no_csd {
+            Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
+        } else {
+            None
+        };
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = mode;
+        });
+        toplevel.send_configure();
+    }
+
+    fn request_mode(&mut self, toplevel: ToplevelSurface, mode: zxdg_toplevel_decoration_v1::Mode) {
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = Some(mode);
+        });
+        toplevel.send_configure();
+    }
+
+    fn unset_mode(&mut self, toplevel: ToplevelSurface) {
+        let mode = if self.niri.config.borrow().prefer_no_csd {
+            Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
+        } else {
+            None
+        };
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = mode;
+        });
+        toplevel.send_configure();
+    }
+}
+delegate_xdg_decoration!(State);
 
 pub fn send_initial_configure_if_needed(window: &Window) {
     let initial_configure_sent = with_states(window.toplevel().wl_surface(), |states| {

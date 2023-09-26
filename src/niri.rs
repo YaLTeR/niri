@@ -54,6 +54,7 @@ use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
@@ -94,6 +95,7 @@ pub struct Niri {
     // Smithay state.
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    pub xdg_decoration_state: XdgDecorationState,
     pub layer_shell_state: WlrLayerShellState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
@@ -213,6 +215,7 @@ impl Niri {
             &display_handle,
             [WmCapabilities::Fullscreen],
         );
+        let xdg_decoration_state = XdgDecorationState::new::<State>(&display_handle);
         let layer_shell_state = WlrLayerShellState::new::<State>(&display_handle);
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let output_manager_state =
@@ -563,6 +566,7 @@ impl Niri {
 
             compositor_state,
             xdg_shell_state,
+            xdg_decoration_state,
             layer_shell_state,
             shm_state,
             output_manager_state,
