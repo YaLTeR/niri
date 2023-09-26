@@ -363,6 +363,11 @@ impl<W: LayoutElement> MonitorSet<W> {
                     if primary.workspaces[i].original_output == id {
                         let ws = primary.workspaces.remove(i);
                         workspaces.push(ws);
+
+                        if i <= primary.active_workspace_idx {
+                            primary.active_workspace_idx =
+                                primary.active_workspace_idx.saturating_sub(1);
+                        }
                     }
                 }
                 workspaces.reverse();
@@ -2571,6 +2576,35 @@ mod tests {
                     monitor_set.verify_invariants();
                 }
             }
+        }
+    }
+
+    #[test]
+    fn primary_active_workspace_idx_not_updated_on_output_add() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::FocusOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::FocusOutput(2),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::RemoveOutput(2),
+            Op::FocusWorkspace(3),
+            Op::AddOutput(2),
+        ];
+
+        let mut monitor_set = MonitorSet::default();
+        for op in ops {
+            op.apply(&mut monitor_set);
+            monitor_set.verify_invariants();
         }
     }
 }
