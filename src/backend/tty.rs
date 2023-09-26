@@ -11,7 +11,7 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime};
+use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime, DrmEventMetadata};
 use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
@@ -302,101 +302,12 @@ impl Tty {
 
         let token = niri
             .event_loop
-            .insert_source(drm_notifier, move |event, metadata, state| {
+            .insert_source(drm_notifier, move |event, meta, state| {
                 let tty = state.backend.tty();
                 match event {
                     DrmEvent::VBlank(crtc) => {
-                        let now = get_monotonic_time();
-
-                        let device = tty.output_device.as_mut().unwrap();
-                        let surface = device.surfaces.get_mut(&crtc).unwrap();
-                        let name = &surface.name;
-                        trace!("vblank on {name} {metadata:?}");
-
-                        drop(surface.vblank_frame.take()); // Drop the old one first.
-                        let vblank_frame = tracy_client::Client::running()
-                            .unwrap()
-                            .non_continuous_frame(surface.vblank_frame_name);
-                        surface.vblank_frame = Some(vblank_frame);
-
-                        let presentation_time = match metadata.as_mut().unwrap().time {
-                            DrmEventTime::Monotonic(time) => time,
-                            DrmEventTime::Realtime(_) => {
-                                // Not supported.
-
-                                // This value will be ignored in the frame clock code.
-                                Duration::ZERO
-                            }
-                        };
-
-                        let message = if presentation_time.is_zero() {
-                            format!("vblank on {name}, presentation time unknown")
-                        } else if presentation_time > now {
-                            let diff = presentation_time - now;
-                            tracy_client::Client::running()
-                                .unwrap()
-                                .plot(surface.vblank_plot_name, -diff.as_secs_f64() * 1000.);
-                            format!("vblank on {name}, presentation is {diff:?} later")
-                        } else {
-                            let diff = now - presentation_time;
-                            tracy_client::Client::running()
-                                .unwrap()
-                                .plot(surface.vblank_plot_name, diff.as_secs_f64() * 1000.);
-                            format!("vblank on {name}, presentation was {diff:?} ago")
-                        };
-                        tracy_client::Client::running()
-                            .unwrap()
-                            .message(&message, 0);
-
-                        let output = state
-                            .niri
-                            .global_space
-                            .outputs()
-                            .find(|output| {
-                                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                                tty_state.device_id == device.id && tty_state.crtc == crtc
-                            })
-                            .unwrap()
-                            .clone();
-                        let output_state = state.niri.output_state.get_mut(&output).unwrap();
-
-                        // Mark the last frame as submitted.
-                        match surface.compositor.frame_submitted() {
-                            Ok(Some((mut feedback, target_presentation_time))) => {
-                                let refresh = output_state
-                                    .frame_clock
-                                    .refresh_interval()
-                                    .unwrap_or(Duration::ZERO);
-                                // FIXME: ideally should be monotonically increasing for a surface.
-                                let seq = metadata.as_ref().unwrap().sequence as u64;
-                                let flags = wp_presentation_feedback::Kind::Vsync
-                                    | wp_presentation_feedback::Kind::HwClock
-                                    | wp_presentation_feedback::Kind::HwCompletion;
-
-                                feedback.presented::<_, smithay::utils::Monotonic>(
-                                    presentation_time,
-                                    refresh,
-                                    seq,
-                                    flags,
-                                );
-
-                                if !presentation_time.is_zero() {
-                                    let diff = presentation_time.as_secs_f64()
-                                        - target_presentation_time.as_secs_f64();
-                                    tracy_client::Client::running()
-                                        .unwrap()
-                                        .plot(surface.presentation_plot_name, diff * 1000.);
-                                }
-                            }
-                            Ok(None) => (),
-                            Err(err) => {
-                                error!("error marking frame as submitted: {err}");
-                            }
-                        }
-
-                        output_state.waiting_for_vblank = false;
-                        output_state.frame_clock.presented(presentation_time);
-                        state.niri.queue_redraw(output);
+                        let meta = meta.as_ref().expect("VBlank events must have metadata");
+                        tty.on_vblank(&mut state.niri, crtc, meta);
                     }
                     DrmEvent::Error(error) => error!("DRM error: {error}"),
                 };
@@ -655,6 +566,99 @@ impl Tty {
         niri.remove_output(&output);
 
         self.connectors.lock().unwrap().remove(&surface.name);
+    }
+
+    fn on_vblank(&mut self, niri: &mut Niri, crtc: crtc::Handle, meta: &DrmEventMetadata) {
+        let now = get_monotonic_time();
+
+        let device = self.output_device.as_mut().unwrap();
+        let surface = device.surfaces.get_mut(&crtc).unwrap();
+        let name = &surface.name;
+        trace!("vblank on {name} {meta:?}");
+
+        drop(surface.vblank_frame.take()); // Drop the old one first.
+        let vblank_frame = tracy_client::Client::running()
+            .unwrap()
+            .non_continuous_frame(surface.vblank_frame_name);
+        surface.vblank_frame = Some(vblank_frame);
+
+        let presentation_time = match meta.time {
+            DrmEventTime::Monotonic(time) => time,
+            DrmEventTime::Realtime(_) => {
+                // Not supported.
+
+                // This value will be ignored in the frame clock code.
+                Duration::ZERO
+            }
+        };
+
+        let message = if presentation_time.is_zero() {
+            format!("vblank on {name}, presentation time unknown")
+        } else if presentation_time > now {
+            let diff = presentation_time - now;
+            tracy_client::Client::running()
+                .unwrap()
+                .plot(surface.vblank_plot_name, -diff.as_secs_f64() * 1000.);
+            format!("vblank on {name}, presentation is {diff:?} later")
+        } else {
+            let diff = now - presentation_time;
+            tracy_client::Client::running()
+                .unwrap()
+                .plot(surface.vblank_plot_name, diff.as_secs_f64() * 1000.);
+            format!("vblank on {name}, presentation was {diff:?} ago")
+        };
+        tracy_client::Client::running()
+            .unwrap()
+            .message(&message, 0);
+
+        let output = niri
+            .global_space
+            .outputs()
+            .find(|output| {
+                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                tty_state.device_id == device.id && tty_state.crtc == crtc
+            })
+            .unwrap()
+            .clone();
+        let output_state = niri.output_state.get_mut(&output).unwrap();
+
+        // Mark the last frame as submitted.
+        match surface.compositor.frame_submitted() {
+            Ok(Some((mut feedback, target_presentation_time))) => {
+                let refresh = output_state
+                    .frame_clock
+                    .refresh_interval()
+                    .unwrap_or(Duration::ZERO);
+                // FIXME: ideally should be monotonically increasing for a surface.
+                let seq = meta.sequence as u64;
+                let flags = wp_presentation_feedback::Kind::Vsync
+                    | wp_presentation_feedback::Kind::HwClock
+                    | wp_presentation_feedback::Kind::HwCompletion;
+
+                feedback.presented::<_, smithay::utils::Monotonic>(
+                    presentation_time,
+                    refresh,
+                    seq,
+                    flags,
+                );
+
+                if !presentation_time.is_zero() {
+                    let diff =
+                        presentation_time.as_secs_f64() - target_presentation_time.as_secs_f64();
+                    tracy_client::Client::running()
+                        .unwrap()
+                        .plot(surface.presentation_plot_name, diff * 1000.);
+                }
+            }
+            Ok(None) => (),
+            Err(err) => {
+                error!("error marking frame as submitted: {err}");
+            }
+        }
+
+        output_state.waiting_for_vblank = false;
+        output_state.frame_clock.presented(presentation_time);
+        niri.queue_redraw(output);
     }
 
     pub fn seat_name(&self) -> String {
