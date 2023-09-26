@@ -146,6 +146,8 @@ impl Tty {
     }
 
     fn on_udev_event(&mut self, niri: &mut Niri, event: UdevEvent) {
+        let _span = tracy_client::span!("Tty::on_udev_event");
+
         match event {
             UdevEvent::Added { device_id, path } => {
                 if !self.session.is_active() {
@@ -177,6 +179,8 @@ impl Tty {
     }
 
     fn on_session_event(&mut self, niri: &mut Niri, event: SessionEvent) {
+        let _span = tracy_client::span!("Tty::on_session_event");
+
         match event {
             SessionEvent::PauseSession => {
                 debug!("pausing session");
@@ -573,6 +577,8 @@ impl Tty {
     }
 
     fn on_vblank(&mut self, niri: &mut Niri, crtc: crtc::Handle, meta: &DrmEventMetadata) {
+        let span = tracy_client::span!("Tty::on_vblank");
+
         let now = get_monotonic_time();
 
         let Some(device) = self.output_device.as_mut() else {
@@ -588,6 +594,7 @@ impl Tty {
 
         let name = &surface.name;
         trace!("vblank on {name} {meta:?}");
+        span.emit_text(name);
 
         drop(surface.vblank_frame.take()); // Drop the old one first.
         let vblank_frame = tracy_client::Client::running()
