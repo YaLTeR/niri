@@ -447,6 +447,7 @@ impl State {
                         time: event.time_msec(),
                     },
                 );
+                pointer.frame(self);
             }
             InputEvent::PointerAxis { event, .. } => {
                 let source = event.source();
