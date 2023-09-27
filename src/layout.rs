@@ -1407,10 +1407,11 @@ impl Monitor<Window> {
 
 impl<W: LayoutElement> Workspace<W> {
     fn new(output: Output) -> Self {
+        let working_area = layer_map_for_output(&output).non_exclusive_zone();
         Self {
             original_output: OutputId::new(&output),
             view_size: output_size(&output),
-            working_area: Rectangle::from_loc_and_size((0, 0), output_size(&output)),
+            working_area,
             output: Some(output),
             columns: vec![],
             active_column_idx: 0,
