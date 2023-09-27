@@ -7,12 +7,13 @@ use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
     XdgShellState, XdgToplevelSurfaceData,
 };
-use smithay::{delegate_xdg_decoration, delegate_xdg_shell};
+use smithay::{delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_shell};
 
 use crate::layout::configure_new_window;
 use crate::niri::State;
@@ -200,6 +201,14 @@ impl XdgDecorationHandler for State {
     }
 }
 delegate_xdg_decoration!(State);
+
+impl KdeDecorationHandler for State {
+    fn kde_decoration_state(&self) -> &KdeDecorationState {
+        &self.niri.kde_decoration_state
+    }
+}
+
+delegate_kde_decoration!(State);
 
 pub fn send_initial_configure_if_needed(window: &Window) {
     let initial_configure_sent = with_states(window.toplevel().wl_surface(), |states| {

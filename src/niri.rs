@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
 
+use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
 use sd_notify::NotifyState;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -37,6 +38,7 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::nix::libc::CLOCK_MONOTONIC;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
+use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
 use smithay::reexports::wayland_server::backend::{
     ClientData, ClientId, DisconnectReason, GlobalId,
 };
@@ -52,6 +54,7 @@ use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::primary_selection::PrimarySelectionState;
+use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
@@ -95,6 +98,7 @@ pub struct Niri {
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
     pub xdg_decoration_state: XdgDecorationState,
+    pub kde_decoration_state: KdeDecorationState,
     pub layer_shell_state: WlrLayerShellState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
@@ -235,6 +239,14 @@ impl Niri {
             [WmCapabilities::Fullscreen],
         );
         let xdg_decoration_state = XdgDecorationState::new::<State>(&display_handle);
+        let kde_decoration_state = KdeDecorationState::new::<State>(
+            &display_handle,
+            if config_.prefer_no_csd {
+                KdeDecorationsMode::Server
+            } else {
+                KdeDecorationsMode::Client
+            },
+        );
         let layer_shell_state = WlrLayerShellState::new::<State>(&display_handle);
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let output_manager_state =
@@ -587,6 +599,7 @@ impl Niri {
             compositor_state,
             xdg_shell_state,
             xdg_decoration_state,
+            kde_decoration_state,
             layer_shell_state,
             shm_state,
             output_manager_state,

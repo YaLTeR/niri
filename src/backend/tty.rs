@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
