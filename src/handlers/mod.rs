@@ -14,7 +14,9 @@ use smithay::wayland::data_device::{
     ServerDndGrabHandler,
 };
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
-use smithay::wayland::primary_selection::{PrimarySelectionHandler, PrimarySelectionState};
+use smithay::wayland::primary_selection::{
+    set_primary_focus, PrimarySelectionHandler, PrimarySelectionState,
+};
 use smithay::{
     delegate_data_device, delegate_dmabuf, delegate_output, delegate_pointer_gestures,
     delegate_presentation, delegate_primary_selection, delegate_seat, delegate_tablet_manager,
@@ -39,7 +41,8 @@ impl SeatHandler for State {
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let dh = &self.niri.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
-        set_data_device_focus(dh, seat, client);
+        set_data_device_focus(dh, seat, client.clone());
+        set_primary_focus(dh, seat, client);
     }
 }
 delegate_seat!(State);
