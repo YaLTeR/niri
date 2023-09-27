@@ -27,9 +27,7 @@ use smithay::desktop::utils::{
     surface_presentation_feedback_flags_from_states, take_presentation_feedback_surface_tree,
     OutputPresentationFeedback,
 };
-use smithay::desktop::{
-    layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
-};
+use smithay::desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
 use smithay::input::pointer::{CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
@@ -906,24 +904,18 @@ impl Niri {
         let mon = self.monitor_set.monitor_for_output(output).unwrap();
         let monitor_elements = mon.render_elements(renderer);
 
-        // Get layer-shell elements.
-        let layer_map = layer_map_for_output(output);
-        let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
-            .layers()
-            .rev()
-            .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
-
         // The pointer goes on the top.
         let mut elements = vec![];
         if include_pointer {
             elements = self.pointer_element(renderer, output);
         }
 
-        // Then the upper layer-shell elements.
-        // FIXME: hide top layer when a fullscreen surface is showing somehow.
-        elements.extend(
-            upper
-                .into_iter()
+        // Get layer-shell elements.
+        let layer_map = layer_map_for_output(output);
+        let mut extend_from_layer = |elements: &mut Vec<OutputRenderElements<GlesRenderer>>,
+                                     layer| {
+            let iter = layer_map
+                .layers_on(layer)
                 .filter_map(|surface| {
                     layer_map
                         .layer_geometry(surface)
@@ -939,33 +931,21 @@ impl Niri {
                         )
                         .into_iter()
                         .map(OutputRenderElements::Wayland)
-                }),
-        );
+                });
+            elements.extend(iter);
+        };
+
+        // The upper layer-shell elements go next.
+        extend_from_layer(&mut elements, Layer::Overlay);
+        // FIXME: hide top layer when a fullscreen surface is showing somehow.
+        extend_from_layer(&mut elements, Layer::Top);
 
         // Then the regular monitor elements.
         elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
 
         // Then the lower layer-shell elements.
-        elements.extend(
-            lower
-                .into_iter()
-                .filter_map(|surface| {
-                    layer_map
-                        .layer_geometry(surface)
-                        .map(|geo| (geo.loc, surface))
-                })
-                .flat_map(|(loc, surface)| {
-                    surface
-                        .render_elements(
-                            renderer,
-                            loc.to_physical_precise_round(output_scale),
-                            output_scale,
-                            1.,
-                        )
-                        .into_iter()
-                        .map(OutputRenderElements::Wayland)
-                }),
-        );
+        extend_from_layer(&mut elements, Layer::Bottom);
+        extend_from_layer(&mut elements, Layer::Background);
 
         elements
     }
