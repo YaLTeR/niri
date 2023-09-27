@@ -2445,10 +2445,15 @@ mod tests {
             activate: bool,
         },
         CloseWindow(#[proptest(strategy = "1..=5usize")] usize),
+        FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
         FocusColumnLeft,
         FocusColumnRight,
+        FocusWindowDown,
+        FocusWindowUp,
         MoveColumnLeft,
         MoveColumnRight,
+        MoveWindowDown,
+        MoveWindowUp,
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
         FocusWorkspaceDown,
@@ -2457,6 +2462,9 @@ mod tests {
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
         MoveWindowToWorkspace(#[proptest(strategy = "1..=5u8")] u8),
+        MoveWindowToOutput(#[proptest(strategy = "1..=5u8")] u8),
+        SwitchPresetColumnWidth,
+        MaximizeColumn,
     }
 
     impl Op {
@@ -2514,10 +2522,18 @@ mod tests {
                     let dummy = TestWindow::new(id, Rectangle::default());
                     monitor_set.remove_window(&dummy);
                 }
+                Op::FullscreenWindow(id) => {
+                    let dummy = TestWindow::new(id, Rectangle::default());
+                    monitor_set.toggle_fullscreen(&dummy);
+                }
                 Op::FocusColumnLeft => monitor_set.focus_left(),
                 Op::FocusColumnRight => monitor_set.focus_right(),
+                Op::FocusWindowDown => monitor_set.focus_down(),
+                Op::FocusWindowUp => monitor_set.focus_up(),
                 Op::MoveColumnLeft => monitor_set.move_left(),
                 Op::MoveColumnRight => monitor_set.move_right(),
+                Op::MoveWindowDown => monitor_set.move_down(),
+                Op::MoveWindowUp => monitor_set.move_up(),
                 Op::ConsumeWindowIntoColumn => monitor_set.consume_into_column(),
                 Op::ExpelWindowFromColumn => monitor_set.expel_from_column(),
                 Op::FocusWorkspaceDown => monitor_set.switch_workspace_down(),
@@ -2526,6 +2542,17 @@ mod tests {
                 Op::MoveWindowToWorkspaceDown => monitor_set.move_to_workspace_down(),
                 Op::MoveWindowToWorkspaceUp => monitor_set.move_to_workspace_up(),
                 Op::MoveWindowToWorkspace(idx) => monitor_set.move_to_workspace(idx),
+                Op::MoveWindowToOutput(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = monitor_set.outputs().find(|o| o.name() == name).cloned()
+                    else {
+                        return;
+                    };
+
+                    monitor_set.move_to_output(&output);
+                }
+                Op::SwitchPresetColumnWidth => monitor_set.toggle_width(),
+                Op::MaximizeColumn => monitor_set.toggle_full_width(),
             }
         }
     }
