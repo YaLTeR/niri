@@ -2618,7 +2618,7 @@ mod tests {
     }
 
     #[test]
-    fn test() {
+    fn window_closed_on_previous_workspace() {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
