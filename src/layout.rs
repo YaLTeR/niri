@@ -2332,6 +2332,8 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
+    use proptest::prelude::*;
+    use proptest_derive::Arbitrary;
     use smithay::output::{Mode, PhysicalProperties, Subpixel};
     use smithay::utils::IsAlive;
 
@@ -2422,17 +2424,27 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Clone, Copy)]
+    fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {
+        any::<(i16, i16, u16, u16)>().prop_map(|(x, y, w, h)| {
+            let loc: Point<i32, _> = Point::from((x.into(), y.into()));
+            let size: Size<i32, _> = Size::from((w.into(), h.into()));
+            Rectangle::from_loc_and_size(loc, size)
+        })
+    }
+
+    #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
-        AddOutput(usize),
-        RemoveOutput(usize),
-        FocusOutput(usize),
+        AddOutput(#[proptest(strategy = "1..=5usize")] usize),
+        RemoveOutput(#[proptest(strategy = "1..=5usize")] usize),
+        FocusOutput(#[proptest(strategy = "1..=5usize")] usize),
         AddWindow {
+            #[proptest(strategy = "1..=5usize")]
             id: usize,
+            #[proptest(strategy = "arbitrary_bbox()")]
             bbox: Rectangle<i32, Logical>,
             activate: bool,
         },
-        CloseWindow(usize),
+        CloseWindow(#[proptest(strategy = "1..=5usize")] usize),
         FocusColumnLeft,
         FocusColumnRight,
         MoveColumnLeft,
@@ -2441,10 +2453,10 @@ mod tests {
         ExpelWindowFromColumn,
         FocusWorkspaceDown,
         FocusWorkspaceUp,
-        FocusWorkspace(u8),
+        FocusWorkspace(#[proptest(strategy = "1..=5u8")] u8),
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
-        MoveWindowToWorkspace(u8),
+        MoveWindowToWorkspace(#[proptest(strategy = "1..=5u8")] u8),
     }
 
     impl Op {
@@ -2631,5 +2643,23 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: if std::env::var_os("RUN_SLOW_TESTS").is_none() {
+                eprintln!("ignoring slow test");
+                0
+            } else {
+                ProptestConfig::default().cases
+            },
+            ..ProptestConfig::default()
+        })]
+
+        #[test]
+        fn random_operations_dont_panic(ops: Vec<Op>) {
+            // eprintln!("{ops:?}");
+            check_ops(&ops);
+        }
     }
 }

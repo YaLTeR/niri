@@ -7,6 +7,9 @@ on:
   schedule:
     - cron: '0 0 1 * *' # Monthly
 
+env:
+  RUN_SLOW_TESTS: 1
+
 jobs:
   build:
     strategy:

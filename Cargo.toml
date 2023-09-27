@@ -57,6 +57,10 @@ features = [
 git = "https://github.com/Smithay/smithay.git"
 # path = "../smithay/smithay-drm-extras"
 
+[dev-dependencies]
+proptest = "1.2.0"
+proptest-derive = "0.4.0"
+
 [features]
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
 
