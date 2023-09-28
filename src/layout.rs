@@ -1981,6 +1981,7 @@ impl Workspace<Window> {
                 let active = self.active_column_idx == col_idx && col.active_window_idx == win_idx;
                 win.set_activated(active);
                 win.toplevel().send_pending_configure();
+                win.refresh();
             }
         }
     }
