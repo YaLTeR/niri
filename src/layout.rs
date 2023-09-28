@@ -2345,6 +2345,8 @@ mod tests {
     struct TestWindowInner {
         id: usize,
         bbox: Cell<Rectangle<i32, Logical>>,
+        initial_bbox: Rectangle<i32, Logical>,
+        requested_size: Cell<Option<Size<i32, Logical>>>,
     }
 
     #[derive(Debug, Clone)]
@@ -2355,7 +2357,31 @@ mod tests {
             Self(Rc::new(TestWindowInner {
                 id,
                 bbox: Cell::new(bbox),
+                initial_bbox: bbox,
+                requested_size: Cell::new(None),
             }))
+        }
+
+        fn communicate(&self) -> bool {
+            if let Some(size) = self.0.requested_size.take() {
+                assert!(size.w >= 0);
+                assert!(size.h >= 0);
+
+                let mut new_bbox = self.0.initial_bbox;
+                if size.w != 0 {
+                    new_bbox.size.w = size.w;
+                }
+                if size.h != 0 {
+                    new_bbox.size.h = size.h;
+                }
+
+                if self.0.bbox.get() != new_bbox {
+                    self.0.bbox.set(new_bbox);
+                    return true;
+                }
+            }
+
+            false
         }
     }
 
@@ -2386,7 +2412,9 @@ mod tests {
     }
 
     impl LayoutElement for TestWindow {
-        fn request_size(&self, _size: Size<i32, Logical>) {}
+        fn request_size(&self, size: Size<i32, Logical>) {
+            self.0.requested_size.set(Some(size));
+        }
 
         fn request_fullscreen(&self, _size: Size<i32, Logical>) {}
 
@@ -2467,6 +2495,7 @@ mod tests {
         MoveWindowToOutput(#[proptest(strategy = "1..=5u8")] u8),
         SwitchPresetColumnWidth,
         MaximizeColumn,
+        Communicate(#[proptest(strategy = "1..=5usize")] usize),
     }
 
     impl Op {
@@ -2555,6 +2584,41 @@ mod tests {
                 }
                 Op::SwitchPresetColumnWidth => monitor_set.toggle_width(),
                 Op::MaximizeColumn => monitor_set.toggle_full_width(),
+                Op::Communicate(id) => {
+                    let mut window = None;
+                    match monitor_set {
+                        MonitorSet::Normal { monitors, .. } => {
+                            'outer: for mon in monitors {
+                                for ws in &mut mon.workspaces {
+                                    for win in ws.windows() {
+                                        if win.0.id == id {
+                                            if win.communicate() {
+                                                window = Some(win.clone());
+                                            }
+                                            break 'outer;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        MonitorSet::NoOutputs(workspaces) => {
+                            'outer: for ws in workspaces {
+                                for win in ws.windows() {
+                                    if win.0.id == id {
+                                        if win.communicate() {
+                                            window = Some(win.clone());
+                                        }
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(win) = window {
+                        monitor_set.update_window(&win);
+                    }
+                }
             }
         }
     }
