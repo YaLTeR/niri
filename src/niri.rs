@@ -35,7 +35,9 @@ use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay::reexports::calloop::{self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction};
+use smithay::reexports::calloop::{
+    self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
+};
 use smithay::reexports::nix::libc::CLOCK_MONOTONIC;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
@@ -47,7 +49,9 @@ use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{
     IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform, SERIAL_COUNTER,
 };
-use smithay::wayland::compositor::{with_states, CompositorClientState, CompositorState};
+use smithay::wayland::compositor::{
+    with_states, CompositorClientState, CompositorState, SurfaceData,
+};
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::output::OutputManagerState;
@@ -133,7 +137,35 @@ pub struct OutputState {
     // Set to `true` when the output was redrawn and is waiting for a VBlank. Upon VBlank a redraw
     // will always be queued, so you cannot queue a redraw while waiting for a VBlank.
     pub waiting_for_vblank: bool,
+    // When we did a redraw which did not result in a KMS frame getting queued, this is a timer
+    // that will fire at the estimated VBlank time.
+    pub estimated_vblank_timer: Option<RegistrationToken>,
     pub frame_clock: FrameClock,
+    /// Estimated sequence currently displayed on this output.
+    ///
+    /// When a frame is presented on this output, this becomes the real sequence from the VBlank
+    /// callback. Then, as long as there are no KMS submissions, but we keep getting commits, this
+    /// sequence increases by 1 at estimated VBlank times.
+    ///
+    /// If there are no commits, then we won't have a timer running, so the estimated sequence will
+    /// not increase.
+    pub current_estimated_sequence: Option<u32>,
+}
+
+// Not related to the one in Smithay.
+//
+// This state keeps track of when a surface last received a frame callback.
+struct SurfaceFrameThrottlingState {
+    /// Output and sequence that the frame callback was last sent at.
+    last_sent_at: RefCell<Option<(Output, u32)>>,
+}
+
+impl Default for SurfaceFrameThrottlingState {
+    fn default() -> Self {
+        Self {
+            last_sent_at: RefCell::new(None),
+        }
+    }
 }
 
 pub struct State {
@@ -642,7 +674,9 @@ impl Niri {
             global,
             queued_redraw: None,
             waiting_for_vblank: false,
+            estimated_vblank_timer: None,
             frame_clock: FrameClock::new(refresh_interval),
+            current_estimated_sequence: None,
         };
         let rv = self.output_state.insert(output, state);
         assert!(rv.is_none(), "output was already tracked");
@@ -1033,27 +1067,56 @@ impl Niri {
         }
     }
 
-    fn send_frame_callbacks(&self, output: &Output) {
+    pub fn send_frame_callbacks(&self, output: &Output) {
         let _span = tracy_client::span!("Niri::send_frame_callbacks");
 
+        let state = self.output_state.get(output).unwrap();
+        let sequence = state.current_estimated_sequence;
+
+        let should_send = |states: &SurfaceData| {
+            let frame_throttling_state = states
+                .data_map
+                .get_or_insert(SurfaceFrameThrottlingState::default);
+            let mut last_sent_at = frame_throttling_state.last_sent_at.borrow_mut();
+
+            let mut send = true;
+
+            // If we already sent a frame callback to this surface this output refresh
+            // cycle, don't send one again to prevent empty-damage commit busy loops.
+            if let Some((last_output, last_sequence)) = &*last_sent_at {
+                if last_output == output && Some(*last_sequence) == sequence {
+                    send = false;
+                }
+            }
+
+            if send {
+                if let Some(sequence) = sequence {
+                    *last_sent_at = Some((output.clone(), sequence));
+                }
+            }
+
+            send
+        };
+
         let frame_callback_time = get_monotonic_time();
-        self.monitor_set.send_frame(output, frame_callback_time);
+        self.monitor_set
+            .send_frame(output, frame_callback_time, &should_send);
 
         for surface in layer_map_for_output(output).layers() {
-            surface.send_frame(output, frame_callback_time, None, |_, _| {
-                Some(output.clone())
+            surface.send_frame(output, frame_callback_time, None, |_, states| {
+                should_send(states).then(|| output.clone())
             });
         }
 
         if let Some(surface) = &self.dnd_icon {
-            send_frames_surface_tree(surface, output, frame_callback_time, None, |_, _| {
-                Some(output.clone())
+            send_frames_surface_tree(surface, output, frame_callback_time, None, |_, states| {
+                should_send(states).then(|| output.clone())
             });
         }
 
         if let CursorImageStatus::Surface(surface) = &self.cursor_image {
-            send_frames_surface_tree(surface, output, frame_callback_time, None, |_, _| {
-                Some(output.clone())
+            send_frames_surface_tree(surface, output, frame_callback_time, None, |_, states| {
+                should_send(states).then(|| output.clone())
             });
         }
     }

@@ -579,11 +579,16 @@ impl<W: LayoutElement> MonitorSet<W> {
         }
     }
 
-    pub fn send_frame(&self, output: &Output, time: Duration) {
+    pub fn send_frame(
+        &self,
+        output: &Output,
+        time: Duration,
+        should_send: &impl Fn(&SurfaceData) -> bool,
+    ) {
         if let MonitorSet::Normal { monitors, .. } = self {
             for mon in monitors {
                 if &mon.output == output {
-                    mon.workspaces[mon.active_workspace_idx].send_frame(time);
+                    mon.workspaces[mon.active_workspace_idx].send_frame(time, should_send);
                 }
             }
         }
@@ -1826,10 +1831,12 @@ impl<W: LayoutElement> Workspace<W> {
         self.add_window(window, true);
     }
 
-    fn send_frame(&self, time: Duration) {
+    fn send_frame(&self, time: Duration, should_send: &impl Fn(&SurfaceData) -> bool) {
         let output = self.output.as_ref().unwrap();
         for win in self.windows() {
-            win.send_frame(output, time, None, |_, _| Some(output.clone()));
+            win.send_frame(output, time, None, |_, states| {
+                should_send(states).then(|| output.clone())
+            });
         }
     }
 

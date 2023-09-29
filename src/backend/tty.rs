@@ -22,6 +22,7 @@ use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel, Scale};
+use smithay::reexports::calloop::timer::{Timer, TimeoutAction};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
     connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags,
@@ -92,6 +93,7 @@ struct Surface {
     vblank_plot_name: tracy_client::PlotName,
     /// Plot name for the presentation target offset plot.
     presentation_plot_name: tracy_client::PlotName,
+    sequence_delta_plot_name: tracy_client::PlotName,
 }
 
 impl Tty {
@@ -526,6 +528,8 @@ impl Tty {
         let presentation_plot_name = tracy_client::PlotName::new_leak(format!(
             "{output_name} presentation target offset, ms"
         ));
+        let sequence_delta_plot_name =
+            tracy_client::PlotName::new_leak(format!("{output_name} sequence delta"));
 
         self.connectors
             .lock()
@@ -540,6 +544,7 @@ impl Tty {
             vblank_frame_name,
             vblank_plot_name,
             presentation_plot_name,
+            sequence_delta_plot_name,
         };
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
@@ -691,9 +696,42 @@ impl Tty {
             }
         }
 
+        if let Some(last_sequence) = output_state.current_estimated_sequence {
+            let delta = meta.sequence as f64 - last_sequence as f64;
+            tracy_client::Client::running()
+                .unwrap()
+                .plot(surface.sequence_delta_plot_name, delta);
+        }
+
+        assert!(output_state.waiting_for_vblank);
+        assert!(output_state.estimated_vblank_timer.is_none());
+
         output_state.waiting_for_vblank = false;
         output_state.frame_clock.presented(presentation_time);
+        output_state.current_estimated_sequence = Some(meta.sequence);
         niri.queue_redraw(output);
+    }
+
+    fn on_estimated_vblank_timer(&self, niri: &mut Niri, output: &Output) {
+        let span = tracy_client::span!("Tty::on_estimated_vblank_timer");
+
+        let name = output.name();
+        span.emit_text(&name);
+
+        let Some(output_state) = niri.output_state.get_mut(output) else {
+            error!("missing output state for {name}");
+            return;
+        };
+
+        assert!(!output_state.waiting_for_vblank);
+        let token = output_state.estimated_vblank_timer.take();
+        assert!(token.is_some());
+
+        if let Some(sequence) = output_state.current_estimated_sequence.as_mut() {
+            *sequence = sequence.wrapping_add(1);
+
+            niri.send_frame_callbacks(output);
+        }
     }
 
     pub fn seat_name(&self) -> String {
@@ -754,10 +792,11 @@ impl Tty {
 
                     match drm_compositor.queue_frame(data) {
                         Ok(()) => {
-                            niri.output_state
-                                .get_mut(output)
-                                .unwrap()
-                                .waiting_for_vblank = true;
+                            let output_state = niri.output_state.get_mut(output).unwrap();
+                            output_state.waiting_for_vblank = true;
+                            if let Some(token) = output_state.estimated_vblank_timer.take() {
+                                niri.event_loop.remove(token);
+                            }
 
                             return Some(&surface.dmabuf_feedback);
                         }
@@ -775,6 +814,10 @@ impl Tty {
 
         // We're not expecting a vblank right after this.
         drop(surface.vblank_frame.take());
+
+        // Queue a timer to fire at the predicted vblank time.
+        queue_estimated_vblank_timer(niri, output.clone(), target_presentation_time);
+
         None
     }
 
@@ -852,4 +895,28 @@ fn suspend() -> anyhow::Result<()> {
     let manager = logind_zbus::manager::ManagerProxyBlocking::new(&conn)
         .context("error creating login manager proxy")?;
     manager.suspend(true).context("error suspending")
+}
+
+fn queue_estimated_vblank_timer(
+    niri: &mut Niri,
+    output: Output,
+    target_presentation_time: Duration,
+) {
+    let output_state = niri.output_state.get_mut(&output).unwrap();
+    if output_state.estimated_vblank_timer.is_some() {
+        return;
+    }
+
+    let now = get_monotonic_time();
+    let timer = Timer::from_duration(target_presentation_time.saturating_sub(now));
+    let token = niri
+        .event_loop
+        .insert_source(timer, move |_, _, data| {
+            data.backend
+                .tty()
+                .on_estimated_vblank_timer(&mut data.niri, &output);
+            TimeoutAction::Drop
+        })
+        .unwrap();
+    output_state.estimated_vblank_timer = Some(token);
 }
