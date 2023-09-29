@@ -178,14 +178,17 @@ impl XdgDecorationHandler for State {
         toplevel.with_pending_state(|state| {
             state.decoration_mode = mode;
         });
-        toplevel.send_configure();
     }
 
     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: zxdg_toplevel_decoration_v1::Mode) {
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(mode);
         });
-        toplevel.send_configure();
+
+        // Only send configure if it's non-initial.
+        if initial_configure_sent(&toplevel) {
+            toplevel.send_pending_configure();
+        }
     }
 
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
@@ -197,7 +200,11 @@ impl XdgDecorationHandler for State {
         toplevel.with_pending_state(|state| {
             state.decoration_mode = mode;
         });
-        toplevel.send_configure();
+
+        // Only send configure if it's non-initial.
+        if initial_configure_sent(&toplevel) {
+            toplevel.send_pending_configure();
+        }
     }
 }
 delegate_xdg_decoration!(State);
