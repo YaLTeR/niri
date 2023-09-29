@@ -95,7 +95,7 @@ impl CompositorHandler for State {
 
                 // The toplevel remains unmapped.
                 let window = entry.get();
-                xdg_shell::send_initial_configure_if_needed(window);
+                xdg_shell::send_initial_configure_if_needed(window.toplevel());
                 return;
             }
 

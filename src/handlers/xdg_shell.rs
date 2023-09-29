@@ -210,8 +210,8 @@ impl KdeDecorationHandler for State {
 
 delegate_kde_decoration!(State);
 
-pub fn send_initial_configure_if_needed(window: &Window) {
-    let initial_configure_sent = with_states(window.toplevel().wl_surface(), |states| {
+pub fn send_initial_configure_if_needed(toplevel: &ToplevelSurface) {
+    let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
         states
             .data_map
             .get::<XdgToplevelSurfaceData>()
@@ -222,7 +222,7 @@ pub fn send_initial_configure_if_needed(window: &Window) {
     });
 
     if !initial_configure_sent {
-        window.toplevel().send_configure();
+        toplevel.send_configure();
     }
 }
 
