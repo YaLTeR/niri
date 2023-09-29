@@ -211,7 +211,13 @@ impl KdeDecorationHandler for State {
 delegate_kde_decoration!(State);
 
 pub fn send_initial_configure_if_needed(toplevel: &ToplevelSurface) {
-    let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
+    if !initial_configure_sent(toplevel) {
+        toplevel.send_configure();
+    }
+}
+
+fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
+    with_states(toplevel.wl_surface(), |states| {
         states
             .data_map
             .get::<XdgToplevelSurfaceData>()
@@ -219,11 +225,7 @@ pub fn send_initial_configure_if_needed(toplevel: &ToplevelSurface) {
             .lock()
             .unwrap()
             .initial_configure_sent
-    });
-
-    if !initial_configure_sent {
-        toplevel.send_configure();
-    }
+    })
 }
 
 impl State {
