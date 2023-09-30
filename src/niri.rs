@@ -53,6 +53,7 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::dmabuf::DmabufFeedback;
+use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
@@ -64,6 +65,8 @@ use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
+use smithay::wayland::text_input::TextInputManagerState;
+use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use zbus::fdo::RequestNameFlags;
 
 use crate::backend::{Backend, Tty, Winit};
@@ -108,6 +111,9 @@ pub struct Niri {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<State>,
     pub tablet_state: TabletManagerState,
+    pub text_input_state: TextInputManagerState,
+    pub input_method_state: InputMethodManagerState,
+    pub virtual_keyboard_state: VirtualKeyboardManagerState,
     pub pointer_gestures_state: PointerGesturesState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
@@ -300,6 +306,11 @@ impl Niri {
         let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
         let presentation_state =
             PresentationState::new::<State>(&display_handle, CLOCK_MONOTONIC as u32);
+
+        let text_input_state = TextInputManagerState::new::<State>(&display_handle);
+        let input_method_state = InputMethodManagerState::new::<State>(&display_handle);
+        let virtual_keyboard_state =
+            VirtualKeyboardManagerState::new::<State, _>(&display_handle, |_| true);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         let xkb = XkbConfig {
@@ -650,6 +661,9 @@ impl Niri {
             xdg_decoration_state,
             kde_decoration_state,
             layer_shell_state,
+            text_input_state,
+            input_method_state,
+            virtual_keyboard_state,
             shm_state,
             output_manager_state,
             seat_state,
