@@ -42,6 +42,9 @@ struct Cli {
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
+    if env::var_os("RUST_LIB_BACKTRACE").is_none() {
+        env::set_var("RUST_LIB_BACKTRACE", "0");
+    }
 
     let directives = env::var("RUST_LOG").unwrap_or_else(|_| "niri=debug,info".to_owned());
     let env_filter = EnvFilter::builder().parse_lossy(directives);
