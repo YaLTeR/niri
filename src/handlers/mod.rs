@@ -4,22 +4,26 @@ mod xdg_shell;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::ImportDma;
+use smithay::desktop::PopupKind;
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
+use smithay::utils::{Logical, Rectangle};
 use smithay::wayland::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
 };
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
+use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::primary_selection::{
     set_primary_focus, PrimarySelectionHandler, PrimarySelectionState,
 };
 use smithay::{
-    delegate_data_device, delegate_dmabuf, delegate_output, delegate_pointer_gestures,
-    delegate_presentation, delegate_primary_selection, delegate_seat, delegate_tablet_manager,
+    delegate_data_device, delegate_dmabuf, delegate_input_method_manager, delegate_output,
+    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection, delegate_seat,
+    delegate_tablet_manager, delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
 use crate::niri::State;
@@ -48,6 +52,25 @@ impl SeatHandler for State {
 delegate_seat!(State);
 delegate_tablet_manager!(State);
 delegate_pointer_gestures!(State);
+delegate_text_input_manager!(State);
+
+impl InputMethodHandler for State {
+    fn new_popup(&mut self, surface: PopupSurface) {
+        if let Err(err) = self.niri.popups.track_popup(PopupKind::from(surface)) {
+            warn!("error tracking ime popup {err:?}");
+        }
+    }
+    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
+        self.niri
+            .monitor_set
+            .find_window_and_output(parent)
+            .map(|(window, _)| window.geometry())
+            .unwrap_or_default()
+    }
+}
+
+delegate_input_method_manager!(State);
+delegate_virtual_keyboard_manager!(State);
 
 impl DataDeviceHandler for State {
     type SelectionUserData = ();
