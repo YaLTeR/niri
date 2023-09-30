@@ -17,7 +17,7 @@ use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::config::{Action, Config, Modifiers};
 use crate::niri::State;
-use crate::utils::{get_monotonic_time, spawn};
+use crate::utils::{center, get_monotonic_time, spawn};
 
 pub enum CompositorMod {
     Super,
@@ -335,29 +335,10 @@ impl State {
                             .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
                     } else {
                         // The pointer was not on any output in the first place. Find one for it.
-                        // Start by clamping the X coordinate.
-                        let mut min_x = i32::MAX;
-                        let mut max_x = 0;
-                        for output in self.niri.global_space.outputs() {
-                            let geom = self.niri.global_space.output_geometry(output).unwrap();
-                            min_x = min_x.min(geom.loc.x);
-                            max_x = max_x.max(geom.loc.x + geom.size.w);
-                        }
-
-                        new_pos.x = new_pos.x.clamp(min_x as f64, (max_x - 1) as f64);
-
-                        // Now clamp the Y coordinate. Assume every X from min to max has some
-                        // output.
-                        let geom = self
-                            .niri
-                            .global_space
-                            .outputs()
-                            .map(|output| self.niri.global_space.output_geometry(output).unwrap())
-                            .find(|geom| geom.contains((new_pos.x as i32, geom.loc.y)))
-                            .unwrap();
-                        new_pos.y = new_pos
-                            .y
-                            .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
+                        // Let's do the simple thing and just put it on the first output.
+                        let output = self.niri.global_space.outputs().next().unwrap();
+                        let geom = self.niri.global_space.output_geometry(output).unwrap();
+                        new_pos = center(geom).to_f64();
                     }
                 }
 
