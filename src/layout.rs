@@ -1539,6 +1539,12 @@ impl<W: LayoutElement> Workspace<W> {
 
         let current_x = self.view_pos();
 
+        let final_x = if let Some(anim) = &self.view_offset_anim {
+            current_x - self.view_offset + anim.to().round() as i32
+        } else {
+            current_x
+        };
+
         self.active_column_idx = idx;
 
         // A different column was activated; reset the flag.
@@ -1546,7 +1552,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let new_x = self.column_x(idx) - PADDING;
         let new_view_offset = compute_new_view_offset(
-            current_x,
+            final_x,
             self.working_area.size.w,
             new_x,
             self.columns[idx].size().w,
@@ -1661,10 +1667,17 @@ impl<W: LayoutElement> Workspace<W> {
         if idx == self.active_column_idx {
             // We might need to move the view to ensure the resized window is still visible.
             let current_x = self.view_pos();
+
+            let final_x = if let Some(anim) = &self.view_offset_anim {
+                current_x - self.view_offset + anim.to().round() as i32
+            } else {
+                current_x
+            };
+
             let new_x = self.column_x(idx) - PADDING;
 
             let new_view_offset = compute_new_view_offset(
-                current_x,
+                final_x,
                 self.working_area.size.w,
                 new_x,
                 self.columns[idx].size().w,
