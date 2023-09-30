@@ -1328,6 +1328,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn are_animations_ongoing(&self) -> bool {
+        self.workspace_idx_anim.is_some()
+            || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
+    }
+
     pub fn update_config(&mut self, config: &Config) {
         for ws in &mut self.workspaces {
             ws.update_config(config);
@@ -1462,6 +1467,10 @@ impl<W: LayoutElement> Workspace<W> {
             self.focus_ring.resize(geom.size);
             self.focus_ring.set_active(is_active);
         }
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        self.view_offset_anim.is_some()
     }
 
     pub fn update_config(&mut self, config: &Config) {

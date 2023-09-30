@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::mem;
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -38,7 +39,7 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::config::Config;
-use crate::niri::{OutputRenderElements, State};
+use crate::niri::{OutputRenderElements, State, RedrawState};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
@@ -703,34 +704,55 @@ impl Tty {
                 .plot(surface.sequence_delta_plot_name, delta);
         }
 
-        assert!(output_state.waiting_for_vblank);
-        assert!(output_state.estimated_vblank_timer.is_none());
-
-        output_state.waiting_for_vblank = false;
         output_state.frame_clock.presented(presentation_time);
         output_state.current_estimated_sequence = Some(meta.sequence);
-        niri.queue_redraw(output);
+
+        let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
+            RedrawState::Idle => unreachable!(),
+            RedrawState::Queued(_) => unreachable!(),
+            RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
+            RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
+            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
+        };
+
+        if redraw_needed || output_state.unfinished_animations_remain {
+            niri.queue_redraw(output);
+        } else {
+            niri.send_frame_callbacks(&output);
+        }
     }
 
-    fn on_estimated_vblank_timer(&self, niri: &mut Niri, output: &Output) {
+    fn on_estimated_vblank_timer(&self, niri: &mut Niri, output: Output) {
         let span = tracy_client::span!("Tty::on_estimated_vblank_timer");
 
         let name = output.name();
         span.emit_text(&name);
 
-        let Some(output_state) = niri.output_state.get_mut(output) else {
+        let Some(output_state) = niri.output_state.get_mut(&output) else {
             error!("missing output state for {name}");
             return;
         };
 
-        assert!(!output_state.waiting_for_vblank);
-        let token = output_state.estimated_vblank_timer.take();
-        assert!(token.is_some());
+        match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
+            RedrawState::Idle => unreachable!(),
+            RedrawState::Queued(_) => unreachable!(),
+            RedrawState::WaitingForVBlank { .. } => unreachable!(),
+            RedrawState::WaitingForEstimatedVBlank(_) => (),
+            // The timer fired just in front of a redraw.
+            RedrawState::WaitingForEstimatedVBlankAndQueued((_, idle)) => {
+                output_state.redraw_state = RedrawState::Queued(idle);
+                return;
+            }
+        }
 
         if let Some(sequence) = output_state.current_estimated_sequence.as_mut() {
             *sequence = sequence.wrapping_add(1);
 
-            niri.send_frame_callbacks(output);
+            if output_state.unfinished_animations_remain {
+                niri.queue_redraw(output);
+            } else {
+                niri.send_frame_callbacks(&output);
+            }
         }
     }
 
@@ -793,10 +815,18 @@ impl Tty {
                     match drm_compositor.queue_frame(data) {
                         Ok(()) => {
                             let output_state = niri.output_state.get_mut(output).unwrap();
-                            output_state.waiting_for_vblank = true;
-                            if let Some(token) = output_state.estimated_vblank_timer.take() {
-                                niri.event_loop.remove(token);
-                            }
+                            let new_state = RedrawState::WaitingForVBlank {
+                                redraw_needed: false,
+                            };
+                            match mem::replace(&mut output_state.redraw_state, new_state) {
+                                RedrawState::Idle => unreachable!(),
+                                RedrawState::Queued(_) => (),
+                                RedrawState::WaitingForVBlank { .. } => unreachable!(),
+                                RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
+                                RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) => {
+                                    niri.event_loop.remove(token);
+                                }
+                            };
 
                             return Some(&surface.dmabuf_feedback);
                         }
@@ -904,8 +934,15 @@ fn queue_estimated_vblank_timer(
     target_presentation_time: Duration,
 ) {
     let output_state = niri.output_state.get_mut(&output).unwrap();
-    if output_state.estimated_vblank_timer.is_some() {
-        return;
+    match mem::take(&mut output_state.redraw_state) {
+        RedrawState::Idle => unreachable!(),
+        RedrawState::Queued(_) => (),
+        RedrawState::WaitingForVBlank { .. } => unreachable!(),
+        RedrawState::WaitingForEstimatedVBlank(token)
+        | RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) => {
+            output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
+            return;
+        }
     }
 
     let now = get_monotonic_time();
@@ -915,9 +952,9 @@ fn queue_estimated_vblank_timer(
         .insert_source(timer, move |_, _, data| {
             data.backend
                 .tty()
-                .on_estimated_vblank_timer(&mut data.niri, &output);
+                .on_estimated_vblank_timer(&mut data.niri, output.clone());
             TimeoutAction::Drop
         })
         .unwrap();
-    output_state.estimated_vblank_timer = Some(token);
+    output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
 }

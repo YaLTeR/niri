@@ -6,7 +6,7 @@ use std::process::Command;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{env, thread};
+use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
@@ -132,16 +132,10 @@ pub struct Niri {
 
 pub struct OutputState {
     pub global: GlobalId,
-    // Set if there's a redraw queued on the event loop. Reset in redraw() which means that you
-    // cannot queue more than one redraw at once.
-    pub queued_redraw: Option<Idle<'static>>,
-    // Set to `true` when the output was redrawn and is waiting for a VBlank. Upon VBlank a redraw
-    // will always be queued, so you cannot queue a redraw while waiting for a VBlank.
-    pub waiting_for_vblank: bool,
-    // When we did a redraw which did not result in a KMS frame getting queued, this is a timer
-    // that will fire at the estimated VBlank time.
-    pub estimated_vblank_timer: Option<RegistrationToken>,
     pub frame_clock: FrameClock,
+    pub redraw_state: RedrawState,
+    // After the last redraw, some ongoing animations still remain.
+    pub unfinished_animations_remain: bool,
     /// Estimated sequence currently displayed on this output.
     ///
     /// When a frame is presented on this output, this becomes the real sequence from the VBlank
@@ -151,6 +145,21 @@ pub struct OutputState {
     /// If there are no commits, then we won't have a timer running, so the estimated sequence will
     /// not increase.
     pub current_estimated_sequence: Option<u32>,
+}
+
+#[derive(Default)]
+pub enum RedrawState {
+    /// The compositor is idle.
+    #[default]
+    Idle,
+    /// A redraw is queued.
+    Queued(Idle<'static>),
+    /// We submitted a frame to the KMS and waiting for it to be presented.
+    WaitingForVBlank { redraw_needed: bool },
+    /// We did not submit anything to KMS and made a timer to fire at the estimated VBlank.
+    WaitingForEstimatedVBlank(RegistrationToken),
+    /// A redraw is queued on top of the above.
+    WaitingForEstimatedVBlankAndQueued((RegistrationToken, Idle<'static>)),
 }
 
 // Not related to the one in Smithay.
@@ -733,9 +742,8 @@ impl Niri {
 
         let state = OutputState {
             global,
-            queued_redraw: None,
-            waiting_for_vblank: false,
-            estimated_vblank_timer: None,
+            redraw_state: RedrawState::Idle,
+            unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval),
             current_estimated_sequence: None,
         };
@@ -748,9 +756,16 @@ impl Niri {
         self.global_space.unmap_output(output);
         // FIXME: reposition outputs so they are adjacent.
 
-        let mut state = self.output_state.remove(output).unwrap();
-        if let Some(idle) = state.queued_redraw.take() {
-            idle.cancel();
+        let state = self.output_state.remove(output).unwrap();
+        match state.redraw_state {
+            RedrawState::Idle => (),
+            RedrawState::Queued(idle) => idle.cancel(),
+            RedrawState::WaitingForVBlank { .. } => (),
+            RedrawState::WaitingForEstimatedVBlank(token) => self.event_loop.remove(token),
+            RedrawState::WaitingForEstimatedVBlankAndQueued((token, idle)) => {
+                self.event_loop.remove(token);
+                idle.cancel();
+            }
         }
 
         // Disable the output global and remove some time later to give the clients some time to
@@ -917,15 +932,34 @@ impl Niri {
     /// Schedules an immediate redraw if one is not already scheduled.
     pub fn queue_redraw(&mut self, output: Output) {
         let state = self.output_state.get_mut(&output).unwrap();
+        let token = match mem::take(&mut state.redraw_state) {
+            RedrawState::Idle => None,
+            RedrawState::WaitingForEstimatedVBlank(token) => Some(token),
 
-        if state.queued_redraw.is_some() || state.waiting_for_vblank {
-            return;
-        }
+            // A redraw is already queued, put it back and do nothing.
+            value @ (RedrawState::Queued(_)
+            | RedrawState::WaitingForEstimatedVBlankAndQueued(_)) => {
+                state.redraw_state = value;
+                return;
+            }
+
+            // We're waiting for VBlank, request a redraw afterwards.
+            RedrawState::WaitingForVBlank { .. } => {
+                state.redraw_state = RedrawState::WaitingForVBlank {
+                    redraw_needed: true,
+                };
+                return;
+            }
+        };
 
         let idle = self.event_loop.insert_idle(move |state| {
             state.niri.redraw(&mut state.backend, &output);
         });
-        state.queued_redraw = Some(idle);
+
+        state.redraw_state = match token {
+            Some(token) => RedrawState::WaitingForEstimatedVBlankAndQueued((token, idle)),
+            None => RedrawState::Queued(idle),
+        };
     }
 
     pub fn pointer_element(
@@ -1070,14 +1104,21 @@ impl Niri {
         };
 
         let state = self.output_state.get_mut(output).unwrap();
-        let presentation_time = state.frame_clock.next_presentation_time();
+        assert!(matches!(
+            state.redraw_state,
+            RedrawState::Queued(_) | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
+        ));
 
-        assert!(state.queued_redraw.take().is_some());
-        assert!(!state.waiting_for_vblank);
+        let presentation_time = state.frame_clock.next_presentation_time();
 
         // Update from the config and advance the animations.
         self.monitor_set.update_config(&self.config.borrow());
         self.monitor_set.advance_animations(presentation_time);
+        state.unfinished_animations_remain = self
+            .monitor_set
+            .monitor_for_output(output)
+            .unwrap()
+            .are_animations_ongoing();
 
         // Render the elements.
         let elements = self.render(renderer, output, true);

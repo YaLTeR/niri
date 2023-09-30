@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::mem;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,7 +19,7 @@ use smithay::utils::Transform;
 use smithay::wayland::dmabuf::DmabufFeedback;
 
 use crate::config::Config;
-use crate::niri::{OutputRenderElements, State};
+use crate::niri::{OutputRenderElements, RedrawState, State};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
@@ -182,7 +183,18 @@ impl Winit {
                 0,
                 wp_presentation_feedback::Kind::empty(),
             );
+        }
 
+        let output_state = niri.output_state.get_mut(output).unwrap();
+        match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
+            RedrawState::Idle => unreachable!(),
+            RedrawState::Queued(_) => (),
+            RedrawState::WaitingForVBlank { .. } => unreachable!(),
+            RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
+            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
+        }
+
+        if output_state.unfinished_animations_remain {
             self.backend.window().request_redraw();
         }
 
