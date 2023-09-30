@@ -20,7 +20,7 @@ use std::{env, mem};
 
 use clap::Parser;
 use config::Config;
-use miette::Context;
+use miette::{Context, NarratableReportHandler};
 use niri::{Niri, State};
 use portable_atomic::Ordering;
 use smithay::reexports::calloop::{self, EventLoop};
@@ -54,6 +54,7 @@ fn main() {
 
     let _client = tracy_client::Client::start();
 
+    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new()))).unwrap();
     let (mut config, path) = match Config::load(cli.config).context("error loading config") {
         Ok((config, path)) => (config, Some(path)),
         Err(err) => {

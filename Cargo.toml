@@ -19,7 +19,7 @@ knuffel = "3.2.0"
 libc = "0.2.148"
 logind-zbus = "3.1.2"
 log = { version = "0.4.20", features = ["max_level_trace", "release_max_level_debug"] }
-miette = { version = "5.10.0", features = ["fancy"] }
+miette = "5.10.0"
 nix = { version = "0.27.1", default-features = false, features = ["time"] }
 pipewire = "0.7.2"
 portable-atomic = { version = "1.4.3", default-features = false, features = ["float"] }
