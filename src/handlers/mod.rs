@@ -11,19 +11,22 @@ use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle};
-use smithay::wayland::data_device::{
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
+use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
+use smithay::wayland::selection::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
 };
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
-use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
-use smithay::wayland::primary_selection::{
+use smithay::wayland::selection::primary_selection::{
     set_primary_focus, PrimarySelectionHandler, PrimarySelectionState,
 };
+use smithay::wayland::selection::wlr_data_control::{DataControlHandler, DataControlState};
+use smithay::wayland::selection::SelectionHandler;
 use smithay::{
-    delegate_data_device, delegate_dmabuf, delegate_input_method_manager, delegate_output,
-    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection, delegate_seat,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_virtual_keyboard_manager,
+    delegate_data_control, delegate_data_device, delegate_dmabuf, delegate_input_method_manager,
+    delegate_output, delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
+    delegate_seat, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_virtual_keyboard_manager,
 };
 
 use crate::niri::State;
@@ -72,8 +75,11 @@ impl InputMethodHandler for State {
 delegate_input_method_manager!(State);
 delegate_virtual_keyboard_manager!(State);
 
-impl DataDeviceHandler for State {
+impl SelectionHandler for State {
     type SelectionUserData = ();
+}
+
+impl DataDeviceHandler for State {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.niri.data_device_state
     }
@@ -103,13 +109,19 @@ impl ServerDndGrabHandler for State {}
 delegate_data_device!(State);
 
 impl PrimarySelectionHandler for State {
-    type SelectionUserData = ();
-
     fn primary_selection_state(&self) -> &PrimarySelectionState {
         &self.niri.primary_selection_state
     }
 }
 delegate_primary_selection!(State);
+
+impl DataControlHandler for State {
+    fn data_control_state(&self) -> &DataControlState {
+        &self.niri.data_control_state
+    }
+}
+
+delegate_data_control!(State);
 
 delegate_output!(State);
 

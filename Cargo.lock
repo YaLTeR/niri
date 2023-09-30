@@ -655,6 +655,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cursor-icon"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "740bb192a8e2d1350119916954f4409ee7f62f149b536911eeb78ba5a20526bf"
+
+[[package]]
 name = "deranged"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -714,7 +720,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
- "libloading 0.8.0",
+ "libloading 0.7.4",
 ]
 
 [[package]]
@@ -2273,13 +2279,14 @@ checksum = "942b4a808e05215192e39f4ab80813e599068285906cc91aa64f923db842bd5a"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay.git#74ef59a3f8b6a1f86a74388590f2f852040354e4"
+source = "git+https://github.com/Smithay/smithay.git#528e23f9bb3d3e1b16189070519ea85f480c3b0e"
 dependencies = [
  "appendlist",
  "bitflags 2.4.0",
  "calloop 0.12.2",
  "cc",
  "cgmath",
+ "cursor-icon",
  "downcast-rs",
  "drm",
  "drm-ffi",
@@ -2336,7 +2343,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#74ef59a3f8b6a1f86a74388590f2f852040354e4"
+source = "git+https://github.com/Smithay/smithay.git#528e23f9bb3d3e1b16189070519ea85f480c3b0e"
 dependencies = [
  "drm",
  "edid-rs",
