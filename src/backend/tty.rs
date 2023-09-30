@@ -853,6 +853,7 @@ impl Tty {
         self.connectors.clone()
     }
 
+    #[cfg(feature = "xdp-gnome-screencast")]
     pub fn gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
         self.output_device.as_ref().map(|d| d.gbm.clone())
     }

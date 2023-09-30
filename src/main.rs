@@ -10,16 +10,21 @@ mod handlers;
 mod input;
 mod layout;
 mod niri;
-mod pw_utils;
 mod utils;
 mod watcher;
 
+#[cfg(not(feature = "xdp-gnome-screencast"))]
+mod dummy_pw_utils;
+#[cfg(feature = "xdp-gnome-screencast")]
+mod pw_utils;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::{env, mem};
 
 use clap::Parser;
 use config::Config;
+#[cfg(not(feature = "xdp-gnome-screencast"))]
+use dummy_pw_utils as pw_utils;
 use miette::{Context, NarratableReportHandler};
 use niri::{Niri, State};
 use portable_atomic::Ordering;

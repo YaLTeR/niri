@@ -46,6 +46,9 @@ jobs:
         with:
           key: ${{ matrix.configuration }}
 
+      - name: Build (no default features)
+        run: cargo build ${{ matrix.release-flag }} --no-default-features
+
       - name: Build
         run: cargo build ${{ matrix.release-flag }}
 

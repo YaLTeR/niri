@@ -11,7 +11,6 @@ use std::{env, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
 use sd_notify::NotifyState;
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
@@ -19,7 +18,7 @@ use smithay::backend::renderer::element::surface::{
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{
-    render_elements, AsRenderElements, Element, Kind, RenderElement, RenderElementStates,
+    render_elements, AsRenderElements, Kind, RenderElement, RenderElementStates,
 };
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
@@ -71,6 +70,7 @@ use crate::backend::{Backend, Tty, Winit};
 use crate::config::Config;
 use crate::dbus::gnome_shell_screenshot::{self, NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_display_config::DisplayConfig;
+#[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCast, ToNiriMsg};
 use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
@@ -122,6 +122,7 @@ pub struct Niri {
 
     pub zbus_conn: Option<zbus::blocking::Connection>,
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
+    #[cfg(feature = "xdp-gnome-screencast")]
     pub screen_cast: ScreenCast,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
@@ -334,7 +335,9 @@ impl Niri {
             }
         };
 
+        #[cfg(feature = "xdp-gnome-screencast")]
         let (to_niri, from_screen_cast) = calloop::channel::channel();
+        #[cfg(feature = "xdp-gnome-screencast")]
         event_loop
             .insert_source(from_screen_cast, {
                 let to_niri = to_niri.clone();
@@ -419,6 +422,7 @@ impl Niri {
                 }
             })
             .unwrap();
+        #[cfg(feature = "xdp-gnome-screencast")]
         let screen_cast = ScreenCast::new(backend.connectors(), to_niri);
 
         let (to_niri, from_screenshot) = calloop::channel::channel();
@@ -520,19 +524,21 @@ impl Niri {
                 conn.request_name_with_flags("org.gnome.Shell.Screenshot", flags)
                     .unwrap();
 
+                server
+                    .at(
+                        "/org/gnome/Mutter/DisplayConfig",
+                        DisplayConfig::new(backend.connectors()),
+                    )
+                    .unwrap();
+                conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
+                    .unwrap();
+
+                #[cfg(feature = "xdp-gnome-screencast")]
                 if pipewire.is_some() {
                     server
                         .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
                         .unwrap();
-                    server
-                        .at(
-                            "/org/gnome/Mutter/DisplayConfig",
-                            DisplayConfig::new(backend.connectors()),
-                        )
-                        .unwrap();
                     conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
-                        .unwrap();
-                    conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
                         .unwrap();
                 }
             }
@@ -584,19 +590,21 @@ impl Niri {
                 conn.request_name_with_flags("org.gnome.Shell.Screenshot", flags)
                     .unwrap();
 
+                server
+                    .at(
+                        "/org/gnome/Mutter/DisplayConfig",
+                        DisplayConfig::new(backend.connectors()),
+                    )
+                    .unwrap();
+                conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
+                    .unwrap();
+
+                #[cfg(feature = "xdp-gnome-screencast")]
                 if pipewire.is_some() {
                     server
                         .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
                         .unwrap();
-                    server
-                        .at(
-                            "/org/gnome/Mutter/DisplayConfig",
-                            DisplayConfig::new(backend.connectors()),
-                        )
-                        .unwrap();
                     conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
-                        .unwrap();
-                    conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
                         .unwrap();
                 }
             }
@@ -650,6 +658,7 @@ impl Niri {
 
             zbus_conn,
             inhibit_power_key_fd,
+            #[cfg(feature = "xdp-gnome-screencast")]
             screen_cast,
             pipewire,
             casts: vec![],
@@ -1033,10 +1042,13 @@ impl Niri {
         self.send_frame_callbacks(output);
 
         // Render and send to PipeWire screencast streams.
-        let renderer = backend
-            .renderer()
-            .expect("renderer must not have disappeared");
-        self.send_for_screen_cast(renderer, output, &elements, presentation_time);
+        #[cfg(feature = "xdp-gnome-screencast")]
+        {
+            let renderer = backend
+                .renderer()
+                .expect("renderer must not have disappeared");
+            self.send_for_screen_cast(renderer, output, &elements, presentation_time);
+        }
     }
 
     fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
@@ -1173,6 +1185,7 @@ impl Niri {
         feedback
     }
 
+    #[cfg(feature = "xdp-gnome-screencast")]
     fn send_for_screen_cast(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -1393,13 +1406,16 @@ fn render_to_vec(
     Ok(copy.to_vec())
 }
 
+#[cfg(feature = "xdp-gnome-screencast")]
 fn render_to_dmabuf(
     renderer: &mut GlesRenderer,
-    dmabuf: Dmabuf,
+    dmabuf: smithay::backend::allocator::dmabuf::Dmabuf,
     size: Size<i32, Physical>,
     scale: Scale<f64>,
     elements: &[OutputRenderElements<GlesRenderer>],
 ) -> anyhow::Result<()> {
+    use smithay::backend::renderer::element::Element;
+
     let _span = tracy_client::span!("render_to_dmabuf");
 
     let output_rect = Rectangle::from_loc_and_size((0, 0), size);

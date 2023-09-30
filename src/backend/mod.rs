@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use smithay::backend::allocator::gbm::GbmDevice;
-use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::wayland::dmabuf::DmabufFeedback;
@@ -93,7 +91,11 @@ impl Backend {
         }
     }
 
-    pub fn gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub fn gbm_device(
+        &self,
+    ) -> Option<smithay::backend::allocator::gbm::GbmDevice<smithay::backend::drm::DrmDeviceFd>>
+    {
         match self {
             Backend::Tty(tty) => tty.gbm_device(),
             Backend::Winit(_) => None,
