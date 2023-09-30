@@ -74,7 +74,7 @@ use crate::dbus::mutter_display_config::DisplayConfig;
 use crate::dbus::mutter_screen_cast::{self, ScreenCast, ToNiriMsg};
 use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
-use crate::layout::{MonitorRenderElement, MonitorSet};
+use crate::layout::{output_size, MonitorRenderElement, MonitorSet};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::utils::{center, get_monotonic_time, load_default_cursor, make_screenshot_path};
 
@@ -668,15 +668,67 @@ impl Niri {
     pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {
         let global = output.create_global::<State>(&self.display_handle);
 
-        let x = self
-            .global_space
-            .outputs()
-            .map(|output| self.global_space.output_geometry(output).unwrap())
-            .map(|geom| geom.loc.x + geom.size.w)
-            .max()
-            .unwrap_or(0);
+        let name = output.name();
+        let config = self
+            .config
+            .borrow()
+            .outputs
+            .iter()
+            .find(|o| o.name == name)
+            .cloned()
+            .unwrap_or_default();
 
-        self.global_space.map_output(&output, (x, 0));
+        let size = output_size(&output);
+        let position = config
+            .position
+            .map(|pos| Point::from((pos.x, pos.y)))
+            .filter(|pos| {
+                // Ensure that the requested position does not overlap any existing output.
+                let target_geom = Rectangle::from_loc_and_size(*pos, size);
+
+                let overlap = self
+                    .global_space
+                    .outputs()
+                    .map(|output| self.global_space.output_geometry(output).unwrap())
+                    .find(|geom| geom.overlaps(target_geom));
+
+                if let Some(overlap) = overlap {
+                    warn!(
+                        "new output {name} at x={} y={} sized {}x{} \
+                         overlaps an existing output at x={} y={} sized {}x{}, \
+                         falling back to automatic placement",
+                        pos.x,
+                        pos.y,
+                        size.w,
+                        size.h,
+                        overlap.loc.x,
+                        overlap.loc.y,
+                        overlap.size.w,
+                        overlap.size.h,
+                    );
+
+                    false
+                } else {
+                    true
+                }
+            })
+            .unwrap_or_else(|| {
+                let x = self
+                    .global_space
+                    .outputs()
+                    .map(|output| self.global_space.output_geometry(output).unwrap())
+                    .map(|geom| geom.loc.x + geom.size.w)
+                    .max()
+                    .unwrap_or(0);
+
+                Point::from((x, 0))
+            });
+
+        debug!(
+            "putting new output {name} at x={} y={}",
+            position.x, position.y
+        );
+        self.global_space.map_output(&output, position);
         self.monitor_set.add_output(output.clone());
 
         let state = OutputState {

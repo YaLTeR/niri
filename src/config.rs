@@ -77,6 +77,8 @@ pub struct Output {
     pub name: String,
     #[knuffel(child, unwrap(argument), default = 1.)]
     pub scale: f64,
+    #[knuffel(child)]
+    pub position: Option<Position>,
 }
 
 impl Default for Output {
@@ -84,8 +86,17 @@ impl Default for Output {
         Self {
             name: String::new(),
             scale: 1.,
+            position: None,
         }
     }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct Position {
+    #[knuffel(property)]
+    pub x: i32,
+    #[knuffel(property)]
+    pub y: i32,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
@@ -342,6 +353,7 @@ mod tests {
 
             output "eDP-1" {
                 scale 2.0
+                position x=10 y=20
             }
 
             spawn-at-startup "alacritty" "-e" "fish"
@@ -387,6 +399,7 @@ mod tests {
                 outputs: vec![Output {
                     name: "eDP-1".to_owned(),
                     scale: 2.,
+                    position: Some(Position { x: 10, y: 20 }),
                 }],
                 spawn_at_startup: vec![SpawnAtStartup {
                     command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
