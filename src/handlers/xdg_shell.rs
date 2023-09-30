@@ -241,20 +241,25 @@ impl State {
         self.niri.popups.commit(surface);
 
         if let Some(popup) = self.niri.popups.find_popup(surface) {
-            let PopupKind::Xdg(ref popup) = popup;
-            let initial_configure_sent = with_states(surface, |states| {
-                states
-                    .data_map
-                    .get::<XdgPopupSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .initial_configure_sent
-            });
-            if !initial_configure_sent {
-                // NOTE: This should never fail as the initial configure is always
-                // allowed.
-                popup.send_configure().expect("initial configure failed");
+            match popup {
+                PopupKind::Xdg(ref popup) => {
+                    let initial_configure_sent = with_states(surface, |states| {
+                        states
+                            .data_map
+                            .get::<XdgPopupSurfaceData>()
+                            .unwrap()
+                            .lock()
+                            .unwrap()
+                            .initial_configure_sent
+                    });
+                    if !initial_configure_sent {
+                        // NOTE: This should never fail as the initial configure is always
+                        // allowed.
+                        popup.send_configure().expect("initial configure failed");
+                    }
+                }
+                // Input method popups don't require a configure.
+                PopupKind::InputMethod(_) => (),
             }
         }
     }
