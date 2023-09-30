@@ -54,13 +54,14 @@ use smithay::wayland::compositor::{
     with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
     TraversalAction,
 };
-use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
-use smithay::wayland::primary_selection::PrimarySelectionState;
+use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::selection::wlr_data_control::DataControlState;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
@@ -121,6 +122,7 @@ pub struct Niri {
     pub pointer_gestures_state: PointerGesturesState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
+    pub data_control_state: DataControlState,
     pub popups: PopupManager,
     pub presentation_state: PresentationState,
 
@@ -319,6 +321,11 @@ impl Niri {
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
         let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
+        let data_control_state = DataControlState::new::<State, _>(
+            &display_handle,
+            Some(&primary_selection_state),
+            |_| true,
+        );
         let presentation_state =
             PresentationState::new::<State>(&display_handle, CLOCK_MONOTONIC as u32);
 
@@ -689,12 +696,13 @@ impl Niri {
             pointer_gestures_state,
             data_device_state,
             primary_selection_state,
+            data_control_state,
             popups: PopupManager::default(),
             presentation_state,
 
             seat,
             default_cursor,
-            cursor_image: CursorImageStatus::Default,
+            cursor_image: CursorImageStatus::default_named(),
             dnd_icon: None,
 
             zbus_conn,
@@ -1019,7 +1027,7 @@ impl Niri {
                         .hotspot
                 })
             } else {
-                self.cursor_image = CursorImageStatus::Default;
+                self.cursor_image = CursorImageStatus::default_named();
                 default_hotspot
             }
         } else {
@@ -1029,7 +1037,16 @@ impl Niri {
 
         let mut pointer_elements = match &self.cursor_image {
             CursorImageStatus::Hidden => vec![],
-            CursorImageStatus::Default => vec![OutputRenderElements::DefaultPointer(
+            CursorImageStatus::Surface(surface) => render_elements_from_surface_tree(
+                renderer,
+                surface,
+                pointer_pos,
+                output_scale,
+                1.,
+                Kind::Cursor,
+            ),
+            // Default shape catch-all
+            _ => vec![OutputRenderElements::DefaultPointer(
                 TextureRenderElement::from_texture_buffer(
                     pointer_pos.to_f64(),
                     &default_buffer,
@@ -1039,14 +1056,6 @@ impl Niri {
                     Kind::Cursor,
                 ),
             )],
-            CursorImageStatus::Surface(surface) => render_elements_from_surface_tree(
-                renderer,
-                surface,
-                pointer_pos,
-                output_scale,
-                1.,
-                Kind::Cursor,
-            ),
         };
 
         if let Some(dnd_icon) = &self.dnd_icon {
