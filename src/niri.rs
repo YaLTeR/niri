@@ -262,7 +262,18 @@ impl State {
             }
         };
 
-        *self.niri.config.borrow_mut() = config;
+        let mut old_config = self.niri.config.borrow_mut();
+
+        if config.cursor != old_config.cursor {
+            self.niri.default_cursor =
+                Cursor::load(&config.cursor.xcursor_theme, config.cursor.xcursor_size);
+        }
+
+        *old_config = config;
+
+        // Release the borrow.
+        drop(old_config);
+
         self.niri.queue_redraw_all();
         // FIXME: apply output scale and whatnot.
         // FIXME: apply libinput device settings.
@@ -329,7 +340,8 @@ impl Niri {
         .unwrap();
         seat.add_pointer();
 
-        let default_cursor = Cursor::load();
+        let default_cursor =
+            Cursor::load(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();

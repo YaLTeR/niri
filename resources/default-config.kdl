@@ -67,6 +67,13 @@ focus-ring {
     inactive-color 0.3 0.3 0.3 1.0
 }
 
+cursor {
+    // Change the theme and size of the cursor as well as set the
+    // `XCURSOR_THEME` and `XCURSOR_SIZE` env variables.
+    // xcursor-theme "default"
+    // xcursor-size 24
+}
+
 // Uncomment this line to ask the clients to omit their client-side decorations if possible.
 // If the client will specifically ask for CSD, the request will be honored.
 // prefer-no-csd
