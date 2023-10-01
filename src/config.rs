@@ -21,6 +21,8 @@ pub struct Config {
     #[knuffel(child, default)]
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
+    pub cursor: Cursor,
+    #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
     pub debug: DebugConfig,
@@ -149,6 +151,23 @@ impl Color {
 impl From<Color> for [f32; 4] {
     fn from(c: Color) -> Self {
         [c.r, c.g, c.b, c.a]
+    }
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq)]
+pub struct Cursor {
+    #[knuffel(child, unwrap(argument), default = String::from("default"))]
+    pub xcursor_theme: String,
+    #[knuffel(child, unwrap(argument), default = 24)]
+    pub xcursor_size: u8,
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Self {
+            xcursor_theme: String::from("default"),
+            xcursor_size: 24,
+        }
     }
 }
 
@@ -366,6 +385,11 @@ mod tests {
 
             prefer-no-csd
 
+            cursor {
+                xcursor-theme "breeze_cursors"
+                xcursor-size 16
+            }
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -421,6 +445,10 @@ mod tests {
                     },
                 },
                 prefer_no_csd: true,
+                cursor: Cursor {
+                    xcursor_theme: String::from("breeze_cursors"),
+                    xcursor_size: 16,
+                },
                 binds: Binds(vec![
                     Bind {
                         key: Key {

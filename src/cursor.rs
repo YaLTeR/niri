@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env;
 use std::fs::File;
 use std::io::Read;
 
@@ -10,17 +11,22 @@ use smithay::utils::{Physical, Point, Transform};
 use xcursor::parser::{parse_xcursor, Image};
 use xcursor::CursorTheme;
 
-const CURSOR_SIZE: i32 = 24;
 static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
 
 pub struct Cursor {
     images: Vec<Image>,
+    size: i32,
     cache: HashMap<i32, (TextureBuffer<GlesTexture>, Point<i32, Physical>)>,
 }
 
 impl Cursor {
-    pub fn load() -> Self {
-        let images = match load_xcursor() {
+    /// Load the said theme as well as set the `XCURSOR_THEME` and `XCURSOR_SIZE`
+    /// env variables.
+    pub fn load(theme: &str, size: u8) -> Self {
+        env::set_var("XCURSOR_THEME", theme);
+        env::set_var("XCURSOR_SIZE", size.to_string());
+
+        let images = match load_xcursor(theme) {
             Ok(images) => images,
             Err(err) => {
                 warn!("error loading xcursor default cursor: {err:?}");
@@ -40,6 +46,7 @@ impl Cursor {
 
         Self {
             images,
+            size: size as i32,
             cache: HashMap::new(),
         }
     }
@@ -54,7 +61,7 @@ impl Cursor {
             .or_insert_with_key(|scale| {
                 let _span = tracy_client::span!("create cursor texture");
 
-                let size = CURSOR_SIZE * scale;
+                let size = self.size * scale;
 
                 let nearest_image = self
                     .images
@@ -86,10 +93,10 @@ impl Cursor {
     }
 }
 
-fn load_xcursor() -> anyhow::Result<Vec<Image>> {
+fn load_xcursor(theme: &str) -> anyhow::Result<Vec<Image>> {
     let _span = tracy_client::span!();
 
-    let theme = CursorTheme::load("default");
+    let theme = CursorTheme::load(theme);
     let path = theme
         .load_icon("default")
         .ok_or_else(|| anyhow!("no default icon"))?;
