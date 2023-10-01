@@ -604,10 +604,10 @@ impl<W: LayoutElement> MonitorSet<W> {
         }
     }
 
-    pub fn find_window_and_output(&mut self, wl_surface: &WlSurface) -> Option<(W, Output)> {
+    pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(W, Output)> {
         if let MonitorSet::Normal { monitors, .. } = self {
             for mon in monitors {
-                for ws in &mut mon.workspaces {
+                for ws in &mon.workspaces {
                     if let Some(window) = ws.find_wl_surface(wl_surface) {
                         return Some((window.clone(), mon.output.clone()));
                     }
