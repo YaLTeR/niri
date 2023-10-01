@@ -15,7 +15,7 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
+use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{
     render_elements, AsRenderElements, Kind, RenderElement, RenderElementStates,
@@ -71,6 +71,7 @@ use zbus::fdo::RequestNameFlags;
 
 use crate::backend::{Backend, Tty, Winit};
 use crate::config::Config;
+use crate::cursor::Cursor;
 use crate::dbus::gnome_shell_screenshot::{self, NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_display_config::DisplayConfig;
 #[cfg(feature = "xdp-gnome-screencast")]
@@ -79,7 +80,7 @@ use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
 use crate::layout::{output_size, MonitorRenderElement, MonitorSet};
 use crate::pw_utils::{Cast, PipeWire};
-use crate::utils::{center, get_monotonic_time, load_default_cursor, make_screenshot_path};
+use crate::utils::{center, get_monotonic_time, make_screenshot_path};
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -122,7 +123,7 @@ pub struct Niri {
 
     pub seat: Seat<State>,
 
-    pub pointer_buffer: Option<(TextureBuffer<GlesTexture>, Point<i32, Physical>)>,
+    pub default_cursor: Cursor,
     pub cursor_image: CursorImageStatus,
     pub dnd_icon: Option<WlSurface>,
 
@@ -327,6 +328,8 @@ impl Niri {
         )
         .unwrap();
         seat.add_pointer();
+
+        let default_cursor = Cursor::load();
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
@@ -675,7 +678,7 @@ impl Niri {
             presentation_state,
 
             seat,
-            pointer_buffer: None,
+            default_cursor,
             cursor_image: CursorImageStatus::Default,
             dnd_icon: None,
 
@@ -985,10 +988,9 @@ impl Niri {
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
 
-        let (default_buffer, default_hotspot) = self
-            .pointer_buffer
-            .get_or_insert_with(|| load_default_cursor(renderer));
-        let default_hotspot = default_hotspot.to_logical(1);
+        let output_scale_int = output.current_scale().integer_scale();
+        let (default_buffer, default_hotspot) = self.default_cursor.get(renderer, output_scale_int);
+        let default_hotspot = default_hotspot.to_logical(output_scale_int);
 
         let hotspot = if let CursorImageStatus::Surface(surface) = &mut self.cursor_image {
             if surface.alive() {
@@ -1015,7 +1017,7 @@ impl Niri {
             CursorImageStatus::Default => vec![OutputRenderElements::DefaultPointer(
                 TextureRenderElement::from_texture_buffer(
                     pointer_pos.to_f64(),
-                    default_buffer,
+                    &default_buffer,
                     None,
                     None,
                     None,

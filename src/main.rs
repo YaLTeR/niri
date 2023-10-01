@@ -4,6 +4,7 @@ extern crate tracing;
 mod animation;
 mod backend;
 mod config;
+mod cursor;
 mod dbus;
 mod frame_clock;
 mod handlers;
