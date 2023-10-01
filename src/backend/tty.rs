@@ -807,6 +807,8 @@ impl Tty {
                     }
                 }
 
+                niri.update_primary_scanout_output(output, &res.states);
+
                 if res.damage.is_some() {
                     let presentation_feedbacks =
                         niri.take_presentation_feedbacks(output, &res.states);

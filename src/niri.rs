@@ -18,13 +18,15 @@ use smithay::backend::renderer::element::surface::{
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{
-    render_elements, AsRenderElements, Kind, RenderElement, RenderElementStates,
+    default_primary_scanout_output_compare, render_elements, AsRenderElements, Kind, RenderElement,
+    RenderElementStates,
 };
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
 use smithay::desktop::utils::{
     send_dmabuf_feedback_surface_tree, send_frames_surface_tree,
-    surface_presentation_feedback_flags_from_states, take_presentation_feedback_surface_tree,
+    surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
+    take_presentation_feedback_surface_tree, update_surface_primary_scanout_output,
     OutputPresentationFeedback,
 };
 use smithay::desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType};
@@ -49,7 +51,8 @@ use smithay::utils::{
     IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
-    with_states, CompositorClientState, CompositorState, SurfaceData,
+    with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
+    TraversalAction,
 };
 use smithay::wayland::data_device::DataDeviceState;
 use smithay::wayland::dmabuf::DmabufFeedback;
@@ -1160,6 +1163,16 @@ impl Niri {
         }
 
         // Send the frame callbacks.
+        //
+        // FIXME: The logic here could be a bit smarter. Currently, during an animation, the
+        // surfaces that are visible for the very last frame (e.g. because the camera is moving
+        // away) will receive frame callbacks, and the surfaces that are invisible but will become
+        // visible next frame will not receive frame callbacks (so they will show stale contents for
+        // one frame). We could advance the animations for the next frame and send frame callbacks
+        // according to the expected new positions.
+        //
+        // However, this should probably be restricted to sending frame callbacks to more surfaces,
+        // to err on the safe side.
         self.send_frame_callbacks(output);
 
         // Render and send to PipeWire screencast streams.
@@ -1172,10 +1185,95 @@ impl Niri {
         }
     }
 
+    pub fn update_primary_scanout_output(
+        &self,
+        output: &Output,
+        render_element_states: &RenderElementStates,
+    ) {
+        // FIXME: potentially tweak the compare function. The default one currently always prefers a
+        // higher refresh-rate output, which is not always desirable (i.e. with a very small
+        // overlap).
+        //
+        // While we only have cursors and DnD icons crossing output boundaries though, it doesn't
+        // matter all that much.
+        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+            with_surface_tree_downward(
+                surface,
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |surface, states, _| {
+                    update_surface_primary_scanout_output(
+                        surface,
+                        output,
+                        states,
+                        render_element_states,
+                        default_primary_scanout_output_compare,
+                    );
+                },
+                |_, _, _| true,
+            );
+        }
+
+        if let Some(surface) = &self.dnd_icon {
+            with_surface_tree_downward(
+                surface,
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |surface, states, _| {
+                    update_surface_primary_scanout_output(
+                        surface,
+                        output,
+                        states,
+                        render_element_states,
+                        default_primary_scanout_output_compare,
+                    );
+                },
+                |_, _, _| true,
+            );
+        }
+
+        // We're only updating the current output's windows and layer surfaces. This should be fine
+        // as in niri they can only be rendered on a single output at a time.
+        //
+        // The reason to do this at all is that it keeps track of whether the surface is visible or
+        // not in a unified way with the pointer surfaces, which makes the logic elsewhere simpler.
+
+        for win in self.monitor_set.windows_for_output(output) {
+            win.with_surfaces(|surface, states| {
+                update_surface_primary_scanout_output(
+                    surface,
+                    output,
+                    states,
+                    render_element_states,
+                    // Windows are shown only on one output at a time.
+                    |_, _, output, _| output,
+                );
+            });
+        }
+
+        for surface in layer_map_for_output(output).layers() {
+            surface.with_surfaces(|surface, states| {
+                update_surface_primary_scanout_output(
+                    surface,
+                    output,
+                    states,
+                    render_element_states,
+                    // Layer surfaces are shown only on one output at a time.
+                    |_, _, output, _| output,
+                );
+            });
+        }
+    }
+
     fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
         let _span = tracy_client::span!("Niri::send_dmabuf_feedbacks");
 
-        self.monitor_set.send_dmabuf_feedback(output, feedback);
+        // We can unconditionally send the current output's feedback to regular and layer-shell
+        // surfaces, as they can only be displayed on a single output at a time. Even if a surface
+        // is currently invisible, this is the DMABUF feedback that it should know about.
+        for win in self.monitor_set.windows_for_output(output) {
+            win.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
+        }
 
         for surface in layer_map_for_output(output).layers() {
             surface.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
@@ -1185,7 +1283,7 @@ impl Niri {
             send_dmabuf_feedback_surface_tree(
                 surface,
                 output,
-                |_, _| Some(output.clone()),
+                surface_primary_scanout_output,
                 |_, _| feedback,
             );
         }
@@ -1194,7 +1292,7 @@ impl Niri {
             send_dmabuf_feedback_surface_tree(
                 surface,
                 output,
-                |_, _| Some(output.clone()),
+                surface_primary_scanout_output,
                 |_, _| feedback,
             );
         }
@@ -1206,7 +1304,16 @@ impl Niri {
         let state = self.output_state.get(output).unwrap();
         let sequence = state.current_estimated_sequence;
 
-        let should_send = |states: &SurfaceData| {
+        let should_send = |surface: &WlSurface, states: &SurfaceData| {
+            // Do the standard primary scanout output check. For pointer surfaces it deduplicates
+            // the frame callbacks across potentially multiple outputs, and for regular windows and
+            // layer-shell surfaces it avoids sending frame callbacks to invisible surfaces.
+            let current_primary_output = surface_primary_scanout_output(surface, states);
+            if current_primary_output.as_ref() != Some(output) {
+                return None;
+            }
+
+            // Next, check the throttling status.
             let frame_throttling_state = states
                 .data_map
                 .get_or_insert(SurfaceFrameThrottlingState::default);
@@ -1226,31 +1333,29 @@ impl Niri {
                 if let Some(sequence) = sequence {
                     *last_sent_at = Some((output.clone(), sequence));
                 }
-            }
 
-            send
+                Some(output.clone())
+            } else {
+                None
+            }
         };
 
         let frame_callback_time = get_monotonic_time();
-        self.monitor_set
-            .send_frame(output, frame_callback_time, &should_send);
+
+        for win in self.monitor_set.windows_for_output(output) {
+            win.send_frame(output, frame_callback_time, None, should_send);
+        }
 
         for surface in layer_map_for_output(output).layers() {
-            surface.send_frame(output, frame_callback_time, None, |_, states| {
-                should_send(states).then(|| output.clone())
-            });
+            surface.send_frame(output, frame_callback_time, None, should_send);
         }
 
         if let Some(surface) = &self.dnd_icon {
-            send_frames_surface_tree(surface, output, frame_callback_time, None, |_, states| {
-                should_send(states).then(|| output.clone())
-            });
+            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
         }
 
         if let CursorImageStatus::Surface(surface) = &self.cursor_image {
-            send_frames_surface_tree(surface, output, frame_callback_time, None, |_, states| {
-                should_send(states).then(|| output.clone())
-            });
+            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
         }
     }
 
@@ -1265,7 +1370,7 @@ impl Niri {
             take_presentation_feedback_surface_tree(
                 surface,
                 &mut feedback,
-                |_, _| Some(output.clone()),
+                surface_primary_scanout_output,
                 |surface, _| {
                     surface_presentation_feedback_flags_from_states(surface, render_element_states)
                 },
@@ -1276,7 +1381,7 @@ impl Niri {
             take_presentation_feedback_surface_tree(
                 surface,
                 &mut feedback,
-                |_, _| Some(output.clone()),
+                surface_primary_scanout_output,
                 |surface, _| {
                     surface_presentation_feedback_flags_from_states(surface, render_element_states)
                 },
@@ -1286,7 +1391,7 @@ impl Niri {
         for win in self.monitor_set.windows_for_output(output) {
             win.take_presentation_feedback(
                 &mut feedback,
-                |_, _| Some(output.clone()),
+                surface_primary_scanout_output,
                 |surface, _| {
                     surface_presentation_feedback_flags_from_states(surface, render_element_states)
                 },
@@ -1296,7 +1401,7 @@ impl Niri {
         for surface in layer_map_for_output(output).layers() {
             surface.take_presentation_feedback(
                 &mut feedback,
-                |_, _| Some(output.clone()),
+                surface_primary_scanout_output,
                 |surface, _| {
                     surface_presentation_feedback_flags_from_states(surface, render_element_states)
                 },

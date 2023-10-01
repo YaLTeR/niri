@@ -161,6 +161,9 @@ impl Winit {
             .damage_tracker
             .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
             .unwrap();
+
+        niri.update_primary_scanout_output(output, &res.states);
+
         if let Some(damage) = res.damage {
             if self
                 .config

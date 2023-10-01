@@ -48,8 +48,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::render_elements;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
-use smithay::wayland::compositor::{with_states, SurfaceData};
-use smithay::wayland::dmabuf::DmabufFeedback;
+use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
@@ -80,23 +79,6 @@ pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
-    fn send_frame<T, F>(
-        &self,
-        output: &Output,
-        time: T,
-        throttle: Option<Duration>,
-        primary_scan_out_output: F,
-    ) where
-        T: Into<Duration>,
-        F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy;
-    fn send_dmabuf_feedback<'a, P, F>(
-        &self,
-        output: &Output,
-        primary_scan_out_output: P,
-        select_dmabuf_feedback: F,
-    ) where
-        P: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
-        F: Fn(&WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy;
 }
 
 #[derive(Debug)]
@@ -252,31 +234,6 @@ impl LayoutElement for Window {
 
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool {
         self.toplevel().wl_surface() == wl_surface
-    }
-
-    fn send_frame<T, F>(
-        &self,
-        output: &Output,
-        time: T,
-        throttle: Option<Duration>,
-        primary_scan_out_output: F,
-    ) where
-        T: Into<Duration>,
-        F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
-    {
-        self.send_frame(output, time, throttle, primary_scan_out_output);
-    }
-
-    fn send_dmabuf_feedback<'a, P, F>(
-        &self,
-        output: &Output,
-        primary_scan_out_output: P,
-        select_dmabuf_feedback: F,
-    ) where
-        P: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
-        F: Fn(&WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
-    {
-        self.send_dmabuf_feedback(output, primary_scan_out_output, select_dmabuf_feedback);
     }
 }
 
@@ -574,31 +531,6 @@ impl<W: LayoutElement> MonitorSet<W> {
                         ws.update_window(window);
                         return;
                     }
-                }
-            }
-        }
-    }
-
-    pub fn send_frame(
-        &self,
-        output: &Output,
-        time: Duration,
-        should_send: &impl Fn(&SurfaceData) -> bool,
-    ) {
-        if let MonitorSet::Normal { monitors, .. } = self {
-            for mon in monitors {
-                if &mon.output == output {
-                    mon.workspaces[mon.active_workspace_idx].send_frame(time, should_send);
-                }
-            }
-        }
-    }
-
-    pub fn send_dmabuf_feedback(&self, output: &Output, feedback: &DmabufFeedback) {
-        if let MonitorSet::Normal { monitors, .. } = self {
-            for mon in monitors {
-                if &mon.output == output {
-                    mon.workspaces[mon.active_workspace_idx].send_dmabuf_feedback(feedback);
                 }
             }
         }
@@ -1853,22 +1785,6 @@ impl<W: LayoutElement> Workspace<W> {
         self.add_window(window, true);
     }
 
-    fn send_frame(&self, time: Duration, should_send: &impl Fn(&SurfaceData) -> bool) {
-        let output = self.output.as_ref().unwrap();
-        for win in self.windows() {
-            win.send_frame(output, time, None, |_, states| {
-                should_send(states).then(|| output.clone())
-            });
-        }
-    }
-
-    fn send_dmabuf_feedback(&self, feedback: &DmabufFeedback) {
-        let output = self.output.as_ref().unwrap();
-        for win in self.windows() {
-            win.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
-        }
-    }
-
     fn view_pos(&self) -> i32 {
         self.column_x(self.active_column_idx) + self.view_offset - PADDING
     }
@@ -2457,29 +2373,6 @@ mod tests {
 
         fn is_wl_surface(&self, _wl_surface: &WlSurface) -> bool {
             false
-        }
-
-        fn send_frame<T, F>(
-            &self,
-            _output: &Output,
-            _time: T,
-            _throttle: Option<Duration>,
-            _primary_scan_out_output: F,
-        ) where
-            T: Into<Duration>,
-            F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
-        {
-        }
-
-        fn send_dmabuf_feedback<'a, P, F>(
-            &self,
-            _output: &Output,
-            _primary_scan_out_output: P,
-            _select_dmabuf_feedback: F,
-        ) where
-            P: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
-            F: Fn(&WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
-        {
         }
     }
 
