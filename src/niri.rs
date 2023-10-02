@@ -12,7 +12,6 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::Context;
 use sd_notify::NotifyState;
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
@@ -1652,7 +1651,6 @@ render_elements! {
     Monitor = MonitorRenderElement<R>,
     Wayland = WaylandSurfaceRenderElement<R>,
     DefaultPointer = TextureRenderElement<<R as Renderer>::TextureId>,
-    X = SolidColorRenderElement,
 }
 
 #[derive(Default)]
