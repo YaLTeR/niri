@@ -793,8 +793,6 @@ impl Tty {
             BACKGROUND_COLOR,
         ) {
             Ok(res) => {
-                assert!(!res.needs_sync());
-
                 if self
                     .config
                     .borrow()
