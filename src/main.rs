@@ -116,6 +116,7 @@ fn main() {
 
             // These should be called periodically, before flushing the clients.
             state.niri.monitor_set.refresh();
+            state.niri.refresh_pointer_outputs();
             state.niri.popups.cleanup();
             state.update_focus();
 

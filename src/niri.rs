@@ -12,6 +12,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::Context;
 use sd_notify::NotifyState;
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
@@ -24,10 +25,10 @@ use smithay::backend::renderer::element::{
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
 use smithay::desktop::utils::{
-    send_dmabuf_feedback_surface_tree, send_frames_surface_tree,
-    surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
-    take_presentation_feedback_surface_tree, update_surface_primary_scanout_output,
-    OutputPresentationFeedback,
+    bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
+    send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
+    surface_primary_scanout_output, take_presentation_feedback_surface_tree,
+    update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
 use smithay::desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
@@ -1072,6 +1073,86 @@ impl Niri {
         pointer_elements
     }
 
+    pub fn refresh_pointer_outputs(&self) {
+        let _span = tracy_client::span!("Niri::refresh_pointer_outputs");
+
+        match &self.cursor_image {
+            CursorImageStatus::Hidden | CursorImageStatus::Named(_) => {
+                // There's no cursor surface, but there might be a DnD icon.
+                let Some(surface) = &self.dnd_icon else {
+                    return;
+                };
+
+                let pointer_pos = self.seat.get_pointer().unwrap().current_location();
+
+                for output in self.global_space.outputs() {
+                    let geo = self.global_space.output_geometry(output).unwrap();
+
+                    // The default cursor is rendered at the right scale for each output, which
+                    // means that it may have a different hotspot for each output.
+                    let output_scale = output.current_scale().integer_scale();
+                    let Some(hotspot) = self.default_cursor.get_cached_hotspot(output_scale) else {
+                        // Oh well; it'll get cached next time we render.
+                        continue;
+                    };
+                    let hotspot = hotspot.to_logical(output_scale);
+
+                    let surface_pos = pointer_pos.to_i32_round() - hotspot;
+                    let bbox = bbox_from_surface_tree(surface, surface_pos);
+
+                    if let Some(mut overlap) = geo.intersection(bbox) {
+                        overlap.loc -= surface_pos;
+                        output_update(output, Some(overlap), surface);
+                    } else {
+                        output_update(output, None, surface);
+                    }
+                }
+            }
+            CursorImageStatus::Surface(surface) => {
+                let hotspot = with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<CursorImageAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .hotspot
+                });
+
+                let pointer_pos = self.seat.get_pointer().unwrap().current_location();
+                let surface_pos = pointer_pos.to_i32_round() - hotspot;
+                let bbox = bbox_from_surface_tree(surface, surface_pos);
+
+                let dnd = self
+                    .dnd_icon
+                    .as_ref()
+                    .map(|surface| (surface, bbox_from_surface_tree(surface, surface_pos)));
+
+                for output in self.global_space.outputs() {
+                    let geo = self.global_space.output_geometry(output).unwrap();
+
+                    // Compute pointer surface overlap.
+                    if let Some(mut overlap) = geo.intersection(bbox) {
+                        overlap.loc -= surface_pos;
+                        output_update(output, Some(overlap), surface);
+                    } else {
+                        output_update(output, None, surface);
+                    }
+
+                    // Compute DnD icon surface overlap.
+                    if let Some((surface, bbox)) = dnd {
+                        if let Some(mut overlap) = geo.intersection(bbox) {
+                            overlap.loc -= surface_pos;
+                            output_update(output, Some(overlap), surface);
+                        } else {
+                            output_update(output, None, surface);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn render(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -1571,6 +1652,7 @@ render_elements! {
     Monitor = MonitorRenderElement<R>,
     Wayland = WaylandSurfaceRenderElement<R>,
     DefaultPointer = TextureRenderElement<<R as Renderer>::TextureId>,
+    X = SolidColorRenderElement,
 }
 
 #[derive(Default)]

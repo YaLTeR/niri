@@ -91,6 +91,10 @@ impl Cursor {
             })
             .clone()
     }
+
+    pub fn get_cached_hotspot(&self, scale: i32) -> Option<Point<i32, Physical>> {
+        self.cache.get(&scale).map(|(_, hotspot)| *hotspot)
+    }
 }
 
 fn load_xcursor(theme: &str) -> anyhow::Result<Vec<Image>> {
