@@ -340,10 +340,14 @@ impl FromStr for Key {
 
 #[cfg(test)]
 mod tests {
+    use miette::NarratableReportHandler;
+
     use super::*;
 
     #[track_caller]
     fn check(text: &str, expected: Config) {
+        let _ = miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())));
+
         let parsed = Config::parse("test.kdl", text)
             .map_err(miette::Report::new)
             .unwrap();
