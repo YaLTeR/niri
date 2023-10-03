@@ -96,7 +96,6 @@ fn action(
 impl State {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         let _span = tracy_client::span!("process_input_event");
-        trace!("process_input_event");
 
         // A bit of a hack, but animation end runs some logic (i.e. workspace clean-up) and it
         // doesn't always trigger due to damage, etc. So run it here right before it might prove
