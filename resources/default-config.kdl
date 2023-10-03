@@ -34,6 +34,14 @@ input {
     // Scale is a floating-point number, but at the moment only integer values work.
     scale 2.0
 
+    // Resolution and, optionally, refresh rate of the output.
+    // The format is "<width>x<height>" or "<width>x<height>@<refresh rate>".
+    // If the refresh rate is omitted, niri will pick the highest refresh rate
+    // for the resolution.
+    // If the mode is omitted altogether or is invalid, niri will pick one automatically.
+    // All valid modes are listed in niri's debug output when an output is connected.
+    mode "1920x1080@144"
+
     // Position of the output in the global coordinate space.
     // This affects directional monitor actions like "focus-monitor-left", and cursor movement.
     // The cursor can only move between directly adjacent outputs.

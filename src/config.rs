@@ -81,6 +81,8 @@ pub struct Output {
     pub scale: f64,
     #[knuffel(child)]
     pub position: Option<Position>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub mode: Option<Mode>,
 }
 
 impl Default for Output {
@@ -89,6 +91,7 @@ impl Default for Output {
             name: String::new(),
             scale: 1.,
             position: None,
+            mode: None,
         }
     }
 }
@@ -99,6 +102,13 @@ pub struct Position {
     pub x: i32,
     #[knuffel(property)]
     pub y: i32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mode {
+    pub width: u16,
+    pub height: u16,
+    pub refresh: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
@@ -303,6 +313,41 @@ impl Default for Config {
     }
 }
 
+impl FromStr for Mode {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((width, rest)) = s.split_once('x') else {
+            return Err(miette!("no 'x' separator found"));
+        };
+
+        let (height, refresh) = match rest.split_once('@') {
+            Some((height, refresh)) => (height, Some(refresh)),
+            None => (rest, None),
+        };
+
+        let width = width
+            .parse()
+            .into_diagnostic()
+            .context("error parsing width")?;
+        let height = height
+            .parse()
+            .into_diagnostic()
+            .context("error parsing height")?;
+        let refresh = refresh
+            .map(str::parse)
+            .transpose()
+            .into_diagnostic()
+            .context("error parsing refresh rate")?;
+
+        Ok(Self {
+            width,
+            height,
+            refresh,
+        })
+    }
+}
+
 impl FromStr for Key {
     type Err = miette::Error;
 
@@ -377,6 +422,7 @@ mod tests {
             output "eDP-1" {
                 scale 2.0
                 position x=10 y=20
+                mode "1920x1080@144"
             }
 
             spawn-at-startup "alacritty" "-e" "fish"
@@ -428,6 +474,11 @@ mod tests {
                     name: "eDP-1".to_owned(),
                     scale: 2.,
                     position: Some(Position { x: 10, y: 20 }),
+                    mode: Some(Mode {
+                        width: 1920,
+                        height: 1080,
+                        refresh: Some(144.),
+                    }),
                 }],
                 spawn_at_startup: vec![SpawnAtStartup {
                     command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
@@ -508,5 +559,31 @@ mod tests {
     #[test]
     fn can_create_default_config() {
         let _ = Config::default();
+    }
+
+    #[test]
+    fn parse_mode() {
+        assert_eq!(
+            "2560x1600@165.004".parse::<Mode>().unwrap(),
+            Mode {
+                width: 2560,
+                height: 1600,
+                refresh: Some(165.004),
+            },
+        );
+
+        assert_eq!(
+            "1920x1080".parse::<Mode>().unwrap(),
+            Mode {
+                width: 1920,
+                height: 1080,
+                refresh: None,
+            },
+        );
+
+        assert!("1920".parse::<Mode>().is_err());
+        assert!("1920x".parse::<Mode>().is_err());
+        assert!("1920x1080@".parse::<Mode>().is_err());
+        assert!("1920x1080@60Hz".parse::<Mode>().is_err());
     }
 }

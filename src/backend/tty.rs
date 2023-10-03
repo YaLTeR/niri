@@ -434,20 +434,81 @@ impl Tty {
             .as_mut()
             .context("missing output device")?;
 
-        let mut mode = connector.modes().get(0);
-        connector.modes().iter().for_each(|m| {
-            trace!("mode: {m:?}");
+        // FIXME: print modes here until we have a better way to list all modes.
+        for m in connector.modes() {
+            let wl_mode = Mode::from(*m);
+            debug!(
+                "mode: {}x{}@{:.3}",
+                m.size().0,
+                m.size().1,
+                wl_mode.refresh as f64 / 1000.,
+            );
 
-            if m.mode_type().contains(ModeTypeFlags::PREFERRED) {
-                // Pick the highest refresh rate.
-                if mode
-                    .map(|curr| curr.vrefresh() < m.vrefresh())
-                    .unwrap_or(true)
-                {
+            trace!("{m:?}");
+        }
+
+        let mut mode = None;
+
+        if let Some(target) = &config.mode {
+            let refresh = target.refresh.map(|r| (r * 1000.).round() as i32);
+
+            for m in connector.modes() {
+                if m.size() != (target.width, target.height) {
+                    continue;
+                }
+
+                if let Some(refresh) = refresh {
+                    // If refresh is set, only pick modes with matching refresh.
+                    let wl_mode = Mode::from(*m);
+                    if wl_mode.refresh == refresh {
+                        mode = Some(m);
+                    }
+                } else if let Some(curr) = mode {
+                    // If refresh isn't set, pick the mode with the highest refresh.
+                    if curr.vrefresh() < m.vrefresh() {
+                        mode = Some(m);
+                    }
+                } else {
                     mode = Some(m);
                 }
             }
-        });
+
+            if mode.is_none() {
+                warn!(
+                    "configured mode {}x{}{} could not be found, falling back to preferred",
+                    target.width,
+                    target.height,
+                    if let Some(refresh) = target.refresh {
+                        format!("@{refresh}")
+                    } else {
+                        String::new()
+                    },
+                );
+            }
+        }
+
+        if mode.is_none() {
+            // Pick a preferred mode.
+            for m in connector.modes() {
+                if !m.mode_type().contains(ModeTypeFlags::PREFERRED) {
+                    continue;
+                }
+
+                if let Some(curr) = mode {
+                    if curr.vrefresh() < m.vrefresh() {
+                        mode = Some(m);
+                    }
+                } else {
+                    mode = Some(m);
+                }
+            }
+        }
+
+        if mode.is_none() {
+            // Last attempt.
+            mode = connector.modes().get(0);
+        }
+
         let mode = mode.ok_or_else(|| anyhow!("no mode"))?;
         debug!("picking mode: {mode:?}");
 
