@@ -181,10 +181,10 @@ impl Default for Cursor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Binds(#[knuffel(children)] pub Vec<Bind>);
 
-#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Bind {
     #[knuffel(node_name)]
     pub key: Key,
@@ -209,7 +209,7 @@ bitflags! {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub enum Action {
     #[knuffel(skip)]
     None,
@@ -248,6 +248,15 @@ pub enum Action {
     MoveWindowToMonitorUp,
     SwitchPresetColumnWidth,
     MaximizeColumn,
+    SetColumnWidth(#[knuffel(argument, str)] SizeChange),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SizeChange {
+    SetFixed(i32),
+    SetProportion(f64),
+    AdjustFixed(i32),
+    AdjustProportion(f64),
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
@@ -380,6 +389,58 @@ impl FromStr for Key {
         }
 
         Ok(Key { keysym, modifiers })
+    }
+}
+
+impl FromStr for SizeChange {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once('%') {
+            Some((value, empty)) => {
+                if !empty.is_empty() {
+                    return Err(miette!("trailing characters after '%' are not allowed"));
+                }
+
+                match value.bytes().next() {
+                    Some(b'-' | b'+') => {
+                        let value = value
+                            .parse()
+                            .into_diagnostic()
+                            .context("error parsing value")?;
+                        Ok(Self::AdjustProportion(value))
+                    }
+                    Some(_) => {
+                        let value = value
+                            .parse()
+                            .into_diagnostic()
+                            .context("error parsing value")?;
+                        Ok(Self::SetProportion(value))
+                    }
+                    None => Err(miette!("value is missing")),
+                }
+            }
+            None => {
+                let value = s;
+                match value.bytes().next() {
+                    Some(b'-' | b'+') => {
+                        let value = value
+                            .parse()
+                            .into_diagnostic()
+                            .context("error parsing value")?;
+                        Ok(Self::AdjustFixed(value))
+                    }
+                    Some(_) => {
+                        let value = value
+                            .parse()
+                            .into_diagnostic()
+                            .context("error parsing value")?;
+                        Ok(Self::SetFixed(value))
+                    }
+                    None => Err(miette!("value is missing")),
+                }
+            }
+        }
     }
 }
 
@@ -585,5 +646,36 @@ mod tests {
         assert!("1920x".parse::<Mode>().is_err());
         assert!("1920x1080@".parse::<Mode>().is_err());
         assert!("1920x1080@60Hz".parse::<Mode>().is_err());
+    }
+
+    #[test]
+    fn parse_size_change() {
+        assert_eq!(
+            "10".parse::<SizeChange>().unwrap(),
+            SizeChange::SetFixed(10),
+        );
+        assert_eq!(
+            "+10".parse::<SizeChange>().unwrap(),
+            SizeChange::AdjustFixed(10),
+        );
+        assert_eq!(
+            "-10".parse::<SizeChange>().unwrap(),
+            SizeChange::AdjustFixed(-10),
+        );
+        assert_eq!(
+            "10%".parse::<SizeChange>().unwrap(),
+            SizeChange::SetProportion(10.),
+        );
+        assert_eq!(
+            "+10%".parse::<SizeChange>().unwrap(),
+            SizeChange::AdjustProportion(10.),
+        );
+        assert_eq!(
+            "-10%".parse::<SizeChange>().unwrap(),
+            SizeChange::AdjustProportion(-10.),
+        );
+
+        assert!("-".parse::<SizeChange>().is_err());
+        assert!("10% ".parse::<SizeChange>().is_err());
     }
 }

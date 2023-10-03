@@ -296,6 +296,9 @@ impl State {
                                 self.move_cursor_to_output(&output);
                             }
                         }
+                        Action::SetColumnWidth(change) => {
+                            self.niri.monitor_set.set_column_width(change);
+                        }
                     }
                 }
             }

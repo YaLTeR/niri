@@ -52,7 +52,7 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
-use crate::config::{Color, Config};
+use crate::config::{Color, Config, SizeChange};
 
 const PADDING: i32 = 16;
 const WIDTH_PROPORTIONS: [ColumnWidth; 3] = [
@@ -288,7 +288,8 @@ impl ColumnWidth {
         match self {
             ColumnWidth::Proportion(proportion) => (view_width as f64 * proportion).floor() as i32,
             ColumnWidth::PresetProportion(idx) => WIDTH_PROPORTIONS[idx].resolve(view_width),
-            ColumnWidth::Fixed(width) => width,
+            // FIXME: remove this PADDING from here after redesigning how padding works.
+            ColumnWidth::Fixed(width) => width + PADDING,
         }
     }
 }
@@ -912,6 +913,13 @@ impl<W: LayoutElement> MonitorSet<W> {
         monitor.toggle_full_width();
     }
 
+    pub fn set_column_width(&mut self, change: SizeChange) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.set_column_width(change);
+    }
+
     pub fn focus_output(&mut self, output: &Output) {
         if let MonitorSet::Normal {
             monitors,
@@ -1277,6 +1285,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     fn toggle_full_width(&mut self) {
         self.active_workspace().toggle_full_width();
+    }
+
+    fn set_column_width(&mut self, change: SizeChange) {
+        self.active_workspace().set_column_width(change);
     }
 }
 
@@ -1871,6 +1883,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns[self.active_column_idx].toggle_full_width(self.view_size, self.working_area);
     }
 
+    fn set_column_width(&mut self, change: SizeChange) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].set_column_width(
+            self.view_size,
+            self.working_area,
+            change,
+        );
+    }
+
     pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
         let (mut col_idx, win_idx) = self
             .columns
@@ -2201,6 +2225,48 @@ impl<W: LayoutElement> Column<W> {
         self.set_width(view_size, working_area, width);
     }
 
+    fn set_column_width(
+        &mut self,
+        view_size: Size<i32, Logical>,
+        working_area: Rectangle<i32, Logical>,
+        change: SizeChange,
+    ) {
+        let current_px = self.width.resolve(working_area.size.w - PADDING) - PADDING;
+
+        let current = match self.width {
+            ColumnWidth::PresetProportion(idx) => WIDTH_PROPORTIONS[idx],
+            current => current,
+        };
+
+        // FIXME: fix overflows then remove limits.
+        const MAX_PX: i32 = 100000;
+        const MAX_F: f64 = 10000.;
+
+        let width = match (current, change) {
+            (_, SizeChange::SetFixed(fixed)) => ColumnWidth::Fixed(fixed.clamp(1, MAX_PX)),
+            (_, SizeChange::SetProportion(proportion)) => {
+                ColumnWidth::Proportion((proportion / 100.).clamp(0., MAX_F))
+            }
+            (_, SizeChange::AdjustFixed(delta)) => {
+                let width = current_px.saturating_add(delta).clamp(1, MAX_PX);
+                ColumnWidth::Fixed(width)
+            }
+            (ColumnWidth::Proportion(current), SizeChange::AdjustProportion(delta)) => {
+                let proportion = (current + delta / 100.).clamp(0., MAX_F);
+                ColumnWidth::Proportion(proportion)
+            }
+            (ColumnWidth::Fixed(_), SizeChange::AdjustProportion(delta)) => {
+                let current =
+                    (current_px + PADDING) as f64 / (working_area.size.w - PADDING) as f64;
+                let proportion = (current + delta / 100.).clamp(0., MAX_F);
+                ColumnWidth::Proportion(proportion)
+            }
+            (ColumnWidth::PresetProportion(_), _) => unreachable!(),
+        };
+
+        self.set_width(view_size, working_area, width);
+    }
+
     fn set_fullscreen(
         &mut self,
         view_size: Size<i32, Logical>,
@@ -2384,6 +2450,15 @@ mod tests {
         })
     }
 
+    fn arbitrary_size_change() -> impl Strategy<Value = SizeChange> {
+        prop_oneof![
+            (0..).prop_map(SizeChange::SetFixed),
+            (0f64..).prop_map(SizeChange::SetProportion),
+            any::<i32>().prop_map(SizeChange::AdjustFixed),
+            any::<f64>().prop_map(SizeChange::AdjustProportion),
+        ]
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -2417,6 +2492,7 @@ mod tests {
         MoveWindowToOutput(#[proptest(strategy = "1..=5u8")] u8),
         SwitchPresetColumnWidth,
         MaximizeColumn,
+        SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
     }
 
@@ -2506,6 +2582,7 @@ mod tests {
                 }
                 Op::SwitchPresetColumnWidth => monitor_set.toggle_width(),
                 Op::MaximizeColumn => monitor_set.toggle_full_width(),
+                Op::SetColumnWidth(change) => monitor_set.set_column_width(change),
                 Op::Communicate(id) => {
                     let mut window = None;
                     match monitor_set {
