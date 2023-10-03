@@ -6,8 +6,9 @@ A scrollable-tiling Wayland compositor.
 
 ## Status
 
-Heavily work in progress.
-Some things work, but a lot of expected functionality is missing.
+Work in progress.
+Many things work, but some pieces of functionality expected of a Wayland compositor are missing.
+Also, have your waybars and fuzzels ready: niri is not a complete desktop environment.
 
 https://github.com/YaLTeR/niri/assets/1794388/3713a563-d7a2-4c56-aa0b-b4986b5dc188
 
@@ -21,7 +22,7 @@ With multiple monitors, every monitor has its own separate window strip.
 Windows can never "overflow" onto an adjacent monitor.
 
 This is one of the reasons that prompted me to try writing my own compositor.
-PaperWM is a solid implementation that I use every day, but, being a GNOME Shell extension, it has to work around Shell's global window coordinate space to prevent windows from overflowing.
+PaperWM is a solid implementation, but, being a GNOME Shell extension, it has to work around Shell's global window coordinate space to prevent windows from overflowing.
 
 Niri also has dynamic workspaces which work similar to GNOME Shell.
 Since windows go left-to-right horizontally, workspaces are arranged vertically.
@@ -32,7 +33,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 ## Running
 
-`cargo run`
+`cargo run --release`
 
 Inside a desktop session, it will run in a window.
 On a TTY, it will run natively.
@@ -48,7 +49,8 @@ After installing, you can choose the niri session in GDM and, presumably, other 
 The niri session will autostart apps through the systemd xdg-autostart target.
 You can also autostart systemd services like [mako] by symlinking them into `$HOME/.config/systemd/user/niri.service.wants/`.
 
-Niri also somewhat-works with xdg-desktop-portal-gnome for Flatpak apps.
+Niri also works with some parts of xdg-desktop-portal-gnome.
+In particular, it supports file choosers and monitor screencasting (e.g. to [OBS]).
 
 ## Default Hotkeys
 
@@ -81,6 +83,8 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>.</kbd> | Expel the focused window into its own column |
 | <kbd>Mod</kbd><kbd>R</kbd> | Toggle between preset column widths |
 | <kbd>Mod</kbd><kbd>F</kbd> | Maximize column |
+| <kbd>Mod</kbd><kbd>-</kbd> | Decrease column width by 10% |
+| <kbd>Mod</kbd><kbd>=</kbd> | Increase column width by 10% |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd> | Toggle full-screen on the focused window |
 | <kbd>PrtSc</kbd> | Save a screenshot to `~/Pictures/Screenshots/` |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd> | Toggle debug tinting of rendered elements |
@@ -94,4 +98,5 @@ Please use the default configuration file as the starting point for your custom 
 
 [PaperWM]: https://github.com/paperwm/PaperWM
 [mako]: https://github.com/emersion/mako
+[OBS]: https://flathub.org/apps/com.obsproject.Studio
 
