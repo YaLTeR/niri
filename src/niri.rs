@@ -105,6 +105,7 @@ pub struct Niri {
     pub unmapped_windows: HashMap<WlSurface, Window>,
 
     pub output_state: HashMap<Output, OutputState>,
+    pub output_by_name: HashMap<String, Output>,
 
     // Smithay state.
     pub compositor_state: CompositorState,
@@ -679,6 +680,7 @@ impl Niri {
             monitor_set: MonitorSet::new(),
             global_space: Space::default(),
             output_state: HashMap::new(),
+            output_by_name: HashMap::new(),
             unmapped_windows: HashMap::new(),
 
             compositor_state,
@@ -787,7 +789,9 @@ impl Niri {
             frame_clock: FrameClock::new(refresh_interval),
             current_estimated_sequence: None,
         };
-        let rv = self.output_state.insert(output, state);
+        let rv = self.output_state.insert(output.clone(), state);
+        assert!(rv.is_none(), "output was already tracked");
+        let rv = self.output_by_name.insert(name, output);
         assert!(rv.is_none(), "output was already tracked");
     }
 
@@ -797,6 +801,8 @@ impl Niri {
         // FIXME: reposition outputs so they are adjacent.
 
         let state = self.output_state.remove(output).unwrap();
+        self.output_by_name.remove(&output.name()).unwrap();
+
         match state.redraw_state {
             RedrawState::Idle => (),
             RedrawState::Queued(idle) => idle.cancel(),
@@ -948,6 +954,14 @@ impl Niri {
             .min_by_key(|(_, geo)| center(*geo).y - center(active_geo).y)
             .map(|(output, _)| output)
             .cloned()
+    }
+
+    pub fn output_for_tablet(&self) -> Option<&Output> {
+        let config = self.config.borrow();
+        let map_to_output = config.input.tablet.map_to_output.as_ref();
+        map_to_output
+            .and_then(|name| self.output_by_name.get(name))
+            .or_else(|| self.global_space.outputs().next())
     }
 
     fn layer_surface_focus(&self) -> Option<WlSurface> {

@@ -35,6 +35,8 @@ pub struct Input {
     pub keyboard: Keyboard,
     #[knuffel(child, default)]
     pub touchpad: Touchpad,
+    #[knuffel(child, default)]
+    pub tablet: Tablet,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -71,6 +73,12 @@ pub struct Touchpad {
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
     pub accel_speed: f64,
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+pub struct Tablet {
+    #[knuffel(child, unwrap(argument))]
+    pub map_to_output: Option<String>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
@@ -478,6 +486,10 @@ mod tests {
                     tap
                     accel-speed 0.2
                 }
+
+                tablet {
+                    map-to-output "eDP-1"
+                }
             }
 
             output "eDP-1" {
@@ -529,6 +541,9 @@ mod tests {
                         tap: true,
                         natural_scroll: false,
                         accel_speed: 0.2,
+                    },
+                    tablet: Tablet {
+                        map_to_output: Some("eDP-1".to_owned()),
                     },
                 },
                 outputs: vec![Output {

@@ -472,8 +472,7 @@ impl State {
                 pointer.frame(self);
             }
             InputEvent::TabletToolAxis { event, .. } => {
-                // FIXME: allow mapping tablet to different outputs.
-                let Some(output) = self.niri.global_space.outputs().next() else {
+                let Some(output) = self.niri.output_for_tablet() else {
                     return;
                 };
 
@@ -560,8 +559,7 @@ impl State {
                 }
             }
             InputEvent::TabletToolProximity { event, .. } => {
-                // FIXME: allow mapping tablet to different outputs.
-                let Some(output) = self.niri.global_space.outputs().next() else {
+                let Some(output) = self.niri.output_for_tablet() else {
                     return;
                 };
 

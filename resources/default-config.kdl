@@ -18,12 +18,19 @@ input {
         // repeat-rate 25
     }
 
-    // Next sections contain libinput settings.
+    // Next sections include libinput settings.
     // Omitting settings disables them, or leaves them at their default values.
     touchpad {
         tap
         natural-scroll
         // accel-speed 0.2
+    }
+
+    tablet {
+        // Set the name of the output (see below) which the tablet will map to.
+        // If this is unset or the output doesn't exist, the tablet maps to one of the
+        // existing outputs.
+        map-to-output "eDP-1"
     }
 }
 
