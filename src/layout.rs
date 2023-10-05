@@ -357,10 +357,11 @@ impl FocusRing {
 impl ColumnWidth {
     fn resolve(self, options: &Options, view_width: i32) -> i32 {
         match self {
-            ColumnWidth::Proportion(proportion) => (view_width as f64 * proportion).floor() as i32,
+            ColumnWidth::Proportion(proportion) => {
+                ((view_width - PADDING) as f64 * proportion).floor() as i32 - PADDING
+            }
             ColumnWidth::Preset(idx) => options.preset_widths[idx].resolve(options, view_width),
-            // FIXME: remove this PADDING from here after redesigning how padding works.
-            ColumnWidth::Fixed(width) => width + PADDING,
+            ColumnWidth::Fixed(width) => width,
         }
     }
 }
@@ -1596,9 +1597,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn configure_new_window(&self, window: &Window) {
-        let width = ColumnWidth::default()
-            .resolve(&self.options, self.working_area.size.w - PADDING)
-            - PADDING;
+        let width = ColumnWidth::default().resolve(&self.options, self.working_area.size.w);
         let height = self.working_area.size.h - PADDING * 2;
         let size = Size::from((max(width, 1), max(height, 1)));
 
@@ -2284,10 +2283,7 @@ impl<W: LayoutElement> Column<W> {
             .unwrap_or(i32::MAX);
         let max_width = max(max_width, min_width);
 
-        let width = self
-            .width
-            .resolve(&self.options, self.working_area.size.w - PADDING)
-            - PADDING;
+        let width = self.width.resolve(&self.options, self.working_area.size.w);
         let height = (self.working_area.size.h - PADDING) / self.window_count() as i32 - PADDING;
         let size = Size::from((max(min(width, max_width), min_width), max(height, 1)));
 
@@ -2356,8 +2352,7 @@ impl<W: LayoutElement> Column<W> {
                     .preset_widths
                     .iter()
                     .position(|prop| {
-                        prop.resolve(&self.options, self.working_area.size.w - PADDING) - PADDING
-                            > current
+                        prop.resolve(&self.options, self.working_area.size.w) > current
                     })
                     .unwrap_or(0)
             }
@@ -2378,10 +2373,7 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn set_column_width(&mut self, change: SizeChange) {
-        let current_px = self
-            .width
-            .resolve(&self.options, self.working_area.size.w - PADDING)
-            - PADDING;
+        let current_px = self.width.resolve(&self.options, self.working_area.size.w);
 
         let current = match self.width {
             ColumnWidth::Preset(idx) => self.options.preset_widths[idx],
