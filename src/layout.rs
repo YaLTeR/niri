@@ -2759,7 +2759,7 @@ mod tests {
     }
 
     #[test]
-    fn operations() {
+    fn operations_dont_panic() {
         let every_op = [
             Op::AddOutput(0),
             Op::AddOutput(1),
@@ -2809,9 +2809,126 @@ mod tests {
         for third in every_op {
             for second in every_op {
                 for first in every_op {
-                    eprintln!("{first:?}, {second:?}, {third:?}");
+                    // eprintln!("{first:?}, {second:?}, {third:?}");
 
                     let mut layout = Layout::default();
+                    first.apply(&mut layout);
+                    layout.verify_invariants();
+                    second.apply(&mut layout);
+                    layout.verify_invariants();
+                    third.apply(&mut layout);
+                    layout.verify_invariants();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn operations_from_starting_state_dont_panic() {
+        if std::env::var_os("RUN_SLOW_TESTS").is_none() {
+            eprintln!("ignoring slow test");
+            return;
+        }
+
+        // Running every op from an empty state doesn't get us to all the interesting states. So,
+        // also run it from a manually-created starting state with more things going on to exercise
+        // more code paths.
+        let setup_ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::MoveWindowToWorkspaceDown,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::AddWindow {
+                id: 3,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::FocusColumnLeft,
+            Op::ConsumeWindowIntoColumn,
+            Op::AddWindow {
+                id: 4,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::AddOutput(2),
+            Op::AddWindow {
+                id: 5,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::MoveWindowToOutput(2),
+            Op::FocusOutput(1),
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::Communicate(4),
+            Op::Communicate(5),
+        ];
+
+        let every_op = [
+            Op::AddOutput(0),
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::RemoveOutput(0),
+            Op::RemoveOutput(1),
+            Op::RemoveOutput(2),
+            Op::FocusOutput(0),
+            Op::FocusOutput(1),
+            Op::FocusOutput(2),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::CloseWindow(0),
+            Op::CloseWindow(1),
+            Op::CloseWindow(2),
+            Op::FocusColumnLeft,
+            Op::FocusColumnRight,
+            Op::MoveColumnLeft,
+            Op::MoveColumnRight,
+            Op::ConsumeWindowIntoColumn,
+            Op::ExpelWindowFromColumn,
+            Op::FocusWorkspaceDown,
+            Op::FocusWorkspaceUp,
+            Op::FocusWorkspace(1),
+            Op::FocusWorkspace(2),
+            Op::FocusWorkspace(3),
+            Op::MoveWindowToWorkspaceDown,
+            Op::MoveWindowToWorkspaceUp,
+            Op::MoveWindowToWorkspace(1),
+            Op::MoveWindowToWorkspace(2),
+            Op::MoveWindowToWorkspace(3),
+        ];
+
+        for third in every_op {
+            for second in every_op {
+                for first in every_op {
+                    // eprintln!("{first:?}, {second:?}, {third:?}");
+
+                    let mut layout = Layout::default();
+                    for op in setup_ops {
+                        op.apply(&mut layout);
+                    }
+
                     first.apply(&mut layout);
                     layout.verify_invariants();
                     second.apply(&mut layout);
