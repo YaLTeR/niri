@@ -65,7 +65,7 @@ impl InputMethodHandler for State {
     }
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
         self.niri
-            .monitor_set
+            .layout
             .find_window_and_output(parent)
             .map(|(window, _)| window.geometry())
             .unwrap_or_default()

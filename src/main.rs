@@ -115,7 +115,7 @@ fn main() {
             let _span = tracy_client::span!("loop callback");
 
             // These should be called periodically, before flushing the clients.
-            state.niri.monitor_set.refresh();
+            state.niri.layout.refresh();
             state.niri.refresh_pointer_outputs();
             state.niri.popups.cleanup();
             state.update_focus();

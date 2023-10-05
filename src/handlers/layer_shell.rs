@@ -26,7 +26,7 @@ impl WlrLayerShellHandler for State {
         let output = wl_output
             .as_ref()
             .and_then(Output::from_resource)
-            .or_else(|| self.niri.monitor_set.active_output().cloned())
+            .or_else(|| self.niri.layout.active_output().cloned())
             .unwrap();
         let mut map = layer_map_for_output(&output);
         map.map_layer(&LayerSurface::new(surface, namespace))
@@ -35,7 +35,7 @@ impl WlrLayerShellHandler for State {
 
     fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
         let output = if let Some((output, mut map, layer)) =
-            self.niri.monitor_set.outputs().find_map(|o| {
+            self.niri.layout.outputs().find_map(|o| {
                 let map = layer_map_for_output(o);
                 let layer = map
                     .layers()
@@ -59,7 +59,7 @@ impl State {
     pub fn layer_shell_handle_commit(&mut self, surface: &WlSurface) {
         let Some(output) = self
             .niri
-            .monitor_set
+            .layout
             .outputs()
             .find(|o| {
                 let map = layer_map_for_output(o);

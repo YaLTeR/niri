@@ -31,6 +31,7 @@
 
 use std::cmp::{max, min};
 use std::mem;
+use std::rc::Rc;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
@@ -52,14 +53,9 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
-use crate::config::{Color, Config, SizeChange};
+use crate::config::{self, Color, Config, PresetWidth, SizeChange};
 
 const PADDING: i32 = 16;
-const WIDTH_PROPORTIONS: [ColumnWidth; 3] = [
-    ColumnWidth::Proportion(1. / 3.),
-    ColumnWidth::Proportion(0.5),
-    ColumnWidth::Proportion(2. / 3.),
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
@@ -82,7 +78,15 @@ pub trait LayoutElement: SpaceElement + PartialEq + Clone {
 }
 
 #[derive(Debug)]
-pub enum MonitorSet<W: LayoutElement> {
+pub struct Layout<W: LayoutElement> {
+    /// Monitors and workspaes in the layout.
+    monitor_set: MonitorSet<W>,
+    /// Configurable properties of the layout.
+    options: Rc<Options>,
+}
+
+#[derive(Debug)]
+enum MonitorSet<W: LayoutElement> {
     /// At least one output is connected.
     Normal {
         /// Connected monitors.
@@ -93,7 +97,10 @@ pub enum MonitorSet<W: LayoutElement> {
         active_monitor_idx: usize,
     },
     /// No outputs are connected, and these are the workspaces.
-    NoOutputs(Vec<Workspace<W>>),
+    NoOutputs {
+        /// The workspaces.
+        workspaces: Vec<Workspace<W>>,
+    },
 }
 
 #[derive(Debug)]
@@ -106,6 +113,8 @@ pub struct Monitor<W: LayoutElement> {
     active_workspace_idx: usize,
     /// Animation for workspace switching.
     workspace_idx_anim: Option<Animation>,
+    /// Configurable properties of the layout.
+    options: Rc<Options>,
 }
 
 #[derive(Debug)]
@@ -155,6 +164,9 @@ pub struct Workspace<W: LayoutElement> {
     /// contrast to tabs in Firefox, for example), we can track this as a bool, rather than an
     /// index of the previous column to activate.
     activate_prev_column_on_removal: bool,
+
+    /// Configurable properties of the layout.
+    options: Rc<Options>,
 }
 
 #[derive(Debug)]
@@ -166,8 +178,49 @@ struct FocusRing {
     inactive_color: Color,
 }
 
+#[derive(Debug, PartialEq)]
+struct Options {
+    focus_ring: config::FocusRing,
+    /// Column widths that `toggle_width()` switches between.
+    preset_widths: Vec<ColumnWidth>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            focus_ring: Default::default(),
+            preset_widths: vec![
+                ColumnWidth::Proportion(1. / 3.),
+                ColumnWidth::Proportion(0.5),
+                ColumnWidth::Proportion(2. / 3.),
+            ],
+        }
+    }
+}
+
+impl Options {
+    fn from_config(config: &Config) -> Self {
+        let preset_column_widths = &config.preset_column_widths;
+
+        let preset_widths = if preset_column_widths.is_empty() {
+            Options::default().preset_widths
+        } else {
+            preset_column_widths
+                .iter()
+                .copied()
+                .map(ColumnWidth::from)
+                .collect()
+        };
+
+        Self {
+            focus_ring: config.focus_ring,
+            preset_widths,
+        }
+    }
+}
+
 /// Width of a column.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum ColumnWidth {
     /// Proportion of the current view width.
     Proportion(f64),
@@ -175,9 +228,18 @@ enum ColumnWidth {
     ///
     /// This is separate from Proportion in order to be able to reliably cycle between preset
     /// proportions.
-    PresetProportion(usize),
+    Preset(usize),
     /// Fixed width in logical pixels.
     Fixed(i32),
+}
+
+impl From<PresetWidth> for ColumnWidth {
+    fn from(value: PresetWidth) -> Self {
+        match value {
+            PresetWidth::Proportion(p) => Self::Proportion(p.clamp(0., 10000.)),
+            PresetWidth::Fixed(f) => Self::Fixed(f.clamp(1, 100000)),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -201,6 +263,9 @@ struct Column<W: LayoutElement> {
 
     /// Latest known working area for this column's workspace.
     working_area: Rectangle<i32, Logical>,
+
+    /// Configurable properties of the layout.
+    options: Rc<Options>,
 }
 
 impl OutputId {
@@ -277,23 +342,23 @@ impl FocusRing {
     }
 }
 
-impl Default for FocusRing {
-    fn default() -> Self {
+impl FocusRing {
+    fn new(config: config::FocusRing) -> Self {
         Self {
             buffer: SolidColorBuffer::new((0, 0), [0., 0., 0., 0.]),
-            is_off: true,
-            width: 0,
-            active_color: Color::default(),
-            inactive_color: Color::default(),
+            is_off: config.off,
+            width: config.width.into(),
+            active_color: config.active_color,
+            inactive_color: config.inactive_color,
         }
     }
 }
 
 impl ColumnWidth {
-    fn resolve(self, view_width: i32) -> i32 {
+    fn resolve(self, options: &Options, view_width: i32) -> i32 {
         match self {
             ColumnWidth::Proportion(proportion) => (view_width as f64 * proportion).floor() as i32,
-            ColumnWidth::PresetProportion(idx) => WIDTH_PROPORTIONS[idx].resolve(view_width),
+            ColumnWidth::Preset(idx) => options.preset_widths[idx].resolve(options, view_width),
             // FIXME: remove this PADDING from here after redesigning how padding works.
             ColumnWidth::Fixed(width) => width + PADDING,
         }
@@ -306,15 +371,18 @@ impl Default for ColumnWidth {
     }
 }
 
-impl<W: LayoutElement> MonitorSet<W> {
-    pub fn new() -> Self {
-        Self::NoOutputs(vec![])
+impl<W: LayoutElement> Layout<W> {
+    pub fn new(config: &Config) -> Self {
+        Self {
+            monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
+            options: Rc::new(Options::from_config(config)),
+        }
     }
 
     pub fn add_output(&mut self, output: Output) {
         let id = OutputId::new(&output);
 
-        *self = match mem::take(self) {
+        self.monitor_set = match mem::take(&mut self.monitor_set) {
             MonitorSet::Normal {
                 mut monitors,
                 primary_idx,
@@ -337,29 +405,30 @@ impl<W: LayoutElement> MonitorSet<W> {
                 workspaces.reverse();
                 if workspaces.iter().all(|ws| ws.has_windows()) {
                     // Make sure there's always an empty workspace.
-                    workspaces.push(Workspace::new(output.clone()));
+                    workspaces.push(Workspace::new(output.clone(), self.options.clone()));
                 }
 
                 for ws in &mut workspaces {
                     ws.set_output(Some(output.clone()));
                 }
 
-                monitors.push(Monitor::new(output, workspaces));
+                monitors.push(Monitor::new(output, workspaces, self.options.clone()));
                 MonitorSet::Normal {
                     monitors,
                     primary_idx,
                     active_monitor_idx,
                 }
             }
-            MonitorSet::NoOutputs(mut workspaces) => {
+            MonitorSet::NoOutputs { mut workspaces } => {
                 // We know there are no empty workspaces there, so add one.
-                workspaces.push(Workspace::new(output.clone()));
+                workspaces.push(Workspace::new(output.clone(), self.options.clone()));
 
                 for workspace in &mut workspaces {
                     workspace.set_output(Some(output.clone()));
                 }
 
-                let monitor = Monitor::new(output, workspaces);
+                let monitor = Monitor::new(output, workspaces, self.options.clone());
+
                 MonitorSet::Normal {
                     monitors: vec![monitor],
                     primary_idx: 0,
@@ -370,7 +439,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn remove_output(&mut self, output: &Output) {
-        *self = match mem::take(self) {
+        self.monitor_set = match mem::take(&mut self.monitor_set) {
             MonitorSet::Normal {
                 mut monitors,
                 mut primary_idx,
@@ -392,7 +461,7 @@ impl<W: LayoutElement> MonitorSet<W> {
 
                 if monitors.is_empty() {
                     // Removed the last monitor.
-                    MonitorSet::NoOutputs(workspaces)
+                    MonitorSet::NoOutputs { workspaces }
                 } else {
                     if primary_idx >= idx {
                         // Update primary_idx to either still point at the same monitor, or at some
@@ -422,7 +491,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     }
                 }
             }
-            MonitorSet::NoOutputs(_) => {
+            MonitorSet::NoOutputs { .. } => {
                 panic!("tried to remove output when there were already none")
             }
         }
@@ -439,7 +508,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = self
+        } = &mut self.monitor_set
         else {
             panic!()
         };
@@ -455,7 +524,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     ///
     /// Returns an output that the window was added to, if there were any outputs.
     pub fn add_window(&mut self, window: W, activate: bool) -> Option<&Output> {
-        match self {
+        match &mut self.monitor_set {
             MonitorSet::Normal {
                 monitors,
                 active_monitor_idx,
@@ -465,11 +534,11 @@ impl<W: LayoutElement> MonitorSet<W> {
                 mon.add_window(mon.active_workspace_idx, window, activate);
                 Some(&mon.output)
             }
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces } => {
                 let ws = if let Some(ws) = workspaces.get_mut(0) {
                     ws
                 } else {
-                    workspaces.push(Workspace::new_no_outputs());
+                    workspaces.push(Workspace::new_no_outputs(self.options.clone()));
                     &mut workspaces[0]
                 };
                 ws.add_window(window, activate);
@@ -479,7 +548,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn remove_window(&mut self, window: &W) {
-        match self {
+        match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for (idx, ws) in mon.workspaces.iter_mut().enumerate() {
@@ -503,7 +572,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     }
                 }
             }
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces, .. } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
                     if ws.has_window(window) {
                         ws.remove_window(window);
@@ -521,7 +590,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn update_window(&mut self, window: &W) {
-        match self {
+        match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mut mon.workspaces {
@@ -532,7 +601,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     }
                 }
             }
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     if ws.has_window(window) {
                         ws.update_window(window);
@@ -544,7 +613,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(W, Output)> {
-        if let MonitorSet::Normal { monitors, .. } = self {
+        if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
             for mon in monitors {
                 for ws in &mon.workspaces {
                     if let Some(window) = ws.find_wl_surface(wl_surface) {
@@ -558,7 +627,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn update_output_size(&mut self, output: &Output) {
-        let MonitorSet::Normal { monitors, .. } = self else {
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
             panic!()
         };
 
@@ -581,7 +650,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = self
+        } = &mut self.monitor_set
         else {
             todo!()
         };
@@ -604,7 +673,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = self
+        } = &mut self.monitor_set
         else {
             return;
         };
@@ -621,7 +690,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = self
+        } = &self.monitor_set
         else {
             return None;
         };
@@ -629,8 +698,22 @@ impl<W: LayoutElement> MonitorSet<W> {
         Some(&monitors[*active_monitor_idx].output)
     }
 
+    pub fn active_workspace(&self) -> Option<&Workspace<W>> {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &self.monitor_set
+        else {
+            return None;
+        };
+
+        let mon = &monitors[*active_monitor_idx];
+        Some(&mon.workspaces[mon.active_workspace_idx])
+    }
+
     pub fn workspace_for_output(&self, output: &Output) -> Option<&Workspace<W>> {
-        let MonitorSet::Normal { monitors, .. } = self else {
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
         };
 
@@ -644,7 +727,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn windows_for_output(&self, output: &Output) -> impl Iterator<Item = &W> + '_ {
-        let MonitorSet::Normal { monitors, .. } = self else {
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             panic!()
         };
 
@@ -657,7 +740,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = self
+        } = &mut self.monitor_set
         else {
             return None;
         };
@@ -666,7 +749,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn monitor_for_output(&self, output: &Output) -> Option<&Monitor<W>> {
-        let MonitorSet::Normal { monitors, .. } = self else {
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
         };
 
@@ -674,7 +757,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn outputs(&self) -> impl Iterator<Item = &Output> + '_ {
-        let monitors = if let MonitorSet::Normal { monitors, .. } = self {
+        let monitors = if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
             &monitors[..]
         } else {
             &[][..]
@@ -800,7 +883,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = self
+        } = &self.monitor_set
         else {
             return None;
         };
@@ -819,17 +902,22 @@ impl<W: LayoutElement> MonitorSet<W> {
 
     #[cfg(test)]
     fn verify_invariants(&self) {
-        let (monitors, &primary_idx, &active_monitor_idx) = match &self {
+        let (monitors, &primary_idx, &active_monitor_idx) = match &self.monitor_set {
             MonitorSet::Normal {
                 monitors,
                 primary_idx,
                 active_monitor_idx,
             } => (monitors, primary_idx, active_monitor_idx),
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces } => {
                 for workspace in workspaces {
                     assert!(
                         workspace.has_windows(),
                         "with no outputs there cannot be empty workspaces"
+                    );
+
+                    assert_eq!(
+                        workspace.options, self.options,
+                        "workspace options must be synchronized with layout"
                     );
 
                     workspace.verify_invariants();
@@ -849,6 +937,11 @@ impl<W: LayoutElement> MonitorSet<W> {
             );
             assert!(monitor.active_workspace_idx < monitor.workspaces.len());
 
+            assert_eq!(
+                monitor.options, self.options,
+                "monitor options must be synchronized with layout"
+            );
+
             let monitor_id = OutputId::new(&monitor.output);
 
             if idx == primary_idx {
@@ -866,13 +959,18 @@ impl<W: LayoutElement> MonitorSet<W> {
             // exists.
 
             for workspace in &monitor.workspaces {
+                assert_eq!(
+                    workspace.options, self.options,
+                    "workspace options must be synchronized with layout"
+                );
+
                 workspace.verify_invariants();
             }
         }
     }
 
     pub fn advance_animations(&mut self, current_time: Duration) {
-        match self {
+        match &mut self.monitor_set {
             MonitorSet::Normal {
                 monitors,
                 active_monitor_idx,
@@ -882,7 +980,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     mon.advance_animations(current_time, idx == *active_monitor_idx);
                 }
             }
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     ws.advance_animations(current_time, false);
                 }
@@ -891,18 +989,22 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn update_config(&mut self, config: &Config) {
-        match self {
+        let options = Rc::new(Options::from_config(config));
+
+        match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
-                    mon.update_config(config);
+                    mon.update_config(options.clone());
                 }
             }
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
-                    ws.update_config(config);
+                    ws.update_config(options.clone());
                 }
             }
         }
+
+        self.options = options;
     }
 
     pub fn toggle_width(&mut self) {
@@ -931,7 +1033,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = self
+        } = &mut self.monitor_set
         {
             for (idx, mon) in monitors.iter().enumerate() {
                 if &mon.output == output {
@@ -947,7 +1049,7 @@ impl<W: LayoutElement> MonitorSet<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = self
+        } = &mut self.monitor_set
         {
             let new_idx = monitors
                 .iter()
@@ -971,7 +1073,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     pub fn move_window_to_output(&mut self, window: W, output: &Output) {
         self.remove_window(&window);
 
-        if let MonitorSet::Normal { monitors, .. } = self {
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
             let new_idx = monitors
                 .iter()
                 .position(|mon| &mon.output == output)
@@ -984,7 +1086,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
-        match self {
+        match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mut mon.workspaces {
@@ -995,7 +1097,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     }
                 }
             }
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     if ws.has_window(window) {
                         ws.set_fullscreen(window, is_fullscreen);
@@ -1007,7 +1109,7 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 
     pub fn toggle_fullscreen(&mut self, window: &W) {
-        match self {
+        match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mut mon.workspaces {
@@ -1018,7 +1120,7 @@ impl<W: LayoutElement> MonitorSet<W> {
                     }
                 }
             }
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     if ws.has_window(window) {
                         ws.toggle_fullscreen(window);
@@ -1030,11 +1132,11 @@ impl<W: LayoutElement> MonitorSet<W> {
     }
 }
 
-impl MonitorSet<Window> {
+impl Layout<Window> {
     pub fn refresh(&self) {
         let _span = tracy_client::span!("MonitorSet::refresh");
 
-        match self {
+        match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mon.workspaces {
@@ -1042,7 +1144,7 @@ impl MonitorSet<Window> {
                     }
                 }
             }
-            MonitorSet::NoOutputs(workspaces) => {
+            MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     ws.refresh();
                 }
@@ -1053,17 +1155,18 @@ impl MonitorSet<Window> {
 
 impl<W: LayoutElement> Default for MonitorSet<W> {
     fn default() -> Self {
-        Self::new()
+        Self::NoOutputs { workspaces: vec![] }
     }
 }
 
 impl<W: LayoutElement> Monitor<W> {
-    fn new(output: Output, workspaces: Vec<Workspace<W>>) -> Self {
+    fn new(output: Output, workspaces: Vec<Workspace<W>>, options: Rc<Options>) -> Self {
         Self {
             output,
             workspaces,
             active_workspace_idx: 0,
             workspace_idx_anim: None,
+            options,
         }
     }
 
@@ -1101,7 +1204,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone());
+            let ws = Workspace::new(self.output.clone(), self.options.clone());
             self.workspaces.push(ws);
         }
 
@@ -1279,10 +1382,12 @@ impl<W: LayoutElement> Monitor<W> {
             || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
     }
 
-    pub fn update_config(&mut self, config: &Config) {
+    fn update_config(&mut self, options: Rc<Options>) {
         for ws in &mut self.workspaces {
-            ws.update_config(config);
+            ws.update_config(options.clone());
         }
+
+        self.options = options;
     }
 
     fn toggle_width(&mut self) {
@@ -1366,7 +1471,7 @@ impl Monitor<Window> {
 }
 
 impl<W: LayoutElement> Workspace<W> {
-    fn new(output: Output) -> Self {
+    fn new(output: Output, options: Rc<Options>) -> Self {
         let working_area = layer_map_for_output(&output).non_exclusive_zone();
         Self {
             original_output: OutputId::new(&output),
@@ -1375,14 +1480,15 @@ impl<W: LayoutElement> Workspace<W> {
             output: Some(output),
             columns: vec![],
             active_column_idx: 0,
-            focus_ring: FocusRing::default(),
+            focus_ring: FocusRing::new(options.focus_ring),
             view_offset: 0,
             view_offset_anim: None,
             activate_prev_column_on_removal: false,
+            options,
         }
     }
 
-    fn new_no_outputs() -> Self {
+    fn new_no_outputs(options: Rc<Options>) -> Self {
         Self {
             output: None,
             original_output: OutputId(String::new()),
@@ -1390,10 +1496,11 @@ impl<W: LayoutElement> Workspace<W> {
             working_area: Rectangle::from_loc_and_size((0, 0), (1280, 720)),
             columns: vec![],
             active_column_idx: 0,
-            focus_ring: FocusRing::default(),
+            focus_ring: FocusRing::new(options.focus_ring),
             view_offset: 0,
             view_offset_anim: None,
             activate_prev_column_on_removal: false,
+            options,
         }
     }
 
@@ -1423,13 +1530,19 @@ impl<W: LayoutElement> Workspace<W> {
         self.view_offset_anim.is_some()
     }
 
-    pub fn update_config(&mut self, config: &Config) {
-        let c = &config.focus_ring;
+    fn update_config(&mut self, options: Rc<Options>) {
+        let c = &options.focus_ring;
         self.focus_ring.is_off = c.off;
         self.focus_ring.width = c.width.into();
         self.focus_ring.active_color = c.active_color;
         self.focus_ring.inactive_color = c.inactive_color;
         // The focus ring buffer will be updated in a subsequent update_animations call.
+
+        for column in &mut self.columns {
+            column.update_config(options.clone());
+        }
+
+        self.options = options;
     }
 
     fn windows(&self) -> impl Iterator<Item = &W> + '_ {
@@ -1480,6 +1593,24 @@ impl<W: LayoutElement> Workspace<W> {
         for col in &mut self.columns {
             col.set_view_size(self.view_size, self.working_area);
         }
+    }
+
+    pub fn configure_new_window(&self, window: &Window) {
+        let width = ColumnWidth::default()
+            .resolve(&self.options, self.working_area.size.w - PADDING)
+            - PADDING;
+        let height = self.working_area.size.h - PADDING * 2;
+        let size = Size::from((max(width, 1), max(height, 1)));
+
+        let bounds = Size::from((
+            self.working_area.size.w - PADDING * 2,
+            self.working_area.size.h - PADDING * 2,
+        ));
+
+        window.toplevel().with_pending_state(|state| {
+            state.size = Some(size);
+            state.bounds = Some(bounds);
+        });
     }
 
     fn activate_column(&mut self, idx: usize) {
@@ -1549,7 +1680,12 @@ impl<W: LayoutElement> Workspace<W> {
             self.active_column_idx + 1
         };
 
-        let column = Column::new(window, self.view_size, self.working_area);
+        let column = Column::new(
+            window,
+            self.view_size,
+            self.working_area,
+            self.options.clone(),
+        );
         self.columns.insert(idx, column);
 
         if activate {
@@ -1923,7 +2059,12 @@ impl<W: LayoutElement> Workspace<W> {
             col_idx += 1;
             self.columns.insert(
                 col_idx,
-                Column::new(window, self.view_size, self.working_area),
+                Column::new(
+                    window,
+                    self.view_size,
+                    self.working_area,
+                    self.options.clone(),
+                ),
             );
             if self.active_column_idx >= col_idx || target_window_was_focused {
                 self.active_column_idx += 1;
@@ -2046,6 +2187,7 @@ impl<W: LayoutElement> Column<W> {
         window: W,
         view_size: Size<i32, Logical>,
         working_area: Rectangle<i32, Logical>,
+        options: Rc<Options>,
     ) -> Self {
         let mut rv = Self {
             windows: vec![],
@@ -2054,6 +2196,7 @@ impl<W: LayoutElement> Column<W> {
             is_fullscreen: false,
             view_size,
             working_area,
+            options,
         };
 
         rv.add_window(window);
@@ -2070,6 +2213,17 @@ impl<W: LayoutElement> Column<W> {
         self.working_area = working_area;
 
         self.update_window_sizes();
+    }
+
+    fn update_config(&mut self, options: Rc<Options>) {
+        // If preset widths changed, make our width non-preset.
+        if self.options.preset_widths != options.preset_widths {
+            if let ColumnWidth::Preset(idx) = self.width {
+                self.width = self.options.preset_widths[idx];
+            }
+        }
+
+        self.options = options;
     }
 
     fn window_count(&self) -> usize {
@@ -2130,7 +2284,10 @@ impl<W: LayoutElement> Column<W> {
             .unwrap_or(i32::MAX);
         let max_width = max(max_width, min_width);
 
-        let width = self.width.resolve(self.working_area.size.w - PADDING) - PADDING;
+        let width = self
+            .width
+            .resolve(&self.options, self.working_area.size.w - PADDING)
+            - PADDING;
         let height = (self.working_area.size.h - PADDING) / self.window_count() as i32 - PADDING;
         let size = Size::from((max(min(width, max_width), min_width), max(height, 1)));
 
@@ -2192,18 +2349,20 @@ impl<W: LayoutElement> Column<W> {
 
     fn toggle_width(&mut self) {
         let idx = match self.width {
-            ColumnWidth::PresetProportion(idx) => (idx + 1) % WIDTH_PROPORTIONS.len(),
+            ColumnWidth::Preset(idx) => (idx + 1) % self.options.preset_widths.len(),
             _ => {
                 let current = self.size().w;
-                WIDTH_PROPORTIONS
-                    .into_iter()
+                self.options
+                    .preset_widths
+                    .iter()
                     .position(|prop| {
-                        prop.resolve(self.working_area.size.w - PADDING) - PADDING > current
+                        prop.resolve(&self.options, self.working_area.size.w - PADDING) - PADDING
+                            > current
                     })
                     .unwrap_or(0)
             }
         };
-        let width = ColumnWidth::PresetProportion(idx);
+        let width = ColumnWidth::Preset(idx);
         self.set_width(width);
     }
 
@@ -2219,10 +2378,13 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn set_column_width(&mut self, change: SizeChange) {
-        let current_px = self.width.resolve(self.working_area.size.w - PADDING) - PADDING;
+        let current_px = self
+            .width
+            .resolve(&self.options, self.working_area.size.w - PADDING)
+            - PADDING;
 
         let current = match self.width {
-            ColumnWidth::PresetProportion(idx) => WIDTH_PROPORTIONS[idx],
+            ColumnWidth::Preset(idx) => self.options.preset_widths[idx],
             current => current,
         };
 
@@ -2249,7 +2411,7 @@ impl<W: LayoutElement> Column<W> {
                 let proportion = (current + delta / 100.).clamp(0., MAX_F);
                 ColumnWidth::Proportion(proportion)
             }
-            (ColumnWidth::PresetProportion(_), _) => unreachable!(),
+            (ColumnWidth::Preset(_), _) => unreachable!(),
         };
 
         self.set_width(width);
@@ -2286,22 +2448,6 @@ pub fn output_size(output: &Output) -> Size<i32, Logical> {
         .to_logical(output_scale)
 }
 
-pub fn configure_new_window(working_area: Rectangle<i32, Logical>, window: &Window) {
-    let width = ColumnWidth::default().resolve(working_area.size.w - PADDING) - PADDING;
-    let height = working_area.size.h - PADDING * 2;
-    let size = Size::from((max(width, 1), max(height, 1)));
-
-    let bounds = Size::from((
-        working_area.size.w - PADDING * 2,
-        working_area.size.h - PADDING * 2,
-    ));
-
-    window.toplevel().with_pending_state(|state| {
-        state.size = Some(size);
-        state.bounds = Some(bounds);
-    });
-}
-
 fn compute_new_view_offset(cur_x: i32, view_width: i32, new_x: i32, new_col_width: i32) -> i32 {
     // If the column is wider than the view, always left-align it.
     if new_col_width + PADDING * 2 >= view_width {
@@ -2334,6 +2480,15 @@ mod tests {
     use smithay::utils::IsAlive;
 
     use super::*;
+
+    impl<W: LayoutElement> Default for Layout<W> {
+        fn default() -> Self {
+            Self {
+                monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
+                options: Rc::new(Options::default()),
+            }
+        }
+    }
 
     #[derive(Debug)]
     struct TestWindowInner {
@@ -2480,11 +2635,11 @@ mod tests {
     }
 
     impl Op {
-        fn apply(self, monitor_set: &mut MonitorSet<TestWindow>) {
+        fn apply(self, layout: &mut Layout<TestWindow>) {
             match self {
                 Op::AddOutput(id) => {
                     let name = format!("output{id}");
-                    if monitor_set.outputs().any(|o| o.name() == name) {
+                    if layout.outputs().any(|o| o.name() == name) {
                         return;
                     }
 
@@ -2506,69 +2661,66 @@ mod tests {
                         None,
                         None,
                     );
-                    monitor_set.add_output(output.clone());
+                    layout.add_output(output.clone());
                 }
                 Op::RemoveOutput(id) => {
                     let name = format!("output{id}");
-                    let Some(output) = monitor_set.outputs().find(|o| o.name() == name).cloned()
-                    else {
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    monitor_set.remove_output(&output);
+                    layout.remove_output(&output);
                 }
                 Op::FocusOutput(id) => {
                     let name = format!("output{id}");
-                    let Some(output) = monitor_set.outputs().find(|o| o.name() == name).cloned()
-                    else {
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    monitor_set.focus_output(&output);
+                    layout.focus_output(&output);
                 }
                 Op::AddWindow { id, bbox, activate } => {
                     let win = TestWindow::new(id, bbox);
-                    monitor_set.add_window(win, activate);
+                    layout.add_window(win, activate);
                 }
                 Op::CloseWindow(id) => {
                     let dummy = TestWindow::new(id, Rectangle::default());
-                    monitor_set.remove_window(&dummy);
+                    layout.remove_window(&dummy);
                 }
                 Op::FullscreenWindow(id) => {
                     let dummy = TestWindow::new(id, Rectangle::default());
-                    monitor_set.toggle_fullscreen(&dummy);
+                    layout.toggle_fullscreen(&dummy);
                 }
-                Op::FocusColumnLeft => monitor_set.focus_left(),
-                Op::FocusColumnRight => monitor_set.focus_right(),
-                Op::FocusWindowDown => monitor_set.focus_down(),
-                Op::FocusWindowUp => monitor_set.focus_up(),
-                Op::MoveColumnLeft => monitor_set.move_left(),
-                Op::MoveColumnRight => monitor_set.move_right(),
-                Op::MoveWindowDown => monitor_set.move_down(),
-                Op::MoveWindowUp => monitor_set.move_up(),
-                Op::ConsumeWindowIntoColumn => monitor_set.consume_into_column(),
-                Op::ExpelWindowFromColumn => monitor_set.expel_from_column(),
-                Op::FocusWorkspaceDown => monitor_set.switch_workspace_down(),
-                Op::FocusWorkspaceUp => monitor_set.switch_workspace_up(),
-                Op::FocusWorkspace(idx) => monitor_set.switch_workspace(idx),
-                Op::MoveWindowToWorkspaceDown => monitor_set.move_to_workspace_down(),
-                Op::MoveWindowToWorkspaceUp => monitor_set.move_to_workspace_up(),
-                Op::MoveWindowToWorkspace(idx) => monitor_set.move_to_workspace(idx),
+                Op::FocusColumnLeft => layout.focus_left(),
+                Op::FocusColumnRight => layout.focus_right(),
+                Op::FocusWindowDown => layout.focus_down(),
+                Op::FocusWindowUp => layout.focus_up(),
+                Op::MoveColumnLeft => layout.move_left(),
+                Op::MoveColumnRight => layout.move_right(),
+                Op::MoveWindowDown => layout.move_down(),
+                Op::MoveWindowUp => layout.move_up(),
+                Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
+                Op::ExpelWindowFromColumn => layout.expel_from_column(),
+                Op::FocusWorkspaceDown => layout.switch_workspace_down(),
+                Op::FocusWorkspaceUp => layout.switch_workspace_up(),
+                Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
+                Op::MoveWindowToWorkspaceDown => layout.move_to_workspace_down(),
+                Op::MoveWindowToWorkspaceUp => layout.move_to_workspace_up(),
+                Op::MoveWindowToWorkspace(idx) => layout.move_to_workspace(idx),
                 Op::MoveWindowToOutput(id) => {
                     let name = format!("output{id}");
-                    let Some(output) = monitor_set.outputs().find(|o| o.name() == name).cloned()
-                    else {
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    monitor_set.move_to_output(&output);
+                    layout.move_to_output(&output);
                 }
-                Op::SwitchPresetColumnWidth => monitor_set.toggle_width(),
-                Op::MaximizeColumn => monitor_set.toggle_full_width(),
-                Op::SetColumnWidth(change) => monitor_set.set_column_width(change),
+                Op::SwitchPresetColumnWidth => layout.toggle_width(),
+                Op::MaximizeColumn => layout.toggle_full_width(),
+                Op::SetColumnWidth(change) => layout.set_column_width(change),
                 Op::Communicate(id) => {
                     let mut window = None;
-                    match monitor_set {
+                    match &mut layout.monitor_set {
                         MonitorSet::Normal { monitors, .. } => {
                             'outer: for mon in monitors {
                                 for ws in &mut mon.workspaces {
@@ -2583,7 +2735,7 @@ mod tests {
                                 }
                             }
                         }
-                        MonitorSet::NoOutputs(workspaces) => {
+                        MonitorSet::NoOutputs { workspaces, .. } => {
                             'outer: for ws in workspaces {
                                 for win in ws.windows() {
                                     if win.0.id == id {
@@ -2598,7 +2750,7 @@ mod tests {
                     }
 
                     if let Some(win) = window {
-                        monitor_set.update_window(&win);
+                        layout.update_window(&win);
                     }
                 }
             }
@@ -2607,10 +2759,10 @@ mod tests {
 
     #[track_caller]
     fn check_ops(ops: &[Op]) {
-        let mut monitor_set = MonitorSet::default();
+        let mut layout = Layout::default();
         for op in ops {
-            op.apply(&mut monitor_set);
-            monitor_set.verify_invariants();
+            op.apply(&mut layout);
+            layout.verify_invariants();
         }
     }
 
@@ -2667,13 +2819,13 @@ mod tests {
                 for first in every_op {
                     eprintln!("{first:?}, {second:?}, {third:?}");
 
-                    let mut monitor_set = MonitorSet::default();
-                    first.apply(&mut monitor_set);
-                    monitor_set.verify_invariants();
-                    second.apply(&mut monitor_set);
-                    monitor_set.verify_invariants();
-                    third.apply(&mut monitor_set);
-                    monitor_set.verify_invariants();
+                    let mut layout = Layout::default();
+                    first.apply(&mut layout);
+                    layout.verify_invariants();
+                    second.apply(&mut layout);
+                    layout.verify_invariants();
+                    third.apply(&mut layout);
+                    layout.verify_invariants();
                 }
             }
         }

@@ -87,7 +87,7 @@ impl CompositorHandler for State {
                     let window = entry.remove();
                     window.on_commit();
 
-                    if let Some(output) = self.niri.monitor_set.add_window(window, true).cloned() {
+                    if let Some(output) = self.niri.layout.add_window(window, true).cloned() {
                         self.niri.queue_redraw(output);
                     }
                     return;
@@ -100,7 +100,7 @@ impl CompositorHandler for State {
             }
 
             // This is a commit of a previously-mapped root or a non-toplevel root.
-            if let Some((window, output)) = self.niri.monitor_set.find_window_and_output(surface) {
+            if let Some((window, output)) = self.niri.layout.find_window_and_output(surface) {
                 // This is a commit of a previously-mapped toplevel.
                 window.on_commit();
 
@@ -110,14 +110,14 @@ impl CompositorHandler for State {
 
                 if !is_mapped {
                     // The toplevel got unmapped.
-                    self.niri.monitor_set.remove_window(&window);
+                    self.niri.layout.remove_window(&window);
                     self.niri.unmapped_windows.insert(surface.clone(), window);
                     self.niri.queue_redraw(output);
                     return;
                 }
 
                 // The toplevel remains mapped.
-                self.niri.monitor_set.update_window(&window);
+                self.niri.layout.update_window(&window);
 
                 self.niri.queue_redraw(output);
                 return;
@@ -127,10 +127,10 @@ impl CompositorHandler for State {
         }
 
         // This is a commit of a non-root or a non-toplevel root.
-        let root_window_output = self.niri.monitor_set.find_window_and_output(&root_surface);
+        let root_window_output = self.niri.layout.find_window_and_output(&root_surface);
         if let Some((window, output)) = root_window_output {
             window.on_commit();
-            self.niri.monitor_set.update_window(&window);
+            self.niri.layout.update_window(&window);
             self.niri.queue_redraw(output);
             return;
         }
@@ -139,7 +139,7 @@ impl CompositorHandler for State {
         self.popups_handle_commit(surface);
         if let Some(popup) = self.niri.popups.find_popup(surface) {
             if let Ok(root) = find_popup_root_surface(&popup) {
-                let root_window_output = self.niri.monitor_set.find_window_and_output(&root);
+                let root_window_output = self.niri.layout.find_window_and_output(&root);
                 if let Some((_window, output)) = root_window_output {
                     self.niri.queue_redraw(output);
                 }

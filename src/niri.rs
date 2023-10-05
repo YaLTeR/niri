@@ -82,7 +82,7 @@ use crate::dbus::mutter_display_config::DisplayConfig;
 use crate::dbus::mutter_screen_cast::{self, ScreenCast, ToNiriMsg};
 use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
-use crate::layout::{output_size, MonitorRenderElement, MonitorSet};
+use crate::layout::{output_size, Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::utils::{center, get_monotonic_time, make_screenshot_path};
 
@@ -95,7 +95,7 @@ pub struct Niri {
 
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
     // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
-    pub monitor_set: MonitorSet<Window>,
+    pub layout: Layout<Window>,
 
     // This space does not actually contain any windows, but all outputs are mapped into it
     // according to their global position.
@@ -245,7 +245,7 @@ impl State {
     pub fn update_focus(&mut self) {
         let focus = self.niri.layer_surface_focus().or_else(|| {
             self.niri
-                .monitor_set
+                .layout
                 .focus()
                 .map(|win| win.toplevel().wl_surface().clone())
         });
@@ -267,6 +267,8 @@ impl State {
                 return;
             }
         };
+
+        self.niri.layout.update_config(&config);
 
         let mut old_config = self.niri.config.borrow_mut();
 
@@ -298,6 +300,8 @@ impl Niri {
     ) -> Self {
         let display_handle = display.handle();
         let config_ = config.borrow();
+
+        let layout = Layout::new(&config_);
 
         let compositor_state = CompositorState::new::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
@@ -677,7 +681,7 @@ impl Niri {
             stop_signal,
             display_handle,
 
-            monitor_set: MonitorSet::new(),
+            layout,
             global_space: Space::default(),
             output_state: HashMap::new(),
             output_by_name: HashMap::new(),
@@ -780,7 +784,7 @@ impl Niri {
             position.x, position.y
         );
         self.global_space.map_output(&output, position);
-        self.monitor_set.add_output(output.clone());
+        self.layout.add_output(output.clone());
 
         let state = OutputState {
             global,
@@ -796,7 +800,7 @@ impl Niri {
     }
 
     pub fn remove_output(&mut self, output: &Output) {
-        self.monitor_set.remove_output(output);
+        self.layout.remove_output(output);
         self.global_space.unmap_output(output);
         // FIXME: reposition outputs so they are adjacent.
 
@@ -834,7 +838,7 @@ impl Niri {
 
     pub fn output_resized(&mut self, output: Output) {
         layer_map_for_output(&output).arrange();
-        self.monitor_set.update_output_size(&output);
+        self.layout.update_output_size(&output);
         self.queue_redraw(output);
     }
 
@@ -854,7 +858,7 @@ impl Niri {
     pub fn window_under_cursor(&self) -> Option<&Window> {
         let pos = self.seat.get_pointer().unwrap().current_location();
         let (output, pos_within_output) = self.output_under(pos)?;
-        let (window, _loc) = self.monitor_set.window_under(output, pos_within_output)?;
+        let (window, _loc) = self.layout.window_under(output, pos_within_output)?;
         Some(window)
     }
 
@@ -869,7 +873,7 @@ impl Niri {
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
         let (output, pos_within_output) = self.output_under(pos)?;
         let (window, win_pos_within_output) =
-            self.monitor_set.window_under(output, pos_within_output)?;
+            self.layout.window_under(output, pos_within_output)?;
 
         let (surface, surface_pos_within_output) = window
             .surface_under(
@@ -889,7 +893,7 @@ impl Niri {
     }
 
     pub fn output_left(&self) -> Option<Output> {
-        let active = self.monitor_set.active_output()?;
+        let active = self.layout.active_output()?;
         let active_geo = self.global_space.output_geometry(active).unwrap();
         let extended_geo = Rectangle::from_loc_and_size(
             (i32::MIN / 2, active_geo.loc.y),
@@ -906,7 +910,7 @@ impl Niri {
     }
 
     pub fn output_right(&self) -> Option<Output> {
-        let active = self.monitor_set.active_output()?;
+        let active = self.layout.active_output()?;
         let active_geo = self.global_space.output_geometry(active).unwrap();
         let extended_geo = Rectangle::from_loc_and_size(
             (i32::MIN / 2, active_geo.loc.y),
@@ -923,7 +927,7 @@ impl Niri {
     }
 
     pub fn output_up(&self) -> Option<Output> {
-        let active = self.monitor_set.active_output()?;
+        let active = self.layout.active_output()?;
         let active_geo = self.global_space.output_geometry(active).unwrap();
         let extended_geo = Rectangle::from_loc_and_size(
             (active_geo.loc.x, i32::MIN / 2),
@@ -940,7 +944,7 @@ impl Niri {
     }
 
     pub fn output_down(&self) -> Option<Output> {
-        let active = self.monitor_set.active_output()?;
+        let active = self.layout.active_output()?;
         let active_geo = self.global_space.output_geometry(active).unwrap();
         let extended_geo = Rectangle::from_loc_and_size(
             (active_geo.loc.x, i32::MIN / 2),
@@ -965,7 +969,7 @@ impl Niri {
     }
 
     fn layer_surface_focus(&self) -> Option<WlSurface> {
-        let output = self.monitor_set.active_output()?;
+        let output = self.layout.active_output()?;
         let layers = layer_map_for_output(output);
         let surface = layers
             .layers_on(Layer::Overlay)
@@ -1177,7 +1181,7 @@ impl Niri {
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
         // Get monitor elements.
-        let mon = self.monitor_set.monitor_for_output(output).unwrap();
+        let mon = self.layout.monitor_for_output(output).unwrap();
         let monitor_elements = mon.render_elements(renderer);
 
         // The pointer goes on the top.
@@ -1246,10 +1250,9 @@ impl Niri {
         let presentation_time = state.frame_clock.next_presentation_time();
 
         // Update from the config and advance the animations.
-        self.monitor_set.update_config(&self.config.borrow());
-        self.monitor_set.advance_animations(presentation_time);
+        self.layout.advance_animations(presentation_time);
         state.unfinished_animations_remain = self
-            .monitor_set
+            .layout
             .monitor_for_output(output)
             .unwrap()
             .are_animations_ongoing();
@@ -1341,7 +1344,7 @@ impl Niri {
         // The reason to do this at all is that it keeps track of whether the surface is visible or
         // not in a unified way with the pointer surfaces, which makes the logic elsewhere simpler.
 
-        for win in self.monitor_set.windows_for_output(output) {
+        for win in self.layout.windows_for_output(output) {
             win.with_surfaces(|surface, states| {
                 update_surface_primary_scanout_output(
                     surface,
@@ -1374,7 +1377,7 @@ impl Niri {
         // We can unconditionally send the current output's feedback to regular and layer-shell
         // surfaces, as they can only be displayed on a single output at a time. Even if a surface
         // is currently invisible, this is the DMABUF feedback that it should know about.
-        for win in self.monitor_set.windows_for_output(output) {
+        for win in self.layout.windows_for_output(output) {
             win.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
         }
 
@@ -1445,7 +1448,7 @@ impl Niri {
 
         let frame_callback_time = get_monotonic_time();
 
-        for win in self.monitor_set.windows_for_output(output) {
+        for win in self.layout.windows_for_output(output) {
             win.send_frame(output, frame_callback_time, None, should_send);
         }
 
@@ -1491,7 +1494,7 @@ impl Niri {
             );
         }
 
-        for win in self.monitor_set.windows_for_output(output) {
+        for win in self.layout.windows_for_output(output) {
             win.take_presentation_feedback(
                 &mut feedback,
                 surface_primary_scanout_output,

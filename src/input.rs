@@ -101,9 +101,7 @@ impl State {
         // doesn't always trigger due to damage, etc. So run it here right before it might prove
         // important. Besides, animations affect the input, so it's best to have up-to-date values
         // here.
-        self.niri
-            .monitor_set
-            .advance_animations(get_monotonic_time());
+        self.niri.layout.advance_animations(get_monotonic_time());
 
         let comp_mod = self.backend.mod_key();
 
@@ -150,7 +148,7 @@ impl State {
                             }
                         }
                         Action::Screenshot => {
-                            let active = self.niri.monitor_set.active_output().cloned();
+                            let active = self.niri.layout.active_output().cloned();
                             if let Some(active) = active {
                                 if let Some(renderer) = self.backend.renderer() {
                                     if let Err(err) = self.niri.screenshot(renderer, &active) {
@@ -160,144 +158,144 @@ impl State {
                             }
                         }
                         Action::CloseWindow => {
-                            if let Some(window) = self.niri.monitor_set.focus() {
+                            if let Some(window) = self.niri.layout.focus() {
                                 window.toplevel().send_close();
                             }
                         }
                         Action::FullscreenWindow => {
-                            let focus = self.niri.monitor_set.focus().cloned();
+                            let focus = self.niri.layout.focus().cloned();
                             if let Some(window) = focus {
-                                self.niri.monitor_set.toggle_fullscreen(&window);
+                                self.niri.layout.toggle_fullscreen(&window);
                             }
                         }
                         Action::MoveColumnLeft => {
-                            self.niri.monitor_set.move_left();
+                            self.niri.layout.move_left();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::MoveColumnRight => {
-                            self.niri.monitor_set.move_right();
+                            self.niri.layout.move_right();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::MoveWindowDown => {
-                            self.niri.monitor_set.move_down();
+                            self.niri.layout.move_down();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::MoveWindowUp => {
-                            self.niri.monitor_set.move_up();
+                            self.niri.layout.move_up();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::FocusColumnLeft => {
-                            self.niri.monitor_set.focus_left();
+                            self.niri.layout.focus_left();
                         }
                         Action::FocusColumnRight => {
-                            self.niri.monitor_set.focus_right();
+                            self.niri.layout.focus_right();
                         }
                         Action::FocusWindowDown => {
-                            self.niri.monitor_set.focus_down();
+                            self.niri.layout.focus_down();
                         }
                         Action::FocusWindowUp => {
-                            self.niri.monitor_set.focus_up();
+                            self.niri.layout.focus_up();
                         }
                         Action::MoveWindowToWorkspaceDown => {
-                            self.niri.monitor_set.move_to_workspace_down();
+                            self.niri.layout.move_to_workspace_down();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::MoveWindowToWorkspaceUp => {
-                            self.niri.monitor_set.move_to_workspace_up();
+                            self.niri.layout.move_to_workspace_up();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::MoveWindowToWorkspace(idx) => {
-                            self.niri.monitor_set.move_to_workspace(idx);
+                            self.niri.layout.move_to_workspace(idx);
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::FocusWorkspaceDown => {
-                            self.niri.monitor_set.switch_workspace_down();
+                            self.niri.layout.switch_workspace_down();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::FocusWorkspaceUp => {
-                            self.niri.monitor_set.switch_workspace_up();
+                            self.niri.layout.switch_workspace_up();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::FocusWorkspace(idx) => {
-                            self.niri.monitor_set.switch_workspace(idx);
+                            self.niri.layout.switch_workspace(idx);
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::ConsumeWindowIntoColumn => {
-                            self.niri.monitor_set.consume_into_column();
+                            self.niri.layout.consume_into_column();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::ExpelWindowFromColumn => {
-                            self.niri.monitor_set.expel_from_column();
+                            self.niri.layout.expel_from_column();
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
                         Action::SwitchPresetColumnWidth => {
-                            self.niri.monitor_set.toggle_width();
+                            self.niri.layout.toggle_width();
                         }
                         Action::MaximizeColumn => {
-                            self.niri.monitor_set.toggle_full_width();
+                            self.niri.layout.toggle_full_width();
                         }
                         Action::FocusMonitorLeft => {
                             if let Some(output) = self.niri.output_left() {
-                                self.niri.monitor_set.focus_output(&output);
+                                self.niri.layout.focus_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::FocusMonitorRight => {
                             if let Some(output) = self.niri.output_right() {
-                                self.niri.monitor_set.focus_output(&output);
+                                self.niri.layout.focus_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::FocusMonitorDown => {
                             if let Some(output) = self.niri.output_down() {
-                                self.niri.monitor_set.focus_output(&output);
+                                self.niri.layout.focus_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::FocusMonitorUp => {
                             if let Some(output) = self.niri.output_up() {
-                                self.niri.monitor_set.focus_output(&output);
+                                self.niri.layout.focus_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::MoveWindowToMonitorLeft => {
                             if let Some(output) = self.niri.output_left() {
-                                self.niri.monitor_set.move_to_output(&output);
+                                self.niri.layout.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::MoveWindowToMonitorRight => {
                             if let Some(output) = self.niri.output_right() {
-                                self.niri.monitor_set.move_to_output(&output);
+                                self.niri.layout.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::MoveWindowToMonitorDown => {
                             if let Some(output) = self.niri.output_down() {
-                                self.niri.monitor_set.move_to_output(&output);
+                                self.niri.layout.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::MoveWindowToMonitorUp => {
                             if let Some(output) = self.niri.output_up() {
-                                self.niri.monitor_set.move_to_output(&output);
+                                self.niri.layout.move_to_output(&output);
                                 self.move_cursor_to_output(&output);
                             }
                         }
                         Action::SetColumnWidth(change) => {
-                            self.niri.monitor_set.set_column_width(change);
+                            self.niri.layout.set_column_width(change);
                         }
                     }
                 }
@@ -415,9 +413,9 @@ impl State {
                 if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
                     if let Some(window) = self.niri.window_under_cursor() {
                         let window = window.clone();
-                        self.niri.monitor_set.activate_window(&window);
+                        self.niri.layout.activate_window(&window);
                     } else if let Some(output) = self.niri.output_under_cursor() {
-                        self.niri.monitor_set.activate_output(&output);
+                        self.niri.layout.activate_output(&output);
                     }
                 };
 
@@ -546,9 +544,9 @@ impl State {
                             if !pointer.is_grabbed() {
                                 if let Some(window) = self.niri.window_under_cursor() {
                                     let window = window.clone();
-                                    self.niri.monitor_set.activate_window(&window);
+                                    self.niri.layout.activate_window(&window);
                                 } else if let Some(output) = self.niri.output_under_cursor() {
-                                    self.niri.monitor_set.activate_output(&output);
+                                    self.niri.layout.activate_output(&output);
                                 }
                             };
                         }

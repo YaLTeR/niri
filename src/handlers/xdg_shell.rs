@@ -1,4 +1,4 @@
-use smithay::desktop::{find_popup_root_surface, layer_map_for_output, PopupKind, Window};
+use smithay::desktop::{find_popup_root_surface, PopupKind, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
@@ -15,7 +15,6 @@ use smithay::wayland::shell::xdg::{
 };
 use smithay::{delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_shell};
 
-use crate::layout::configure_new_window;
 use crate::niri::State;
 
 impl XdgShellHandler for State {
@@ -28,9 +27,9 @@ impl XdgShellHandler for State {
         let window = Window::new(surface);
 
         // Tell the surface the preferred size and bounds for its likely output.
-        let output = self.niri.monitor_set.active_output().unwrap();
-        let working_area = layer_map_for_output(output).non_exclusive_zone();
-        configure_new_window(working_area, &window);
+        if let Some(ws) = self.niri.layout.active_workspace() {
+            ws.configure_new_window(&window);
+        }
 
         // At the moment of creation, xdg toplevels must have no buffer.
         let existing = self.niri.unmapped_windows.insert(wl_surface, window);
@@ -106,18 +105,18 @@ impl XdgShellHandler for State {
             // independently from its buffer size
             if let Some((window, current_output)) = self
                 .niri
-                .monitor_set
+                .layout
                 .find_window_and_output(surface.wl_surface())
             {
                 if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
                     if requested_output != current_output {
                         self.niri
-                            .monitor_set
+                            .layout
                             .move_window_to_output(window.clone(), &requested_output);
                     }
                 }
 
-                self.niri.monitor_set.set_fullscreen(&window, true);
+                self.niri.layout.set_fullscreen(&window, true);
             }
         }
 
@@ -129,10 +128,10 @@ impl XdgShellHandler for State {
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
         if let Some((window, _)) = self
             .niri
-            .monitor_set
+            .layout
             .find_window_and_output(surface.wl_surface())
         {
-            self.niri.monitor_set.set_fullscreen(&window, false);
+            self.niri.layout.set_fullscreen(&window, false);
         }
     }
 
@@ -149,16 +148,16 @@ impl XdgShellHandler for State {
 
         let (window, output) = self
             .niri
-            .monitor_set
+            .layout
             .find_window_and_output(surface.wl_surface())
             .unwrap();
-        self.niri.monitor_set.remove_window(&window);
+        self.niri.layout.remove_window(&window);
         self.niri.queue_redraw(output);
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
         if let Ok(root) = find_popup_root_surface(&surface.into()) {
-            let root_window_output = self.niri.monitor_set.find_window_and_output(&root);
+            let root_window_output = self.niri.layout.find_window_and_output(&root);
             if let Some((_window, output)) = root_window_output {
                 self.niri.queue_redraw(output);
             }

@@ -93,6 +93,19 @@ cursor {
 // If the client will specifically ask for CSD, the request will be honored.
 // prefer-no-csd
 
+// You can customize the widths that "switch-preset-column-width" (Mod+R) toggles between.
+preset-column-widths {
+    // Proportion sets the width as a fraction of the output width, taking gaps into account.
+    // For example, you can perfectly fit four windows sized "proportion 0.25" on an output.
+    // The default preset widths are 1/3, 1/2 and 2/3 of the output.
+    proportion 0.333
+    proportion 0.5
+    proportion 0.667
+
+    // Fixed sets the width in logical pixels exactly.
+    // fixed 1920
+}
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program

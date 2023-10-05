@@ -22,6 +22,8 @@ pub struct Config {
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
     pub cursor: Cursor,
+    #[knuffel(child, unwrap(children), default)]
+    pub preset_column_widths: Vec<PresetWidth>,
     #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
@@ -125,7 +127,7 @@ pub struct SpawnAtStartup {
     pub command: Vec<String>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct FocusRing {
     #[knuffel(child)]
     pub off: bool,
@@ -187,6 +189,12 @@ impl Default for Cursor {
             xcursor_size: 24,
         }
     }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub enum PresetWidth {
+    Proportion(#[knuffel(argument)] f64),
+    Fixed(#[knuffel(argument)] i32),
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -513,6 +521,13 @@ mod tests {
                 xcursor-size 16
             }
 
+            preset-column-widths {
+                proportion 0.25
+                proportion 0.5
+                fixed 960
+                fixed 1280
+            }
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -580,6 +595,12 @@ mod tests {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,
                 },
+                preset_column_widths: vec![
+                    PresetWidth::Proportion(0.25),
+                    PresetWidth::Proportion(0.5),
+                    PresetWidth::Fixed(960),
+                    PresetWidth::Fixed(1280),
+                ],
                 binds: Binds(vec![
                     Bind {
                         key: Key {
