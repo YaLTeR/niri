@@ -30,6 +30,7 @@
 //! making the primary output their original output.
 
 use std::cmp::{max, min};
+use std::iter::zip;
 use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
@@ -150,6 +151,10 @@ pub struct Workspace<W: LayoutElement> {
     focus_ring: FocusRing,
 
     /// Offset of the view computed from the active column.
+    ///
+    /// Any left padding, including left padding from work area left exclusive zone, is handled
+    /// with this view offset (rather than added as a constant elsewhere in the code). This allows
+    /// for natural handling of fullscreen windows, which must ignore work area padding.
     view_offset: i32,
 
     /// Animation of the view offset, if one is currently ongoing.
@@ -1612,12 +1617,12 @@ impl<W: LayoutElement> Workspace<W> {
         });
     }
 
-    fn activate_column(&mut self, idx: usize) {
-        if self.active_column_idx == idx {
-            return;
+    fn compute_new_view_offset_for_column(&self, current_x: i32, idx: usize) -> i32 {
+        if self.columns[idx].is_fullscreen {
+            return 0;
         }
 
-        let current_x = self.view_pos();
+        let new_col_x = self.column_x(idx);
 
         let final_x = if let Some(anim) = &self.view_offset_anim {
             current_x - self.view_offset + anim.to().round() as i32
@@ -1625,26 +1630,58 @@ impl<W: LayoutElement> Workspace<W> {
             current_x
         };
 
+        let new_offset = compute_new_view_offset(
+            final_x + self.working_area.loc.x,
+            self.working_area.size.w,
+            new_col_x,
+            self.columns[idx].width(),
+        );
+
+        // Non-fullscreen windows are always offset at least by the working area position.
+        new_offset - self.working_area.loc.x
+    }
+
+    fn animate_view_offset_to_column(&mut self, current_x: i32, idx: usize) {
+        let new_view_offset = self.compute_new_view_offset_for_column(current_x, idx);
+
+        let new_col_x = self.column_x(idx);
+        let from_view_offset = current_x - new_col_x;
+        self.view_offset = from_view_offset;
+
+        // If we're already animating towards that, don't restart it.
+        if let Some(anim) = &self.view_offset_anim {
+            if anim.value().round() as i32 == self.view_offset
+                && anim.to().round() as i32 == new_view_offset
+            {
+                return;
+            }
+        }
+
+        // If our view offset is already this, we don't need to do anything.
+        if self.view_offset == new_view_offset {
+            self.view_offset_anim = None;
+            return;
+        }
+
+        self.view_offset_anim = Some(Animation::new(
+            self.view_offset as f64,
+            new_view_offset as f64,
+            Duration::from_millis(250),
+        ));
+    }
+
+    fn activate_column(&mut self, idx: usize) {
+        if self.active_column_idx == idx {
+            return;
+        }
+
+        let current_x = self.view_pos();
+        self.animate_view_offset_to_column(current_x, idx);
+
         self.active_column_idx = idx;
 
         // A different column was activated; reset the flag.
         self.activate_prev_column_on_removal = false;
-
-        let new_x = self.column_x(idx) - PADDING;
-        let new_view_offset = compute_new_view_offset(
-            final_x,
-            self.working_area.size.w,
-            new_x,
-            self.columns[idx].size().w,
-        );
-
-        let from_view_offset = current_x - new_x;
-        self.view_offset_anim = Some(Animation::new(
-            from_view_offset as f64,
-            new_view_offset as f64,
-            Duration::from_millis(250),
-        ));
-        self.view_offset = from_view_offset;
     }
 
     fn has_windows(&self) -> bool {
@@ -1661,10 +1698,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     /// Computes the X position of the windows in the given column, in logical coordinates.
     fn column_x(&self, column_idx: usize) -> i32 {
-        let mut x = PADDING;
+        let mut x = 0;
 
         for column in self.columns.iter().take(column_idx) {
-            x += column.size().w + PADDING;
+            x += column.width() + PADDING;
         }
 
         x
@@ -1672,6 +1709,8 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn add_window(&mut self, window: W, activate: bool) {
         self.enter_output_for_window(&window);
+
+        let was_empty = self.columns.is_empty();
 
         let idx = if self.columns.is_empty() {
             0
@@ -1688,6 +1727,15 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns.insert(idx, column);
 
         if activate {
+            // If this is the first window on an empty workspace, skip the animation from whatever
+            // view_offset was left over.
+            if was_empty {
+                // Try to make the code produce a left-aligned offset, even in presence of left
+                // exclusive zones.
+                self.view_offset = self.compute_new_view_offset_for_column(self.column_x(0), 0);
+                self.view_offset_anim = None;
+            }
+
             self.activate_column(idx);
             self.activate_prev_column_on_removal = true;
         }
@@ -1752,36 +1800,7 @@ impl<W: LayoutElement> Workspace<W> {
         if idx == self.active_column_idx {
             // We might need to move the view to ensure the resized window is still visible.
             let current_x = self.view_pos();
-
-            let final_x = if let Some(anim) = &self.view_offset_anim {
-                current_x - self.view_offset + anim.to().round() as i32
-            } else {
-                current_x
-            };
-
-            let new_x = self.column_x(idx) - PADDING;
-
-            let new_view_offset = compute_new_view_offset(
-                final_x,
-                self.working_area.size.w,
-                new_x,
-                self.columns[idx].size().w,
-            );
-
-            let cur_view_offset = self
-                .view_offset_anim
-                .as_ref()
-                .map(|a| a.to().round() as i32)
-                .unwrap_or(self.view_offset);
-            if cur_view_offset != new_view_offset {
-                let from_view_offset = current_x - new_x;
-                self.view_offset_anim = Some(Animation::new(
-                    from_view_offset as f64,
-                    new_view_offset as f64,
-                    Duration::from_millis(250),
-                ));
-                self.view_offset = from_view_offset;
-            }
+            self.animate_view_offset_to_column(current_x, idx);
         }
     }
 
@@ -1849,14 +1868,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.columns.swap(self.active_column_idx, new_idx);
 
-        let new_x = self.column_x(self.active_column_idx) - PADDING;
-        let new_view_offset = compute_new_view_offset(
-            current_x,
-            self.working_area.size.w,
-            new_x,
-            self.columns[self.active_column_idx].size().w,
-        );
-        self.view_offset = new_view_offset;
+        self.view_offset =
+            self.compute_new_view_offset_for_column(current_x, self.active_column_idx);
 
         self.activate_column(new_idx);
     }
@@ -1875,14 +1888,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.columns.swap(self.active_column_idx, new_idx);
 
-        let new_x = self.column_x(self.active_column_idx) - PADDING;
-        let new_view_offset = compute_new_view_offset(
-            current_x,
-            self.working_area.size.w,
-            new_x,
-            self.columns[self.active_column_idx].size().w,
-        );
-        self.view_offset = new_view_offset;
+        self.view_offset =
+            self.compute_new_view_offset_for_column(current_x, self.active_column_idx);
 
         self.activate_column(new_idx);
     }
@@ -1939,70 +1946,44 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     fn view_pos(&self) -> i32 {
-        self.column_x(self.active_column_idx) + self.view_offset - PADDING
+        self.column_x(self.active_column_idx) + self.view_offset
     }
 
-    fn window_under(
-        &self,
-        pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Point<i32, Logical>)> {
+    fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, Point<i32, Logical>)> {
         if self.columns.is_empty() {
             return None;
         }
 
         let view_pos = self.view_pos();
 
-        let mut pos = pos_within_output;
-        pos.x += view_pos as f64;
-
         // Prefer the active window since it's drawn on top.
         let col = &self.columns[self.active_column_idx];
         let active_win = &col.windows[col.active_window_idx];
         let geom = active_win.geometry();
-        let mut win_pos = Point::from((
-            self.column_x(self.active_column_idx),
+        let buf_pos = Point::from((
+            self.column_x(self.active_column_idx) - view_pos,
             col.window_y(col.active_window_idx),
         )) - geom.loc;
-        if col.is_fullscreen {
-            // FIXME: fullscreen windows are missing left padding
-            win_pos.x -= PADDING;
-        } else {
-            win_pos += self.working_area.loc;
-        }
-        if active_win.is_in_input_region(&(pos - win_pos.to_f64())) {
-            let mut win_pos_within_output = win_pos;
-            win_pos_within_output.x -= view_pos;
-            return Some((active_win, win_pos_within_output));
+        if active_win.is_in_input_region(&(pos - buf_pos.to_f64())) {
+            return Some((active_win, buf_pos));
         }
 
-        let mut x = PADDING;
+        let mut x = -view_pos;
         for col in &self.columns {
-            let mut y = PADDING;
-
-            for win in &col.windows {
-                let geom = win.geometry();
-
-                if win != active_win {
-                    // x, y point at the top-left of the window geometry.
-                    let mut win_pos = Point::from((x, y)) - geom.loc;
-                    if col.is_fullscreen {
-                        // FIXME: fullscreen windows are missing left padding
-                        win_pos.x -= PADDING;
-                        win_pos.y -= PADDING;
-                    } else {
-                        win_pos += self.working_area.loc;
-                    }
-                    if win.is_in_input_region(&(pos - win_pos.to_f64())) {
-                        let mut win_pos_within_output = win_pos;
-                        win_pos_within_output.x -= view_pos;
-                        return Some((win, win_pos_within_output));
-                    }
+            for (win, y) in zip(&col.windows, col.window_ys()) {
+                if win == active_win {
+                    // Already handled it above.
+                    continue;
                 }
 
-                y += geom.size.h + PADDING;
+                let geom = win.geometry();
+                let buf_pos = Point::from((x, y)) - geom.loc;
+                if win.is_in_input_region(&(pos - buf_pos.to_f64())) {
+                    return Some((win, buf_pos));
+                }
             }
 
-            x += col.size().w + PADDING;
+            x += col.width() + PADDING;
         }
 
         None
@@ -2119,22 +2100,17 @@ impl Workspace<Window> {
         // Draw the active window on top.
         let col = &self.columns[self.active_column_idx];
         let active_win = &col.windows[col.active_window_idx];
-        let geom = active_win.geometry();
-        let mut win_pos = Point::from((
+        let win_pos = Point::from((
             self.column_x(self.active_column_idx) - view_pos,
             col.window_y(col.active_window_idx),
-        )) - geom.loc;
-        if col.is_fullscreen {
-            // FIXME: fullscreen windows are missing left padding
-            win_pos.x -= PADDING;
-        } else {
-            win_pos += self.working_area.loc;
-        }
+        ));
 
         // Draw the window itself.
+        let geom = active_win.geometry();
+        let buf_pos = win_pos - geom.loc;
         rv.extend(active_win.render_elements(
             renderer,
-            win_pos.to_physical_precise_round(output_scale),
+            buf_pos.to_physical_precise_round(output_scale),
             output_scale,
             1.,
         ));
@@ -2142,39 +2118,29 @@ impl Workspace<Window> {
         // Draw the focus ring.
         rv.extend(
             self.focus_ring
-                .render(win_pos + geom.loc, output_scale)
+                .render(win_pos, output_scale)
                 .map(Into::into),
         );
 
-        let mut x = PADDING;
+        let mut x = -view_pos;
         for col in &self.columns {
-            let mut y = PADDING;
-
-            for win in &col.windows {
-                let geom = win.geometry();
-
-                if win != active_win {
-                    let mut win_pos = Point::from((x - view_pos, y)) - geom.loc;
-                    if col.is_fullscreen {
-                        // FIXME: fullscreen windows are missing left padding
-                        win_pos.x -= PADDING;
-                        win_pos.y -= PADDING;
-                    } else {
-                        win_pos += self.working_area.loc;
-                    }
-
-                    rv.extend(win.render_elements(
-                        renderer,
-                        win_pos.to_physical_precise_round(output_scale),
-                        output_scale,
-                        1.,
-                    ));
+            for (win, y) in zip(&col.windows, col.window_ys()) {
+                if win == active_win {
+                    // Already handled it above.
+                    continue;
                 }
 
-                y += geom.size.h + PADDING;
+                let geom = win.geometry();
+                let buf_pos = Point::from((x, y)) - geom.loc;
+                rv.extend(win.render_elements(
+                    renderer,
+                    buf_pos.to_physical_precise_round(output_scale),
+                    output_scale,
+                    1.,
+                ));
             }
 
-            x += col.size().w + PADDING;
+            x += col.width() + PADDING;
         }
 
         rv
@@ -2292,17 +2258,12 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
-    /// Computes the size of the column including top and bottom padding.
-    fn size(&self) -> Size<i32, Logical> {
-        let mut total = Size::from((0, PADDING));
-
-        for window in &self.windows {
-            let size = window.geometry().size;
-            total.w = max(total.w, size.w);
-            total.h += size.h + PADDING;
-        }
-
-        total
+    fn width(&self) -> i32 {
+        self.windows
+            .iter()
+            .map(|win| win.geometry().size.w)
+            .max()
+            .unwrap()
     }
 
     fn focus_up(&mut self) {
@@ -2347,7 +2308,7 @@ impl<W: LayoutElement> Column<W> {
         let idx = match self.width {
             ColumnWidth::Preset(idx) => (idx + 1) % self.options.preset_widths.len(),
             _ => {
-                let current = self.size().w;
+                let current = self.width();
                 self.options
                     .preset_widths
                     .iter()
@@ -2416,17 +2377,21 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn window_y(&self, window_idx: usize) -> i32 {
-        if self.is_fullscreen {
-            return 0;
+        self.window_ys().nth(window_idx).unwrap()
+    }
+
+    fn window_ys(&self) -> impl Iterator<Item = i32> + '_ {
+        let mut y = 0;
+
+        if !self.is_fullscreen {
+            y = self.working_area.loc.y + PADDING;
         }
 
-        let mut y = PADDING;
-
-        for win in self.windows.iter().take(window_idx) {
+        self.windows.iter().map(move |win| {
+            let pos = y;
             y += win.geometry().size.h + PADDING;
-        }
-
-        y
+            pos
+        })
     }
 }
 
@@ -2440,24 +2405,31 @@ pub fn output_size(output: &Output) -> Size<i32, Logical> {
         .to_logical(output_scale)
 }
 
-fn compute_new_view_offset(cur_x: i32, view_width: i32, new_x: i32, new_col_width: i32) -> i32 {
+fn compute_new_view_offset(cur_x: i32, view_width: i32, new_col_x: i32, new_col_width: i32) -> i32 {
     // If the column is wider than the view, always left-align it.
-    if new_col_width + PADDING * 2 >= view_width {
+    if view_width <= new_col_width {
         return 0;
     }
 
+    // Compute the padding in case it needs to be smaller due to large window width.
+    let padding = ((view_width - new_col_width) / 2).clamp(0, PADDING);
+
+    // Compute the desired new X with padding.
+    let new_x = new_col_x - padding;
+    let new_right_x = new_col_x + new_col_width + padding;
+
     // If the column is already fully visible, leave the view as is.
-    if new_x >= cur_x && new_x + new_col_width + PADDING * 2 <= cur_x + view_width {
-        return -(new_x - cur_x);
+    if cur_x <= new_x && new_right_x <= cur_x + view_width {
+        return -(new_col_x - cur_x);
     }
 
     // Otherwise, prefer the aligment that results in less motion from the current position.
     let dist_to_left = cur_x.abs_diff(new_x);
-    let dist_to_right = (cur_x + view_width).abs_diff(new_x + new_col_width + PADDING * 2);
+    let dist_to_right = (cur_x + view_width).abs_diff(new_right_x);
     if dist_to_left <= dist_to_right {
-        0
+        -padding
     } else {
-        -(view_width - new_col_width - PADDING * 2)
+        -(view_width - padding - new_col_width)
     }
 }
 
