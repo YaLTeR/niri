@@ -24,6 +24,8 @@ pub struct Config {
     pub cursor: Cursor,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetWidth>,
+    #[knuffel(child, unwrap(argument), default = 16)]
+    pub gaps: u16,
     #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
@@ -528,6 +530,8 @@ mod tests {
                 fixed 1280
             }
 
+            gaps 8
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -601,6 +605,7 @@ mod tests {
                     PresetWidth::Fixed(960),
                     PresetWidth::Fixed(1280),
                 ],
+                gaps: 8,
                 binds: Binds(vec![
                     Bind {
                         key: Key {

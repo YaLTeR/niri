@@ -106,6 +106,9 @@ preset-column-widths {
     // fixed 1920
 }
 
+// Set gaps around windows in logical pixels.
+gaps 16
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program

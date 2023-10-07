@@ -56,8 +56,6 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 use crate::animation::Animation;
 use crate::config::{self, Color, Config, PresetWidth, SizeChange};
 
-const PADDING: i32 = 16;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
 
@@ -152,7 +150,7 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Offset of the view computed from the active column.
     ///
-    /// Any left padding, including left padding from work area left exclusive zone, is handled
+    /// Any gaps, including left padding from work area left exclusive zone, is handled
     /// with this view offset (rather than added as a constant elsewhere in the code). This allows
     /// for natural handling of fullscreen windows, which must ignore work area padding.
     view_offset: i32,
@@ -185,6 +183,8 @@ struct FocusRing {
 
 #[derive(Debug, PartialEq)]
 struct Options {
+    /// Padding around windows in logical pixels.
+    gaps: i32,
     focus_ring: config::FocusRing,
     /// Column widths that `toggle_width()` switches between.
     preset_widths: Vec<ColumnWidth>,
@@ -193,6 +193,7 @@ struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            gaps: 16,
             focus_ring: Default::default(),
             preset_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
@@ -218,6 +219,7 @@ impl Options {
         };
 
         Self {
+            gaps: config.gaps.into(),
             focus_ring: config.focus_ring,
             preset_widths,
         }
@@ -363,7 +365,7 @@ impl ColumnWidth {
     fn resolve(self, options: &Options, view_width: i32) -> i32 {
         match self {
             ColumnWidth::Proportion(proportion) => {
-                ((view_width - PADDING) as f64 * proportion).floor() as i32 - PADDING
+                ((view_width - options.gaps) as f64 * proportion).floor() as i32 - options.gaps
             }
             ColumnWidth::Preset(idx) => options.preset_widths[idx].resolve(options, view_width),
             ColumnWidth::Fixed(width) => width,
@@ -1603,12 +1605,12 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn configure_new_window(&self, window: &Window) {
         let width = ColumnWidth::default().resolve(&self.options, self.working_area.size.w);
-        let height = self.working_area.size.h - PADDING * 2;
+        let height = self.working_area.size.h - self.options.gaps * 2;
         let size = Size::from((max(width, 1), max(height, 1)));
 
         let bounds = Size::from((
-            self.working_area.size.w - PADDING * 2,
-            self.working_area.size.h - PADDING * 2,
+            max(self.working_area.size.w - self.options.gaps * 2, 1),
+            max(self.working_area.size.h - self.options.gaps * 2, 1),
         ));
 
         window.toplevel().with_pending_state(|state| {
@@ -1635,6 +1637,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.working_area.size.w,
             new_col_x,
             self.columns[idx].width(),
+            self.options.gaps,
         );
 
         // Non-fullscreen windows are always offset at least by the working area position.
@@ -1701,7 +1704,7 @@ impl<W: LayoutElement> Workspace<W> {
         let mut x = 0;
 
         for column in self.columns.iter().take(column_idx) {
-            x += column.width() + PADDING;
+            x += column.width() + self.options.gaps;
         }
 
         x
@@ -1983,7 +1986,7 @@ impl<W: LayoutElement> Workspace<W> {
                 }
             }
 
-            x += col.width() + PADDING;
+            x += col.width() + self.options.gaps;
         }
 
         None
@@ -2140,7 +2143,7 @@ impl Workspace<Window> {
                 ));
             }
 
-            x += col.width() + PADDING;
+            x += col.width() + self.options.gaps;
         }
 
         rv
@@ -2181,6 +2184,8 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn update_config(&mut self, options: Rc<Options>) {
+        let mut update_sizes = false;
+
         // If preset widths changed, make our width non-preset.
         if self.options.preset_widths != options.preset_widths {
             if let ColumnWidth::Preset(idx) = self.width {
@@ -2188,7 +2193,15 @@ impl<W: LayoutElement> Column<W> {
             }
         }
 
+        if self.options.gaps != options.gaps {
+            update_sizes = true;
+        }
+
         self.options = options;
+
+        if update_sizes {
+            self.update_window_sizes();
+        }
     }
 
     fn window_count(&self) -> usize {
@@ -2250,7 +2263,8 @@ impl<W: LayoutElement> Column<W> {
         let max_width = max(max_width, min_width);
 
         let width = self.width.resolve(&self.options, self.working_area.size.w);
-        let height = (self.working_area.size.h - PADDING) / self.window_count() as i32 - PADDING;
+        let height = (self.working_area.size.h - self.options.gaps) / self.window_count() as i32
+            - self.options.gaps;
         let size = Size::from((max(min(width, max_width), min_width), max(height, 1)));
 
         for win in &self.windows {
@@ -2359,8 +2373,8 @@ impl<W: LayoutElement> Column<W> {
                 ColumnWidth::Proportion(proportion)
             }
             (ColumnWidth::Fixed(_), SizeChange::AdjustProportion(delta)) => {
-                let current =
-                    (current_px + PADDING) as f64 / (self.working_area.size.w - PADDING) as f64;
+                let current = (current_px + self.options.gaps) as f64
+                    / (self.working_area.size.w - self.options.gaps) as f64;
                 let proportion = (current + delta / 100.).clamp(0., MAX_F);
                 ColumnWidth::Proportion(proportion)
             }
@@ -2384,12 +2398,12 @@ impl<W: LayoutElement> Column<W> {
         let mut y = 0;
 
         if !self.is_fullscreen {
-            y = self.working_area.loc.y + PADDING;
+            y = self.working_area.loc.y + self.options.gaps;
         }
 
         self.windows.iter().map(move |win| {
             let pos = y;
-            y += win.geometry().size.h + PADDING;
+            y += win.geometry().size.h + self.options.gaps;
             pos
         })
     }
@@ -2405,14 +2419,20 @@ pub fn output_size(output: &Output) -> Size<i32, Logical> {
         .to_logical(output_scale)
 }
 
-fn compute_new_view_offset(cur_x: i32, view_width: i32, new_col_x: i32, new_col_width: i32) -> i32 {
+fn compute_new_view_offset(
+    cur_x: i32,
+    view_width: i32,
+    new_col_x: i32,
+    new_col_width: i32,
+    gaps: i32,
+) -> i32 {
     // If the column is wider than the view, always left-align it.
     if view_width <= new_col_width {
         return 0;
     }
 
     // Compute the padding in case it needs to be smaller due to large window width.
-    let padding = ((view_width - new_col_width) / 2).clamp(0, PADDING);
+    let padding = ((view_width - new_col_width) / 2).clamp(0, gaps);
 
     // Compute the desired new X with padding.
     let new_x = new_col_x - padding;
