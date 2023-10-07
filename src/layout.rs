@@ -1603,15 +1603,19 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    fn toplevel_bounds(&self) -> Size<i32, Logical> {
+        Size::from((
+            max(self.working_area.size.w - self.options.gaps * 2, 1),
+            max(self.working_area.size.h - self.options.gaps * 2, 1),
+        ))
+    }
+
     pub fn configure_new_window(&self, window: &Window) {
         let width = ColumnWidth::default().resolve(&self.options, self.working_area.size.w);
         let height = self.working_area.size.h - self.options.gaps * 2;
         let size = Size::from((max(width, 1), max(height, 1)));
 
-        let bounds = Size::from((
-            max(self.working_area.size.w - self.options.gaps * 2, 1),
-            max(self.working_area.size.h - self.options.gaps * 2, 1),
-        ));
+        let bounds = self.toplevel_bounds();
 
         window.toplevel().with_pending_state(|state| {
             state.size = Some(size);
@@ -2071,10 +2075,17 @@ impl<W: LayoutElement> Workspace<W> {
 
 impl Workspace<Window> {
     fn refresh(&self) {
+        let bounds = self.toplevel_bounds();
+
         for (col_idx, col) in self.columns.iter().enumerate() {
             for (win_idx, win) in col.windows.iter().enumerate() {
                 let active = self.active_column_idx == col_idx && col.active_window_idx == win_idx;
                 win.set_activated(active);
+
+                win.toplevel().with_pending_state(|state| {
+                    state.bounds = Some(bounds);
+                });
+
                 win.toplevel().send_pending_configure();
                 win.refresh();
             }
