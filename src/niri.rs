@@ -785,6 +785,7 @@ impl Niri {
         );
         self.global_space.map_output(&output, position);
         self.layout.add_output(output.clone());
+        output.change_current_state(None, None, None, Some(position));
 
         let state = OutputState {
             global,
