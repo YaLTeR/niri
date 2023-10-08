@@ -110,10 +110,24 @@ pub struct Monitor<W: LayoutElement> {
     workspaces: Vec<Workspace<W>>,
     /// Index of the currently active workspace.
     active_workspace_idx: usize,
-    /// Animation for workspace switching.
-    workspace_idx_anim: Option<Animation>,
+    /// In-progress switch between workspaces.
+    workspace_switch: Option<WorkspaceSwitch>,
     /// Configurable properties of the layout.
     options: Rc<Options>,
+}
+
+#[derive(Debug)]
+enum WorkspaceSwitch {
+    Animation(Animation),
+    Gesture(WorkspaceSwitchGesture),
+}
+
+#[derive(Debug)]
+struct WorkspaceSwitchGesture {
+    /// Index of the workspace where the gesture was started.
+    center_idx: usize,
+    /// Current, fractional workspace index.
+    current_idx: f64,
 }
 
 #[derive(Debug)]
@@ -358,6 +372,23 @@ impl FocusRing {
             active_color: config.active_color,
             inactive_color: config.inactive_color,
         }
+    }
+}
+
+impl WorkspaceSwitch {
+    fn current_idx(&self) -> f64 {
+        match self {
+            WorkspaceSwitch::Animation(anim) => anim.value(),
+            WorkspaceSwitch::Gesture(gesture) => gesture.current_idx,
+        }
+    }
+
+    /// Returns `true` if the workspace switch is [`Animation`].
+    ///
+    /// [`Animation`]: WorkspaceSwitch::Animation
+    #[must_use]
+    fn is_animation(&self) -> bool {
+        matches!(self, Self::Animation(..))
     }
 }
 
@@ -1138,6 +1169,95 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
     }
+
+    pub fn workspace_switch_gesture_begin(&mut self, output: &Output) {
+        let monitors = match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => monitors,
+            MonitorSet::NoOutputs { .. } => unreachable!(),
+        };
+
+        for monitor in monitors {
+            // Cancel the gesture on other outputs.
+            if &monitor.output != output {
+                if let Some(WorkspaceSwitch::Gesture(_)) = monitor.workspace_switch {
+                    monitor.workspace_switch = None;
+                }
+                continue;
+            }
+
+            let center_idx = monitor.active_workspace_idx;
+            let current_idx = monitor
+                .workspace_switch
+                .as_ref()
+                .map(|s| s.current_idx())
+                .unwrap_or(center_idx as f64);
+
+            let gesture = WorkspaceSwitchGesture {
+                center_idx,
+                current_idx,
+            };
+            monitor.workspace_switch = Some(WorkspaceSwitch::Gesture(gesture));
+        }
+    }
+
+    pub fn workspace_switch_gesture_update(&mut self, delta_y: f64) -> Option<Option<Output>> {
+        let monitors = match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => monitors,
+            MonitorSet::NoOutputs { .. } => return None,
+        };
+
+        for monitor in monitors {
+            if let Some(WorkspaceSwitch::Gesture(gesture)) = &mut monitor.workspace_switch {
+                // Normalize like GNOME Shell's workspace switching.
+                let delta_y = -delta_y / 400.;
+
+                let min = gesture.center_idx.saturating_sub(1) as f64;
+                let max = (gesture.center_idx + 1).min(monitor.workspaces.len() - 1) as f64;
+                let new_idx = (gesture.current_idx + delta_y).clamp(min, max);
+
+                if gesture.current_idx == new_idx {
+                    return Some(None);
+                }
+
+                gesture.current_idx = new_idx;
+                return Some(Some(monitor.output.clone()));
+            }
+        }
+
+        None
+    }
+
+    pub fn workspace_switch_gesture_end(&mut self, cancelled: bool) -> Option<Output> {
+        let monitors = match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => monitors,
+            MonitorSet::NoOutputs { .. } => return None,
+        };
+
+        for monitor in monitors {
+            if let Some(WorkspaceSwitch::Gesture(gesture)) = &mut monitor.workspace_switch {
+                if cancelled {
+                    monitor.workspace_switch = None;
+                    return Some(monitor.output.clone());
+                }
+
+                // FIXME: keep track of gesture velocity and use it to compute the final point and
+                // to animate to it.
+                let current_idx = gesture.current_idx;
+                let idx = current_idx.round() as usize;
+
+                monitor.active_workspace_idx = idx;
+                monitor.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
+                    current_idx,
+                    idx as f64,
+                    Duration::from_millis(250),
+                )));
+
+                return Some(monitor.output.clone());
+            }
+        }
+
+        None
+    }
 }
 
 impl Layout<Window> {
@@ -1173,7 +1293,7 @@ impl<W: LayoutElement> Monitor<W> {
             output,
             workspaces,
             active_workspace_idx: 0,
-            workspace_idx_anim: None,
+            workspace_switch: None,
             options,
         }
     }
@@ -1188,18 +1308,18 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let current_idx = self
-            .workspace_idx_anim
+            .workspace_switch
             .as_ref()
-            .map(|anim| anim.value())
+            .map(|s| s.current_idx())
             .unwrap_or(self.active_workspace_idx as f64);
 
         self.active_workspace_idx = idx;
 
-        self.workspace_idx_anim = Some(Animation::new(
+        self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             current_idx,
             idx as f64,
             Duration::from_millis(250),
-        ));
+        )));
     }
 
     pub fn add_window(&mut self, workspace_idx: usize, window: W, activate: bool) {
@@ -1222,7 +1342,7 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     fn clean_up_workspaces(&mut self) {
-        assert!(self.workspace_idx_anim.is_none());
+        assert!(self.workspace_switch.is_none());
 
         for idx in (0..self.workspaces.len() - 1).rev() {
             if self.active_workspace_idx == idx {
@@ -1330,7 +1450,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.add_window(new_idx, window, true);
 
         // Don't animate this action.
-        self.workspace_idx_anim = None;
+        self.workspace_switch = None;
     }
 
     pub fn switch_workspace_up(&mut self) {
@@ -1350,7 +1470,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.workspaces.len() - 1,
         ));
         // Don't animate this action.
-        self.workspace_idx_anim = None;
+        self.workspace_switch = None;
     }
 
     pub fn consume_into_column(&mut self) {
@@ -1372,10 +1492,10 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
-        if let Some(anim) = &mut self.workspace_idx_anim {
+        if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
             anim.set_current_time(current_time);
             if anim.is_done() {
-                self.workspace_idx_anim = None;
+                self.workspace_switch = None;
                 self.clean_up_workspaces();
             }
         }
@@ -1386,7 +1506,9 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.workspace_idx_anim.is_some()
+        self.workspace_switch
+            .as_ref()
+            .is_some_and(|s| s.is_animation())
             || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
     }
 
@@ -1421,9 +1543,9 @@ impl Monitor<Window> {
         let output_mode = self.output.current_mode().unwrap();
         let output_size = output_transform.transform_size(output_mode.size);
 
-        match &self.workspace_idx_anim {
-            Some(anim) => {
-                let render_idx = anim.value();
+        match &self.workspace_switch {
+            Some(switch) => {
+                let render_idx = switch.current_idx();
                 let below_idx = render_idx.floor() as usize;
                 let above_idx = render_idx.ceil() as usize;
 

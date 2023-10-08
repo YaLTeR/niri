@@ -631,6 +631,19 @@ impl State {
                 }
             }
             InputEvent::GestureSwipeBegin { event } => {
+                if event.fingers() == 3 {
+                    if let Some(output) = self.niri.output_under_cursor() {
+                        self.niri.layout.workspace_switch_gesture_begin(&output);
+
+                        // FIXME: granular. This one is awkward because this can cancel a gesture on
+                        // multiple other outputs in theory.
+                        self.niri.queue_redraw_all();
+                    }
+
+                    // We handled this event.
+                    return;
+                }
+
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_swipe_begin(
@@ -643,6 +656,19 @@ impl State {
                 );
             }
             InputEvent::GestureSwipeUpdate { event } => {
+                let res = self
+                    .niri
+                    .layout
+                    .workspace_switch_gesture_update(event.delta_y());
+                if let Some(output) = res {
+                    if let Some(output) = output {
+                        self.niri.queue_redraw(output);
+                    }
+
+                    // We handled this event.
+                    return;
+                }
+
                 let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_swipe_update(
                     self,
@@ -653,6 +679,17 @@ impl State {
                 );
             }
             InputEvent::GestureSwipeEnd { event } => {
+                let res = self
+                    .niri
+                    .layout
+                    .workspace_switch_gesture_end(event.cancelled());
+                if let Some(output) = res {
+                    self.niri.queue_redraw(output);
+
+                    // We handled this event.
+                    return;
+                }
+
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.niri.seat.get_pointer().unwrap();
                 pointer.gesture_swipe_end(
