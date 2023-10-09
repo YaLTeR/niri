@@ -209,6 +209,7 @@ binds {
 
     Print { screenshot; }
     Mod+Shift+E { quit; }
+    Mod+Shift+P { power-off-monitors; }
 
     Mod+Shift+Ctrl+T { toggle-debug-tint; }
 }

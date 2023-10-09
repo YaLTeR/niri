@@ -103,6 +103,13 @@ impl State {
         // here.
         self.niri.layout.advance_animations(get_monotonic_time());
 
+        // Power on monitors if they were off.
+        // HACK: ignore key releases so that the power-off-monitors bind can work.
+        if !matches!(&event, InputEvent::Keyboard { event } if event.state() == KeyState::Released)
+        {
+            self.niri.activate_monitors(&self.backend);
+        }
+
         let comp_mod = self.backend.mod_key();
 
         match event {
@@ -138,6 +145,9 @@ impl State {
                         }
                         Action::Suspend => {
                             self.backend.suspend();
+                        }
+                        Action::PowerOffMonitors => {
+                            self.niri.deactivate_monitors(&self.backend);
                         }
                         Action::ToggleDebugTint => {
                             self.backend.toggle_debug_tint();

@@ -107,6 +107,9 @@ pub struct Niri {
     pub output_state: HashMap<Output, OutputState>,
     pub output_by_name: HashMap<String, Output>,
 
+    // When false, we're idling with monitors powered off.
+    pub monitors_active: bool,
+
     // Smithay state.
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -688,6 +691,7 @@ impl Niri {
             output_state: HashMap::new(),
             output_by_name: HashMap::new(),
             unmapped_windows: HashMap::new(),
+            monitors_active: true,
 
             compositor_state,
             xdg_shell_state,
@@ -843,6 +847,26 @@ impl Niri {
         layer_map_for_output(&output).arrange();
         self.layout.update_output_size(&output);
         self.queue_redraw(output);
+    }
+
+    pub fn deactivate_monitors(&mut self, backend: &Backend) {
+        if !self.monitors_active {
+            return;
+        }
+
+        self.monitors_active = false;
+        backend.set_monitors_active(false);
+    }
+
+    pub fn activate_monitors(&mut self, backend: &Backend) {
+        if self.monitors_active {
+            return;
+        }
+
+        self.monitors_active = true;
+        backend.set_monitors_active(true);
+
+        self.queue_redraw_all();
     }
 
     pub fn output_under(&self, pos: Point<f64, Logical>) -> Option<(&Output, Point<f64, Logical>)> {
@@ -1241,6 +1265,11 @@ impl Niri {
             state.redraw_state,
             RedrawState::Queued(_) | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
         ));
+
+        if !self.monitors_active {
+            state.redraw_state = RedrawState::Idle;
+            return;
+        }
 
         if !backend.is_active() {
             state.redraw_state = RedrawState::Idle;

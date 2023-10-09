@@ -26,7 +26,7 @@ use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpix
 use smithay::reexports::calloop::timer::{Timer, TimeoutAction};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
-    connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags,
+    connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags, Device, property,
 };
 use smithay::reexports::input::Libinput;
 use smithay::reexports::nix::fcntl::OFlag;
@@ -612,7 +612,12 @@ impl Tty {
         assert!(res.is_none(), "crtc must not have already existed");
 
         niri.add_output(output.clone(), Some(refresh_interval(*mode)));
-        niri.queue_redraw(output);
+
+        // Power on all monitors if necessary and queue a redraw on the new one.
+        niri.event_loop.insert_idle(move |state| {
+            state.niri.activate_monitors(&state.backend);
+            state.niri.queue_redraw(output);
+        });
 
         Ok(())
     }
@@ -955,6 +960,45 @@ impl Tty {
         };
 
         device.drm.is_active()
+    }
+
+    pub fn set_monitors_active(&self, active: bool) {
+        let Some(device) = &self.output_device else {
+            return;
+        };
+
+        for crtc in device.surfaces.keys() {
+            set_crtc_active(&device.drm, *crtc, active);
+        }
+    }
+}
+
+fn find_drm_property(drm: &DrmDevice, crtc: crtc::Handle, name: &str) -> Option<property::Handle> {
+    let props = match drm.get_properties(crtc) {
+        Ok(props) => props,
+        Err(err) => {
+            warn!("error getting CRTC properties: {err:?}");
+            return None;
+        }
+    };
+
+    let (handles, _) = props.as_props_and_values();
+    handles.iter().find_map(|handle| {
+        let info = drm.get_property(*handle).ok()?;
+        let n = info.name().to_str().ok()?;
+
+        (n == name).then_some(*handle)
+    })
+}
+
+fn set_crtc_active(drm: &DrmDevice, crtc: crtc::Handle, active: bool) {
+    let Some(prop) = find_drm_property(drm, crtc, "ACTIVE") else {
+        return;
+    };
+
+    let value = property::Value::Boolean(active);
+    if let Err(err) = drm.set_property(crtc, prop, value.into()) {
+        warn!("error setting CRTC property: {err:?}");
     }
 }
 

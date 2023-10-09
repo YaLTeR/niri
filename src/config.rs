@@ -235,6 +235,7 @@ pub enum Action {
     #[knuffel(skip)]
     ChangeVt(i32),
     Suspend,
+    PowerOffMonitors,
     ToggleDebugTint,
     Spawn(#[knuffel(arguments)] Vec<String>),
     Screenshot,
