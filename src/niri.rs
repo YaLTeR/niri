@@ -298,6 +298,8 @@ impl Niri {
         display: Display<State>,
         backend: &Backend,
     ) -> Self {
+        let _span = tracy_client::span!("Niri::new");
+
         let display_handle = display.handle();
         let config_ = config.borrow();
 
