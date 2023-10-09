@@ -1236,19 +1236,21 @@ impl Niri {
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
-        if !backend.is_active() {
-            return;
-        }
-
-        let Some(renderer) = backend.renderer() else {
-            return;
-        };
-
         let state = self.output_state.get_mut(output).unwrap();
         assert!(matches!(
             state.redraw_state,
             RedrawState::Queued(_) | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
         ));
+
+        if !backend.is_active() {
+            state.redraw_state = RedrawState::Idle;
+            return;
+        }
+
+        let Some(renderer) = backend.renderer() else {
+            state.redraw_state = RedrawState::Idle;
+            return;
+        };
 
         let presentation_time = state.frame_clock.next_presentation_time();
 
