@@ -239,6 +239,7 @@ pub enum Action {
     ToggleDebugTint,
     Spawn(#[knuffel(arguments)] Vec<String>),
     Screenshot,
+    ScreenshotWindow,
     CloseWindow,
     FullscreenWindow,
     FocusColumnLeft,

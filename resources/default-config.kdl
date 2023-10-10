@@ -208,6 +208,8 @@ binds {
     Mod+Equal { set-column-width "+10%"; }
 
     Print { screenshot; }
+    Alt+Print { screenshot-window; }
+
     Mod+Shift+E { quit; }
     Mod+Shift+P { power-off-monitors; }
 

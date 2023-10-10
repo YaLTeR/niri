@@ -751,6 +751,30 @@ impl<W: LayoutElement> Layout<W> {
         Some(&mon.workspaces[mon.active_workspace_idx])
     }
 
+    pub fn active_window(&self) -> Option<(W, Output)> {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &self.monitor_set
+        else {
+            return None;
+        };
+
+        let mon = &monitors[*active_monitor_idx];
+        let ws = &mon.workspaces[mon.active_workspace_idx];
+
+        if ws.columns.is_empty() {
+            return None;
+        }
+
+        let col = &ws.columns[ws.active_column_idx];
+        Some((
+            col.windows[col.active_window_idx].clone(),
+            mon.output.clone(),
+        ))
+    }
+
     pub fn workspace_for_output(&self, output: &Output) -> Option<&Workspace<W>> {
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;

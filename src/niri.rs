@@ -1510,6 +1510,40 @@ impl Niri {
         let elements = self.render(renderer, output, true);
         let pixels = render_to_vec(renderer, size, scale, &elements)?;
 
+        self.save_screenshot(size, pixels)
+            .context("error saving screenshot")
+    }
+
+    pub fn screenshot_window(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        window: &Window,
+    ) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("Niri::screenshot_window");
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let bbox = window.bbox_with_popups();
+        let size = bbox.size.to_physical_precise_ceil(scale);
+        let buf_pos = Point::from((0, 0)) - bbox.loc;
+        // FIXME: pointer.
+        let elements = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+            renderer,
+            buf_pos.to_physical_precise_ceil(scale),
+            scale,
+            1.,
+        );
+        let pixels = render_to_vec(renderer, size, scale, &elements)?;
+
+        self.save_screenshot(size, pixels)
+            .context("error saving screenshot")
+    }
+
+    fn save_screenshot(
+        &mut self,
+        size: Size<i32, Physical>,
+        pixels: Vec<u8>,
+    ) -> anyhow::Result<()> {
         let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
 
