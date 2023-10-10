@@ -353,6 +353,46 @@ impl State {
             ToNiriMsg::StopCast { session_id } => self.niri.stop_cast(session_id),
         }
     }
+
+    fn on_screen_shot_msg(
+        &mut self,
+        to_screenshot: &async_channel::Sender<NiriToScreenshot>,
+        msg: ScreenshotToNiri,
+    ) {
+        let ScreenshotToNiri::TakeScreenshot { include_cursor } = msg;
+        let _span = tracy_client::span!("TakeScreenshot");
+
+        let Some(renderer) = self.backend.renderer() else {
+            let msg = NiriToScreenshot::ScreenshotResult(None);
+            if let Err(err) = to_screenshot.send_blocking(msg) {
+                warn!("error sending None to screenshot: {err:?}");
+            }
+            return;
+        };
+
+        let on_done = {
+            let to_screenshot = to_screenshot.clone();
+            move |path| {
+                let msg = NiriToScreenshot::ScreenshotResult(Some(path));
+                if let Err(err) = to_screenshot.send_blocking(msg) {
+                    warn!("error sending path to screenshot: {err:?}");
+                }
+            }
+        };
+
+        let res = self
+            .niri
+            .screenshot_all_outputs(renderer, include_cursor, on_done);
+
+        if let Err(err) = res {
+            warn!("error taking a screenshot: {err:?}");
+
+            let msg = NiriToScreenshot::ScreenshotResult(None);
+            if let Err(err) = to_screenshot.send_blocking(msg) {
+                warn!("error sending None to screenshot: {err:?}");
+            }
+        }
+    }
 }
 
 impl Niri {
@@ -524,40 +564,7 @@ impl Niri {
         let (to_screenshot, from_niri) = async_channel::unbounded();
         self.event_loop
             .insert_source(from_screenshot, move |event, _, state| match event {
-                calloop::channel::Event::Msg(ScreenshotToNiri::TakeScreenshot {
-                    include_cursor,
-                }) => {
-                    let Some(renderer) = state.backend.renderer() else {
-                        let msg = NiriToScreenshot::ScreenshotResult(None);
-                        if let Err(err) = to_screenshot.send_blocking(msg) {
-                            warn!("error sending None to screenshot: {err:?}");
-                        }
-                        return;
-                    };
-
-                    let on_done = {
-                        let to_screenshot = to_screenshot.clone();
-                        move |path| {
-                            let msg = NiriToScreenshot::ScreenshotResult(Some(path));
-                            if let Err(err) = to_screenshot.send_blocking(msg) {
-                                warn!("error sending path to screenshot: {err:?}");
-                            }
-                        }
-                    };
-
-                    let res = state
-                        .niri
-                        .screenshot_all_outputs(renderer, include_cursor, on_done);
-
-                    if let Err(err) = res {
-                        warn!("error taking a screenshot: {err:?}");
-
-                        let msg = NiriToScreenshot::ScreenshotResult(None);
-                        if let Err(err) = to_screenshot.send_blocking(msg) {
-                            warn!("error sending None to screenshot: {err:?}");
-                        }
-                    }
-                }
+                calloop::channel::Event::Msg(msg) => state.on_screen_shot_msg(&to_screenshot, msg),
                 calloop::channel::Event::Closed => (),
             })
             .unwrap();
