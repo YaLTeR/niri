@@ -1660,10 +1660,6 @@ fn render_and_download(
         .render(size, Transform::Normal)
         .context("error starting frame")?;
 
-    frame
-        .clear([0.1, 0.1, 0.1, 1.], &[output_rect])
-        .context("error clearing")?;
-
     for element in elements.iter().rev() {
         let src = element.src();
         let dst = element.geometry(scale);
