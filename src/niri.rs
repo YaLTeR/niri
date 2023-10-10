@@ -571,7 +571,6 @@ impl Niri {
         let screenshot = gnome_shell_screenshot::Screenshot::new(to_niri, from_niri);
 
         let mut zbus_conn = None;
-        let mut inhibit_power_key_fd = None;
         if is_session_instance {
             let conn = zbus::blocking::ConnectionBuilder::session()
                 .unwrap()
@@ -617,32 +616,6 @@ impl Niri {
             }
 
             zbus_conn = Some(conn);
-
-            // Inhibit power key handling so we can suspend on it.
-            let zbus_system_conn = zbus::blocking::ConnectionBuilder::system()
-                .unwrap()
-                .build()
-                .unwrap();
-
-            // logind-zbus has a wrong signature for this method, so do it manually.
-            // https://gitlab.com/flukejones/logind-zbus/-/merge_requests/5
-            let message = zbus_system_conn
-                .call_method(
-                    Some("org.freedesktop.login1"),
-                    "/org/freedesktop/login1",
-                    Some("org.freedesktop.login1.Manager"),
-                    "Inhibit",
-                    &("handle-power-key", "niri", "Power key handling", "block"),
-                )
-                .unwrap();
-            match message.body() {
-                Ok(fd) => {
-                    inhibit_power_key_fd = Some(fd);
-                }
-                Err(err) => {
-                    warn!("error inhibiting power key: {err:?}");
-                }
-            }
         } else if config.debug.dbus_interfaces_in_non_session_instances {
             let conn = zbus::blocking::Connection::session().unwrap();
             let flags = RequestNameFlags::AllowReplacement
@@ -681,7 +654,25 @@ impl Niri {
         }
 
         self.zbus_conn = zbus_conn;
-        self.inhibit_power_key_fd = inhibit_power_key_fd;
+    }
+
+    pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
+        let conn = zbus::blocking::ConnectionBuilder::system()?.build()?;
+
+        // logind-zbus has a wrong signature for this method, so do it manually.
+        // https://gitlab.com/flukejones/logind-zbus/-/merge_requests/5
+        let message = conn.call_method(
+            Some("org.freedesktop.login1"),
+            "/org/freedesktop/login1",
+            Some("org.freedesktop.login1.Manager"),
+            "Inhibit",
+            &("handle-power-key", "niri", "Power key handling", "block"),
+        )?;
+
+        let fd = message.body()?;
+        self.inhibit_power_key_fd = Some(fd);
+
+        Ok(())
     }
 
     pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {

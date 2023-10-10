@@ -100,6 +100,11 @@ fn main() {
     if is_systemd_service {
         // We're starting as a systemd service. Export our variables.
         import_env_to_systemd();
+
+        // Inhibit power key handling so we can suspend on it.
+        if let Err(err) = state.niri.inhibit_power_key() {
+            warn!("error inhibiting power key: {err:?}");
+        }
     }
 
     state.niri.start_dbus(&state.backend, is_systemd_service);
