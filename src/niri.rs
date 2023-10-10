@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::PathBuf;
-use std::process::Command;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -10,7 +10,6 @@ use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
-use sd_notify::NotifyState;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
@@ -92,6 +91,7 @@ pub struct Niri {
     pub event_loop: LoopHandle<'static, State>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
+    pub socket_name: OsString,
 
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
     // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
@@ -138,8 +138,6 @@ pub struct Niri {
 
     pub zbus_conn: Option<zbus::blocking::Connection>,
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub screen_cast: ScreenCast,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
@@ -308,6 +306,53 @@ impl State {
         // FIXME: apply xkb settings.
         // FIXME: apply xdg decoration settings.
     }
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    fn on_screen_cast_msg(
+        &mut self,
+        to_niri: &calloop::channel::Sender<ToNiriMsg>,
+        msg: ToNiriMsg,
+    ) {
+        match msg {
+            ToNiriMsg::StartCast {
+                session_id,
+                output,
+                cursor_mode,
+                signal_ctx,
+            } => {
+                let _span = tracy_client::span!("StartCast");
+
+                debug!(session_id, "StartCast");
+
+                let gbm = match self.backend.gbm_device() {
+                    Some(gbm) => gbm,
+                    None => {
+                        debug!("no GBM device available");
+                        return;
+                    }
+                };
+
+                let pw = self.niri.pipewire.as_ref().unwrap();
+                match pw.start_cast(
+                    to_niri.clone(),
+                    gbm,
+                    session_id,
+                    output,
+                    cursor_mode,
+                    signal_ctx,
+                ) {
+                    Ok(cast) => {
+                        self.niri.casts.push(cast);
+                    }
+                    Err(err) => {
+                        warn!("error starting screencast: {err:?}");
+                        self.niri.stop_cast(session_id);
+                    }
+                }
+            }
+            ToNiriMsg::StopCast { session_id } => self.niri.stop_cast(session_id),
+        }
+    }
 }
 
 impl Niri {
@@ -390,11 +435,6 @@ impl Niri {
                 }
             })
             .unwrap();
-        std::env::set_var("WAYLAND_DISPLAY", &socket_name);
-        info!(
-            "listening on Wayland socket: {}",
-            socket_name.to_string_lossy()
-        );
 
         let pipewire = match PipeWire::new(&event_loop) {
             Ok(pipewire) => Some(pipewire),
@@ -404,89 +444,75 @@ impl Niri {
             }
         };
 
+        let display_source = Generic::new(display, Interest::READ, Mode::Level);
+        event_loop
+            .insert_source(display_source, |_, display, state| {
+                // SAFETY: we don't drop the display.
+                unsafe {
+                    display.get_mut().dispatch_clients(state).unwrap();
+                }
+                Ok(PostAction::Continue)
+            })
+            .unwrap();
+
+        drop(config_);
+        Self {
+            config,
+
+            event_loop,
+            stop_signal,
+            display_handle,
+            socket_name,
+
+            layout,
+            global_space: Space::default(),
+            output_state: HashMap::new(),
+            output_by_name: HashMap::new(),
+            unmapped_windows: HashMap::new(),
+            monitors_active: true,
+
+            compositor_state,
+            xdg_shell_state,
+            xdg_decoration_state,
+            kde_decoration_state,
+            layer_shell_state,
+            text_input_state,
+            input_method_state,
+            virtual_keyboard_state,
+            shm_state,
+            output_manager_state,
+            seat_state,
+            tablet_state,
+            pointer_gestures_state,
+            data_device_state,
+            primary_selection_state,
+            data_control_state,
+            popups: PopupManager::default(),
+            presentation_state,
+
+            seat,
+            default_cursor,
+            cursor_image: CursorImageStatus::default_named(),
+            dnd_icon: None,
+
+            zbus_conn: None,
+            inhibit_power_key_fd: None,
+            pipewire,
+            casts: vec![],
+        }
+    }
+
+    pub fn start_dbus(&mut self, backend: &Backend, is_session_instance: bool) {
+        let config = self.config.borrow();
+
         #[cfg(feature = "xdp-gnome-screencast")]
         let (to_niri, from_screen_cast) = calloop::channel::channel();
         #[cfg(feature = "xdp-gnome-screencast")]
-        event_loop
+        self.event_loop
             .insert_source(from_screen_cast, {
                 let to_niri = to_niri.clone();
                 move |event, _, state| match event {
-                    calloop::channel::Event::Msg(msg) => match msg {
-                        ToNiriMsg::StartCast {
-                            session_id,
-                            output,
-                            cursor_mode,
-                            signal_ctx,
-                        } => {
-                            let _span = tracy_client::span!("StartCast");
-
-                            debug!(session_id, "StartCast");
-
-                            let gbm = match state.backend.gbm_device() {
-                                Some(gbm) => gbm,
-                                None => {
-                                    debug!("no GBM device available");
-                                    return;
-                                }
-                            };
-
-                            let pw = state.niri.pipewire.as_ref().unwrap();
-                            match pw.start_cast(
-                                to_niri.clone(),
-                                gbm,
-                                session_id,
-                                output,
-                                cursor_mode,
-                                signal_ctx,
-                            ) {
-                                Ok(cast) => {
-                                    state.niri.casts.push(cast);
-                                }
-                                Err(err) => {
-                                    warn!("error starting screencast: {err:?}");
-
-                                    if let Err(err) =
-                                        to_niri.send(ToNiriMsg::StopCast { session_id })
-                                    {
-                                        warn!("error sending StopCast to niri: {err:?}");
-                                    }
-                                }
-                            }
-                        }
-                        ToNiriMsg::StopCast { session_id } => {
-                            let _span = tracy_client::span!("StopCast");
-
-                            debug!(session_id, "StopCast");
-
-                            for i in (0..state.niri.casts.len()).rev() {
-                                let cast = &state.niri.casts[i];
-                                if cast.session_id != session_id {
-                                    continue;
-                                }
-
-                                let cast = state.niri.casts.swap_remove(i);
-                                if let Err(err) = cast.stream.disconnect() {
-                                    warn!("error disconnecting stream: {err:?}");
-                                }
-                            }
-
-                            let server = state.niri.zbus_conn.as_ref().unwrap().object_server();
-                            let path =
-                                format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
-                            if let Ok(iface) =
-                                server.interface::<_, mutter_screen_cast::Session>(path)
-                            {
-                                let _span = tracy_client::span!("invoking Session::stop");
-
-                                async_io::block_on(async move {
-                                    iface
-                                        .get()
-                                        .stop(&server, iface.signal_context().clone())
-                                        .await
-                                });
-                            }
-                        }
-                    },
+                    calloop::channel::Event::Msg(msg) => state.on_screen_cast_msg(&to_niri, msg),
                     calloop::channel::Event::Closed => (),
                 }
             })
@@ -496,7 +522,7 @@ impl Niri {
 
         let (to_niri, from_screenshot) = calloop::channel::channel();
         let (to_screenshot, from_niri) = async_channel::unbounded();
-        event_loop
+        self.event_loop
             .insert_source(from_screenshot, move |event, _, state| match event {
                 calloop::channel::Event::Msg(ScreenshotToNiri::TakeScreenshot {
                     include_cursor,
@@ -539,43 +565,14 @@ impl Niri {
 
         let mut zbus_conn = None;
         let mut inhibit_power_key_fd = None;
-        if std::env::var_os("NOTIFY_SOCKET").is_some() {
-            // We're starting as a systemd service. Export our variables and tell systemd we're
-            // ready.
-            let rv = Command::new("/bin/sh")
-                .args([
-                    "-c",
-                    "systemctl --user import-environment WAYLAND_DISPLAY && \
-                     hash dbus-update-activation-environment 2>/dev/null && \
-                     dbus-update-activation-environment WAYLAND_DISPLAY",
-                ])
-                .spawn();
-            // Wait for the import process to complete, otherwise services will start too fast
-            // without environment variables available.
-            match rv {
-                Ok(mut child) => match child.wait() {
-                    Ok(status) => {
-                        if !status.success() {
-                            warn!("import environment shell exited with {status}");
-                        }
-                    }
-                    Err(err) => {
-                        warn!("error waiting for import environment shell: {err:?}");
-                    }
-                },
-                Err(err) => {
-                    warn!("error spawning shell to import environment into systemd: {err:?}");
-                }
-            }
-
-            // Set up zbus, make sure it happens before anything might want it.
+        if is_session_instance {
             let conn = zbus::blocking::ConnectionBuilder::session()
                 .unwrap()
                 .name("org.gnome.Mutter.ServiceChannel")
                 .unwrap()
                 .serve_at(
                     "/org/gnome/Mutter/ServiceChannel",
-                    ServiceChannel::new(display_handle.clone()),
+                    ServiceChannel::new(self.display_handle.clone()),
                 )
                 .unwrap()
                 .build()
@@ -603,7 +600,7 @@ impl Niri {
                     .unwrap();
 
                 #[cfg(feature = "xdp-gnome-screencast")]
-                if pipewire.is_some() {
+                if self.pipewire.is_some() {
                     server
                         .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
                         .unwrap();
@@ -613,11 +610,6 @@ impl Niri {
             }
 
             zbus_conn = Some(conn);
-
-            // Notify systemd we're ready.
-            if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
-                warn!("error notifying systemd: {err:?}");
-            };
 
             // Inhibit power key handling so we can suspend on it.
             let zbus_system_conn = zbus::blocking::ConnectionBuilder::system()
@@ -644,7 +636,7 @@ impl Niri {
                     warn!("error inhibiting power key: {err:?}");
                 }
             }
-        } else if config_.debug.dbus_interfaces_in_non_session_instances {
+        } else if config.debug.dbus_interfaces_in_non_session_instances {
             let conn = zbus::blocking::Connection::session().unwrap();
             let flags = RequestNameFlags::AllowReplacement
                 | RequestNameFlags::ReplaceExisting
@@ -669,7 +661,7 @@ impl Niri {
                     .unwrap();
 
                 #[cfg(feature = "xdp-gnome-screencast")]
-                if pipewire.is_some() {
+                if self.pipewire.is_some() {
                     server
                         .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
                         .unwrap();
@@ -681,63 +673,8 @@ impl Niri {
             zbus_conn = Some(conn);
         }
 
-        let display_source = Generic::new(display, Interest::READ, Mode::Level);
-        event_loop
-            .insert_source(display_source, |_, display, state| {
-                // SAFETY: we don't drop the display.
-                unsafe {
-                    display.get_mut().dispatch_clients(state).unwrap();
-                }
-                Ok(PostAction::Continue)
-            })
-            .unwrap();
-
-        drop(config_);
-        Self {
-            config,
-
-            event_loop,
-            stop_signal,
-            display_handle,
-
-            layout,
-            global_space: Space::default(),
-            output_state: HashMap::new(),
-            output_by_name: HashMap::new(),
-            unmapped_windows: HashMap::new(),
-            monitors_active: true,
-
-            compositor_state,
-            xdg_shell_state,
-            xdg_decoration_state,
-            kde_decoration_state,
-            layer_shell_state,
-            text_input_state,
-            input_method_state,
-            virtual_keyboard_state,
-            shm_state,
-            output_manager_state,
-            seat_state,
-            tablet_state,
-            pointer_gestures_state,
-            data_device_state,
-            primary_selection_state,
-            data_control_state,
-            popups: PopupManager::default(),
-            presentation_state,
-
-            seat,
-            default_cursor,
-            cursor_image: CursorImageStatus::default_named(),
-            dnd_icon: None,
-
-            zbus_conn,
-            inhibit_power_key_fd,
-            #[cfg(feature = "xdp-gnome-screencast")]
-            screen_cast,
-            pipewire,
-            casts: vec![],
-        }
+        self.zbus_conn = zbus_conn;
+        self.inhibit_power_key_fd = inhibit_power_key_fd;
     }
 
     pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {
@@ -1624,6 +1561,38 @@ impl Niri {
             }
 
             cast.last_frame_time = presentation_time;
+        }
+    }
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    fn stop_cast(&mut self, session_id: usize) {
+        let _span = tracy_client::span!("Niri::stop_cast");
+
+        debug!(session_id, "StopCast");
+
+        for i in (0..self.casts.len()).rev() {
+            let cast = &self.casts[i];
+            if cast.session_id != session_id {
+                continue;
+            }
+
+            let cast = self.casts.swap_remove(i);
+            if let Err(err) = cast.stream.disconnect() {
+                warn!("error disconnecting stream: {err:?}");
+            }
+        }
+
+        let server = self.zbus_conn.as_ref().unwrap().object_server();
+        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
+        if let Ok(iface) = server.interface::<_, mutter_screen_cast::Session>(path) {
+            let _span = tracy_client::span!("invoking Session::stop");
+
+            async_io::block_on(async move {
+                iface
+                    .get()
+                    .stop(&server, iface.signal_context().clone())
+                    .await
+            });
         }
     }
 

@@ -20,6 +20,7 @@ mod dummy_pw_utils;
 mod pw_utils;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::process::Command;
 use std::{env, mem};
 
 use clap::Parser;
@@ -29,6 +30,7 @@ use dummy_pw_utils as pw_utils;
 use miette::{Context, NarratableReportHandler};
 use niri::{Niri, State};
 use portable_atomic::Ordering;
+use sd_notify::NotifyState;
 use smithay::reexports::calloop::{self, EventLoop};
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
@@ -52,6 +54,8 @@ fn main() {
         env::set_var("RUST_LIB_BACKTRACE", "0");
     }
 
+    let is_systemd_service = env::var_os("NOTIFY_SOCKET").is_some();
+
     let directives = env::var("RUST_LOG").unwrap_or_else(|_| "niri=debug,info".to_owned());
     let env_filter = EnvFilter::builder().parse_lossy(directives);
     tracing_subscriber::fmt()
@@ -63,6 +67,7 @@ fn main() {
 
     let _client = tracy_client::Client::start();
 
+    // Load the config.
     miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new()))).unwrap();
     let (mut config, path) = match Config::load(cli.config).context("error loading config") {
         Ok((config, path)) => (config, Some(path)),
@@ -74,6 +79,7 @@ fn main() {
     animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
 
+    // Create the compositor.
     let mut event_loop = EventLoop::try_new().unwrap();
     let display = Display::new().unwrap();
     let mut state = State::new(
@@ -82,6 +88,26 @@ fn main() {
         event_loop.get_signal(),
         display,
     );
+
+    // Set WAYLAND_DISPLAY for children.
+    let socket_name = &state.niri.socket_name;
+    env::set_var("WAYLAND_DISPLAY", socket_name);
+    info!(
+        "listening on Wayland socket: {}",
+        socket_name.to_string_lossy()
+    );
+
+    if is_systemd_service {
+        // We're starting as a systemd service. Export our variables.
+        import_env_to_systemd();
+    }
+
+    state.niri.start_dbus(&state.backend, is_systemd_service);
+
+    // Notify systemd we're ready.
+    if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
+        warn!("error notifying systemd: {err:?}");
+    };
 
     // Set up config file watcher.
     let _watcher = if let Some(path) = path {
@@ -110,7 +136,36 @@ fn main() {
         }
     }
 
+    // Run the compositor.
     event_loop
         .run(None, &mut state, |state| state.refresh_and_flush_clients())
         .unwrap();
+}
+
+fn import_env_to_systemd() {
+    let rv = Command::new("/bin/sh")
+        .args([
+            "-c",
+            "systemctl --user import-environment WAYLAND_DISPLAY && \
+             hash dbus-update-activation-environment 2>/dev/null && \
+             dbus-update-activation-environment WAYLAND_DISPLAY",
+        ])
+        .spawn();
+    // Wait for the import process to complete, otherwise services will start too fast without
+    // environment variables available.
+    match rv {
+        Ok(mut child) => match child.wait() {
+            Ok(status) => {
+                if !status.success() {
+                    warn!("import environment shell exited with {status}");
+                }
+            }
+            Err(err) => {
+                warn!("error waiting for import environment shell: {err:?}");
+            }
+        },
+        Err(err) => {
+            warn!("error spawning shell to import environment into systemd: {err:?}");
+        }
+    }
 }
