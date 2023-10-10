@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::cmp::max;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -15,7 +14,6 @@ use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::texture::TextureRenderElement;
-use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, render_elements, AsRenderElements, Kind, RenderElement,
     RenderElementStates,
@@ -74,10 +72,10 @@ use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use crate::backend::{Backend, Tty, Winit};
 use crate::config::Config;
 use crate::cursor::Cursor;
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
-use crate::dbus::DBusServers;
 use crate::frame_clock::FrameClock;
 use crate::layout::{output_size, Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
@@ -134,7 +132,9 @@ pub struct Niri {
     pub cursor_image: CursorImageStatus,
     pub dnd_icon: Option<WlSurface>,
 
-    pub dbus: Option<DBusServers>,
+    #[cfg(feature = "dbus")]
+    pub dbus: Option<crate::dbus::DBusServers>,
+    #[cfg(feature = "dbus")]
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
@@ -352,6 +352,7 @@ impl State {
         }
     }
 
+    #[cfg(feature = "dbus")]
     pub fn on_screen_shot_msg(
         &mut self,
         to_screenshot: &async_channel::Sender<NiriToScreenshot>,
@@ -533,13 +534,17 @@ impl Niri {
             cursor_image: CursorImageStatus::default_named(),
             dnd_icon: None,
 
+            #[cfg(feature = "dbus")]
             dbus: None,
+            #[cfg(feature = "dbus")]
             inhibit_power_key_fd: None,
+
             pipewire,
             casts: vec![],
         }
     }
 
+    #[cfg(feature = "dbus")]
     pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
         let conn = zbus::blocking::ConnectionBuilder::system()?.build()?;
 
@@ -1520,12 +1525,17 @@ impl Niri {
         Ok(())
     }
 
+    #[cfg(feature = "dbus")]
     pub fn screenshot_all_outputs(
         &mut self,
         renderer: &mut GlesRenderer,
         include_pointer: bool,
         on_done: impl FnOnce(PathBuf) + Send + 'static,
     ) -> anyhow::Result<()> {
+        use std::cmp::max;
+
+        use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
+
         let _span = tracy_client::span!("Niri::screenshot_all_outputs");
 
         let mut elements = vec![];

@@ -84,6 +84,7 @@ impl Backend {
         }
     }
 
+    #[cfg_attr(not(feature = "dbus"), allow(unused))]
     pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
         match self {
             Backend::Tty(tty) => tty.connectors(),

@@ -5,6 +5,7 @@ mod animation;
 mod backend;
 mod config;
 mod cursor;
+#[cfg(feature = "dbus")]
 mod dbus;
 mod frame_clock;
 mod handlers;
@@ -36,8 +37,6 @@ use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 use utils::spawn;
 use watcher::Watcher;
-
-use crate::dbus::DBusServers;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -104,12 +103,14 @@ fn main() {
         import_env_to_systemd();
 
         // Inhibit power key handling so we can suspend on it.
+        #[cfg(feature = "dbus")]
         if let Err(err) = state.niri.inhibit_power_key() {
             warn!("error inhibiting power key: {err:?}");
         }
     }
 
-    DBusServers::start(&mut state, is_systemd_service);
+    #[cfg(feature = "dbus")]
+    dbus::DBusServers::start(&mut state, is_systemd_service);
 
     // Notify systemd we're ready.
     if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
