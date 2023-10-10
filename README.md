@@ -86,7 +86,8 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>-</kbd> | Decrease column width by 10% |
 | <kbd>Mod</kbd><kbd>=</kbd> | Increase column width by 10% |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd> | Toggle full-screen on the focused window |
-| <kbd>PrtSc</kbd> | Save a screenshot to `~/Pictures/Screenshots/` |
+| <kbd>PrtSc</kbd> | Take a screenshot to clipboard and to `~/Pictures/Screenshots/` |
+| <kbd>Alt</kbd><kbd>PrtSc</kbd> | Take a screenshot of the focused window to clipboard and to `~/Pictures/Screenshots/` |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd> | Toggle debug tinting of rendered elements |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>E</kbd> | Exit niri |
 
