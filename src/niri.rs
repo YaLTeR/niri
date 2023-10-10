@@ -206,6 +206,8 @@ impl State {
         stop_signal: LoopSignal,
         display: Display<State>,
     ) -> Self {
+        let _span = tracy_client::span!("State::new");
+
         let config = Rc::new(RefCell::new(config));
 
         let has_display =
