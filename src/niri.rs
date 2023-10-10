@@ -9,6 +9,7 @@ use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
+use image::ImageFormat;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
@@ -34,7 +35,7 @@ use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
-    Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
+    self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
 use smithay::reexports::nix::libc::CLOCK_MONOTONIC;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
@@ -56,8 +57,10 @@ use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
-use smithay::wayland::selection::data_device::DataDeviceState;
-use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
+use smithay::wayland::selection::primary_selection::{
+    set_primary_selection, PrimarySelectionState,
+};
 use smithay::wayland::selection::wlr_data_control::DataControlState;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
@@ -308,7 +311,7 @@ impl State {
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_screen_cast_msg(
         &mut self,
-        to_niri: &smithay::reexports::calloop::channel::Sender<ScreenCastToNiri>,
+        to_niri: &calloop::channel::Sender<ScreenCastToNiri>,
         msg: ScreenCastToNiri,
     ) {
         match msg {
@@ -1510,14 +1513,49 @@ impl Niri {
         let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
 
+        // Prepare to set the encoded image as our clipboard selection. This must be done from the
+        // main thread.
+        let (tx, rx) = calloop::channel::sync_channel::<Arc<[u8]>>(1);
+        self.event_loop
+            .insert_source(rx, move |event, _, state| match event {
+                calloop::channel::Event::Msg(buf) => {
+                    set_data_device_selection(
+                        &state.niri.display_handle,
+                        &state.niri.seat,
+                        vec![String::from("image/png")],
+                        buf.clone(),
+                    );
+                    set_primary_selection(
+                        &state.niri.display_handle,
+                        &state.niri.seat,
+                        vec![String::from("image/png")],
+                        buf.clone(),
+                    );
+                }
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+
+        // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
-            if let Err(err) = image::save_buffer(
-                path,
+            let mut buf = vec![];
+
+            if let Err(err) = image::write_buffer_with_format(
+                &mut std::io::Cursor::new(&mut buf),
                 &pixels,
                 size.w as u32,
                 size.h as u32,
                 image::ColorType::Rgba8,
+                ImageFormat::Png,
             ) {
+                warn!("error encoding screenshot image: {err:?}");
+                return;
+            }
+
+            let buf: Arc<[u8]> = Arc::from(buf.into_boxed_slice());
+            let _ = tx.send(buf.clone());
+
+            if let Err(err) = std::fs::write(path, buf) {
                 warn!("error saving screenshot image: {err:?}");
             }
         });

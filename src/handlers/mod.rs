@@ -2,6 +2,12 @@ mod compositor;
 mod layer_shell;
 mod xdg_shell;
 
+use std::fs::File;
+use std::io::Write;
+use std::os::fd::OwnedFd;
+use std::sync::Arc;
+use std::thread;
+
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::ImportDma;
 use smithay::desktop::PopupKind;
@@ -21,7 +27,7 @@ use smithay::wayland::selection::primary_selection::{
     set_primary_focus, PrimarySelectionHandler, PrimarySelectionState,
 };
 use smithay::wayland::selection::wlr_data_control::{DataControlHandler, DataControlState};
-use smithay::wayland::selection::SelectionHandler;
+use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
 use smithay::{
     delegate_data_control, delegate_data_device, delegate_dmabuf, delegate_input_method_manager,
     delegate_output, delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
@@ -76,7 +82,25 @@ delegate_input_method_manager!(State);
 delegate_virtual_keyboard_manager!(State);
 
 impl SelectionHandler for State {
-    type SelectionUserData = ();
+    type SelectionUserData = Arc<[u8]>;
+
+    fn send_selection(
+        &mut self,
+        _ty: SelectionTarget,
+        _mime_type: String,
+        fd: OwnedFd,
+        _seat: Seat<Self>,
+        user_data: &Self::SelectionUserData,
+    ) {
+        let _span = tracy_client::span!("send_selection");
+
+        let buf = user_data.clone();
+        thread::spawn(move || {
+            if let Err(err) = File::from(fd).write_all(&buf) {
+                warn!("error writing selection: {err:?}");
+            }
+        });
+    }
 }
 
 impl DataDeviceHandler for State {
