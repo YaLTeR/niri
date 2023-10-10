@@ -111,19 +111,6 @@ fn main() {
     }
 
     event_loop
-        .run(None, &mut state, move |state| {
-            let _span = tracy_client::span!("loop callback");
-
-            // These should be called periodically, before flushing the clients.
-            state.niri.layout.refresh();
-            state.niri.refresh_pointer_outputs();
-            state.niri.popups.cleanup();
-            state.update_focus();
-
-            {
-                let _span = tracy_client::span!("flush_clients");
-                state.niri.display_handle.flush_clients().unwrap();
-            }
-        })
+        .run(None, &mut state, |state| state.refresh_and_flush_clients())
         .unwrap();
 }

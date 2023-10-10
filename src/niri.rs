@@ -223,6 +223,21 @@ impl State {
         Self { backend, niri }
     }
 
+    pub fn refresh_and_flush_clients(&mut self) {
+        let _span = tracy_client::span!("refresh_and_flush_clients");
+
+        // These should be called periodically, before flushing the clients.
+        self.niri.layout.refresh();
+        self.niri.refresh_pointer_outputs();
+        self.niri.popups.cleanup();
+        self.update_focus();
+
+        {
+            let _span = tracy_client::span!("flush_clients");
+            self.niri.display_handle.flush_clients().unwrap();
+        }
+    }
+
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
         let under = self.niri.surface_under_and_global_space(location);
         let pointer = &self.niri.seat.get_pointer().unwrap();
