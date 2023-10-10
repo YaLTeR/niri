@@ -1099,18 +1099,29 @@ impl Niri {
             RedrawState::Queued(_) | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
         ));
 
+        let mut reset = || {
+            state.redraw_state =
+                if let RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) =
+                    state.redraw_state
+                {
+                    RedrawState::WaitingForEstimatedVBlank(token)
+                } else {
+                    RedrawState::Idle
+                }
+        };
+
         if !self.monitors_active {
-            state.redraw_state = RedrawState::Idle;
+            reset();
             return;
         }
 
         if !backend.is_active() {
-            state.redraw_state = RedrawState::Idle;
+            reset();
             return;
         }
 
         let Some(renderer) = backend.renderer() else {
-            state.redraw_state = RedrawState::Idle;
+            reset();
             return;
         };
 
