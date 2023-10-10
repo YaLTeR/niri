@@ -29,7 +29,7 @@ use smithay::reexports::calloop::{self, Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
 use zbus::SignalContext;
 
-use crate::dbus::mutter_screen_cast::{self, CursorMode, ToNiriMsg};
+use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri};
 use crate::niri::State;
 
 pub struct PipeWire {
@@ -86,7 +86,7 @@ impl PipeWire {
 
     pub fn start_cast(
         &self,
-        to_niri: calloop::channel::Sender<ToNiriMsg>,
+        to_niri: calloop::channel::Sender<ScreenCastToNiri>,
         gbm: GbmDevice<DrmDeviceFd>,
         session_id: usize,
         output: Output,
@@ -96,7 +96,7 @@ impl PipeWire {
         let _span = tracy_client::span!("PipeWire::start_cast");
 
         let stop_cast = move || {
-            if let Err(err) = to_niri.send(ToNiriMsg::StopCast { session_id }) {
+            if let Err(err) = to_niri.send(ScreenCastToNiri::StopCast { session_id }) {
                 warn!("error sending StopCast to niri: {err:?}");
             }
         };

@@ -12,7 +12,7 @@ use zbus::{dbus_interface, fdo, InterfaceRef, ObjectServer, SignalContext};
 #[derive(Clone)]
 pub struct ScreenCast {
     connectors: Arc<Mutex<HashMap<String, Output>>>,
-    to_niri: calloop::channel::Sender<ToNiriMsg>,
+    to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     sessions: Arc<Mutex<Vec<(Session, InterfaceRef<Session>)>>>,
 }
 
@@ -20,7 +20,7 @@ pub struct ScreenCast {
 pub struct Session {
     id: usize,
     connectors: Arc<Mutex<HashMap<String, Output>>>,
-    to_niri: calloop::channel::Sender<ToNiriMsg>,
+    to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     streams: Arc<Mutex<Vec<(Stream, InterfaceRef<Stream>)>>>,
 }
 
@@ -46,10 +46,10 @@ pub struct Stream {
     output: Output,
     cursor_mode: CursorMode,
     was_started: Arc<AtomicBool>,
-    to_niri: calloop::channel::Sender<ToNiriMsg>,
+    to_niri: calloop::channel::Sender<ScreenCastToNiri>,
 }
 
-pub enum ToNiriMsg {
+pub enum ScreenCastToNiri {
     StartCast {
         session_id: usize,
         output: Output,
@@ -121,7 +121,7 @@ impl Session {
 
         Session::closed(&ctxt).await.unwrap();
 
-        if let Err(err) = self.to_niri.send(ToNiriMsg::StopCast {
+        if let Err(err) = self.to_niri.send(ScreenCastToNiri::StopCast {
             session_id: self.id,
         }) {
             warn!("error sending StopCast to niri: {err:?}");
@@ -190,7 +190,7 @@ impl Stream {
 impl ScreenCast {
     pub fn new(
         connectors: Arc<Mutex<HashMap<String, Output>>>,
-        to_niri: calloop::channel::Sender<ToNiriMsg>,
+        to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
         Self {
             connectors,
@@ -204,7 +204,7 @@ impl Session {
     pub fn new(
         id: usize,
         connectors: Arc<Mutex<HashMap<String, Output>>>,
-        to_niri: calloop::channel::Sender<ToNiriMsg>,
+        to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
         Self {
             id,
@@ -217,7 +217,7 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        let _ = self.to_niri.send(ToNiriMsg::StopCast {
+        let _ = self.to_niri.send(ScreenCastToNiri::StopCast {
             session_id: self.id,
         });
     }
@@ -227,7 +227,7 @@ impl Stream {
     pub fn new(
         output: Output,
         cursor_mode: CursorMode,
-        to_niri: calloop::channel::Sender<ToNiriMsg>,
+        to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
         Self {
             output,
@@ -242,7 +242,7 @@ impl Stream {
             return;
         }
 
-        let msg = ToNiriMsg::StartCast {
+        let msg = ScreenCastToNiri::StartCast {
             session_id,
             output: self.output.clone(),
             cursor_mode: self.cursor_mode,

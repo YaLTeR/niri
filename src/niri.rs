@@ -78,7 +78,7 @@ use crate::cursor::Cursor;
 use crate::dbus::gnome_shell_screenshot::{self, NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_display_config::DisplayConfig;
 #[cfg(feature = "xdp-gnome-screencast")]
-use crate::dbus::mutter_screen_cast::{self, ScreenCast, ToNiriMsg};
+use crate::dbus::mutter_screen_cast::{self, ScreenCast, ScreenCastToNiri};
 use crate::dbus::mutter_service_channel::ServiceChannel;
 use crate::frame_clock::FrameClock;
 use crate::layout::{output_size, Layout, MonitorRenderElement};
@@ -310,11 +310,11 @@ impl State {
     #[cfg(feature = "xdp-gnome-screencast")]
     fn on_screen_cast_msg(
         &mut self,
-        to_niri: &calloop::channel::Sender<ToNiriMsg>,
-        msg: ToNiriMsg,
+        to_niri: &calloop::channel::Sender<ScreenCastToNiri>,
+        msg: ScreenCastToNiri,
     ) {
         match msg {
-            ToNiriMsg::StartCast {
+            ScreenCastToNiri::StartCast {
                 session_id,
                 output,
                 cursor_mode,
@@ -350,7 +350,7 @@ impl State {
                     }
                 }
             }
-            ToNiriMsg::StopCast { session_id } => self.niri.stop_cast(session_id),
+            ScreenCastToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
         }
     }
 
