@@ -6,8 +6,11 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use smithay::output::Output;
 use smithay::reexports::calloop;
+use zbus::fdo::RequestNameFlags;
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, Type, Value};
 use zbus::{dbus_interface, fdo, InterfaceRef, ObjectServer, SignalContext};
+
+use super::Start;
 
 #[derive(Clone)]
 pub struct ScreenCast {
@@ -197,6 +200,21 @@ impl ScreenCast {
             to_niri,
             sessions: Arc::new(Mutex::new(vec![])),
         }
+    }
+}
+
+impl Start for ScreenCast {
+    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+        let conn = zbus::blocking::Connection::session()?;
+        let flags = RequestNameFlags::AllowReplacement
+            | RequestNameFlags::ReplaceExisting
+            | RequestNameFlags::DoNotQueue;
+
+        conn.object_server()
+            .at("/org/gnome/Mutter/ScreenCast", self)?;
+        conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)?;
+
+        Ok(conn)
     }
 }
 

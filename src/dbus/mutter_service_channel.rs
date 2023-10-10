@@ -5,6 +5,7 @@ use std::sync::Arc;
 use smithay::reexports::wayland_server::DisplayHandle;
 use zbus::dbus_interface;
 
+use super::Start;
 use crate::niri::ClientState;
 
 pub struct ServiceChannel {
@@ -34,5 +35,15 @@ impl ServiceChannel {
 impl ServiceChannel {
     pub fn new(display: DisplayHandle) -> Self {
         Self { display }
+    }
+}
+
+impl Start for ServiceChannel {
+    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+        let conn = zbus::blocking::ConnectionBuilder::session()?
+            .name("org.gnome.Mutter.ServiceChannel")?
+            .serve_at("/org/gnome/Mutter/ServiceChannel", self)?
+            .build()?;
+        Ok(conn)
     }
 }

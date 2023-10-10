@@ -3,8 +3,11 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use smithay::output::Output;
+use zbus::fdo::RequestNameFlags;
 use zbus::zvariant::{OwnedValue, Type};
 use zbus::{dbus_interface, fdo};
+
+use super::Start;
 
 pub struct DisplayConfig {
     connectors: Arc<Mutex<HashMap<String, Output>>>,
@@ -84,5 +87,20 @@ impl DisplayConfig {
 impl DisplayConfig {
     pub fn new(connectors: Arc<Mutex<HashMap<String, Output>>>) -> Self {
         Self { connectors }
+    }
+}
+
+impl Start for DisplayConfig {
+    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+        let conn = zbus::blocking::Connection::session()?;
+        let flags = RequestNameFlags::AllowReplacement
+            | RequestNameFlags::ReplaceExisting
+            | RequestNameFlags::DoNotQueue;
+
+        conn.object_server()
+            .at("/org/gnome/Mutter/DisplayConfig", self)?;
+        conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)?;
+
+        Ok(conn)
     }
 }

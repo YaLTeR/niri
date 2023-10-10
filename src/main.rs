@@ -37,6 +37,8 @@ use tracing_subscriber::EnvFilter;
 use utils::spawn;
 use watcher::Watcher;
 
+use crate::dbus::DBusServers;
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -107,7 +109,7 @@ fn main() {
         }
     }
 
-    state.niri.start_dbus(&state.backend, is_systemd_service);
+    DBusServers::start(&mut state, is_systemd_service);
 
     // Notify systemd we're ready.
     if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {

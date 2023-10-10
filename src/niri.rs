@@ -36,7 +36,7 @@ use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
-    self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
+    Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
 use smithay::reexports::nix::libc::CLOCK_MONOTONIC;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
@@ -70,16 +70,14 @@ use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
-use zbus::fdo::RequestNameFlags;
 
 use crate::backend::{Backend, Tty, Winit};
 use crate::config::Config;
 use crate::cursor::Cursor;
-use crate::dbus::gnome_shell_screenshot::{self, NiriToScreenshot, ScreenshotToNiri};
-use crate::dbus::mutter_display_config::DisplayConfig;
+use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
-use crate::dbus::mutter_screen_cast::{self, ScreenCast, ScreenCastToNiri};
-use crate::dbus::mutter_service_channel::ServiceChannel;
+use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
+use crate::dbus::DBusServers;
 use crate::frame_clock::FrameClock;
 use crate::layout::{output_size, Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
@@ -136,7 +134,7 @@ pub struct Niri {
     pub cursor_image: CursorImageStatus,
     pub dnd_icon: Option<WlSurface>,
 
-    pub zbus_conn: Option<zbus::blocking::Connection>,
+    pub dbus: Option<DBusServers>,
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
@@ -308,9 +306,9 @@ impl State {
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
-    fn on_screen_cast_msg(
+    pub fn on_screen_cast_msg(
         &mut self,
-        to_niri: &calloop::channel::Sender<ScreenCastToNiri>,
+        to_niri: &smithay::reexports::calloop::channel::Sender<ScreenCastToNiri>,
         msg: ScreenCastToNiri,
     ) {
         match msg {
@@ -354,7 +352,7 @@ impl State {
         }
     }
 
-    fn on_screen_shot_msg(
+    pub fn on_screen_shot_msg(
         &mut self,
         to_screenshot: &async_channel::Sender<NiriToScreenshot>,
         msg: ScreenshotToNiri,
@@ -535,125 +533,11 @@ impl Niri {
             cursor_image: CursorImageStatus::default_named(),
             dnd_icon: None,
 
-            zbus_conn: None,
+            dbus: None,
             inhibit_power_key_fd: None,
             pipewire,
             casts: vec![],
         }
-    }
-
-    pub fn start_dbus(&mut self, backend: &Backend, is_session_instance: bool) {
-        let config = self.config.borrow();
-
-        #[cfg(feature = "xdp-gnome-screencast")]
-        let (to_niri, from_screen_cast) = calloop::channel::channel();
-        #[cfg(feature = "xdp-gnome-screencast")]
-        self.event_loop
-            .insert_source(from_screen_cast, {
-                let to_niri = to_niri.clone();
-                move |event, _, state| match event {
-                    calloop::channel::Event::Msg(msg) => state.on_screen_cast_msg(&to_niri, msg),
-                    calloop::channel::Event::Closed => (),
-                }
-            })
-            .unwrap();
-        #[cfg(feature = "xdp-gnome-screencast")]
-        let screen_cast = ScreenCast::new(backend.connectors(), to_niri);
-
-        let (to_niri, from_screenshot) = calloop::channel::channel();
-        let (to_screenshot, from_niri) = async_channel::unbounded();
-        self.event_loop
-            .insert_source(from_screenshot, move |event, _, state| match event {
-                calloop::channel::Event::Msg(msg) => state.on_screen_shot_msg(&to_screenshot, msg),
-                calloop::channel::Event::Closed => (),
-            })
-            .unwrap();
-        let screenshot = gnome_shell_screenshot::Screenshot::new(to_niri, from_niri);
-
-        let mut zbus_conn = None;
-        if is_session_instance {
-            let conn = zbus::blocking::ConnectionBuilder::session()
-                .unwrap()
-                .name("org.gnome.Mutter.ServiceChannel")
-                .unwrap()
-                .serve_at(
-                    "/org/gnome/Mutter/ServiceChannel",
-                    ServiceChannel::new(self.display_handle.clone()),
-                )
-                .unwrap()
-                .build()
-                .unwrap();
-
-            {
-                let server = conn.object_server();
-                let flags = RequestNameFlags::AllowReplacement
-                    | RequestNameFlags::ReplaceExisting
-                    | RequestNameFlags::DoNotQueue;
-
-                server
-                    .at("/org/gnome/Shell/Screenshot", screenshot)
-                    .unwrap();
-                conn.request_name_with_flags("org.gnome.Shell.Screenshot", flags)
-                    .unwrap();
-
-                server
-                    .at(
-                        "/org/gnome/Mutter/DisplayConfig",
-                        DisplayConfig::new(backend.connectors()),
-                    )
-                    .unwrap();
-                conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
-                    .unwrap();
-
-                #[cfg(feature = "xdp-gnome-screencast")]
-                if self.pipewire.is_some() {
-                    server
-                        .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
-                        .unwrap();
-                    conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
-                        .unwrap();
-                }
-            }
-
-            zbus_conn = Some(conn);
-        } else if config.debug.dbus_interfaces_in_non_session_instances {
-            let conn = zbus::blocking::Connection::session().unwrap();
-            let flags = RequestNameFlags::AllowReplacement
-                | RequestNameFlags::ReplaceExisting
-                | RequestNameFlags::DoNotQueue;
-
-            {
-                let server = conn.object_server();
-
-                server
-                    .at("/org/gnome/Shell/Screenshot", screenshot)
-                    .unwrap();
-                conn.request_name_with_flags("org.gnome.Shell.Screenshot", flags)
-                    .unwrap();
-
-                server
-                    .at(
-                        "/org/gnome/Mutter/DisplayConfig",
-                        DisplayConfig::new(backend.connectors()),
-                    )
-                    .unwrap();
-                conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)
-                    .unwrap();
-
-                #[cfg(feature = "xdp-gnome-screencast")]
-                if self.pipewire.is_some() {
-                    server
-                        .at("/org/gnome/Mutter/ScreenCast", screen_cast.clone())
-                        .unwrap();
-                    conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)
-                        .unwrap();
-                }
-            }
-
-            zbus_conn = Some(conn);
-        }
-
-        self.zbus_conn = zbus_conn;
     }
 
     pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
@@ -1580,7 +1464,8 @@ impl Niri {
             }
         }
 
-        let server = self.zbus_conn.as_ref().unwrap().object_server();
+        let dbus = &self.dbus.as_ref().unwrap();
+        let server = dbus.conn_screen_cast.as_ref().unwrap().object_server();
         let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
         if let Ok(iface) = server.interface::<_, mutter_screen_cast::Session>(path) {
             let _span = tracy_client::span!("invoking Session::stop");

@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use smithay::reexports::calloop;
-use zbus::{dbus_interface, fdo};
+use zbus::dbus_interface;
+use zbus::fdo::{self, RequestNameFlags};
+
+use super::Start;
 
 pub struct Screenshot {
     to_niri: calloop::channel::Sender<ScreenshotToNiri>,
@@ -53,5 +56,20 @@ impl Screenshot {
         from_niri: async_channel::Receiver<NiriToScreenshot>,
     ) -> Self {
         Self { to_niri, from_niri }
+    }
+}
+
+impl Start for Screenshot {
+    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+        let conn = zbus::blocking::Connection::session()?;
+        let flags = RequestNameFlags::AllowReplacement
+            | RequestNameFlags::ReplaceExisting
+            | RequestNameFlags::DoNotQueue;
+
+        conn.object_server()
+            .at("/org/gnome/Shell/Screenshot", self)?;
+        conn.request_name_with_flags("org.gnome.Shell.Screenshot", flags)?;
+
+        Ok(conn)
     }
 }
