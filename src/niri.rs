@@ -384,11 +384,8 @@ impl Niri {
         let socket_name = socket_source.socket_name().to_os_string();
         event_loop
             .insert_source(socket_source, move |client, _, state| {
-                if let Err(err) = state
-                    .niri
-                    .display_handle
-                    .insert_client(client, Arc::new(ClientState::default()))
-                {
+                let data = Arc::new(ClientState::default());
+                if let Err(err) = state.niri.display_handle.insert_client(client, data) {
                     error!("error inserting client: {err}");
                 }
             })
