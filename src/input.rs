@@ -93,6 +93,27 @@ fn action(
     Action::None
 }
 
+fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
+    match event {
+        InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
+        InputEvent::PointerMotion { .. }
+        | InputEvent::PointerMotionAbsolute { .. }
+        | InputEvent::PointerButton { .. }
+        | InputEvent::PointerAxis { .. }
+        | InputEvent::GestureSwipeBegin { .. }
+        | InputEvent::GesturePinchBegin { .. }
+        | InputEvent::GestureHoldBegin { .. }
+        | InputEvent::TouchDown { .. }
+        | InputEvent::TouchMotion { .. }
+        | InputEvent::TabletToolAxis { .. }
+        | InputEvent::TabletToolProximity { .. }
+        | InputEvent::TabletToolTip { .. }
+        | InputEvent::TabletToolButton { .. } => true,
+        // Ignore events like device additions and removals, key releases, gesture ends.
+        _ => false,
+    }
+}
+
 impl State {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         let _span = tracy_client::span!("process_input_event");
@@ -104,9 +125,7 @@ impl State {
         self.niri.layout.advance_animations(get_monotonic_time());
 
         // Power on monitors if they were off.
-        // HACK: ignore key releases so that the power-off-monitors bind can work.
-        if !matches!(&event, InputEvent::Keyboard { event } if event.state() == KeyState::Released)
-        {
+        if should_activate_monitors(&event) {
             self.niri.activate_monitors(&self.backend);
         }
 
