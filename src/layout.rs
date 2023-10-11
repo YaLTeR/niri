@@ -189,6 +189,7 @@ pub struct Workspace<W: LayoutElement> {
 #[derive(Debug)]
 struct FocusRing {
     buffer: SolidColorBuffer,
+    location: Point<i32, Logical>,
     is_off: bool,
     width: i32,
     active_color: Color,
@@ -335,6 +336,11 @@ impl FocusRing {
         self.buffer.resize(size);
     }
 
+    fn reposition(&mut self, win_pos: Point<i32, Logical>) {
+        let offset = Point::from((self.width, self.width));
+        self.location = win_pos - offset;
+    }
+
     fn set_active(&mut self, is_active: bool) {
         self.buffer.set_color(if is_active {
             self.active_color.into()
@@ -343,19 +349,14 @@ impl FocusRing {
         });
     }
 
-    fn render(
-        &self,
-        loc: Point<i32, Logical>,
-        scale: Scale<f64>,
-    ) -> Option<SolidColorRenderElement> {
+    fn render(&self, scale: Scale<f64>) -> Option<SolidColorRenderElement> {
         if self.is_off {
             return None;
         }
 
-        let offset = Point::from((self.width, self.width));
         Some(SolidColorRenderElement::from_buffer(
             &self.buffer,
-            (loc - offset).to_physical_precise_round(scale),
+            self.location.to_physical_precise_round(scale),
             scale,
             1.,
             Kind::Unspecified,
@@ -367,6 +368,7 @@ impl FocusRing {
     fn new(config: config::FocusRing) -> Self {
         Self {
             buffer: SolidColorBuffer::new((0, 0), [0., 0., 0., 0.]),
+            location: Point::from((0, 0)),
             is_off: config.off,
             width: config.width.into(),
             active_color: config.active_color,
@@ -1670,11 +1672,20 @@ impl<W: LayoutElement> Workspace<W> {
             None => (),
         }
 
+        let view_pos = self.view_pos();
+
         // This shall one day become a proper animation.
         if !self.columns.is_empty() {
             let col = &self.columns[self.active_column_idx];
             let active_win = &col.windows[col.active_window_idx];
             let geom = active_win.geometry();
+
+            let win_pos = Point::from((
+                self.column_x(self.active_column_idx) - view_pos,
+                col.window_y(col.active_window_idx),
+            ));
+
+            self.focus_ring.reposition(win_pos);
             self.focus_ring.resize(geom.size);
             self.focus_ring.set_active(is_active);
         }
@@ -2276,11 +2287,7 @@ impl Workspace<Window> {
         ));
 
         // Draw the focus ring.
-        rv.extend(
-            self.focus_ring
-                .render(win_pos, output_scale)
-                .map(Into::into),
-        );
+        rv.extend(self.focus_ring.render(output_scale).map(Into::into));
 
         let mut x = -view_pos;
         for col in &self.columns {
