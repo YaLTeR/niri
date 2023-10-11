@@ -35,6 +35,7 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
+use arrayvec::ArrayVec;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::{
@@ -46,6 +47,7 @@ use smithay::backend::renderer::ImportAll;
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
+use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::render_elements;
@@ -74,6 +76,7 @@ pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
+    fn has_ssd(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -188,9 +191,10 @@ pub struct Workspace<W: LayoutElement> {
 
 #[derive(Debug)]
 struct FocusRing {
-    buffer: SolidColorBuffer,
-    location: Point<i32, Logical>,
+    buffers: [SolidColorBuffer; 4],
+    locations: [Point<i32, Logical>; 4],
     is_off: bool,
+    is_border: bool,
     width: i32,
     active_color: Color,
     inactive_color: Color,
@@ -328,48 +332,88 @@ impl LayoutElement for Window {
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool {
         self.toplevel().wl_surface() == wl_surface
     }
+
+    fn has_ssd(&self) -> bool {
+        self.toplevel().current_state().decoration_mode
+            == Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
+    }
 }
 
 impl FocusRing {
-    fn resize(&mut self, size: Size<i32, Logical>) {
-        let size = size + Size::from((self.width * 2, self.width * 2));
-        self.buffer.resize(size);
-    }
+    fn update(
+        &mut self,
+        win_pos: Point<i32, Logical>,
+        win_size: Size<i32, Logical>,
+        is_border: bool,
+    ) {
+        if is_border {
+            self.buffers[0].resize((win_size.w + self.width * 2, self.width));
+            self.buffers[1].resize((win_size.w + self.width * 2, self.width));
+            self.buffers[2].resize((self.width, win_size.h));
+            self.buffers[3].resize((self.width, win_size.h));
 
-    fn reposition(&mut self, win_pos: Point<i32, Logical>) {
-        let offset = Point::from((self.width, self.width));
-        self.location = win_pos - offset;
+            self.locations[0] = win_pos + Point::from((-self.width, -self.width));
+            self.locations[1] = win_pos + Point::from((-self.width, win_size.h));
+            self.locations[2] = win_pos + Point::from((-self.width, 0));
+            self.locations[3] = win_pos + Point::from((win_size.w, 0));
+        } else {
+            let size = win_size + Size::from((self.width * 2, self.width * 2));
+            self.buffers[0].resize(size);
+            self.locations[0] = win_pos - Point::from((self.width, self.width));
+        }
+
+        self.is_border = is_border;
     }
 
     fn set_active(&mut self, is_active: bool) {
-        self.buffer.set_color(if is_active {
+        let color = if is_active {
             self.active_color.into()
         } else {
             self.inactive_color.into()
-        });
+        };
+
+        for buf in &mut self.buffers {
+            buf.set_color(color);
+        }
     }
 
-    fn render(&self, scale: Scale<f64>) -> Option<SolidColorRenderElement> {
+    fn render(&self, scale: Scale<f64>) -> impl Iterator<Item = SolidColorRenderElement> {
+        let mut rv = ArrayVec::<_, 4>::new();
+
         if self.is_off {
-            return None;
+            return rv.into_iter();
         }
 
-        Some(SolidColorRenderElement::from_buffer(
-            &self.buffer,
-            self.location.to_physical_precise_round(scale),
-            scale,
-            1.,
-            Kind::Unspecified,
-        ))
+        let mut push = |buffer, location: Point<i32, Logical>| {
+            let elem = SolidColorRenderElement::from_buffer(
+                buffer,
+                location.to_physical_precise_round(scale),
+                scale,
+                1.,
+                Kind::Unspecified,
+            );
+            rv.push(elem);
+        };
+
+        if self.is_border {
+            for (buf, loc) in zip(&self.buffers, self.locations) {
+                push(buf, loc);
+            }
+        } else {
+            push(&self.buffers[0], self.locations[0]);
+        }
+
+        rv.into_iter()
     }
 }
 
 impl FocusRing {
     fn new(config: config::FocusRing) -> Self {
         Self {
-            buffer: SolidColorBuffer::new((0, 0), [0., 0., 0., 0.]),
-            location: Point::from((0, 0)),
+            buffers: Default::default(),
+            locations: Default::default(),
             is_off: config.off,
+            is_border: false,
             width: config.width.into(),
             active_color: config.active_color,
             inactive_color: config.inactive_color,
@@ -1679,14 +1723,14 @@ impl<W: LayoutElement> Workspace<W> {
             let col = &self.columns[self.active_column_idx];
             let active_win = &col.windows[col.active_window_idx];
             let geom = active_win.geometry();
+            let has_ssd = active_win.has_ssd();
 
             let win_pos = Point::from((
                 self.column_x(self.active_column_idx) - view_pos,
                 col.window_y(col.active_window_idx),
             ));
 
-            self.focus_ring.reposition(win_pos);
-            self.focus_ring.resize(geom.size);
+            self.focus_ring.update(win_pos, geom.size, has_ssd);
             self.focus_ring.set_active(is_active);
         }
     }
@@ -2724,6 +2768,10 @@ mod tests {
         }
 
         fn is_wl_surface(&self, _wl_surface: &WlSurface) -> bool {
+            false
+        }
+
+        fn has_ssd(&self) -> bool {
             false
         }
     }
