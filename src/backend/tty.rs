@@ -672,15 +672,12 @@ impl Tty {
             return;
         };
 
+        // Finish the Tracy frame, if any.
+        drop(surface.vblank_frame.take());
+
         let name = &surface.name;
         trace!("vblank on {name} {meta:?}");
         span.emit_text(name);
-
-        drop(surface.vblank_frame.take()); // Drop the old one first.
-        let vblank_frame = tracy_client::Client::running()
-            .unwrap()
-            .non_continuous_frame(surface.vblank_frame_name);
-        surface.vblank_frame = Some(vblank_frame);
 
         let presentation_time = match meta.time {
             DrmEventTime::Monotonic(time) => time,
@@ -782,6 +779,11 @@ impl Tty {
         };
 
         if redraw_needed || output_state.unfinished_animations_remain {
+            let vblank_frame = tracy_client::Client::running()
+                .unwrap()
+                .non_continuous_frame(surface.vblank_frame_name);
+            surface.vblank_frame = Some(vblank_frame);
+
             niri.queue_redraw(output);
         } else {
             niri.send_frame_callbacks(&output);
