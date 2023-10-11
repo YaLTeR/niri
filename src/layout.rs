@@ -1079,6 +1079,8 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn advance_animations(&mut self, current_time: Duration) {
+        let _span = tracy_client::span!("Layout::advance_animations");
+
         match &mut self.monitor_set {
             MonitorSet::Normal {
                 monitors,
@@ -1608,6 +1610,8 @@ impl Monitor<Window> {
         &self,
         renderer: &mut GlesRenderer,
     ) -> Vec<MonitorRenderElement<GlesRenderer>> {
+        let _span = tracy_client::span!("Monitor::render_elements");
+
         let output_scale = Scale::from(self.output.current_scale().fractional_scale());
         let output_transform = self.output.current_transform();
         let output_mode = self.output.current_mode().unwrap();

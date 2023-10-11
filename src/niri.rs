@@ -893,6 +893,8 @@ impl Niri {
         renderer: &mut GlesRenderer,
         output: &Output,
     ) -> Vec<OutputRenderElements<GlesRenderer>> {
+        let _span = tracy_client::span!("Niri::pointer_element");
+
         let output_scale = Scale::from(output.current_scale().fractional_scale());
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
