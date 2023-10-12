@@ -52,8 +52,19 @@ impl FrameClock {
 
         if now <= last_presentation_time {
             // Got an early VBlank.
+            let orig_now = now;
             now += Duration::from_nanos(refresh_interval_ns);
-            // Assume two-frame early VBlanks don't happen. Overflow checks will catch them.
+
+            if now < last_presentation_time {
+                // Not sure when this can happen.
+                error!(
+                    now = ?orig_now,
+                    ?last_presentation_time,
+                    "got a 2+ early VBlank, {:?} until presentation",
+                    last_presentation_time - now,
+                );
+                now = last_presentation_time + Duration::from_nanos(refresh_interval_ns);
+            }
         }
 
         let since_last = now - last_presentation_time;
