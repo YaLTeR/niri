@@ -43,7 +43,6 @@ use crate::niri::{OutputRenderElements, State, RedrawState};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
-const BACKGROUND_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.];
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
@@ -858,7 +857,7 @@ impl Tty {
         match drm_compositor.render_frame::<_, _, GlesTexture>(
             &mut device.gles,
             elements,
-            BACKGROUND_COLOR,
+            niri.clear_color(),
         ) {
             Ok(res) => {
                 if self

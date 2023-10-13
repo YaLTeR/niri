@@ -888,6 +888,10 @@ impl Niri {
         };
     }
 
+    pub fn clear_color(&self) -> [f32; 4] {
+        [0.1, 0.1, 0.1, 1.0]
+    }
+
     pub fn pointer_element(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -1417,6 +1421,7 @@ impl Niri {
 
         let size = output.current_mode().unwrap().size;
         let scale = Scale::from(output.current_scale().fractional_scale());
+        let clear_color = self.clear_color();
 
         for cast in &mut self.casts {
             if !cast.is_active.get() {
@@ -1452,7 +1457,9 @@ impl Niri {
                 let dmabuf = cast.dmabufs.borrow()[&fd].clone();
 
                 // FIXME: Hidden / embedded / metadata cursor
-                if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
+                if let Err(err) =
+                    render_to_dmabuf(renderer, dmabuf, size, scale, clear_color, elements)
+                {
                     error!("error rendering to dmabuf: {err:?}");
                     continue;
                 }
@@ -1735,6 +1742,7 @@ fn render_to_dmabuf(
     dmabuf: smithay::backend::allocator::dmabuf::Dmabuf,
     size: Size<i32, Physical>,
     scale: Scale<f64>,
+    clear_color: [f32; 4],
     elements: &[OutputRenderElements<GlesRenderer>],
 ) -> anyhow::Result<()> {
     use smithay::backend::renderer::element::Element;
@@ -1749,7 +1757,7 @@ fn render_to_dmabuf(
         .context("error starting frame")?;
 
     frame
-        .clear([0.1, 0.1, 0.1, 1.], &[output_rect])
+        .clear(clear_color, &[output_rect])
         .context("error clearing")?;
 
     for element in elements.iter().rev() {

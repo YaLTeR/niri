@@ -157,9 +157,10 @@ impl Winit {
 
         self.backend.bind().unwrap();
         let age = self.backend.buffer_age().unwrap();
+        let clear_color = niri.clear_color();
         let res = self
             .damage_tracker
-            .render_output(self.backend.renderer(), age, elements, [0.1, 0.1, 0.1, 1.0])
+            .render_output(self.backend.renderer(), age, elements, clear_color)
             .unwrap();
 
         niri.update_primary_scanout_output(output, &res.states);
