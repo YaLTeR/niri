@@ -39,7 +39,7 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::config::Config;
-use crate::niri::{OutputRenderElements, State, RedrawState};
+use crate::niri::{OutputRenderElements, State, RedrawState, CLEAR_COLOR};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
@@ -861,7 +861,7 @@ impl Tty {
         match drm_compositor.render_frame::<_, _, GlesTexture>(
             &mut device.gles,
             elements,
-            niri.clear_color(),
+            CLEAR_COLOR,
         ) {
             Ok(res) => {
                 if self

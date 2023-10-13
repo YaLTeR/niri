@@ -19,7 +19,7 @@ use smithay::utils::Transform;
 
 use super::RenderResult;
 use crate::config::Config;
-use crate::niri::{OutputRenderElements, RedrawState, State};
+use crate::niri::{OutputRenderElements, RedrawState, State, CLEAR_COLOR};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
@@ -157,10 +157,9 @@ impl Winit {
 
         self.backend.bind().unwrap();
         let age = self.backend.buffer_age().unwrap();
-        let clear_color = niri.clear_color();
         let res = self
             .damage_tracker
-            .render_output(self.backend.renderer(), age, elements, clear_color)
+            .render_output(self.backend.renderer(), age, elements, CLEAR_COLOR)
             .unwrap();
 
         niri.update_primary_scanout_output(output, &res.states);
