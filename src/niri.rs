@@ -1153,12 +1153,7 @@ impl Niri {
         let elements = self.render(renderer, output, true);
 
         // Hand it over to the backend.
-        let dmabuf_feedback = backend.render(self, output, &elements, presentation_time);
-
-        // Send the dmabuf feedbacks.
-        if let Some(feedback) = dmabuf_feedback {
-            self.send_dmabuf_feedbacks(output, feedback);
-        }
+        backend.render(self, output, &elements, presentation_time);
 
         // Send the frame callbacks.
         //
@@ -1263,7 +1258,7 @@ impl Niri {
         }
     }
 
-    fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
+    pub fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
         let _span = tracy_client::span!("Niri::send_dmabuf_feedbacks");
 
         // We can unconditionally send the current output's feedback to regular and layer-shell

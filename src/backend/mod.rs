@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
-use smithay::wayland::dmabuf::DmabufFeedback;
 
 use crate::input::CompositorMod;
 use crate::niri::OutputRenderElements;
@@ -49,7 +48,7 @@ impl Backend {
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
-    ) -> Option<&DmabufFeedback> {
+    ) {
         match self {
             Backend::Tty(tty) => tty.render(niri, output, elements, target_presentation_time),
             Backend::Winit(winit) => winit.render(niri, output, elements),

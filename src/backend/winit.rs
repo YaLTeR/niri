@@ -16,7 +16,6 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
-use smithay::wayland::dmabuf::DmabufFeedback;
 
 use crate::config::Config;
 use crate::niri::{OutputRenderElements, RedrawState, State};
@@ -152,7 +151,7 @@ impl Winit {
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
-    ) -> Option<&DmabufFeedback> {
+    ) {
         let _span = tracy_client::span!("Winit::render");
 
         self.backend.bind().unwrap();
@@ -201,8 +200,6 @@ impl Winit {
         if output_state.unfinished_animations_remain {
             self.backend.window().request_redraw();
         }
-
-        None
     }
 
     pub fn toggle_debug_tint(&mut self) {

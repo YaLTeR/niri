@@ -837,18 +837,18 @@ impl Tty {
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
-    ) -> Option<&DmabufFeedback> {
+    ) {
         let span = tracy_client::span!("Tty::render");
 
         let Some(device) = self.output_device.as_mut() else {
             error!("missing output device");
-            return None;
+            return;
         };
 
         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
         let Some(surface) = device.surfaces.get_mut(&tty_state.crtc) else {
             error!("missing surface");
-            return None;
+            return;
         };
 
         span.emit_text(&surface.name);
@@ -873,6 +873,7 @@ impl Tty {
                 }
 
                 niri.update_primary_scanout_output(output, &res.states);
+                niri.send_dmabuf_feedbacks(output, &surface.dmabuf_feedback);
 
                 if res.damage.is_some() {
                     let presentation_feedbacks =
@@ -895,7 +896,7 @@ impl Tty {
                                 }
                             };
 
-                            return Some(&surface.dmabuf_feedback);
+                            return;
                         }
                         Err(err) => {
                             error!("error queueing frame: {err}");
@@ -914,8 +915,6 @@ impl Tty {
 
         // Queue a timer to fire at the predicted vblank time.
         queue_estimated_vblank_timer(niri, output.clone(), target_presentation_time);
-
-        None
     }
 
     pub fn change_vt(&mut self, vt: i32) {
