@@ -136,7 +136,7 @@ impl State {
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time_msec(&event);
 
-                let action = self.niri.seat.get_keyboard().unwrap().input(
+                let mut action = self.niri.seat.get_keyboard().unwrap().input(
                     self,
                     event.key_code(),
                     event.state(),
@@ -151,6 +151,19 @@ impl State {
                         }
                     },
                 );
+
+                // Filter actions when the session is locked.
+                if self.niri.is_locked() {
+                    match action {
+                        Some(
+                            Action::Quit
+                            | Action::ChangeVt(_)
+                            | Action::Suspend
+                            | Action::PowerOffMonitors,
+                        ) => (),
+                        _ => action = None,
+                    }
+                }
 
                 if let Some(action) = action {
                     match action {

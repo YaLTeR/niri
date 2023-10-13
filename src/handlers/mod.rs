@@ -13,10 +13,12 @@ use smithay::backend::renderer::ImportDma;
 use smithay::desktop::PopupKind;
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
+use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
+use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Rectangle};
+use smithay::utils::{Logical, Rectangle, Size};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::selection::data_device::{
@@ -28,13 +30,17 @@ use smithay::wayland::selection::primary_selection::{
 };
 use smithay::wayland::selection::wlr_data_control::{DataControlHandler, DataControlState};
 use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
+use smithay::wayland::session_lock::{
+    LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
+};
 use smithay::{
     delegate_data_control, delegate_data_device, delegate_dmabuf, delegate_input_method_manager,
     delegate_output, delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
-    delegate_seat, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_seat, delegate_session_lock, delegate_tablet_manager, delegate_text_input_manager,
     delegate_virtual_keyboard_manager,
 };
 
+use crate::layout::output_size;
 use crate::niri::State;
 
 impl SeatHandler for State {
@@ -174,3 +180,36 @@ impl DmabufHandler for State {
     }
 }
 delegate_dmabuf!(State);
+
+impl SessionLockHandler for State {
+    fn lock_state(&mut self) -> &mut SessionLockManagerState {
+        &mut self.niri.session_lock_state
+    }
+
+    fn lock(&mut self, confirmation: SessionLocker) {
+        self.niri.lock(confirmation);
+    }
+
+    fn unlock(&mut self) {
+        self.niri.unlock();
+    }
+
+    fn new_surface(&mut self, surface: LockSurface, output: WlOutput) {
+        let Some(output) = Output::from_resource(&output) else {
+            error!("no Output matching WlOutput");
+            return;
+        };
+
+        configure_lock_surface(&surface, &output);
+        self.niri.new_lock_surface(surface, &output);
+    }
+}
+delegate_session_lock!(State);
+
+pub fn configure_lock_surface(surface: &LockSurface, output: &Output) {
+    surface.with_pending_state(|states| {
+        let size = output_size(output);
+        states.size = Some(Size::from((size.w as u32, size.h as u32)));
+    });
+    surface.send_configure();
+}

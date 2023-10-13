@@ -11,6 +11,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::Context;
 use image::ImageFormat;
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
@@ -25,7 +26,7 @@ use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
     surface_primary_scanout_output, take_presentation_feedback_surface_tree,
-    update_surface_primary_scanout_output, OutputPresentationFeedback,
+    under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
 use smithay::desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
@@ -62,6 +63,7 @@ use smithay::wayland::selection::primary_selection::{
     set_primary_selection, PrimarySelectionState,
 };
 use smithay::wayland::selection::wlr_data_control::DataControlState;
+use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
@@ -72,7 +74,7 @@ use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
-use crate::backend::{Backend, Tty, Winit};
+use crate::backend::{Backend, RenderResult, Tty, Winit};
 use crate::config::Config;
 use crate::cursor::Cursor;
 #[cfg(feature = "dbus")]
@@ -80,11 +82,13 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
+use crate::handlers::configure_lock_surface;
 use crate::layout::{output_size, Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::utils::{center, get_monotonic_time, make_screenshot_path};
 
 pub const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
+pub const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -117,6 +121,7 @@ pub struct Niri {
     pub xdg_decoration_state: XdgDecorationState,
     pub kde_decoration_state: KdeDecorationState,
     pub layer_shell_state: WlrLayerShellState,
+    pub session_lock_state: SessionLockManagerState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<State>,
@@ -137,6 +142,8 @@ pub struct Niri {
     pub cursor_image: CursorImageStatus,
     pub dnd_icon: Option<WlSurface>,
     pub pointer_focus: Option<PointerFocus>,
+
+    pub lock_state: LockState,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -163,6 +170,9 @@ pub struct OutputState {
     /// If there are no commits, then we won't have a timer running, so the estimated sequence will
     /// not increase.
     pub current_estimated_sequence: Option<u32>,
+    pub lock_render_state: LockRenderState,
+    pub lock_surface: Option<LockSurface>,
+    pub lock_color_buffer: SolidColorBuffer,
 }
 
 #[derive(Default)]
@@ -184,6 +194,22 @@ pub enum RedrawState {
 pub struct PointerFocus {
     pub output: Output,
     pub surface: (WlSurface, Point<i32, Logical>),
+}
+
+#[derive(Default)]
+pub enum LockState {
+    #[default]
+    Unlocked,
+    Locking(SessionLocker),
+    Locked,
+}
+
+#[derive(PartialEq, Eq)]
+pub enum LockRenderState {
+    /// The output displays a normal session frame.
+    Unlocked,
+    /// The output displays a locked frame.
+    Locked,
 }
 
 // Not related to the one in Smithay.
@@ -327,12 +353,17 @@ impl State {
     }
 
     pub fn update_focus(&mut self) {
-        let focus = self.niri.layer_surface_focus().or_else(|| {
-            self.niri
-                .layout
-                .focus()
-                .map(|win| win.toplevel().wl_surface().clone())
-        });
+        let focus = if self.niri.is_locked() {
+            self.niri.lock_surface_focus()
+        } else {
+            self.niri.layer_surface_focus().or_else(|| {
+                self.niri
+                    .layout
+                    .focus()
+                    .map(|win| win.toplevel().wl_surface().clone())
+            })
+        };
+
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         if keyboard.current_focus() != focus {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
@@ -492,6 +523,8 @@ impl Niri {
             },
         );
         let layer_shell_state = WlrLayerShellState::new::<State>(&display_handle);
+        let session_lock_state =
+            SessionLockManagerState::new::<State, _>(&display_handle, |_| true);
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let output_manager_state =
             OutputManagerState::new_with_xdg_output::<State>(&display_handle);
@@ -584,6 +617,7 @@ impl Niri {
             xdg_decoration_state,
             kde_decoration_state,
             layer_shell_state,
+            session_lock_state,
             text_input_state,
             input_method_state,
             virtual_keyboard_state,
@@ -603,6 +637,8 @@ impl Niri {
             cursor_image: CursorImageStatus::default_named(),
             dnd_icon: None,
             pointer_focus: None,
+
+            lock_state: LockState::Unlocked,
 
             #[cfg(feature = "dbus")]
             dbus: None,
@@ -701,12 +737,22 @@ impl Niri {
         self.layout.add_output(output.clone());
         output.change_current_state(None, None, None, Some(position));
 
+        let lock_render_state = if self.is_locked() {
+            // We haven't rendered anything yet so it's as good as locked.
+            LockRenderState::Locked
+        } else {
+            LockRenderState::Unlocked
+        };
+
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval),
             current_estimated_sequence: None,
+            lock_render_state,
+            lock_surface: None,
+            lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
@@ -749,11 +795,41 @@ impl Niri {
                 },
             )
             .unwrap();
+
+        match mem::take(&mut self.lock_state) {
+            LockState::Locking(confirmation) => {
+                // We're locking and an output was removed, check if the requirements are now met.
+                let all_locked = self
+                    .output_state
+                    .values()
+                    .all(|state| state.lock_render_state == LockRenderState::Locked);
+
+                if all_locked {
+                    confirmation.lock();
+                    self.lock_state = LockState::Locked;
+                } else {
+                    // Still waiting.
+                    self.lock_state = LockState::Locking(confirmation);
+                }
+            }
+            lock_state => self.lock_state = lock_state,
+        }
     }
 
     pub fn output_resized(&mut self, output: Output) {
         layer_map_for_output(&output).arrange();
         self.layout.update_output_size(&output);
+
+        let is_locked = self.is_locked();
+        if let Some(state) = self.output_state.get_mut(&output) {
+            state.lock_color_buffer.resize(output_size(&output));
+            if is_locked {
+                if let Some(lock_surface) = &state.lock_surface {
+                    configure_lock_surface(lock_surface, &output);
+                }
+            }
+        }
+
         self.queue_redraw(output);
     }
 
@@ -791,6 +867,10 @@ impl Niri {
     }
 
     pub fn window_under_cursor(&self) -> Option<&Window> {
+        if self.is_locked() {
+            return None;
+        }
+
         let pos = self.seat.get_pointer().unwrap().current_location();
         let (output, pos_within_output) = self.output_under(pos)?;
         let (window, _loc) = self.layout.window_under(output, pos_within_output)?;
@@ -808,6 +888,23 @@ impl Niri {
     ) -> Option<PointerFocus> {
         let (output, pos_within_output) = self.output_under(pos)?;
         let output = output.clone();
+
+        if self.is_locked() {
+            let state = self.output_state.get(&output)?;
+            let surface = state.lock_surface.as_ref()?;
+            // We put lock surfaces at (0, 0).
+            let point = pos_within_output;
+            let (surface, point) = under_from_surface_tree(
+                surface.wl_surface(),
+                point,
+                (0, 0),
+                WindowSurfaceType::ALL,
+            )?;
+            return Some(PointerFocus {
+                output,
+                surface: (surface, point),
+            });
+        }
 
         let (window, win_pos_within_output) =
             self.layout.window_under(&output, pos_within_output)?;
@@ -906,6 +1003,17 @@ impl Niri {
         map_to_output
             .and_then(|name| self.output_by_name.get(name))
             .or_else(|| self.global_space.outputs().next())
+    }
+
+    fn lock_surface_focus(&self) -> Option<WlSurface> {
+        let output_under_cursor = self.output_under_cursor();
+        let output = output_under_cursor
+            .as_ref()
+            .or_else(|| self.layout.active_output())
+            .or_else(|| self.global_space.outputs().next())?;
+
+        let state = self.output_state.get(output)?;
+        state.lock_surface.as_ref().map(|s| s.wl_surface()).cloned()
     }
 
     fn layer_surface_focus(&self) -> Option<WlSurface> {
@@ -1122,15 +1230,44 @@ impl Niri {
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
-        // Get monitor elements.
-        let mon = self.layout.monitor_for_output(output).unwrap();
-        let monitor_elements = mon.render_elements(renderer);
-
         // The pointer goes on the top.
         let mut elements = vec![];
         if include_pointer {
             elements = self.pointer_element(renderer, output);
         }
+
+        // If the session is locked, draw the lock surface.
+        if self.is_locked() {
+            let state = self.output_state.get_mut(output).unwrap();
+            if let Some(surface) = state.lock_surface.as_ref() {
+                elements.extend(render_elements_from_surface_tree(
+                    renderer,
+                    surface.wl_surface(),
+                    (0, 0),
+                    output_scale,
+                    1.,
+                    Kind::Unspecified,
+                ));
+            }
+
+            // Draw the solid color background.
+            elements.push(
+                SolidColorRenderElement::from_buffer(
+                    &state.lock_color_buffer,
+                    (0, 0),
+                    output_scale,
+                    1.,
+                    Kind::Unspecified,
+                )
+                .into(),
+            );
+
+            return elements;
+        }
+
+        // Get monitor elements.
+        let mon = self.layout.monitor_for_output(output).unwrap();
+        let monitor_elements = mon.render_elements(renderer);
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
@@ -1175,13 +1312,17 @@ impl Niri {
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
+        let monitors_active = self.monitors_active;
+
         let state = self.output_state.get_mut(output).unwrap();
         assert!(matches!(
             state.redraw_state,
             RedrawState::Queued(_) | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
         ));
 
+        // FIXME: make this not cursed.
         let mut reset = || {
+            let state = self.output_state.get_mut(output).unwrap();
             state.redraw_state =
                 if let RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) =
                     state.redraw_state
@@ -1189,10 +1330,17 @@ impl Niri {
                     RedrawState::WaitingForEstimatedVBlank(token)
                 } else {
                     RedrawState::Idle
-                }
+                };
+
+            if matches!(self.lock_state, LockState::Locking { .. })
+                && state.lock_render_state == LockRenderState::Unlocked
+            {
+                // We needed to redraw this output for locking and failed.
+                self.unlock();
+            }
         };
 
-        if !self.monitors_active {
+        if !monitors_active {
             reset();
             return;
         }
@@ -1207,6 +1355,7 @@ impl Niri {
             return;
         };
 
+        let state = self.output_state.get_mut(output).unwrap();
         let presentation_time = state.frame_clock.next_presentation_time();
 
         // Update from the config and advance the animations.
@@ -1221,7 +1370,48 @@ impl Niri {
         let elements = self.render(renderer, output, true);
 
         // Hand it over to the backend.
-        backend.render(self, output, &elements, presentation_time);
+        let res = backend.render(self, output, &elements, presentation_time);
+
+        // Update the lock render state on successful render.
+        let is_locked = self.is_locked();
+        let state = self.output_state.get_mut(output).unwrap();
+        if res != RenderResult::Error {
+            state.lock_render_state = if is_locked {
+                LockRenderState::Locked
+            } else {
+                LockRenderState::Unlocked
+            };
+        }
+
+        // If we're in process of locking the session, check if the requirements were met.
+        match mem::take(&mut self.lock_state) {
+            LockState::Locking(confirmation) => {
+                if res == RenderResult::Error {
+                    if state.lock_render_state == LockRenderState::Unlocked {
+                        // We needed to render a locked frame on this output but failed.
+                        self.unlock();
+                    } else {
+                        // Rendering failed but this output is already locked, so it's fine.
+                        self.lock_state = LockState::Locking(confirmation);
+                    }
+                } else {
+                    // Rendering succeeded, check if this was the last output.
+                    let all_locked = self
+                        .output_state
+                        .values()
+                        .all(|state| state.lock_render_state == LockRenderState::Locked);
+
+                    if all_locked {
+                        confirmation.lock();
+                        self.lock_state = LockState::Locked;
+                    } else {
+                        // Still waiting.
+                        self.lock_state = LockState::Locking(confirmation);
+                    }
+                }
+            }
+            lock_state => self.lock_state = lock_state,
+        }
 
         // Send the frame callbacks.
         //
@@ -1324,6 +1514,24 @@ impl Niri {
                 );
             });
         }
+
+        if let Some(surface) = &self.output_state[output].lock_surface {
+            with_surface_tree_downward(
+                surface.wl_surface(),
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |surface, states, _| {
+                    update_surface_primary_scanout_output(
+                        surface,
+                        output,
+                        states,
+                        render_element_states,
+                        default_primary_scanout_output_compare,
+                    );
+                },
+                |_, _, _| true,
+            );
+        }
     }
 
     pub fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
@@ -1338,6 +1546,15 @@ impl Niri {
 
         for surface in layer_map_for_output(output).layers() {
             surface.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
+        }
+
+        if let Some(surface) = &self.output_state[output].lock_surface {
+            send_dmabuf_feedback_surface_tree(
+                surface.wl_surface(),
+                output,
+                |_, _| Some(output.clone()),
+                |_, _| feedback,
+            );
         }
 
         if let Some(surface) = &self.dnd_icon {
@@ -1411,6 +1628,16 @@ impl Niri {
             surface.send_frame(output, frame_callback_time, None, should_send);
         }
 
+        if let Some(surface) = &self.output_state[output].lock_surface {
+            send_frames_surface_tree(
+                surface.wl_surface(),
+                output,
+                frame_callback_time,
+                None,
+                should_send,
+            );
+        }
+
         if let Some(surface) = &self.dnd_icon {
             send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
         }
@@ -1461,6 +1688,17 @@ impl Niri {
 
         for surface in layer_map_for_output(output).layers() {
             surface.take_presentation_feedback(
+                &mut feedback,
+                surface_primary_scanout_output,
+                |surface, _| {
+                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                },
+            );
+        }
+
+        if let Some(surface) = &self.output_state[output].lock_surface {
+            take_presentation_feedback_surface_tree(
+                surface.wl_surface(),
                 &mut feedback,
                 surface_primary_scanout_output,
                 |surface, _| {
@@ -1722,6 +1960,41 @@ impl Niri {
 
         Ok(())
     }
+
+    pub fn is_locked(&self) -> bool {
+        !matches!(self.lock_state, LockState::Unlocked)
+    }
+
+    pub fn lock(&mut self, confirmation: SessionLocker) {
+        info!("locking session");
+
+        self.lock_state = LockState::Locking(confirmation);
+        self.queue_redraw_all();
+    }
+
+    pub fn unlock(&mut self) {
+        info!("unlocking session");
+
+        self.lock_state = LockState::Unlocked;
+        for output_state in self.output_state.values_mut() {
+            output_state.lock_surface = None;
+        }
+        self.queue_redraw_all();
+    }
+
+    pub fn new_lock_surface(&mut self, surface: LockSurface, output: &Output) {
+        if !self.is_locked() {
+            error!("tried to add a lock surface on an unlocked session");
+            return;
+        }
+
+        let Some(output_state) = self.output_state.get_mut(output) else {
+            error!("missing output state");
+            return;
+        };
+
+        output_state.lock_surface = Some(surface);
+    }
 }
 
 render_elements! {
@@ -1730,6 +2003,7 @@ render_elements! {
     Monitor = MonitorRenderElement<R>,
     Wayland = WaylandSurfaceRenderElement<R>,
     DefaultPointer = TextureRenderElement<<R as Renderer>::TextureId>,
+    SolidColor = SolidColorRenderElement,
 }
 
 #[derive(Default)]
