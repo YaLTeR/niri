@@ -20,6 +20,16 @@ pub enum Backend {
     Winit(Winit),
 }
 
+#[derive(PartialEq, Eq)]
+pub enum RenderResult {
+    /// The frame was submitted to the backend for presentation.
+    Submitted,
+    /// Rendering succeeded, but there was no damage.
+    NoDamage,
+    /// An error has occurred, the frame was not submitted.
+    Error,
+}
+
 impl Backend {
     pub fn init(&mut self, niri: &mut Niri) {
         match self {
@@ -48,7 +58,7 @@ impl Backend {
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
-    ) {
+    ) -> RenderResult {
         match self {
             Backend::Tty(tty) => tty.render(niri, output, elements, target_presentation_time),
             Backend::Winit(winit) => winit.render(niri, output, elements),

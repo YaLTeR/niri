@@ -17,6 +17,7 @@ use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
 
+use super::RenderResult;
 use crate::config::Config;
 use crate::niri::{OutputRenderElements, RedrawState, State};
 use crate::utils::get_monotonic_time;
@@ -151,7 +152,7 @@ impl Winit {
         niri: &mut Niri,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
-    ) {
+    ) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
 
         self.backend.bind().unwrap();
@@ -164,6 +165,7 @@ impl Winit {
 
         niri.update_primary_scanout_output(output, &res.states);
 
+        let rv;
         if let Some(damage) = res.damage {
             if self
                 .config
@@ -186,6 +188,10 @@ impl Winit {
                 0,
                 wp_presentation_feedback::Kind::empty(),
             );
+
+            rv = RenderResult::Submitted;
+        } else {
+            rv = RenderResult::NoDamage;
         }
 
         let output_state = niri.output_state.get_mut(output).unwrap();
@@ -200,6 +206,8 @@ impl Winit {
         if output_state.unfinished_animations_remain {
             self.backend.window().request_redraw();
         }
+
+        rv
     }
 
     pub fn toggle_debug_tint(&mut self) {

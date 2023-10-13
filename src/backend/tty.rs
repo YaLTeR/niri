@@ -43,6 +43,8 @@ use crate::niri::{OutputRenderElements, State, RedrawState};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
+use super::RenderResult;
+
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
@@ -837,18 +839,20 @@ impl Tty {
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
-    ) {
+    ) -> RenderResult {
         let span = tracy_client::span!("Tty::render");
+
+        let mut rv = RenderResult::Error;
 
         let Some(device) = self.output_device.as_mut() else {
             error!("missing output device");
-            return;
+            return rv;
         };
 
         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
         let Some(surface) = device.surfaces.get_mut(&tty_state.crtc) else {
             error!("missing surface");
-            return;
+            return rv;
         };
 
         span.emit_text(&surface.name);
@@ -896,12 +900,14 @@ impl Tty {
                                 }
                             };
 
-                            return;
+                            return RenderResult::Submitted;
                         }
                         Err(err) => {
                             error!("error queueing frame: {err}");
                         }
                     }
+                } else {
+                    rv = RenderResult::NoDamage;
                 }
             }
             Err(err) => {
@@ -915,6 +921,8 @@ impl Tty {
 
         // Queue a timer to fire at the predicted vblank time.
         queue_estimated_vblank_timer(niri, output.clone(), target_presentation_time);
+
+        rv
     }
 
     pub fn change_vt(&mut self, vt: i32) {
