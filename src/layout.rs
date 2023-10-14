@@ -1363,6 +1363,20 @@ impl<W: LayoutElement> Layout<W> {
 
         None
     }
+
+    pub fn move_workspace_down(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_workspace_down();
+    }
+
+    pub fn move_workspace_up(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_workspace_up();
+    }
 }
 
 impl Layout<Window> {
@@ -1639,6 +1653,46 @@ impl<W: LayoutElement> Monitor<W> {
 
     fn set_column_width(&mut self, change: SizeChange) {
         self.active_workspace().set_column_width(change);
+    }
+
+    fn move_workspace_down(&mut self) {
+        let new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
+        if new_idx == self.active_workspace_idx {
+            return;
+        }
+
+        self.workspaces.swap(self.active_workspace_idx, new_idx);
+
+        if new_idx == self.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            let ws = Workspace::new(self.output.clone(), self.options.clone());
+            self.workspaces.push(ws);
+        }
+
+        self.activate_workspace(new_idx);
+        self.workspace_switch = None;
+
+        self.clean_up_workspaces();
+    }
+
+    fn move_workspace_up(&mut self) {
+        let new_idx = self.active_workspace_idx.saturating_sub(1);
+        if new_idx == self.active_workspace_idx {
+            return;
+        }
+
+        self.workspaces.swap(self.active_workspace_idx, new_idx);
+
+        if self.active_workspace_idx == self.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            let ws = Workspace::new(self.output.clone(), self.options.clone());
+            self.workspaces.push(ws);
+        }
+
+        self.activate_workspace(new_idx);
+        self.workspace_switch = None;
+
+        self.clean_up_workspaces();
     }
 }
 
@@ -2864,6 +2918,8 @@ mod tests {
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
         MoveWindowToWorkspace(#[proptest(strategy = "1..=5u8")] u8),
+        MoveWorkspaceDown,
+        MoveWorkspaceUp,
         MoveWindowToOutput(#[proptest(strategy = "1..=5u8")] u8),
         SwitchPresetColumnWidth,
         MaximizeColumn,
@@ -2917,6 +2973,29 @@ mod tests {
                     layout.focus_output(&output);
                 }
                 Op::AddWindow { id, bbox, activate } => {
+                    match &mut layout.monitor_set {
+                        MonitorSet::Normal { monitors, .. } => {
+                            for mon in monitors {
+                                for ws in &mut mon.workspaces {
+                                    for win in ws.windows() {
+                                        if win.0.id == id {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        MonitorSet::NoOutputs { workspaces, .. } => {
+                            for ws in workspaces {
+                                for win in ws.windows() {
+                                    if win.0.id == id {
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let win = TestWindow::new(id, bbox);
                     layout.add_window(win, activate);
                 }
@@ -2952,6 +3031,8 @@ mod tests {
 
                     layout.move_to_output(&output);
                 }
+                Op::MoveWorkspaceDown => layout.move_workspace_down(),
+                Op::MoveWorkspaceUp => layout.move_workspace_up(),
                 Op::SwitchPresetColumnWidth => layout.toggle_width(),
                 Op::MaximizeColumn => layout.toggle_full_width(),
                 Op::SetColumnWidth(change) => layout.set_column_width(change),
@@ -3049,6 +3130,8 @@ mod tests {
             Op::MoveWindowToWorkspace(1),
             Op::MoveWindowToWorkspace(2),
             Op::MoveWindowToWorkspace(3),
+            Op::MoveWindowDown,
+            Op::MoveWindowUp,
         ];
 
         for third in every_op {
@@ -3162,6 +3245,8 @@ mod tests {
             Op::MoveWindowToWorkspace(1),
             Op::MoveWindowToWorkspace(2),
             Op::MoveWindowToWorkspace(3),
+            Op::MoveWindowDown,
+            Op::MoveWindowUp,
         ];
 
         for third in every_op {

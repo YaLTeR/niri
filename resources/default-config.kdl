@@ -170,6 +170,11 @@ binds {
     Mod+Ctrl+Page_Down { move-window-to-workspace-down; }
     Mod+Ctrl+Page_Up   { move-window-to-workspace-up; }
 
+    Mod+Shift+U         { move-workspace-down; }
+    Mod+Shift+I         { move-workspace-up; }
+    Mod+Shift+Page_Down { move-workspace-down; }
+    Mod+Shift+Page_Up   { move-workspace-up; }
+
     Mod+1 { focus-workspace 1; }
     Mod+2 { focus-workspace 2; }
     Mod+3 { focus-workspace 3; }

@@ -271,6 +271,16 @@ impl State {
                             // FIXME: granular
                             self.niri.queue_redraw_all();
                         }
+                        Action::MoveWorkspaceDown => {
+                            self.niri.layout.move_workspace_down();
+                            // FIXME: granular
+                            self.niri.queue_redraw_all();
+                        }
+                        Action::MoveWorkspaceUp => {
+                            self.niri.layout.move_workspace_up();
+                            // FIXME: granular
+                            self.niri.queue_redraw_all();
+                        }
                         Action::ConsumeWindowIntoColumn => {
                             self.niri.layout.consume_into_column();
                             // FIXME: granular

@@ -258,6 +258,8 @@ pub enum Action {
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
     MoveWindowToWorkspace(#[knuffel(argument)] u8),
+    MoveWorkspaceDown,
+    MoveWorkspaceUp,
     FocusMonitorLeft,
     FocusMonitorRight,
     FocusMonitorDown,
