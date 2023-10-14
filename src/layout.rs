@@ -565,9 +565,19 @@ impl<W: LayoutElement> Layout<W> {
                         ws.set_output(Some(primary.output.clone()));
                     }
 
+                    let empty_was_focused =
+                        primary.active_workspace_idx == primary.workspaces.len() - 1;
+
+                    // Push the workspaces from the removed monitor in the end, right before the
+                    // last, empty, workspace.
                     let empty = primary.workspaces.remove(primary.workspaces.len() - 1);
                     primary.workspaces.extend(workspaces);
                     primary.workspaces.push(empty);
+
+                    // If the empty workspace was focused on the primary monitor, keep it focused.
+                    if empty_was_focused {
+                        primary.active_workspace_idx = primary.workspaces.len() - 1;
+                    }
 
                     MonitorSet::Normal {
                         monitors,
@@ -3187,6 +3197,33 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn removing_output_must_keep_empty_focus_on_primary() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::AddOutput(2),
+            Op::RemoveOutput(1),
+        ];
+
+        let mut layout = Layout::default();
+        for op in ops {
+            op.apply(&mut layout);
+        }
+
+        let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+            unreachable!()
+        };
+
+        // The workspace from the removed output was inserted at position 0, so the active workspace
+        // must change to 1 to keep the focus on the empty workspace.
+        assert_eq!(monitors[0].active_workspace_idx, 1);
     }
 
     proptest! {
