@@ -479,7 +479,13 @@ impl<W: LayoutElement> Layout<W> {
                 for i in (0..primary.workspaces.len()).rev() {
                     if primary.workspaces[i].original_output == id {
                         let ws = primary.workspaces.remove(i);
-                        workspaces.push(ws);
+
+                        // The user could've closed a window while remaining on this workspace, on
+                        // another monitor. However, we will add an empty workspace in the end
+                        // instead.
+                        if ws.has_windows() {
+                            workspaces.push(ws);
+                        }
 
                         if i <= primary.active_workspace_idx {
                             primary.active_workspace_idx =
@@ -488,10 +494,9 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 }
                 workspaces.reverse();
-                if workspaces.iter().all(|ws| ws.has_windows()) {
-                    // Make sure there's always an empty workspace.
-                    workspaces.push(Workspace::new(output.clone(), self.options.clone()));
-                }
+
+                // Make sure there's always an empty workspace.
+                workspaces.push(Workspace::new(output.clone(), self.options.clone()));
 
                 for ws in &mut workspaces {
                     ws.set_output(Some(output.clone()));
@@ -1073,6 +1078,11 @@ impl<W: LayoutElement> Layout<W> {
                     "secondary monitor must have all own workspaces"
                 );
             }
+
+            assert!(
+                monitor.workspaces.last().unwrap().columns.is_empty(),
+                "monitor must have an empty workspace in the end"
+            );
 
             // FIXME: verify that primary doesn't have any workspaces for which their own monitor
             // exists.
@@ -3284,6 +3294,31 @@ mod tests {
         };
 
         assert!(monitors[0].workspaces[0].has_windows());
+    }
+
+    #[test]
+    fn empty_workspaces_dont_move_back_to_original_output() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::FocusWorkspaceDown,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::AddOutput(2),
+            Op::RemoveOutput(1),
+            Op::FocusWorkspace(1),
+            Op::CloseWindow(1),
+            Op::AddOutput(1),
+        ];
+
+        check_ops(&ops);
     }
 
     proptest! {
