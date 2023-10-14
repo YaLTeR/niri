@@ -1042,7 +1042,7 @@ impl<W: LayoutElement> Layout<W> {
         for (idx, monitor) in monitors.iter().enumerate() {
             assert!(
                 !monitor.workspaces.is_empty(),
-                "monitor monitor must have at least one workspace"
+                "monitor must have at least one workspace"
             );
             assert!(monitor.active_workspace_idx < monitor.workspaces.len());
 
