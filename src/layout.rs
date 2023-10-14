@@ -1533,6 +1533,8 @@ impl<W: LayoutElement> Monitor<W> {
 
         // Don't animate this action.
         self.workspace_switch = None;
+
+        self.clean_up_workspaces();
     }
 
     pub fn switch_workspace_up(&mut self) {
@@ -1553,6 +1555,8 @@ impl<W: LayoutElement> Monitor<W> {
         ));
         // Don't animate this action.
         self.workspace_switch = None;
+
+        self.clean_up_workspaces();
     }
 
     pub fn consume_into_column(&mut self) {
@@ -3224,6 +3228,62 @@ mod tests {
         // The workspace from the removed output was inserted at position 0, so the active workspace
         // must change to 1 to keep the focus on the empty workspace.
         assert_eq!(monitors[0].active_workspace_idx, 1);
+    }
+
+    #[test]
+    fn move_to_workspace_by_idx_does_not_leave_empty_workspaces() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::MoveWindowToWorkspace(2),
+        ];
+
+        let mut layout = Layout::default();
+        for op in ops {
+            op.apply(&mut layout);
+        }
+
+        let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+            unreachable!()
+        };
+
+        assert!(monitors[0].workspaces[0].has_windows());
+    }
+
+    #[test]
+    fn focus_workspace_by_idx_does_not_leave_empty_workspaces() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::FocusWorkspaceDown,
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                activate: true,
+            },
+            Op::FocusWorkspaceUp,
+            Op::CloseWindow(0),
+            Op::FocusWorkspace(3),
+        ];
+
+        let mut layout = Layout::default();
+        for op in ops {
+            op.apply(&mut layout);
+        }
+
+        let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+            unreachable!()
+        };
+
+        assert!(monitors[0].workspaces[0].has_windows());
     }
 
     proptest! {
