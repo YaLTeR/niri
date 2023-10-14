@@ -1084,6 +1084,19 @@ impl<W: LayoutElement> Layout<W> {
                 "monitor must have an empty workspace in the end"
             );
 
+            // If there's no workspace switch in progress, there can't be any non-last non-active
+            // empty workspaces.
+            if monitor.workspace_switch.is_none() {
+                for (idx, ws) in monitor.workspaces.iter().enumerate().rev().skip(1) {
+                    if idx != monitor.active_workspace_idx {
+                        assert!(
+                            !ws.columns.is_empty(),
+                            "non-active workspace can't be empty except the last one"
+                        );
+                    }
+                }
+            }
+
             // FIXME: verify that primary doesn't have any workspaces for which their own monitor
             // exists.
 
