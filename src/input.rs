@@ -394,6 +394,8 @@ impl State {
                 }
 
                 let under = self.niri.surface_under_and_global_space(new_pos);
+                self.niri.pointer_focus = under.clone();
+                let under = under.map(|u| u.surface);
 
                 pointer.motion(
                     self,
@@ -435,6 +437,8 @@ impl State {
                 let pointer = self.niri.seat.get_pointer().unwrap();
 
                 let under = self.niri.surface_under_and_global_space(pos);
+                self.niri.pointer_focus = under.clone();
+                let under = under.map(|u| u.surface);
 
                 pointer.motion(
                     self,
@@ -534,6 +538,8 @@ impl State {
                 let pointer = self.niri.seat.get_pointer().unwrap();
 
                 let under = self.niri.surface_under_and_global_space(pos);
+                self.niri.pointer_focus = under.clone();
+                let under = under.map(|u| u.surface);
 
                 pointer.motion(
                     self,
@@ -621,6 +627,8 @@ impl State {
                 let pointer = self.niri.seat.get_pointer().unwrap();
 
                 let under = self.niri.surface_under_and_global_space(pos);
+                self.niri.pointer_focus = under.clone();
+                let under = under.map(|u| u.surface);
 
                 pointer.motion(
                     self,

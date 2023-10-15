@@ -136,6 +136,7 @@ pub struct Niri {
     pub default_cursor: Cursor,
     pub cursor_image: CursorImageStatus,
     pub dnd_icon: Option<WlSurface>,
+    pub pointer_focus: Option<PointerFocus>,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -177,6 +178,12 @@ pub enum RedrawState {
     WaitingForEstimatedVBlank(RegistrationToken),
     /// A redraw is queued on top of the above.
     WaitingForEstimatedVBlankAndQueued((RegistrationToken, Idle<'static>)),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PointerFocus {
+    pub output: Output,
+    pub surface: (WlSurface, Point<i32, Logical>),
 }
 
 // Not related to the one in Smithay.
@@ -234,6 +241,7 @@ impl State {
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
         self.update_focus();
+        self.refresh_cursor_focus();
 
         {
             let _span = tracy_client::span!("flush_clients");
@@ -243,7 +251,49 @@ impl State {
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
         let under = self.niri.surface_under_and_global_space(location);
+        self.niri.pointer_focus = under.clone();
+        let under = under.map(|u| u.surface);
+
         let pointer = &self.niri.seat.get_pointer().unwrap();
+        pointer.motion(
+            self,
+            under,
+            &MotionEvent {
+                location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time: get_monotonic_time().as_millis() as u32,
+            },
+        );
+        pointer.frame(self);
+        // FIXME: granular
+        self.niri.queue_redraw_all();
+    }
+
+    pub fn refresh_cursor_focus(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_cursor_focus");
+
+        let pointer = &self.niri.seat.get_pointer().unwrap();
+        let location = pointer.current_location();
+
+        let under = self.niri.surface_under_and_global_space(location);
+
+        // We're not changing the global cursor location here, so if the focus did not change, then
+        // nothing changed.
+        if self.niri.pointer_focus == under {
+            return;
+        }
+
+        // Don't refresh cursor focus during animations.
+        if let Some(PointerFocus { output, .. }) = &under {
+            let monitor = self.niri.layout.monitor_for_output(output).unwrap();
+            if monitor.are_animations_ongoing() {
+                return;
+            }
+        }
+
+        self.niri.pointer_focus = under.clone();
+        let under = under.map(|u| u.surface);
+
         pointer.motion(
             self,
             under,
@@ -538,6 +588,7 @@ impl Niri {
             default_cursor,
             cursor_image: CursorImageStatus::default_named(),
             dnd_icon: None,
+            pointer_focus: None,
 
             #[cfg(feature = "dbus")]
             dbus: None,
@@ -740,10 +791,12 @@ impl Niri {
     pub fn surface_under_and_global_space(
         &mut self,
         pos: Point<f64, Logical>,
-    ) -> Option<(WlSurface, Point<i32, Logical>)> {
+    ) -> Option<PointerFocus> {
         let (output, pos_within_output) = self.output_under(pos)?;
+        let output = output.clone();
+
         let (window, win_pos_within_output) =
-            self.layout.window_under(output, pos_within_output)?;
+            self.layout.window_under(&output, pos_within_output)?;
 
         let (surface, surface_pos_within_output) = window
             .surface_under(
@@ -751,10 +804,13 @@ impl Niri {
                 WindowSurfaceType::ALL,
             )
             .map(|(s, pos_within_window)| (s, pos_within_window + win_pos_within_output))?;
-        let output_pos_in_global_space = self.global_space.output_geometry(output).unwrap().loc;
+        let output_pos_in_global_space = self.global_space.output_geometry(&output).unwrap().loc;
         let surface_loc_in_global_space = surface_pos_within_output + output_pos_in_global_space;
 
-        Some((surface, surface_loc_in_global_space))
+        Some(PointerFocus {
+            output,
+            surface: (surface, surface_loc_in_global_space),
+        })
     }
 
     pub fn output_under_cursor(&self) -> Option<Output> {
