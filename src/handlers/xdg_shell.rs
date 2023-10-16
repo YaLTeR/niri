@@ -31,6 +31,18 @@ impl XdgShellHandler for State {
             ws.configure_new_window(&window);
         }
 
+        // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
+        // rid of the various client-side rounded corners also by using the tiled state.
+        let config = self.niri.config.borrow();
+        if config.prefer_no_csd {
+            window.toplevel().with_pending_state(|state| {
+                state.states.set(xdg_toplevel::State::TiledLeft);
+                state.states.set(xdg_toplevel::State::TiledRight);
+                state.states.set(xdg_toplevel::State::TiledTop);
+                state.states.set(xdg_toplevel::State::TiledBottom);
+            });
+        }
+
         // At the moment of creation, xdg toplevels must have no buffer.
         let existing = self.niri.unmapped_windows.insert(wl_surface, window);
         assert!(existing.is_none());
