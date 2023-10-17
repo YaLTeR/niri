@@ -10,7 +10,7 @@ use std::thread;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::ImportDma;
-use smithay::desktop::PopupKind;
+use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::output::Output;
@@ -73,6 +73,11 @@ impl InputMethodHandler for State {
     fn new_popup(&mut self, surface: PopupSurface) {
         if let Err(err) = self.niri.popups.track_popup(PopupKind::from(surface)) {
             warn!("error tracking ime popup {err:?}");
+        }
+    }
+    fn dismiss_popup(&mut self, surface: PopupSurface) {
+        if let Some(parent) = surface.get_parent().map(|parent| parent.surface.clone()) {
+            let _ = PopupManager::dismiss_popup(&parent, &PopupKind::from(surface));
         }
     }
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {

@@ -8,9 +8,8 @@ use std::time::Duration;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, Renderer};
-use smithay::backend::winit::{self, WinitError, WinitEvent, WinitGraphicsBackend};
+use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::winit::dpi::LogicalSize;
@@ -37,7 +36,7 @@ impl Winit {
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
             .with_title("niri");
-        let (backend, mut winit_event_loop) = winit::init_from_builder(builder).unwrap();
+        let (backend, winit) = winit::init_from_builder(builder).unwrap();
 
         let output_config = config
             .borrow()
@@ -50,7 +49,7 @@ impl Winit {
         let scale = scale.max(1.).round() as i32;
 
         let mode = Mode {
-            size: backend.window_size().physical_size,
+            size: backend.window_size(),
             refresh: 60_000,
         };
 
@@ -78,40 +77,30 @@ impl Winit {
 
         let damage_tracker = OutputDamageTracker::from_output(&output);
 
-        let timer = Timer::immediate();
         event_loop
-            .insert_source(timer, move |_, _, state| {
-                let res = winit_event_loop.dispatch_new_events(|event| match event {
-                    WinitEvent::Resized { size, .. } => {
-                        let winit = state.backend.winit();
-                        winit.output.change_current_state(
-                            Some(Mode {
-                                size,
-                                refresh: 60_000,
-                            }),
-                            None,
-                            None,
-                            None,
-                        );
-                        state.niri.output_resized(winit.output.clone());
-                    }
-                    WinitEvent::Input(event) => state.process_input_event(event),
-                    WinitEvent::Focus(_) => (),
-                    WinitEvent::Refresh => state
-                        .niri
-                        .queue_redraw(state.backend.winit().output.clone()),
-                });
-
-                // I want this to stop compiling if more errors are added.
-                #[allow(clippy::single_match)]
-                match res {
-                    Err(WinitError::WindowClosed) => {
-                        state.niri.stop_signal.stop();
-                        state.niri.remove_output(&state.backend.winit().output);
-                    }
-                    Ok(()) => (),
+            .insert_source(winit, move |event, _, state| match event {
+                WinitEvent::Resized { size, .. } => {
+                    let winit = state.backend.winit();
+                    winit.output.change_current_state(
+                        Some(Mode {
+                            size,
+                            refresh: 60_000,
+                        }),
+                        None,
+                        None,
+                        None,
+                    );
+                    state.niri.output_resized(winit.output.clone());
                 }
-                TimeoutAction::ToDuration(Duration::from_micros(16667))
+                WinitEvent::Input(event) => state.process_input_event(event),
+                WinitEvent::Focus(_) => (),
+                WinitEvent::Redraw => state
+                    .niri
+                    .queue_redraw(state.backend.winit().output.clone()),
+                WinitEvent::CloseRequested => {
+                    state.niri.stop_signal.stop();
+                    state.niri.remove_output(&state.backend.winit().output);
+                }
             })
             .unwrap();
 
