@@ -474,6 +474,8 @@ impl State {
                     }
                 };
 
+                self.update_pointer_focus();
+
                 pointer.button(
                     self,
                     &ButtonEvent {
@@ -519,6 +521,8 @@ impl State {
                         frame = frame.stop(Axis::Vertical);
                     }
                 }
+
+                self.update_pointer_focus();
 
                 let pointer = &self.niri.seat.get_pointer().unwrap();
                 pointer.axis(self, frame);
@@ -705,6 +709,11 @@ impl State {
 
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.niri.seat.get_pointer().unwrap();
+
+                if self.update_pointer_focus() {
+                    pointer.frame(self);
+                }
+
                 pointer.gesture_swipe_begin(
                     self,
                     &GestureSwipeBeginEvent {
@@ -729,6 +738,11 @@ impl State {
                 }
 
                 let pointer = self.niri.seat.get_pointer().unwrap();
+
+                if self.update_pointer_focus() {
+                    pointer.frame(self);
+                }
+
                 pointer.gesture_swipe_update(
                     self,
                     &GestureSwipeUpdateEvent {
@@ -751,6 +765,11 @@ impl State {
 
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.niri.seat.get_pointer().unwrap();
+
+                if self.update_pointer_focus() {
+                    pointer.frame(self);
+                }
+
                 pointer.gesture_swipe_end(
                     self,
                     &GestureSwipeEndEvent {
@@ -763,6 +782,11 @@ impl State {
             InputEvent::GesturePinchBegin { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.niri.seat.get_pointer().unwrap();
+
+                if self.update_pointer_focus() {
+                    pointer.frame(self);
+                }
+
                 pointer.gesture_pinch_begin(
                     self,
                     &GesturePinchBeginEvent {
@@ -774,6 +798,11 @@ impl State {
             }
             InputEvent::GesturePinchUpdate { event } => {
                 let pointer = self.niri.seat.get_pointer().unwrap();
+
+                if self.update_pointer_focus() {
+                    pointer.frame(self);
+                }
+
                 pointer.gesture_pinch_update(
                     self,
                     &GesturePinchUpdateEvent {
@@ -787,6 +816,11 @@ impl State {
             InputEvent::GesturePinchEnd { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.niri.seat.get_pointer().unwrap();
+
+                if self.update_pointer_focus() {
+                    pointer.frame(self);
+                }
+
                 pointer.gesture_pinch_end(
                     self,
                     &GesturePinchEndEvent {
@@ -799,6 +833,11 @@ impl State {
             InputEvent::GestureHoldBegin { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.niri.seat.get_pointer().unwrap();
+
+                if self.update_pointer_focus() {
+                    pointer.frame(self);
+                }
+
                 pointer.gesture_hold_begin(
                     self,
                     &GestureHoldBeginEvent {
@@ -811,6 +850,11 @@ impl State {
             InputEvent::GestureHoldEnd { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.niri.seat.get_pointer().unwrap();
+
+                if self.update_pointer_focus() {
+                    pointer.frame(self);
+                }
+
                 pointer.gesture_hold_end(
                     self,
                     &GestureHoldEndEvent {
