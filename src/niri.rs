@@ -241,7 +241,7 @@ impl State {
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
         self.update_focus();
-        self.refresh_cursor_focus();
+        self.refresh_pointer_focus();
 
         {
             let _span = tracy_client::span!("flush_clients");
@@ -269,8 +269,8 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn refresh_cursor_focus(&mut self) {
-        let _span = tracy_client::span!("Niri::refresh_cursor_focus");
+    pub fn refresh_pointer_focus(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_pointer_focus");
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
