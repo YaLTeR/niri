@@ -835,20 +835,6 @@ impl<W: LayoutElement> Layout<W> {
         ))
     }
 
-    pub fn workspace_for_output(&self, output: &Output) -> Option<&Workspace<W>> {
-        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
-            return None;
-        };
-
-        monitors.iter().find_map(|monitor| {
-            if &monitor.output == output {
-                Some(&monitor.workspaces[monitor.active_workspace_idx])
-            } else {
-                None
-            }
-        })
-    }
-
     pub fn windows_for_output(&self, output: &Output) -> impl Iterator<Item = &W> + '_ {
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             panic!()
@@ -1019,8 +1005,12 @@ impl<W: LayoutElement> Layout<W> {
         output: &Output,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, Point<i32, Logical>)> {
-        let ws = self.workspace_for_output(output).unwrap();
-        ws.window_under(pos_within_output)
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return None;
+        };
+
+        let mon = monitors.iter().find(|mon| &mon.output == output)?;
+        mon.window_under(pos_within_output)
     }
 
     #[cfg(test)]
@@ -1697,6 +1687,37 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = None;
 
         self.clean_up_workspaces();
+    }
+
+    pub fn window_under(
+        &self,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<(&W, Point<i32, Logical>)> {
+        match &self.workspace_switch {
+            Some(switch) => {
+                let size = output_size(&self.output);
+
+                let render_idx = switch.current_idx();
+                let before_idx = render_idx.floor() as usize;
+                let after_idx = render_idx.ceil() as usize;
+
+                let offset = ((render_idx - before_idx as f64) * size.h as f64).round() as i32;
+
+                let (idx, ws_offset) = if pos_within_output.y < (size.h - offset) as f64 {
+                    (before_idx, Point::from((0, offset)))
+                } else {
+                    (after_idx, Point::from((0, -size.h + offset)))
+                };
+
+                let ws = &self.workspaces[idx];
+                let (win, win_pos) = ws.window_under(pos_within_output + ws_offset.to_f64())?;
+                Some((win, win_pos - ws_offset))
+            }
+            None => {
+                let ws = &self.workspaces[self.active_workspace_idx];
+                ws.window_under(pos_within_output)
+            }
+        }
     }
 }
 
