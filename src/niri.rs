@@ -275,10 +275,10 @@ impl State {
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
 
-        // Don't refresh cursor focus during animations.
+        // Don't refresh cursor focus during transitions.
         if let Some((output, _)) = self.niri.output_under(location) {
             let monitor = self.niri.layout.monitor_for_output(output).unwrap();
-            if monitor.are_animations_ongoing() {
+            if monitor.are_transitions_ongoing() {
                 return;
             }
         }

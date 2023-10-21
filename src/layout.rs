@@ -1634,6 +1634,11 @@ impl<W: LayoutElement> Monitor<W> {
             || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
     }
 
+    pub fn are_transitions_ongoing(&self) -> bool {
+        self.workspace_switch.is_some()
+            || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
+    }
+
     fn update_config(&mut self, options: Rc<Options>) {
         for ws in &mut self.workspaces {
             ws.update_config(options.clone());
