@@ -283,12 +283,26 @@ impl State {
             }
         }
 
+        if !self.update_pointer_focus() {
+            return;
+        }
+
+        pointer.frame(self);
+        // FIXME: granular
+        self.niri.queue_redraw_all();
+    }
+
+    pub fn update_pointer_focus(&mut self) -> bool {
+        let _span = tracy_client::span!("Niri::update_pointer_focus");
+
+        let pointer = &self.niri.seat.get_pointer().unwrap();
+        let location = pointer.current_location();
         let under = self.niri.surface_under_and_global_space(location);
 
         // We're not changing the global cursor location here, so if the focus did not change, then
         // nothing changed.
         if self.niri.pointer_focus == under {
-            return;
+            return false;
         }
 
         self.niri.pointer_focus = under.clone();
@@ -303,9 +317,8 @@ impl State {
                 time: get_monotonic_time().as_millis() as u32,
             },
         );
-        pointer.frame(self);
-        // FIXME: granular
-        self.niri.queue_redraw_all();
+
+        true
     }
 
     pub fn move_cursor_to_output(&mut self, output: &Output) {
