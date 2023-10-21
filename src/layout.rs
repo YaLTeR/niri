@@ -756,11 +756,10 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
-            for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
+            for (_workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.has_window(window) {
                     *active_monitor_idx = monitor_idx;
-                    // TODO
-                    assert_eq!(mon.active_workspace_idx, workspace_idx);
+                    // FIXME: switch to this workspace if not already switching.
                     ws.activate_window(window);
                     break;
                 }
