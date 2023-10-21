@@ -1706,7 +1706,7 @@ impl Monitor<Window> {
         let output_scale = Scale::from(self.output.current_scale().fractional_scale());
         let output_transform = self.output.current_transform();
         let output_mode = self.output.current_mode().unwrap();
-        let output_size = output_transform.transform_size(output_mode.size);
+        let size = output_transform.transform_size(output_mode.size);
 
         match &self.workspace_switch {
             Some(switch) => {
@@ -1714,8 +1714,7 @@ impl Monitor<Window> {
                 let below_idx = render_idx.floor() as usize;
                 let above_idx = render_idx.ceil() as usize;
 
-                let offset =
-                    ((render_idx - below_idx as f64) * output_size.h as f64).round() as i32;
+                let offset = ((render_idx - below_idx as f64) * size.h as f64).round() as i32;
 
                 let below = self.workspaces[below_idx].render_elements(renderer);
                 let above = self.workspaces[above_idx].render_elements(renderer);
@@ -1725,7 +1724,7 @@ impl Monitor<Window> {
                         CropRenderElement::from_element(
                             elem,
                             output_scale,
-                            Rectangle::from_loc_and_size((0, 0), output_size),
+                            Rectangle::from_extemities((0, offset), (size.w, size.h)),
                         )?,
                         (0, -offset),
                         Relocate::Relative,
@@ -1736,9 +1735,9 @@ impl Monitor<Window> {
                         CropRenderElement::from_element(
                             elem,
                             output_scale,
-                            Rectangle::from_loc_and_size((0, 0), output_size),
+                            Rectangle::from_extemities((0, 0), (size.w, offset)),
                         )?,
-                        (0, -offset + output_size.h),
+                        (0, -offset + size.h),
                         Relocate::Relative,
                     ))
                 });
@@ -1753,7 +1752,7 @@ impl Monitor<Window> {
                             CropRenderElement::from_element(
                                 elem,
                                 output_scale,
-                                Rectangle::from_loc_and_size((0, 0), output_size),
+                                Rectangle::from_loc_and_size((0, 0), size),
                             )?,
                             (0, 0),
                             Relocate::Relative,
