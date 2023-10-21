@@ -1711,15 +1711,15 @@ impl Monitor<Window> {
         match &self.workspace_switch {
             Some(switch) => {
                 let render_idx = switch.current_idx();
-                let below_idx = render_idx.floor() as usize;
-                let above_idx = render_idx.ceil() as usize;
+                let before_idx = render_idx.floor() as usize;
+                let after_idx = render_idx.ceil() as usize;
 
-                let offset = ((render_idx - below_idx as f64) * size.h as f64).round() as i32;
+                let offset = ((render_idx - before_idx as f64) * size.h as f64).round() as i32;
 
-                let below = self.workspaces[below_idx].render_elements(renderer);
-                let above = self.workspaces[above_idx].render_elements(renderer);
+                let before = self.workspaces[before_idx].render_elements(renderer);
+                let after = self.workspaces[after_idx].render_elements(renderer);
 
-                let below = below.into_iter().filter_map(|elem| {
+                let before = before.into_iter().filter_map(|elem| {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
                             elem,
@@ -1730,7 +1730,7 @@ impl Monitor<Window> {
                         Relocate::Relative,
                     ))
                 });
-                let above = above.into_iter().filter_map(|elem| {
+                let after = after.into_iter().filter_map(|elem| {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
                             elem,
@@ -1741,7 +1741,7 @@ impl Monitor<Window> {
                         Relocate::Relative,
                     ))
                 });
-                below.chain(above).collect()
+                before.chain(after).collect()
             }
             None => {
                 let elements = self.workspaces[self.active_workspace_idx].render_elements(renderer);
