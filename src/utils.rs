@@ -7,12 +7,13 @@ use std::time::Duration;
 
 use anyhow::Context;
 use directories::UserDirs;
-use nix::time::{clock_gettime, ClockId};
+use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::utils::{Logical, Point, Rectangle};
 use time::OffsetDateTime;
 
 pub fn get_monotonic_time() -> Duration {
-    Duration::from(clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap())
+    let ts = clock_gettime(ClockId::Monotonic);
+    Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
 }
 
 pub fn center(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {

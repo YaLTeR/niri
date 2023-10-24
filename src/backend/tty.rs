@@ -1,13 +1,13 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::mem;
-use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
+use libc::dev_t;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
@@ -29,8 +29,7 @@ use smithay::reexports::drm::control::{
     connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags, Device, property,
 };
 use smithay::reexports::input::Libinput;
-use smithay::reexports::nix::fcntl::OFlag;
-use smithay::reexports::nix::libc::dev_t;
+use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::utils::DeviceFd;
@@ -285,9 +284,9 @@ impl Tty {
         debug!("adding device {path:?}");
         assert!(self.output_device.is_none());
 
-        let open_flags = OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK;
+        let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = self.session.open(path, open_flags)?;
-        let device_fd = unsafe { DrmDeviceFd::new(DeviceFd::from_raw_fd(fd)) };
+        let device_fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, drm_notifier) = DrmDevice::new(device_fd.clone(), true)?;
         let gbm = GbmDevice::new(device_fd)?;

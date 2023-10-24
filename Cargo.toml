@@ -11,7 +11,7 @@ anyhow = { version = "1.0.75" }
 arrayvec = "0.7.4"
 async-channel = { version = "1.9.0", optional = true }
 async-io = { version = "1.13.0", optional = true }
-bitflags = "2.4.0"
+bitflags = "2.4.1"
 clap = { version = "4.4.6", features = ["derive"] }
 directories = "5.0.1"
 image = { version = "0.24.7", default-features = false, features = ["png"] }
@@ -21,15 +21,14 @@ libc = "0.2.149"
 logind-zbus = { version = "3.1.2", optional = true }
 log = { version = "0.4.20", features = ["max_level_trace", "release_max_level_debug"] }
 miette = "5.10.0"
-nix = { version = "0.27.1", default-features = false, features = ["time"] }
 pipewire = { version = "0.7.2", optional = true }
-portable-atomic = { version = "1.4.3", default-features = false, features = ["float"] }
+portable-atomic = { version = "1.5.0", default-features = false, features = ["float"] }
 profiling = "1.0.11"
 sd-notify = "0.4.1"
 serde = { version = "1.0.189", features = ["derive"] }
-time = { version = "0.3.29", features = ["formatting", "local-offset", "macros"] }
+time = { version = "0.3.30", features = ["formatting", "local-offset", "macros"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_debug"] }
+tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracy-client = { version = "0.16.3", default-features = false }
 xcursor = "0.3.4"
 zbus = { version = "3.14.1", optional = true }

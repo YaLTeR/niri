@@ -37,7 +37,6 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
     self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
-use smithay::reexports::nix::libc::CLOCK_MONOTONIC;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
 use smithay::reexports::wayland_server::backend::{
@@ -46,7 +45,8 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{
-    IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform, SERIAL_COUNTER,
+    ClockSource, IsAlive, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
+    SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
     with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
@@ -506,10 +506,11 @@ impl Niri {
             |_| true,
         );
         let presentation_state =
-            PresentationState::new::<State>(&display_handle, CLOCK_MONOTONIC as u32);
+            PresentationState::new::<State>(&display_handle, Monotonic::id() as u32);
 
         let text_input_state = TextInputManagerState::new::<State>(&display_handle);
-        let input_method_state = InputMethodManagerState::new::<State>(&display_handle);
+        let input_method_state =
+            InputMethodManagerState::new::<State, _>(&display_handle, |_| true);
         let virtual_keyboard_state =
             VirtualKeyboardManagerState::new::<State, _>(&display_handle, |_| true);
 
