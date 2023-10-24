@@ -6,9 +6,9 @@ A scrollable-tiling Wayland compositor.
 
 ## Status
 
-Work in progress.
-Many things work, but some pieces of functionality expected of a Wayland compositor are missing.
-Also, have your waybars and fuzzels ready: niri is not a complete desktop environment.
+A lot of the essential functionality is implemented, plus some goodies on top.
+Feel free to give niri a try.
+Have your waybars and fuzzels ready: niri is not a complete desktop environment.
 
 https://github.com/YaLTeR/niri/assets/1794388/3713a563-d7a2-4c56-aa0b-b4986b5dc188
 
