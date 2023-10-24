@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -88,4 +88,18 @@ pub fn spawn(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl AsR
             warn!("error waiting for child: {err:?}");
         }
     }
+}
+
+pub fn write_png_rgba8(
+    w: impl Write,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+) -> Result<(), png::EncodingError> {
+    let mut encoder = png::Encoder::new(w, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+
+    let mut writer = encoder.write_header()?;
+    writer.write_image_data(pixels)
 }

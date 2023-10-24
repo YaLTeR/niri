@@ -9,7 +9,6 @@ use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
-use image::ImageFormat;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
@@ -85,7 +84,7 @@ use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
 use crate::layout::{output_size, Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
-use crate::utils::{center, get_monotonic_time, make_screenshot_path};
+use crate::utils::{center, get_monotonic_time, make_screenshot_path, write_png_rgba8};
 
 pub const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
 pub const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -1881,14 +1880,8 @@ impl Niri {
         thread::spawn(move || {
             let mut buf = vec![];
 
-            if let Err(err) = image::write_buffer_with_format(
-                &mut std::io::Cursor::new(&mut buf),
-                &pixels,
-                size.w as u32,
-                size.h as u32,
-                image::ColorType::Rgba8,
-                ImageFormat::Png,
-            ) {
+            let w = std::io::Cursor::new(&mut buf);
+            if let Err(err) = write_png_rgba8(w, size.w as u32, size.h as u32, &pixels) {
                 warn!("error encoding screenshot image: {err:?}");
                 return;
             }
@@ -1942,16 +1935,17 @@ impl Niri {
         debug!("saving screenshot to {path:?}");
 
         thread::spawn(move || {
-            let res = image::save_buffer(
-                &path,
-                &pixels,
-                size.w as u32,
-                size.h as u32,
-                image::ColorType::Rgba8,
-            );
+            let file = match std::fs::File::create(&path) {
+                Ok(file) => file,
+                Err(err) => {
+                    warn!("error creating file: {err:?}");
+                    return;
+                }
+            };
 
-            if let Err(err) = res {
-                warn!("error saving screenshot image: {err:?}");
+            let w = std::io::BufWriter::new(file);
+            if let Err(err) = write_png_rgba8(w, size.w as u32, size.h as u32, &pixels) {
+                warn!("error encoding screenshot image: {err:?}");
                 return;
             }
 
