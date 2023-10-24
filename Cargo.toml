@@ -26,7 +26,6 @@ portable-atomic = { version = "1.5.0", default-features = false, features = ["fl
 profiling = "1.0.11"
 sd-notify = "0.4.1"
 serde = { version = "1.0.189", features = ["derive"] }
-time = { version = "0.3.30", features = ["formatting", "local-offset", "macros"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracy-client = { version = "0.16.3", default-features = false }

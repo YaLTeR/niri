@@ -1,15 +1,16 @@
 use std::ffi::OsStr;
 use std::io::{self, Write};
+use std::os::unix::prelude::OsStrExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::ptr::null_mut;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use directories::UserDirs;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::utils::{Logical, Point, Rectangle};
-use time::OffsetDateTime;
 
 pub fn get_monotonic_time() -> Duration {
     let ts = clock_gettime(ClockId::Monotonic);
@@ -29,16 +30,27 @@ pub fn make_screenshot_path() -> anyhow::Result<PathBuf> {
     });
     path.push("Screenshots");
 
+    let mut buf = [0u8; 256];
+    let name;
     unsafe {
-        // are you kidding me
-        time::util::local_offset::set_soundness(time::util::local_offset::Soundness::Unsound);
-    };
+        let time = libc::time(null_mut());
+        ensure!(time != -1, "error in time()");
 
-    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-    let desc = time::macros::format_description!(
-        "Screenshot from [year]-[month]-[day] [hour]-[minute]-[second].png"
-    );
-    let name = now.format(desc).context("error formatting time")?;
+        let tm = libc::localtime(&time);
+        ensure!(!tm.is_null(), "error in localtime()");
+
+        let format = b"Screenshot from %Y-%m-%d %H-%M-%S.png\0";
+        let rv = libc::strftime(
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+            format.as_ptr().cast(),
+            tm,
+        );
+        ensure!(rv != 0, "error formatting time");
+
+        name = OsStr::from_bytes(&buf[..rv]);
+    }
+
     path.push(name);
 
     Ok(path)
