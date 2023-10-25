@@ -45,13 +45,6 @@ impl Winit {
             .find(|o| o.name == "winit")
             .cloned()
             .unwrap_or_default();
-        let scale = output_config.scale.clamp(0.1, 10.);
-        let scale = scale.max(1.).round() as i32;
-
-        let mode = Mode {
-            size: backend.window_size(),
-            refresh: 60_000,
-        };
 
         let output = Output::new(
             "winit".to_string(),
@@ -62,6 +55,12 @@ impl Winit {
                 model: "Winit".into(),
             },
         );
+
+        let mode = Mode {
+            size: backend.window_size(),
+            refresh: 60_000,
+        };
+        let scale = output_config.scale.clamp(1., 10.).ceil() as i32;
         output.change_current_state(
             Some(mode),
             Some(Transform::Flipped180),

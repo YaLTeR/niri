@@ -6,7 +6,7 @@ use smithay::reexports::wayland_server::protocol::wl_output;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
-use smithay::wayland::compositor::with_states;
+use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
@@ -264,8 +264,18 @@ impl State {
                             .initial_configure_sent
                     });
                     if !initial_configure_sent {
-                        // NOTE: This should never fail as the initial configure is always
-                        // allowed.
+                        if let Some(output) = popup.get_parent_surface().and_then(|parent| {
+                            self.niri
+                                .layout
+                                .find_window_and_output(&parent)
+                                .map(|(_, output)| output)
+                        }) {
+                            let scale = output.current_scale().integer_scale();
+                            let transform = output.current_transform();
+                            with_states(surface, |data| {
+                                send_surface_state(surface, data, scale, transform);
+                            });
+                        }
                         popup.send_configure().expect("initial configure failed");
                     }
                 }

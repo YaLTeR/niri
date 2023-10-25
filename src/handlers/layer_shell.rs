@@ -3,7 +3,7 @@ use smithay::desktop::{layer_map_for_output, LayerSurface, WindowSurfaceType};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::wayland::compositor::with_states;
+use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::wlr_layer::{
     Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
     WlrLayerShellState,
@@ -91,6 +91,12 @@ impl State {
             let layer = map
                 .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
                 .unwrap();
+
+            let scale = output.current_scale().integer_scale();
+            let transform = output.current_transform();
+            with_states(surface, |data| {
+                send_surface_state(surface, data, scale, transform);
+            });
 
             layer.layer_surface().send_configure();
         }

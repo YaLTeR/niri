@@ -19,6 +19,7 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle, Size};
+use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::selection::data_device::{
@@ -71,6 +72,17 @@ delegate_text_input_manager!(State);
 
 impl InputMethodHandler for State {
     fn new_popup(&mut self, surface: PopupSurface) {
+        if let Some((_, output)) = surface
+            .get_parent()
+            .and_then(|parent| self.niri.layout.find_window_and_output(&parent.surface))
+        {
+            let scale = output.current_scale().integer_scale();
+            let transform = output.current_transform();
+            let wl_surface = surface.wl_surface();
+            with_states(wl_surface, |data| {
+                send_surface_state(wl_surface, data, scale, transform);
+            });
+        }
         if let Err(err) = self.niri.popups.track_popup(PopupKind::from(surface)) {
             warn!("error tracking ime popup {err:?}");
         }
@@ -215,6 +227,12 @@ pub fn configure_lock_surface(surface: &LockSurface, output: &Output) {
     surface.with_pending_state(|states| {
         let size = output_size(output);
         states.size = Some(Size::from((size.w as u32, size.h as u32)));
+    });
+    let scale = output.current_scale().integer_scale();
+    let transform = output.current_transform();
+    let wl_surface = surface.wl_surface();
+    with_states(wl_surface, |data| {
+        send_surface_state(wl_surface, data, scale, transform);
     });
     surface.send_configure();
 }
