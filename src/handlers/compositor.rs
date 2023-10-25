@@ -9,8 +9,9 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
-    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
-    BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
+    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, send_surface_state,
+    with_states, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
+    SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::{ShmHandler, ShmState};
@@ -26,6 +27,16 @@ impl CompositorHandler for State {
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
         &client.get_data::<ClientState>().unwrap().compositor_state
+    }
+
+    fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
+        if let Some((_, output)) = self.niri.layout.find_window_and_output(parent) {
+            let scale = output.current_scale().integer_scale();
+            let transform = output.current_transform();
+            with_states(surface, |data| {
+                send_surface_state(surface, data, scale, transform);
+            });
+        }
     }
 
     fn new_surface(&mut self, surface: &WlSurface) {

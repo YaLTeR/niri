@@ -49,8 +49,8 @@ use smithay::utils::{
     SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
-    with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
-    TraversalAction,
+    send_surface_state, with_states, with_surface_tree_downward, CompositorClientState,
+    CompositorState, SurfaceData, TraversalAction,
 };
 use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::input_method::InputMethodManagerState;
@@ -507,7 +507,7 @@ impl Niri {
 
         let layout = Layout::new(&config_);
 
-        let compositor_state = CompositorState::new::<State>(&display_handle);
+        let compositor_state = CompositorState::new_v6::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
             &display_handle,
             [WmCapabilities::Fullscreen],
@@ -538,7 +538,7 @@ impl Niri {
             |_| true,
         );
         let presentation_state =
-            PresentationState::new::<State>(&display_handle, Monotonic::id() as u32);
+            PresentationState::new::<State>(&display_handle, Monotonic::ID as u32);
 
         let text_input_state = TextInputManagerState::new::<State>(&display_handle);
         let input_method_state =
@@ -1151,6 +1151,7 @@ impl Niri {
 
                 let pointer_pos = self.seat.get_pointer().unwrap().current_location();
 
+                let mut dnd_scale = 1;
                 for output in self.global_space.outputs() {
                     let geo = self.global_space.output_geometry(output).unwrap();
 
@@ -1168,10 +1169,15 @@ impl Niri {
 
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlap.loc -= surface_pos;
+                        dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
                         output_update(output, Some(overlap), surface);
                     } else {
                         output_update(output, None, surface);
                     }
+
+                    with_states(surface, |data| {
+                        send_surface_state(surface, data, dnd_scale, Transform::Normal);
+                    });
                 }
             }
             CursorImageStatus::Surface(surface) => {
@@ -1194,12 +1200,17 @@ impl Niri {
                     .as_ref()
                     .map(|surface| (surface, bbox_from_surface_tree(surface, surface_pos)));
 
+                // FIXME we basically need to pick the largest scale factor across the overlapping
+                // outputs, this is how it's usually done in clients as well.
+                let mut cursor_scale = 1;
+                let mut dnd_scale = 1;
                 for output in self.global_space.outputs() {
                     let geo = self.global_space.output_geometry(output).unwrap();
 
                     // Compute pointer surface overlap.
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlap.loc -= surface_pos;
+                        cursor_scale = cursor_scale.max(output.current_scale().integer_scale());
                         output_update(output, Some(overlap), surface);
                     } else {
                         output_update(output, None, surface);
@@ -1209,11 +1220,21 @@ impl Niri {
                     if let Some((surface, bbox)) = dnd {
                         if let Some(mut overlap) = geo.intersection(bbox) {
                             overlap.loc -= surface_pos;
+                            dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
                             output_update(output, Some(overlap), surface);
                         } else {
                             output_update(output, None, surface);
                         }
                     }
+                }
+
+                with_states(surface, |data| {
+                    send_surface_state(surface, data, cursor_scale, Transform::Normal);
+                });
+                if let Some((surface, _)) = dnd {
+                    with_states(surface, |data| {
+                        send_surface_state(surface, data, dnd_scale, Transform::Normal);
+                    });
                 }
             }
         }

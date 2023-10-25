@@ -529,9 +529,6 @@ impl Tty {
             .map(|info| (info.manufacturer, info.model))
             .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
 
-        let scale = config.scale.clamp(0.1, 10.);
-        let scale = scale.max(1.).round() as i32;
-
         let output = Output::new(
             output_name.clone(),
             PhysicalProperties {
@@ -541,7 +538,9 @@ impl Tty {
                 make,
             },
         );
+
         let wl_mode = Mode::from(*mode);
+        let scale = config.scale.clamp(1., 10.).ceil() as i32;
         output.change_current_state(Some(wl_mode), None, Some(Scale::Integer(scale)), None);
         output.set_preferred(wl_mode);
 
