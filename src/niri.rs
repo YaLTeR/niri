@@ -1069,7 +1069,7 @@ impl Niri {
     }
 
     pub fn pointer_element(
-        &mut self,
+        &self,
         renderer: &mut GlesRenderer,
         output: &Output,
     ) -> Vec<OutputRenderElements<GlesRenderer>> {
@@ -1224,7 +1224,7 @@ impl Niri {
     }
 
     fn render(
-        &mut self,
+        &self,
         renderer: &mut GlesRenderer,
         output: &Output,
         include_pointer: bool,
@@ -1241,7 +1241,7 @@ impl Niri {
 
         // If the session is locked, draw the lock surface.
         if self.is_locked() {
-            let state = self.output_state.get_mut(output).unwrap();
+            let state = self.output_state.get(output).unwrap();
             if let Some(surface) = state.lock_surface.as_ref() {
                 elements.extend(render_elements_from_surface_tree(
                     renderer,
@@ -1808,11 +1808,7 @@ impl Niri {
         }
     }
 
-    pub fn screenshot(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        output: &Output,
-    ) -> anyhow::Result<()> {
+    pub fn screenshot(&self, renderer: &mut GlesRenderer, output: &Output) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
         let size = output.current_mode().unwrap().size;
@@ -1825,7 +1821,7 @@ impl Niri {
     }
 
     pub fn screenshot_window(
-        &mut self,
+        &self,
         renderer: &mut GlesRenderer,
         output: &Output,
         window: &Window,
@@ -1849,11 +1845,7 @@ impl Niri {
             .context("error saving screenshot")
     }
 
-    fn save_screenshot(
-        &mut self,
-        size: Size<i32, Physical>,
-        pixels: Vec<u8>,
-    ) -> anyhow::Result<()> {
+    fn save_screenshot(&self, size: Size<i32, Physical>, pixels: Vec<u8>) -> anyhow::Result<()> {
         let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
 
@@ -1903,7 +1895,7 @@ impl Niri {
 
     #[cfg(feature = "dbus")]
     pub fn screenshot_all_outputs(
-        &mut self,
+        &self,
         renderer: &mut GlesRenderer,
         include_pointer: bool,
         on_done: impl FnOnce(PathBuf) + Send + 'static,
