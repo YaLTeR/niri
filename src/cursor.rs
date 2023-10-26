@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
@@ -13,10 +14,12 @@ use xcursor::CursorTheme;
 
 static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
 
+type CursorCache = HashMap<i32, (TextureBuffer<GlesTexture>, Point<i32, Physical>)>;
+
 pub struct Cursor {
     images: Vec<Image>,
     size: i32,
-    cache: HashMap<i32, (TextureBuffer<GlesTexture>, Point<i32, Physical>)>,
+    cache: RefCell<CursorCache>,
 }
 
 impl Cursor {
@@ -47,16 +50,17 @@ impl Cursor {
         Self {
             images,
             size: size as i32,
-            cache: HashMap::new(),
+            cache: Default::default(),
         }
     }
 
     pub fn get(
-        &mut self,
+        &self,
         renderer: &mut GlesRenderer,
         scale: i32,
     ) -> (TextureBuffer<GlesTexture>, Point<i32, Physical>) {
         self.cache
+            .borrow_mut()
             .entry(scale)
             .or_insert_with_key(|scale| {
                 let _span = tracy_client::span!("create cursor texture");
@@ -93,7 +97,7 @@ impl Cursor {
     }
 
     pub fn get_cached_hotspot(&self, scale: i32) -> Option<Point<i32, Physical>> {
-        self.cache.get(&scale).map(|(_, hotspot)| *hotspot)
+        self.cache.borrow().get(&scale).map(|(_, hotspot)| *hotspot)
     }
 }
 
