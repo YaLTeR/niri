@@ -263,6 +263,7 @@ impl State {
 
         // These should be called periodically, before flushing the clients.
         self.niri.layout.refresh();
+        self.niri.check_cursor_image_surface_alive();
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
         self.update_focus();
@@ -1082,21 +1083,16 @@ impl Niri {
         let (default_buffer, default_hotspot) = self.default_cursor.get(renderer, output_scale_int);
         let default_hotspot = default_hotspot.to_logical(output_scale_int);
 
-        let hotspot = if let CursorImageStatus::Surface(surface) = &mut self.cursor_image {
-            if surface.alive() {
-                with_states(surface, |states| {
-                    states
-                        .data_map
-                        .get::<Mutex<CursorImageAttributes>>()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .hotspot
-                })
-            } else {
-                self.cursor_image = CursorImageStatus::default_named();
-                default_hotspot
-            }
+        let hotspot = if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+            with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<Mutex<CursorImageAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .hotspot
+            })
         } else {
             default_hotspot
         };
@@ -1137,6 +1133,14 @@ impl Niri {
         }
 
         pointer_elements
+    }
+
+    pub fn check_cursor_image_surface_alive(&mut self) {
+        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+            if !surface.alive() {
+                self.cursor_image = CursorImageStatus::default_named();
+            }
+        }
     }
 
     pub fn refresh_pointer_outputs(&self) {
