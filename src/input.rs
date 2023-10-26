@@ -116,7 +116,7 @@ impl State {
                             spawn(command, args);
                         }
                     }
-                    Action::Screenshot => {
+                    Action::ScreenshotScreen => {
                         let active = self.niri.layout.active_output().cloned();
                         if let Some(active) = active {
                             if let Some(renderer) = self.backend.renderer() {
