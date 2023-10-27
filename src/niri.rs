@@ -86,8 +86,8 @@ use crate::layout::{output_size, Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::utils::{center, get_monotonic_time, make_screenshot_path, write_png_rgba8};
 
-pub const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
-pub const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
+const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
+const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -169,6 +169,9 @@ pub struct OutputState {
     /// If there are no commits, then we won't have a timer running, so the estimated sequence will
     /// not increase.
     pub current_estimated_sequence: Option<u32>,
+    /// Solid color buffer for the background that we use instead of clearing to avoid damage
+    /// tracking issues and make screenshots easier.
+    pub background_buffer: SolidColorBuffer,
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
@@ -750,6 +753,7 @@ impl Niri {
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval),
             current_estimated_sequence: None,
+            background_buffer: SolidColorBuffer::new(size, CLEAR_COLOR),
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
@@ -817,12 +821,16 @@ impl Niri {
     }
 
     pub fn output_resized(&mut self, output: Output) {
+        let output_size = output_size(&output);
+        let is_locked = self.is_locked();
+
         layer_map_for_output(&output).arrange();
         self.layout.update_output_size(&output);
 
-        let is_locked = self.is_locked();
         if let Some(state) = self.output_state.get_mut(&output) {
-            state.lock_color_buffer.resize(output_size(&output));
+            state.background_buffer.resize(output_size);
+
+            state.lock_color_buffer.resize(output_size);
             if is_locked {
                 if let Some(lock_surface) = &state.lock_surface {
                     configure_lock_surface(lock_surface, &output);
@@ -1308,6 +1316,19 @@ impl Niri {
         // Then the lower layer-shell elements.
         extend_from_layer(&mut elements, Layer::Bottom);
         extend_from_layer(&mut elements, Layer::Background);
+
+        // Then the background.
+        let state = self.output_state.get(output).unwrap();
+        elements.push(
+            SolidColorRenderElement::from_buffer(
+                &state.background_buffer,
+                (0, 0),
+                output_scale,
+                1.,
+                Kind::Unspecified,
+            )
+            .into(),
+        );
 
         elements
     }
@@ -2078,10 +2099,6 @@ fn render_to_dmabuf(
     let mut frame = renderer
         .render(size, Transform::Normal)
         .context("error starting frame")?;
-
-    frame
-        .clear(CLEAR_COLOR, &[output_rect])
-        .context("error clearing")?;
 
     for element in elements.iter().rev() {
         let src = element.src();
