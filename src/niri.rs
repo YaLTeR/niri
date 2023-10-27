@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -136,6 +136,8 @@ pub struct Niri {
     pub presentation_state: PresentationState,
 
     pub seat: Seat<State>,
+    /// Scancodes of the keys to suppress.
+    pub suppressed_keys: HashSet<u32>,
 
     pub default_cursor: Cursor,
     pub cursor_image: CursorImageStatus,
@@ -633,6 +635,7 @@ impl Niri {
             primary_selection_state,
             data_control_state,
             popups: PopupManager::default(),
+            suppressed_keys: HashSet::new(),
             presentation_state,
 
             seat,
