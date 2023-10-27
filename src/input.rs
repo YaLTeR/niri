@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -6,7 +8,7 @@ use smithay::backend::input::{
     TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
 };
 use smithay::backend::libinput::LibinputInputBackend;
-use smithay::input::keyboard::{keysyms, FilterResult, KeysymHandle, ModifiersState};
+use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
     GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -15,103 +17,14 @@ use smithay::input::pointer::{
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
-use crate::config::{Action, Config, Modifiers};
+use crate::config::{Action, Binds, Modifiers};
 use crate::niri::State;
 use crate::utils::{center, get_monotonic_time, spawn};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompositorMod {
     Super,
     Alt,
-}
-
-impl From<Action> for FilterResult<Action> {
-    fn from(value: Action) -> Self {
-        match value {
-            Action::None => FilterResult::Forward,
-            action => FilterResult::Intercept(action),
-        }
-    }
-}
-
-fn action(
-    config: &Config,
-    comp_mod: CompositorMod,
-    keysym: KeysymHandle,
-    mods: ModifiersState,
-) -> Action {
-    use keysyms::*;
-
-    // Handle hardcoded binds.
-    #[allow(non_upper_case_globals)] // wat
-    match keysym.modified_sym().raw() {
-        modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
-            let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
-            return Action::ChangeVt(vt);
-        }
-        KEY_XF86PowerOff => return Action::Suspend,
-        _ => (),
-    }
-
-    // Handle configured binds.
-    let mut modifiers = Modifiers::empty();
-    if mods.ctrl {
-        modifiers |= Modifiers::CTRL;
-    }
-    if mods.shift {
-        modifiers |= Modifiers::SHIFT;
-    }
-    if mods.alt {
-        modifiers |= Modifiers::ALT;
-    }
-    if mods.logo {
-        modifiers |= Modifiers::SUPER;
-    }
-
-    let (mod_down, mut comp_mod) = match comp_mod {
-        CompositorMod::Super => (mods.logo, Modifiers::SUPER),
-        CompositorMod::Alt => (mods.alt, Modifiers::ALT),
-    };
-    if mod_down {
-        modifiers |= Modifiers::COMPOSITOR;
-    } else {
-        comp_mod = Modifiers::empty();
-    }
-
-    let Some(&raw) = keysym.raw_syms().first() else {
-        return Action::None;
-    };
-    for bind in &config.binds.0 {
-        if bind.key.keysym != raw {
-            continue;
-        }
-
-        if bind.key.modifiers | comp_mod == modifiers {
-            return bind.actions.first().cloned().unwrap_or(Action::None);
-        }
-    }
-
-    Action::None
-}
-
-fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
-    match event {
-        InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
-        InputEvent::PointerMotion { .. }
-        | InputEvent::PointerMotionAbsolute { .. }
-        | InputEvent::PointerButton { .. }
-        | InputEvent::PointerAxis { .. }
-        | InputEvent::GestureSwipeBegin { .. }
-        | InputEvent::GesturePinchBegin { .. }
-        | InputEvent::GestureHoldBegin { .. }
-        | InputEvent::TouchDown { .. }
-        | InputEvent::TouchMotion { .. }
-        | InputEvent::TabletToolAxis { .. }
-        | InputEvent::TabletToolProximity { .. }
-        | InputEvent::TabletToolTip { .. }
-        | InputEvent::TabletToolButton { .. } => true,
-        // Ignore events like device additions and removals, key releases, gesture ends.
-        _ => false,
-    }
 }
 
 impl State {
@@ -135,232 +48,245 @@ impl State {
             InputEvent::Keyboard { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time_msec(&event);
+                let pressed = event.state() == KeyState::Pressed;
 
-                let mut action = self.niri.seat.get_keyboard().unwrap().input(
+                let Some(Some(action)) = self.niri.seat.get_keyboard().unwrap().input(
                     self,
                     event.key_code(),
                     event.state(),
                     serial,
                     time,
-                    |self_, mods, keysym| {
-                        if event.state() == KeyState::Pressed {
-                            let config = self_.niri.config.borrow();
-                            action(&config, comp_mod, keysym, *mods).into()
-                        } else {
-                            FilterResult::Forward
-                        }
+                    |this, mods, keysym| {
+                        let bindings = &this.niri.config.borrow().binds;
+                        let key_code = event.key_code();
+                        let modified = keysym.modified_sym();
+                        let raw = keysym.raw_syms().first().cloned();
+                        should_intercept_key(
+                            &mut this.niri.suppressed_keys,
+                            bindings,
+                            comp_mod,
+                            key_code,
+                            modified,
+                            raw,
+                            pressed,
+                            *mods,
+                        )
                     },
-                );
+                ) else {
+                    return;
+                };
 
-                // Filter actions when the session is locked.
-                if self.niri.is_locked() {
-                    match action {
-                        Some(
+                // Filter actions when the key is released or the session is locked.
+                if !pressed
+                    || self.niri.is_locked()
+                        && !matches!(
+                            action,
                             Action::Quit
-                            | Action::ChangeVt(_)
-                            | Action::Suspend
-                            | Action::PowerOffMonitors,
-                        ) => (),
-                        _ => action = None,
-                    }
+                                | Action::ChangeVt(_)
+                                | Action::Suspend
+                                | Action::PowerOffMonitors
+                        )
+                {
+                    return;
                 }
 
-                if let Some(action) = action {
-                    match action {
-                        Action::None => unreachable!(),
-                        Action::Quit => {
-                            info!("quitting because quit bind was pressed");
-                            self.niri.stop_signal.stop()
+                match action {
+                    Action::Quit => {
+                        info!("quitting because quit bind was pressed");
+                        self.niri.stop_signal.stop()
+                    }
+                    Action::ChangeVt(vt) => {
+                        self.backend.change_vt(vt);
+                        // Changing `VT` may not deliver the key releases, so clear the state.
+                        self.niri.suppressed_keys.clear();
+                    }
+                    Action::Suspend => {
+                        self.backend.suspend();
+                        // Suspend may not deliver the key releases, so clear the state.
+                        self.niri.suppressed_keys.clear();
+                    }
+                    Action::PowerOffMonitors => {
+                        self.niri.deactivate_monitors(&self.backend);
+                    }
+                    Action::ToggleDebugTint => {
+                        self.backend.toggle_debug_tint();
+                    }
+                    Action::Spawn(command) => {
+                        if let Some((command, args)) = command.split_first() {
+                            spawn(command, args);
                         }
-                        Action::ChangeVt(vt) => {
-                            self.backend.change_vt(vt);
-                        }
-                        Action::Suspend => {
-                            self.backend.suspend();
-                        }
-                        Action::PowerOffMonitors => {
-                            self.niri.deactivate_monitors(&self.backend);
-                        }
-                        Action::ToggleDebugTint => {
-                            self.backend.toggle_debug_tint();
-                        }
-                        Action::Spawn(command) => {
-                            if let Some((command, args)) = command.split_first() {
-                                spawn(command, args);
-                            }
-                        }
-                        Action::Screenshot => {
-                            let active = self.niri.layout.active_output().cloned();
-                            if let Some(active) = active {
-                                if let Some(renderer) = self.backend.renderer() {
-                                    if let Err(err) = self.niri.screenshot(renderer, &active) {
-                                        warn!("error taking screenshot: {err:?}");
-                                    }
+                    }
+                    Action::Screenshot => {
+                        let active = self.niri.layout.active_output().cloned();
+                        if let Some(active) = active {
+                            if let Some(renderer) = self.backend.renderer() {
+                                if let Err(err) = self.niri.screenshot(renderer, &active) {
+                                    warn!("error taking screenshot: {err:?}");
                                 }
                             }
                         }
-                        Action::ScreenshotWindow => {
-                            let active = self.niri.layout.active_window();
-                            if let Some((window, output)) = active {
-                                if let Some(renderer) = self.backend.renderer() {
-                                    if let Err(err) =
-                                        self.niri.screenshot_window(renderer, &output, &window)
-                                    {
-                                        warn!("error taking screenshot: {err:?}");
-                                    }
+                    }
+                    Action::ScreenshotWindow => {
+                        let active = self.niri.layout.active_window();
+                        if let Some((window, output)) = active {
+                            if let Some(renderer) = self.backend.renderer() {
+                                if let Err(err) =
+                                    self.niri.screenshot_window(renderer, &output, &window)
+                                {
+                                    warn!("error taking screenshot: {err:?}");
                                 }
                             }
                         }
-                        Action::CloseWindow => {
-                            if let Some(window) = self.niri.layout.focus() {
-                                window.toplevel().send_close();
-                            }
+                    }
+                    Action::CloseWindow => {
+                        if let Some(window) = self.niri.layout.focus() {
+                            window.toplevel().send_close();
                         }
-                        Action::FullscreenWindow => {
-                            let focus = self.niri.layout.focus().cloned();
-                            if let Some(window) = focus {
-                                self.niri.layout.toggle_fullscreen(&window);
-                            }
+                    }
+                    Action::FullscreenWindow => {
+                        let focus = self.niri.layout.focus().cloned();
+                        if let Some(window) = focus {
+                            self.niri.layout.toggle_fullscreen(&window);
                         }
-                        Action::MoveColumnLeft => {
-                            self.niri.layout.move_left();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
+                    }
+                    Action::MoveColumnLeft => {
+                        self.niri.layout.move_left();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::MoveColumnRight => {
+                        self.niri.layout.move_right();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::MoveWindowDown => {
+                        self.niri.layout.move_down();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::MoveWindowUp => {
+                        self.niri.layout.move_up();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::FocusColumnLeft => {
+                        self.niri.layout.focus_left();
+                    }
+                    Action::FocusColumnRight => {
+                        self.niri.layout.focus_right();
+                    }
+                    Action::FocusWindowDown => {
+                        self.niri.layout.focus_down();
+                    }
+                    Action::FocusWindowUp => {
+                        self.niri.layout.focus_up();
+                    }
+                    Action::MoveWindowToWorkspaceDown => {
+                        self.niri.layout.move_to_workspace_down();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::MoveWindowToWorkspaceUp => {
+                        self.niri.layout.move_to_workspace_up();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::MoveWindowToWorkspace(idx) => {
+                        self.niri.layout.move_to_workspace(idx);
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::FocusWorkspaceDown => {
+                        self.niri.layout.switch_workspace_down();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::FocusWorkspaceUp => {
+                        self.niri.layout.switch_workspace_up();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::FocusWorkspace(idx) => {
+                        self.niri.layout.switch_workspace(idx);
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::MoveWorkspaceDown => {
+                        self.niri.layout.move_workspace_down();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::MoveWorkspaceUp => {
+                        self.niri.layout.move_workspace_up();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::ConsumeWindowIntoColumn => {
+                        self.niri.layout.consume_into_column();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::ExpelWindowFromColumn => {
+                        self.niri.layout.expel_from_column();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::SwitchPresetColumnWidth => {
+                        self.niri.layout.toggle_width();
+                    }
+                    Action::MaximizeColumn => {
+                        self.niri.layout.toggle_full_width();
+                    }
+                    Action::FocusMonitorLeft => {
+                        if let Some(output) = self.niri.output_left() {
+                            self.niri.layout.focus_output(&output);
+                            self.move_cursor_to_output(&output);
                         }
-                        Action::MoveColumnRight => {
-                            self.niri.layout.move_right();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
+                    }
+                    Action::FocusMonitorRight => {
+                        if let Some(output) = self.niri.output_right() {
+                            self.niri.layout.focus_output(&output);
+                            self.move_cursor_to_output(&output);
                         }
-                        Action::MoveWindowDown => {
-                            self.niri.layout.move_down();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
+                    }
+                    Action::FocusMonitorDown => {
+                        if let Some(output) = self.niri.output_down() {
+                            self.niri.layout.focus_output(&output);
+                            self.move_cursor_to_output(&output);
                         }
-                        Action::MoveWindowUp => {
-                            self.niri.layout.move_up();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
+                    }
+                    Action::FocusMonitorUp => {
+                        if let Some(output) = self.niri.output_up() {
+                            self.niri.layout.focus_output(&output);
+                            self.move_cursor_to_output(&output);
                         }
-                        Action::FocusColumnLeft => {
-                            self.niri.layout.focus_left();
+                    }
+                    Action::MoveWindowToMonitorLeft => {
+                        if let Some(output) = self.niri.output_left() {
+                            self.niri.layout.move_to_output(&output);
+                            self.move_cursor_to_output(&output);
                         }
-                        Action::FocusColumnRight => {
-                            self.niri.layout.focus_right();
+                    }
+                    Action::MoveWindowToMonitorRight => {
+                        if let Some(output) = self.niri.output_right() {
+                            self.niri.layout.move_to_output(&output);
+                            self.move_cursor_to_output(&output);
                         }
-                        Action::FocusWindowDown => {
-                            self.niri.layout.focus_down();
+                    }
+                    Action::MoveWindowToMonitorDown => {
+                        if let Some(output) = self.niri.output_down() {
+                            self.niri.layout.move_to_output(&output);
+                            self.move_cursor_to_output(&output);
                         }
-                        Action::FocusWindowUp => {
-                            self.niri.layout.focus_up();
+                    }
+                    Action::MoveWindowToMonitorUp => {
+                        if let Some(output) = self.niri.output_up() {
+                            self.niri.layout.move_to_output(&output);
+                            self.move_cursor_to_output(&output);
                         }
-                        Action::MoveWindowToWorkspaceDown => {
-                            self.niri.layout.move_to_workspace_down();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::MoveWindowToWorkspaceUp => {
-                            self.niri.layout.move_to_workspace_up();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::MoveWindowToWorkspace(idx) => {
-                            self.niri.layout.move_to_workspace(idx);
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::FocusWorkspaceDown => {
-                            self.niri.layout.switch_workspace_down();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::FocusWorkspaceUp => {
-                            self.niri.layout.switch_workspace_up();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::FocusWorkspace(idx) => {
-                            self.niri.layout.switch_workspace(idx);
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::MoveWorkspaceDown => {
-                            self.niri.layout.move_workspace_down();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::MoveWorkspaceUp => {
-                            self.niri.layout.move_workspace_up();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::ConsumeWindowIntoColumn => {
-                            self.niri.layout.consume_into_column();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::ExpelWindowFromColumn => {
-                            self.niri.layout.expel_from_column();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
-                        Action::SwitchPresetColumnWidth => {
-                            self.niri.layout.toggle_width();
-                        }
-                        Action::MaximizeColumn => {
-                            self.niri.layout.toggle_full_width();
-                        }
-                        Action::FocusMonitorLeft => {
-                            if let Some(output) = self.niri.output_left() {
-                                self.niri.layout.focus_output(&output);
-                                self.move_cursor_to_output(&output);
-                            }
-                        }
-                        Action::FocusMonitorRight => {
-                            if let Some(output) = self.niri.output_right() {
-                                self.niri.layout.focus_output(&output);
-                                self.move_cursor_to_output(&output);
-                            }
-                        }
-                        Action::FocusMonitorDown => {
-                            if let Some(output) = self.niri.output_down() {
-                                self.niri.layout.focus_output(&output);
-                                self.move_cursor_to_output(&output);
-                            }
-                        }
-                        Action::FocusMonitorUp => {
-                            if let Some(output) = self.niri.output_up() {
-                                self.niri.layout.focus_output(&output);
-                                self.move_cursor_to_output(&output);
-                            }
-                        }
-                        Action::MoveWindowToMonitorLeft => {
-                            if let Some(output) = self.niri.output_left() {
-                                self.niri.layout.move_to_output(&output);
-                                self.move_cursor_to_output(&output);
-                            }
-                        }
-                        Action::MoveWindowToMonitorRight => {
-                            if let Some(output) = self.niri.output_right() {
-                                self.niri.layout.move_to_output(&output);
-                                self.move_cursor_to_output(&output);
-                            }
-                        }
-                        Action::MoveWindowToMonitorDown => {
-                            if let Some(output) = self.niri.output_down() {
-                                self.niri.layout.move_to_output(&output);
-                                self.move_cursor_to_output(&output);
-                            }
-                        }
-                        Action::MoveWindowToMonitorUp => {
-                            if let Some(output) = self.niri.output_up() {
-                                self.niri.layout.move_to_output(&output);
-                                self.move_cursor_to_output(&output);
-                            }
-                        }
-                        Action::SetColumnWidth(change) => {
-                            self.niri.layout.set_column_width(change);
-                        }
+                    }
+                    Action::SetColumnWidth(change) => {
+                        self.niri.layout.set_column_width(change);
                     }
                 }
             }
@@ -897,5 +823,245 @@ impl State {
                 let _ = device.config_accel_set_speed(c.accel_speed);
             }
         }
+    }
+}
+
+/// Check whether the key should be intercepted and mark intercepted
+/// pressed keys as `suppressed`, thus preventing `releases` corresponding
+/// to them from being delivered.
+#[allow(clippy::too_many_arguments)]
+fn should_intercept_key(
+    suppressed_keys: &mut HashSet<u32>,
+    bindings: &Binds,
+    comp_mod: CompositorMod,
+    key_code: u32,
+    modified: Keysym,
+    raw: Option<Keysym>,
+    pressed: bool,
+    mods: ModifiersState,
+) -> FilterResult<Option<Action>> {
+    // Actions are only triggered on presses, release of the key
+    // shouldn't try to intercept anything unless we have marked
+    // the key to suppress.
+    if !pressed && !suppressed_keys.contains(&key_code) {
+        return FilterResult::Forward;
+    }
+
+    match (action(bindings, comp_mod, modified, raw, mods), pressed) {
+        (Some(action), true) => {
+            suppressed_keys.insert(key_code);
+            FilterResult::Intercept(Some(action))
+        }
+        (_, false) => {
+            suppressed_keys.remove(&key_code);
+            FilterResult::Intercept(None)
+        }
+        (None, true) => FilterResult::Forward,
+    }
+}
+
+fn action(
+    bindings: &Binds,
+    comp_mod: CompositorMod,
+    modified: Keysym,
+    raw: Option<Keysym>,
+    mods: ModifiersState,
+) -> Option<Action> {
+    use keysyms::*;
+
+    // Handle hardcoded binds.
+    #[allow(non_upper_case_globals)] // wat
+    match modified.raw() {
+        modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
+            let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
+            return Some(Action::ChangeVt(vt));
+        }
+        KEY_XF86PowerOff => return Some(Action::Suspend),
+        _ => (),
+    }
+
+    // Handle configured binds.
+    let mut modifiers = Modifiers::empty();
+    if mods.ctrl {
+        modifiers |= Modifiers::CTRL;
+    }
+    if mods.shift {
+        modifiers |= Modifiers::SHIFT;
+    }
+    if mods.alt {
+        modifiers |= Modifiers::ALT;
+    }
+    if mods.logo {
+        modifiers |= Modifiers::SUPER;
+    }
+
+    let (mod_down, mut comp_mod) = match comp_mod {
+        CompositorMod::Super => (mods.logo, Modifiers::SUPER),
+        CompositorMod::Alt => (mods.alt, Modifiers::ALT),
+    };
+    if mod_down {
+        modifiers |= Modifiers::COMPOSITOR;
+    } else {
+        comp_mod = Modifiers::empty();
+    }
+
+    let Some(raw) = raw else {
+        return None;
+    };
+
+    for bind in &bindings.0 {
+        if bind.key.keysym != raw {
+            continue;
+        }
+
+        if bind.key.modifiers | comp_mod == modifiers {
+            return bind.actions.first().cloned();
+        }
+    }
+
+    None
+}
+
+fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
+    match event {
+        InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
+        InputEvent::PointerMotion { .. }
+        | InputEvent::PointerMotionAbsolute { .. }
+        | InputEvent::PointerButton { .. }
+        | InputEvent::PointerAxis { .. }
+        | InputEvent::GestureSwipeBegin { .. }
+        | InputEvent::GesturePinchBegin { .. }
+        | InputEvent::GestureHoldBegin { .. }
+        | InputEvent::TouchDown { .. }
+        | InputEvent::TouchMotion { .. }
+        | InputEvent::TabletToolAxis { .. }
+        | InputEvent::TabletToolProximity { .. }
+        | InputEvent::TabletToolTip { .. }
+        | InputEvent::TabletToolButton { .. } => true,
+        // Ignore events like device additions and removals, key releases, gesture ends.
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
+
+    use super::{should_intercept_key, CompositorMod};
+    use crate::config::{Action, Bind, Binds, Key, Modifiers};
+
+    #[test]
+    fn bindings_suppress_keys() {
+        let close_keysym = Keysym::q;
+        let bindings = Binds(vec![Bind {
+            key: Key {
+                keysym: close_keysym,
+                modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
+            },
+            actions: vec![Action::CloseWindow],
+        }]);
+
+        let comp_mod = CompositorMod::Super;
+        let mut suppressed_keys = HashSet::new();
+
+        // The key_code we pick is arbitrary, the only thing
+        // that matters is that they are different between cases.
+
+        let close_key_code = close_keysym.into();
+        let close_key_event = |suppr: &mut HashSet<u32>, mods: ModifiersState, pressed| {
+            should_intercept_key(
+                suppr,
+                &bindings,
+                comp_mod,
+                close_key_code,
+                close_keysym,
+                Some(close_keysym),
+                pressed,
+                mods,
+            )
+        };
+
+        // Key event with the code which can't trigger any action.
+        let none_key_event = |suppr: &mut HashSet<u32>, mods: ModifiersState, pressed| {
+            should_intercept_key(
+                suppr,
+                &bindings,
+                comp_mod,
+                Keysym::l.into(),
+                Keysym::l,
+                Some(Keysym::l),
+                pressed,
+                mods,
+            )
+        };
+
+        let mut mods = ModifiersState::default();
+        mods.logo = true;
+        mods.ctrl = true;
+
+        // Action press/release.
+
+        let filter = close_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(
+            filter,
+            FilterResult::Intercept(Some(Action::CloseWindow))
+        ));
+        assert!(suppressed_keys.contains(&close_key_code));
+
+        let filter = close_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Intercept(None)));
+        assert!(suppressed_keys.is_empty());
+
+        // Remove mod to make it for a binding.
+
+        mods.shift = true;
+        let filter = close_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(filter, FilterResult::Forward));
+
+        mods.shift = false;
+        let filter = close_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Forward));
+
+        // Just none press/release.
+
+        let filter = none_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(filter, FilterResult::Forward));
+
+        let filter = none_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Forward));
+
+        // Press action, press arbitrary, release action, release arbitrary.
+
+        let filter = close_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(
+            filter,
+            FilterResult::Intercept(Some(Action::CloseWindow))
+        ));
+
+        let filter = none_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(filter, FilterResult::Forward));
+
+        let filter = close_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Intercept(None)));
+
+        let filter = none_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Forward));
+
+        // Trigger and remove all mods.
+
+        let filter = close_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(
+            filter,
+            FilterResult::Intercept(Some(Action::CloseWindow))
+        ));
+
+        mods = Default::default();
+        let filter = close_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Intercept(None)));
+
+        // Ensure that no keys are being suppressed.
+        assert!(suppressed_keys.is_empty());
     }
 }

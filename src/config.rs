@@ -229,8 +229,6 @@ bitflags! {
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub enum Action {
-    #[knuffel(skip)]
-    None,
     Quit,
     #[knuffel(skip)]
     ChangeVt(i32),
