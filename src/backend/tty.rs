@@ -66,14 +66,16 @@ type GbmDrmCompositor = DrmCompositor<
 struct OutputDevice {
     id: dev_t,
     token: RegistrationToken,
-    drm: DrmDevice,
-    gbm: GbmDevice<DrmDeviceFd>,
     gles: GlesRenderer,
     formats: HashSet<DrmFormat>,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
     dmabuf_state: DmabufState,
     dmabuf_global: DmabufGlobal,
+    // SAFETY: drop after all the objects used with them are dropped.
+    // See https://github.com/Smithay/smithay/issues/1102.
+    drm: DrmDevice,
+    gbm: GbmDevice<DrmDeviceFd>,
 }
 
 #[derive(Debug, Clone, Copy)]
