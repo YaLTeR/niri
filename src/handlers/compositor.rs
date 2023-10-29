@@ -161,7 +161,8 @@ impl CompositorHandler for State {
         self.layer_shell_handle_commit(surface);
 
         // This might be a cursor surface.
-        if matches!(&self.niri.cursor_image, CursorImageStatus::Surface(s) if s == surface) {
+        if matches!(&self.niri.cursor_manager.cursor_image(), CursorImageStatus::Surface(s) if s == surface)
+        {
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
         }

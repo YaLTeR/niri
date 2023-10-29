@@ -35,10 +35,10 @@ use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
 };
 use smithay::{
-    delegate_data_control, delegate_data_device, delegate_dmabuf, delegate_input_method_manager,
-    delegate_output, delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
-    delegate_seat, delegate_session_lock, delegate_tablet_manager, delegate_text_input_manager,
-    delegate_virtual_keyboard_manager,
+    delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
+    delegate_input_method_manager, delegate_output, delegate_pointer_gestures,
+    delegate_presentation, delegate_primary_selection, delegate_seat, delegate_session_lock,
+    delegate_tablet_manager, delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
 use crate::layout::output_size;
@@ -53,7 +53,7 @@ impl SeatHandler for State {
     }
 
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
-        self.niri.cursor_image = image;
+        self.niri.cursor_manager.set_cursor_image(image);
         // FIXME: more granular
         self.niri.queue_redraw_all();
     }
@@ -66,6 +66,7 @@ impl SeatHandler for State {
     }
 }
 delegate_seat!(State);
+delegate_cursor_shape!(State);
 delegate_tablet_manager!(State);
 delegate_pointer_gestures!(State);
 delegate_text_input_manager!(State);
