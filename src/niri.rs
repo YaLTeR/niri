@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
@@ -45,13 +45,14 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{
-    ClockSource, IsAlive, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
+    ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
     SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
     send_surface_state, with_states, with_surface_tree_downward, CompositorClientState,
     CompositorState, SurfaceData, TraversalAction,
 };
+use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
@@ -75,7 +76,7 @@ use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
 use crate::backend::{Backend, RenderResult, Tty, Winit};
 use crate::config::Config;
-use crate::cursor::Cursor;
+use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
@@ -96,6 +97,8 @@ pub struct Niri {
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
     pub socket_name: OsString,
+
+    pub start_time: Instant,
 
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
     // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
@@ -139,8 +142,9 @@ pub struct Niri {
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<u32>,
 
-    pub default_cursor: Cursor,
-    pub cursor_image: CursorImageStatus,
+    pub cursor_manager: CursorManager,
+    pub cursor_texture_cache: CursorTextureCache,
+    pub cursor_shape_manager_state: CursorShapeManagerState,
     pub dnd_icon: Option<WlSurface>,
     pub pointer_focus: Option<PointerFocus>,
 
@@ -268,7 +272,7 @@ impl State {
 
         // These should be called periodically, before flushing the clients.
         self.niri.layout.refresh();
-        self.niri.check_cursor_image_surface_alive();
+        self.niri.cursor_manager.check_cursor_image_surface_alive();
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
         self.update_focus();
@@ -393,8 +397,10 @@ impl State {
         let mut old_config = self.niri.config.borrow_mut();
 
         if config.cursor != old_config.cursor {
-            self.niri.default_cursor =
-                Cursor::load(&config.cursor.xcursor_theme, config.cursor.xcursor_size);
+            self.niri
+                .cursor_manager
+                .reload(&config.cursor.xcursor_theme, config.cursor.xcursor_size);
+            self.niri.cursor_texture_cache.clear();
         }
 
         *old_config = config;
@@ -568,8 +574,9 @@ impl Niri {
         .unwrap();
         seat.add_pointer();
 
-        let default_cursor =
-            Cursor::load(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
+        let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
+        let cursor_manager =
+            CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
@@ -607,8 +614,9 @@ impl Niri {
 
             event_loop,
             stop_signal,
-            display_handle,
             socket_name,
+            display_handle,
+            start_time: Instant::now(),
 
             layout,
             global_space: Space::default(),
@@ -639,8 +647,9 @@ impl Niri {
             presentation_state,
 
             seat,
-            default_cursor,
-            cursor_image: CursorImageStatus::default_named(),
+            cursor_manager,
+            cursor_texture_cache: Default::default(),
+            cursor_shape_manager_state,
             dnd_icon: None,
             pointer_focus: None,
 
@@ -1085,51 +1094,60 @@ impl Niri {
         output: &Output,
     ) -> Vec<OutputRenderElements<GlesRenderer>> {
         let _span = tracy_client::span!("Niri::pointer_element");
-
-        let output_scale = Scale::from(output.current_scale().fractional_scale());
+        let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
 
-        let output_scale_int = output.current_scale().integer_scale();
-        let (default_buffer, default_hotspot) = self.default_cursor.get(renderer, output_scale_int);
-        let default_hotspot = default_hotspot.to_logical(output_scale_int);
+        // Get the render cursor to draw.
+        let cursor_scale = output_scale.integer_scale();
+        let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
 
-        let hotspot = if let CursorImageStatus::Surface(surface) = &self.cursor_image {
-            with_states(surface, |states| {
-                states
-                    .data_map
-                    .get::<Mutex<CursorImageAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .hotspot
-            })
-        } else {
-            default_hotspot
-        };
-        let pointer_pos = (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
 
-        let mut pointer_elements = match &self.cursor_image {
-            CursorImageStatus::Hidden => vec![],
-            CursorImageStatus::Surface(surface) => render_elements_from_surface_tree(
-                renderer,
-                surface,
-                pointer_pos,
-                output_scale,
-                1.,
-                Kind::Cursor,
-            ),
-            // Default shape catch-all
-            _ => vec![OutputRenderElements::DefaultPointer(
-                TextureRenderElement::from_texture_buffer(
-                    pointer_pos.to_f64(),
-                    &default_buffer,
-                    None,
-                    None,
-                    None,
+        let (mut pointer_elements, pointer_pos) = match render_cursor {
+            RenderCursor::Hidden => (vec![], pointer_pos.to_physical_precise_round(output_scale)),
+            RenderCursor::Surface { surface, hotspot } => {
+                let pointer_pos =
+                    (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
+
+                let pointer_elements = render_elements_from_surface_tree(
+                    renderer,
+                    &surface,
+                    pointer_pos,
+                    output_scale,
+                    1.,
                     Kind::Cursor,
-                ),
-            )],
+                );
+
+                (pointer_elements, pointer_pos)
+            }
+            RenderCursor::Named {
+                icon,
+                scale,
+                cursor,
+            } => {
+                let (idx, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
+                let hotspot = XCursor::hotspot(frame).to_logical(scale);
+                let pointer_pos =
+                    (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
+
+                let texture = self
+                    .cursor_texture_cache
+                    .get(renderer, icon, scale, &cursor, idx);
+
+                let pointer_elements = vec![OutputRenderElements::NamedPointer(
+                    TextureRenderElement::from_texture_buffer(
+                        pointer_pos.to_f64(),
+                        &texture,
+                        None,
+                        None,
+                        None,
+                        Kind::Cursor,
+                    ),
+                )];
+
+                (pointer_elements, pointer_pos)
+            }
         };
 
         if let Some(dnd_icon) = &self.dnd_icon {
@@ -1146,56 +1164,11 @@ impl Niri {
         pointer_elements
     }
 
-    pub fn check_cursor_image_surface_alive(&mut self) {
-        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
-            if !surface.alive() {
-                self.cursor_image = CursorImageStatus::default_named();
-            }
-        }
-    }
-
-    pub fn refresh_pointer_outputs(&self) {
+    pub fn refresh_pointer_outputs(&mut self) {
         let _span = tracy_client::span!("Niri::refresh_pointer_outputs");
 
-        match &self.cursor_image {
-            CursorImageStatus::Hidden | CursorImageStatus::Named(_) => {
-                // There's no cursor surface, but there might be a DnD icon.
-                let Some(surface) = &self.dnd_icon else {
-                    return;
-                };
-
-                let pointer_pos = self.seat.get_pointer().unwrap().current_location();
-
-                let mut dnd_scale = 1;
-                for output in self.global_space.outputs() {
-                    let geo = self.global_space.output_geometry(output).unwrap();
-
-                    // The default cursor is rendered at the right scale for each output, which
-                    // means that it may have a different hotspot for each output.
-                    let output_scale = output.current_scale().integer_scale();
-                    let Some(hotspot) = self.default_cursor.get_cached_hotspot(output_scale) else {
-                        // Oh well; it'll get cached next time we render.
-                        continue;
-                    };
-                    let hotspot = hotspot.to_logical(output_scale);
-
-                    let surface_pos = pointer_pos.to_i32_round() - hotspot;
-                    let bbox = bbox_from_surface_tree(surface, surface_pos);
-
-                    if let Some(mut overlap) = geo.intersection(bbox) {
-                        overlap.loc -= surface_pos;
-                        dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
-                        output_update(output, Some(overlap), surface);
-                    } else {
-                        output_update(output, None, surface);
-                    }
-
-                    with_states(surface, |data| {
-                        send_surface_state(surface, data, dnd_scale, Transform::Normal);
-                    });
-                }
-            }
-            CursorImageStatus::Surface(surface) => {
+        match self.cursor_manager.cursor_image().clone() {
+            CursorImageStatus::Surface(ref surface) => {
                 let hotspot = with_states(surface, |states| {
                     states
                         .data_map
@@ -1247,6 +1220,52 @@ impl Niri {
                     send_surface_state(surface, data, cursor_scale, Transform::Normal);
                 });
                 if let Some((surface, _)) = dnd {
+                    with_states(surface, |data| {
+                        send_surface_state(surface, data, dnd_scale, Transform::Normal);
+                    });
+                }
+            }
+            cursor_image => {
+                // There's no cursor surface, but there might be a DnD icon.
+                let Some(surface) = &self.dnd_icon else {
+                    return;
+                };
+
+                let icon = if let CursorImageStatus::Named(icon) = cursor_image {
+                    icon
+                } else {
+                    Default::default()
+                };
+
+                let pointer_pos = self.seat.get_pointer().unwrap().current_location();
+
+                let mut dnd_scale = 1;
+                for output in self.global_space.outputs() {
+                    let geo = self.global_space.output_geometry(output).unwrap();
+
+                    // The default cursor is rendered at the right scale for each output, which
+                    // means that it may have a different hotspot for each output.
+                    let output_scale = output.current_scale().integer_scale();
+                    let cursor = self
+                        .cursor_manager
+                        .get_cursor_with_name(icon, output_scale)
+                        .unwrap_or_else(|| self.cursor_manager.get_default_cursor(output_scale));
+
+                    // For simplicity, we always use frame 0 for this computation. Let's hope the
+                    // hotspot doesn't change between frames.
+                    let hotspot = XCursor::hotspot(&cursor.frames()[0]).to_logical(output_scale);
+
+                    let surface_pos = pointer_pos.to_i32_round() - hotspot;
+                    let bbox = bbox_from_surface_tree(surface, surface_pos);
+
+                    if let Some(mut overlap) = geo.intersection(bbox) {
+                        overlap.loc -= surface_pos;
+                        dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
+                        output_update(output, Some(overlap), surface);
+                    } else {
+                        output_update(output, None, surface);
+                    }
+
                     with_states(surface, |data| {
                         send_surface_state(surface, data, dnd_scale, Transform::Normal);
                     });
@@ -1414,6 +1433,11 @@ impl Niri {
             .unwrap()
             .are_animations_ongoing();
 
+        // Also keep redrawing if the current cursor is animated.
+        state.unfinished_animations_remain |= self
+            .cursor_manager
+            .is_current_cursor_animated(output.current_scale().integer_scale());
+
         // Render the elements.
         let elements = self.render(renderer, output, true);
 
@@ -1495,7 +1519,7 @@ impl Niri {
         //
         // While we only have cursors and DnD icons crossing output boundaries though, it doesn't
         // matter all that much.
-        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+        if let CursorImageStatus::Surface(surface) = &self.cursor_manager.cursor_image() {
             with_surface_tree_downward(
                 surface,
                 (),
@@ -1614,7 +1638,7 @@ impl Niri {
             );
         }
 
-        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+        if let CursorImageStatus::Surface(surface) = &self.cursor_manager.cursor_image() {
             send_dmabuf_feedback_surface_tree(
                 surface,
                 output,
@@ -1690,7 +1714,7 @@ impl Niri {
             send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
         }
 
-        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+        if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
             send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
         }
     }
@@ -1702,7 +1726,7 @@ impl Niri {
     ) -> OutputPresentationFeedback {
         let mut feedback = OutputPresentationFeedback::new(output);
 
-        if let CursorImageStatus::Surface(surface) = &self.cursor_image {
+        if let CursorImageStatus::Surface(surface) = &self.cursor_manager.cursor_image() {
             take_presentation_feedback_surface_tree(
                 surface,
                 &mut feedback,
@@ -2037,7 +2061,7 @@ render_elements! {
     pub OutputRenderElements<R> where R: ImportAll;
     Monitor = MonitorRenderElement<R>,
     Wayland = WaylandSurfaceRenderElement<R>,
-    DefaultPointer = TextureRenderElement<<R as Renderer>::TextureId>,
+    NamedPointer = TextureRenderElement<<R as Renderer>::TextureId>,
     SolidColor = SolidColorRenderElement,
 }
 
