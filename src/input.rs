@@ -945,11 +945,7 @@ fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
-    use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
-
-    use super::{should_intercept_key, CompositorMod};
+    use super::*;
     use crate::config::{Action, Bind, Binds, Key, Modifiers};
 
     #[test]
