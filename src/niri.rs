@@ -1885,7 +1885,7 @@ impl Niri {
         let size = output.current_mode().unwrap().size;
         let scale = Scale::from(output.current_scale().fractional_scale());
         let elements = self.render(renderer, output, true);
-        let pixels = render_to_vec(renderer, size, scale, &elements)?;
+        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, &elements)?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -1910,7 +1910,7 @@ impl Niri {
             scale,
             1.,
         );
-        let pixels = render_to_vec(renderer, size, scale, &elements)?;
+        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, &elements)?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -1996,7 +1996,7 @@ impl Niri {
         }
 
         // FIXME: scale.
-        let pixels = render_to_vec(renderer, size, Scale::from(1.), &elements)?;
+        let pixels = render_to_vec(renderer, size, Scale::from(1.), Fourcc::Abgr8888, &elements)?;
 
         let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
@@ -2077,23 +2077,26 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
-fn render_and_download(
+fn render_to_texture(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
     scale: Scale<f64>,
+    fourcc: Fourcc,
     elements: &[impl RenderElement<GlesRenderer>],
-) -> anyhow::Result<GlesMapping> {
-    let _span = tracy_client::span!("render_and_download");
+) -> anyhow::Result<(GlesTexture, SyncPoint)> {
+    let _span = tracy_client::span!("render_to_texture");
 
     let output_rect = Rectangle::from_loc_and_size((0, 0), size);
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
-    let fourcc = Fourcc::Abgr8888;
 
     let texture: GlesTexture = renderer
         .create_buffer(fourcc, buffer_size)
         .context("error creating texture")?;
 
-    renderer.bind(texture).context("error binding texture")?;
+    renderer
+        .bind(texture.clone())
+        .context("error binding texture")?;
+
     let mut frame = renderer
         .render(size, Transform::Normal)
         .context("error starting frame")?;
@@ -2107,8 +2110,22 @@ fn render_and_download(
     }
 
     let sync_point = frame.finish().context("error finishing frame")?;
+    Ok((texture, sync_point))
+}
+
+fn render_and_download(
+    renderer: &mut GlesRenderer,
+    size: Size<i32, Physical>,
+    scale: Scale<f64>,
+    fourcc: Fourcc,
+    elements: &[impl RenderElement<GlesRenderer>],
+) -> anyhow::Result<GlesMapping> {
+    let _span = tracy_client::span!("render_and_download");
+
+    let (_, sync_point) = render_to_texture(renderer, size, scale, fourcc, elements)?;
     sync_point.wait();
 
+    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
     let mapping = renderer
         .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), buffer_size), fourcc)
         .context("error copying framebuffer")?;
@@ -2119,12 +2136,13 @@ fn render_to_vec(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
     scale: Scale<f64>,
+    fourcc: Fourcc,
     elements: &[impl RenderElement<GlesRenderer>],
 ) -> anyhow::Result<Vec<u8>> {
     let _span = tracy_client::span!("render_to_vec");
 
     let mapping =
-        render_and_download(renderer, size, scale, elements).context("error rendering")?;
+        render_and_download(renderer, size, scale, fourcc, elements).context("error rendering")?;
     let copy = renderer
         .map_texture(&mapping)
         .context("error mapping texture")?;
