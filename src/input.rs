@@ -19,6 +19,7 @@ use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::config::{Action, Binds, Modifiers};
 use crate::niri::State;
+use crate::screenshot_ui::ScreenshotUi;
 use crate::utils::{center, get_monotonic_time, spawn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +71,7 @@ impl State {
                             raw,
                             pressed,
                             *mods,
+                            &this.niri.screenshot_ui,
                         )
                     },
                 ) else {
@@ -127,6 +129,32 @@ impl State {
                                     warn!("error taking screenshot: {err:?}");
                                 }
                             }
+                        }
+                    }
+                    Action::ConfirmScreenshot => {
+                        if let Some(renderer) = self.backend.renderer() {
+                            match self.niri.screenshot_ui.capture(renderer) {
+                                Ok((size, pixels)) => {
+                                    if let Err(err) = self.niri.save_screenshot(size, pixels) {
+                                        warn!("error saving screenshot: {err:?}");
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!("error capturing screenshot: {err:?}");
+                                }
+                            }
+                        }
+
+                        self.niri.screenshot_ui.close();
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::CancelScreenshot => {
+                        self.niri.screenshot_ui.close();
+                        self.niri.queue_redraw_all();
+                    }
+                    Action::Screenshot => {
+                        if let Some(renderer) = self.backend.renderer() {
+                            self.niri.open_screenshot_ui(renderer);
                         }
                     }
                     Action::ScreenshotWindow => {
@@ -335,6 +363,21 @@ impl State {
                     }
                 }
 
+                if let Some(output) = self.niri.screenshot_ui.selection_output() {
+                    let geom = self.niri.global_space.output_geometry(output).unwrap();
+                    let mut point = new_pos;
+                    point.x = point
+                        .x
+                        .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
+                    point.y = point
+                        .y
+                        .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
+                    let point = (point - geom.loc.to_f64())
+                        .to_physical(output.current_scale().fractional_scale())
+                        .to_i32_round();
+                    self.niri.screenshot_ui.pointer_motion(point);
+                }
+
                 let under = self.niri.surface_under_and_global_space(new_pos);
                 self.niri.pointer_focus = under.clone();
                 let under = under.map(|u| u.surface);
@@ -378,6 +421,21 @@ impl State {
 
                 let pointer = self.niri.seat.get_pointer().unwrap();
 
+                if let Some(output) = self.niri.screenshot_ui.selection_output() {
+                    let geom = self.niri.global_space.output_geometry(output).unwrap();
+                    let mut point = pos;
+                    point.x = point
+                        .x
+                        .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
+                    point.y = point
+                        .y
+                        .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
+                    let point = (point - geom.loc.to_f64())
+                        .to_physical(output.current_scale().fractional_scale())
+                        .to_i32_round();
+                    self.niri.screenshot_ui.pointer_motion(point);
+                }
+
                 let under = self.niri.surface_under_and_global_space(pos);
                 self.niri.pointer_focus = under.clone();
                 let under = under.map(|u| u.surface);
@@ -417,6 +475,34 @@ impl State {
                 };
 
                 self.update_pointer_focus();
+
+                if let Some(button) = event.button() {
+                    let pos = pointer.current_location();
+                    if let Some((output, _)) = self.niri.output_under(pos) {
+                        let output = output.clone();
+                        let geom = self.niri.global_space.output_geometry(&output).unwrap();
+                        let mut point = pos;
+                        // Re-clamp as pointer can be within 0.5 from the limit which will round up
+                        // to a wrong value.
+                        point.x = point
+                            .x
+                            .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
+                        point.y = point
+                            .y
+                            .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
+                        let point = (point - geom.loc.to_f64())
+                            .to_physical(output.current_scale().fractional_scale())
+                            .to_i32_round();
+                        if self.niri.screenshot_ui.pointer_button(
+                            output,
+                            point,
+                            button,
+                            button_state,
+                        ) {
+                            self.niri.queue_redraw_all();
+                        }
+                    }
+                }
 
                 pointer.button(
                     self,
@@ -842,6 +928,7 @@ fn should_intercept_key(
     raw: Option<Keysym>,
     pressed: bool,
     mods: ModifiersState,
+    screenshot_ui: &ScreenshotUi,
 ) -> FilterResult<Option<Action>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -850,7 +937,20 @@ fn should_intercept_key(
         return FilterResult::Forward;
     }
 
-    match (action(bindings, comp_mod, modified, raw, mods), pressed) {
+    let mut final_action = action(bindings, comp_mod, modified, raw, mods);
+    if screenshot_ui.is_open()
+        // Allow only a subset of compositor actions while the screenshot UI is open,
+        // since the user cannot see the screen.
+        && !matches!(
+            final_action,
+            Some(Action::Quit | Action::ChangeVt(_) | Action::Suspend | Action::PowerOffMonitors)
+        )
+    {
+        // Otherwise, use the screenshot UI action.
+        final_action = screenshot_ui.action(raw, mods);
+    }
+
+    match (final_action, pressed) {
         (Some(action), true) => {
             suppressed_keys.insert(key_code);
             FilterResult::Intercept(Some(action))
@@ -965,6 +1065,8 @@ mod tests {
         let comp_mod = CompositorMod::Super;
         let mut suppressed_keys = HashSet::new();
 
+        let screenshot_ui = ScreenshotUi::new();
+
         // The key_code we pick is arbitrary, the only thing
         // that matters is that they are different between cases.
 
@@ -979,6 +1081,7 @@ mod tests {
                 Some(close_keysym),
                 pressed,
                 mods,
+                &screenshot_ui,
             )
         };
 
@@ -993,6 +1096,7 @@ mod tests {
                 Some(Keysym::l),
                 pressed,
                 mods,
+                &screenshot_ui,
             )
         };
 

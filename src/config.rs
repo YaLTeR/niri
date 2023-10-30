@@ -236,6 +236,11 @@ pub enum Action {
     PowerOffMonitors,
     ToggleDebugTint,
     Spawn(#[knuffel(arguments)] Vec<String>),
+    #[knuffel(skip)]
+    ConfirmScreenshot,
+    #[knuffel(skip)]
+    CancelScreenshot,
+    Screenshot,
     ScreenshotScreen,
     ScreenshotWindow,
     CloseWindow,

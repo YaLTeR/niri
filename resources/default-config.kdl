@@ -213,7 +213,8 @@ binds {
     Mod+Minus { set-column-width "-10%"; }
     Mod+Equal { set-column-width "+10%"; }
 
-    Print { screenshot-screen; }
+    Print { screenshot; }
+    Ctrl+Print { screenshot-screen; }
     Alt+Print { screenshot-window; }
 
     Mod+Shift+E { quit; }

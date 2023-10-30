@@ -20,6 +20,7 @@ use smithay::backend::renderer::element::{
     RenderElementStates,
 };
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
@@ -85,6 +86,7 @@ use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
 use crate::layout::{output_size, Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
+use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::{center, get_monotonic_time, make_screenshot_path, write_png_rgba8};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
@@ -149,6 +151,8 @@ pub struct Niri {
     pub pointer_focus: Option<PointerFocus>,
 
     pub lock_state: LockState,
+
+    pub screenshot_ui: ScreenshotUi,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -310,7 +314,7 @@ impl State {
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
 
-        if !self.niri.is_locked() {
+        if !self.niri.is_locked() && !self.niri.screenshot_ui.is_open() {
             // Don't refresh cursor focus during transitions.
             if let Some((output, _)) = self.niri.output_under(location) {
                 let monitor = self.niri.layout.monitor_for_output(output).unwrap();
@@ -366,6 +370,8 @@ impl State {
     pub fn update_focus(&mut self) {
         let focus = if self.niri.is_locked() {
             self.niri.lock_surface_focus()
+        } else if self.niri.screenshot_ui.is_open() {
+            None
         } else {
             self.niri.layer_surface_focus().or_else(|| {
                 self.niri
@@ -580,6 +586,8 @@ impl Niri {
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
+        let screenshot_ui = ScreenshotUi::new();
+
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
         event_loop
@@ -656,6 +664,8 @@ impl Niri {
             pointer_focus: None,
 
             lock_state: LockState::Unlocked,
+
+            screenshot_ui,
 
             #[cfg(feature = "dbus")]
             dbus: None,
@@ -832,6 +842,10 @@ impl Niri {
             }
             lock_state => self.lock_state = lock_state,
         }
+
+        if self.screenshot_ui.close() {
+            self.queue_redraw_all();
+        }
     }
 
     pub fn output_resized(&mut self, output: Output) {
@@ -849,6 +863,18 @@ impl Niri {
                 if let Some(lock_surface) = &state.lock_surface {
                     configure_lock_surface(lock_surface, &output);
                 }
+            }
+        }
+
+        // If the output size changed with an open screenshot UI, close the screenshot UI.
+        if let Some(old_size) = self.screenshot_ui.output_size(&output) {
+            let output_transform = output.current_transform();
+            let output_mode = output.current_mode().unwrap();
+            let size = output_transform.transform_size(output_mode.size);
+            if old_size != size {
+                self.screenshot_ui.close();
+                self.queue_redraw_all();
+                return;
             }
         }
 
@@ -889,7 +915,7 @@ impl Niri {
     }
 
     pub fn window_under_cursor(&self) -> Option<&Window> {
-        if self.is_locked() {
+        if self.is_locked() || self.screenshot_ui.is_open() {
             return None;
         }
 
@@ -926,6 +952,10 @@ impl Niri {
                 output,
                 surface: (surface, point),
             });
+        }
+
+        if self.screenshot_ui.is_open() {
+            return None;
         }
 
         let (window, win_pos_within_output) =
@@ -1321,6 +1351,32 @@ impl Niri {
             return elements;
         }
 
+        // Prepare the background element.
+        let state = self.output_state.get(output).unwrap();
+        let background = SolidColorRenderElement::from_buffer(
+            &state.background_buffer,
+            (0, 0),
+            output_scale,
+            1.,
+            Kind::Unspecified,
+        )
+        .into();
+
+        // If the screenshot UI is open, draw it.
+        if self.screenshot_ui.is_open() {
+            elements.extend(
+                self.screenshot_ui
+                    .render_output(output)
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
+
+            // Add the background for outputs that were connected while the screenshot UI was open.
+            elements.push(background);
+
+            return elements;
+        }
+
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
         let monitor_elements = mon.render_elements(renderer);
@@ -1363,17 +1419,7 @@ impl Niri {
         extend_from_layer(&mut elements, Layer::Background);
 
         // Then the background.
-        let state = self.output_state.get(output).unwrap();
-        elements.push(
-            SolidColorRenderElement::from_buffer(
-                &state.background_buffer,
-                (0, 0),
-                output_scale,
-                1.,
-                Kind::Unspecified,
-            )
-            .into(),
-        );
+        elements.push(background);
 
         elements
     }
@@ -1879,6 +1925,42 @@ impl Niri {
         }
     }
 
+    pub fn open_screenshot_ui(&mut self, renderer: &mut GlesRenderer) {
+        if self.is_locked() || self.screenshot_ui.is_open() {
+            return;
+        }
+
+        let Some(default_output) = self.output_under_cursor() else {
+            return;
+        };
+
+        let screenshots = self
+            .global_space
+            .outputs()
+            .cloned()
+            .filter_map(|output| {
+                let size = output.current_mode().unwrap().size;
+                let scale = Scale::from(output.current_scale().fractional_scale());
+                let elements = self.render(renderer, &output, true);
+
+                let res = render_to_texture(renderer, size, scale, Fourcc::Abgr8888, &elements);
+                let screenshot = match res {
+                    Ok((texture, _)) => texture,
+                    Err(err) => {
+                        warn!("error rendering output {}: {err:?}", output.name());
+                        return None;
+                    }
+                };
+
+                Some((output, screenshot))
+            })
+            .collect();
+
+        self.screenshot_ui
+            .open(renderer, screenshots, default_output);
+        self.queue_redraw_all();
+    }
+
     pub fn screenshot(&self, renderer: &mut GlesRenderer, output: &Output) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
@@ -1916,7 +1998,11 @@ impl Niri {
             .context("error saving screenshot")
     }
 
-    fn save_screenshot(&self, size: Size<i32, Physical>, pixels: Vec<u8>) -> anyhow::Result<()> {
+    pub fn save_screenshot(
+        &self,
+        size: Size<i32, Physical>,
+        pixels: Vec<u8>,
+    ) -> anyhow::Result<()> {
         let path = make_screenshot_path().context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
 
@@ -2029,6 +2115,8 @@ impl Niri {
     pub fn lock(&mut self, confirmation: SessionLocker) {
         info!("locking session");
 
+        self.screenshot_ui.close();
+
         self.lock_state = LockState::Locking(confirmation);
         self.queue_redraw_all();
     }
@@ -2065,6 +2153,7 @@ render_elements! {
     Wayland = WaylandSurfaceRenderElement<R>,
     NamedPointer = TextureRenderElement<<R as Renderer>::TextureId>,
     SolidColor = SolidColorRenderElement,
+    ScreenshotUi = ScreenshotUiRenderElement<R>,
 }
 
 #[derive(Default)]
