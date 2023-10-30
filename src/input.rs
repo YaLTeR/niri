@@ -993,9 +993,11 @@ mod tests {
             )
         };
 
-        let mut mods = ModifiersState::default();
-        mods.logo = true;
-        mods.ctrl = true;
+        let mut mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            ..Default::default()
+        };
 
         // Action press/release.
 
