@@ -77,15 +77,18 @@ impl State {
                 };
 
                 // Filter actions when the key is released or the session is locked.
-                if !pressed
-                    || self.niri.is_locked()
-                        && !matches!(
-                            action,
-                            Action::Quit
-                                | Action::ChangeVt(_)
-                                | Action::Suspend
-                                | Action::PowerOffMonitors
-                        )
+                if !pressed {
+                    return;
+                }
+
+                if self.niri.is_locked()
+                    && !matches!(
+                        action,
+                        Action::Quit
+                            | Action::ChangeVt(_)
+                            | Action::Suspend
+                            | Action::PowerOffMonitors
+                    )
                 {
                     return;
                 }
