@@ -11,7 +11,7 @@ use std::thread;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::ImportDma;
 use smithay::desktop::{PopupKind, PopupManager};
-use smithay::input::pointer::CursorImageStatus;
+use smithay::input::pointer::{CursorIcon, CursorImageStatus};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
@@ -52,7 +52,12 @@ impl SeatHandler for State {
         &mut self.niri.seat_state
     }
 
-    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
+    fn cursor_image(&mut self, _seat: &Seat<Self>, mut image: CursorImageStatus) {
+        // FIXME: this hack should be removable once the screenshot UI is tracked with a
+        // PointerFocus properly.
+        if self.niri.screenshot_ui.is_open() {
+            image = CursorImageStatus::Named(CursorIcon::Crosshair);
+        }
         self.niri.cursor_manager.set_cursor_image(image);
         // FIXME: more granular
         self.niri.queue_redraw_all();

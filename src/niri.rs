@@ -30,7 +30,7 @@ use smithay::desktop::utils::{
 };
 use smithay::desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::XkbConfig;
-use smithay::input::pointer::{CursorImageAttributes, CursorImageStatus, MotionEvent};
+use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
@@ -844,6 +844,8 @@ impl Niri {
         }
 
         if self.screenshot_ui.close() {
+            self.cursor_manager
+                .set_cursor_image(CursorImageStatus::default_named());
             self.queue_redraw_all();
         }
     }
@@ -873,6 +875,8 @@ impl Niri {
             let size = output_transform.transform_size(output_mode.size);
             if old_size != size {
                 self.screenshot_ui.close();
+                self.cursor_manager
+                    .set_cursor_image(CursorImageStatus::default_named());
                 self.queue_redraw_all();
                 return;
             }
@@ -1958,6 +1962,8 @@ impl Niri {
 
         self.screenshot_ui
             .open(renderer, screenshots, default_output);
+        self.cursor_manager
+            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
         self.queue_redraw_all();
     }
 
@@ -2116,6 +2122,8 @@ impl Niri {
         info!("locking session");
 
         self.screenshot_ui.close();
+        self.cursor_manager
+            .set_cursor_image(CursorImageStatus::default_named());
 
         self.lock_state = LockState::Locking(confirmation);
         self.queue_redraw_all();

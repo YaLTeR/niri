@@ -10,9 +10,9 @@ use smithay::backend::input::{
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{
-    AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
-    GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
-    GestureSwipeUpdateEvent, MotionEvent, RelativeMotionEvent,
+    AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
+    GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
+    GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent, RelativeMotionEvent,
 };
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
@@ -146,10 +146,16 @@ impl State {
                         }
 
                         self.niri.screenshot_ui.close();
+                        self.niri
+                            .cursor_manager
+                            .set_cursor_image(CursorImageStatus::default_named());
                         self.niri.queue_redraw_all();
                     }
                     Action::CancelScreenshot => {
                         self.niri.screenshot_ui.close();
+                        self.niri
+                            .cursor_manager
+                            .set_cursor_image(CursorImageStatus::default_named());
                         self.niri.queue_redraw_all();
                     }
                     Action::Screenshot => {
