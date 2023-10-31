@@ -2077,8 +2077,6 @@ impl Niri {
 
         use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 
-        use crate::utils::add_screenshot_filename;
-
         let _span = tracy_client::span!("Niri::screenshot_all_outputs");
 
         let mut elements = vec![];
@@ -2103,15 +2101,13 @@ impl Niri {
         let pixels = render_to_vec(renderer, size, Scale::from(1.), Fourcc::Abgr8888, &elements)?;
 
         let path = make_screenshot_path(&self.config.borrow())
-            .and_then(|path| match path {
-                Some(path) => Ok(path),
-                None => {
-                    let mut path = env::temp_dir();
-                    add_screenshot_filename(&mut path)?;
-                    Ok(path)
-                }
-            })
-            .context("error making screenshot path")?;
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| {
+                let mut path = env::temp_dir();
+                path.push("screenshot.png");
+                path
+            });
         debug!("saving screenshot to {path:?}");
 
         thread::spawn(move || {

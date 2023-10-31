@@ -26,8 +26,14 @@ pub struct Config {
     pub preset_column_widths: Vec<PresetWidth>,
     #[knuffel(child, unwrap(argument), default = 16)]
     pub gaps: u16,
-    #[knuffel(child, unwrap(argument), default = Some(PathBuf::from("~/Pictures/Screenshots")))]
-    pub screenshot_path: Option<PathBuf>,
+    #[knuffel(
+        child,
+        unwrap(argument),
+        default = Some(String::from(
+            "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+        )))
+    ]
+    pub screenshot_path: Option<String>,
     #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
@@ -541,7 +547,7 @@ mod tests {
 
             gaps 8
 
-            screenshot-path "~/Screenshots"
+            screenshot-path "~/Screenshots/screenshot.png"
 
             binds {
                 Mod+T { spawn "alacritty"; }
@@ -617,7 +623,7 @@ mod tests {
                     PresetWidth::Fixed(1280),
                 ],
                 gaps: 8,
-                screenshot_path: Some(PathBuf::from("~/Screenshots")),
+                screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
                 binds: Binds(vec![
                     Bind {
                         key: Key {

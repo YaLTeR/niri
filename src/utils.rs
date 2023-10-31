@@ -1,4 +1,4 @@
-use std::ffi::OsStr;
+use std::ffi::{CString, OsStr};
 use std::io::{self, Write};
 use std::os::unix::prelude::OsStrExt;
 use std::os::unix::process::CommandExt;
@@ -24,23 +24,14 @@ pub fn center(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
 }
 
 pub fn make_screenshot_path(config: &Config) -> anyhow::Result<Option<PathBuf>> {
-    let Some(mut path) = config.screenshot_path.clone() else {
+    let Some(path) = &config.screenshot_path else {
         return Ok(None);
     };
 
-    if let Ok(rest) = path.strip_prefix("~") {
-        let dirs = UserDirs::new().context("error retrieving home directory")?;
-        path = [dirs.home_dir(), rest].iter().collect();
-    }
+    let format = CString::new(path.clone()).context("path must not contain nul bytes")?;
 
-    add_screenshot_filename(&mut path)?;
-
-    Ok(Some(path))
-}
-
-pub fn add_screenshot_filename(path: &mut PathBuf) -> anyhow::Result<()> {
-    let mut buf = [0u8; 256];
-    let name;
+    let mut buf = [0u8; 2048];
+    let mut path;
     unsafe {
         let time = libc::time(null_mut());
         ensure!(time != -1, "error in time()");
@@ -48,21 +39,18 @@ pub fn add_screenshot_filename(path: &mut PathBuf) -> anyhow::Result<()> {
         let tm = libc::localtime(&time);
         ensure!(!tm.is_null(), "error in localtime()");
 
-        let format = b"Screenshot from %Y-%m-%d %H-%M-%S.png\0";
-        let rv = libc::strftime(
-            buf.as_mut_ptr().cast(),
-            buf.len(),
-            format.as_ptr().cast(),
-            tm,
-        );
+        let rv = libc::strftime(buf.as_mut_ptr().cast(), buf.len(), format.as_ptr(), tm);
         ensure!(rv != 0, "error formatting time");
 
-        name = OsStr::from_bytes(&buf[..rv]);
+        path = PathBuf::from(OsStr::from_bytes(&buf[..rv]));
     }
 
-    path.push(name);
+    if let Ok(rest) = path.strip_prefix("~") {
+        let dirs = UserDirs::new().context("error retrieving home directory")?;
+        path = [dirs.home_dir(), rest].iter().collect();
+    }
 
-    Ok(())
+    Ok(Some(path))
 }
 
 /// Spawns the command to run independently of the compositor.
