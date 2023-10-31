@@ -2053,14 +2053,25 @@ impl Niri {
             let buf: Arc<[u8]> = Arc::from(buf.into_boxed_slice());
             let _ = tx.send(buf.clone());
 
+            let mut image_path = None;
+
             if let Some(path) = path {
                 debug!("saving screenshot to {path:?}");
-                if let Err(err) = std::fs::write(path, buf) {
-                    warn!("error saving screenshot image: {err:?}");
+
+                match std::fs::write(&path, buf) {
+                    Ok(()) => image_path = Some(path),
+                    Err(err) => {
+                        warn!("error saving screenshot image: {err:?}");
+                    }
                 }
             } else {
                 debug!("not saving screenshot to disk");
             }
+
+            #[cfg(feature = "dbus")]
+            crate::utils::show_screenshot_notification(image_path);
+            #[cfg(not(feature = "dbus"))]
+            drop(image_path);
         });
 
         Ok(())

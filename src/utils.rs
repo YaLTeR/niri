@@ -112,3 +112,34 @@ pub fn write_png_rgba8(
     let mut writer = encoder.write_header()?;
     writer.write_image_data(pixels)
 }
+
+#[cfg(feature = "dbus")]
+pub fn show_screenshot_notification(image_path: Option<PathBuf>) {
+    let mut notification = notify_rust::Notification::new();
+    notification
+        .summary("Screenshot captured")
+        .body("You can paste the image from the clipboard.")
+        .urgency(notify_rust::Urgency::Normal)
+        .hint(notify_rust::Hint::Transient(true));
+
+    // Try to add the screenshot as an image if possible.
+    if let Some(path) = image_path {
+        match path.canonicalize() {
+            Ok(path) => match url::Url::from_file_path(path) {
+                Ok(url) => {
+                    notification.image_path(url.as_str());
+                }
+                Err(err) => {
+                    warn!("error converting screenshot path to file url: {err:?}");
+                }
+            },
+            Err(err) => {
+                warn!("error canonicalizing screenshot path: {err:?}");
+            }
+        }
+    }
+
+    if let Err(err) = notification.show() {
+        warn!("error showing screenshot notification: {err:?}");
+    }
+}
