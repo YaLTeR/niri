@@ -380,7 +380,7 @@ impl ScreenshotUi {
             return false;
         }
 
-        if !output_data.contains_key(&output) {
+        if down && !output_data.contains_key(&output) {
             return false;
         }
 
