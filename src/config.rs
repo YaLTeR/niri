@@ -137,9 +137,9 @@ pub struct FocusRing {
     pub off: bool,
     #[knuffel(child, unwrap(argument), default = 4)]
     pub width: u16,
-    #[knuffel(child, default = Color::new(0.5, 0.8, 1.0, 1.0))]
+    #[knuffel(child, default = Color::new(127, 200, 255, 255))]
     pub active_color: Color,
-    #[knuffel(child, default = Color::new(0.3, 0.3, 0.3, 1.0))]
+    #[knuffel(child, default = Color::new(80, 80, 80, 255))]
     pub inactive_color: Color,
 }
 
@@ -148,33 +148,33 @@ impl Default for FocusRing {
         Self {
             off: false,
             width: 4,
-            active_color: Color::new(0.5, 0.8, 1.0, 1.0),
-            inactive_color: Color::new(0.3, 0.3, 0.3, 1.0),
+            active_color: Color::new(127, 200, 255, 255),
+            inactive_color: Color::new(80, 80, 80, 255),
         }
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     #[knuffel(argument)]
-    pub r: f32,
+    pub r: u8,
     #[knuffel(argument)]
-    pub g: f32,
+    pub g: u8,
     #[knuffel(argument)]
-    pub b: f32,
+    pub b: u8,
     #[knuffel(argument)]
-    pub a: f32,
+    pub a: u8,
 }
 
 impl Color {
-    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+    pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
 }
 
 impl From<Color> for [f32; 4] {
     fn from(c: Color) -> Self {
-        [c.r, c.g, c.b, c.a]
+        [c.r, c.g, c.b, c.a].map(|x| x as f32 / 255.)
     }
 }
 
@@ -521,8 +521,8 @@ mod tests {
 
             focus-ring {
                 width 5
-                active-color 0.0 0.25 0.5 1.0
-                inactive-color 1.0 0.5 0.25 0.0
+                active-color 0 100 200 255
+                inactive-color 255 200 100 0
             }
 
             prefer-no-csd
@@ -593,16 +593,16 @@ mod tests {
                     off: false,
                     width: 5,
                     active_color: Color {
-                        r: 0.,
-                        g: 0.25,
-                        b: 0.5,
-                        a: 1.,
+                        r: 0,
+                        g: 100,
+                        b: 200,
+                        a: 255,
                     },
                     inactive_color: Color {
-                        r: 1.,
-                        g: 0.5,
-                        b: 0.25,
-                        a: 0.,
+                        r: 255,
+                        g: 200,
+                        b: 100,
+                        a: 0,
                     },
                 },
                 prefer_no_csd: true,

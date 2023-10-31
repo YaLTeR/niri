@@ -76,10 +76,10 @@ focus-ring {
     width 4
 
     // Color of the ring on the active monitor: red, green, blue, alpha.
-    active-color 0.5 0.8 1.0 1.0
+    active-color 127 200 255 255
 
     // Color of the ring on inactive monitors: red, green, blue, alpha.
-    inactive-color 0.3 0.3 0.3 1.0
+    inactive-color 80 80 80 255
 }
 
 cursor {
