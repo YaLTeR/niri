@@ -2009,8 +2009,13 @@ impl Niri {
         size: Size<i32, Physical>,
         pixels: Vec<u8>,
     ) -> anyhow::Result<()> {
-        let path = make_screenshot_path().context("error making screenshot path")?;
-        debug!("saving screenshot to {path:?}");
+        let path = match make_screenshot_path(&self.config.borrow()) {
+            Ok(path) => path,
+            Err(err) => {
+                warn!("error making screenshot path: {err:?}");
+                None
+            }
+        };
 
         // Prepare to set the encoded image as our clipboard selection. This must be done from the
         // main thread.
@@ -2048,8 +2053,13 @@ impl Niri {
             let buf: Arc<[u8]> = Arc::from(buf.into_boxed_slice());
             let _ = tx.send(buf.clone());
 
-            if let Err(err) = std::fs::write(path, buf) {
-                warn!("error saving screenshot image: {err:?}");
+            if let Some(path) = path {
+                debug!("saving screenshot to {path:?}");
+                if let Err(err) = std::fs::write(path, buf) {
+                    warn!("error saving screenshot image: {err:?}");
+                }
+            } else {
+                debug!("not saving screenshot to disk");
             }
         });
 
@@ -2066,6 +2076,8 @@ impl Niri {
         use std::cmp::max;
 
         use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
+
+        use crate::utils::add_screenshot_filename;
 
         let _span = tracy_client::span!("Niri::screenshot_all_outputs");
 
@@ -2090,7 +2102,16 @@ impl Niri {
         // FIXME: scale.
         let pixels = render_to_vec(renderer, size, Scale::from(1.), Fourcc::Abgr8888, &elements)?;
 
-        let path = make_screenshot_path().context("error making screenshot path")?;
+        let path = make_screenshot_path(&self.config.borrow())
+            .and_then(|path| match path {
+                Some(path) => Ok(path),
+                None => {
+                    let mut path = env::temp_dir();
+                    add_screenshot_filename(&mut path)?;
+                    Ok(path)
+                }
+            })
+            .context("error making screenshot path")?;
         debug!("saving screenshot to {path:?}");
 
         thread::spawn(move || {

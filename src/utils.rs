@@ -12,6 +12,8 @@ use directories::UserDirs;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::utils::{Logical, Point, Rectangle};
 
+use crate::config::Config;
+
 pub fn get_monotonic_time() -> Duration {
     let ts = clock_gettime(ClockId::Monotonic);
     Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
@@ -21,15 +23,22 @@ pub fn center(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
     rect.loc + rect.size.downscale(2).to_point()
 }
 
-pub fn make_screenshot_path() -> anyhow::Result<PathBuf> {
-    let dirs = UserDirs::new().context("error retrieving home directory")?;
-    let mut path = dirs.picture_dir().map(|p| p.to_owned()).unwrap_or_else(|| {
-        let mut dir = dirs.home_dir().to_owned();
-        dir.push("Pictures");
-        dir
-    });
-    path.push("Screenshots");
+pub fn make_screenshot_path(config: &Config) -> anyhow::Result<Option<PathBuf>> {
+    let Some(mut path) = config.screenshot_path.clone() else {
+        return Ok(None);
+    };
 
+    if let Ok(rest) = path.strip_prefix("~") {
+        let dirs = UserDirs::new().context("error retrieving home directory")?;
+        path = [dirs.home_dir(), rest].iter().collect();
+    }
+
+    add_screenshot_filename(&mut path)?;
+
+    Ok(Some(path))
+}
+
+pub fn add_screenshot_filename(path: &mut PathBuf) -> anyhow::Result<()> {
     let mut buf = [0u8; 256];
     let name;
     unsafe {
@@ -53,7 +62,7 @@ pub fn make_screenshot_path() -> anyhow::Result<PathBuf> {
 
     path.push(name);
 
-    Ok(path)
+    Ok(())
 }
 
 /// Spawns the command to run independently of the compositor.
