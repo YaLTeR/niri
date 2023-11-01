@@ -248,7 +248,7 @@ impl Options {
 
 /// Width of a column.
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum ColumnWidth {
+pub enum ColumnWidth {
     /// Proportion of the current view width.
     Proportion(f64),
     /// One of the proportion presets.
@@ -610,6 +610,7 @@ impl<W: LayoutElement> Layout<W> {
         workspace_idx: usize,
         window: W,
         activate: bool,
+        width: ColumnWidth,
     ) {
         let MonitorSet::Normal {
             monitors,
@@ -620,7 +621,7 @@ impl<W: LayoutElement> Layout<W> {
             panic!()
         };
 
-        monitors[monitor_idx].add_window(workspace_idx, window, activate);
+        monitors[monitor_idx].add_window(workspace_idx, window, activate, width);
 
         if activate {
             *active_monitor_idx = monitor_idx;
@@ -630,7 +631,7 @@ impl<W: LayoutElement> Layout<W> {
     /// Adds a new window to the layout.
     ///
     /// Returns an output that the window was added to, if there were any outputs.
-    pub fn add_window(&mut self, window: W, activate: bool) -> Option<&Output> {
+    pub fn add_window(&mut self, window: W, activate: bool, width: ColumnWidth) -> Option<&Output> {
         match &mut self.monitor_set {
             MonitorSet::Normal {
                 monitors,
@@ -638,7 +639,7 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 let mon = &mut monitors[*active_monitor_idx];
-                mon.add_window(mon.active_workspace_idx, window, activate);
+                mon.add_window(mon.active_workspace_idx, window, activate, width);
                 Some(&mon.output)
             }
             MonitorSet::NoOutputs { workspaces } => {
@@ -648,7 +649,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces.push(Workspace::new_no_outputs(self.options.clone()));
                     &mut workspaces[0]
                 };
-                ws.add_window(window, activate);
+                ws.add_window(window, activate, width);
                 None
             }
         }
@@ -1203,10 +1204,11 @@ impl<W: LayoutElement> Layout<W> {
             }
             let column = &ws.columns[ws.active_column_idx];
             let window = column.windows[column.active_window_idx].clone();
+            let width = column.width;
             ws.remove_window(&window);
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
-            self.add_window_by_idx(new_idx, workspace_idx, window, true);
+            self.add_window_by_idx(new_idx, workspace_idx, window, true, width);
         }
     }
 
@@ -1218,6 +1220,19 @@ impl<W: LayoutElement> Layout<W> {
         self.remove_window(&window);
 
         if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            let mut width = None;
+            for mon in &*monitors {
+                for ws in &mon.workspaces {
+                    for col in &ws.columns {
+                        if col.windows.contains(&window) {
+                            width = Some(col.width);
+                            break;
+                        }
+                    }
+                }
+            }
+            let Some(width) = width else { return };
+
             let new_idx = monitors
                 .iter()
                 .position(|mon| &mon.output == output)
@@ -1225,7 +1240,7 @@ impl<W: LayoutElement> Layout<W> {
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             // FIXME: activate only if it was already active and focused.
-            self.add_window_by_idx(new_idx, workspace_idx, window, true);
+            self.add_window_by_idx(new_idx, workspace_idx, window, true, width);
         }
     }
 
@@ -1441,10 +1456,16 @@ impl<W: LayoutElement> Monitor<W> {
         )));
     }
 
-    pub fn add_window(&mut self, workspace_idx: usize, window: W, activate: bool) {
+    pub fn add_window(
+        &mut self,
+        workspace_idx: usize,
+        window: W,
+        activate: bool,
+        width: ColumnWidth,
+    ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_window(window.clone(), activate);
+        workspace.add_window(window.clone(), activate, width);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -1523,10 +1544,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let column = &mut workspace.columns[workspace.active_column_idx];
+        let width = column.width;
         let window = column.windows[column.active_window_idx].clone();
         workspace.remove_window(&window);
 
-        self.add_window(new_idx, window, true);
+        self.add_window(new_idx, window, true, width);
     }
 
     pub fn move_to_workspace_down(&mut self) {
@@ -1543,10 +1565,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let column = &mut workspace.columns[workspace.active_column_idx];
+        let width = column.width;
         let window = column.windows[column.active_window_idx].clone();
         workspace.remove_window(&window);
 
-        self.add_window(new_idx, window, true);
+        self.add_window(new_idx, window, true, width);
     }
 
     pub fn move_to_workspace(&mut self, idx: u8) {
@@ -1563,10 +1586,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let column = &mut workspace.columns[workspace.active_column_idx];
+        let width = column.width;
         let window = column.windows[column.active_window_idx].clone();
         workspace.remove_window(&window);
 
-        self.add_window(new_idx, window, true);
+        self.add_window(new_idx, window, true, width);
 
         // Don't animate this action.
         self.workspace_switch = None;
@@ -2051,7 +2075,7 @@ impl<W: LayoutElement> Workspace<W> {
         x
     }
 
-    fn add_window(&mut self, window: W, activate: bool) {
+    fn add_window(&mut self, window: W, activate: bool, width: ColumnWidth) {
         self.enter_output_for_window(&window);
 
         let was_empty = self.columns.is_empty();
@@ -2067,6 +2091,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.view_size,
             self.working_area,
             self.options.clone(),
+            width,
         );
         self.columns.insert(idx, column);
 
@@ -2286,7 +2311,7 @@ impl<W: LayoutElement> Workspace<W> {
         let window = source_column.windows[source_column.active_window_idx].clone();
         self.remove_window(&window);
 
-        self.add_window(window, true);
+        self.add_window(window, true, ColumnWidth::default());
     }
 
     fn view_pos(&self) -> i32 {
@@ -2379,6 +2404,7 @@ impl<W: LayoutElement> Workspace<W> {
             let window = col.windows.remove(win_idx);
             col.active_window_idx = min(col.active_window_idx, col.windows.len() - 1);
             col.update_window_sizes();
+            let width = col.width;
 
             col_idx += 1;
             self.columns.insert(
@@ -2388,6 +2414,7 @@ impl<W: LayoutElement> Workspace<W> {
                     self.view_size,
                     self.working_area,
                     self.options.clone(),
+                    width,
                 ),
             );
             if self.active_column_idx >= col_idx || target_window_was_focused {
@@ -2500,11 +2527,12 @@ impl<W: LayoutElement> Column<W> {
         view_size: Size<i32, Logical>,
         working_area: Rectangle<i32, Logical>,
         options: Rc<Options>,
+        width: ColumnWidth,
     ) -> Self {
         let mut rv = Self {
             windows: vec![],
             active_window_idx: 0,
-            width: ColumnWidth::default(),
+            width,
             is_fullscreen: false,
             view_size,
             working_area,
@@ -3046,7 +3074,7 @@ mod tests {
                     }
 
                     let win = TestWindow::new(id, bbox);
-                    layout.add_window(win, activate);
+                    layout.add_window(win, activate, ColumnWidth::default());
                 }
                 Op::CloseWindow(id) => {
                     let dummy = TestWindow::new(id, Rectangle::default());
