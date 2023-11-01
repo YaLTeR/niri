@@ -939,10 +939,9 @@ impl Niri {
         pos: Point<f64, Logical>,
     ) -> Option<PointerFocus> {
         let (output, pos_within_output) = self.output_under(pos)?;
-        let output = output.clone();
 
         if self.is_locked() {
-            let state = self.output_state.get(&output)?;
+            let state = self.output_state.get(output)?;
             let surface = state.lock_surface.as_ref()?;
             // We put lock surfaces at (0, 0).
             let point = pos_within_output;
@@ -953,7 +952,7 @@ impl Niri {
                 WindowSurfaceType::ALL,
             )?;
             return Some(PointerFocus {
-                output,
+                output: output.clone(),
                 surface: (surface, point),
             });
         }
@@ -962,20 +961,46 @@ impl Niri {
             return None;
         }
 
-        let (window, win_pos_within_output) =
-            self.layout.window_under(&output, pos_within_output)?;
+        let layers = layer_map_for_output(output);
+        let layer_surface = |first: Layer, second: Layer| {
+            layers
+                .layer_under(first, pos_within_output)
+                .or_else(|| layers.layer_under(second, pos_within_output))
+                .and_then(|layer| {
+                    let layer_pos_within_output = layers.layer_geometry(layer).unwrap().loc;
+                    layer
+                        .surface_under(
+                            pos_within_output - layer_pos_within_output.to_f64(),
+                            WindowSurfaceType::ALL,
+                        )
+                        .map(|(surface, pos_within_layer)| {
+                            (surface, pos_within_layer + layer_pos_within_output)
+                        })
+                })
+        };
 
-        let (surface, surface_pos_within_output) = window
-            .surface_under(
-                pos_within_output - win_pos_within_output.to_f64(),
-                WindowSurfaceType::ALL,
-            )
-            .map(|(s, pos_within_window)| (s, pos_within_window + win_pos_within_output))?;
-        let output_pos_in_global_space = self.global_space.output_geometry(&output).unwrap().loc;
+        let (surface, surface_pos_within_output) = layer_surface(Layer::Overlay, Layer::Top)
+            .or_else(|| {
+                self.layout
+                    .window_under(output, pos_within_output)
+                    .and_then(|(window, win_pos_within_output)| {
+                        window
+                            .surface_under(
+                                pos_within_output - win_pos_within_output.to_f64(),
+                                WindowSurfaceType::ALL,
+                            )
+                            .map(|(s, pos_within_window)| {
+                                (s, pos_within_window + win_pos_within_output)
+                            })
+                    })
+            })
+            .or_else(|| layer_surface(Layer::Bottom, Layer::Background))?;
+
+        let output_pos_in_global_space = self.global_space.output_geometry(output).unwrap().loc;
         let surface_loc_in_global_space = surface_pos_within_output + output_pos_in_global_space;
 
         Some(PointerFocus {
-            output,
+            output: output.clone(),
             surface: (surface, surface_loc_in_global_space),
         })
     }
