@@ -51,8 +51,8 @@ use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_to
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::render_elements;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
-use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
+use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
@@ -77,7 +77,7 @@ pub trait LayoutElement: SpaceElement + PartialEq + Clone {
     fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
     fn has_ssd(&self) -> bool;
-    fn with_surfaces<F: FnMut(&WlSurface, &SurfaceData)>(&self, processor: F);
+    fn set_preferred_scale_transform(&self, scale: i32, transform: Transform);
 }
 
 #[derive(Debug)]
@@ -334,8 +334,10 @@ impl LayoutElement for Window {
         self.toplevel().wl_surface() == wl_surface
     }
 
-    fn with_surfaces<F: FnMut(&WlSurface, &SurfaceData)>(&self, processor: F) {
-        self.with_surfaces(processor);
+    fn set_preferred_scale_transform(&self, scale: i32, transform: Transform) {
+        self.with_surfaces(|surface, data| {
+            send_surface_state(surface, data, scale, transform);
+        });
     }
 
     fn has_ssd(&self) -> bool {
@@ -1907,8 +1909,9 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn enter_output_for_window(&self, window: &W) {
         if let Some(output) = &self.output {
+            prepare_for_output(window, output);
+
             // FIXME: proper overlap.
-            self.send_surface_state_for_window_tree(window, output);
             window.output_enter(
                 output,
                 Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX)),
@@ -1944,20 +1947,12 @@ impl<W: LayoutElement> Workspace<W> {
         let bounds = self.toplevel_bounds();
 
         if let Some(output) = self.output.as_ref() {
-            self.send_surface_state_for_window_tree(window, output);
+            prepare_for_output(window, output);
         }
 
         window.toplevel().with_pending_state(|state| {
             state.size = Some(size);
             state.bounds = Some(bounds);
-        });
-    }
-
-    fn send_surface_state_for_window_tree(&self, window: &impl LayoutElement, output: &Output) {
-        let scale = output.current_scale().integer_scale();
-        let transform = output.current_transform();
-        window.with_surfaces(|surface, data| {
-            send_surface_state(surface, data, scale, transform);
         });
     }
 
@@ -2798,6 +2793,12 @@ fn compute_new_view_offset(
     }
 }
 
+fn prepare_for_output(window: &impl LayoutElement, output: &Output) {
+    let scale = output.current_scale().integer_scale();
+    let transform = output.current_transform();
+    window.set_preferred_scale_transform(scale, transform);
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -2908,7 +2909,7 @@ mod tests {
             false
         }
 
-        fn with_surfaces<F: FnMut(&WlSurface, &SurfaceData)>(&self, _processor: F) {}
+        fn set_preferred_scale_transform(&self, _scale: i32, _transform: Transform) {}
 
         fn has_ssd(&self) -> bool {
             false
