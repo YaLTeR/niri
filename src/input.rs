@@ -61,7 +61,7 @@ impl State {
                         let bindings = &this.niri.config.borrow().binds;
                         let key_code = event.key_code();
                         let modified = keysym.modified_sym();
-                        let raw = keysym.raw_syms().first().cloned();
+                        let raw = keysym.raw_latin_sym_or_raw_current_sym();
                         should_intercept_key(
                             &mut this.niri.suppressed_keys,
                             bindings,
