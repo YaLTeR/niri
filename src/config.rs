@@ -62,6 +62,8 @@ pub struct Keyboard {
     pub repeat_delay: u16,
     #[knuffel(child, unwrap(argument), default = 25)]
     pub repeat_rate: u8,
+    #[knuffel(child, unwrap(argument), default)]
+    pub track_layout: TrackLayout,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -76,6 +78,15 @@ pub struct Xkb {
     pub variant: String,
     #[knuffel(child, unwrap(argument))]
     pub options: Option<String>,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
+pub enum TrackLayout {
+    /// The layout change is global.
+    #[default]
+    Global,
+    /// The layout change is window local.
+    Window,
 }
 
 // FIXME: Add the rest of the settings.
@@ -514,6 +525,7 @@ mod tests {
                 keyboard {
                     repeat-delay 600
                     repeat-rate 25
+                    track-layout "window"
                     xkb {
                         layout "us,ru"
                         options "grp:win_space_toggle"
@@ -587,6 +599,7 @@ mod tests {
                         },
                         repeat_delay: 600,
                         repeat_rate: 25,
+                        track_layout: TrackLayout::Window,
                     },
                     touchpad: Touchpad {
                         tap: true,

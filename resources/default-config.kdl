@@ -16,6 +16,11 @@ input {
         // Delay is in milliseconds before the repeat starts. Rate is in characters per second.
         // repeat-delay 600
         // repeat-rate 25
+
+        // Niri can remember the keyboard layout globally (the default) or per-window.
+        // - "global" - layout change is global for all windows.
+        // - "window" - layout is tracked for each window individually.
+        // track-layout "global"
     }
 
     // Next sections include libinput settings.
