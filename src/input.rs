@@ -17,7 +17,7 @@ use smithay::input::pointer::{
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
-use crate::config::{Action, Binds, Modifiers};
+use crate::config::{Action, Binds, LayoutAction, Modifiers};
 use crate::niri::State;
 use crate::screenshot_ui::ScreenshotUi;
 use crate::utils::{center, get_monotonic_time, spawn};
@@ -90,6 +90,7 @@ impl State {
                             | Action::ChangeVt(_)
                             | Action::Suspend
                             | Action::PowerOffMonitors
+                            | Action::SwitchLayout(_)
                     )
                 {
                     return;
@@ -185,6 +186,16 @@ impl State {
                         if let Some(window) = focus {
                             self.niri.layout.toggle_fullscreen(&window);
                         }
+                    }
+                    Action::SwitchLayout(action) => {
+                        self.niri
+                            .seat
+                            .get_keyboard()
+                            .unwrap()
+                            .with_kkb_state(self, |mut state| match action {
+                                LayoutAction::Next => state.cycle_next_layout(),
+                                LayoutAction::Prev => state.cycle_prev_layout(),
+                            });
                     }
                     Action::MoveColumnLeft => {
                         self.niri.layout.move_left();

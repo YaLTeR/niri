@@ -288,6 +288,7 @@ pub enum Action {
     SwitchPresetColumnWidth,
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
+    SwitchLayout(#[knuffel(argument)] LayoutAction),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -296,6 +297,12 @@ pub enum SizeChange {
     SetProportion(f64),
     AdjustFixed(i32),
     AdjustProportion(f64),
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+pub enum LayoutAction {
+    Next,
+    Prev,
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
