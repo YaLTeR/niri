@@ -1211,6 +1211,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn move_window_to_output(&mut self, window: W, output: &Output) {
+        if !matches!(&self.monitor_set, MonitorSet::Normal { .. }) {
+            return;
+        }
+
         self.remove_window(&window);
 
         if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
