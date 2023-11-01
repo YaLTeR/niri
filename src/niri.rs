@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -29,7 +29,7 @@ use smithay::desktop::utils::{
     under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
 use smithay::desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType};
-use smithay::input::keyboard::XkbConfig;
+use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig, XkbContextHandler};
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
@@ -76,7 +76,7 @@ use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
 use crate::backend::{Backend, RenderResult, Tty, Winit};
-use crate::config::Config;
+use crate::config::{Config, TrackLayout};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -382,8 +382,43 @@ impl State {
         };
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
-        if keyboard.current_focus() != focus {
+        let current_focus = keyboard.current_focus();
+        if current_focus != focus {
+            if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
+                let current_layout =
+                    keyboard.with_kkb_state(self, |context| context.active_layout());
+
+                let mut new_layout = current_layout;
+                // Store the currently active layout for the surface.
+                if let Some(current_focus) = current_focus.as_ref() {
+                    with_states(current_focus, |data| {
+                        let cell = data
+                            .data_map
+                            .get_or_insert::<Cell<KeyboardLayout>, _>(Cell::default);
+                        cell.set(current_layout);
+                    });
+                }
+
+                if let Some(focus) = focus.as_ref() {
+                    new_layout = with_states(focus, |data| {
+                        let cell = data.data_map.get_or_insert::<Cell<KeyboardLayout>, _>(|| {
+                            // The default layout is effectively the first layout in the
+                            // keymap, so use it for new windows.
+                            Cell::new(KeyboardLayout::default())
+                        });
+                        cell.get()
+                    });
+                }
+                if new_layout != current_layout && focus.is_some() {
+                    keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
+                    keyboard.with_kkb_state(self, |mut context| {
+                        context.set_layout(new_layout);
+                    });
+                }
+            }
+
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
+
             // FIXME: can be more granular.
             self.niri.queue_redraw_all();
         }
