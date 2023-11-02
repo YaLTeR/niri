@@ -993,9 +993,21 @@ impl Niri {
                 })
         };
 
-        let (surface, surface_pos_within_output) = layer_surface_under(Layer::Overlay)
-            .or_else(|| layer_surface_under(Layer::Top))
-            .or_else(window_under)
+        let mon = self.layout.monitor_for_output(output).unwrap();
+
+        let mut under = layer_surface_under(Layer::Overlay);
+
+        if mon.render_above_top_layer() {
+            under = under
+                .or_else(window_under)
+                .or_else(|| layer_surface_under(Layer::Top));
+        } else {
+            under = under
+                .or_else(|| layer_surface_under(Layer::Top))
+                .or_else(window_under);
+        }
+
+        let (surface, surface_pos_within_output) = under
             .or_else(|| layer_surface_under(Layer::Bottom))
             .or_else(|| layer_surface_under(Layer::Background))?;
 
@@ -1440,11 +1452,15 @@ impl Niri {
 
         // The upper layer-shell elements go next.
         extend_from_layer(&mut elements, Layer::Overlay);
-        // FIXME: hide top layer when a fullscreen surface is showing somehow.
-        extend_from_layer(&mut elements, Layer::Top);
 
-        // Then the regular monitor elements.
-        elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
+        // Then the regular monitor elements and the top layer in varying order.
+        if mon.render_above_top_layer() {
+            elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
+            extend_from_layer(&mut elements, Layer::Top);
+        } else {
+            extend_from_layer(&mut elements, Layer::Top);
+            elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
+        }
 
         // Then the lower layer-shell elements.
         extend_from_layer(&mut elements, Layer::Bottom);

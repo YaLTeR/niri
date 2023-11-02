@@ -1768,6 +1768,16 @@ impl<W: LayoutElement> Monitor<W> {
             }
         }
     }
+
+    pub fn render_above_top_layer(&self) -> bool {
+        // Render above the top layer only if the view is stationary.
+        if self.workspace_switch.is_some() {
+            return false;
+        }
+
+        let ws = &self.workspaces[self.active_workspace_idx];
+        ws.render_above_top_layer()
+    }
 }
 
 impl Monitor<Window> {
@@ -2448,6 +2458,19 @@ impl<W: LayoutElement> Workspace<W> {
             .unwrap();
         let value = !col.is_fullscreen;
         self.set_fullscreen(window, value);
+    }
+
+    pub fn render_above_top_layer(&self) -> bool {
+        // Render above the top layer if we're on a fullscreen window and the view is stationary.
+        if self.columns.is_empty() {
+            return false;
+        }
+
+        if self.view_offset_anim.is_some() {
+            return false;
+        }
+
+        self.columns[self.active_column_idx].is_fullscreen
     }
 }
 
