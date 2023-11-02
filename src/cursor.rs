@@ -111,6 +111,17 @@ impl CursorManager {
             .or_insert_with_key(|(icon, scale)| {
                 let size = self.size as i32 * scale;
                 let mut cursor = Self::load_xcursor(&self.theme, icon.name(), size);
+
+                // Check alternative names to account for non-compliant themes.
+                if cursor.is_err() {
+                    for name in icon.alt_names() {
+                        cursor = Self::load_xcursor(&self.theme, name, size);
+                        if cursor.is_ok() {
+                            break;
+                        }
+                    }
+                }
+
                 if let Err(err) = &cursor {
                     warn!("error loading xcursor {}@{size}: {err:?}", icon.name());
                 }
