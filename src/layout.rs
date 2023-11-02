@@ -208,6 +208,8 @@ struct Options {
     focus_ring: config::FocusRing,
     /// Column widths that `toggle_width()` switches between.
     preset_widths: Vec<ColumnWidth>,
+    /// Initial width for new windows.
+    default_width: Option<ColumnWidth>,
 }
 
 impl Default for Options {
@@ -220,6 +222,7 @@ impl Default for Options {
                 ColumnWidth::Proportion(0.5),
                 ColumnWidth::Proportion(2. / 3.),
             ],
+            default_width: None,
         }
     }
 }
@@ -238,10 +241,19 @@ impl Options {
                 .collect()
         };
 
+        // Missing default_column_width maps to Some(ColumnWidth::Proportion(0.5)),
+        // while present, but empty, maps to None.
+        let default_width = config
+            .default_column_width
+            .as_ref()
+            .map(|w| w.0.first().copied().map(ColumnWidth::from))
+            .unwrap_or(Some(ColumnWidth::Proportion(0.5)));
+
         Self {
             gaps: config.gaps.into(),
             focus_ring: config.focus_ring,
             preset_widths,
+            default_width,
         }
     }
 }
@@ -457,12 +469,6 @@ impl ColumnWidth {
     }
 }
 
-impl Default for ColumnWidth {
-    fn default() -> Self {
-        Self::Proportion(0.5)
-    }
-}
-
 impl<W: LayoutElement> Layout<W> {
     pub fn new(config: &Config) -> Self {
         Self {
@@ -631,7 +637,16 @@ impl<W: LayoutElement> Layout<W> {
     /// Adds a new window to the layout.
     ///
     /// Returns an output that the window was added to, if there were any outputs.
-    pub fn add_window(&mut self, window: W, activate: bool, width: ColumnWidth) -> Option<&Output> {
+    pub fn add_window(
+        &mut self,
+        window: W,
+        activate: bool,
+        width: Option<ColumnWidth>,
+    ) -> Option<&Output> {
+        let width = width
+            .or(self.options.default_width)
+            .unwrap_or_else(|| ColumnWidth::Fixed(window.geometry().size.w));
+
         match &mut self.monitor_set {
             MonitorSet::Normal {
                 monitors,
@@ -1992,9 +2007,14 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn configure_new_window(&self, window: &Window) {
-        let width = ColumnWidth::default().resolve(&self.options, self.working_area.size.w);
+        let width = if let Some(width) = self.options.default_width {
+            max(1, width.resolve(&self.options, self.working_area.size.w))
+        } else {
+            0
+        };
+
         let height = self.working_area.size.h - self.options.gaps * 2;
-        let size = Size::from((max(width, 1), max(height, 1)));
+        let size = Size::from((width, max(height, 1)));
 
         let bounds = self.toplevel_bounds();
 
@@ -2332,10 +2352,11 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        let width = source_column.width;
         let window = source_column.windows[source_column.active_window_idx].clone();
         self.remove_window(&window);
 
-        self.add_window(window, true, ColumnWidth::default());
+        self.add_window(window, true, width);
     }
 
     fn view_pos(&self) -> i32 {
@@ -2749,7 +2770,9 @@ impl<W: LayoutElement> Column<W> {
         let width = match self.width {
             ColumnWidth::Proportion(x) if x == 1. => {
                 // FIXME: would be good to restore to previous width here.
-                ColumnWidth::default()
+                self.options
+                    .default_width
+                    .unwrap_or(ColumnWidth::Proportion(0.5))
             }
             _ => ColumnWidth::Proportion(1.),
         };
@@ -3111,7 +3134,7 @@ mod tests {
                     }
 
                     let win = TestWindow::new(id, bbox);
-                    layout.add_window(win, activate, ColumnWidth::default());
+                    layout.add_window(win, activate, None);
                 }
                 Op::CloseWindow(id) => {
                     let dummy = TestWindow::new(id, Rectangle::default());

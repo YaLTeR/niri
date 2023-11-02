@@ -107,6 +107,11 @@ preset-column-widths {
     // fixed 1920
 }
 
+// You can change the default width of the new windows.
+default-column-width { proportion 0.5; }
+// If you leave the brackets empty, the windows themselves will decide their initial width.
+// default-column-width {}
+
 // Set gaps around windows in logical pixels.
 gaps 16
 

@@ -18,7 +18,6 @@ use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell;
-use crate::layout::ColumnWidth;
 use crate::niri::{ClientState, State};
 
 impl CompositorHandler for State {
@@ -99,12 +98,7 @@ impl CompositorHandler for State {
                     let window = entry.remove();
                     window.on_commit();
 
-                    if let Some(output) = self
-                        .niri
-                        .layout
-                        .add_window(window, true, ColumnWidth::default())
-                        .cloned()
-                    {
+                    if let Some(output) = self.niri.layout.add_window(window, true, None).cloned() {
                         self.niri.queue_redraw(output);
                     }
                     return;

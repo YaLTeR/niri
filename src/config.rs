@@ -24,6 +24,8 @@ pub struct Config {
     pub cursor: Cursor,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetWidth>,
+    #[knuffel(child)]
+    pub default_column_width: Option<DefaultColumnWidth>,
     #[knuffel(child, unwrap(argument), default = 16)]
     pub gaps: u16,
     #[knuffel(
@@ -206,6 +208,9 @@ pub enum PresetWidth {
     Proportion(#[knuffel(argument)] f64),
     Fixed(#[knuffel(argument)] i32),
 }
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct DefaultColumnWidth(#[knuffel(children)] pub Vec<PresetWidth>);
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Binds(#[knuffel(children)] pub Vec<Bind>);
@@ -545,6 +550,8 @@ mod tests {
                 fixed 1280
             }
 
+            default-column-width { proportion 0.25; }
+
             gaps 8
 
             screenshot-path "~/Screenshots/screenshot.png"
@@ -622,6 +629,7 @@ mod tests {
                     PresetWidth::Fixed(960),
                     PresetWidth::Fixed(1280),
                 ],
+                default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(0.25)])),
                 gaps: 8,
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
                 binds: Binds(vec![
