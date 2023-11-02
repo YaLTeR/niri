@@ -1066,13 +1066,27 @@ impl<W: LayoutElement> Layout<W> {
             let monitor_id = OutputId::new(&monitor.output);
 
             if idx == primary_idx {
+                for ws in &monitor.workspaces {
+                    if ws.original_output == monitor_id {
+                        // This is the primary monitor's own workspace.
+                        continue;
+                    }
+
+                    let own_monitor_exists = monitors
+                        .iter()
+                        .any(|m| OutputId::new(&m.output) == ws.original_output);
+                    assert!(
+                        !own_monitor_exists,
+                        "primary monitor cannot have workspaces for which their own monitor exists"
+                    );
+                }
             } else {
                 assert!(
                     monitor
                         .workspaces
                         .iter()
                         .any(|workspace| workspace.original_output == monitor_id),
-                    "secondary monitor must have all own workspaces"
+                    "secondary monitor must not have any non-own workspaces"
                 );
             }
 
