@@ -962,10 +962,9 @@ impl Niri {
         }
 
         let layers = layer_map_for_output(output);
-        let layer_surface = |first: Layer, second: Layer| {
+        let layer_surface_under = |layer| {
             layers
-                .layer_under(first, pos_within_output)
-                .or_else(|| layers.layer_under(second, pos_within_output))
+                .layer_under(layer, pos_within_output)
                 .and_then(|layer| {
                     let layer_pos_within_output = layers.layer_geometry(layer).unwrap().loc;
                     layer
@@ -979,22 +978,26 @@ impl Niri {
                 })
         };
 
-        let (surface, surface_pos_within_output) = layer_surface(Layer::Overlay, Layer::Top)
-            .or_else(|| {
-                self.layout
-                    .window_under(output, pos_within_output)
-                    .and_then(|(window, win_pos_within_output)| {
-                        window
-                            .surface_under(
-                                pos_within_output - win_pos_within_output.to_f64(),
-                                WindowSurfaceType::ALL,
-                            )
-                            .map(|(s, pos_within_window)| {
-                                (s, pos_within_window + win_pos_within_output)
-                            })
-                    })
-            })
-            .or_else(|| layer_surface(Layer::Bottom, Layer::Background))?;
+        let window_under = || {
+            self.layout
+                .window_under(output, pos_within_output)
+                .and_then(|(window, win_pos_within_output)| {
+                    window
+                        .surface_under(
+                            pos_within_output - win_pos_within_output.to_f64(),
+                            WindowSurfaceType::ALL,
+                        )
+                        .map(|(s, pos_within_window)| {
+                            (s, pos_within_window + win_pos_within_output)
+                        })
+                })
+        };
+
+        let (surface, surface_pos_within_output) = layer_surface_under(Layer::Overlay)
+            .or_else(|| layer_surface_under(Layer::Top))
+            .or_else(window_under)
+            .or_else(|| layer_surface_under(Layer::Bottom))
+            .or_else(|| layer_surface_under(Layer::Background))?;
 
         let output_pos_in_global_space = self.global_space.output_geometry(output).unwrap().loc;
         let surface_loc_in_global_space = surface_pos_within_output + output_pos_in_global_space;
