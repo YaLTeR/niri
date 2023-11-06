@@ -72,6 +72,7 @@ xdp-gnome-screencast = ["dbus", "pipewire"]
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
 
 [profile.release]
+debug = "line-tables-only"
 overflow-checks = true
 lto = "thin"
 
