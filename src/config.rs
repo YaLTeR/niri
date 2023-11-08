@@ -284,6 +284,7 @@ pub enum Action {
     MoveWindowToMonitorRight,
     MoveWindowToMonitorDown,
     MoveWindowToMonitorUp,
+    SetWindowHeight(#[knuffel(argument, str)] SizeChange),
     SwitchPresetColumnWidth,
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),

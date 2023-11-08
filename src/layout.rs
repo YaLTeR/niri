@@ -1223,6 +1223,13 @@ impl<W: LayoutElement> Layout<W> {
         monitor.set_column_width(change);
     }
 
+    pub fn set_window_height(&mut self, change: SizeChange) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.set_window_height(change);
+    }
+
     pub fn focus_output(&mut self, output: &Output) {
         if let MonitorSet::Normal {
             monitors,
@@ -1736,6 +1743,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     fn set_column_width(&mut self, change: SizeChange) {
         self.active_workspace().set_column_width(change);
+    }
+
+    fn set_window_height(&mut self, change: SizeChange) {
+        self.active_workspace().set_window_height(change);
     }
 
     fn move_workspace_down(&mut self) {
@@ -2453,6 +2464,14 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns[self.active_column_idx].set_column_width(change);
     }
 
+    fn set_window_height(&mut self, change: SizeChange) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].set_window_height(change);
+    }
+
     pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
         let (mut col_idx, win_idx) = self
             .columns
@@ -2944,6 +2963,50 @@ impl<W: LayoutElement> Column<W> {
         self.set_width(width);
     }
 
+    fn set_window_height(&mut self, change: SizeChange) {
+        let current = self.heights[self.active_window_idx];
+        let current_px = match current {
+            WindowHeight::Auto => self.windows[self.active_window_idx].geometry().size.h,
+            WindowHeight::Fixed(height) => height,
+        };
+        let current_prop = (current_px + self.options.gaps) as f64
+            / (self.working_area.size.h - self.options.gaps) as f64;
+
+        // FIXME: fix overflows then remove limits.
+        const MAX_PX: i32 = 100000;
+
+        let mut height = match change {
+            SizeChange::SetFixed(fixed) => fixed,
+            SizeChange::SetProportion(proportion) => {
+                ((self.working_area.size.h - self.options.gaps) as f64 * proportion
+                    - self.options.gaps as f64)
+                    .round() as i32
+            }
+            SizeChange::AdjustFixed(delta) => current_px.saturating_add(delta),
+            SizeChange::AdjustProportion(delta) => {
+                let proportion = current_prop + delta / 100.;
+                ((self.working_area.size.h - self.options.gaps) as f64 * proportion
+                    - self.options.gaps as f64)
+                    .round() as i32
+            }
+        };
+
+        // Clamp it against the window height constraints.
+        let win = &self.windows[self.active_window_idx];
+        let min_h = win.min_size().h;
+        let max_h = win.max_size().h;
+
+        if max_h > 0 {
+            height = height.min(max_h);
+        }
+        if min_h > 0 {
+            height = height.max(min_h);
+        }
+
+        self.heights[self.active_window_idx] = WindowHeight::Fixed(height.clamp(1, MAX_PX));
+        self.update_window_sizes();
+    }
+
     fn set_fullscreen(&mut self, is_fullscreen: bool) {
         assert_eq!(self.windows.len(), 1);
         self.is_fullscreen = is_fullscreen;
@@ -3189,6 +3252,7 @@ mod tests {
         SwitchPresetColumnWidth,
         MaximizeColumn,
         SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
+        SetWindowHeight(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
     }
 
@@ -3301,6 +3365,7 @@ mod tests {
                 Op::SwitchPresetColumnWidth => layout.toggle_width(),
                 Op::MaximizeColumn => layout.toggle_full_width(),
                 Op::SetColumnWidth(change) => layout.set_column_width(change),
+                Op::SetWindowHeight(change) => layout.set_window_height(change),
                 Op::Communicate(id) => {
                     let mut window = None;
                     match &mut layout.monitor_set {

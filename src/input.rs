@@ -325,6 +325,9 @@ impl State {
                     Action::SetColumnWidth(change) => {
                         self.niri.layout.set_column_width(change);
                     }
+                    Action::SetWindowHeight(change) => {
+                        self.niri.layout.set_window_height(change);
+                    }
                 }
             }
             InputEvent::PointerMotion { event, .. } => {
