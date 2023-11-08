@@ -281,12 +281,26 @@ impl From<PresetWidth> for ColumnWidth {
     }
 }
 
+/// Height of a window in a column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowHeight {
+    /// Automatically computed height, evenly distributed across the column.
+    Auto,
+    /// Fixed height in logical pixels.
+    Fixed(i32),
+}
+
 #[derive(Debug)]
 struct Column<W: LayoutElement> {
     /// Windows in this column.
     ///
     /// Must be non-empty.
     windows: Vec<W>,
+
+    /// Heights of the windows.
+    ///
+    /// Must have the same number of elements as `windows`.
+    heights: Vec<WindowHeight>,
 
     /// Index of the currently active window.
     active_window_idx: usize,
@@ -2168,6 +2182,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let window_idx = column.windows.iter().position(|win| win == window).unwrap();
         column.windows.remove(window_idx);
+        column.heights.remove(window_idx);
         if column.windows.is_empty() {
             if column_idx + 1 == self.active_column_idx {
                 // The previous column, that we were going to activate upon removal of the active
@@ -2447,6 +2462,7 @@ impl<W: LayoutElement> Workspace<W> {
             let target_window_was_focused =
                 self.active_column_idx == col_idx && col.active_window_idx == win_idx;
             let window = col.windows.remove(win_idx);
+            col.heights.remove(win_idx);
             col.active_window_idx = min(col.active_window_idx, col.windows.len() - 1);
             col.update_window_sizes();
             let width = col.width;
@@ -2589,6 +2605,7 @@ impl<W: LayoutElement> Column<W> {
     ) -> Self {
         let mut rv = Self {
             windows: vec![],
+            heights: vec![],
             active_window_idx: 0,
             width,
             is_fullscreen: false,
@@ -2655,6 +2672,7 @@ impl<W: LayoutElement> Column<W> {
     fn add_window(&mut self, window: W) {
         self.is_fullscreen = false;
         self.windows.push(window);
+        self.heights.push(WindowHeight::Auto);
         self.update_window_sizes();
     }
 
@@ -2725,6 +2743,7 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.windows.swap(self.active_window_idx, new_idx);
+        self.heights.swap(self.active_window_idx, new_idx);
         self.active_window_idx = new_idx;
     }
 
@@ -2735,6 +2754,7 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.windows.swap(self.active_window_idx, new_idx);
+        self.heights.swap(self.active_window_idx, new_idx);
         self.active_window_idx = new_idx;
     }
 
@@ -2742,6 +2762,7 @@ impl<W: LayoutElement> Column<W> {
     fn verify_invariants(&self) {
         assert!(!self.windows.is_empty(), "columns can't be empty");
         assert!(self.active_window_idx < self.windows.len());
+        assert_eq!(self.windows.len(), self.heights.len());
 
         if self.is_fullscreen {
             assert_eq!(self.windows.len(), 1);
