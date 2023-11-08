@@ -282,6 +282,17 @@ impl From<PresetWidth> for ColumnWidth {
 }
 
 /// Height of a window in a column.
+///
+/// Proportional height is intentionally omitted. With column widths you frequently want e.g. two
+/// columns side-by-side with 50% width each, and you want them to remain this way when moving to a
+/// differently sized monitor. Windows in a column, however, already auto-size to fill the available
+/// height, giving you this behavior. The only reason to set a different window height, then, is
+/// when you want something in the window to fit exactly, e.g. to fit 30 lines in a terminal, which
+/// corresponds to the `Fixed` variant.
+///
+/// This does not preclude the usual set of binds to set or resize a window proportionally. Just,
+/// they are converted to, and stored as fixed height right away, so that once you resize a window
+/// to fit the desired content, it can never become smaller than that when moving between monitors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowHeight {
     /// Automatically computed height, evenly distributed across the column.
@@ -2651,10 +2662,6 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
-    fn window_count(&self) -> usize {
-        self.windows.len()
-    }
-
     fn set_width(&mut self, width: ColumnWidth) {
         self.width = width;
         self.update_window_sizes();
@@ -2682,11 +2689,14 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
-        let min_width = self
-            .windows
+        let min_size: Vec<_> = self.windows.iter().map(LayoutElement::min_size).collect();
+        let max_size: Vec<_> = self.windows.iter().map(LayoutElement::max_size).collect();
+
+        // Compute the column width.
+        let min_width = min_size
             .iter()
-            .filter_map(|win| {
-                let w = win.min_size().w;
+            .filter_map(|size| {
+                let w = size.w;
                 if w == 0 {
                     None
                 } else {
@@ -2695,11 +2705,10 @@ impl<W: LayoutElement> Column<W> {
             })
             .max()
             .unwrap_or(1);
-        let max_width = self
-            .windows
+        let max_width = max_size
             .iter()
-            .filter_map(|win| {
-                let w = win.max_size().w;
+            .filter_map(|size| {
+                let w = size.w;
                 if w == 0 {
                     None
                 } else {
@@ -2711,11 +2720,109 @@ impl<W: LayoutElement> Column<W> {
         let max_width = max(max_width, min_width);
 
         let width = self.width.resolve(&self.options, self.working_area.size.w);
-        let height = (self.working_area.size.h - self.options.gaps) / self.window_count() as i32
-            - self.options.gaps;
-        let size = Size::from((max(min(width, max_width), min_width), max(height, 1)));
+        let width = max(min(width, max_width), min_width);
 
-        for win in &self.windows {
+        // Compute the window heights.
+        let mut heights = self.heights.clone();
+        let mut height_left = self.working_area.size.h - self.options.gaps;
+        let mut auto_windows_left = self.windows.len();
+
+        // Subtract all fixed-height windows.
+        for (h, (min_size, max_size)) in zip(&mut heights, zip(&min_size, &max_size)) {
+            // Check if the window has an exact height constraint.
+            if min_size.h > 0 && min_size.h == max_size.h {
+                *h = WindowHeight::Fixed(min_size.h);
+            }
+
+            if let WindowHeight::Fixed(h) = h {
+                if max_size.h > 0 {
+                    *h = min(*h, max_size.h);
+                }
+                if min_size.h > 0 {
+                    *h = max(*h, min_size.h);
+                }
+                *h = max(*h, 1);
+
+                height_left -= *h + self.options.gaps;
+                auto_windows_left -= 1;
+            }
+        }
+
+        // Iteratively try to distribute the remaining height, checking against window min heights.
+        // Pick an auto height according to the current sizes, then check if it satisfies all
+        // remaining min heights. If not, allocate fixed height to those windows and repeat the
+        // loop. On each iteration the auto height will get smaller.
+        //
+        // NOTE: we do not respect max height here. Doing so would complicate things: if the current
+        // auto height is above some window's max height, then the auto height can become larger.
+        // Combining this with the min height loop is where the complexity appears.
+        //
+        // However, most max height uses are for fixed-size dialogs, where min height == max_height.
+        // This case is separately handled above.
+        while auto_windows_left > 0 {
+            // Compute the current auto height.
+            let auto_height = height_left / auto_windows_left as i32 - self.options.gaps;
+            let auto_height = max(auto_height, 1);
+
+            // Integer division above can result in imperfect height distribution. We will make some
+            // windows 1 px taller to account for this.
+            let mut ones_left = height_left
+                .saturating_sub((auto_height + self.options.gaps) * auto_windows_left as i32);
+
+            let mut unsatisfied_min = false;
+            let mut ones_left_2 = ones_left;
+            for (h, min_size) in zip(&mut heights, &min_size) {
+                if matches!(h, WindowHeight::Fixed(_)) {
+                    continue;
+                }
+
+                let mut auto = auto_height;
+                if ones_left_2 > 0 {
+                    auto += 1;
+                    ones_left_2 -= 1;
+                }
+
+                // Check if the auto height satisfies the min height.
+                if min_size.h > 0 && min_size.h > auto {
+                    *h = WindowHeight::Fixed(min_size.h);
+                    height_left -= min_size.h + self.options.gaps;
+                    auto_windows_left -= 1;
+                    unsatisfied_min = true;
+                }
+            }
+
+            // If some min height was unsatisfied, then we allocated the window more than the auto
+            // height, which means that the remaining auto windows now have less height to work
+            // with, and the loop must run again.
+            if unsatisfied_min {
+                continue;
+            }
+
+            // All min heights were satisfied, fill them in.
+            for h in &mut heights {
+                if matches!(h, WindowHeight::Fixed(_)) {
+                    continue;
+                }
+
+                let mut auto = auto_height;
+                if ones_left > 0 {
+                    auto += 1;
+                    ones_left -= 1;
+                }
+
+                *h = WindowHeight::Fixed(auto);
+                auto_windows_left -= 1;
+            }
+
+            assert_eq!(auto_windows_left, 0);
+        }
+
+        for (win, h) in zip(&self.windows, heights) {
+            let WindowHeight::Fixed(height) = h else {
+                unreachable!()
+            };
+
+            let size = Size::from((width, height));
             win.request_size(size);
         }
     }
