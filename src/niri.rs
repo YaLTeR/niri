@@ -60,9 +60,7 @@ use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
-use smithay::wayland::selection::primary_selection::{
-    set_primary_selection, PrimarySelectionState,
-};
+use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
 use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
@@ -2103,12 +2101,6 @@ impl Niri {
             .insert_source(rx, move |event, _, state| match event {
                 calloop::channel::Event::Msg(buf) => {
                     set_data_device_selection(
-                        &state.niri.display_handle,
-                        &state.niri.seat,
-                        vec![String::from("image/png")],
-                        buf.clone(),
-                    );
-                    set_primary_selection(
                         &state.niri.display_handle,
                         &state.niri.seat,
                         vec![String::from("image/png")],
