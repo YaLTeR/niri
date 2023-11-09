@@ -31,20 +31,34 @@ Every monitor has an independent set of workspaces, and there's always one empty
 Niri tries to preserve the workspace arrangement as much as possible upon disconnecting and connecting monitors.
 When a monitor disconnects, its workspaces will move to another monitor, but upon reconnection they will move back to the original monitor.
 
+## Installation
+
+The recommended way to install and run niri is as a standalone desktop session.
+To do that, put files into the correct directories according to this table.
+
+| File | Destination |
+| ---- | ----------- |
+| `target/release/niri` | `/usr/bin/` |
+| `resources/niri-session` | `/usr/bin/` |
+| `resources/niri.desktop` | `/usr/share/wayland-sessions/` |
+| `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |
+| `resources/niri.service` | `/usr/lib/systemd/user/` |
+
+Doing this will make niri appear in GDM and, presumably, other display managers.
+
 ## Running
 
 `cargo run --release`
 
-Inside a desktop session, it will run in a window.
+Inside an existing desktop session, it will run in a window.
 On a TTY, it will run natively.
 
 To exit when running on a TTY, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.
 
 ### Session
 
-You can install and run niri as a standalone desktop session.
-Check the `generate-rpm` metadata at the bottom of `Cargo.toml` to see which files go where.
-After installing, you can choose the niri session in GDM and, presumably, other display managers.
+If you followed the recommended installation steps above, niri should appear in your display manager.
+Starting it from there will run niri as a desktop session.
 
 The niri session will autostart apps through the systemd xdg-autostart target.
 You can also autostart systemd services like [mako] by symlinking them into `$HOME/.config/systemd/user/niri.service.wants/`.
