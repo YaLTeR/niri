@@ -31,6 +31,27 @@ Every monitor has an independent set of workspaces, and there's always one empty
 Niri tries to preserve the workspace arrangement as much as possible upon disconnecting and connecting monitors.
 When a monitor disconnects, its workspaces will move to another monitor, but upon reconnection they will move back to the original monitor.
 
+## Building
+
+First, install the dependencies for your distribution.
+
+- Ubuntu:
+
+    ```sh
+    sudo apt-get install -y software-properties-common
+    sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
+    sudo apt-get update -y
+    sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev
+    ```
+
+- Fedora:
+
+    ```sh
+    sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel clang
+    ```
+
+Next, build niri with `cargo build --release`.
+
 ## Installation
 
 The recommended way to install and run niri is as a standalone desktop session.
