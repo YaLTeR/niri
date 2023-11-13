@@ -317,7 +317,13 @@ struct Column<W: LayoutElement> {
     active_window_idx: usize,
 
     /// Desired width of this column.
+    ///
+    /// If the column is full-width or full-screened, this is the width that should be restored
+    /// upon unfullscreening and untoggling full-width.
     width: ColumnWidth,
+
+    /// Whether this column is full-width.
+    is_full_width: bool,
 
     /// Whether this column contains a single full-screened window.
     is_fullscreen: bool,
@@ -642,6 +648,7 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         activate: bool,
         width: ColumnWidth,
+        is_full_width: bool,
     ) {
         let MonitorSet::Normal {
             monitors,
@@ -652,7 +659,7 @@ impl<W: LayoutElement> Layout<W> {
             panic!()
         };
 
-        monitors[monitor_idx].add_window(workspace_idx, window, activate, width);
+        monitors[monitor_idx].add_window(workspace_idx, window, activate, width, is_full_width);
 
         if activate {
             *active_monitor_idx = monitor_idx;
@@ -667,6 +674,7 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         activate: bool,
         width: Option<ColumnWidth>,
+        is_full_width: bool,
     ) -> Option<&Output> {
         let width = width
             .or(self.options.default_width)
@@ -679,7 +687,13 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 let mon = &mut monitors[*active_monitor_idx];
-                mon.add_window(mon.active_workspace_idx, window, activate, width);
+                mon.add_window(
+                    mon.active_workspace_idx,
+                    window,
+                    activate,
+                    width,
+                    is_full_width,
+                );
                 Some(&mon.output)
             }
             MonitorSet::NoOutputs { workspaces } => {
@@ -689,7 +703,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces.push(Workspace::new_no_outputs(self.options.clone()));
                     &mut workspaces[0]
                 };
-                ws.add_window(window, activate, width);
+                ws.add_window(window, activate, width, is_full_width);
                 None
             }
         }
@@ -1266,10 +1280,11 @@ impl<W: LayoutElement> Layout<W> {
             let column = &ws.columns[ws.active_column_idx];
             let window = column.windows[column.active_window_idx].clone();
             let width = column.width;
+            let is_full_width = column.is_full_width;
             ws.remove_window(&window);
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
-            self.add_window_by_idx(new_idx, workspace_idx, window, true, width);
+            self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
         }
     }
 
@@ -1282,11 +1297,13 @@ impl<W: LayoutElement> Layout<W> {
 
         if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
             let mut width = None;
+            let mut is_full_width = false;
             for mon in &*monitors {
                 for ws in &mon.workspaces {
                     for col in &ws.columns {
                         if col.windows.contains(&window) {
                             width = Some(col.width);
+                            is_full_width = col.is_full_width;
                             break;
                         }
                     }
@@ -1301,7 +1318,7 @@ impl<W: LayoutElement> Layout<W> {
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             // FIXME: activate only if it was already active and focused.
-            self.add_window_by_idx(new_idx, workspace_idx, window, true, width);
+            self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
         }
     }
 
@@ -1523,10 +1540,11 @@ impl<W: LayoutElement> Monitor<W> {
         window: W,
         activate: bool,
         width: ColumnWidth,
+        is_full_width: bool,
     ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_window(window.clone(), activate, width);
+        workspace.add_window(window.clone(), activate, width, is_full_width);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -1606,10 +1624,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         let column = &mut workspace.columns[workspace.active_column_idx];
         let width = column.width;
+        let is_full_width = column.is_full_width;
         let window = column.windows[column.active_window_idx].clone();
         workspace.remove_window(&window);
 
-        self.add_window(new_idx, window, true, width);
+        self.add_window(new_idx, window, true, width, is_full_width);
     }
 
     pub fn move_to_workspace_down(&mut self) {
@@ -1627,10 +1646,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         let column = &mut workspace.columns[workspace.active_column_idx];
         let width = column.width;
+        let is_full_width = column.is_full_width;
         let window = column.windows[column.active_window_idx].clone();
         workspace.remove_window(&window);
 
-        self.add_window(new_idx, window, true, width);
+        self.add_window(new_idx, window, true, width, is_full_width);
     }
 
     pub fn move_to_workspace(&mut self, idx: u8) {
@@ -1648,10 +1668,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         let column = &mut workspace.columns[workspace.active_column_idx];
         let width = column.width;
+        let is_full_width = column.is_full_width;
         let window = column.windows[column.active_window_idx].clone();
         workspace.remove_window(&window);
 
-        self.add_window(new_idx, window, true, width);
+        self.add_window(new_idx, window, true, width, is_full_width);
 
         // Don't animate this action.
         self.workspace_switch = None;
@@ -2155,7 +2176,7 @@ impl<W: LayoutElement> Workspace<W> {
         x
     }
 
-    fn add_window(&mut self, window: W, activate: bool, width: ColumnWidth) {
+    fn add_window(&mut self, window: W, activate: bool, width: ColumnWidth, is_full_width: bool) {
         self.enter_output_for_window(&window);
 
         let was_empty = self.columns.is_empty();
@@ -2172,6 +2193,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.working_area,
             self.options.clone(),
             width,
+            is_full_width,
         );
         self.columns.insert(idx, column);
 
@@ -2390,10 +2412,11 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let width = source_column.width;
+        let is_full_width = source_column.is_full_width;
         let window = source_column.windows[source_column.active_window_idx].clone();
         self.remove_window(&window);
 
-        self.add_window(window, true, width);
+        self.add_window(window, true, width, is_full_width);
     }
 
     fn view_pos(&self) -> i32 {
@@ -2496,6 +2519,7 @@ impl<W: LayoutElement> Workspace<W> {
             col.active_window_idx = min(col.active_window_idx, col.windows.len() - 1);
             col.update_window_sizes();
             let width = col.width;
+            let is_full_width = col.is_full_width;
 
             col_idx += 1;
             self.columns.insert(
@@ -2506,6 +2530,7 @@ impl<W: LayoutElement> Workspace<W> {
                     self.working_area,
                     self.options.clone(),
                     width,
+                    is_full_width,
                 ),
             );
             if self.active_column_idx >= col_idx || target_window_was_focused {
@@ -2632,12 +2657,14 @@ impl<W: LayoutElement> Column<W> {
         working_area: Rectangle<i32, Logical>,
         options: Rc<Options>,
         width: ColumnWidth,
+        is_full_width: bool,
     ) -> Self {
         let mut rv = Self {
             windows: vec![],
             heights: vec![],
             active_window_idx: 0,
             width,
+            is_full_width,
             is_fullscreen: false,
             view_size,
             working_area,
@@ -2683,6 +2710,7 @@ impl<W: LayoutElement> Column<W> {
 
     fn set_width(&mut self, width: ColumnWidth) {
         self.width = width;
+        self.is_full_width = false;
         self.update_window_sizes();
     }
 
@@ -2738,7 +2766,13 @@ impl<W: LayoutElement> Column<W> {
             .unwrap_or(i32::MAX);
         let max_width = max(max_width, min_width);
 
-        let width = self.width.resolve(&self.options, self.working_area.size.w);
+        let width = if self.is_full_width {
+            ColumnWidth::Proportion(1.)
+        } else {
+            self.width
+        };
+
+        let width = width.resolve(&self.options, self.working_area.size.w);
         let width = max(min(width, max_width), min_width);
 
         // Compute the window heights.
@@ -2896,7 +2930,13 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn toggle_width(&mut self) {
-        let idx = match self.width {
+        let width = if self.is_full_width {
+            ColumnWidth::Proportion(1.)
+        } else {
+            self.width
+        };
+
+        let idx = match width {
             ColumnWidth::Preset(idx) => (idx + 1) % self.options.preset_widths.len(),
             _ => {
                 let current = self.width();
@@ -2914,22 +2954,20 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn toggle_full_width(&mut self) {
-        let width = match self.width {
-            ColumnWidth::Proportion(x) if x == 1. => {
-                // FIXME: would be good to restore to previous width here.
-                self.options
-                    .default_width
-                    .unwrap_or(ColumnWidth::Proportion(0.5))
-            }
-            _ => ColumnWidth::Proportion(1.),
-        };
-        self.set_width(width);
+        self.is_full_width = !self.is_full_width;
+        self.update_window_sizes();
     }
 
     fn set_column_width(&mut self, change: SizeChange) {
-        let current_px = self.width.resolve(&self.options, self.working_area.size.w);
+        let width = if self.is_full_width {
+            ColumnWidth::Proportion(1.)
+        } else {
+            self.width
+        };
 
-        let current = match self.width {
+        let current_px = width.resolve(&self.options, self.working_area.size.w);
+
+        let current = match width {
             ColumnWidth::Preset(idx) => self.options.preset_widths[idx],
             current => current,
         };
@@ -3326,7 +3364,7 @@ mod tests {
                     }
 
                     let win = TestWindow::new(id, bbox);
-                    layout.add_window(win, activate, None);
+                    layout.add_window(win, activate, None, false);
                 }
                 Op::CloseWindow(id) => {
                     let dummy = TestWindow::new(id, Rectangle::default());
