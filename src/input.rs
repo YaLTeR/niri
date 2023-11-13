@@ -282,6 +282,11 @@ impl State {
                     Action::SwitchPresetColumnWidth => {
                         self.niri.layout.toggle_width();
                     }
+                    Action::CenterColumn => {
+                        self.niri.layout.center_column();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
                     Action::MaximizeColumn => {
                         self.niri.layout.toggle_full_width();
                     }

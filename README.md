@@ -120,6 +120,7 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>.</kbd> | Expel the focused window into its own column |
 | <kbd>Mod</kbd><kbd>R</kbd> | Toggle between preset column widths |
 | <kbd>Mod</kbd><kbd>F</kbd> | Maximize column |
+| <kbd>Mod</kbd><kbd>C</kbd> | Center column within view |
 | <kbd>Mod</kbd><kbd>-</kbd> | Decrease column width by 10% |
 | <kbd>Mod</kbd><kbd>=</kbd> | Increase column width by 10% |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>-</kbd> | Decrease window height by 10% |

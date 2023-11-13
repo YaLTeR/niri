@@ -219,6 +219,7 @@ binds {
     Mod+R { switch-preset-column-width; }
     Mod+F { maximize-column; }
     Mod+Shift+F { fullscreen-window; }
+    Mod+C { center-column; }
 
     // Finer width adjustments.
     // This command can also:

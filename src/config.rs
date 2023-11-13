@@ -279,6 +279,7 @@ pub enum Action {
     MoveWindowUp,
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
+    CenterColumn,
     FocusWorkspaceDown,
     FocusWorkspaceUp,
     FocusWorkspace(#[knuffel(argument)] u8),

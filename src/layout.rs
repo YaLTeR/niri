@@ -1049,6 +1049,13 @@ impl<W: LayoutElement> Layout<W> {
         monitor.expel_from_column();
     }
 
+    pub fn center_column(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.center_column();
+    }
+
     pub fn focus(&self) -> Option<&W> {
         let MonitorSet::Normal {
             monitors,
@@ -1708,6 +1715,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn expel_from_column(&mut self) {
         self.active_workspace().expel_from_column();
+    }
+
+    pub fn center_column(&mut self) {
+        self.active_workspace().center_column();
     }
 
     pub fn focus(&self) -> Option<&W> {
@@ -2417,6 +2428,45 @@ impl<W: LayoutElement> Workspace<W> {
         self.remove_window(&window);
 
         self.add_window(window, true, width, is_full_width);
+    }
+
+    fn center_column(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &self.columns[self.active_column_idx];
+        if col.is_fullscreen {
+            return;
+        }
+
+        let width = col.width();
+
+        // If the column is wider than the working area, then on commit it will be shifted to left
+        // edge alignment by the usual positioning code, so there's no use in doing anything here.
+        if self.working_area.size.w <= width {
+            return;
+        }
+
+        let new_view_offset = -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+
+        // If we're already animating towards that, don't restart it.
+        if let Some(anim) = &self.view_offset_anim {
+            if anim.to().round() as i32 == new_view_offset {
+                return;
+            }
+        }
+
+        // If our view offset is already this, we don't need to do anything.
+        if self.view_offset == new_view_offset {
+            return;
+        }
+
+        self.view_offset_anim = Some(Animation::new(
+            self.view_offset as f64,
+            new_view_offset as f64,
+            Duration::from_millis(250),
+        ));
     }
 
     fn view_pos(&self) -> i32 {
@@ -3278,6 +3328,7 @@ mod tests {
         MoveWindowUp,
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
+        CenterColumn,
         FocusWorkspaceDown,
         FocusWorkspaceUp,
         FocusWorkspace(#[proptest(strategy = "1..=5u8")] u8),
@@ -3384,6 +3435,7 @@ mod tests {
                 Op::MoveWindowUp => layout.move_up(),
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
+                Op::CenterColumn => layout.center_column(),
                 Op::FocusWorkspaceDown => layout.switch_workspace_down(),
                 Op::FocusWorkspaceUp => layout.switch_workspace_up(),
                 Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
@@ -3488,6 +3540,7 @@ mod tests {
             Op::MoveColumnRight,
             Op::ConsumeWindowIntoColumn,
             Op::ExpelWindowFromColumn,
+            Op::CenterColumn,
             Op::FocusWorkspaceDown,
             Op::FocusWorkspaceUp,
             Op::FocusWorkspace(1),
@@ -3603,6 +3656,7 @@ mod tests {
             Op::MoveColumnRight,
             Op::ConsumeWindowIntoColumn,
             Op::ExpelWindowFromColumn,
+            Op::CenterColumn,
             Op::FocusWorkspaceDown,
             Op::FocusWorkspaceUp,
             Op::FocusWorkspace(1),
