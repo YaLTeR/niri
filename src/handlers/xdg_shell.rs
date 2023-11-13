@@ -91,14 +91,15 @@ impl XdgShellHandler for State {
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {
+        // FIXME
+
         // The protocol demands us to always reply with a configure,
         // regardless of we fulfilled the request or not
-        self.niri.layout.toggle_full_width();
         surface.send_configure();
     }
 
     fn unmaximize_request(&mut self, _surface: ToplevelSurface) {
-        self.niri.layout.toggle_full_width();
+        // FIXME
     }
 
     fn fullscreen_request(
