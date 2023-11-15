@@ -29,7 +29,7 @@ sd-notify = "0.4.1"
 serde = { version = "1.0.190", features = ["derive"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
-tracy-client = { version = "0.16.3", default-features = false }
+tracy-client = { version = "0.16.4", default-features = false }
 url = { version = "2.4.1", optional = true }
 xcursor = "0.3.4"
 zbus = { version = "3.14.1", optional = true }
