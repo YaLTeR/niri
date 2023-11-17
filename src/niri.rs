@@ -28,7 +28,9 @@ use smithay::desktop::utils::{
     surface_primary_scanout_output, take_presentation_feedback_surface_tree,
     under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
-use smithay::desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType};
+use smithay::desktop::{
+    layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
+};
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig, XkbContextHandler};
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
@@ -370,13 +372,34 @@ impl State {
             self.niri.lock_surface_focus()
         } else if self.niri.screenshot_ui.is_open() {
             None
-        } else {
-            self.niri.layer_surface_focus().or_else(|| {
+        } else if let Some(output) = self.niri.layout.active_output() {
+            let mon = self.niri.layout.monitor_for_output(output).unwrap();
+            let layers = layer_map_for_output(output);
+
+            let layout_focus = || {
                 self.niri
                     .layout
                     .focus()
                     .map(|win| win.toplevel().wl_surface().clone())
-            })
+            };
+            let layer_focus = |surface: &LayerSurface| {
+                surface
+                    .can_receive_keyboard_focus()
+                    .then(|| surface.wl_surface().clone())
+            };
+
+            let mut surface = layers.layers_on(Layer::Overlay).find_map(layer_focus);
+            if mon.render_above_top_layer() {
+                surface = surface.or_else(layout_focus);
+                surface = surface.or_else(|| layers.layers_on(Layer::Top).find_map(layer_focus));
+            } else {
+                surface = surface.or_else(|| layers.layers_on(Layer::Top).find_map(layer_focus));
+                surface = surface.or_else(layout_focus);
+            }
+
+            surface
+        } else {
+            None
         };
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
@@ -1143,17 +1166,6 @@ impl Niri {
 
         let state = self.output_state.get(output)?;
         state.lock_surface.as_ref().map(|s| s.wl_surface()).cloned()
-    }
-
-    fn layer_surface_focus(&self) -> Option<WlSurface> {
-        let output = self.layout.active_output()?;
-        let layers = layer_map_for_output(output);
-        let surface = layers
-            .layers_on(Layer::Overlay)
-            .chain(layers.layers_on(Layer::Top))
-            .find(|surface| surface.can_receive_keyboard_focus())?;
-
-        Some(surface.wl_surface().clone())
     }
 
     /// Schedules an immediate redraw on all outputs if one is not already scheduled.
