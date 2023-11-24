@@ -74,12 +74,6 @@ fn main() {
         .with_env_filter(env_filter)
         .init();
 
-    info!(
-        "starting version {} ({})",
-        env!("CARGO_PKG_VERSION"),
-        git_version!(fallback = "unknown commit"),
-    );
-
     if is_systemd_service {
         // If we're starting as a systemd service, assume that the intention is to start on a TTY.
         // Remove DISPLAY or WAYLAND_DISPLAY from our environment if they are set, since they will
@@ -97,6 +91,12 @@ fn main() {
     let cli = Cli::parse();
 
     let _client = tracy_client::Client::start();
+
+    info!(
+        "starting version {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        git_version!(fallback = "unknown commit"),
+    );
 
     // Load the config.
     miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new()))).unwrap();
