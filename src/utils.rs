@@ -5,6 +5,7 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::ptr::null_mut;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{ensure, Context};
@@ -53,6 +54,9 @@ pub fn make_screenshot_path(config: &Config) -> anyhow::Result<Option<PathBuf>> 
     Ok(Some(path))
 }
 
+pub static REMOVE_ENV_RUST_BACKTRACE: AtomicBool = AtomicBool::new(false);
+pub static REMOVE_ENV_RUST_LIB_BACKTRACE: AtomicBool = AtomicBool::new(false);
+
 /// Spawns the command to run independently of the compositor.
 pub fn spawn(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl AsRef<OsStr>>) {
     let _span = tracy_client::span!();
@@ -65,6 +69,14 @@ pub fn spawn(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl AsR
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+
+    // Remove RUST_BACKTRACE and RUST_LIB_BACKTRACE from the environment if needed.
+    if REMOVE_ENV_RUST_BACKTRACE.load(Ordering::Relaxed) {
+        process.env_remove("RUST_BACKTRACE");
+    }
+    if REMOVE_ENV_RUST_LIB_BACKTRACE.load(Ordering::Relaxed) {
+        process.env_remove("RUST_LIB_BACKTRACE");
+    }
 
     // Double-fork to avoid having to waitpid the child.
     unsafe {

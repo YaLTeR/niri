@@ -39,6 +39,8 @@ use tracing_subscriber::EnvFilter;
 use utils::spawn;
 use watcher::Watcher;
 
+use crate::utils::{REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -51,9 +53,14 @@ struct Cli {
 }
 
 fn main() {
-    env::set_var("RUST_BACKTRACE", "1");
+    // Set backtrace defaults if not set.
+    if env::var_os("RUST_BACKTRACE").is_none() {
+        env::set_var("RUST_BACKTRACE", "1");
+        REMOVE_ENV_RUST_BACKTRACE.store(true, Ordering::Relaxed);
+    }
     if env::var_os("RUST_LIB_BACKTRACE").is_none() {
         env::set_var("RUST_LIB_BACKTRACE", "0");
+        REMOVE_ENV_RUST_LIB_BACKTRACE.store(true, Ordering::Relaxed);
     }
 
     let is_systemd_service = env::var_os("NOTIFY_SOCKET").is_some();
