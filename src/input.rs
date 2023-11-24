@@ -192,7 +192,7 @@ impl State {
                             .seat
                             .get_keyboard()
                             .unwrap()
-                            .with_kkb_state(self, |mut state| match action {
+                            .with_xkb_state(self, |mut state| match action {
                                 LayoutAction::Next => state.cycle_next_layout(),
                                 LayoutAction::Prev => state.cycle_prev_layout(),
                             });

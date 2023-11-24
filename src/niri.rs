@@ -407,7 +407,7 @@ impl State {
         if current_focus != focus {
             if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
                 let current_layout =
-                    keyboard.with_kkb_state(self, |context| context.active_layout());
+                    keyboard.with_xkb_state(self, |context| context.active_layout());
 
                 let mut new_layout = current_layout;
                 // Store the currently active layout for the surface.
@@ -432,7 +432,7 @@ impl State {
                 }
                 if new_layout != current_layout && focus.is_some() {
                     keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
-                    keyboard.with_kkb_state(self, |mut context| {
+                    keyboard.with_xkb_state(self, |mut context| {
                         context.set_layout(new_layout);
                     });
                 }

@@ -20,7 +20,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle, Size};
 use smithay::wayland::compositor::{send_surface_state, with_states};
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::selection::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
@@ -189,15 +189,18 @@ impl DmabufHandler for State {
         &mut self,
         _global: &DmabufGlobal,
         dmabuf: Dmabuf,
-    ) -> Result<(), ImportError> {
+        notifier: ImportNotifier,
+    ) {
         let renderer = self.backend.renderer().expect(
             "the dmabuf global must be created and destroyed together with the output device",
         );
         match renderer.import_dmabuf(&dmabuf, None) {
-            Ok(_texture) => Ok(()),
+            Ok(_texture) => {
+                let _ = notifier.successful::<State>();
+            }
             Err(err) => {
                 debug!("error importing dmabuf: {err:?}");
-                Err(ImportError::Failed)
+                notifier.failed();
             }
         }
     }
