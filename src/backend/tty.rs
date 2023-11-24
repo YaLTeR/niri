@@ -94,8 +94,8 @@ struct Surface {
     vblank_frame_name: tracy_client::FrameName,
     /// Plot name for the VBlank dispatch offset plot.
     vblank_plot_name: tracy_client::PlotName,
-    /// Plot name for the presentation target offset plot.
-    presentation_plot_name: tracy_client::PlotName,
+    /// Plot name for the presentation misprediction plot.
+    presentation_misprediction_plot_name: tracy_client::PlotName,
     sequence_delta_plot_name: tracy_client::PlotName,
 }
 
@@ -588,8 +588,8 @@ impl Tty {
             tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
         let vblank_plot_name =
             tracy_client::PlotName::new_leak(format!("{output_name} vblank dispatch offset, ms"));
-        let presentation_plot_name = tracy_client::PlotName::new_leak(format!(
-            "{output_name} presentation target offset, ms"
+        let presentation_misprediction_plot_name = tracy_client::PlotName::new_leak(format!(
+            "{output_name} presentation misprediction, ms"
         ));
         let sequence_delta_plot_name =
             tracy_client::PlotName::new_leak(format!("{output_name} sequence delta"));
@@ -606,7 +606,7 @@ impl Tty {
             vblank_frame: None,
             vblank_frame_name,
             vblank_plot_name,
-            presentation_plot_name,
+            presentation_misprediction_plot_name,
             sequence_delta_plot_name,
         };
         let res = device.surfaces.insert(crtc, surface);
@@ -748,11 +748,12 @@ impl Tty {
                 );
 
                 if !presentation_time.is_zero() {
-                    let diff =
+                    let misprediction_s =
                         presentation_time.as_secs_f64() - target_presentation_time.as_secs_f64();
-                    tracy_client::Client::running()
-                        .unwrap()
-                        .plot(surface.presentation_plot_name, diff * 1000.);
+                    tracy_client::Client::running().unwrap().plot(
+                        surface.presentation_misprediction_plot_name,
+                        misprediction_s * 1000.,
+                    );
                 }
             }
             Ok(None) => (),
