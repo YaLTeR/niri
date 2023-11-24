@@ -79,6 +79,20 @@ fn main() {
         git_version!(fallback = "unknown commit"),
     );
 
+    if is_systemd_service {
+        // If we're starting as a systemd service, assume that the intention is to start on a TTY.
+        // Remove DISPLAY or WAYLAND_DISPLAY from our environment if they are set, since they will
+        // cause the winit backend to be selected instead.
+        if env::var_os("DISPLAY").is_some() {
+            debug!("we're running as a systemd service but DISPLAY is set, removing it");
+            env::remove_var("DISPLAY");
+        }
+        if env::var_os("WAYLAND_DISPLAY").is_some() {
+            debug!("we're running as a systemd service but WAYLAND_DISPLAY is set, removing it");
+            env::remove_var("WAYLAND_DISPLAY");
+        }
+    }
+
     let cli = Cli::parse();
 
     let _client = tracy_client::Client::start();
