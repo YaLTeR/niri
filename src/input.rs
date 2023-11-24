@@ -240,6 +240,7 @@ impl State {
                         self.niri.queue_redraw_all();
                     }
                     Action::MoveWindowToWorkspace(idx) => {
+                        let idx = idx.saturating_sub(1) as usize;
                         self.niri.layout.move_to_workspace(idx);
                         // FIXME: granular
                         self.niri.queue_redraw_all();
@@ -255,6 +256,7 @@ impl State {
                         self.niri.queue_redraw_all();
                     }
                     Action::FocusWorkspace(idx) => {
+                        let idx = idx.saturating_sub(1) as usize;
                         self.niri.layout.switch_workspace(idx);
                         // FIXME: granular
                         self.niri.queue_redraw_all();

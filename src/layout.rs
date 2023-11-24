@@ -1007,7 +1007,7 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace_down();
     }
 
-    pub fn move_to_workspace(&mut self, idx: u8) {
+    pub fn move_to_workspace(&mut self, idx: usize) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
@@ -1028,7 +1028,7 @@ impl<W: LayoutElement> Layout<W> {
         monitor.switch_workspace_down();
     }
 
-    pub fn switch_workspace(&mut self, idx: u8) {
+    pub fn switch_workspace(&mut self, idx: usize) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
@@ -1660,10 +1660,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.add_window(new_idx, window, true, width, is_full_width);
     }
 
-    pub fn move_to_workspace(&mut self, idx: u8) {
+    pub fn move_to_workspace(&mut self, idx: usize) {
         let source_workspace_idx = self.active_workspace_idx;
 
-        let new_idx = min(idx.saturating_sub(1) as usize, self.workspaces.len() - 1);
+        let new_idx = min(idx, self.workspaces.len() - 1);
         if new_idx == source_workspace_idx {
             return;
         }
@@ -1698,11 +1698,8 @@ impl<W: LayoutElement> Monitor<W> {
         ));
     }
 
-    pub fn switch_workspace(&mut self, idx: u8) {
-        self.activate_workspace(min(
-            idx.saturating_sub(1) as usize,
-            self.workspaces.len() - 1,
-        ));
+    pub fn switch_workspace(&mut self, idx: usize) {
+        self.activate_workspace(min(idx, self.workspaces.len() - 1));
         // Don't animate this action.
         self.workspace_switch = None;
 
@@ -3331,10 +3328,10 @@ mod tests {
         CenterColumn,
         FocusWorkspaceDown,
         FocusWorkspaceUp,
-        FocusWorkspace(#[proptest(strategy = "1..=5u8")] u8),
+        FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
-        MoveWindowToWorkspace(#[proptest(strategy = "1..=5u8")] u8),
+        MoveWindowToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
         MoveWorkspaceDown,
         MoveWorkspaceUp,
         MoveWindowToOutput(#[proptest(strategy = "1..=5u8")] u8),
