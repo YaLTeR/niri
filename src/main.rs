@@ -29,6 +29,7 @@ use clap::Parser;
 use config::Config;
 #[cfg(not(feature = "xdp-gnome-screencast"))]
 use dummy_pw_utils as pw_utils;
+use git_version::git_version;
 use miette::{Context, NarratableReportHandler};
 use niri::{Niri, State};
 use portable_atomic::Ordering;
@@ -71,6 +72,12 @@ fn main() {
         .compact()
         .with_env_filter(env_filter)
         .init();
+
+    info!(
+        "starting version {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        git_version!(fallback = "unknown commit"),
+    );
 
     let cli = Cli::parse();
 

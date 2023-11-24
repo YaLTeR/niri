@@ -1151,6 +1151,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "git-version"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13ad01ffa8221f7fe8b936d6ffb2a3e7ad428885a04fad51866a5f33eafda57c"
+dependencies = [
+ "git-version-macro",
+]
+
+[[package]]
+name = "git-version-macro"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84488ccbdb24ad6f56dc1863b4a8154a7856cd3c6c7610401634fab3cb588dae"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.39",
+]
+
+[[package]]
 name = "gl_generator"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1683,6 +1703,7 @@ dependencies = [
  "bitflags 2.4.1",
  "clap",
  "directories",
+ "git-version",
  "keyframe",
  "knuffel",
  "libc",
