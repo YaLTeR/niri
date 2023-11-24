@@ -1564,10 +1564,10 @@ impl Niri {
         };
 
         let state = self.output_state.get_mut(output).unwrap();
-        let presentation_time = state.frame_clock.next_presentation_time();
+        let target_presentation_time = state.frame_clock.next_presentation_time();
 
         // Update from the config and advance the animations.
-        self.layout.advance_animations(presentation_time);
+        self.layout.advance_animations(target_presentation_time);
         state.unfinished_animations_remain = self
             .layout
             .monitor_for_output(output)
@@ -1583,7 +1583,7 @@ impl Niri {
         let elements = self.render(renderer, output, true);
 
         // Hand it over to the backend.
-        let res = backend.render(self, output, &elements, presentation_time);
+        let res = backend.render(self, output, &elements, target_presentation_time);
 
         // Update the lock render state on successful render.
         let is_locked = self.is_locked();
@@ -1645,7 +1645,7 @@ impl Niri {
             let renderer = backend
                 .renderer()
                 .expect("renderer must not have disappeared");
-            self.send_for_screen_cast(renderer, output, &elements, presentation_time);
+            self.send_for_screen_cast(renderer, output, &elements, target_presentation_time);
         }
     }
 
@@ -1929,7 +1929,7 @@ impl Niri {
         renderer: &mut GlesRenderer,
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
-        presentation_time: Duration,
+        target_presentation_time: Duration,
     ) {
         let _span = tracy_client::span!("Niri::send_for_screen_cast");
 
@@ -1947,11 +1947,11 @@ impl Niri {
 
             let last = cast.last_frame_time;
             let min = cast.min_time_between_frames.get();
-            if !last.is_zero() && presentation_time - last < min {
+            if !last.is_zero() && target_presentation_time - last < min {
                 trace!(
                     "skipping frame because it is too soon \
-                     last={last:?} now={presentation_time:?} diff={:?} < min={min:?}",
-                    presentation_time - last,
+                     last={last:?} now={target_presentation_time:?} diff={:?} < min={min:?}",
+                    target_presentation_time - last,
                 );
                 continue;
             }
@@ -1981,7 +1981,7 @@ impl Niri {
                 *chunk.stride_mut() = maxsize as i32 / size.h;
             }
 
-            cast.last_frame_time = presentation_time;
+            cast.last_frame_time = target_presentation_time;
         }
     }
 
