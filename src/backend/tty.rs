@@ -92,8 +92,8 @@ struct Surface {
     vblank_frame: Option<tracy_client::Frame>,
     /// Frame name for the VBlank frame.
     vblank_frame_name: tracy_client::FrameName,
-    /// Plot name for the VBlank dispatch offset plot.
-    vblank_plot_name: tracy_client::PlotName,
+    /// Plot name for the time since presentation plot.
+    time_since_presentation_plot_name: tracy_client::PlotName,
     /// Plot name for the presentation misprediction plot.
     presentation_misprediction_plot_name: tracy_client::PlotName,
     sequence_delta_plot_name: tracy_client::PlotName,
@@ -586,8 +586,8 @@ impl Tty {
 
         let vblank_frame_name =
             tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
-        let vblank_plot_name =
-            tracy_client::PlotName::new_leak(format!("{output_name} vblank dispatch offset, ms"));
+        let time_since_presentation_plot_name =
+            tracy_client::PlotName::new_leak(format!("{output_name} time since presentation, ms"));
         let presentation_misprediction_plot_name = tracy_client::PlotName::new_leak(format!(
             "{output_name} presentation misprediction, ms"
         ));
@@ -605,7 +605,7 @@ impl Tty {
             dmabuf_feedback,
             vblank_frame: None,
             vblank_frame_name,
-            vblank_plot_name,
+            time_since_presentation_plot_name,
             presentation_misprediction_plot_name,
             sequence_delta_plot_name,
         };
@@ -694,15 +694,17 @@ impl Tty {
             format!("vblank on {name}, presentation time unknown")
         } else if presentation_time > now {
             let diff = presentation_time - now;
-            tracy_client::Client::running()
-                .unwrap()
-                .plot(surface.vblank_plot_name, -diff.as_secs_f64() * 1000.);
+            tracy_client::Client::running().unwrap().plot(
+                surface.time_since_presentation_plot_name,
+                -diff.as_secs_f64() * 1000.,
+            );
             format!("vblank on {name}, presentation is {diff:?} later")
         } else {
             let diff = now - presentation_time;
-            tracy_client::Client::running()
-                .unwrap()
-                .plot(surface.vblank_plot_name, diff.as_secs_f64() * 1000.);
+            tracy_client::Client::running().unwrap().plot(
+                surface.time_since_presentation_plot_name,
+                diff.as_secs_f64() * 1000.,
+            );
             format!("vblank on {name}, presentation was {diff:?} ago")
         };
         tracy_client::Client::running()
