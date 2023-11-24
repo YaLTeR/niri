@@ -1947,13 +1947,25 @@ impl Niri {
 
             let last = cast.last_frame_time;
             let min = cast.min_time_between_frames.get();
-            if !last.is_zero() && target_presentation_time - last < min {
-                trace!(
-                    "skipping frame because it is too soon \
-                     last={last:?} now={target_presentation_time:?} diff={:?} < min={min:?}",
-                    target_presentation_time - last,
+            if last.is_zero() {
+                trace!(?target_presentation_time, ?last, "last is zero, recording");
+            } else if target_presentation_time < last {
+                // Record frame with a warning; in case it was an overflow this will fix it.
+                warn!(
+                    ?target_presentation_time,
+                    ?last,
+                    "target presentation time is below last, did it overflow or did we mispredict?"
                 );
-                continue;
+            } else {
+                let diff = target_presentation_time - last;
+                if diff < min {
+                    trace!(
+                        ?target_presentation_time,
+                        ?last,
+                        "skipping frame because it is too soon: diff={diff:?} < min={min:?}",
+                    );
+                    continue;
+                }
             }
 
             {
