@@ -118,9 +118,7 @@ impl State {
                         self.backend.toggle_debug_tint();
                     }
                     Action::Spawn(command) => {
-                        if let Some((command, args)) = command.split_first() {
-                            spawn(command, args);
-                        }
+                        spawn(command);
                     }
                     Action::ScreenshotScreen => {
                         let active = self.niri.layout.active_output().cloned();

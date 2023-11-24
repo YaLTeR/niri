@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use std::time::Duration;
 
 use anyhow::{ensure, Context};
@@ -58,7 +59,27 @@ pub static REMOVE_ENV_RUST_BACKTRACE: AtomicBool = AtomicBool::new(false);
 pub static REMOVE_ENV_RUST_LIB_BACKTRACE: AtomicBool = AtomicBool::new(false);
 
 /// Spawns the command to run independently of the compositor.
-pub fn spawn(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl AsRef<OsStr>>) {
+pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>) {
+    let _span = tracy_client::span!();
+
+    if command.is_empty() {
+        return;
+    }
+
+    // Spawning and waiting takes some milliseconds, so do it in a thread.
+    let res = thread::Builder::new()
+        .name("Command Spawner".to_owned())
+        .spawn(move || {
+            let (command, args) = command.split_first().unwrap();
+            spawn_sync(command, args);
+        });
+
+    if let Err(err) = res {
+        warn!("error spawning a thread to spawn the command: {err:?}");
+    }
+}
+
+fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl AsRef<OsStr>>) {
     let _span = tracy_client::span!();
 
     let command = command.as_ref();

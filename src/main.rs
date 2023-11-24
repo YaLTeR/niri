@@ -164,14 +164,10 @@ fn main() {
     };
 
     // Spawn commands from cli and auto-start.
-    if let Some((command, args)) = cli.command.split_first() {
-        spawn(command, args);
-    }
+    spawn(cli.command);
 
     for elem in spawn_at_startup {
-        if let Some((command, args)) = elem.command.split_first() {
-            spawn(command, args);
-        }
+        spawn(elem.command);
     }
 
     // Run the compositor.
