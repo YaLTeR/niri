@@ -508,7 +508,7 @@ impl Tty {
 
         if mode.is_none() {
             // Last attempt.
-            mode = connector.modes().get(0);
+            mode = connector.modes().first();
         }
 
         let mode = mode.ok_or_else(|| anyhow!("no mode"))?;
