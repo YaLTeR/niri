@@ -1921,7 +1921,14 @@ impl Monitor<Window> {
                             CropRenderElement::from_element(
                                 elem,
                                 output_scale,
-                                Rectangle::from_loc_and_size((0, 0), size),
+                                // HACK: set infinite crop bounds due to a damage tracking bug
+                                // which causes glitched rendering for maximized GTK windows.
+                                // FIXME: use proper bounds after fixing the Crop element.
+                                Rectangle::from_loc_and_size(
+                                    (-i32::MAX / 2, -i32::MAX / 2),
+                                    (i32::MAX, i32::MAX),
+                                ),
+                                // Rectangle::from_loc_and_size((0, 0), size),
                             )?,
                             (0, 0),
                             Relocate::Relative,
