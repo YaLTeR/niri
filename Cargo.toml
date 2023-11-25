@@ -6,6 +6,10 @@ authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 
+readme = "README.md"
+repository = "https://github.com/YaLTeR/niri"
+keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
+
 [dependencies]
 anyhow = { version = "1.0.75" }
 arrayvec = "0.7.4"
