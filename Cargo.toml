@@ -1,6 +1,6 @@
 [package]
 name = "niri"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
