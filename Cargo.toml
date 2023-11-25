@@ -84,6 +84,7 @@ assets = [
     { source = "resources/niri.desktop", dest = "/usr/share/wayland-sessions/", mode = "644" },
     { source = "resources/niri-portals.conf", dest = "/usr/share/xdg-desktop-portal/", mode = "644" },
     { source = "resources/niri.service", dest = "/usr/lib/systemd/user/", mode = "644" },
+    { source = "resources/niri-shutdown.target", dest = "/usr/lib/systemd/user/", mode = "644" },
 ]
 [package.metadata.generate-rpm.requires]
 alacritty = "*"

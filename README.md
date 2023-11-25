@@ -64,6 +64,7 @@ To do that, put files into the correct directories according to this table.
 | `resources/niri.desktop` | `/usr/share/wayland-sessions/` |
 | `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |
 | `resources/niri.service` | `/usr/lib/systemd/user/` |
+| `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
 
 Doing this will make niri appear in GDM and, presumably, other display managers.
 
