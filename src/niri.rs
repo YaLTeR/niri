@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, mem, thread};
@@ -75,6 +76,7 @@ use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
+use crate::animation;
 use crate::backend::{Backend, RenderResult, Tty, Winit};
 use crate::config::{Config, TrackLayout};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
@@ -457,6 +459,7 @@ impl State {
         };
 
         self.niri.layout.update_config(&config);
+        animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
 
         let mut old_config = self.niri.config.borrow_mut();
 
