@@ -136,13 +136,16 @@ binds {
     // "Mod" is a special modifier equal to Super when running on a TTY, and to Alt
     // when running as a winit window.
 
+    // Suggested binds for running programs: terminal, app launcher, screen locker.
     Mod+T { spawn "alacritty"; }
-    Mod+Q { close-window; }
+    Mod+D { spawn "fuzzel"; }
+    Mod+Alt+L { spawn "swaylock"; }
 
     // Example volume keys mappings for PipeWire & WirePlumber.
-    // Remember to uncomment the nodes by removing "/-"!
-    /-XF86AudioRaiseVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1+"; }
-    /-XF86AudioLowerVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1-"; }
+    XF86AudioRaiseVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1+"; }
+    XF86AudioLowerVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1-"; }
+
+    Mod+Q { close-window; }
 
     Mod+H     { focus-column-left; }
     Mod+J     { focus-window-down; }

@@ -97,7 +97,9 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 
 | Hotkey | Description |
 | ------ | ----------- |
-| <kbd>Mod</kbd><kbd>T</kbd> | Spawn `alacritty` |
+| <kbd>Mod</kbd><kbd>T</kbd> | Spawn `alacritty` (terminal) |
+| <kbd>Mod</kbd><kbd>D</kbd> | Spawn `fuzzel` (application launcher) |
+| <kbd>Mod</kbd><kbd>Alt</kbd><kbd>L</kbd> | Spawn `swaylock` (screen locker) |
 | <kbd>Mod</kbd><kbd>Q</kbd> | Close the focused window |
 | <kbd>Mod</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>←</kbd> | Focus the column to the left |
 | <kbd>Mod</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>→</kbd> | Focus the column to the right |
