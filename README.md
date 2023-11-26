@@ -33,6 +33,8 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 ## Building
 
+For Fedora users, there's a COPR with built and packaged niri: https://copr.fedorainfracloud.org/coprs/yalter/niri/
+
 First, install the dependencies for your distribution.
 
 - Ubuntu:
