@@ -72,7 +72,6 @@ input {
 // spawn-at-startup "alacritty" "-e" "fish"
 
 // You can change how the focus ring looks.
-// Remember to uncommend the node by removing "/-"!
 focus-ring {
     // Uncomment this line to disable the focus ring.
     // off
