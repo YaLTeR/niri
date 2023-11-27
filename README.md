@@ -86,6 +86,7 @@ Starting it from there will run niri as a desktop session.
 
 The niri session will autostart apps through the systemd xdg-autostart target.
 You can also autostart systemd services like [mako] by symlinking them into `$HOME/.config/systemd/user/niri.service.wants/`.
+A step-by-step process for this is explained [on the wiki](https://github.com/YaLTeR/niri/wiki/Example-systemd-Setup).
 
 Niri also works with some parts of xdg-desktop-portal-gnome.
 In particular, it supports file choosers and monitor screencasting (e.g. to [OBS]).
