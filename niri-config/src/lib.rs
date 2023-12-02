@@ -438,6 +438,10 @@ pub enum Action {
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     SwitchLayout(#[knuffel(argument)] LayoutAction),
     ShowHotkeyOverlay,
+    MoveWorkspaceToMonitorLeft,
+    MoveWorkspaceToMonitorRight,
+    MoveWorkspaceToMonitorDown,
+    MoveWorkspaceToMonitorUp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

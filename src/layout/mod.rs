@@ -1335,6 +1335,42 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn move_workspace_to_output(&mut self, output: &Output) {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+
+        let current = &mut monitors[*active_monitor_idx];
+        if current.active_workspace_idx == current.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            let ws = Workspace::new(current.output.clone(), current.options.clone());
+            current.workspaces.push(ws);
+        }
+        let mut ws = current.workspaces.remove(current.active_workspace_idx);
+        current.active_workspace_idx = current.active_workspace_idx.saturating_sub(1);
+        current.workspace_switch = None;
+        current.clean_up_workspaces();
+
+        ws.set_output(Some(output.clone()));
+        ws.original_output = OutputId::new(output);
+
+        let target_idx = monitors
+            .iter()
+            .position(|mon| &mon.output == output)
+            .unwrap();
+        let target = &mut monitors[target_idx];
+        target.workspaces.insert(target.active_workspace_idx, ws);
+        target.workspace_switch = None;
+        target.clean_up_workspaces();
+
+        *active_monitor_idx = target_idx;
+    }
+
     pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -1737,6 +1773,7 @@ mod tests {
         SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
         SetWindowHeight(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
+        MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
     }
 
     impl Op {
@@ -1910,6 +1947,14 @@ mod tests {
                         layout.update_window(&win);
                     }
                 }
+                Op::MoveWorkspaceToOutput(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+
+                    layout.move_workspace_to_output(&output);
+                }
             }
         }
     }
@@ -1996,6 +2041,7 @@ mod tests {
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
             Op::MoveWindowUpOrToWorkspaceUp,
+            Op::MoveWorkspaceToOutput(1),
         ];
 
         for third in every_op {
@@ -2408,6 +2454,42 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn move_workspace_to_output() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::FocusOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::MoveWorkspaceToOutput(2),
+        ];
+
+        let mut layout = Layout::default();
+        for op in ops {
+            op.apply(&mut layout);
+        }
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = layout.monitor_set
+        else {
+            unreachable!()
+        };
+
+        assert_eq!(active_monitor_idx, 1);
+        assert_eq!(monitors[0].workspaces.len(), 1);
+        assert!(!monitors[0].workspaces[0].has_windows());
+        assert_eq!(monitors[1].active_workspace_idx, 0);
+        assert_eq!(monitors[1].workspaces.len(), 2);
+        assert!(monitors[1].workspaces[0].has_windows());
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = u16> {
