@@ -609,6 +609,30 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::MoveWorkspaceToMonitorLeft => {
+                if let Some(output) = self.niri.output_left() {
+                    self.niri.layout.move_workspace_to_output(&output);
+                    self.move_cursor_to_output(&output);
+                }
+            }
+            Action::MoveWorkspaceToMonitorRight => {
+                if let Some(output) = self.niri.output_right() {
+                    self.niri.layout.move_workspace_to_output(&output);
+                    self.move_cursor_to_output(&output);
+                }
+            }
+            Action::MoveWorkspaceToMonitorDown => {
+                if let Some(output) = self.niri.output_down() {
+                    self.niri.layout.move_workspace_to_output(&output);
+                    self.move_cursor_to_output(&output);
+                }
+            }
+            Action::MoveWorkspaceToMonitorUp => {
+                if let Some(output) = self.niri.output_up() {
+                    self.niri.layout.move_workspace_to_output(&output);
+                    self.move_cursor_to_output(&output);
+                }
+            }
         }
     }
 
