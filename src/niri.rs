@@ -41,6 +41,7 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
     self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
+use smithay::reexports::input;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
 use smithay::reexports::wayland_server::backend::{
@@ -86,6 +87,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
+use crate::input::TabletData;
 use crate::layout::{output_size, Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
@@ -120,6 +122,8 @@ pub struct Niri {
 
     // When false, we're idling with monitors powered off.
     pub monitors_active: bool,
+
+    pub tablets: HashMap<input::Device, TabletData>,
 
     // Smithay state.
     pub compositor_state: CompositorState,
@@ -693,6 +697,8 @@ impl Niri {
             output_by_name: HashMap::new(),
             unmapped_windows: HashMap::new(),
             monitors_active: true,
+
+            tablets: HashMap::new(),
 
             compositor_state,
             xdg_shell_state,

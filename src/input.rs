@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashSet;
 
 use smithay::backend::input::{
@@ -14,7 +15,8 @@ use smithay::input::pointer::{
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent, RelativeMotionEvent,
 };
-use smithay::utils::SERIAL_COUNTER;
+use smithay::reexports::input;
+use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::config::{Action, Binds, LayoutAction, Modifiers};
@@ -28,8 +30,16 @@ pub enum CompositorMod {
     Alt,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TabletData {
+    pub aspect_ratio: f64,
+}
+
 impl State {
-    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>)
+    where
+        I::Device: 'static, // Needed for downcasting.
+    {
         let _span = tracy_client::span!("process_input_event");
 
         // A bit of a hack, but animation end runs some logic (i.e. workspace clean-up) and it
@@ -582,13 +592,9 @@ impl State {
                 pointer.frame(self);
             }
             InputEvent::TabletToolAxis { event, .. } => {
-                let Some(output) = self.niri.output_for_tablet() else {
+                let Some(pos) = self.compute_tablet_position(&event) else {
                     return;
                 };
-
-                let output_geo = self.niri.global_space.output_geometry(output).unwrap();
-
-                let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
                 let serial = SERIAL_COUNTER.next_serial();
 
@@ -671,13 +677,9 @@ impl State {
                 }
             }
             InputEvent::TabletToolProximity { event, .. } => {
-                let Some(output) = self.niri.output_for_tablet() else {
+                let Some(pos) = self.compute_tablet_position(&event) else {
                     return;
                 };
-
-                let output_geo = self.niri.global_space.output_geometry(output).unwrap();
-
-                let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
                 let serial = SERIAL_COUNTER.next_serial();
 
@@ -927,16 +929,74 @@ impl State {
     }
 
     pub fn process_libinput_event(&mut self, event: &mut InputEvent<LibinputInputBackend>) {
-        if let InputEvent::DeviceAdded { device } = event {
-            // According to Mutter code, this setting is specific to touchpads.
-            let is_touchpad = device.config_tap_finger_count() > 0;
-            if is_touchpad {
-                let c = &self.niri.config.borrow().input.touchpad;
-                let _ = device.config_tap_set_enabled(c.tap);
-                let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-                let _ = device.config_accel_set_speed(c.accel_speed);
+        match event {
+            InputEvent::DeviceAdded { device } => {
+                // According to Mutter code, this setting is specific to touchpads.
+                let is_touchpad = device.config_tap_finger_count() > 0;
+                if is_touchpad {
+                    let c = &self.niri.config.borrow().input.touchpad;
+                    let _ = device.config_tap_set_enabled(c.tap);
+                    let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
+                    let _ = device.config_accel_set_speed(c.accel_speed);
+                }
+
+                if device.has_capability(smithay::reexports::input::DeviceCapability::TabletTool) {
+                    match device.size() {
+                        Some((w, h)) => {
+                            self.niri.tablets.insert(
+                                device.clone(),
+                                TabletData {
+                                    aspect_ratio: w / h,
+                                },
+                            );
+                        }
+                        None => {
+                            warn!("tablet tool device has no size");
+                        }
+                    }
+                }
             }
+            InputEvent::DeviceRemoved { device } => {
+                self.niri.tablets.remove(device);
+            }
+            _ => (),
         }
+    }
+
+    fn compute_tablet_position<I: InputBackend>(
+        &mut self,
+        event: &(impl Event<I> + TabletToolEvent<I>),
+    ) -> Option<Point<f64, Logical>>
+    where
+        I::Device: 'static,
+    {
+        let output = self.niri.output_for_tablet()?;
+        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+
+        let mut pos = event.position_transformed(output_geo.size);
+        pos.x /= output_geo.size.w as f64;
+        pos.y /= output_geo.size.h as f64;
+
+        let device = event.device();
+        if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
+            if let Some(data) = self.niri.tablets.get(device) {
+                // This code does the same thing as mutter with "keep aspect ratio" enabled.
+                let output_aspect_ratio = output_geo.size.w as f64 / output_geo.size.h as f64;
+                let ratio = data.aspect_ratio / output_aspect_ratio;
+
+                if ratio > 1. {
+                    pos.x *= ratio;
+                } else {
+                    pos.y /= ratio;
+                }
+            }
+        };
+
+        pos.x *= output_geo.size.w as f64;
+        pos.y *= output_geo.size.h as f64;
+        pos.x = pos.x.clamp(0.0, output_geo.size.w as f64 - 1.);
+        pos.y = pos.y.clamp(0.0, output_geo.size.h as f64 - 1.);
+        Some(pos + output_geo.loc.to_f64())
     }
 }
 
