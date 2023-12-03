@@ -82,6 +82,7 @@ overflow-checks = true
 lto = "thin"
 
 [package.metadata.generate-rpm]
+version = "0.1.0~alpha.1"
 assets = [
     { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
     { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
