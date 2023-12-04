@@ -63,6 +63,7 @@ use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
+use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
@@ -140,6 +141,7 @@ pub struct Niri {
     pub input_method_state: InputMethodManagerState,
     pub virtual_keyboard_state: VirtualKeyboardManagerState,
     pub pointer_gestures_state: PointerGesturesState,
+    pub relative_pointer_state: RelativePointerManagerState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
     pub data_control_state: DataControlState,
@@ -613,6 +615,7 @@ impl Niri {
         let mut seat_state = SeatState::new();
         let tablet_state = TabletManagerState::new::<State>(&display_handle);
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
+        let relative_pointer_state = RelativePointerManagerState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
         let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
         let data_control_state = DataControlState::new::<State, _>(
@@ -714,6 +717,7 @@ impl Niri {
             seat_state,
             tablet_state,
             pointer_gestures_state,
+            relative_pointer_state,
             data_device_state,
             primary_selection_state,
             data_control_state,

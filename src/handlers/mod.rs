@@ -37,8 +37,9 @@ use smithay::wayland::session_lock::{
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
     delegate_input_method_manager, delegate_output, delegate_pointer_gestures,
-    delegate_presentation, delegate_primary_selection, delegate_seat, delegate_session_lock,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_virtual_keyboard_manager,
+    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_session_lock, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_virtual_keyboard_manager,
 };
 
 use crate::layout::output_size;
@@ -74,6 +75,7 @@ delegate_seat!(State);
 delegate_cursor_shape!(State);
 delegate_tablet_manager!(State);
 delegate_pointer_gestures!(State);
+delegate_relative_pointer!(State);
 delegate_text_input_manager!(State);
 
 impl InputMethodHandler for State {
