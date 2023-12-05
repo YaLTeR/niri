@@ -6,7 +6,7 @@ use directories::ProjectDirs;
 use miette::{miette, Context, IntoDiagnostic};
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
-use smithay::input::keyboard::Keysym;
+use smithay::input::keyboard::{Keysym, XkbConfig};
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
@@ -78,6 +78,18 @@ pub struct Xkb {
     pub variant: String,
     #[knuffel(child, unwrap(argument))]
     pub options: Option<String>,
+}
+
+impl Xkb {
+    pub fn to_xkb_config(&self) -> XkbConfig {
+        XkbConfig {
+            rules: &self.rules,
+            model: &self.model,
+            layout: self.layout.as_deref().unwrap_or("us"),
+            variant: &self.variant,
+            options: self.options.clone(),
+        }
+    }
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]

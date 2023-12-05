@@ -32,7 +32,7 @@ use smithay::desktop::utils::{
 use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig, XkbContextHandler};
+use smithay::input::keyboard::{Layout as KeyboardLayout, XkbContextHandler};
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
@@ -633,17 +633,10 @@ impl Niri {
             VirtualKeyboardManagerState::new::<State, _>(&display_handle, |_| true);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
-        let xkb = XkbConfig {
-            rules: &config_.input.keyboard.xkb.rules,
-            model: &config_.input.keyboard.xkb.model,
-            layout: config_.input.keyboard.xkb.layout.as_deref().unwrap_or("us"),
-            variant: &config_.input.keyboard.xkb.variant,
-            options: config_.input.keyboard.xkb.options.clone(),
-        };
         seat.add_keyboard(
-            xkb,
-            config_.input.keyboard.repeat_delay as i32,
-            config_.input.keyboard.repeat_rate as i32,
+            config_.input.keyboard.xkb.to_xkb_config(),
+            config_.input.keyboard.repeat_delay.into(),
+            config_.input.keyboard.repeat_rate.into(),
         )
         .unwrap();
         seat.add_pointer();
