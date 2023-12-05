@@ -672,7 +672,6 @@ impl<W: LayoutElement> Layout<W> {
     pub fn add_window(
         &mut self,
         window: W,
-        activate: bool,
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
@@ -687,6 +686,14 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 let mon = &mut monitors[*active_monitor_idx];
+
+                // Don't steal focus from an active fullscreen window.
+                let mut activate = true;
+                let ws = &mon.workspaces[mon.active_workspace_idx];
+                if !ws.columns.is_empty() && ws.columns[ws.active_column_idx].is_fullscreen {
+                    activate = false;
+                }
+
                 mon.add_window(
                     mon.active_workspace_idx,
                     window,
@@ -703,7 +710,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces.push(Workspace::new_no_outputs(self.options.clone()));
                     &mut workspaces[0]
                 };
-                ws.add_window(window, activate, width, is_full_width);
+                ws.add_window(window, true, width, is_full_width);
                 None
             }
         }
@@ -3323,7 +3330,6 @@ mod tests {
             id: usize,
             #[proptest(strategy = "arbitrary_bbox()")]
             bbox: Rectangle<i32, Logical>,
-            activate: bool,
         },
         CloseWindow(#[proptest(strategy = "1..=5usize")] usize),
         FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
@@ -3399,7 +3405,7 @@ mod tests {
 
                     layout.focus_output(&output);
                 }
-                Op::AddWindow { id, bbox, activate } => {
+                Op::AddWindow { id, bbox } => {
                     match &mut layout.monitor_set {
                         MonitorSet::Normal { monitors, .. } => {
                             for mon in monitors {
@@ -3424,7 +3430,7 @@ mod tests {
                     }
 
                     let win = TestWindow::new(id, bbox);
-                    layout.add_window(win, activate, None, false);
+                    layout.add_window(win, None, false);
                 }
                 Op::CloseWindow(id) => {
                     let dummy = TestWindow::new(id, Rectangle::default());
@@ -3528,17 +3534,14 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -3596,31 +3599,26 @@ mod tests {
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::MoveWindowToWorkspaceDown,
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::AddWindow {
                 id: 3,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::FocusColumnLeft,
             Op::ConsumeWindowIntoColumn,
             Op::AddWindow {
                 id: 4,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::AddOutput(2),
             Op::AddWindow {
                 id: 5,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::MoveWindowToOutput(2),
             Op::FocusOutput(1),
@@ -3644,17 +3642,14 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -3710,13 +3705,11 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::FocusOutput(2),
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::RemoveOutput(2),
             Op::FocusWorkspace(3),
@@ -3733,7 +3726,6 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::FocusWorkspaceDown,
             Op::CloseWindow(0),
@@ -3749,7 +3741,6 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -3776,7 +3767,6 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::MoveWindowToWorkspace(2),
         ];
@@ -3800,13 +3790,11 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::FocusWorkspaceUp,
             Op::CloseWindow(0),
@@ -3832,13 +3820,11 @@ mod tests {
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                activate: true,
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),

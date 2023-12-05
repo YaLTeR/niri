@@ -98,11 +98,7 @@ impl CompositorHandler for State {
                     let window = entry.remove();
                     window.on_commit();
 
-                    if let Some(output) = self
-                        .niri
-                        .layout
-                        .add_window(window, true, None, false)
-                        .cloned()
+                    if let Some(output) = self.niri.layout.add_window(window, None, false).cloned()
                     {
                         self.niri.queue_redraw(output);
                     }
