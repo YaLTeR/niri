@@ -74,7 +74,7 @@ use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
-use smithay::wayland::tablet_manager::TabletManagerState;
+use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatTrait};
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
@@ -157,6 +157,7 @@ pub struct Niri {
     pub cursor_shape_manager_state: CursorShapeManagerState,
     pub dnd_icon: Option<WlSurface>,
     pub pointer_focus: Option<PointerFocus>,
+    pub tablet_cursor_location: Option<Point<f64, Logical>>,
 
     pub lock_state: LockState,
 
@@ -645,6 +646,23 @@ impl Niri {
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
+        let (tx, rx) = calloop::channel::channel();
+        event_loop
+            .insert_source(rx, move |event, _, state| {
+                if let calloop::channel::Event::Msg(image) = event {
+                    state.niri.cursor_manager.set_cursor_image(image);
+                    // FIXME: granular.
+                    state.niri.queue_redraw_all();
+                }
+            })
+            .unwrap();
+        seat.tablet_seat()
+            .on_cursor_surface(move |_tool, new_image| {
+                if let Err(err) = tx.send(new_image) {
+                    warn!("error sending new tablet cursor image: {err:?}");
+                };
+            });
+
         let screenshot_ui = ScreenshotUi::new();
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
@@ -724,6 +742,7 @@ impl Niri {
             cursor_shape_manager_state,
             dnd_icon: None,
             pointer_focus: None,
+            tablet_cursor_location: None,
 
             lock_state: LockState::Unlocked,
 
@@ -980,15 +999,19 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
-    pub fn window_under_cursor(&self) -> Option<&Window> {
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Window> {
         if self.is_locked() || self.screenshot_ui.is_open() {
             return None;
         }
 
-        let pos = self.seat.get_pointer().unwrap().current_location();
         let (output, pos_within_output) = self.output_under(pos)?;
         let (window, _loc) = self.layout.window_under(output, pos_within_output)?;
         Some(window)
+    }
+
+    pub fn window_under_cursor(&self) -> Option<&Window> {
+        let pos = self.seat.get_pointer().unwrap().current_location();
+        self.window_under(pos)
     }
 
     /// Returns the surface under cursor and its position in the global space.
@@ -1223,7 +1246,12 @@ impl Niri {
         let _span = tracy_client::span!("Niri::pointer_element");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
-        let pointer_pos = self.seat.get_pointer().unwrap().current_location() - output_pos.to_f64();
+
+        // Check whether we need to draw the tablet cursor or the regular cursor.
+        let pointer_pos = self
+            .tablet_cursor_location
+            .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+        let pointer_pos = pointer_pos - output_pos.to_f64();
 
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
@@ -1294,6 +1322,11 @@ impl Niri {
     pub fn refresh_pointer_outputs(&mut self) {
         let _span = tracy_client::span!("Niri::refresh_pointer_outputs");
 
+        // Check whether we need to draw the tablet cursor or the regular cursor.
+        let pointer_pos = self
+            .tablet_cursor_location
+            .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+
         match self.cursor_manager.cursor_image().clone() {
             CursorImageStatus::Surface(ref surface) => {
                 let hotspot = with_states(surface, |states| {
@@ -1306,7 +1339,6 @@ impl Niri {
                         .hotspot
                 });
 
-                let pointer_pos = self.seat.get_pointer().unwrap().current_location();
                 let surface_pos = pointer_pos.to_i32_round() - hotspot;
                 let bbox = bbox_from_surface_tree(surface, surface_pos);
 
@@ -1363,8 +1395,6 @@ impl Niri {
                 } else {
                     Default::default()
                 };
-
-                let pointer_pos = self.seat.get_pointer().unwrap().current_location();
 
                 let mut dnd_scale = 1;
                 for output in self.global_space.outputs() {

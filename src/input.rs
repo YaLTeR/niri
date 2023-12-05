@@ -439,6 +439,9 @@ impl State {
 
                 pointer.frame(self);
 
+                // We moved the regular pointer, so show it now.
+                self.niri.tablet_cursor_location = None;
+
                 // Redraw to update the cursor position.
                 // FIXME: redraw only outputs overlapping the cursor.
                 self.niri.queue_redraw_all();
@@ -486,6 +489,9 @@ impl State {
                 );
 
                 pointer.frame(self);
+
+                // We moved the regular pointer, so show it now.
+                self.niri.tablet_cursor_location = None;
 
                 // Redraw to update the cursor position.
                 // FIXME: redraw only outputs overlapping the cursor.
@@ -596,24 +602,8 @@ impl State {
                     return;
                 };
 
-                let serial = SERIAL_COUNTER.next_serial();
-
-                let pointer = self.niri.seat.get_pointer().unwrap();
-
                 let under = self.niri.surface_under_and_global_space(pos);
-                self.niri.pointer_focus = under.clone();
                 let under = under.map(|u| u.surface);
-
-                pointer.motion(
-                    self,
-                    under.clone(),
-                    &MotionEvent {
-                        location: pos,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
 
                 let tablet_seat = self.niri.seat.tablet_seat();
                 let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
@@ -645,6 +635,8 @@ impl State {
                         SERIAL_COUNTER.next_serial(),
                         event.time_msec(),
                     );
+
+                    self.niri.tablet_cursor_location = Some(pos);
                 }
 
                 // Redraw to update the cursor position.
@@ -660,15 +652,21 @@ impl State {
                             let serial = SERIAL_COUNTER.next_serial();
                             tool.tip_down(serial, event.time_msec());
 
-                            let pointer = self.niri.seat.get_pointer().unwrap();
-                            if !pointer.is_grabbed() {
-                                if let Some(window) = self.niri.window_under_cursor() {
+                            if let Some(pos) = self.niri.tablet_cursor_location {
+                                if let Some(window) = self.niri.window_under(pos) {
                                     let window = window.clone();
                                     self.niri.layout.activate_window(&window);
-                                } else if let Some(output) = self.niri.output_under_cursor() {
+
+                                    // FIXME: granular.
+                                    self.niri.queue_redraw_all();
+                                } else if let Some((output, _)) = self.niri.output_under(pos) {
+                                    let output = output.clone();
                                     self.niri.layout.activate_output(&output);
+
+                                    // FIXME: granular.
+                                    self.niri.queue_redraw_all();
                                 }
-                            };
+                            }
                         }
                         TabletToolTipState::Up => {
                             tool.tip_up(event.time_msec());
@@ -681,39 +679,34 @@ impl State {
                     return;
                 };
 
-                let serial = SERIAL_COUNTER.next_serial();
-
-                let pointer = self.niri.seat.get_pointer().unwrap();
-
                 let under = self.niri.surface_under_and_global_space(pos);
-                self.niri.pointer_focus = under.clone();
                 let under = under.map(|u| u.surface);
-
-                pointer.motion(
-                    self,
-                    under.clone(),
-                    &MotionEvent {
-                        location: pos,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
 
                 let tablet_seat = self.niri.seat.tablet_seat();
                 let tool = tablet_seat.add_tool::<Self>(&self.niri.display_handle, &event.tool());
                 let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
-                if let (Some(under), Some(tablet)) = (under, tablet) {
+                if let Some(tablet) = tablet {
                     match event.state() {
-                        ProximityState::In => tool.proximity_in(
-                            pos,
-                            under,
-                            &tablet,
-                            SERIAL_COUNTER.next_serial(),
-                            event.time_msec(),
-                        ),
-                        ProximityState::Out => tool.proximity_out(event.time_msec()),
+                        ProximityState::In => {
+                            if let Some(under) = under {
+                                tool.proximity_in(
+                                    pos,
+                                    under,
+                                    &tablet,
+                                    SERIAL_COUNTER.next_serial(),
+                                    event.time_msec(),
+                                );
+                            }
+                            self.niri.tablet_cursor_location = Some(pos);
+                        }
+                        ProximityState::Out => {
+                            tool.proximity_out(event.time_msec());
+                            self.niri.tablet_cursor_location = None;
+                        }
                     }
+
+                    // FIXME: granular.
+                    self.niri.queue_redraw_all();
                 }
             }
             InputEvent::TabletToolButton { event, .. } => {
