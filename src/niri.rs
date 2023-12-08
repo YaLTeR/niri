@@ -468,8 +468,10 @@ impl State {
         self.niri.layout.update_config(&config);
         animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
 
+        let mut reload_xkb = None;
         let mut old_config = self.niri.config.borrow_mut();
 
+        // Reload the cursor.
         if config.cursor != old_config.cursor {
             self.niri
                 .cursor_manager
@@ -477,15 +479,38 @@ impl State {
             self.niri.cursor_texture_cache.clear();
         }
 
+        // We need &mut self to reload the xkb config, so just store it here.
+        if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
+            reload_xkb = Some(config.input.keyboard.xkb.clone());
+        }
+
+        // Reload the repeat info.
+        if config.input.keyboard.repeat_rate != old_config.input.keyboard.repeat_rate
+            || config.input.keyboard.repeat_delay != old_config.input.keyboard.repeat_delay
+        {
+            let keyboard = self.niri.seat.get_keyboard().unwrap();
+            keyboard.change_repeat_info(
+                config.input.keyboard.repeat_rate.into(),
+                config.input.keyboard.repeat_delay.into(),
+            );
+        }
+
         *old_config = config;
 
         // Release the borrow.
         drop(old_config);
 
+        // Now with a &mut self we can reload the xkb config.
+        if let Some(xkb) = reload_xkb {
+            let keyboard = self.niri.seat.get_keyboard().unwrap();
+            if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
+                warn!("error updating xkb config: {err:?}");
+            }
+        }
+
         self.niri.queue_redraw_all();
         // FIXME: apply output scale and whatnot.
         // FIXME: apply libinput device settings.
-        // FIXME: apply xkb settings.
         // FIXME: apply xdg decoration settings.
     }
 

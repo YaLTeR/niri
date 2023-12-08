@@ -66,7 +66,7 @@ pub struct Keyboard {
     pub track_layout: TrackLayout,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Xkb {
     #[knuffel(child, unwrap(argument), default)]
     pub rules: String,
