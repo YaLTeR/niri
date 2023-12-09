@@ -100,12 +100,9 @@ impl State {
                 if device.has_capability(input::DeviceCapability::TabletTool) {
                     match device.size() {
                         Some((w, h)) => {
-                            self.niri.tablets.insert(
-                                device.clone(),
-                                TabletData {
-                                    aspect_ratio: w / h,
-                                },
-                            );
+                            let aspect_ratio = w / h;
+                            let data = TabletData { aspect_ratio };
+                            self.niri.tablets.insert(device.clone(), data);
                         }
                         None => {
                             warn!("tablet tool device has no size");
