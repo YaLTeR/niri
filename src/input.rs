@@ -84,6 +84,8 @@ impl State {
     }
 
     pub fn process_libinput_event(&mut self, event: &mut InputEvent<LibinputInputBackend>) {
+        let _span = tracy_client::span!("process_libinput_event");
+
         match event {
             InputEvent::DeviceAdded { device } => {
                 // According to Mutter code, this setting is specific to touchpads.
