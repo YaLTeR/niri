@@ -95,7 +95,7 @@ impl State {
                     let _ = device.config_accel_set_speed(c.accel_speed);
                 }
 
-                if device.has_capability(smithay::reexports::input::DeviceCapability::TabletTool) {
+                if device.has_capability(input::DeviceCapability::TabletTool) {
                     match device.size() {
                         Some((w, h)) => {
                             self.niri.tablets.insert(
