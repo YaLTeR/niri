@@ -140,8 +140,12 @@ impl State {
         }
     }
 
+    /// Computes the cursor position for the tablet event.
+    ///
+    /// This function handles the tablet output mapping, as well as coordinate clamping and aspect
+    /// ratio correction.
     fn compute_tablet_position<I: InputBackend>(
-        &mut self,
+        &self,
         event: &(impl Event<I> + TabletToolEvent<I>),
     ) -> Option<Point<f64, Logical>>
     where
