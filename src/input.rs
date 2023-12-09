@@ -219,16 +219,7 @@ impl State {
             return;
         }
 
-        if self.niri.is_locked()
-            && !matches!(
-                action,
-                Action::Quit
-                    | Action::ChangeVt(_)
-                    | Action::Suspend
-                    | Action::PowerOffMonitors
-                    | Action::SwitchLayout(_)
-            )
-        {
+        if self.niri.is_locked() && !allowed_when_locked(&action) {
             return;
         }
 
@@ -1073,16 +1064,21 @@ fn should_intercept_key(
     }
 
     let mut final_action = action(bindings, comp_mod, modified, raw, mods);
-    if screenshot_ui.is_open()
-        // Allow only a subset of compositor actions while the screenshot UI is open,
-        // since the user cannot see the screen.
-        && !matches!(
-            final_action,
-            Some(Action::Quit | Action::ChangeVt(_) | Action::Suspend | Action::PowerOffMonitors)
-        )
-    {
-        // Otherwise, use the screenshot UI action.
-        final_action = screenshot_ui.action(raw, mods);
+
+    // Allow only a subset of compositor actions while the screenshot UI is open, since the user
+    // cannot see the screen.
+    if screenshot_ui.is_open() {
+        let mut use_screenshot_ui_action = true;
+
+        if let Some(action) = &final_action {
+            if allowed_during_screenshot(action) {
+                use_screenshot_ui_action = false;
+            }
+        }
+
+        if use_screenshot_ui_action {
+            final_action = screenshot_ui.action(raw, mods);
+        }
     }
 
     match (final_action, pressed) {
@@ -1179,6 +1175,24 @@ fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
         // Ignore events like device additions and removals, key releases, gesture ends.
         _ => false,
     }
+}
+
+fn allowed_when_locked(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Quit
+            | Action::ChangeVt(_)
+            | Action::Suspend
+            | Action::PowerOffMonitors
+            | Action::SwitchLayout(_)
+    )
+}
+
+fn allowed_during_screenshot(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Quit | Action::ChangeVt(_) | Action::Suspend | Action::PowerOffMonitors
+    )
 }
 
 #[cfg(test)]
