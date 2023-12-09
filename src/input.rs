@@ -119,10 +119,10 @@ impl State {
 
     fn on_device_added(&mut self, device: impl Device) {
         if device.has_capability(DeviceCapability::TabletTool) {
-            self.niri
-                .seat
-                .tablet_seat()
-                .add_tablet::<Self>(&self.niri.display_handle, &TabletDescriptor::from(&device));
+            let tablet_seat = self.niri.seat.tablet_seat();
+
+            let desc = TabletDescriptor::from(&device);
+            tablet_seat.add_tablet::<Self>(&self.niri.display_handle, &desc);
         }
     }
 
@@ -130,7 +130,8 @@ impl State {
         if device.has_capability(DeviceCapability::TabletTool) {
             let tablet_seat = self.niri.seat.tablet_seat();
 
-            tablet_seat.remove_tablet(&TabletDescriptor::from(&device));
+            let desc = TabletDescriptor::from(&device);
+            tablet_seat.remove_tablet(&desc);
 
             // If there are no tablets in seat we can remove all tools
             if tablet_seat.count_tablets() == 0 {
