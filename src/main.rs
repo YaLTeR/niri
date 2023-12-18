@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::{env, mem};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use config::Config;
 #[cfg(not(feature = "xdp-gnome-screencast"))]
 use dummy_pw_utils as pw_utils;
@@ -45,6 +45,9 @@ use crate::utils::{REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
+#[command(args_conflicts_with_subcommands = true)]
+#[command(subcommand_value_name = "SUBCOMMAND")]
+#[command(subcommand_help_heading = "Subcommands")]
 struct Cli {
     /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
     #[arg(short, long)]
@@ -52,6 +55,19 @@ struct Cli {
     /// Command to run upon compositor startup.
     #[arg(last = true)]
     command: Vec<OsString>,
+
+    #[command(subcommand)]
+    subcommand: Option<Sub>,
+}
+
+#[derive(Subcommand)]
+enum Sub {
+    /// Validate the config file.
+    Validate {
+        /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -94,6 +110,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set a better error printer for config loading.
     miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new()))).unwrap();
+
+    // Handle subcommands.
+    if let Some(subcommand) = cli.subcommand {
+        match subcommand {
+            Sub::Validate { config } => {
+                Config::load(config).context("error loading config")?;
+                info!("config is valid");
+                return Ok(());
+            }
+        }
+    }
 
     info!(
         "starting version {} ({})",
