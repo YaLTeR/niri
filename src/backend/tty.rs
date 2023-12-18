@@ -431,6 +431,11 @@ impl Tty {
             .cloned()
             .unwrap_or_default();
 
+        if config.off {
+            debug!("output is disabled in the config");
+            return Ok(());
+        }
+
         let device = self
             .output_device
             .as_mut()

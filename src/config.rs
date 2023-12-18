@@ -120,6 +120,8 @@ pub struct Tablet {
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
+    #[knuffel(child)]
+    pub off: bool,
     #[knuffel(argument)]
     pub name: String,
     #[knuffel(child, unwrap(argument), default = 1.)]
@@ -133,6 +135,7 @@ pub struct Output {
 impl Default for Output {
     fn default() -> Self {
         Self {
+            off: false,
             name: String::new(),
             scale: 1.,
             position: None,
@@ -624,6 +627,7 @@ mod tests {
                     },
                 },
                 outputs: vec![Output {
+                    off: false,
                     name: "eDP-1".to_owned(),
                     scale: 2.,
                     position: Some(Position { x: 10, y: 20 }),
