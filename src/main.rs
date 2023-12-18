@@ -54,7 +54,7 @@ struct Cli {
     command: Vec<OsString>,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set backtrace defaults if not set.
     if env::var_os("RUST_BACKTRACE").is_none() {
         env::set_var("RUST_BACKTRACE", "1");
@@ -176,6 +176,8 @@ fn main() {
     event_loop
         .run(None, &mut state, |state| state.refresh_and_flush_clients())
         .unwrap();
+
+    Ok(())
 }
 
 fn import_env_to_systemd() {
