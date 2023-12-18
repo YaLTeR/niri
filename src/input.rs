@@ -329,13 +329,13 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowDown => {
-                self.niri.layout.move_down();
+            Action::MoveWindowDown(fallback) => {
+                self.niri.layout.move_down(fallback);
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowUp => {
-                self.niri.layout.move_up();
+            Action::MoveWindowUp(fallback) => {
+                self.niri.layout.move_up(fallback);
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -345,11 +345,11 @@ impl State {
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
             }
-            Action::FocusWindowDown => {
-                self.niri.layout.focus_down();
+            Action::FocusWindowDown(fallback) => {
+                self.niri.layout.focus_down(fallback);
             }
-            Action::FocusWindowUp => {
-                self.niri.layout.focus_up();
+            Action::FocusWindowUp(fallback) => {
+                self.niri.layout.focus_up(fallback);
             }
             Action::MoveWindowToWorkspaceDown => {
                 self.niri.layout.move_to_workspace_down();
