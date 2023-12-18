@@ -92,6 +92,9 @@ fn main() {
 
     let _client = tracy_client::Client::start();
 
+    // Set a better error printer for config loading.
+    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new()))).unwrap();
+
     info!(
         "starting version {} ({})",
         env!("CARGO_PKG_VERSION"),
@@ -99,7 +102,6 @@ fn main() {
     );
 
     // Load the config.
-    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new()))).unwrap();
     let (mut config, path) = match Config::load(cli.config).context("error loading config") {
         Ok((config, path)) => (config, Some(path)),
         Err(err) => {
