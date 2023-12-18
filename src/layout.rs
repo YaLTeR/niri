@@ -963,18 +963,32 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_right();
     }
 
-    pub fn move_down(&mut self, fallback: bool) {
+    pub fn move_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_down(fallback);
+        monitor.move_down();
     }
 
-    pub fn move_up(&mut self, fallback: bool) {
+    pub fn move_up(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_up(fallback);
+        monitor.move_up();
+    }
+
+    pub fn move_down_or_to_workspace_down(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_down_or_to_workspace_down();
+    }
+
+    pub fn move_up_or_to_workspace_up(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_up_or_to_workspace_up();
     }
 
     pub fn focus_left(&mut self) {
@@ -991,18 +1005,32 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_right();
     }
 
-    pub fn focus_down(&mut self, fallback: bool) {
+    pub fn focus_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.focus_down(fallback);
+        monitor.focus_down();
     }
 
-    pub fn focus_up(&mut self, fallback: bool) {
+    pub fn focus_up(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.focus_up(fallback);
+        monitor.focus_up();
+    }
+
+    pub fn focus_window_or_workspace_down(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_or_workspace_down();
+    }
+
+    pub fn focus_window_or_workspace_up(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_or_workspace_up();
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -1604,9 +1632,16 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().move_right();
     }
 
-    pub fn move_down(&mut self, fallback: bool) {
+    pub fn move_down(&mut self) {
+        self.active_workspace().move_down();
+    }
+
+    pub fn move_up(&mut self) {
+        self.active_workspace().move_up();
+    }
+
+    pub fn move_down_or_to_workspace_down(&mut self) {
         let workspace = self.active_workspace();
-        if fallback {
             if workspace.columns.is_empty() {
                 return;
             }
@@ -1618,14 +1653,10 @@ impl<W: LayoutElement> Monitor<W> {
             } else {
                 workspace.move_down();
             }
-        } else {
-            workspace.move_down();
-        }
     }
-
-    pub fn move_up(&mut self, fallback: bool) {
+    
+    pub fn move_up_or_to_workspace_up(&mut self) {
         let workspace = self.active_workspace();
-        if fallback {
             if workspace.columns.is_empty() {
                 return;
             }
@@ -1636,9 +1667,6 @@ impl<W: LayoutElement> Monitor<W> {
             } else {
                 workspace.move_up();
             }
-        } else {
-            workspace.move_up();
-        }
     }
 
     pub fn focus_left(&mut self) {
@@ -1649,42 +1677,42 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().focus_right();
     }
 
-    pub fn focus_down(&mut self, fallback: bool) {
+    pub fn focus_down(&mut self) {
+        self.active_workspace().focus_down();
+    }
+
+    pub fn focus_up(&mut self) {
+        self.active_workspace().focus_up();
+    }
+
+    pub fn focus_window_or_workspace_down(&mut self) {
         let workspace = self.active_workspace();
-        if fallback {
-            if workspace.columns.is_empty() {
+        if workspace.columns.is_empty() {
+            self.switch_workspace_down();
+        } else {
+            let column = &mut workspace.columns[workspace.active_column_idx];
+            let curr_idx = column.active_window_idx;
+            let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
+            if curr_idx == new_idx {
                 self.switch_workspace_down();
             } else {
-                let column = &mut workspace.columns[workspace.active_column_idx];
-                let curr_idx = column.active_window_idx;
-                let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
-                if curr_idx == new_idx {
-                    self.switch_workspace_down();
-                } else {
-                    workspace.focus_down();
-                }
+                workspace.focus_down();
             }
-        } else {
-            workspace.focus_down();
         }
     }
 
-    pub fn focus_up(&mut self, fallback: bool) {
+    pub fn focus_window_or_workspace_up(&mut self) {
         let workspace = self.active_workspace();
-        if fallback {
-            if workspace.columns.is_empty() {
+        if workspace.columns.is_empty() {
+            self.switch_workspace_up();
+        } else {
+            let curr_idx = workspace.columns[workspace.active_column_idx].active_window_idx;
+            let new_idx = curr_idx.saturating_sub(1);
+            if curr_idx == new_idx {
                 self.switch_workspace_up();
             } else {
-                let curr_idx = workspace.columns[workspace.active_column_idx].active_window_idx;
-                let new_idx = curr_idx.saturating_sub(1);
-                if curr_idx == new_idx {
-                    self.switch_workspace_up();
-                } else {
-                    workspace.focus_up();
-                }
+                workspace.focus_up();
             }
-        } else {
-            workspace.focus_up()
         }
     }
 
@@ -3395,12 +3423,16 @@ mod tests {
         FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
         FocusColumnLeft,
         FocusColumnRight,
-        FocusWindowDown(#[proptest(strategy = "any::<bool>()")] bool),
-        FocusWindowUp(#[proptest(strategy = "any::<bool>()")] bool),
+        FocusWindowDown,
+        FocusWindowUp,
+        FocusWindowOrWorkspaceDown,
+        FocusWindowOrWorkspaceUp,
         MoveColumnLeft,
         MoveColumnRight,
-        MoveWindowDown(#[proptest(strategy = "any::<bool>()")] bool),
-        MoveWindowUp(#[proptest(strategy = "any::<bool>()")] bool),
+        MoveWindowDown,
+        MoveWindowUp,
+        MoveWindowDownOrToWorkspaceDown,
+        MoveWindowUpOrToWorkspaceUp,
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
         CenterColumn,
@@ -3502,12 +3534,16 @@ mod tests {
                 }
                 Op::FocusColumnLeft => layout.focus_left(),
                 Op::FocusColumnRight => layout.focus_right(),
-                Op::FocusWindowDown(fallback) => layout.focus_down(fallback),
-                Op::FocusWindowUp(fallback) => layout.focus_up(fallback),
+                Op::FocusWindowDown => layout.focus_down(),
+                Op::FocusWindowUp => layout.focus_up(),
+                Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
+                Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
-                Op::MoveWindowDown(fallback) => layout.move_down(fallback),
-                Op::MoveWindowUp(fallback) => layout.move_up(fallback),
+                Op::MoveWindowDown => layout.move_down(),
+                Op::MoveWindowUp => layout.move_up(),
+                Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),
+                Op::MoveWindowUpOrToWorkspaceUp => layout.move_up_or_to_workspace_up(),
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
                 Op::CenterColumn => layout.center_column(),
@@ -3608,10 +3644,10 @@ mod tests {
             Op::CloseWindow(2),
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
-            Op::FocusWindowUp(false),
-            Op::FocusWindowUp(true),
-            Op::FocusWindowDown(false),
-            Op::FocusWindowDown(true),
+            Op::FocusWindowUp,
+            Op::FocusWindowOrWorkspaceUp,
+            Op::FocusWindowDown,
+            Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
             Op::ConsumeWindowIntoColumn,
@@ -3627,10 +3663,10 @@ mod tests {
             Op::MoveWindowToWorkspace(1),
             Op::MoveWindowToWorkspace(2),
             Op::MoveWindowToWorkspace(3),
-            Op::MoveWindowDown(false),
-            Op::MoveWindowDown(true),
-            Op::MoveWindowUp(false),
-            Op::MoveWindowUp(true),
+            Op::MoveWindowDown,
+            Op::MoveWindowDownOrToWorkspaceDown,
+            Op::MoveWindowUp,
+            Op::MoveWindowUpOrToWorkspaceUp,
         ];
 
         for third in every_op {
@@ -3722,10 +3758,10 @@ mod tests {
             Op::CloseWindow(2),
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
-            Op::FocusWindowUp(false),
-            Op::FocusWindowUp(true),
-            Op::FocusWindowDown(false),
-            Op::FocusWindowDown(true),
+            Op::FocusWindowUp,
+            Op::FocusWindowOrWorkspaceUp,
+            Op::FocusWindowDown,
+            Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
             Op::ConsumeWindowIntoColumn,
@@ -3741,10 +3777,10 @@ mod tests {
             Op::MoveWindowToWorkspace(1),
             Op::MoveWindowToWorkspace(2),
             Op::MoveWindowToWorkspace(3),
-            Op::MoveWindowDown(false),
-            Op::MoveWindowDown(true),
-            Op::MoveWindowUp(false),
-            Op::MoveWindowUp(true),
+            Op::MoveWindowDown,
+            Op::MoveWindowDownOrToWorkspaceDown,
+            Op::MoveWindowUp,
+            Op::MoveWindowUpOrToWorkspaceUp,
         ];
 
         for third in every_op {

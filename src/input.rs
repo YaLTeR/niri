@@ -329,14 +329,24 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowDown(fallback) => {
-                self.niri.layout.move_down(fallback);
+            Action::MoveWindowDown => {
+                self.niri.layout.move_down();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowUp(fallback) => {
-                self.niri.layout.move_up(fallback);
+            Action::MoveWindowUp => {
+                self.niri.layout.move_up();
                 // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveWindowDownOrToWorkspaceDown => {
+                self.niri.layout.move_down_or_to_workspace_down();
+                //FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveWindowUpOrToWorkspaceUp => {
+                self.niri.layout.move_up_or_to_workspace_up();
+                //FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusColumnLeft => {
@@ -345,11 +355,17 @@ impl State {
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
             }
-            Action::FocusWindowDown(fallback) => {
-                self.niri.layout.focus_down(fallback);
+            Action::FocusWindowDown => {
+                self.niri.layout.focus_down();
             }
-            Action::FocusWindowUp(fallback) => {
-                self.niri.layout.focus_up(fallback);
+            Action::FocusWindowUp => {
+                self.niri.layout.focus_up();
+            }
+            Action::FocusWindowOrWorkspaceDown => {
+                self.niri.layout.focus_window_or_workspace_down();
+            }
+            Action::FocusWindowOrWorkspaceUp => {
+                self.niri.layout.focus_window_or_workspace_up();
             }
             Action::MoveWindowToWorkspaceDown => {
                 self.niri.layout.move_to_workspace_down();
