@@ -80,10 +80,8 @@ delegate_text_input_manager!(State);
 
 impl InputMethodHandler for State {
     fn new_popup(&mut self, surface: PopupSurface) {
-        if let Some((_, output)) = surface
-            .get_parent()
-            .and_then(|parent| self.niri.layout.find_window_and_output(&parent.surface))
-        {
+        let popup = PopupKind::from(surface.clone());
+        if let Some(output) = self.output_for_popup(&popup) {
             let scale = output.current_scale().integer_scale();
             let transform = output.current_transform();
             let wl_surface = surface.wl_surface();
@@ -91,7 +89,7 @@ impl InputMethodHandler for State {
                 send_surface_state(wl_surface, data, scale, transform);
             });
         }
-        if let Err(err) = self.niri.popups.track_popup(PopupKind::from(surface)) {
+        if let Err(err) = self.niri.popups.track_popup(popup) {
             warn!("error tracking ime popup {err:?}");
         }
     }

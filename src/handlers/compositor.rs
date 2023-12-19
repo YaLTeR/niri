@@ -1,7 +1,6 @@
 use std::collections::hash_map::Entry;
 
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
-use smithay::desktop::find_popup_root_surface;
 use smithay::input::pointer::CursorImageStatus;
 use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
@@ -30,7 +29,12 @@ impl CompositorHandler for State {
     }
 
     fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
-        if let Some((_, output)) = self.niri.layout.find_window_and_output(parent) {
+        let mut root = parent.clone();
+        while let Some(parent) = get_parent(&root) {
+            root = parent;
+        }
+
+        if let Some(output) = self.niri.output_for_root(&root) {
             let scale = output.current_scale().integer_scale();
             let transform = output.current_transform();
             with_states(surface, |data| {
@@ -150,11 +154,8 @@ impl CompositorHandler for State {
         // This might be a popup.
         self.popups_handle_commit(surface);
         if let Some(popup) = self.niri.popups.find_popup(surface) {
-            if let Ok(root) = find_popup_root_surface(&popup) {
-                let root_window_output = self.niri.layout.find_window_and_output(&root);
-                if let Some((_window, output)) = root_window_output {
-                    self.niri.queue_redraw(output);
-                }
+            if let Some(output) = self.output_for_popup(&popup) {
+                self.niri.queue_redraw(output);
             }
         }
 

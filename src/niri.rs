@@ -1211,6 +1211,22 @@ impl Niri {
             .or_else(|| self.global_space.outputs().next())
     }
 
+    pub fn output_for_root(&self, root: &WlSurface) -> Option<Output> {
+        // Check the main layout.
+        let win_out = self.layout.find_window_and_output(root);
+        let layout_output = win_out.map(|(_, output)| output);
+
+        // Check layer-shell.
+        let has_layer_surface = |o: &&Output| {
+            layer_map_for_output(o)
+                .layer_for_surface(root, WindowSurfaceType::TOPLEVEL)
+                .is_some()
+        };
+        let layer_shell_output = || self.layout.outputs().find(has_layer_surface).cloned();
+
+        layout_output.or_else(layer_shell_output)
+    }
+
     fn lock_surface_focus(&self) -> Option<WlSurface> {
         let output_under_cursor = self.output_under_cursor();
         let output = output_under_cursor

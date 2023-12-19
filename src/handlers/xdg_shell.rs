@@ -175,11 +175,8 @@ impl XdgShellHandler for State {
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
-        if let Ok(root) = find_popup_root_surface(&surface.into()) {
-            let root_window_output = self.niri.layout.find_window_and_output(&root);
-            if let Some((_window, output)) = root_window_output {
-                self.niri.queue_redraw(output);
-            }
+        if let Some(output) = self.output_for_popup(&PopupKind::Xdg(surface)) {
+            self.niri.queue_redraw(output);
         }
     }
 }
@@ -271,12 +268,8 @@ impl State {
                             .initial_configure_sent
                     });
                     if !initial_configure_sent {
-                        if let Some(output) = popup.get_parent_surface().and_then(|parent| {
-                            self.niri
-                                .layout
-                                .find_window_and_output(&parent)
-                                .map(|(_, output)| output)
-                        }) {
+                        if let Some(output) = self.output_for_popup(&PopupKind::Xdg(popup.clone()))
+                        {
                             let scale = output.current_scale().integer_scale();
                             let transform = output.current_transform();
                             with_states(surface, |data| {
@@ -290,5 +283,10 @@ impl State {
                 PopupKind::InputMethod(_) => (),
             }
         }
+    }
+
+    pub fn output_for_popup(&self, popup: &PopupKind) -> Option<Output> {
+        let root = find_popup_root_surface(popup).ok()?;
+        self.niri.output_for_root(&root)
     }
 }
