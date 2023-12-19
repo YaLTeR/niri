@@ -1642,31 +1642,31 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn move_down_or_to_workspace_down(&mut self) {
         let workspace = self.active_workspace();
-            if workspace.columns.is_empty() {
-                return;
-            }
-            let column = &mut workspace.columns[workspace.active_column_idx];
-            let curr_idx = column.active_window_idx;
-            let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
-            if curr_idx == new_idx {
-                self.move_to_workspace_down();
-            } else {
-                workspace.move_down();
-            }
+        if workspace.columns.is_empty() {
+            return;
+        }
+        let column = &mut workspace.columns[workspace.active_column_idx];
+        let curr_idx = column.active_window_idx;
+        let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
+        if curr_idx == new_idx {
+            self.move_to_workspace_down();
+        } else {
+            workspace.move_down();
+        }
     }
     
     pub fn move_up_or_to_workspace_up(&mut self) {
         let workspace = self.active_workspace();
-            if workspace.columns.is_empty() {
-                return;
-            }
-            let curr_idx = workspace.columns[workspace.active_column_idx].active_window_idx;
-            let new_idx = curr_idx.saturating_sub(1);
-            if curr_idx == new_idx {
-                self.move_to_workspace_up();
-            } else {
-                workspace.move_up();
-            }
+        if workspace.columns.is_empty() {
+            return;
+        }
+        let curr_idx = workspace.columns[workspace.active_column_idx].active_window_idx;
+        let new_idx = curr_idx.saturating_sub(1);
+        if curr_idx == new_idx {
+            self.move_to_workspace_up();
+        } else {
+            workspace.move_up();
+        }
     }
 
     pub fn focus_left(&mut self) {
