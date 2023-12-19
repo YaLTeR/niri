@@ -1654,7 +1654,7 @@ impl<W: LayoutElement> Monitor<W> {
             workspace.move_down();
         }
     }
-    
+
     pub fn move_up_or_to_workspace_up(&mut self) {
         let workspace = self.active_workspace();
         if workspace.columns.is_empty() {
