@@ -1690,7 +1690,7 @@ impl<W: LayoutElement> Monitor<W> {
         if workspace.columns.is_empty() {
             self.switch_workspace_down();
         } else {
-            let column = &mut workspace.columns[workspace.active_column_idx];
+            let column = &workspace.columns[workspace.active_column_idx];
             let curr_idx = column.active_window_idx;
             let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
             if curr_idx == new_idx {
