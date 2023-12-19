@@ -1,11 +1,14 @@
-use smithay::desktop::{find_popup_root_surface, PopupKind, Window};
+use smithay::desktop::{
+    find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, LayerSurface,
+    PopupKind, PopupManager, Window, WindowSurfaceType,
+};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
 use smithay::reexports::wayland_server::protocol::wl_output;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::Serial;
+use smithay::utils::{Rectangle, Serial};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
@@ -49,8 +52,8 @@ impl XdgShellHandler for State {
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
-        // FIXME: adjust the geometry so the popup doesn't overflow at least off the top and bottom
-        // screen edges, and ideally off the view size.
+        self.unconstrain_popup(&surface);
+
         if let Err(err) = self.niri.popups.track_popup(PopupKind::Xdg(surface)) {
             warn!("error tracking popup: {err:?}");
         }
@@ -76,13 +79,12 @@ impl XdgShellHandler for State {
         positioner: PositionerState,
         token: u32,
     ) {
-        // FIXME: adjust the geometry so the popup doesn't overflow at least off the top and bottom
-        // screen edges, and ideally off the view size.
         surface.with_pending_state(|state| {
             let geometry = positioner.get_geometry();
             state.geometry = geometry;
             state.positioner = positioner;
         });
+        self.unconstrain_popup(&surface);
         surface.send_repositioned(token);
     }
 
@@ -288,5 +290,87 @@ impl State {
     pub fn output_for_popup(&self, popup: &PopupKind) -> Option<Output> {
         let root = find_popup_root_surface(popup).ok()?;
         self.niri.output_for_root(&root)
+    }
+
+    pub fn unconstrain_popup(&self, popup: &PopupSurface) {
+        let _span = tracy_client::span!("Niri::unconstrain_popup");
+
+        // Popups with a NULL parent will get repositioned in their respective protocol handlers
+        // (i.e. layer-shell).
+        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
+            return;
+        };
+
+        // Figure out if the root is a window or a layer surface.
+        if let Some((window, output)) = self.niri.layout.find_window_and_output(&root) {
+            self.unconstrain_window_popup(popup, &window, &output);
+        } else if let Some((layer_surface, output)) = self.niri.layout.outputs().find_map(|o| {
+            let map = layer_map_for_output(o);
+            let layer_surface = map.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)?;
+            Some((layer_surface.clone(), o))
+        }) {
+            self.unconstrain_layer_shell_popup(popup, &layer_surface, output);
+        }
+    }
+
+    fn unconstrain_window_popup(&self, popup: &PopupSurface, window: &Window, output: &Output) {
+        let window_geo = window.geometry();
+        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+
+        // The target geometry for the positioner should be relative to its parent's geometry, so
+        // we will compute that here.
+        //
+        // We try to keep regular window popups within the window itself horizontally (since the
+        // window can be scrolled to both edges of the screen), but within the whole monitor's
+        // height.
+        let mut target =
+            Rectangle::from_loc_and_size((0, 0), (window_geo.size.w, output_geo.size.h));
+        target.loc.y -= self.niri.layout.window_y(window).unwrap();
+        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+
+        popup.with_pending_state(|state| {
+            state.geometry = state.positioner.get_unconstrained_geometry(target);
+        });
+    }
+
+    pub fn unconstrain_layer_shell_popup(
+        &self,
+        popup: &PopupSurface,
+        layer_surface: &LayerSurface,
+        output: &Output,
+    ) {
+        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+        let map = layer_map_for_output(output);
+        let Some(layer_geo) = map.layer_geometry(layer_surface) else {
+            return;
+        };
+
+        // The target geometry for the positioner should be relative to its parent's geometry, so
+        // we will compute that here.
+        let mut target = Rectangle::from_loc_and_size((0, 0), output_geo.size);
+        target.loc -= layer_geo.loc;
+        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+
+        popup.with_pending_state(|state| {
+            state.geometry = state.positioner.get_unconstrained_geometry(target);
+        });
+    }
+
+    pub fn update_reactive_popups(&self, window: &Window, output: &Output) {
+        let _span = tracy_client::span!("Niri::update_reactive_popups");
+
+        for (popup, _) in PopupManager::popups_for_surface(window.toplevel().wl_surface()) {
+            match popup {
+                PopupKind::Xdg(ref popup) => {
+                    if popup.with_pending_state(|state| state.positioner.reactive) {
+                        self.unconstrain_window_popup(popup, window, output);
+                        if let Err(err) = popup.send_pending_configure() {
+                            warn!("error re-configuring reactive popup: {err:?}");
+                        }
+                    }
+                }
+                PopupKind::InputMethod(_) => (),
+            }
+        }
     }
 }

@@ -795,6 +795,33 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn window_y(&self, window: &W) -> Option<i32> {
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mon.workspaces {
+                        for col in &ws.columns {
+                            if let Some(idx) = col.windows.iter().position(|w| w == window) {
+                                return Some(col.window_y(idx));
+                            }
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    for col in &ws.columns {
+                        if let Some(idx) = col.windows.iter().position(|w| w == window) {
+                            return Some(col.window_y(idx));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn update_output_size(&mut self, output: &Output) {
         let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
             panic!()

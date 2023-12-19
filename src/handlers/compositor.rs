@@ -135,6 +135,9 @@ impl CompositorHandler for State {
                 // The toplevel remains mapped.
                 self.niri.layout.update_window(&window);
 
+                // Popup placement depends on window size which might have changed.
+                self.update_reactive_popups(&window, &output);
+
                 self.niri.queue_redraw(output);
                 return;
             }

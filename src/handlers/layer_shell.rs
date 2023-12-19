@@ -8,6 +8,7 @@ use smithay::wayland::shell::wlr_layer::{
     Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
     WlrLayerShellState,
 };
+use smithay::wayland::shell::xdg::PopupSurface;
 
 use crate::niri::State;
 
@@ -51,6 +52,10 @@ impl WlrLayerShellHandler for State {
         if let Some(output) = output {
             self.niri.output_resized(output);
         }
+    }
+
+    fn new_popup(&mut self, _parent: WlrLayerSurface, popup: PopupSurface) {
+        self.unconstrain_popup(&popup);
     }
 }
 delegate_layer_shell!(State);
