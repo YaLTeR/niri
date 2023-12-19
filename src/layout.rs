@@ -977,6 +977,20 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_up();
     }
 
+    pub fn move_down_or_to_workspace_down(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_down_or_to_workspace_down();
+    }
+
+    pub fn move_up_or_to_workspace_up(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_up_or_to_workspace_up();
+    }
+
     pub fn focus_left(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1003,6 +1017,20 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.focus_up();
+    }
+
+    pub fn focus_window_or_workspace_down(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_or_workspace_down();
+    }
+
+    pub fn focus_window_or_workspace_up(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_or_workspace_up();
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -1612,6 +1640,35 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().move_up();
     }
 
+    pub fn move_down_or_to_workspace_down(&mut self) {
+        let workspace = self.active_workspace();
+        if workspace.columns.is_empty() {
+            return;
+        }
+        let column = &mut workspace.columns[workspace.active_column_idx];
+        let curr_idx = column.active_window_idx;
+        let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
+        if curr_idx == new_idx {
+            self.move_to_workspace_down();
+        } else {
+            workspace.move_down();
+        }
+    }
+
+    pub fn move_up_or_to_workspace_up(&mut self) {
+        let workspace = self.active_workspace();
+        if workspace.columns.is_empty() {
+            return;
+        }
+        let curr_idx = workspace.columns[workspace.active_column_idx].active_window_idx;
+        let new_idx = curr_idx.saturating_sub(1);
+        if curr_idx == new_idx {
+            self.move_to_workspace_up();
+        } else {
+            workspace.move_up();
+        }
+    }
+
     pub fn focus_left(&mut self) {
         self.active_workspace().focus_left();
     }
@@ -1626,6 +1683,37 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn focus_up(&mut self) {
         self.active_workspace().focus_up();
+    }
+
+    pub fn focus_window_or_workspace_down(&mut self) {
+        let workspace = self.active_workspace();
+        if workspace.columns.is_empty() {
+            self.switch_workspace_down();
+        } else {
+            let column = &workspace.columns[workspace.active_column_idx];
+            let curr_idx = column.active_window_idx;
+            let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
+            if curr_idx == new_idx {
+                self.switch_workspace_down();
+            } else {
+                workspace.focus_down();
+            }
+        }
+    }
+
+    pub fn focus_window_or_workspace_up(&mut self) {
+        let workspace = self.active_workspace();
+        if workspace.columns.is_empty() {
+            self.switch_workspace_up();
+        } else {
+            let curr_idx = workspace.columns[workspace.active_column_idx].active_window_idx;
+            let new_idx = curr_idx.saturating_sub(1);
+            if curr_idx == new_idx {
+                self.switch_workspace_up();
+            } else {
+                workspace.focus_up();
+            }
+        }
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -3337,10 +3425,14 @@ mod tests {
         FocusColumnRight,
         FocusWindowDown,
         FocusWindowUp,
+        FocusWindowOrWorkspaceDown,
+        FocusWindowOrWorkspaceUp,
         MoveColumnLeft,
         MoveColumnRight,
         MoveWindowDown,
         MoveWindowUp,
+        MoveWindowDownOrToWorkspaceDown,
+        MoveWindowUpOrToWorkspaceUp,
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
         CenterColumn,
@@ -3444,10 +3536,14 @@ mod tests {
                 Op::FocusColumnRight => layout.focus_right(),
                 Op::FocusWindowDown => layout.focus_down(),
                 Op::FocusWindowUp => layout.focus_up(),
+                Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
+                Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
                 Op::MoveWindowDown => layout.move_down(),
                 Op::MoveWindowUp => layout.move_up(),
+                Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),
+                Op::MoveWindowUpOrToWorkspaceUp => layout.move_up_or_to_workspace_up(),
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
                 Op::CenterColumn => layout.center_column(),
@@ -3548,6 +3644,10 @@ mod tests {
             Op::CloseWindow(2),
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
+            Op::FocusWindowUp,
+            Op::FocusWindowOrWorkspaceUp,
+            Op::FocusWindowDown,
+            Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
             Op::ConsumeWindowIntoColumn,
@@ -3564,7 +3664,9 @@ mod tests {
             Op::MoveWindowToWorkspace(2),
             Op::MoveWindowToWorkspace(3),
             Op::MoveWindowDown,
+            Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
+            Op::MoveWindowUpOrToWorkspaceUp,
         ];
 
         for third in every_op {
@@ -3656,6 +3758,10 @@ mod tests {
             Op::CloseWindow(2),
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
+            Op::FocusWindowUp,
+            Op::FocusWindowOrWorkspaceUp,
+            Op::FocusWindowDown,
+            Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
             Op::ConsumeWindowIntoColumn,
@@ -3672,7 +3778,9 @@ mod tests {
             Op::MoveWindowToWorkspace(2),
             Op::MoveWindowToWorkspace(3),
             Op::MoveWindowDown,
+            Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
+            Op::MoveWindowUpOrToWorkspaceUp,
         ];
 
         for third in every_op {
