@@ -52,7 +52,6 @@ features = [
     "backend_udev",
     "backend_winit",
     "desktop",
-    "libinput_1_19",
     "renderer_gl",
     "renderer_multi",
     "use_system_lib",
