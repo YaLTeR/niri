@@ -4,11 +4,12 @@ use smithay::desktop::{
 };
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::ConstraintAdjustment;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
 use smithay::reexports::wayland_server::protocol::wl_output;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Rectangle, Serial};
+use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
@@ -329,7 +330,7 @@ impl State {
         target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
 
         popup.with_pending_state(|state| {
-            state.geometry = state.positioner.get_unconstrained_geometry(target);
+            state.geometry = unconstrain_with_padding(state.positioner, target);
         });
     }
 
@@ -352,7 +353,7 @@ impl State {
         target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
 
         popup.with_pending_state(|state| {
-            state.geometry = state.positioner.get_unconstrained_geometry(target);
+            state.geometry = unconstrain_with_padding(state.positioner, target);
         });
     }
 
@@ -373,4 +374,45 @@ impl State {
             }
         }
     }
+}
+
+fn unconstrain_with_padding(
+    positioner: PositionerState,
+    target: Rectangle<i32, Logical>,
+) -> Rectangle<i32, Logical> {
+    // Try unconstraining with a small padding first which looks nicer, then if it doesn't fit try
+    // unconstraining without padding.
+    const PADDING: i32 = 8;
+
+    let mut padded = target;
+    if PADDING * 2 < padded.size.w {
+        padded.loc.x += PADDING;
+        padded.size.w -= PADDING * 2;
+    }
+    if PADDING * 2 < padded.size.h {
+        padded.loc.y += PADDING;
+        padded.size.h -= PADDING * 2;
+    }
+
+    // No padding, so just unconstrain with the original target.
+    if padded == target {
+        return positioner.get_unconstrained_geometry(target);
+    }
+
+    // Do not try to resize to fit the padded target rectangle.
+    let mut no_resize = positioner;
+    no_resize
+        .constraint_adjustment
+        .remove(ConstraintAdjustment::ResizeX);
+    no_resize
+        .constraint_adjustment
+        .remove(ConstraintAdjustment::ResizeY);
+
+    let geo = no_resize.get_unconstrained_geometry(padded);
+    if padded.contains_rect(geo) {
+        return geo;
+    }
+
+    // Could not unconstrain into the padded target, so resort to the regular one.
+    positioner.get_unconstrained_geometry(target)
 }
