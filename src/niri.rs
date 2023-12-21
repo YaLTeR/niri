@@ -61,6 +61,7 @@ use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufFeedback;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
@@ -142,6 +143,7 @@ pub struct Niri {
     pub virtual_keyboard_state: VirtualKeyboardManagerState,
     pub pointer_gestures_state: PointerGesturesState,
     pub relative_pointer_state: RelativePointerManagerState,
+    pub pointer_constraints_state: PointerConstraintsState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
     pub data_control_state: DataControlState,
@@ -299,6 +301,8 @@ impl State {
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
         let under = self.niri.surface_under_and_global_space(location);
+        self.niri
+            .maybe_activate_pointer_constraint(location, &under);
         self.niri.pointer_focus = under.clone();
         let under = under.map(|u| u.surface);
 
@@ -354,6 +358,9 @@ impl State {
         if self.niri.pointer_focus == under {
             return false;
         }
+
+        self.niri
+            .maybe_activate_pointer_constraint(location, &under);
 
         self.niri.pointer_focus = under.clone();
         let under = under.map(|u| u.surface);
@@ -642,6 +649,7 @@ impl Niri {
         let tablet_state = TabletManagerState::new::<State>(&display_handle);
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
         let relative_pointer_state = RelativePointerManagerState::new::<State>(&display_handle);
+        let pointer_constraints_state = PointerConstraintsState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
         let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
         let data_control_state = DataControlState::new::<State, _>(
@@ -754,6 +762,7 @@ impl Niri {
             tablet_state,
             pointer_gestures_state,
             relative_pointer_state,
+            pointer_constraints_state,
             data_device_state,
             primary_selection_state,
             data_control_state,
@@ -2351,6 +2360,31 @@ impl Niri {
         };
 
         output_state.lock_surface = Some(surface);
+    }
+
+    pub fn maybe_activate_pointer_constraint(
+        &self,
+        new_pos: Point<f64, Logical>,
+        new_under: &Option<PointerFocus>,
+    ) {
+        let Some(under) = new_under else { return };
+        let pointer = &self.seat.get_pointer().unwrap();
+        with_pointer_constraint(&under.surface.0, pointer, |constraint| {
+            let Some(constraint) = constraint else { return };
+            if constraint.is_active() {
+                return;
+            }
+
+            // Constraint does not apply if not within region.
+            if let Some(region) = constraint.region() {
+                let new_pos_within_surface = new_pos.to_i32_round() - under.surface.1;
+                if !region.contains(new_pos_within_surface) {
+                    return;
+                }
+            }
+
+            constraint.activate();
+        });
     }
 }
 

@@ -11,7 +11,7 @@ use std::thread;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::ImportDma;
 use smithay::desktop::{PopupKind, PopupManager};
-use smithay::input::pointer::{CursorIcon, CursorImageStatus};
+use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
@@ -22,6 +22,7 @@ use smithay::utils::{Logical, Rectangle, Size};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
+use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::selection::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
@@ -36,10 +37,10 @@ use smithay::wayland::session_lock::{
 };
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
-    delegate_input_method_manager, delegate_output, delegate_pointer_gestures,
-    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
-    delegate_session_lock, delegate_tablet_manager, delegate_text_input_manager,
-    delegate_virtual_keyboard_manager,
+    delegate_input_method_manager, delegate_output, delegate_pointer_constraints,
+    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
+    delegate_relative_pointer, delegate_seat, delegate_session_lock, delegate_tablet_manager,
+    delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
 use crate::layout::output_size;
@@ -77,6 +78,16 @@ delegate_tablet_manager!(State);
 delegate_pointer_gestures!(State);
 delegate_relative_pointer!(State);
 delegate_text_input_manager!(State);
+
+impl PointerConstraintsHandler for State {
+    fn new_constraint(&mut self, _surface: &WlSurface, pointer: &PointerHandle<Self>) {
+        self.niri.maybe_activate_pointer_constraint(
+            pointer.current_location(),
+            &self.niri.pointer_focus,
+        );
+    }
+}
+delegate_pointer_constraints!(State);
 
 impl InputMethodHandler for State {
     fn new_popup(&mut self, surface: PopupSurface) {

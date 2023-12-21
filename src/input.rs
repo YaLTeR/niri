@@ -17,6 +17,7 @@ use smithay::input::pointer::{
 };
 use smithay::reexports::input;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::config::{Action, Binds, LayoutAction, Modifiers};
@@ -509,6 +510,56 @@ impl State {
         // We received an event for the regular pointer, so show it now.
         self.niri.tablet_cursor_location = None;
 
+        // Check if we have an active pointer constraint.
+        let mut pointer_confined = None;
+        if let Some(focus) = self.niri.pointer_focus.as_ref() {
+            let focus_surface_loc = focus.surface.1;
+            let pos_within_surface = pos.to_i32_round() - focus_surface_loc;
+
+            let mut pointer_locked = false;
+            with_pointer_constraint(&focus.surface.0, &pointer, |constraint| {
+                let Some(constraint) = constraint else { return };
+                if !constraint.is_active() {
+                    return;
+                }
+
+                // Constraint does not apply if not within region.
+                if let Some(region) = constraint.region() {
+                    if !region.contains(pos_within_surface) {
+                        return;
+                    }
+                }
+
+                match &*constraint {
+                    PointerConstraint::Locked(_locked) => {
+                        pointer_locked = true;
+                    }
+                    PointerConstraint::Confined(confine) => {
+                        pointer_confined = Some((focus.surface.clone(), confine.region().cloned()));
+                    }
+                }
+            });
+
+            // If the pointer is locked, only send relative motion.
+            if pointer_locked {
+                pointer.relative_motion(
+                    self,
+                    Some(focus.surface.clone()),
+                    &RelativeMotionEvent {
+                        delta: event.delta(),
+                        delta_unaccel: event.delta_unaccel(),
+                        utime: event.time(),
+                    },
+                );
+
+                pointer.frame(self);
+
+                // I guess a redraw to hide the tablet cursor could be nice? Doesn't matter too
+                // much here I think.
+                return;
+            }
+        }
+
         if self
             .niri
             .global_space
@@ -552,6 +603,44 @@ impl State {
         }
 
         let under = self.niri.surface_under_and_global_space(new_pos);
+
+        // Handle confined pointer.
+        if let Some((focus_surface, region)) = pointer_confined {
+            let mut prevent = false;
+
+            // Prevent the pointer from leaving the focused surface.
+            if Some(&focus_surface.0) != under.as_ref().map(|x| &x.surface.0) {
+                prevent = true;
+            }
+
+            // Prevent the pointer from leaving the confine region, if any.
+            if let Some(region) = region {
+                let new_pos_within_surface = new_pos.to_i32_round() - focus_surface.1;
+                if !region.contains(new_pos_within_surface) {
+                    prevent = true;
+                }
+            }
+
+            if prevent {
+                pointer.relative_motion(
+                    self,
+                    Some(focus_surface),
+                    &RelativeMotionEvent {
+                        delta: event.delta(),
+                        delta_unaccel: event.delta_unaccel(),
+                        utime: event.time(),
+                    },
+                );
+
+                pointer.frame(self);
+
+                return;
+            }
+        }
+
+        // Activate a new confinement if necessary.
+        self.niri.maybe_activate_pointer_constraint(new_pos, &under);
+
         self.niri.pointer_focus = under.clone();
         let under = under.map(|u| u.surface);
 
@@ -614,6 +703,7 @@ impl State {
         }
 
         let under = self.niri.surface_under_and_global_space(pos);
+        self.niri.maybe_activate_pointer_constraint(pos, &under);
         self.niri.pointer_focus = under.clone();
         let under = under.map(|u| u.surface);
 
