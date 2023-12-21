@@ -56,7 +56,7 @@ use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
-use crate::config::{self, Color, Config, PresetWidth, SizeChange};
+use crate::config::{self, Color, Config, PresetWidth, SizeChange, Struts};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
@@ -205,6 +205,8 @@ struct FocusRing {
 struct Options {
     /// Padding around windows in logical pixels.
     gaps: i32,
+    /// Extra padding around the working area in logical pixels.
+    struts: Struts,
     focus_ring: config::FocusRing,
     /// Column widths that `toggle_width()` switches between.
     preset_widths: Vec<ColumnWidth>,
@@ -216,6 +218,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             gaps: 16,
+            struts: Default::default(),
             focus_ring: Default::default(),
             preset_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
@@ -251,6 +254,7 @@ impl Options {
 
         Self {
             gaps: config.gaps.into(),
+            struts: config.struts,
             focus_ring: config.focus_ring,
             preset_widths,
             default_width,
@@ -830,7 +834,7 @@ impl<W: LayoutElement> Layout<W> {
         for mon in monitors {
             if &mon.output == output {
                 let view_size = output_size(output);
-                let working_area = layer_map_for_output(output).non_exclusive_zone();
+                let working_area = compute_working_area(output, self.options.struts);
 
                 for ws in &mut mon.workspaces {
                     ws.set_view_size(view_size, working_area);
@@ -1886,6 +1890,15 @@ impl<W: LayoutElement> Monitor<W> {
             ws.update_config(options.clone());
         }
 
+        if self.options.struts != options.struts {
+            let view_size = output_size(&self.output);
+            let working_area = compute_working_area(&self.output, options.struts);
+
+            for ws in &mut self.workspaces {
+                ws.set_view_size(view_size, working_area);
+            }
+        }
+
         self.options = options;
     }
 
@@ -2064,7 +2077,7 @@ impl Monitor<Window> {
 
 impl<W: LayoutElement> Workspace<W> {
     fn new(output: Output, options: Rc<Options>) -> Self {
-        let working_area = layer_map_for_output(&output).non_exclusive_zone();
+        let working_area = compute_working_area(&output, options.struts);
         Self {
             original_output: OutputId::new(&output),
             view_size: output_size(&output),
@@ -2164,7 +2177,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.output = output;
 
         if let Some(output) = &self.output {
-            let working_area = layer_map_for_output(output).non_exclusive_zone();
+            let working_area = compute_working_area(output, self.options.struts);
             self.set_view_size(output_size(output), working_area);
 
             for win in self.windows() {
@@ -3259,6 +3272,27 @@ pub fn output_size(output: &Output) -> Size<i32, Logical> {
     output_transform
         .transform_size(output_mode.size)
         .to_logical(output_scale)
+}
+
+fn compute_working_area(output: &Output, struts: Struts) -> Rectangle<i32, Logical> {
+    // Start with the layer-shell non-exclusive zone.
+    let mut working_area = layer_map_for_output(output).non_exclusive_zone();
+
+    // Add struts.
+    let w = working_area.size.w;
+    let h = working_area.size.h;
+
+    working_area.size.w = w
+        .saturating_sub(struts.left.into())
+        .saturating_sub(struts.right.into());
+    working_area.loc.x += struts.left as i32;
+
+    working_area.size.h = h
+        .saturating_sub(struts.top.into())
+        .saturating_sub(struts.bottom.into());
+    working_area.loc.y += struts.top as i32;
+
+    working_area
 }
 
 fn compute_new_view_offset(

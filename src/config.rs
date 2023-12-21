@@ -28,6 +28,8 @@ pub struct Config {
     pub default_column_width: Option<DefaultColumnWidth>,
     #[knuffel(child, unwrap(argument), default = 16)]
     pub gaps: u16,
+    #[knuffel(child, default)]
+    pub struts: Struts,
     #[knuffel(
         child,
         unwrap(argument),
@@ -237,6 +239,18 @@ pub enum PresetWidth {
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct DefaultColumnWidth(#[knuffel(children)] pub Vec<PresetWidth>);
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Struts {
+    #[knuffel(child, unwrap(argument), default)]
+    pub left: u16,
+    #[knuffel(child, unwrap(argument), default)]
+    pub right: u16,
+    #[knuffel(child, unwrap(argument), default)]
+    pub top: u16,
+    #[knuffel(child, unwrap(argument), default)]
+    pub bottom: u16,
+}
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Binds(#[knuffel(children)] pub Vec<Bind>);
@@ -594,6 +608,12 @@ mod tests {
 
             gaps 8
 
+            struts {
+                left 1
+                right 2
+                top 3
+            }
+
             screenshot-path "~/Screenshots/screenshot.png"
 
             binds {
@@ -673,6 +693,12 @@ mod tests {
                 ],
                 default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(0.25)])),
                 gaps: 8,
+                struts: Struts {
+                    left: 1,
+                    right: 2,
+                    top: 3,
+                    bottom: 0,
+                },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
                 binds: Binds(vec![
                     Bind {

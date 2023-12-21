@@ -122,6 +122,18 @@ default-column-width { proportion 0.5; }
 // Set gaps around windows in logical pixels.
 gaps 16
 
+// Struts shrink the area occupied by windows, similarly to layer-shell panels.
+// You can think of them as a kind of outer gaps. They are set in logical pixels.
+// Left and right struts will cause the next window to the side to always be visible.
+// Top and bottom struts will simply add outer gaps in addition to the area occupied by
+// layer-shell panels and regular gaps.
+struts {
+    // left 64
+    // right 64
+    // top 64
+    // bottom 64
+}
+
 // You can change the path where screenshots are saved.
 // A ~ at the front will be expanded to the home directory.
 // The path is formatted with strftime(3) to give you the screenshot date and time.
