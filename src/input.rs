@@ -506,6 +506,9 @@ impl State {
         // We have an output, so we can compute the new location and focus.
         let mut new_pos = pos + event.delta();
 
+        // We received an event for the regular pointer, so show it now.
+        self.niri.tablet_cursor_location = None;
+
         if self
             .niri
             .global_space
@@ -573,9 +576,6 @@ impl State {
         );
 
         pointer.frame(self);
-
-        // We moved the regular pointer, so show it now.
-        self.niri.tablet_cursor_location = None;
 
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
