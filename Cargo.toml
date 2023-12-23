@@ -1,6 +1,6 @@
 [package]
 name = "niri"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -81,7 +81,7 @@ overflow-checks = true
 lto = "thin"
 
 [package.metadata.generate-rpm]
-version = "0.1.0~alpha.1"
+version = "0.1.0~alpha.2"
 assets = [
     { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
     { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
