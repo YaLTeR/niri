@@ -43,8 +43,8 @@ use smithay::{
     delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
-use crate::layout::output_size;
 use crate::niri::State;
+use crate::utils::output_size;
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;

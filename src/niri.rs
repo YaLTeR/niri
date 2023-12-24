@@ -90,10 +90,12 @@ use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
 use crate::input::TabletData;
-use crate::layout::{output_size, Layout, MonitorRenderElement};
+use crate::layout::{Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
-use crate::utils::{center, get_monotonic_time, make_screenshot_path, write_png_rgba8};
+use crate::utils::{
+    center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
+};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];

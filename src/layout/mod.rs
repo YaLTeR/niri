@@ -57,6 +57,7 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::animation::Animation;
 use crate::config::{self, Color, Config, PresetWidth, SizeChange, Struts};
+use crate::utils::output_size;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
@@ -3262,16 +3263,6 @@ impl<W: LayoutElement> Column<W> {
             pos
         })
     }
-}
-
-pub fn output_size(output: &Output) -> Size<i32, Logical> {
-    let output_scale = output.current_scale().integer_scale();
-    let output_transform = output.current_transform();
-    let output_mode = output.current_mode().unwrap();
-
-    output_transform
-        .transform_size(output_mode.size)
-        .to_logical(output_scale)
 }
 
 fn compute_working_area(output: &Output, struts: Struts) -> Rectangle<i32, Logical> {
