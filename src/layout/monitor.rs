@@ -249,11 +249,11 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let column = &mut workspace.columns[workspace.active_column_idx];
+        let column = &workspace.columns[workspace.active_column_idx];
         let width = column.width;
         let is_full_width = column.is_full_width;
-        let window = column.windows[column.active_window_idx].clone();
-        workspace.remove_window(&window);
+        let window =
+            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_window_idx);
 
         self.add_window(new_idx, window, true, width, is_full_width);
     }
@@ -271,11 +271,11 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let column = &mut workspace.columns[workspace.active_column_idx];
+        let column = &workspace.columns[workspace.active_column_idx];
         let width = column.width;
         let is_full_width = column.is_full_width;
-        let window = column.windows[column.active_window_idx].clone();
-        workspace.remove_window(&window);
+        let window =
+            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_window_idx);
 
         self.add_window(new_idx, window, true, width, is_full_width);
     }
@@ -293,11 +293,11 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let column = &mut workspace.columns[workspace.active_column_idx];
+        let column = &workspace.columns[workspace.active_column_idx];
         let width = column.width;
         let is_full_width = column.is_full_width;
-        let window = column.windows[column.active_window_idx].clone();
-        workspace.remove_window(&window);
+        let window =
+            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_window_idx);
 
         self.add_window(new_idx, window, true, width, is_full_width);
 

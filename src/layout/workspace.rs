@@ -482,21 +482,15 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn remove_window(&mut self, window: &W) {
+    pub fn remove_window_by_idx(&mut self, column_idx: usize, window_idx: usize) -> W {
+        let column = &mut self.columns[column_idx];
+        let window = column.windows.remove(window_idx);
+        column.heights.remove(window_idx);
+
         if let Some(output) = &self.output {
             window.output_leave(output);
         }
 
-        let column_idx = self
-            .columns
-            .iter()
-            .position(|col| col.contains(window))
-            .unwrap();
-        let column = &mut self.columns[column_idx];
-
-        let window_idx = column.windows.iter().position(|win| win == window).unwrap();
-        column.windows.remove(window_idx);
-        column.heights.remove(window_idx);
         if column.windows.is_empty() {
             if column_idx + 1 == self.active_column_idx {
                 // The previous column, that we were going to activate upon removal of the active
@@ -509,7 +503,7 @@ impl<W: LayoutElement> Workspace<W> {
             // view jumps.
             self.columns.remove(column_idx);
             if self.columns.is_empty() {
-                return;
+                return window;
             }
 
             if self.active_column_idx > column_idx
@@ -523,11 +517,25 @@ impl<W: LayoutElement> Workspace<W> {
                 self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
             }
 
-            return;
+            return window;
         }
 
         column.active_window_idx = min(column.active_window_idx, column.windows.len() - 1);
         column.update_window_sizes();
+
+        window
+    }
+
+    pub fn remove_window(&mut self, window: &W) {
+        let column_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(window))
+            .unwrap();
+        let column = &self.columns[column_idx];
+
+        let window_idx = column.windows.iter().position(|win| win == window).unwrap();
+        self.remove_window_by_idx(column_idx, window_idx);
     }
 
     pub fn update_window(&mut self, window: &W) {
@@ -662,10 +670,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let source_column_idx = self.active_column_idx + 1;
-
-        let source_column = &mut self.columns[source_column_idx];
-        let window = source_column.windows[0].clone();
-        self.remove_window(&window);
+        let window = self.remove_window_by_idx(source_column_idx, 0);
 
         let target_column = &mut self.columns[self.active_column_idx];
         target_column.add_window(window);
@@ -676,15 +681,15 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let source_column = &mut self.columns[self.active_column_idx];
+        let source_column = &self.columns[self.active_column_idx];
         if source_column.windows.len() == 1 {
             return;
         }
 
         let width = source_column.width;
         let is_full_width = source_column.is_full_width;
-        let window = source_column.windows[source_column.active_window_idx].clone();
-        self.remove_window(&window);
+        let window =
+            self.remove_window_by_idx(self.active_column_idx, source_column.active_window_idx);
 
         self.add_window(window, true, width, is_full_width);
     }

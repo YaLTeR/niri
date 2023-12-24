@@ -1045,10 +1045,9 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             }
             let column = &ws.columns[ws.active_column_idx];
-            let window = column.windows[column.active_window_idx].clone();
             let width = column.width;
             let is_full_width = column.is_full_width;
-            ws.remove_window(&window);
+            let window = ws.remove_window_by_idx(ws.active_column_idx, column.active_window_idx);
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
