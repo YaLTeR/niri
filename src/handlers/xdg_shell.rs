@@ -20,6 +20,7 @@ use smithay::wayland::shell::xdg::{
 use smithay::{delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_shell};
 
 use crate::niri::State;
+use crate::utils::clone2;
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -123,8 +124,10 @@ impl XdgShellHandler for State {
                 .layout
                 .find_window_and_output(surface.wl_surface())
             {
+                let window = window.clone();
+
                 if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
-                    if requested_output != current_output {
+                    if &requested_output != current_output {
                         self.niri
                             .layout
                             .move_window_to_output(window.clone(), &requested_output);
@@ -146,6 +149,7 @@ impl XdgShellHandler for State {
             .layout
             .find_window_and_output(surface.wl_surface())
         {
+            let window = window.clone();
             self.niri.layout.set_fullscreen(&window, false);
         }
     }
@@ -166,7 +170,7 @@ impl XdgShellHandler for State {
             .layout
             .find_window_and_output(surface.wl_surface());
 
-        let Some((window, output)) = win_out else {
+        let Some((window, output)) = win_out.map(clone2) else {
             // I have no idea how this can happen, but I saw it happen once, in a weird interaction
             // involving laptop going to sleep and resuming.
             error!("toplevel missing from both unmapped_windows and layout");
@@ -179,7 +183,7 @@ impl XdgShellHandler for State {
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
         if let Some(output) = self.output_for_popup(&PopupKind::Xdg(surface)) {
-            self.niri.queue_redraw(output);
+            self.niri.queue_redraw(output.clone());
         }
     }
 }
@@ -288,7 +292,7 @@ impl State {
         }
     }
 
-    pub fn output_for_popup(&self, popup: &PopupKind) -> Option<Output> {
+    pub fn output_for_popup(&self, popup: &PopupKind) -> Option<&Output> {
         let root = find_popup_root_surface(popup).ok()?;
         self.niri.output_for_root(&root)
     }
@@ -304,7 +308,7 @@ impl State {
 
         // Figure out if the root is a window or a layer surface.
         if let Some((window, output)) = self.niri.layout.find_window_and_output(&root) {
-            self.unconstrain_window_popup(popup, &window, &output);
+            self.unconstrain_window_popup(popup, window, output);
         } else if let Some((layer_surface, output)) = self.niri.layout.outputs().find_map(|o| {
             let map = layer_map_for_output(o);
             let layer_surface = map.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)?;

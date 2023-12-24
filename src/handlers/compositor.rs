@@ -18,6 +18,7 @@ use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell;
 use crate::niri::{ClientState, State};
+use crate::utils::clone2;
 
 impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
@@ -116,8 +117,9 @@ impl CompositorHandler for State {
             }
 
             // This is a commit of a previously-mapped root or a non-toplevel root.
-            if let Some((window, output)) = self.niri.layout.find_window_and_output(surface) {
-                // This is a commit of a previously-mapped toplevel.
+            if let Some(win_out) = self.niri.layout.find_window_and_output(surface) {
+                let (window, output) = clone2(win_out);
+
                 window.on_commit();
 
                 // This is a commit of a previously-mapped toplevel.
@@ -147,7 +149,7 @@ impl CompositorHandler for State {
 
         // This is a commit of a non-root or a non-toplevel root.
         let root_window_output = self.niri.layout.find_window_and_output(&root_surface);
-        if let Some((window, output)) = root_window_output {
+        if let Some((window, output)) = root_window_output.map(clone2) {
             window.on_commit();
             self.niri.layout.update_window(&window);
             self.niri.queue_redraw(output);
@@ -158,7 +160,7 @@ impl CompositorHandler for State {
         self.popups_handle_commit(surface);
         if let Some(popup) = self.niri.popups.find_popup(surface) {
             if let Some(output) = self.output_for_popup(&popup) {
-                self.niri.queue_redraw(output);
+                self.niri.queue_redraw(output.clone());
             }
         }
 
