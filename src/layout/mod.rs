@@ -608,7 +608,7 @@ impl<W: LayoutElement> Layout<W> {
         Some(&mon.workspaces[mon.active_workspace_idx])
     }
 
-    pub fn active_window(&self) -> Option<(W, Output)> {
+    pub fn active_window(&self) -> Option<(&W, &Output)> {
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -626,10 +626,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         let col = &ws.columns[ws.active_column_idx];
-        Some((
-            col.windows[col.active_window_idx].clone(),
-            mon.output.clone(),
-        ))
+        Some((&col.windows[col.active_window_idx], &mon.output))
     }
 
     pub fn windows_for_output(&self, output: &Output) -> impl Iterator<Item = &W> + '_ {
