@@ -91,6 +91,10 @@ A step-by-step process for this is explained [on the wiki](https://github.com/Ya
 Niri also works with some parts of xdg-desktop-portal-gnome.
 In particular, it supports file choosers and monitor screencasting (e.g. to [OBS]).
 
+### Xwayland
+
+See [the wiki page](https://github.com/YaLTeR/niri/wiki/Xwayland) to learn how to use Xwayland with niri.
+
 ## Default Hotkeys
 
 When running on a TTY, the Mod key is <kbd>Super</kbd>.
