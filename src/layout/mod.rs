@@ -54,7 +54,7 @@ mod focus_ring;
 mod monitor;
 mod workspace;
 
-pub trait LayoutElement: SpaceElement + PartialEq + Clone {
+pub trait LayoutElement: SpaceElement + PartialEq {
     fn request_size(&self, size: Size<i32, Logical>);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
