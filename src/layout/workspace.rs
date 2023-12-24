@@ -294,12 +294,7 @@ impl<W: LayoutElement> Workspace<W> {
     fn enter_output_for_window(&self, window: &W) {
         if let Some(output) = &self.output {
             prepare_for_output(window, output);
-
-            // FIXME: proper overlap.
-            window.output_enter(
-                output,
-                Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX)),
-            );
+            window.output_enter(output);
         }
     }
 
@@ -752,7 +747,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.column_x(self.active_column_idx) - view_pos,
             col.window_y(col.active_window_idx),
         )) - geom.loc;
-        if active_win.is_in_input_region(&(pos - buf_pos.to_f64())) {
+        if active_win.is_in_input_region(pos - buf_pos.to_f64()) {
             return Some((active_win, buf_pos));
         }
 
@@ -766,7 +761,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                 let geom = win.geometry();
                 let buf_pos = Point::from((x, y)) - geom.loc;
-                if win.is_in_input_region(&(pos - buf_pos.to_f64())) {
+                if win.is_in_input_region(pos - buf_pos.to_f64()) {
                     return Some((win, buf_pos));
                 }
             }

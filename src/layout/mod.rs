@@ -39,7 +39,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
@@ -54,7 +54,9 @@ mod focus_ring;
 mod monitor;
 mod workspace;
 
-pub trait LayoutElement: SpaceElement + PartialEq {
+pub trait LayoutElement: PartialEq {
+    fn geometry(&self) -> Rectangle<i32, Logical>;
+    fn is_in_input_region(&self, point: Point<f64, Logical>) -> bool;
     fn request_size(&self, size: Size<i32, Logical>);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
@@ -62,6 +64,8 @@ pub trait LayoutElement: SpaceElement + PartialEq {
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
     fn has_ssd(&self) -> bool;
     fn set_preferred_scale_transform(&self, scale: i32, transform: Transform);
+    fn output_enter(&self, output: &Output);
+    fn output_leave(&self, output: &Output);
 }
 
 #[derive(Debug)]
@@ -152,6 +156,14 @@ impl Options {
 }
 
 impl LayoutElement for Window {
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        SpaceElement::geometry(self)
+    }
+
+    fn is_in_input_region(&self, point: Point<f64, Logical>) -> bool {
+        SpaceElement::is_in_input_region(self, &point)
+    }
+
     fn request_size(&self, size: Size<i32, Logical>) {
         self.toplevel().with_pending_state(|state| {
             state.size = Some(size);
@@ -193,6 +205,15 @@ impl LayoutElement for Window {
     fn has_ssd(&self) -> bool {
         self.toplevel().current_state().decoration_mode
             == Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
+    }
+
+    fn output_enter(&self, output: &Output) {
+        let overlap = Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX));
+        SpaceElement::output_enter(self, output, overlap)
+    }
+
+    fn output_leave(&self, output: &Output) {
+        SpaceElement::output_leave(self, output)
     }
 }
 
@@ -1268,12 +1289,10 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
-    use std::rc::Rc;
 
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use smithay::output::{Mode, PhysicalProperties, Subpixel};
-    use smithay::utils::{IsAlive, Rectangle};
 
     use super::*;
 
@@ -1336,27 +1355,15 @@ mod tests {
         }
     }
 
-    impl IsAlive for TestWindow {
-        fn alive(&self) -> bool {
-            true
-        }
-    }
-
-    impl SpaceElement for TestWindow {
-        fn bbox(&self) -> Rectangle<i32, Logical> {
+    impl LayoutElement for TestWindow {
+        fn geometry(&self) -> Rectangle<i32, Logical> {
             self.0.bbox.get()
         }
 
-        fn is_in_input_region(&self, _point: &Point<f64, Logical>) -> bool {
+        fn is_in_input_region(&self, _point: Point<f64, Logical>) -> bool {
             false
         }
 
-        fn set_activate(&self, _activated: bool) {}
-        fn output_enter(&self, _output: &Output, _overlap: Rectangle<i32, Logical>) {}
-        fn output_leave(&self, _output: &Output) {}
-    }
-
-    impl LayoutElement for TestWindow {
         fn request_size(&self, size: Size<i32, Logical>) {
             self.0.requested_size.set(Some(size));
         }
@@ -1380,6 +1387,10 @@ mod tests {
         fn has_ssd(&self) -> bool {
             false
         }
+
+        fn output_enter(&self, _output: &Output) {}
+
+        fn output_leave(&self, _output: &Output) {}
     }
 
     fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {
