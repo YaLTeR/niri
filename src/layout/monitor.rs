@@ -111,7 +111,7 @@ impl<W: LayoutElement> Monitor<W> {
     ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_window(window.clone(), activate, width, is_full_width);
+        workspace.add_window(window, activate, width, is_full_width);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
