@@ -1088,7 +1088,7 @@ impl<W: LayoutElement> Layout<W> {
             for mon in &*monitors {
                 for ws in &mon.workspaces {
                     for col in &ws.columns {
-                        if col.windows.contains(&window) {
+                        if col.contains(&window) {
                             width = Some(col.width);
                             is_full_width = col.is_full_width;
                             break;

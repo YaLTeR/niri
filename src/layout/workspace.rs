@@ -855,7 +855,7 @@ impl<W: LayoutElement> Workspace<W> {
         let col = self
             .columns
             .iter_mut()
-            .find(|col| col.windows.contains(window))
+            .find(|col| col.contains(window))
             .unwrap();
         let value = !col.is_fullscreen;
         self.set_fullscreen(window, value);
@@ -1023,7 +1023,7 @@ impl<W: LayoutElement> Column<W> {
         self.update_window_sizes();
     }
 
-    fn contains(&self, window: &W) -> bool {
+    pub fn contains(&self, window: &W) -> bool {
         self.windows.iter().any(|win| win == window)
     }
 
