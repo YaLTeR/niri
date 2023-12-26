@@ -77,7 +77,7 @@ impl FocusRing {
         }
     }
 
-    pub fn render(&self, scale: Scale<f64>) -> impl Iterator<Item = SolidColorRenderElement> {
+    pub fn render(&self, scale: Scale<f64>) -> impl Iterator<Item = FocusRingRenderElement> {
         let mut rv = ArrayVec::<_, 4>::new();
 
         if self.is_off {
