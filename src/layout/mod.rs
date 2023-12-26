@@ -33,19 +33,23 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
+use smithay::backend::renderer::element::AsRenderElements;
+use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch, WorkspaceSwitchGesture};
-use self::workspace::{compute_working_area, ColumnWidth, OutputId, Workspace};
+use self::workspace::{
+    compute_working_area, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
+};
 use crate::animation::Animation;
 use crate::config::{self, Config, SizeChange, Struts};
 use crate::utils::output_size;
@@ -55,8 +59,35 @@ mod monitor;
 mod workspace;
 
 pub trait LayoutElement: PartialEq {
-    fn geometry(&self) -> Rectangle<i32, Logical>;
+    /// Visual size of the element.
+    ///
+    /// This is what the user would consider the size, i.e. excluding CSD shadows and whatnot.
+    /// Corresponds to the Wayland window geometry size.
+    fn size(&self) -> Size<i32, Logical>;
+
+    /// Returns the location of the element's buffer relative to the element's visual geometry.
+    ///
+    /// I.e. if the element has CSD shadows, its buffer location will have negative coordinates.
+    fn buf_loc(&self) -> Point<i32, Logical>;
+
+    /// Checks whether a point is in the element's input region.
+    ///
+    /// The point is relative to the element's visual geometry.
     fn is_in_input_region(&self, point: Point<f64, Logical>) -> bool;
+
+    /// Renders the element at the given visual location.
+    ///
+    /// The element should be rendered in such a way that its visual geometry ends up at the given
+    /// location.
+    fn render<R: Renderer + ImportAll>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+    ) -> Vec<WorkspaceRenderElement<R>>
+    where
+        <R as Renderer>::TextureId: 'static;
+
     fn request_size(&self, size: Size<i32, Logical>);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
@@ -156,12 +187,35 @@ impl Options {
 }
 
 impl LayoutElement for Window {
-    fn geometry(&self) -> Rectangle<i32, Logical> {
-        SpaceElement::geometry(self)
+    fn size(&self) -> Size<i32, Logical> {
+        self.geometry().size
+    }
+
+    fn buf_loc(&self) -> Point<i32, Logical> {
+        Point::from((0, 0)) - self.geometry().loc
     }
 
     fn is_in_input_region(&self, point: Point<f64, Logical>) -> bool {
-        SpaceElement::is_in_input_region(self, &point)
+        let surace_local = point + self.geometry().loc.to_f64();
+        SpaceElement::is_in_input_region(self, &surace_local)
+    }
+
+    fn render<R: Renderer + ImportAll>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+    ) -> Vec<WorkspaceRenderElement<R>>
+    where
+        <R as Renderer>::TextureId: 'static,
+    {
+        let buf_pos = location - self.geometry().loc;
+        self.render_elements(
+            renderer,
+            buf_pos.to_physical_precise_round(scale),
+            scale,
+            1.,
+        )
     }
 
     fn request_size(&self, size: Size<i32, Logical>) {
@@ -394,7 +448,7 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Option<&Output> {
         let width = width
             .or(self.options.default_width)
-            .unwrap_or_else(|| ColumnWidth::Fixed(window.geometry().size.w));
+            .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -1356,12 +1410,25 @@ mod tests {
     }
 
     impl LayoutElement for TestWindow {
-        fn geometry(&self) -> Rectangle<i32, Logical> {
-            self.0.bbox.get()
+        fn size(&self) -> Size<i32, Logical> {
+            self.0.bbox.get().size
+        }
+
+        fn buf_loc(&self) -> Point<i32, Logical> {
+            (0, 0).into()
         }
 
         fn is_in_input_region(&self, _point: Point<f64, Logical>) -> bool {
             false
+        }
+
+        fn render<R: Renderer + ImportAll>(
+            &self,
+            _renderer: &mut R,
+            _location: Point<i32, Logical>,
+            _scale: Scale<f64>,
+        ) -> Vec<WorkspaceRenderElement<R>> {
+            vec![]
         }
 
         fn request_size(&self, size: Size<i32, Logical>) {

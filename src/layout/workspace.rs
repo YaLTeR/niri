@@ -4,7 +4,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportAll;
 use smithay::desktop::space::SpaceElement;
@@ -236,7 +235,7 @@ impl<W: LayoutElement> Workspace<W> {
         if !self.columns.is_empty() {
             let col = &self.columns[self.active_column_idx];
             let active_win = &col.windows[col.active_window_idx];
-            let geom = active_win.geometry();
+            let size = active_win.size();
             let has_ssd = active_win.has_ssd();
 
             let win_pos = Point::from((
@@ -244,7 +243,7 @@ impl<W: LayoutElement> Workspace<W> {
                 col.window_y(col.active_window_idx),
             ));
 
-            self.focus_ring.update(win_pos, geom.size, has_ssd);
+            self.focus_ring.update(win_pos, size, has_ssd);
             self.focus_ring.set_active(is_active);
         }
     }
@@ -742,13 +741,12 @@ impl<W: LayoutElement> Workspace<W> {
         // Prefer the active window since it's drawn on top.
         let col = &self.columns[self.active_column_idx];
         let active_win = &col.windows[col.active_window_idx];
-        let geom = active_win.geometry();
-        let buf_pos = Point::from((
+        let win_pos = Point::from((
             self.column_x(self.active_column_idx) - view_pos,
             col.window_y(col.active_window_idx),
-        )) - geom.loc;
-        if active_win.is_in_input_region(pos - buf_pos.to_f64()) {
-            return Some((active_win, buf_pos));
+        ));
+        if active_win.is_in_input_region(pos - win_pos.to_f64()) {
+            return Some((active_win, win_pos + active_win.buf_loc()));
         }
 
         let mut x = -view_pos;
@@ -759,10 +757,9 @@ impl<W: LayoutElement> Workspace<W> {
                     continue;
                 }
 
-                let geom = win.geometry();
-                let buf_pos = Point::from((x, y)) - geom.loc;
-                if win.is_in_input_region(pos - buf_pos.to_f64()) {
-                    return Some((win, buf_pos));
+                let win_pos = Point::from((x, y));
+                if win.is_in_input_region(pos - win_pos.to_f64()) {
+                    return Some((win, win_pos + win.buf_loc()));
                 }
             }
 
@@ -917,14 +914,7 @@ impl Workspace<Window> {
         ));
 
         // Draw the window itself.
-        let geom = active_win.geometry();
-        let buf_pos = win_pos - geom.loc;
-        rv.extend(active_win.render_elements(
-            renderer,
-            buf_pos.to_physical_precise_round(output_scale),
-            output_scale,
-            1.,
-        ));
+        rv.extend(active_win.render(renderer, win_pos, output_scale));
 
         // Draw the focus ring.
         rv.extend(self.focus_ring.render(output_scale).map(Into::into));
@@ -937,14 +927,8 @@ impl Workspace<Window> {
                     continue;
                 }
 
-                let geom = win.geometry();
-                let buf_pos = Point::from((x, y)) - geom.loc;
-                rv.extend(win.render_elements(
-                    renderer,
-                    buf_pos.to_physical_precise_round(output_scale),
-                    output_scale,
-                    1.,
-                ));
+                let win_pos = Point::from((x, y));
+                rv.extend(win.render(renderer, win_pos, output_scale));
             }
 
             x += col.width() + self.options.gaps;
@@ -1189,11 +1173,7 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn width(&self) -> i32 {
-        self.windows
-            .iter()
-            .map(|win| win.geometry().size.w)
-            .max()
-            .unwrap()
+        self.windows.iter().map(|win| win.size().w).max().unwrap()
     }
 
     fn focus_up(&mut self) {
@@ -1312,7 +1292,7 @@ impl<W: LayoutElement> Column<W> {
     fn set_window_height(&mut self, change: SizeChange) {
         let current = self.heights[self.active_window_idx];
         let current_px = match current {
-            WindowHeight::Auto => self.windows[self.active_window_idx].geometry().size.h,
+            WindowHeight::Auto => self.windows[self.active_window_idx].size().h,
             WindowHeight::Fixed(height) => height,
         };
         let current_prop = (current_px + self.options.gaps) as f64
@@ -1372,7 +1352,7 @@ impl<W: LayoutElement> Column<W> {
 
         self.windows.iter().map(move |win| {
             let pos = y;
-            y += win.geometry().size.h + self.options.gaps;
+            y += win.size().h + self.options.gaps;
             pos
         })
     }
