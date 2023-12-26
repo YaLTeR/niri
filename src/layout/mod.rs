@@ -518,7 +518,7 @@ impl<W: LayoutElement> Layout<W> {
                 for mon in monitors {
                     for ws in &mon.workspaces {
                         for col in &ws.columns {
-                            if let Some(idx) = col.windows.iter().position(|w| w == window) {
+                            if let Some(idx) = col.position(window) {
                                 return Some(col.window_y(idx));
                             }
                         }
@@ -528,7 +528,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     for col in &ws.columns {
-                        if let Some(idx) = col.windows.iter().position(|w| w == window) {
+                        if let Some(idx) = col.position(window) {
                             return Some(col.window_y(idx));
                         }
                     }

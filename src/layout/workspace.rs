@@ -529,7 +529,7 @@ impl<W: LayoutElement> Workspace<W> {
             .unwrap();
         let column = &self.columns[column_idx];
 
-        let window_idx = column.windows.iter().position(|win| win == window).unwrap();
+        let window_idx = column.position(window).unwrap();
         self.remove_window_by_idx(column_idx, window_idx);
     }
 
@@ -809,12 +809,7 @@ impl<W: LayoutElement> Workspace<W> {
             .columns
             .iter()
             .enumerate()
-            .find_map(|(col_idx, col)| {
-                col.windows
-                    .iter()
-                    .position(|w| w == window)
-                    .map(|win_idx| (col_idx, win_idx))
-            })
+            .find_map(|(col_idx, col)| col.position(window).map(|win_idx| (col_idx, win_idx)))
             .unwrap();
 
         let mut col = &mut self.columns[col_idx];
@@ -1027,8 +1022,12 @@ impl<W: LayoutElement> Column<W> {
         self.windows.iter().any(|win| win == window)
     }
 
+    pub fn position(&self, window: &W) -> Option<usize> {
+        self.windows.iter().position(|win| win == window)
+    }
+
     fn activate_window(&mut self, window: &W) {
-        let idx = self.windows.iter().position(|win| win == window).unwrap();
+        let idx = self.position(window).unwrap();
         self.active_window_idx = idx;
     }
 
