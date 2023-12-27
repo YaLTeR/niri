@@ -105,4 +105,12 @@ impl FocusRing {
 
         rv.into_iter()
     }
+
+    pub fn width(&self) -> i32 {
+        self.width
+    }
+
+    pub fn is_off(&self) -> bool {
+        self.is_off
+    }
 }

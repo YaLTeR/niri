@@ -345,7 +345,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let column = &workspace.columns[workspace.active_column_idx];
-        Some(&column.windows[column.active_window_idx])
+        Some(column.windows[column.active_window_idx].window())
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {

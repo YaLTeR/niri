@@ -89,6 +89,17 @@ focus-ring {
     inactive-color 80 80 80 255
 }
 
+// You can also add a border. It's similar to the focus ring, but always visible.
+border {
+    // The settings are the same as for the focus ring.
+    // If you enable the border, you probably want to disable the focus ring.
+    off
+
+    width 4
+    active-color 255 200 127 255
+    inactive-color 80 80 80 255
+}
+
 cursor {
     // Change the theme and size of the cursor as well as set the
     // `XCURSOR_THEME` and `XCURSOR_SIZE` env variables.

@@ -18,6 +18,8 @@ pub struct Config {
     pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(child, default)]
     pub focus_ring: FocusRing,
+    #[knuffel(child, default = default_border())]
+    pub border: FocusRing,
     #[knuffel(child, default)]
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
@@ -190,6 +192,15 @@ impl Default for FocusRing {
     }
 }
 
+pub const fn default_border() -> FocusRing {
+    FocusRing {
+        off: true,
+        width: 4,
+        active_color: Color::new(255, 200, 127, 255),
+        inactive_color: Color::new(80, 80, 80, 255),
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     #[knuffel(argument)]
@@ -203,7 +214,7 @@ pub struct Color {
 }
 
 impl Color {
-    pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
 }
@@ -590,6 +601,12 @@ mod tests {
                 inactive-color 255 200 100 0
             }
 
+            border {
+                width 3
+                active-color 0 100 200 255
+                inactive-color 255 200 100 0
+            }
+
             prefer-no-csd
 
             cursor {
@@ -667,6 +684,22 @@ mod tests {
                 focus_ring: FocusRing {
                     off: false,
                     width: 5,
+                    active_color: Color {
+                        r: 0,
+                        g: 100,
+                        b: 200,
+                        a: 255,
+                    },
+                    inactive_color: Color {
+                        r: 255,
+                        g: 200,
+                        b: 100,
+                        a: 0,
+                    },
+                },
+                border: FocusRing {
+                    off: false,
+                    width: 3,
                     active_color: Color {
                         r: 0,
                         g: 100,

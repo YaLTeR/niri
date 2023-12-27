@@ -56,6 +56,7 @@ use crate::utils::output_size;
 
 mod focus_ring;
 mod monitor;
+mod tile;
 mod workspace;
 
 pub trait LayoutElement: PartialEq {
@@ -97,6 +98,11 @@ pub trait LayoutElement: PartialEq {
     fn set_preferred_scale_transform(&self, scale: i32, transform: Transform);
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
+
+    /// Whether the element is currently fullscreen.
+    ///
+    /// This will *not* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
+    fn is_fullscreen(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -132,6 +138,7 @@ pub struct Options {
     /// Extra padding around the working area in logical pixels.
     struts: Struts,
     focus_ring: config::FocusRing,
+    border: config::FocusRing,
     /// Column widths that `toggle_width()` switches between.
     preset_widths: Vec<ColumnWidth>,
     /// Initial width for new windows.
@@ -144,6 +151,7 @@ impl Default for Options {
             gaps: 16,
             struts: Default::default(),
             focus_ring: Default::default(),
+            border: config::default_border(),
             preset_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
                 ColumnWidth::Proportion(0.5),
@@ -180,6 +188,7 @@ impl Options {
             gaps: config.gaps.into(),
             struts: config.struts,
             focus_ring: config.focus_ring,
+            border: config.border,
             preset_widths,
             default_width,
         }
@@ -268,6 +277,13 @@ impl LayoutElement for Window {
 
     fn output_leave(&self, output: &Output) {
         SpaceElement::output_leave(self, output)
+    }
+
+    fn is_fullscreen(&self) -> bool {
+        self.toplevel()
+            .current_state()
+            .states
+            .contains(xdg_toplevel::State::Fullscreen)
     }
 }
 
@@ -701,7 +717,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         let col = &ws.columns[ws.active_column_idx];
-        Some((&col.windows[col.active_window_idx], &mon.output))
+        Some((&col.windows[col.active_window_idx].window(), &mon.output))
     }
 
     pub fn windows_for_output(&self, output: &Output) -> impl Iterator<Item = &W> + '_ {
@@ -1458,6 +1474,10 @@ mod tests {
         fn output_enter(&self, _output: &Output) {}
 
         fn output_leave(&self, _output: &Output) {}
+
+        fn is_fullscreen(&self) -> bool {
+            false
+        }
     }
 
     fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {
