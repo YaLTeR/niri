@@ -909,13 +909,15 @@ impl<W: LayoutElement> Workspace<W> {
 }
 
 impl Workspace<Window> {
-    pub fn refresh(&self) {
+    pub fn refresh(&self, is_active: bool) {
         let bounds = self.toplevel_bounds();
 
         for (col_idx, col) in self.columns.iter().enumerate() {
             for (tile_idx, tile) in col.tiles.iter().enumerate() {
                 let win = tile.window();
-                let active = self.active_column_idx == col_idx && col.active_tile_idx == tile_idx;
+                let active = is_active
+                    && self.active_column_idx == col_idx
+                    && col.active_tile_idx == tile_idx;
                 win.set_activated(active);
 
                 win.toplevel().with_pending_state(|state| {

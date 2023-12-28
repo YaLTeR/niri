@@ -1341,16 +1341,21 @@ impl Layout<Window> {
         let _span = tracy_client::span!("MonitorSet::refresh");
 
         match &self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
+            MonitorSet::Normal {
+                monitors,
+                active_monitor_idx,
+                ..
+            } => {
+                for (idx, mon) in monitors.iter().enumerate() {
+                    let is_active = idx == *active_monitor_idx;
                     for ws in &mon.workspaces {
-                        ws.refresh();
+                        ws.refresh(is_active);
                     }
                 }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
-                    ws.refresh();
+                    ws.refresh(false);
                 }
             }
         }
