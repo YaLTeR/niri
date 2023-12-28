@@ -37,6 +37,12 @@ input {
         // existing outputs.
         map-to-output "eDP-1"
     }
+
+    // By default, niri will take over the power button to make it sleep
+    // instead of power off.
+    // Uncomment this if you would like to configure the power button elsewhere
+    // (i.e. logind.conf).
+    // disable-power-key-handling
 }
 
 // You can configure outputs by their name, which you can find with wayland-info(1).

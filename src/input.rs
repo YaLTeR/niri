@@ -209,6 +209,7 @@ impl State {
                     pressed,
                     *mods,
                     &this.niri.screenshot_ui,
+                    this.niri.config.borrow().input.disable_power_key_handling,
                 )
             },
         ) else {
@@ -1165,6 +1166,7 @@ fn should_intercept_key(
     pressed: bool,
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
+    disable_power_key_handling: bool,
 ) -> FilterResult<Option<Action>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -1173,7 +1175,14 @@ fn should_intercept_key(
         return FilterResult::Forward;
     }
 
-    let mut final_action = action(bindings, comp_mod, modified, raw, mods);
+    let mut final_action = action(
+        bindings,
+        comp_mod,
+        modified,
+        raw,
+        mods,
+        disable_power_key_handling,
+    );
 
     // Allow only a subset of compositor actions while the screenshot UI is open, since the user
     // cannot see the screen.
@@ -1210,6 +1219,7 @@ fn action(
     modified: Keysym,
     raw: Option<Keysym>,
     mods: ModifiersState,
+    disable_power_key_handling: bool,
 ) -> Option<Action> {
     use keysyms::*;
 
@@ -1220,7 +1230,7 @@ fn action(
             let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
             return Some(Action::ChangeVt(vt));
         }
-        KEY_XF86PowerOff => return Some(Action::Suspend),
+        KEY_XF86PowerOff if !disable_power_key_handling => return Some(Action::Suspend),
         _ => (),
     }
 
@@ -1325,6 +1335,7 @@ mod tests {
         let mut suppressed_keys = HashSet::new();
 
         let screenshot_ui = ScreenshotUi::new();
+        let disable_power_key_handling = false;
 
         // The key_code we pick is arbitrary, the only thing
         // that matters is that they are different between cases.
@@ -1341,6 +1352,7 @@ mod tests {
                 pressed,
                 mods,
                 &screenshot_ui,
+                disable_power_key_handling,
             )
         };
 
@@ -1356,6 +1368,7 @@ mod tests {
                 pressed,
                 mods,
                 &screenshot_ui,
+                disable_power_key_handling,
             )
         };
 

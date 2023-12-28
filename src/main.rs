@@ -163,8 +163,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Inhibit power key handling so we can suspend on it.
         #[cfg(feature = "dbus")]
-        if let Err(err) = state.niri.inhibit_power_key() {
-            warn!("error inhibiting power key: {err:?}");
+        if !state.niri.config.borrow().input.disable_power_key_handling {
+            if let Err(err) = state.niri.inhibit_power_key() {
+                warn!("error inhibiting power key: {err:?}");
+            }
         }
     }
 

@@ -55,6 +55,8 @@ pub struct Input {
     pub touchpad: Touchpad,
     #[knuffel(child, default)]
     pub tablet: Tablet,
+    #[knuffel(child)]
+    pub disable_power_key_handling: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -585,6 +587,8 @@ mod tests {
                 tablet {
                     map-to-output "eDP-1"
                 }
+
+                disable-power-key-handling
             }
 
             output "eDP-1" {
@@ -666,6 +670,7 @@ mod tests {
                     tablet: Tablet {
                         map_to_output: Some("eDP-1".to_owned()),
                     },
+                    disable_power_key_handling: true,
                 },
                 outputs: vec![Output {
                     off: false,
