@@ -127,17 +127,17 @@ pub struct Column<W: LayoutElement> {
     /// Tiles in this column.
     ///
     /// Must be non-empty.
-    pub windows: Vec<Tile<W>>,
+    pub tiles: Vec<Tile<W>>,
 
     /// Heights of the windows.
     ///
-    /// Must have the same number of elements as `windows`.
+    /// Must have the same number of elements as `tiles`.
     ///
-    /// These heights are window heights, so they exclude tile decorations, if any.
+    /// These heights are window heights, not tile heights, so they exclude tile decorations.
     heights: Vec<WindowHeight>,
 
     /// Index of the currently active tile.
-    pub active_window_idx: usize,
+    pub active_tile_idx: usize,
 
     /// Desired width of this column.
     ///
@@ -237,10 +237,10 @@ impl<W: LayoutElement> Workspace<W> {
         let view_pos = self.view_pos();
 
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
-            for (win_idx, tile) in col.windows.iter_mut().enumerate() {
+            for (tile_idx, tile) in col.tiles.iter_mut().enumerate() {
                 let is_active = is_active
                     && col_idx == self.active_column_idx
-                    && win_idx == col.active_window_idx;
+                    && tile_idx == col.active_tile_idx;
                 tile.advance_animations(current_time, is_active);
             }
         }
@@ -248,16 +248,16 @@ impl<W: LayoutElement> Workspace<W> {
         // This shall one day become a proper animation.
         if !self.columns.is_empty() {
             let col = &self.columns[self.active_column_idx];
-            let active_win = &col.windows[col.active_window_idx];
-            let size = active_win.tile_size();
-            let has_ssd = active_win.has_ssd();
+            let active_tile = &col.tiles[col.active_tile_idx];
+            let size = active_tile.tile_size();
+            let has_ssd = active_tile.has_ssd();
 
-            let win_pos = Point::from((
+            let tile_pos = Point::from((
                 self.column_x(self.active_column_idx) - view_pos,
-                col.window_y(col.active_window_idx),
+                col.tile_y(col.active_tile_idx),
             ));
 
-            self.focus_ring.update(win_pos, size, has_ssd);
+            self.focus_ring.update(tile_pos, size, has_ssd);
             self.focus_ring.set_active(is_active);
         }
     }
@@ -280,7 +280,7 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn windows(&self) -> impl Iterator<Item = &W> + '_ {
         self.columns
             .iter()
-            .flat_map(|col| col.windows.iter())
+            .flat_map(|col| col.tiles.iter())
             .map(Tile::window)
     }
 
@@ -508,14 +508,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn remove_window_by_idx(&mut self, column_idx: usize, window_idx: usize) -> W {
         let column = &mut self.columns[column_idx];
-        let window = column.windows.remove(window_idx).into_window();
+        let window = column.tiles.remove(window_idx).into_window();
         column.heights.remove(window_idx);
 
         if let Some(output) = &self.output {
             window.output_leave(output);
         }
 
-        if column.windows.is_empty() {
+        if column.tiles.is_empty() {
             if column_idx + 1 == self.active_column_idx {
                 // The previous column, that we were going to activate upon removal of the active
                 // column, has just been itself removed.
@@ -544,8 +544,8 @@ impl<W: LayoutElement> Workspace<W> {
             return window;
         }
 
-        column.active_window_idx = min(column.active_window_idx, column.windows.len() - 1);
-        column.update_window_sizes();
+        column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
+        column.update_tile_sizes();
 
         window
     }
@@ -569,7 +569,7 @@ impl<W: LayoutElement> Workspace<W> {
             .enumerate()
             .find(|(_, col)| col.contains(window))
             .unwrap();
-        column.update_window_sizes();
+        column.update_tile_sizes();
 
         if idx == self.active_column_idx {
             // We might need to move the view to ensure the resized window is still visible.
@@ -706,14 +706,14 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let source_column = &self.columns[self.active_column_idx];
-        if source_column.windows.len() == 1 {
+        if source_column.tiles.len() == 1 {
             return;
         }
 
         let width = source_column.width;
         let is_full_width = source_column.is_full_width;
         let window =
-            self.remove_window_by_idx(self.active_column_idx, source_column.active_window_idx);
+            self.remove_window_by_idx(self.active_column_idx, source_column.active_tile_idx);
 
         self.add_window(window, true, width, is_full_width);
     }
@@ -770,26 +770,26 @@ impl<W: LayoutElement> Workspace<W> {
 
         // Prefer the active window since it's drawn on top.
         let col = &self.columns[self.active_column_idx];
-        let active_win = &col.windows[col.active_window_idx];
-        let win_pos = Point::from((
+        let active_tile = &col.tiles[col.active_tile_idx];
+        let tile_pos = Point::from((
             self.column_x(self.active_column_idx) - view_pos,
-            col.window_y(col.active_window_idx),
+            col.tile_y(col.active_tile_idx),
         ));
-        if active_win.is_in_input_region(pos - win_pos.to_f64()) {
-            return Some((active_win.window(), win_pos + active_win.buf_loc()));
+        if active_tile.is_in_input_region(pos - tile_pos.to_f64()) {
+            return Some((active_tile.window(), tile_pos + active_tile.buf_loc()));
         }
 
         let mut x = -view_pos;
         for col in &self.columns {
-            for (win, y) in zip(&col.windows, col.window_ys()) {
-                if win.window() == active_win.window() {
+            for (tile, y) in zip(&col.tiles, col.tile_ys()) {
+                if tile.window() == active_tile.window() {
                     // Already handled it above.
                     continue;
                 }
 
-                let win_pos = Point::from((x, y));
-                if win.is_in_input_region(pos - win_pos.to_f64()) {
-                    return Some((win.window(), win_pos + win.buf_loc()));
+                let tile_pos = Point::from((x, y));
+                if tile.is_in_input_region(pos - tile_pos.to_f64()) {
+                    return Some((tile.window(), tile_pos + tile.buf_loc()));
                 }
             }
 
@@ -832,23 +832,23 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
-        let (mut col_idx, win_idx) = self
+        let (mut col_idx, tile_idx) = self
             .columns
             .iter()
             .enumerate()
-            .find_map(|(col_idx, col)| col.position(window).map(|win_idx| (col_idx, win_idx)))
+            .find_map(|(col_idx, col)| col.position(window).map(|tile_idx| (col_idx, tile_idx)))
             .unwrap();
 
         let mut col = &mut self.columns[col_idx];
 
-        if is_fullscreen && col.windows.len() > 1 {
+        if is_fullscreen && col.tiles.len() > 1 {
             // This wasn't the only window in its column; extract it into a separate column.
             let target_window_was_focused =
-                self.active_column_idx == col_idx && col.active_window_idx == win_idx;
-            let window = col.windows.remove(win_idx).into_window();
-            col.heights.remove(win_idx);
-            col.active_window_idx = min(col.active_window_idx, col.windows.len() - 1);
-            col.update_window_sizes();
+                self.active_column_idx == col_idx && col.active_tile_idx == tile_idx;
+            let window = col.tiles.remove(tile_idx).into_window();
+            col.heights.remove(tile_idx);
+            col.active_tile_idx = min(col.active_tile_idx, col.tiles.len() - 1);
+            col.update_tile_sizes();
             let width = col.width;
             let is_full_width = col.is_full_width;
 
@@ -902,9 +902,9 @@ impl Workspace<Window> {
         let bounds = self.toplevel_bounds();
 
         for (col_idx, col) in self.columns.iter().enumerate() {
-            for (win_idx, tile) in col.windows.iter().enumerate() {
+            for (tile_idx, tile) in col.tiles.iter().enumerate() {
                 let win = tile.window();
-                let active = self.active_column_idx == col_idx && col.active_window_idx == win_idx;
+                let active = self.active_column_idx == col_idx && col.active_tile_idx == tile_idx;
                 win.set_activated(active);
 
                 win.toplevel().with_pending_state(|state| {
@@ -938,28 +938,28 @@ impl Workspace<Window> {
 
         // Draw the active window on top.
         let col = &self.columns[self.active_column_idx];
-        let active_win = &col.windows[col.active_window_idx];
-        let win_pos = Point::from((
+        let active_tile = &col.tiles[col.active_tile_idx];
+        let tile_pos = Point::from((
             self.column_x(self.active_column_idx) - view_pos,
-            col.window_y(col.active_window_idx),
+            col.tile_y(col.active_tile_idx),
         ));
 
         // Draw the window itself.
-        rv.extend(active_win.render(renderer, win_pos, output_scale));
+        rv.extend(active_tile.render(renderer, tile_pos, output_scale));
 
         // Draw the focus ring.
         rv.extend(self.focus_ring.render(output_scale).map(Into::into));
 
         let mut x = -view_pos;
         for col in &self.columns {
-            for (win, y) in zip(&col.windows, col.window_ys()) {
-                if win.window() == active_win.window() {
+            for (tile, y) in zip(&col.tiles, col.tile_ys()) {
+                if tile.window() == active_tile.window() {
                     // Already handled it above.
                     continue;
                 }
 
-                let win_pos = Point::from((x, y));
-                rv.extend(win.render(renderer, win_pos, output_scale));
+                let tile_pos = Point::from((x, y));
+                rv.extend(tile.render(renderer, tile_pos, output_scale));
             }
 
             x += col.width() + self.options.gaps;
@@ -979,9 +979,9 @@ impl<W: LayoutElement> Column<W> {
         is_full_width: bool,
     ) -> Self {
         let mut rv = Self {
-            windows: vec![],
+            tiles: vec![],
             heights: vec![],
-            active_window_idx: 0,
+            active_tile_idx: 0,
             width,
             is_full_width,
             is_fullscreen: false,
@@ -1003,7 +1003,7 @@ impl<W: LayoutElement> Column<W> {
         self.view_size = size;
         self.working_area = working_area;
 
-        self.update_window_sizes();
+        self.update_tile_sizes();
     }
 
     fn update_config(&mut self, options: Rc<Options>) {
@@ -1026,32 +1026,29 @@ impl<W: LayoutElement> Column<W> {
             update_sizes = true;
         }
 
-        for tile in &mut self.windows {
+        for tile in &mut self.tiles {
             tile.update_config(options.clone());
         }
 
         self.options = options;
 
         if update_sizes {
-            self.update_window_sizes();
+            self.update_tile_sizes();
         }
     }
 
     fn set_width(&mut self, width: ColumnWidth) {
         self.width = width;
         self.is_full_width = false;
-        self.update_window_sizes();
+        self.update_tile_sizes();
     }
 
     pub fn contains(&self, window: &W) -> bool {
-        self.windows
-            .iter()
-            .map(Tile::window)
-            .any(|win| win == window)
+        self.tiles.iter().map(Tile::window).any(|win| win == window)
     }
 
     pub fn position(&self, window: &W) -> Option<usize> {
-        self.windows
+        self.tiles
             .iter()
             .map(Tile::window)
             .position(|win| win == window)
@@ -1059,25 +1056,25 @@ impl<W: LayoutElement> Column<W> {
 
     fn activate_window(&mut self, window: &W) {
         let idx = self.position(window).unwrap();
-        self.active_window_idx = idx;
+        self.active_tile_idx = idx;
     }
 
     fn add_window(&mut self, window: W) {
         let tile = Tile::new(window, self.options.clone());
         self.is_fullscreen = false;
-        self.windows.push(tile);
+        self.tiles.push(tile);
         self.heights.push(WindowHeight::Auto);
-        self.update_window_sizes();
+        self.update_tile_sizes();
     }
 
-    fn update_window_sizes(&mut self) {
+    fn update_tile_sizes(&mut self) {
         if self.is_fullscreen {
-            self.windows[0].request_fullscreen(self.view_size);
+            self.tiles[0].request_fullscreen(self.view_size);
             return;
         }
 
-        let min_size: Vec<_> = self.windows.iter().map(Tile::min_size).collect();
-        let max_size: Vec<_> = self.windows.iter().map(Tile::max_size).collect();
+        let min_size: Vec<_> = self.tiles.iter().map(Tile::min_size).collect();
+        let max_size: Vec<_> = self.tiles.iter().map(Tile::max_size).collect();
 
         // Compute the column width.
         let min_width = min_size
@@ -1115,8 +1112,8 @@ impl<W: LayoutElement> Column<W> {
         let width = width.resolve(&self.options, self.working_area.size.w);
         let width = max(min(width, max_width), min_width);
 
-        // Compute the window heights. Start by converting window heights to tile heights.
-        let mut heights = zip(&self.windows, &self.heights)
+        // Compute the tile heights. Start by converting window heights to tile heights.
+        let mut heights = zip(&self.tiles, &self.heights)
             .map(|(tile, height)| match *height {
                 WindowHeight::Auto => WindowHeight::Auto,
                 WindowHeight::Fixed(height) => {
@@ -1125,11 +1122,11 @@ impl<W: LayoutElement> Column<W> {
             })
             .collect::<Vec<_>>();
         let mut height_left = self.working_area.size.h - self.options.gaps;
-        let mut auto_windows_left = self.windows.len();
+        let mut auto_tiles_left = self.tiles.len();
 
-        // Subtract all fixed-height windows.
+        // Subtract all fixed-height tiles.
         for (h, (min_size, max_size)) in zip(&mut heights, zip(&min_size, &max_size)) {
-            // Check if the window has an exact height constraint.
+            // Check if the tile has an exact height constraint.
             if min_size.h > 0 && min_size.h == max_size.h {
                 *h = WindowHeight::Fixed(min_size.h);
             }
@@ -1144,30 +1141,30 @@ impl<W: LayoutElement> Column<W> {
                 *h = max(*h, 1);
 
                 height_left -= *h + self.options.gaps;
-                auto_windows_left -= 1;
+                auto_tiles_left -= 1;
             }
         }
 
-        // Iteratively try to distribute the remaining height, checking against window min heights.
+        // Iteratively try to distribute the remaining height, checking against tile min heights.
         // Pick an auto height according to the current sizes, then check if it satisfies all
-        // remaining min heights. If not, allocate fixed height to those windows and repeat the
+        // remaining min heights. If not, allocate fixed height to those tiles and repeat the
         // loop. On each iteration the auto height will get smaller.
         //
         // NOTE: we do not respect max height here. Doing so would complicate things: if the current
-        // auto height is above some window's max height, then the auto height can become larger.
+        // auto height is above some tile's max height, then the auto height can become larger.
         // Combining this with the min height loop is where the complexity appears.
         //
         // However, most max height uses are for fixed-size dialogs, where min height == max_height.
         // This case is separately handled above.
-        while auto_windows_left > 0 {
+        while auto_tiles_left > 0 {
             // Compute the current auto height.
-            let auto_height = height_left / auto_windows_left as i32 - self.options.gaps;
+            let auto_height = height_left / auto_tiles_left as i32 - self.options.gaps;
             let auto_height = max(auto_height, 1);
 
             // Integer division above can result in imperfect height distribution. We will make some
-            // windows 1 px taller to account for this.
+            // tiles 1 px taller to account for this.
             let mut ones_left = height_left
-                .saturating_sub((auto_height + self.options.gaps) * auto_windows_left as i32);
+                .saturating_sub((auto_height + self.options.gaps) * auto_tiles_left as i32);
 
             let mut unsatisfied_min = false;
             let mut ones_left_2 = ones_left;
@@ -1186,13 +1183,13 @@ impl<W: LayoutElement> Column<W> {
                 if min_size.h > 0 && min_size.h > auto {
                     *h = WindowHeight::Fixed(min_size.h);
                     height_left -= min_size.h + self.options.gaps;
-                    auto_windows_left -= 1;
+                    auto_tiles_left -= 1;
                     unsatisfied_min = true;
                 }
             }
 
-            // If some min height was unsatisfied, then we allocated the window more than the auto
-            // height, which means that the remaining auto windows now have less height to work
+            // If some min height was unsatisfied, then we allocated the tile more than the auto
+            // height, which means that the remaining auto tiles now have less height to work
             // with, and the loop must run again.
             if unsatisfied_min {
                 continue;
@@ -1211,13 +1208,13 @@ impl<W: LayoutElement> Column<W> {
                 }
 
                 *h = WindowHeight::Fixed(auto);
-                auto_windows_left -= 1;
+                auto_tiles_left -= 1;
             }
 
-            assert_eq!(auto_windows_left, 0);
+            assert_eq!(auto_tiles_left, 0);
         }
 
-        for (tile, h) in zip(&mut self.windows, heights) {
+        for (tile, h) in zip(&mut self.tiles, heights) {
             let WindowHeight::Fixed(height) = h else {
                 unreachable!()
             };
@@ -1228,51 +1225,51 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn width(&self) -> i32 {
-        self.windows
+        self.tiles
             .iter()
-            .map(|win| win.tile_size().w)
+            .map(|tile| tile.tile_size().w)
             .max()
             .unwrap()
     }
 
     fn focus_up(&mut self) {
-        self.active_window_idx = self.active_window_idx.saturating_sub(1);
+        self.active_tile_idx = self.active_tile_idx.saturating_sub(1);
     }
 
     fn focus_down(&mut self) {
-        self.active_window_idx = min(self.active_window_idx + 1, self.windows.len() - 1);
+        self.active_tile_idx = min(self.active_tile_idx + 1, self.tiles.len() - 1);
     }
 
     fn move_up(&mut self) {
-        let new_idx = self.active_window_idx.saturating_sub(1);
-        if self.active_window_idx == new_idx {
+        let new_idx = self.active_tile_idx.saturating_sub(1);
+        if self.active_tile_idx == new_idx {
             return;
         }
 
-        self.windows.swap(self.active_window_idx, new_idx);
-        self.heights.swap(self.active_window_idx, new_idx);
-        self.active_window_idx = new_idx;
+        self.tiles.swap(self.active_tile_idx, new_idx);
+        self.heights.swap(self.active_tile_idx, new_idx);
+        self.active_tile_idx = new_idx;
     }
 
     fn move_down(&mut self) {
-        let new_idx = min(self.active_window_idx + 1, self.windows.len() - 1);
-        if self.active_window_idx == new_idx {
+        let new_idx = min(self.active_tile_idx + 1, self.tiles.len() - 1);
+        if self.active_tile_idx == new_idx {
             return;
         }
 
-        self.windows.swap(self.active_window_idx, new_idx);
-        self.heights.swap(self.active_window_idx, new_idx);
-        self.active_window_idx = new_idx;
+        self.tiles.swap(self.active_tile_idx, new_idx);
+        self.heights.swap(self.active_tile_idx, new_idx);
+        self.active_tile_idx = new_idx;
     }
 
     #[cfg(test)]
     fn verify_invariants(&self) {
-        assert!(!self.windows.is_empty(), "columns can't be empty");
-        assert!(self.active_window_idx < self.windows.len());
-        assert_eq!(self.windows.len(), self.heights.len());
+        assert!(!self.tiles.is_empty(), "columns can't be empty");
+        assert!(self.active_tile_idx < self.tiles.len());
+        assert_eq!(self.tiles.len(), self.heights.len());
 
         if self.is_fullscreen {
-            assert_eq!(self.windows.len(), 1);
+            assert_eq!(self.tiles.len(), 1);
         }
     }
 
@@ -1302,7 +1299,7 @@ impl<W: LayoutElement> Column<W> {
 
     fn toggle_full_width(&mut self) {
         self.is_full_width = !self.is_full_width;
-        self.update_window_sizes();
+        self.update_tile_sizes();
     }
 
     fn set_column_width(&mut self, change: SizeChange) {
@@ -1328,7 +1325,7 @@ impl<W: LayoutElement> Column<W> {
                 // As a special case, setting a fixed column width will compute it in such a way
                 // that the active window gets that width. This is the intention behind the ability
                 // to set a fixed size.
-                let tile = &self.windows[self.active_window_idx];
+                let tile = &self.tiles[self.active_tile_idx];
                 ColumnWidth::Fixed(tile.tile_width_for_window_width(fixed).clamp(1, MAX_PX))
             }
             (_, SizeChange::SetProportion(proportion)) => {
@@ -1355,8 +1352,8 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn set_window_height(&mut self, change: SizeChange) {
-        let current = self.heights[self.active_window_idx];
-        let tile = &self.windows[self.active_window_idx];
+        let current = self.heights[self.active_tile_idx];
+        let tile = &self.tiles[self.active_tile_idx];
         let current_window_px = match current {
             WindowHeight::Auto => tile.window_size().h,
             WindowHeight::Fixed(height) => height,
@@ -1389,7 +1386,7 @@ impl<W: LayoutElement> Column<W> {
         };
 
         // Clamp it against the window height constraints.
-        let win = &self.windows[self.active_window_idx].window();
+        let win = &self.tiles[self.active_tile_idx].window();
         let min_h = win.min_size().h;
         let max_h = win.max_size().h;
 
@@ -1400,30 +1397,35 @@ impl<W: LayoutElement> Column<W> {
             window_height = window_height.max(min_h);
         }
 
-        self.heights[self.active_window_idx] = WindowHeight::Fixed(window_height.clamp(1, MAX_PX));
-        self.update_window_sizes();
+        self.heights[self.active_tile_idx] = WindowHeight::Fixed(window_height.clamp(1, MAX_PX));
+        self.update_tile_sizes();
     }
 
     fn set_fullscreen(&mut self, is_fullscreen: bool) {
-        assert_eq!(self.windows.len(), 1);
+        assert_eq!(self.tiles.len(), 1);
         self.is_fullscreen = is_fullscreen;
-        self.update_window_sizes();
+        self.update_tile_sizes();
     }
 
-    pub fn window_y(&self, window_idx: usize) -> i32 {
-        self.window_ys().nth(window_idx).unwrap()
+    pub fn window_y(&self, tile_idx: usize) -> i32 {
+        let (tile, tile_y) = zip(&self.tiles, self.tile_ys()).nth(tile_idx).unwrap();
+        tile_y + tile.window_loc().y
     }
 
-    fn window_ys(&self) -> impl Iterator<Item = i32> + '_ {
+    fn tile_y(&self, tile_idx: usize) -> i32 {
+        self.tile_ys().nth(tile_idx).unwrap()
+    }
+
+    fn tile_ys(&self) -> impl Iterator<Item = i32> + '_ {
         let mut y = 0;
 
         if !self.is_fullscreen {
             y = self.working_area.loc.y + self.options.gaps;
         }
 
-        self.windows.iter().map(move |win| {
+        self.tiles.iter().map(move |tile| {
             let pos = y;
-            y += win.tile_size().h + self.options.gaps;
+            y += tile.tile_size().h + self.options.gaps;
             pos
         })
     }
@@ -1441,7 +1443,7 @@ fn compute_new_view_offset(
         return 0;
     }
 
-    // Compute the padding in case it needs to be smaller due to large window width.
+    // Compute the padding in case it needs to be smaller due to large tile width.
     let padding = ((view_width - new_col_width) / 2).clamp(0, gaps);
 
     // Compute the desired new X with padding.

@@ -166,8 +166,8 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
         let column = &mut workspace.columns[workspace.active_column_idx];
-        let curr_idx = column.active_window_idx;
-        let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
+        let curr_idx = column.active_tile_idx;
+        let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
         if curr_idx == new_idx {
             self.move_to_workspace_down();
         } else {
@@ -180,7 +180,7 @@ impl<W: LayoutElement> Monitor<W> {
         if workspace.columns.is_empty() {
             return;
         }
-        let curr_idx = workspace.columns[workspace.active_column_idx].active_window_idx;
+        let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
         let new_idx = curr_idx.saturating_sub(1);
         if curr_idx == new_idx {
             self.move_to_workspace_up();
@@ -211,8 +211,8 @@ impl<W: LayoutElement> Monitor<W> {
             self.switch_workspace_down();
         } else {
             let column = &workspace.columns[workspace.active_column_idx];
-            let curr_idx = column.active_window_idx;
-            let new_idx = min(column.active_window_idx + 1, column.windows.len() - 1);
+            let curr_idx = column.active_tile_idx;
+            let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
             if curr_idx == new_idx {
                 self.switch_workspace_down();
             } else {
@@ -226,7 +226,7 @@ impl<W: LayoutElement> Monitor<W> {
         if workspace.columns.is_empty() {
             self.switch_workspace_up();
         } else {
-            let curr_idx = workspace.columns[workspace.active_column_idx].active_window_idx;
+            let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
             let new_idx = curr_idx.saturating_sub(1);
             if curr_idx == new_idx {
                 self.switch_workspace_up();
@@ -253,7 +253,7 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window =
-            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_window_idx);
+            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_tile_idx);
 
         self.add_window(new_idx, window, true, width, is_full_width);
     }
@@ -275,7 +275,7 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window =
-            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_window_idx);
+            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_tile_idx);
 
         self.add_window(new_idx, window, true, width, is_full_width);
     }
@@ -297,7 +297,7 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window =
-            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_window_idx);
+            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_tile_idx);
 
         self.add_window(new_idx, window, true, width, is_full_width);
 
@@ -345,7 +345,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let column = &workspace.columns[workspace.active_column_idx];
-        Some(column.windows[column.active_window_idx].window())
+        Some(column.tiles[column.active_tile_idx].window())
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {

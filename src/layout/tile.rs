@@ -91,7 +91,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// Returns the location of the window's visual geometry within this Tile.
-    fn window_loc(&self) -> Point<i32, Logical> {
+    pub fn window_loc(&self) -> Point<i32, Logical> {
         let mut loc = Point::from((0, 0));
 
         // In fullscreen, center the window in the given size.

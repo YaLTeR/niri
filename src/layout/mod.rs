@@ -141,7 +141,7 @@ pub struct Options {
     border: config::FocusRing,
     /// Column widths that `toggle_width()` switches between.
     preset_widths: Vec<ColumnWidth>,
-    /// Initial width for new windows.
+    /// Initial width for new columns.
     default_width: Option<ColumnWidth>,
 }
 
@@ -717,7 +717,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         let col = &ws.columns[ws.active_column_idx];
-        Some((&col.windows[col.active_window_idx].window(), &mon.output))
+        Some((&col.tiles[col.active_tile_idx].window(), &mon.output))
     }
 
     pub fn windows_for_output(&self, output: &Output) -> impl Iterator<Item = &W> + '_ {
@@ -1138,7 +1138,7 @@ impl<W: LayoutElement> Layout<W> {
             let column = &ws.columns[ws.active_column_idx];
             let width = column.width;
             let is_full_width = column.is_full_width;
-            let window = ws.remove_window_by_idx(ws.active_column_idx, column.active_window_idx);
+            let window = ws.remove_window_by_idx(ws.active_column_idx, column.active_tile_idx);
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
