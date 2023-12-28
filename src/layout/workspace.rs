@@ -569,6 +569,7 @@ impl<W: LayoutElement> Workspace<W> {
             .enumerate()
             .find(|(_, col)| col.contains(window))
             .unwrap();
+        column.update_window(window);
         column.update_tile_sizes();
 
         if idx == self.active_column_idx {
@@ -1078,6 +1079,15 @@ impl<W: LayoutElement> Column<W> {
         self.tiles.push(tile);
         self.heights.push(WindowHeight::Auto);
         self.update_tile_sizes();
+    }
+
+    fn update_window(&mut self, window: &W) {
+        let tile = self
+            .tiles
+            .iter_mut()
+            .find(|tile| tile.window() == window)
+            .unwrap();
+        tile.update_window();
     }
 
     fn update_tile_sizes(&mut self) {

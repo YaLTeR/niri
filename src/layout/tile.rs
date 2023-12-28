@@ -54,6 +54,13 @@ impl<W: LayoutElement> Tile<W> {
         self.options = options;
     }
 
+    pub fn update_window(&mut self) {
+        // FIXME: remove when we can get a fullscreen size right away.
+        if self.fullscreen_size != Size::from((0, 0)) {
+            self.is_fullscreen = self.window.is_fullscreen();
+        }
+    }
+
     pub fn advance_animations(&mut self, _current_time: Duration, is_active: bool) {
         let width = self.border.width();
         self.border.update(
@@ -62,11 +69,6 @@ impl<W: LayoutElement> Tile<W> {
             self.window.has_ssd(),
         );
         self.border.set_active(is_active);
-
-        // FIXME: remove when we can get a fullscreen size right away.
-        if self.fullscreen_size != Size::from((0, 0)) {
-            self.is_fullscreen = self.window.is_fullscreen();
-        }
     }
 
     pub fn window(&self) -> &W {
