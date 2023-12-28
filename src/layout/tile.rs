@@ -130,7 +130,8 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if let Some(width) = self.effective_border_width() {
-            size += (width * 2, width * 2).into();
+            size.w = size.w.saturating_add(width * 2);
+            size.h = size.h.saturating_add(width * 2);
         }
 
         size
@@ -172,7 +173,7 @@ impl<W: LayoutElement> Tile<W> {
         if self.border.is_off() {
             size
         } else {
-            size + self.border.width() * 2
+            size.saturating_add(self.border.width() * 2)
         }
     }
 
@@ -180,7 +181,7 @@ impl<W: LayoutElement> Tile<W> {
         if self.border.is_off() {
             size
         } else {
-            size + self.border.width() * 2
+            size.saturating_add(self.border.width() * 2)
         }
     }
 
@@ -204,7 +205,9 @@ impl<W: LayoutElement> Tile<W> {
         if let Some(width) = self.effective_border_width() {
             size.w = max(1, size.w);
             size.h = max(1, size.h);
-            size += (width * 2, width * 2).into();
+
+            size.w = size.w.saturating_add(width * 2);
+            size.h = size.h.saturating_add(width * 2);
         }
 
         size
@@ -215,10 +218,10 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(width) = self.effective_border_width() {
             if size.w > 0 {
-                size.w += width * 2;
+                size.w = size.w.saturating_add(width * 2);
             }
             if size.h > 0 {
-                size.h += width * 2;
+                size.h = size.h.saturating_add(width * 2);
             }
         }
 
