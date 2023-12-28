@@ -6,7 +6,7 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::{ImportAll, Renderer};
-use smithay::utils::{Logical, Point, Scale, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::FocusRing;
 use super::workspace::WorkspaceRenderElement;
@@ -148,6 +148,11 @@ impl<W: LayoutElement> Tile<W> {
     pub fn is_in_input_region(&self, mut point: Point<f64, Logical>) -> bool {
         point -= self.window_loc().to_f64();
         self.window.is_in_input_region(point)
+    }
+
+    pub fn is_in_activation_region(&self, point: Point<f64, Logical>) -> bool {
+        let activation_region = Rectangle::from_loc_and_size((0, 0), self.tile_size());
+        activation_region.to_f64().contains(point)
     }
 
     pub fn request_tile_size(&mut self, mut size: Size<i32, Logical>) {

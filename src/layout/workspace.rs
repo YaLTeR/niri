@@ -761,7 +761,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.column_x(self.active_column_idx) + self.view_offset
     }
 
-    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, Point<i32, Logical>)> {
+    pub fn window_under(
+        &self,
+        pos: Point<f64, Logical>,
+    ) -> Option<(&W, Option<Point<i32, Logical>>)> {
         if self.columns.is_empty() {
             return None;
         }
@@ -775,8 +778,12 @@ impl<W: LayoutElement> Workspace<W> {
             self.column_x(self.active_column_idx) - view_pos,
             col.tile_y(col.active_tile_idx),
         ));
-        if active_tile.is_in_input_region(pos - tile_pos.to_f64()) {
-            return Some((active_tile.window(), tile_pos + active_tile.buf_loc()));
+        let pos_within_tile = pos - tile_pos.to_f64();
+        if active_tile.is_in_input_region(pos_within_tile) {
+            let pos_within_surface = tile_pos + active_tile.buf_loc();
+            return Some((active_tile.window(), Some(pos_within_surface)));
+        } else if active_tile.is_in_activation_region(pos_within_tile) {
+            return Some((active_tile.window(), None));
         }
 
         let mut x = -view_pos;
@@ -788,8 +795,12 @@ impl<W: LayoutElement> Workspace<W> {
                 }
 
                 let tile_pos = Point::from((x, y));
-                if tile.is_in_input_region(pos - tile_pos.to_f64()) {
-                    return Some((tile.window(), tile_pos + tile.buf_loc()));
+                let pos_within_tile = pos - tile_pos.to_f64();
+                if tile.is_in_input_region(pos_within_tile) {
+                    let pos_within_surface = tile_pos + tile.buf_loc();
+                    return Some((tile.window(), Some(pos_within_surface)));
+                } else if tile.is_in_activation_region(pos_within_tile) {
+                    return Some((tile.window(), None));
                 }
             }
 

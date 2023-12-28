@@ -450,7 +450,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn window_under(
         &self,
         pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Point<i32, Logical>)> {
+    ) -> Option<(&W, Option<Point<i32, Logical>>)> {
         match &self.workspace_switch {
             Some(switch) => {
                 let size = output_size(&self.output);
@@ -469,7 +469,7 @@ impl<W: LayoutElement> Monitor<W> {
 
                 let ws = &self.workspaces[idx];
                 let (win, win_pos) = ws.window_under(pos_within_output + ws_offset.to_f64())?;
-                Some((win, win_pos - ws_offset))
+                Some((win, win_pos.map(|p| p - ws_offset)))
             }
             None => {
                 let ws = &self.workspaces[self.active_workspace_idx];

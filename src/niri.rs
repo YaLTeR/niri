@@ -1035,6 +1035,10 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
+    /// Returns the window under the position to be activated.
+    ///
+    /// The cursor may be inside the window's activation region, but not within the window's input
+    /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Window> {
         if self.is_locked() || self.screenshot_ui.is_open() {
             return None;
@@ -1045,6 +1049,10 @@ impl Niri {
         Some(window)
     }
 
+    /// Returns the window under the cursor to be activated.
+    ///
+    /// The cursor may be inside the window's activation region, but not within the window's input
+    /// region.
     pub fn window_under_cursor(&self) -> Option<&Window> {
         let pos = self.seat.get_pointer().unwrap().current_location();
         self.window_under(pos)
@@ -1103,6 +1111,7 @@ impl Niri {
             self.layout
                 .window_under(output, pos_within_output)
                 .and_then(|(window, win_pos_within_output)| {
+                    let win_pos_within_output = win_pos_within_output?;
                     window
                         .surface_under(
                             pos_within_output - win_pos_within_output.to_f64(),

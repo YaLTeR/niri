@@ -920,11 +920,18 @@ impl<W: LayoutElement> Layout<W> {
         monitors[*active_monitor_idx].focus()
     }
 
+    /// Returns the window under the cursor and the position of its toplevel surface within the
+    /// output.
+    ///
+    /// `Some((w, Some(p)))` means that the cursor is within the window's input region and can be
+    /// used for delivering events to the window. `Some((w, None))` means that the cursor is within
+    /// the window's activation region, but not within the window's input region. For example, the
+    /// cursor may be on the window's server-side border.
     pub fn window_under(
         &self,
         output: &Output,
         pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Point<i32, Logical>)> {
+    ) -> Option<(&W, Option<Point<i32, Logical>>)> {
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
         };
