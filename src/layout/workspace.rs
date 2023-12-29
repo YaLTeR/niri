@@ -645,8 +645,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns[self.active_column_idx].focus_up();
     }
 
-    pub fn move_left(&mut self) {
-        let new_idx = self.active_column_idx.saturating_sub(1);
+    fn move_column_to(&mut self, new_idx: usize) {
         if self.active_column_idx == new_idx {
             return;
         }
@@ -661,24 +660,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.activate_column(new_idx);
     }
 
+    pub fn move_left(&mut self) {
+        let new_idx = self.active_column_idx.saturating_sub(1);
+        self.move_column_to(new_idx);
+    }
+
     pub fn move_right(&mut self) {
         if self.columns.is_empty() {
             return;
         }
 
         let new_idx = min(self.active_column_idx + 1, self.columns.len() - 1);
-        if self.active_column_idx == new_idx {
-            return;
-        }
-
-        let current_x = self.view_pos();
-
-        self.columns.swap(self.active_column_idx, new_idx);
-
-        self.view_offset =
-            self.compute_new_view_offset_for_column(current_x, self.active_column_idx);
-
-        self.activate_column(new_idx);
+        self.move_column_to(new_idx);
     }
 
     pub fn move_down(&mut self) {
