@@ -652,7 +652,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         let current_x = self.view_pos();
 
-        self.columns.swap(self.active_column_idx, new_idx);
+        let column = self.columns.remove(self.active_column_idx);
+        self.columns.insert(new_idx, column);
 
         self.view_offset =
             self.compute_new_view_offset_for_column(current_x, self.active_column_idx);
