@@ -1752,6 +1752,19 @@ mod tests {
         }
     }
 
+    #[track_caller]
+    fn check_ops_with_options(options: Options, ops: &[Op]) {
+        let mut layout = Layout {
+            options: Rc::new(options),
+            ..Default::default()
+        };
+
+        for op in ops {
+            op.apply(&mut layout);
+            layout.verify_invariants();
+        }
+    }
+
     #[test]
     fn operations_dont_panic() {
         let every_op = [
@@ -2079,6 +2092,24 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn large_negative_height_change() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+            },
+            Op::SetWindowHeight(SizeChange::AdjustProportion(-1e129)),
+        ];
+
+        let mut options = Options::default();
+        options.border.off = false;
+        options.border.width = 1;
+
+        check_ops_with_options(options, &ops);
     }
 
     proptest! {

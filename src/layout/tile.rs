@@ -189,7 +189,7 @@ impl<W: LayoutElement> Tile<W> {
         if self.border.is_off() {
             size
         } else {
-            size - self.border.width() * 2
+            size.saturating_sub(self.border.width() * 2)
         }
     }
 
