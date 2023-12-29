@@ -152,6 +152,14 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().move_right();
     }
 
+    pub fn move_column_to_first(&mut self) {
+        self.active_workspace().move_column_to_first();
+    }
+
+    pub fn move_column_to_last(&mut self) {
+        self.active_workspace().move_column_to_last();
+    }
+
     pub fn move_down(&mut self) {
         self.active_workspace().move_down();
     }

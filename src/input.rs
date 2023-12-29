@@ -331,6 +331,16 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::MoveColumnToFirst => {
+                self.niri.layout.move_column_to_first();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveColumnToLast => {
+                self.niri.layout.move_column_to_last();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::MoveWindowDown => {
                 self.niri.layout.move_down();
                 // FIXME: granular

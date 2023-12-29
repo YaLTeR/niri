@@ -674,6 +674,19 @@ impl<W: LayoutElement> Workspace<W> {
         self.move_column_to(new_idx);
     }
 
+    pub fn move_column_to_first(&mut self) {
+        self.move_column_to(0);
+    }
+
+    pub fn move_column_to_last(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let new_idx = self.columns.len() - 1;
+        self.move_column_to(new_idx);
+    }
+
     pub fn move_down(&mut self) {
         if self.columns.is_empty() {
             return;

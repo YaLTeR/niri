@@ -774,6 +774,20 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_right();
     }
 
+    pub fn move_column_to_first(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_column_to_first();
+    }
+
+    pub fn move_column_to_last(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_column_to_last();
+    }
+
     pub fn move_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1546,6 +1560,8 @@ mod tests {
         FocusWindowOrWorkspaceUp,
         MoveColumnLeft,
         MoveColumnRight,
+        MoveColumnToFirst,
+        MoveColumnToLast,
         MoveWindowDown,
         MoveWindowUp,
         MoveWindowDownOrToWorkspaceDown,
@@ -1659,6 +1675,8 @@ mod tests {
                 Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
+                Op::MoveColumnToFirst => layout.move_column_to_first(),
+                Op::MoveColumnToLast => layout.move_column_to_last(),
                 Op::MoveWindowDown => layout.move_down(),
                 Op::MoveWindowUp => layout.move_up(),
                 Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),

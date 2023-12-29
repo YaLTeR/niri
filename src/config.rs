@@ -321,6 +321,8 @@ pub enum Action {
     FocusWindowOrWorkspaceUp,
     MoveColumnLeft,
     MoveColumnRight,
+    MoveColumnToFirst,
+    MoveColumnToLast,
     MoveWindowDown,
     MoveWindowUp,
     MoveWindowDownOrToWorkspaceDown,
