@@ -2186,6 +2186,10 @@ mod tests {
         check_ops_with_options(options, &ops);
     }
 
+    fn arbitrary_border() -> impl Strategy<Value = u16> {
+        prop_oneof![Just(0), (1..=u16::MAX)]
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig {
             cases: if std::env::var_os("RUN_SLOW_TESTS").is_none() {
@@ -2198,9 +2202,15 @@ mod tests {
         })]
 
         #[test]
-        fn random_operations_dont_panic(ops: Vec<Op>) {
+        fn random_operations_dont_panic(ops: Vec<Op>, border in arbitrary_border()) {
+            let mut options = Options::default();
+            if border != 0 {
+                options.border.off = false;
+                options.border.width = border;
+            }
+
             // eprintln!("{ops:?}");
-            check_ops(&ops);
+            check_ops_with_options(options, &ops);
         }
     }
 }
