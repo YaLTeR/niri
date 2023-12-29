@@ -1421,18 +1421,27 @@ mod tests {
         bbox: Cell<Rectangle<i32, Logical>>,
         initial_bbox: Rectangle<i32, Logical>,
         requested_size: Cell<Option<Size<i32, Logical>>>,
+        min_size: Size<i32, Logical>,
+        max_size: Size<i32, Logical>,
     }
 
     #[derive(Debug, Clone)]
     struct TestWindow(Rc<TestWindowInner>);
 
     impl TestWindow {
-        fn new(id: usize, bbox: Rectangle<i32, Logical>) -> Self {
+        fn new(
+            id: usize,
+            bbox: Rectangle<i32, Logical>,
+            min_size: Size<i32, Logical>,
+            max_size: Size<i32, Logical>,
+        ) -> Self {
             Self(Rc::new(TestWindowInner {
                 id,
                 bbox: Cell::new(bbox),
                 initial_bbox: bbox,
                 requested_size: Cell::new(None),
+                min_size,
+                max_size,
             }))
         }
 
@@ -1494,11 +1503,11 @@ mod tests {
         fn request_fullscreen(&self, _size: Size<i32, Logical>) {}
 
         fn min_size(&self) -> Size<i32, Logical> {
-            Size::from((0, 0))
+            self.0.min_size
         }
 
         fn max_size(&self) -> Size<i32, Logical> {
-            Size::from((0, 0))
+            self.0.max_size
         }
 
         fn is_wl_surface(&self, _wl_surface: &WlSurface) -> bool {
@@ -1537,6 +1546,24 @@ mod tests {
         ]
     }
 
+    fn arbitrary_min_max() -> impl Strategy<Value = (i32, i32)> {
+        prop_oneof![
+            Just((0, 0)),
+            (1..65536).prop_map(|n| (n, n)),
+            (1..65536).prop_map(|min| (min, 0)),
+            (1..).prop_map(|max| (0, max)),
+            (1..65536, 1..).prop_map(|(min, max): (i32, i32)| (min, max.max(min))),
+        ]
+    }
+
+    fn arbitrary_min_max_size() -> impl Strategy<Value = (Size<i32, Logical>, Size<i32, Logical>)> {
+        (arbitrary_min_max(), arbitrary_min_max()).prop_map(|((min_w, max_w), (min_h, max_h))| {
+            let min_size = Size::from((min_w, min_h));
+            let max_size = Size::from((max_w, max_h));
+            (min_size, max_size)
+        })
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -1547,6 +1574,8 @@ mod tests {
             id: usize,
             #[proptest(strategy = "arbitrary_bbox()")]
             bbox: Rectangle<i32, Logical>,
+            #[proptest(strategy = "arbitrary_min_max_size()")]
+            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
         },
         CloseWindow(#[proptest(strategy = "1..=5usize")] usize),
         FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
@@ -1630,7 +1659,11 @@ mod tests {
 
                     layout.focus_output(&output);
                 }
-                Op::AddWindow { id, bbox } => {
+                Op::AddWindow {
+                    id,
+                    bbox,
+                    min_max_size,
+                } => {
                     match &mut layout.monitor_set {
                         MonitorSet::Normal { monitors, .. } => {
                             for mon in monitors {
@@ -1654,15 +1687,17 @@ mod tests {
                         }
                     }
 
-                    let win = TestWindow::new(id, bbox);
+                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
                     layout.add_window(win, None, false);
                 }
                 Op::CloseWindow(id) => {
-                    let dummy = TestWindow::new(id, Rectangle::default());
+                    let dummy =
+                        TestWindow::new(id, Rectangle::default(), Size::default(), Size::default());
                     layout.remove_window(&dummy);
                 }
                 Op::FullscreenWindow(id) => {
-                    let dummy = TestWindow::new(id, Rectangle::default());
+                    let dummy =
+                        TestWindow::new(id, Rectangle::default(), Size::default(), Size::default());
                     layout.toggle_fullscreen(&dummy);
                 }
                 Op::FocusColumnLeft => layout.focus_left(),
@@ -1780,14 +1815,17 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -1851,26 +1889,31 @@ mod tests {
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::MoveWindowToWorkspaceDown,
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::AddWindow {
                 id: 3,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::FocusColumnLeft,
             Op::ConsumeWindowIntoColumn,
             Op::AddWindow {
                 id: 4,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::AddOutput(2),
             Op::AddWindow {
                 id: 5,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::MoveWindowToOutput(2),
             Op::FocusOutput(1),
@@ -1894,14 +1937,17 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -1963,11 +2009,13 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::FocusOutput(2),
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::RemoveOutput(2),
             Op::FocusWorkspace(3),
@@ -1984,6 +2032,7 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::FocusWorkspaceDown,
             Op::CloseWindow(0),
@@ -1999,6 +2048,7 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -2025,6 +2075,7 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::MoveWindowToWorkspace(2),
         ];
@@ -2048,11 +2099,13 @@ mod tests {
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::FocusWorkspaceUp,
             Op::CloseWindow(0),
@@ -2078,11 +2131,13 @@ mod tests {
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -2101,8 +2156,27 @@ mod tests {
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
             },
             Op::SetWindowHeight(SizeChange::AdjustProportion(-1e129)),
+        ];
+
+        let mut options = Options::default();
+        options.border.off = false;
+        options.border.width = 1;
+
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
+    fn large_max_size() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
         ];
 
         let mut options = Options::default();
