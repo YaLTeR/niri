@@ -197,6 +197,14 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().focus_right();
     }
 
+    pub fn focus_column_first(&mut self) {
+        self.active_workspace().focus_column_first();
+    }
+
+    pub fn focus_column_last(&mut self) {
+        self.active_workspace().focus_column_last();
+    }
+
     pub fn focus_down(&mut self) {
         self.active_workspace().focus_down();
     }

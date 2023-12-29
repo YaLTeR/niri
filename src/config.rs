@@ -313,6 +313,8 @@ pub enum Action {
     FullscreenWindow,
     FocusColumnLeft,
     FocusColumnRight,
+    FocusColumnFirst,
+    FocusColumnLast,
     FocusWindowDown,
     FocusWindowUp,
     FocusWindowOrWorkspaceDown,

@@ -617,6 +617,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.activate_column(min(self.active_column_idx + 1, self.columns.len() - 1));
     }
 
+    pub fn focus_column_first(&mut self) {
+        self.activate_column(0);
+    }
+
+    pub fn focus_column_last(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.activate_column(self.columns.len() - 1);
+    }
+
     pub fn focus_down(&mut self) {
         if self.columns.is_empty() {
             return;

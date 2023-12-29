@@ -357,6 +357,12 @@ impl State {
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
             }
+            Action::FocusColumnFirst => {
+                self.niri.layout.focus_column_first();
+            }
+            Action::FocusColumnLast => {
+                self.niri.layout.focus_column_last();
+            }
             Action::FocusWindowDown => {
                 self.niri.layout.focus_down();
             }

@@ -816,6 +816,20 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_right();
     }
 
+    pub fn focus_column_first(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_column_first();
+    }
+
+    pub fn focus_column_last(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_column_last();
+    }
+
     pub fn focus_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1524,6 +1538,8 @@ mod tests {
         FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
         FocusColumnLeft,
         FocusColumnRight,
+        FocusColumnFirst,
+        FocusColumnLast,
         FocusWindowDown,
         FocusWindowUp,
         FocusWindowOrWorkspaceDown,
@@ -1635,6 +1651,8 @@ mod tests {
                 }
                 Op::FocusColumnLeft => layout.focus_left(),
                 Op::FocusColumnRight => layout.focus_right(),
+                Op::FocusColumnFirst => layout.focus_column_first(),
+                Op::FocusColumnLast => layout.focus_column_last(),
                 Op::FocusWindowDown => layout.focus_down(),
                 Op::FocusWindowUp => layout.focus_up(),
                 Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
