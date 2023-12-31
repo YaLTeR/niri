@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::{DebugFlags, Renderer};
+use smithay::backend::renderer::{DebugFlags, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
@@ -113,17 +113,14 @@ impl Winit {
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
-        // For some reason, binding the display here causes damage tracker artifacts.
-        //
-        // use smithay::backend::renderer::ImportEgl;
-        //
-        // if let Err(err) = self
-        //     .backend
-        //     .renderer()
-        //     .bind_wl_display(&niri.display_handle)
-        // {
-        //     warn!("error binding renderer wl_display: {err}");
-        // }
+        if let Err(err) = self
+            .backend
+            .renderer()
+            .bind_wl_display(&niri.display_handle)
+        {
+            warn!("error binding renderer wl_display: {err}");
+        }
+
         niri.add_output(self.output.clone(), None);
     }
 
