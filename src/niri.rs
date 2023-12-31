@@ -58,7 +58,7 @@ use smithay::wayland::compositor::{
     CompositorState, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
-use smithay::wayland::dmabuf::DmabufFeedback;
+use smithay::wayland::dmabuf::{DmabufFeedback, DmabufState};
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
@@ -138,6 +138,7 @@ pub struct Niri {
     pub session_lock_state: SessionLockManagerState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
+    pub dmabuf_state: DmabufState,
     pub seat_state: SeatState<State>,
     pub tablet_state: TabletManagerState,
     pub text_input_state: TextInputManagerState,
@@ -647,6 +648,7 @@ impl Niri {
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let output_manager_state =
             OutputManagerState::new_with_xdg_output::<State>(&display_handle);
+        let dmabuf_state = DmabufState::new();
         let mut seat_state = SeatState::new();
         let tablet_state = TabletManagerState::new::<State>(&display_handle);
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
@@ -760,6 +762,7 @@ impl Niri {
             virtual_keyboard_state,
             shm_state,
             output_manager_state,
+            dmabuf_state,
             seat_state,
             tablet_state,
             pointer_gestures_state,

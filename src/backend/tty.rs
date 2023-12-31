@@ -33,7 +33,7 @@ use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::utils::DeviceFd;
-use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState, DmabufFeedback};
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufFeedback};
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
@@ -70,7 +70,6 @@ struct OutputDevice {
     formats: HashSet<DrmFormat>,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
-    dmabuf_state: DmabufState,
     dmabuf_global: DmabufGlobal,
     // SAFETY: drop after all the objects used with them are dropped.
     // See https://github.com/Smithay/smithay/issues/1102.
@@ -329,11 +328,11 @@ impl Tty {
 
         let formats = Bind::<Dmabuf>::supported_formats(&gles).unwrap_or_default();
 
-        let mut dmabuf_state = DmabufState::new();
         let default_feedback = DmabufFeedbackBuilder::new(device_id, gles.dmabuf_formats())
             .build()
             .context("error building default dmabuf feedback")?;
-        let dmabuf_global = dmabuf_state
+        let dmabuf_global = niri
+            .dmabuf_state
             .create_global_with_default_feedback::<State>(&niri.display_handle, &default_feedback);
 
         self.output_device = Some(OutputDevice {
@@ -345,7 +344,6 @@ impl Tty {
             formats,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
-            dmabuf_state,
             dmabuf_global,
         });
 
@@ -401,8 +399,7 @@ impl Tty {
         }
 
         let mut device = self.output_device.take().unwrap();
-        device
-            .dmabuf_state
+        niri.dmabuf_state
             .destroy_global::<State>(&niri.display_handle, device.dmabuf_global);
         device.gles.unbind_wl_display();
 
@@ -950,13 +947,6 @@ impl Tty {
                 compositor.set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
             }
         }
-    }
-
-    pub fn dmabuf_state(&mut self) -> &mut DmabufState {
-        let device = self.output_device.as_mut().expect(
-            "the dmabuf global must be created and destroyed together with the output device",
-        );
-        &mut device.dmabuf_state
     }
 
     pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {

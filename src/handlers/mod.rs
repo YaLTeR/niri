@@ -193,7 +193,7 @@ delegate_presentation!(State);
 
 impl DmabufHandler for State {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
-        self.backend.tty().dmabuf_state()
+        &mut self.niri.dmabuf_state
     }
 
     fn dmabuf_imported(
