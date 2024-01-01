@@ -202,9 +202,11 @@ impl DmabufHandler for State {
         dmabuf: Dmabuf,
         notifier: ImportNotifier,
     ) {
-        let renderer = self.backend.renderer().expect(
-            "the dmabuf global must be created and destroyed together with the output device",
-        );
+        let Some(renderer) = self.backend.renderer() else {
+            notifier.failed();
+            return;
+        };
+
         match renderer.import_dmabuf(&dmabuf, None) {
             Ok(_texture) => {
                 let _ = notifier.successful::<State>();

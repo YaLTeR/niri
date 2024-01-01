@@ -402,9 +402,23 @@ impl Tty {
         }
 
         let mut device = self.output_device.take().unwrap();
-        niri.dmabuf_state
-            .destroy_global::<State>(&niri.display_handle, self.dmabuf_global.take().unwrap());
         device.gles.unbind_wl_display();
+
+        let global = self.dmabuf_global.take().unwrap();
+        niri.dmabuf_state
+            .disable_global::<State>(&niri.display_handle, &global);
+        niri.event_loop
+            .insert_source(
+                Timer::from_duration(Duration::from_secs(10)),
+                move |_, _, state| {
+                    state
+                        .niri
+                        .dmabuf_state
+                        .destroy_global::<State>(&state.niri.display_handle, global);
+                    TimeoutAction::Drop
+                },
+            )
+            .unwrap();
 
         niri.event_loop.remove(device.token);
     }
