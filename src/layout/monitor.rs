@@ -5,7 +5,7 @@ use std::time::Duration;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale};
@@ -506,10 +506,13 @@ impl<W: LayoutElement> Monitor<W> {
 }
 
 impl Monitor<Window> {
-    pub fn render_elements(
+    pub fn render_elements<R: Renderer + ImportAll>(
         &self,
-        renderer: &mut GlesRenderer,
-    ) -> Vec<MonitorRenderElement<GlesRenderer>> {
+        renderer: &mut R,
+    ) -> Vec<MonitorRenderElement<R>>
+    where
+        <R as Renderer>::TextureId: 'static,
+    {
         let _span = tracy_client::span!("Monitor::render_elements");
 
         let output_scale = Scale::from(self.output.current_scale().fractional_scale());

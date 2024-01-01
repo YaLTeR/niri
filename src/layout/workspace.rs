@@ -5,8 +5,7 @@ use std::time::Duration;
 
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RelocateRenderElement;
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::ImportAll;
+use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -950,10 +949,13 @@ impl Workspace<Window> {
         }
     }
 
-    pub fn render_elements(
+    pub fn render_elements<R: Renderer + ImportAll>(
         &self,
-        renderer: &mut GlesRenderer,
-    ) -> Vec<WorkspaceRenderElement<GlesRenderer>> {
+        renderer: &mut R,
+    ) -> Vec<WorkspaceRenderElement<R>>
+    where
+        <R as Renderer>::TextureId: 'static,
+    {
         if self.columns.is_empty() {
             return vec![];
         }
