@@ -52,6 +52,9 @@ pub struct Tty {
     udev_dispatcher: Dispatcher<'static, UdevBackend, State>,
     libinput: Libinput,
     primary_gpu_path: PathBuf,
+    // The dma-buf global corresponds to the output device (the primary GPU). It is only `Some()`
+    // if we have a device corresponding to the primary GPU.
+    dmabuf_global: Option<DmabufGlobal>,
     output_device: Option<OutputDevice>,
     connectors: Arc<Mutex<HashMap<String, Output>>>,
 }
@@ -70,7 +73,6 @@ struct OutputDevice {
     formats: HashSet<DrmFormat>,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
-    dmabuf_global: DmabufGlobal,
     // SAFETY: drop after all the objects used with them are dropped.
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
@@ -136,6 +138,7 @@ impl Tty {
             udev_dispatcher,
             libinput,
             primary_gpu_path,
+            dmabuf_global: None,
             output_device: None,
             connectors: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -344,8 +347,8 @@ impl Tty {
             formats,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
-            dmabuf_global,
         });
+        self.dmabuf_global = Some(dmabuf_global);
 
         self.device_changed(device_id, niri);
 
@@ -400,7 +403,7 @@ impl Tty {
 
         let mut device = self.output_device.take().unwrap();
         niri.dmabuf_state
-            .destroy_global::<State>(&niri.display_handle, device.dmabuf_global);
+            .destroy_global::<State>(&niri.display_handle, self.dmabuf_global.take().unwrap());
         device.gles.unbind_wl_display();
 
         niri.event_loop.remove(device.token);
