@@ -8,16 +8,15 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use libc::dev_t;
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
-use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime};
 use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::gles::{Capability, GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{Bind, DebugFlags, ImportDma, ImportEgl};
+use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
@@ -70,7 +69,6 @@ struct OutputDevice {
     id: dev_t,
     token: RegistrationToken,
     gles: GlesRenderer,
-    formats: HashSet<DrmFormat>,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
     // SAFETY: drop after all the objects used with them are dropped.
@@ -329,8 +327,6 @@ impl Tty {
             })
             .unwrap();
 
-        let formats = Bind::<Dmabuf>::supported_formats(&gles).unwrap_or_default();
-
         let default_feedback = DmabufFeedbackBuilder::new(device_id, gles.dmabuf_formats())
             .build()
             .context("error building default dmabuf feedback")?;
@@ -344,7 +340,6 @@ impl Tty {
             drm,
             gbm,
             gles,
-            formats,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
         });
@@ -576,6 +571,10 @@ impl Tty {
             planes.overlay.clear();
         }
 
+        let egl_context = device.gles.egl_context();
+        let texture_formats = egl_context.dmabuf_texture_formats();
+        let render_formats = egl_context.dmabuf_render_formats();
+
         let scanout_formats = planes
             .primary
             .formats
@@ -583,7 +582,7 @@ impl Tty {
             .chain(planes.overlay.iter().flat_map(|p| &p.formats))
             .copied()
             .collect::<HashSet<_>>();
-        let scanout_formats = scanout_formats.intersection(&device.formats).copied();
+        let scanout_formats = scanout_formats.intersection(texture_formats).copied();
 
         // Create the compositor.
         let compositor = DrmCompositor::new(
@@ -593,12 +592,12 @@ impl Tty {
             allocator,
             device.gbm.clone(),
             SUPPORTED_COLOR_FORMATS,
-            device.formats.clone(),
+            render_formats.clone(),
             device.drm.cursor_size(),
             Some(device.gbm.clone()),
         )?;
 
-        let dmabuf_feedback = DmabufFeedbackBuilder::new(device.id, device.formats.clone())
+        let dmabuf_feedback = DmabufFeedbackBuilder::new(device.id, texture_formats.clone())
             .add_preference_tranche(device.id, Some(TrancheFlags::Scanout), scanout_formats)
             .build()
             .context("error building dmabuf feedback")?;
