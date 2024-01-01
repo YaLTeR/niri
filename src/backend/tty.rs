@@ -12,37 +12,37 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime, DrmEventMetadata};
+use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime};
 use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture, Capability};
+use smithay::backend::renderer::gles::{Capability, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, DebugFlags, ImportDma, ImportEgl};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
-use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel, Scale};
-use smithay::reexports::calloop::timer::{Timer, TimeoutAction};
+use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Scale, Subpixel};
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
-    connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags, Device, property,
+    connector, crtc, property, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags,
 };
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
-use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
-use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
+use smithay::reexports::wayland_protocols;
 use smithay::utils::DeviceFd;
-use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufFeedback};
+use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal};
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
-
-use crate::config::Config;
-use crate::niri::{OutputRenderElements, State, RedrawState};
-use crate::utils::get_monotonic_time;
-use crate::Niri;
+use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
+use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
 use super::RenderResult;
+use crate::config::Config;
+use crate::niri::{OutputRenderElements, RedrawState, State};
+use crate::utils::get_monotonic_time;
+use crate::Niri;
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
