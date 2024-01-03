@@ -1745,7 +1745,7 @@ impl Niri {
             let renderer = backend
                 .renderer()
                 .expect("renderer must not have disappeared");
-            self.send_for_screen_cast(renderer, output, &elements, target_presentation_time);
+            self.render_for_screen_cast(renderer, output, target_presentation_time);
         }
     }
 
@@ -2024,19 +2024,21 @@ impl Niri {
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
-    fn send_for_screen_cast(
+    fn render_for_screen_cast(
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
     ) {
-        let _span = tracy_client::span!("Niri::send_for_screen_cast");
+        let _span = tracy_client::span!("Niri::render_for_screen_cast");
 
         let size = output.current_mode().unwrap().size;
         let scale = Scale::from(output.current_scale().fractional_scale());
 
-        for cast in &mut self.casts {
+        let mut elements = None;
+
+        let mut casts = mem::take(&mut self.casts);
+        for cast in &mut casts {
             if !cast.is_active.get() {
                 continue;
             }
@@ -2082,6 +2084,8 @@ impl Niri {
                 let dmabuf = cast.dmabufs.borrow()[&fd].clone();
 
                 // FIXME: Hidden / embedded / metadata cursor
+                let elements = elements.get_or_insert_with(|| self.render(renderer, output, true));
+
                 if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
                     error!("error rendering to dmabuf: {err:?}");
                     continue;
@@ -2095,6 +2099,7 @@ impl Niri {
 
             cast.last_frame_time = target_presentation_time;
         }
+        self.casts = casts;
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
