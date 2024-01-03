@@ -565,9 +565,11 @@ impl Tty {
 
         let mut planes = surface.planes().clone();
 
+        let config = self.config.borrow();
+
         // Overlay planes are disabled by default as they cause weird performance issues on my
         // system.
-        if !self.config.borrow().debug.enable_overlay_planes {
+        if !config.debug.enable_overlay_planes {
             planes.overlay.clear();
         }
 
