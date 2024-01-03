@@ -7,7 +7,6 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 
 use crate::input::CompositorMod;
-use crate::niri::OutputRenderElements;
 use crate::Niri;
 
 pub mod tty;
@@ -57,12 +56,11 @@ impl Backend {
         &mut self,
         niri: &mut Niri,
         output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
     ) -> RenderResult {
         match self {
-            Backend::Tty(tty) => tty.render(niri, output, elements, target_presentation_time),
-            Backend::Winit(winit) => winit.render(niri, output, elements),
+            Backend::Tty(tty) => tty.render(niri, output, target_presentation_time),
+            Backend::Winit(winit) => winit.render(niri, output),
         }
     }
 
@@ -117,13 +115,6 @@ impl Backend {
         match self {
             Backend::Tty(tty) => tty.gbm_device(),
             Backend::Winit(_) => None,
-        }
-    }
-
-    pub fn is_active(&self) -> bool {
-        match self {
-            Backend::Tty(tty) => tty.is_active(),
-            Backend::Winit(_) => true,
         }
     }
 

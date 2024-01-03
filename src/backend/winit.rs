@@ -19,7 +19,7 @@ use smithay::utils::Transform;
 
 use super::RenderResult;
 use crate::config::Config;
-use crate::niri::{OutputRenderElements, RedrawState, State};
+use crate::niri::{RedrawState, State};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
@@ -133,19 +133,18 @@ impl Winit {
         self.backend.renderer()
     }
 
-    pub fn render(
-        &mut self,
-        niri: &mut Niri,
-        output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
-    ) -> RenderResult {
+    pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
 
+        // Render the elements.
+        let elements = niri.render(self.backend.renderer(), output, true);
+
+        // Hand them over to winit.
         self.backend.bind().unwrap();
         let age = self.backend.buffer_age().unwrap();
         let res = self
             .damage_tracker
-            .render_output(self.backend.renderer(), age, elements, [0.; 4])
+            .render_output(self.backend.renderer(), age, &elements, [0.; 4])
             .unwrap();
 
         niri.update_primary_scanout_output(output, &res.states);

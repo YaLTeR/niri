@@ -40,7 +40,7 @@ use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
 use super::RenderResult;
 use crate::config::Config;
-use crate::niri::{OutputRenderElements, RedrawState, State};
+use crate::niri::{RedrawState, State};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
@@ -868,7 +868,6 @@ impl Tty {
         &mut self,
         niri: &mut Niri,
         output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
     ) -> RenderResult {
         let span = tracy_client::span!("Tty::render");
@@ -880,6 +879,11 @@ impl Tty {
             return rv;
         };
 
+        if !device.drm.is_active() {
+            warn!("device is inactive");
+            return rv;
+        }
+
         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
         let Some(surface) = device.surfaces.get_mut(&tty_state.crtc) else {
             error!("missing surface");
@@ -888,9 +892,14 @@ impl Tty {
 
         span.emit_text(&surface.name);
 
+        let renderer = &mut device.gles;
+
+        // Render the elements.
+        let elements = niri.render(renderer, output, true);
+
+        // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;
-        match drm_compositor.render_frame::<_, _, GlesTexture>(&mut device.gles, elements, [0.; 4])
-        {
+        match drm_compositor.render_frame::<_, _, GlesTexture>(renderer, &elements, [0.; 4]) {
             Ok(res) => {
                 if self
                     .config
@@ -993,14 +1002,6 @@ impl Tty {
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
         self.output_device.as_ref().map(|d| d.gbm.clone())
-    }
-
-    pub fn is_active(&self) -> bool {
-        let Some(device) = &self.output_device else {
-            return false;
-        };
-
-        device.drm.is_active()
     }
 
     pub fn set_monitors_active(&self, active: bool) {

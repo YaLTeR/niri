@@ -1495,7 +1495,7 @@ impl Niri {
         }
     }
 
-    fn render(
+    pub fn render(
         &self,
         renderer: &mut GlesRenderer,
         output: &Output,
@@ -1620,75 +1620,50 @@ impl Niri {
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
-        let monitors_active = self.monitors_active;
-
+        // Verify our invariant.
         let state = self.output_state.get_mut(output).unwrap();
         assert!(matches!(
             state.redraw_state,
             RedrawState::Queued(_) | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
         ));
 
-        // FIXME: make this not cursed.
-        let mut reset = || {
-            let state = self.output_state.get_mut(output).unwrap();
+        let target_presentation_time = state.frame_clock.next_presentation_time();
+
+        let mut res = RenderResult::Error;
+        if self.monitors_active {
+            // Update from the config and advance the animations.
+            self.layout.advance_animations(target_presentation_time);
+            state.unfinished_animations_remain = self
+                .layout
+                .monitor_for_output(output)
+                .unwrap()
+                .are_animations_ongoing();
+
+            // Also keep redrawing if the current cursor is animated.
+            state.unfinished_animations_remain |= self
+                .cursor_manager
+                .is_current_cursor_animated(output.current_scale().integer_scale());
+
+            // Render.
+            res = backend.render(self, output, target_presentation_time);
+        }
+
+        let is_locked = self.is_locked();
+        let state = self.output_state.get_mut(output).unwrap();
+
+        if res == RenderResult::Error {
+            // Update the redraw state on failed render.
             state.redraw_state =
-                if let RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) =
+                if let RedrawState::WaitingForEstimatedVBlank(token)
+                | RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) =
                     state.redraw_state
                 {
                     RedrawState::WaitingForEstimatedVBlank(token)
                 } else {
                     RedrawState::Idle
                 };
-
-            if matches!(self.lock_state, LockState::Locking { .. })
-                && state.lock_render_state == LockRenderState::Unlocked
-            {
-                // We needed to redraw this output for locking and failed.
-                self.unlock();
-            }
-        };
-
-        if !monitors_active {
-            reset();
-            return;
-        }
-
-        if !backend.is_active() {
-            reset();
-            return;
-        }
-
-        let Some(renderer) = backend.renderer() else {
-            reset();
-            return;
-        };
-
-        let state = self.output_state.get_mut(output).unwrap();
-        let target_presentation_time = state.frame_clock.next_presentation_time();
-
-        // Update from the config and advance the animations.
-        self.layout.advance_animations(target_presentation_time);
-        state.unfinished_animations_remain = self
-            .layout
-            .monitor_for_output(output)
-            .unwrap()
-            .are_animations_ongoing();
-
-        // Also keep redrawing if the current cursor is animated.
-        state.unfinished_animations_remain |= self
-            .cursor_manager
-            .is_current_cursor_animated(output.current_scale().integer_scale());
-
-        // Render the elements.
-        let elements = self.render(renderer, output, true);
-
-        // Hand it over to the backend.
-        let res = backend.render(self, output, &elements, target_presentation_time);
-
-        // Update the lock render state on successful render.
-        let is_locked = self.is_locked();
-        let state = self.output_state.get_mut(output).unwrap();
-        if res != RenderResult::Error {
+        } else {
+            // Update the lock render state on successful render.
             state.lock_render_state = if is_locked {
                 LockRenderState::Locked
             } else {
