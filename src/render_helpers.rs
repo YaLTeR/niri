@@ -6,6 +6,8 @@ use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, ExportMem, ImportAll, Offscreen, Renderer, Texture};
 use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 
+use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
+
 /// Trait with our main renderer requirements to save on the typing.
 pub trait NiriRenderer:
     ImportAll
@@ -45,6 +47,12 @@ impl AsGlesRenderer for GlesRenderer {
     }
 }
 
+impl<'render, 'alloc> AsGlesRenderer for TtyRenderer<'render, 'alloc> {
+    fn as_gles_renderer(&mut self) -> &mut GlesRenderer {
+        self.as_mut()
+    }
+}
+
 /// Trait for getting the underlying `GlesFrame`.
 pub trait AsGlesFrame<'frame>
 where
@@ -56,6 +64,12 @@ where
 impl<'frame> AsGlesFrame<'frame> for GlesFrame<'frame> {
     fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame> {
         self
+    }
+}
+
+impl<'render, 'alloc, 'frame> AsGlesFrame<'frame> for TtyFrame<'render, 'alloc, 'frame> {
+    fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame> {
+        self.as_mut()
     }
 }
 
@@ -119,6 +133,31 @@ impl RenderElement<GlesRenderer> for PrimaryGpuTextureRenderElement {
     }
 
     fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+        // If scanout for things other than Wayland buffers is implemented, this will need to take
+        // the target GPU into account.
+        None
+    }
+}
+
+impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
+    for PrimaryGpuTextureRenderElement
+{
+    fn draw(
+        &self,
+        frame: &mut TtyFrame<'_, '_, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), TtyRendererError<'render, 'alloc>> {
+        let gles_frame = frame.as_gles_frame();
+        RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage)?;
+        Ok(())
+    }
+
+    fn underlying_storage(
+        &self,
+        _renderer: &mut TtyRenderer<'render, 'alloc>,
+    ) -> Option<UnderlyingStorage> {
         // If scanout for things other than Wayland buffers is implemented, this will need to take
         // the target GPU into account.
         None

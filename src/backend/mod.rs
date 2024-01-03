@@ -5,6 +5,7 @@ use std::time::Duration;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::input::CompositorMod;
 use crate::Niri;
@@ -102,6 +103,13 @@ impl Backend {
         }
     }
 
+    pub fn early_import(&mut self, surface: &WlSurface) {
+        match self {
+            Backend::Tty(tty) => tty.early_import(surface),
+            Backend::Winit(_) => (),
+        }
+    }
+
     #[cfg_attr(not(feature = "dbus"), allow(unused))]
     pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
         match self {
@@ -116,7 +124,7 @@ impl Backend {
     ) -> Option<smithay::backend::allocator::gbm::GbmDevice<smithay::backend::drm::DrmDeviceFd>>
     {
         match self {
-            Backend::Tty(tty) => tty.gbm_device(),
+            Backend::Tty(tty) => tty.primary_gbm_device(),
             Backend::Winit(_) => None,
         }
     }

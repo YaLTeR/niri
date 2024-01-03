@@ -16,6 +16,7 @@ use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::utils::select_dmabuf_feedback;
 use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, AsRenderElements, Element, Id, Kind, RenderElement,
     RenderElementStates, UnderlyingStorage,
@@ -61,7 +62,7 @@ use smithay::wayland::compositor::{
     CompositorState, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
-use smithay::wayland::dmabuf::{DmabufFeedback, DmabufState};
+use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
@@ -83,6 +84,7 @@ use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
 use crate::animation;
+use crate::backend::tty::{SurfaceDmabufFeedback, TtyFrame, TtyRenderer, TtyRendererError};
 use crate::backend::{Backend, RenderResult, Tty, Winit};
 use crate::config::{Config, TrackLayout};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
@@ -1829,18 +1831,45 @@ impl Niri {
         }
     }
 
-    pub fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
+    pub fn send_dmabuf_feedbacks(
+        &self,
+        output: &Output,
+        feedback: &SurfaceDmabufFeedback,
+        render_element_states: &RenderElementStates,
+    ) {
         let _span = tracy_client::span!("Niri::send_dmabuf_feedbacks");
 
         // We can unconditionally send the current output's feedback to regular and layer-shell
         // surfaces, as they can only be displayed on a single output at a time. Even if a surface
         // is currently invisible, this is the DMABUF feedback that it should know about.
         for win in self.layout.windows_for_output(output) {
-            win.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
+            win.send_dmabuf_feedback(
+                output,
+                |_, _| Some(output.clone()),
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
+            );
         }
 
         for surface in layer_map_for_output(output).layers() {
-            surface.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
+            surface.send_dmabuf_feedback(
+                output,
+                |_, _| Some(output.clone()),
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
+            );
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
@@ -1848,7 +1877,14 @@ impl Niri {
                 surface.wl_surface(),
                 output,
                 |_, _| Some(output.clone()),
-                |_, _| feedback,
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
             );
         }
 
@@ -1857,7 +1893,14 @@ impl Niri {
                 surface,
                 output,
                 surface_primary_scanout_output,
-                |_, _| feedback,
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
             );
         }
 
@@ -1866,7 +1909,14 @@ impl Niri {
                 surface,
                 output,
                 surface_primary_scanout_output,
-                |_, _| feedback,
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
             );
         }
     }
@@ -2632,6 +2682,45 @@ impl RenderElement<GlesRenderer> for OutputRenderElements<GlesRenderer> {
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+        match self {
+            Self::Monitor(elem) => elem.underlying_storage(renderer),
+            Self::Wayland(elem) => elem.underlying_storage(renderer),
+            Self::NamedPointer(elem) => elem.underlying_storage(renderer),
+            Self::SolidColor(elem) => elem.underlying_storage(renderer),
+            Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
+        }
+    }
+}
+
+impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
+    for OutputRenderElements<TtyRenderer<'render, 'alloc>>
+{
+    fn draw(
+        &self,
+        frame: &mut TtyFrame<'render, 'alloc, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), TtyRendererError<'render, 'alloc>> {
+        match self {
+            Self::Monitor(elem) => elem.draw(frame, src, dst, damage),
+            Self::Wayland(elem) => elem.draw(frame, src, dst, damage),
+            Self::NamedPointer(elem) => {
+                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::SolidColor(elem) => {
+                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::ScreenshotUi(elem) => {
+                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+            }
+        }
+    }
+
+    fn underlying_storage(
+        &self,
+        renderer: &mut TtyRenderer<'render, 'alloc>,
+    ) -> Option<UnderlyingStorage> {
         match self {
             Self::Monitor(elem) => elem.underlying_storage(renderer),
             Self::Wayland(elem) => elem.underlying_storage(renderer),

@@ -17,6 +17,7 @@ use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
+use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::config::Action;
 use crate::render_helpers::PrimaryGpuTextureRenderElement;
 
@@ -533,6 +534,34 @@ impl RenderElement<GlesRenderer> for ScreenshotUiRenderElement {
     }
 
     fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+        // If scanout for things other than Wayland buffers is implemented, this will need to take
+        // the target GPU into account.
+        None
+    }
+}
+
+impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>> for ScreenshotUiRenderElement {
+    fn draw(
+        &self,
+        frame: &mut TtyFrame<'render, 'alloc, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), TtyRendererError<'render, 'alloc>> {
+        match self {
+            Self::Screenshot(elem) => {
+                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::SolidColor(elem) => {
+                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+            }
+        }
+    }
+
+    fn underlying_storage(
+        &self,
+        _renderer: &mut TtyRenderer<'render, 'alloc>,
+    ) -> Option<UnderlyingStorage> {
         // If scanout for things other than Wayland buffers is implemented, this will need to take
         // the target GPU into account.
         None

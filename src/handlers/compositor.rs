@@ -82,6 +82,7 @@ impl CompositorHandler for State {
         let _span = tracy_client::span!("CompositorHandler::commit");
 
         on_commit_buffer_handler::<Self>(surface);
+        self.backend.early_import(surface);
 
         if is_sync_subsurface(surface) {
             return;
