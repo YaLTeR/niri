@@ -379,6 +379,8 @@ pub struct DebugConfig {
     pub enable_color_transformations_capability: bool,
     #[knuffel(child)]
     pub enable_overlay_planes: bool,
+    #[knuffel(child)]
+    pub disable_cursor_plane: bool,
 }
 
 impl Default for DebugConfig {
@@ -389,6 +391,7 @@ impl Default for DebugConfig {
             wait_for_frame_completion_before_queueing: false,
             enable_color_transformations_capability: false,
             enable_overlay_planes: false,
+            disable_cursor_plane: false,
         }
     }
 }

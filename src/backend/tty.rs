@@ -573,6 +573,13 @@ impl Tty {
             planes.overlay.clear();
         }
 
+        // Cursor planes have bugs on some systems.
+        let cursor_plane_gbm = if config.debug.disable_cursor_plane {
+            None
+        } else {
+            Some(device.gbm.clone())
+        };
+
         let egl_context = device.gles.egl_context();
         let texture_formats = egl_context.dmabuf_texture_formats();
         let render_formats = egl_context.dmabuf_render_formats();
@@ -596,7 +603,7 @@ impl Tty {
             SUPPORTED_COLOR_FORMATS,
             render_formats.clone(),
             device.drm.cursor_size(),
-            Some(device.gbm.clone()),
+            cursor_plane_gbm,
         )?;
 
         let dmabuf_feedback = DmabufFeedbackBuilder::new(device.id, texture_formats.clone())
