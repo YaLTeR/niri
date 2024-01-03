@@ -872,7 +872,7 @@ impl Tty {
     ) -> RenderResult {
         let span = tracy_client::span!("Tty::render");
 
-        let mut rv = RenderResult::Error;
+        let mut rv = RenderResult::Skipped;
 
         let Some(device) = self.output_device.as_mut() else {
             error!("missing output device");

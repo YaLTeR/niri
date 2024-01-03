@@ -1629,7 +1629,7 @@ impl Niri {
 
         let target_presentation_time = state.frame_clock.next_presentation_time();
 
-        let mut res = RenderResult::Error;
+        let mut res = RenderResult::Skipped;
         if self.monitors_active {
             // Update from the config and advance the animations.
             self.layout.advance_animations(target_presentation_time);
@@ -1651,7 +1651,7 @@ impl Niri {
         let is_locked = self.is_locked();
         let state = self.output_state.get_mut(output).unwrap();
 
-        if res == RenderResult::Error {
+        if res == RenderResult::Skipped {
             // Update the redraw state on failed render.
             state.redraw_state =
                 if let RedrawState::WaitingForEstimatedVBlank(token)
@@ -1674,7 +1674,7 @@ impl Niri {
         // If we're in process of locking the session, check if the requirements were met.
         match mem::take(&mut self.lock_state) {
             LockState::Locking(confirmation) => {
-                if res == RenderResult::Error {
+                if res == RenderResult::Skipped {
                     if state.lock_render_state == LockRenderState::Unlocked {
                         // We needed to render a locked frame on this output but failed.
                         self.unlock();

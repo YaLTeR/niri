@@ -26,8 +26,8 @@ pub enum RenderResult {
     Submitted,
     /// Rendering succeeded, but there was no damage.
     NoDamage,
-    /// An error has occurred, the frame was not submitted.
-    Error,
+    /// The frame was not rendered and submitted, due to an error or otherwise.
+    Skipped,
 }
 
 impl Backend {
