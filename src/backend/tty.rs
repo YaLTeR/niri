@@ -860,8 +860,11 @@ impl Tty {
         self.session.seat()
     }
 
-    pub fn renderer(&mut self) -> Option<&mut GlesRenderer> {
-        self.output_device.as_mut().map(|d| &mut d.gles)
+    pub fn with_primary_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut GlesRenderer) -> T,
+    ) -> Option<T> {
+        self.output_device.as_mut().map(|d| f(&mut d.gles))
     }
 
     pub fn render(

@@ -580,31 +580,32 @@ impl State {
         let ScreenshotToNiri::TakeScreenshot { include_cursor } = msg;
         let _span = tracy_client::span!("TakeScreenshot");
 
-        let Some(renderer) = self.backend.renderer() else {
-            let msg = NiriToScreenshot::ScreenshotResult(None);
-            if let Err(err) = to_screenshot.send_blocking(msg) {
-                warn!("error sending None to screenshot: {err:?}");
-            }
-            return;
-        };
+        let rv = self.backend.with_primary_renderer(|renderer| {
+            let on_done = {
+                let to_screenshot = to_screenshot.clone();
+                move |path| {
+                    let msg = NiriToScreenshot::ScreenshotResult(Some(path));
+                    if let Err(err) = to_screenshot.send_blocking(msg) {
+                        warn!("error sending path to screenshot: {err:?}");
+                    }
+                }
+            };
 
-        let on_done = {
-            let to_screenshot = to_screenshot.clone();
-            move |path| {
-                let msg = NiriToScreenshot::ScreenshotResult(Some(path));
+            let res = self
+                .niri
+                .screenshot_all_outputs(renderer, include_cursor, on_done);
+
+            if let Err(err) = res {
+                warn!("error taking a screenshot: {err:?}");
+
+                let msg = NiriToScreenshot::ScreenshotResult(None);
                 if let Err(err) = to_screenshot.send_blocking(msg) {
-                    warn!("error sending path to screenshot: {err:?}");
+                    warn!("error sending None to screenshot: {err:?}");
                 }
             }
-        };
+        });
 
-        let res = self
-            .niri
-            .screenshot_all_outputs(renderer, include_cursor, on_done);
-
-        if let Err(err) = res {
-            warn!("error taking a screenshot: {err:?}");
-
+        if rv.is_none() {
             let msg = NiriToScreenshot::ScreenshotResult(None);
             if let Err(err) = to_screenshot.send_blocking(msg) {
                 warn!("error sending None to screenshot: {err:?}");
@@ -1717,10 +1718,9 @@ impl Niri {
         // Render and send to PipeWire screencast streams.
         #[cfg(feature = "xdp-gnome-screencast")]
         {
-            let renderer = backend
-                .renderer()
-                .expect("renderer must not have disappeared");
-            self.render_for_screen_cast(renderer, output, target_presentation_time);
+            backend.with_primary_renderer(|renderer| {
+                self.render_for_screen_cast(renderer, output, target_presentation_time);
+            });
         }
     }
 

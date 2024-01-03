@@ -252,15 +252,15 @@ impl State {
             Action::ScreenshotScreen => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
-                    if let Some(renderer) = self.backend.renderer() {
+                    self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot(renderer, &active) {
                             warn!("error taking screenshot: {err:?}");
                         }
-                    }
+                    });
                 }
             }
             Action::ConfirmScreenshot => {
-                if let Some(renderer) = self.backend.renderer() {
+                self.backend.with_primary_renderer(|renderer| {
                     match self.niri.screenshot_ui.capture(renderer) {
                         Ok((size, pixels)) => {
                             if let Err(err) = self.niri.save_screenshot(size, pixels) {
@@ -271,7 +271,7 @@ impl State {
                             warn!("error capturing screenshot: {err:?}");
                         }
                     }
-                }
+                });
 
                 self.niri.screenshot_ui.close();
                 self.niri
@@ -287,18 +287,18 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::Screenshot => {
-                if let Some(renderer) = self.backend.renderer() {
+                self.backend.with_primary_renderer(|renderer| {
                     self.niri.open_screenshot_ui(renderer);
-                }
+                });
             }
             Action::ScreenshotWindow => {
                 let active = self.niri.layout.active_window();
                 if let Some((window, output)) = active {
-                    if let Some(renderer) = self.backend.renderer() {
+                    self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot_window(renderer, output, window) {
                             warn!("error taking screenshot: {err:?}");
                         }
-                    }
+                    });
                 }
             }
             Action::CloseWindow => {

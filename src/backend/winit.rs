@@ -129,8 +129,11 @@ impl Winit {
         "winit".to_owned()
     }
 
-    pub fn renderer(&mut self) -> &mut GlesRenderer {
-        self.backend.renderer()
+    pub fn with_primary_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut GlesRenderer) -> T,
+    ) -> Option<T> {
+        Some(f(self.backend.renderer()))
     }
 
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {

@@ -45,10 +45,13 @@ impl Backend {
         }
     }
 
-    pub fn renderer(&mut self) -> Option<&mut GlesRenderer> {
+    pub fn with_primary_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut GlesRenderer) -> T,
+    ) -> Option<T> {
         match self {
-            Backend::Tty(tty) => tty.renderer(),
-            Backend::Winit(winit) => Some(winit.renderer()),
+            Backend::Tty(tty) => tty.with_primary_renderer(f),
+            Backend::Winit(winit) => winit.with_primary_renderer(f),
         }
     }
 
