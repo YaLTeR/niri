@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 
@@ -90,6 +91,13 @@ impl Backend {
         match self {
             Backend::Tty(tty) => tty.toggle_debug_tint(),
             Backend::Winit(winit) => winit.toggle_debug_tint(),
+        }
+    }
+
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+        match self {
+            Backend::Tty(tty) => tty.import_dmabuf(dmabuf),
+            Backend::Winit(winit) => winit.import_dmabuf(dmabuf),
         }
     }
 

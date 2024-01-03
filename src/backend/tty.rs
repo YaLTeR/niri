@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use libc::dev_t;
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
@@ -970,6 +971,17 @@ impl Tty {
             for surface in device.surfaces.values_mut() {
                 let compositor = &mut surface.compositor;
                 compositor.set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
+            }
+        }
+    }
+
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+        let device = self.output_device.as_mut().ok_or(())?;
+        match device.gles.import_dmabuf(dmabuf, None) {
+            Ok(_texture) => Ok(()),
+            Err(err) => {
+                debug!("error importing dmabuf: {err:?}");
+                Err(())
             }
         }
     }

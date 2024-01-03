@@ -5,9 +5,10 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::{DebugFlags, ImportEgl, Renderer};
+use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
@@ -197,6 +198,16 @@ impl Winit {
     pub fn toggle_debug_tint(&mut self) {
         let renderer = self.backend.renderer();
         renderer.set_debug_flags(renderer.debug_flags() ^ DebugFlags::TINT);
+    }
+
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+        match self.backend.renderer().import_dmabuf(dmabuf, None) {
+            Ok(_texture) => Ok(()),
+            Err(err) => {
+                debug!("error importing dmabuf: {err:?}");
+                Err(())
+            }
+        }
     }
 
     pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {

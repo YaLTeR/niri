@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::thread;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::renderer::ImportDma;
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatHandler, SeatState};
@@ -202,17 +201,11 @@ impl DmabufHandler for State {
         dmabuf: Dmabuf,
         notifier: ImportNotifier,
     ) {
-        let Some(renderer) = self.backend.renderer() else {
-            notifier.failed();
-            return;
-        };
-
-        match renderer.import_dmabuf(&dmabuf, None) {
-            Ok(_texture) => {
+        match self.backend.import_dmabuf(&dmabuf) {
+            Ok(_) => {
                 let _ = notifier.successful::<State>();
             }
-            Err(err) => {
-                debug!("error importing dmabuf: {err:?}");
+            Err(_) => {
                 notifier.failed();
             }
         }
