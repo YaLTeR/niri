@@ -140,7 +140,7 @@ impl Winit {
         let _span = tracy_client::span!("Winit::render");
 
         // Render the elements.
-        let elements = niri.render(self.backend.renderer(), output, true);
+        let elements = niri.render::<GlesRenderer>(self.backend.renderer(), output, true);
 
         // Hand them over to winit.
         self.backend.bind().unwrap();

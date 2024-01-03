@@ -12,6 +12,7 @@ mod handlers;
 mod input;
 mod layout;
 mod niri;
+mod render_helpers;
 mod screenshot_ui;
 mod utils;
 mod watcher;

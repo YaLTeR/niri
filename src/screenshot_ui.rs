@@ -9,15 +9,16 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{ButtonState, MouseButton};
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
-use smithay::backend::renderer::element::Kind;
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
+use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::ExportMem;
 use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
-use smithay::render_elements;
-use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
+use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::config::Action;
+use crate::render_helpers::PrimaryGpuTextureRenderElement;
 
 const BORDER: i32 = 2;
 
@@ -45,11 +46,10 @@ pub struct OutputData {
     locations: [Point<i32, Physical>; 8],
 }
 
-render_elements! {
-    #[derive(Debug)]
-    pub ScreenshotUiRenderElement<R>;
-    Screenshot = TextureRenderElement<R::TextureId>,
-    SolidColor = SolidColorRenderElement,
+#[derive(Debug)]
+pub enum ScreenshotUiRenderElement {
+    Screenshot(PrimaryGpuTextureRenderElement),
+    SolidColor(SolidColorRenderElement),
 }
 
 impl ScreenshotUi {
@@ -236,10 +236,7 @@ impl ScreenshotUi {
         }
     }
 
-    pub fn render_output(
-        &self,
-        output: &Output,
-    ) -> ArrayVec<ScreenshotUiRenderElement<GlesRenderer>, 9> {
+    pub fn render_output(&self, output: &Output) -> ArrayVec<ScreenshotUiRenderElement, 9> {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
         let Self::Open { output_data, .. } = self else {
@@ -266,14 +263,14 @@ impl ScreenshotUi {
 
         // The screenshot itself goes last.
         elements.push(
-            TextureRenderElement::from_texture_buffer(
+            PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                 (0., 0.),
                 &output_data.texture_buffer,
                 None,
                 None,
                 None,
                 Kind::Unspecified,
-            )
+            ))
             .into(),
         );
 
@@ -445,4 +442,111 @@ pub fn rect_from_corner_points(
     let x2 = max(a.x, b.x);
     let y2 = max(a.y, b.y);
     Rectangle::from_extemities((x1, y1), (x2 + scale, y2 + scale))
+}
+
+// Manual RenderElement implementation due to AsGlesFrame requirement.
+impl Element for ScreenshotUiRenderElement {
+    fn id(&self) -> &Id {
+        match self {
+            Self::Screenshot(elem) => elem.id(),
+            Self::SolidColor(elem) => elem.id(),
+        }
+    }
+
+    fn current_commit(&self) -> CommitCounter {
+        match self {
+            Self::Screenshot(elem) => elem.current_commit(),
+            Self::SolidColor(elem) => elem.current_commit(),
+        }
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        match self {
+            Self::Screenshot(elem) => elem.geometry(scale),
+            Self::SolidColor(elem) => elem.geometry(scale),
+        }
+    }
+
+    fn transform(&self) -> Transform {
+        match self {
+            Self::Screenshot(elem) => elem.transform(),
+            Self::SolidColor(elem) => elem.transform(),
+        }
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        match self {
+            Self::Screenshot(elem) => elem.src(),
+            Self::SolidColor(elem) => elem.src(),
+        }
+    }
+
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            Self::Screenshot(elem) => elem.damage_since(scale, commit),
+            Self::SolidColor(elem) => elem.damage_since(scale, commit),
+        }
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            Self::Screenshot(elem) => elem.opaque_regions(scale),
+            Self::SolidColor(elem) => elem.opaque_regions(scale),
+        }
+    }
+
+    fn alpha(&self) -> f32 {
+        match self {
+            Self::Screenshot(elem) => elem.alpha(),
+            Self::SolidColor(elem) => elem.alpha(),
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        match self {
+            Self::Screenshot(elem) => elem.kind(),
+            Self::SolidColor(elem) => elem.kind(),
+        }
+    }
+}
+
+impl RenderElement<GlesRenderer> for ScreenshotUiRenderElement {
+    fn draw(
+        &self,
+        frame: &mut GlesFrame<'_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), GlesError> {
+        match self {
+            Self::Screenshot(elem) => {
+                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::SolidColor(elem) => {
+                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
+            }
+        }
+    }
+
+    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+        // If scanout for things other than Wayland buffers is implemented, this will need to take
+        // the target GPU into account.
+        None
+    }
+}
+
+impl From<SolidColorRenderElement> for ScreenshotUiRenderElement {
+    fn from(x: SolidColorRenderElement) -> Self {
+        Self::SolidColor(x)
+    }
+}
+
+impl From<PrimaryGpuTextureRenderElement> for ScreenshotUiRenderElement {
+    fn from(x: PrimaryGpuTextureRenderElement) -> Self {
+        Self::Screenshot(x)
+    }
 }

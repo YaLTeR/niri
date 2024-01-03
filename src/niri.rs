@@ -17,12 +17,15 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, render_elements, AsRenderElements, Kind, RenderElement,
-    RenderElementStates,
+    default_primary_scanout_output_compare, AsRenderElements, Element, Id, Kind, RenderElement,
+    RenderElementStates, UnderlyingStorage,
 };
-use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{
+    GlesError, GlesFrame, GlesMapping, GlesRenderer, GlesTexture,
+};
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
+use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::{Bind, ExportMem, Frame, Offscreen, Renderer};
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -50,7 +53,7 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{
-    ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
+    Buffer, ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
     SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
@@ -92,6 +95,7 @@ use crate::handlers::configure_lock_surface;
 use crate::input::TabletData;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
+use crate::render_helpers::{NiriRenderer, PrimaryGpuTextureRenderElement};
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::{
     center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
@@ -1303,11 +1307,11 @@ impl Niri {
         };
     }
 
-    pub fn pointer_element(
+    pub fn pointer_element<R: NiriRenderer>(
         &self,
-        renderer: &mut GlesRenderer,
+        renderer: &mut R,
         output: &Output,
-    ) -> Vec<OutputRenderElements<GlesRenderer>> {
+    ) -> Vec<OutputRenderElements<R>> {
         let _span = tracy_client::span!("Niri::pointer_element");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
@@ -1351,19 +1355,23 @@ impl Niri {
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                let texture = self
-                    .cursor_texture_cache
-                    .get(renderer, icon, scale, &cursor, idx);
+                let texture = self.cursor_texture_cache.get(
+                    renderer.as_gles_renderer(),
+                    icon,
+                    scale,
+                    &cursor,
+                    idx,
+                );
 
                 let pointer_elements = vec![OutputRenderElements::NamedPointer(
-                    TextureRenderElement::from_texture_buffer(
+                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                         pointer_pos.to_f64(),
                         &texture,
                         None,
                         None,
                         None,
                         Kind::Cursor,
-                    ),
+                    )),
                 )];
 
                 (pointer_elements, pointer_pos)
@@ -1496,12 +1504,12 @@ impl Niri {
         }
     }
 
-    pub fn render(
+    pub fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut GlesRenderer,
+        renderer: &mut R,
         output: &Output,
         include_pointer: bool,
-    ) -> Vec<OutputRenderElements<GlesRenderer>> {
+    ) -> Vec<OutputRenderElements<R>> {
         let _span = tracy_client::span!("Niri::render");
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
@@ -1573,8 +1581,7 @@ impl Niri {
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
-        let mut extend_from_layer = |elements: &mut Vec<OutputRenderElements<GlesRenderer>>,
-                                     layer| {
+        let mut extend_from_layer = |elements: &mut Vec<OutputRenderElements<R>>, layer| {
             let iter = layer_map
                 .layers_on(layer)
                 .filter_map(|surface| {
@@ -2059,7 +2066,8 @@ impl Niri {
                 let dmabuf = cast.dmabufs.borrow()[&fd].clone();
 
                 // FIXME: Hidden / embedded / metadata cursor
-                let elements = elements.get_or_insert_with(|| self.render(renderer, output, true));
+                let elements = elements
+                    .get_or_insert_with(|| self.render::<GlesRenderer>(renderer, output, true));
 
                 if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
                     error!("error rendering to dmabuf: {err:?}");
@@ -2126,7 +2134,7 @@ impl Niri {
             .filter_map(|output| {
                 let size = output.current_mode().unwrap().size;
                 let scale = Scale::from(output.current_scale().fractional_scale());
-                let elements = self.render(renderer, &output, true);
+                let elements = self.render::<GlesRenderer>(renderer, &output, true);
 
                 let res = render_to_texture(renderer, size, scale, Fourcc::Abgr8888, &elements);
                 let screenshot = match res {
@@ -2153,7 +2161,7 @@ impl Niri {
 
         let size = output.current_mode().unwrap().size;
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let elements = self.render(renderer, output, true);
+        let elements = self.render::<GlesRenderer>(renderer, output, true);
         let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, &elements)?;
 
         self.save_screenshot(size, pixels)
@@ -2277,7 +2285,7 @@ impl Niri {
             size.w = max(size.w, geom.loc.x + geom.size.w);
             size.h = max(size.h, geom.loc.y + geom.size.h);
 
-            let output_elements = self.render(renderer, &output, include_pointer);
+            let output_elements = self.render::<GlesRenderer>(renderer, &output, include_pointer);
             elements.extend(output_elements.into_iter().map(|elem| {
                 RelocateRenderElement::from_element(elem, geom.loc, Relocate::Relative)
             }));
@@ -2382,16 +2390,6 @@ impl Niri {
     }
 }
 
-render_elements! {
-    #[derive(Debug)]
-    pub OutputRenderElements<R> where R: ImportAll;
-    Monitor = MonitorRenderElement<R>,
-    Wayland = WaylandSurfaceRenderElement<R>,
-    NamedPointer = TextureRenderElement<<R as Renderer>::TextureId>,
-    SolidColor = SolidColorRenderElement,
-    ScreenshotUi = ScreenshotUiRenderElement<R>,
-}
-
 #[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
@@ -2482,8 +2480,6 @@ fn render_to_dmabuf(
     scale: Scale<f64>,
     elements: &[OutputRenderElements<GlesRenderer>],
 ) -> anyhow::Result<()> {
-    use smithay::backend::renderer::element::Element;
-
     let _span = tracy_client::span!("render_to_dmabuf");
 
     let output_rect = Rectangle::from_loc_and_size((0, 0), size);
@@ -2504,4 +2500,174 @@ fn render_to_dmabuf(
     let _sync_point = frame.finish().context("error finishing frame")?;
 
     Ok(())
+}
+
+// Manual RenderElement implementation due to AsGlesFrame requirement.
+#[derive(Debug)]
+pub enum OutputRenderElements<R: NiriRenderer> {
+    Monitor(MonitorRenderElement<R>),
+    Wayland(WaylandSurfaceRenderElement<R>),
+    NamedPointer(PrimaryGpuTextureRenderElement),
+    SolidColor(SolidColorRenderElement),
+    ScreenshotUi(ScreenshotUiRenderElement),
+}
+
+impl<R: NiriRenderer> Element for OutputRenderElements<R> {
+    fn id(&self) -> &Id {
+        match self {
+            Self::Monitor(elem) => elem.id(),
+            Self::Wayland(elem) => elem.id(),
+            Self::NamedPointer(elem) => elem.id(),
+            Self::SolidColor(elem) => elem.id(),
+            Self::ScreenshotUi(elem) => elem.id(),
+        }
+    }
+
+    fn current_commit(&self) -> CommitCounter {
+        match self {
+            Self::Monitor(elem) => elem.current_commit(),
+            Self::Wayland(elem) => elem.current_commit(),
+            Self::NamedPointer(elem) => elem.current_commit(),
+            Self::SolidColor(elem) => elem.current_commit(),
+            Self::ScreenshotUi(elem) => elem.current_commit(),
+        }
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        match self {
+            Self::Monitor(elem) => elem.geometry(scale),
+            Self::Wayland(elem) => elem.geometry(scale),
+            Self::NamedPointer(elem) => elem.geometry(scale),
+            Self::SolidColor(elem) => elem.geometry(scale),
+            Self::ScreenshotUi(elem) => elem.geometry(scale),
+        }
+    }
+
+    fn transform(&self) -> Transform {
+        match self {
+            Self::Monitor(elem) => elem.transform(),
+            Self::Wayland(elem) => elem.transform(),
+            Self::NamedPointer(elem) => elem.transform(),
+            Self::SolidColor(elem) => elem.transform(),
+            Self::ScreenshotUi(elem) => elem.transform(),
+        }
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        match self {
+            Self::Monitor(elem) => elem.src(),
+            Self::Wayland(elem) => elem.src(),
+            Self::NamedPointer(elem) => elem.src(),
+            Self::SolidColor(elem) => elem.src(),
+            Self::ScreenshotUi(elem) => elem.src(),
+        }
+    }
+
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            Self::Monitor(elem) => elem.damage_since(scale, commit),
+            Self::Wayland(elem) => elem.damage_since(scale, commit),
+            Self::NamedPointer(elem) => elem.damage_since(scale, commit),
+            Self::SolidColor(elem) => elem.damage_since(scale, commit),
+            Self::ScreenshotUi(elem) => elem.damage_since(scale, commit),
+        }
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            Self::Monitor(elem) => elem.opaque_regions(scale),
+            Self::Wayland(elem) => elem.opaque_regions(scale),
+            Self::NamedPointer(elem) => elem.opaque_regions(scale),
+            Self::SolidColor(elem) => elem.opaque_regions(scale),
+            Self::ScreenshotUi(elem) => elem.opaque_regions(scale),
+        }
+    }
+
+    fn alpha(&self) -> f32 {
+        match self {
+            Self::Monitor(elem) => elem.alpha(),
+            Self::Wayland(elem) => elem.alpha(),
+            Self::NamedPointer(elem) => elem.alpha(),
+            Self::SolidColor(elem) => elem.alpha(),
+            Self::ScreenshotUi(elem) => elem.alpha(),
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        match self {
+            Self::Monitor(elem) => elem.kind(),
+            Self::Wayland(elem) => elem.kind(),
+            Self::NamedPointer(elem) => elem.kind(),
+            Self::SolidColor(elem) => elem.kind(),
+            Self::ScreenshotUi(elem) => elem.kind(),
+        }
+    }
+}
+
+impl RenderElement<GlesRenderer> for OutputRenderElements<GlesRenderer> {
+    fn draw(
+        &self,
+        frame: &mut GlesFrame<'_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), GlesError> {
+        match self {
+            Self::Monitor(elem) => elem.draw(frame, src, dst, damage),
+            Self::Wayland(elem) => elem.draw(frame, src, dst, damage),
+            Self::NamedPointer(elem) => {
+                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::SolidColor(elem) => {
+                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::ScreenshotUi(elem) => {
+                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
+            }
+        }
+    }
+
+    fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+        match self {
+            Self::Monitor(elem) => elem.underlying_storage(renderer),
+            Self::Wayland(elem) => elem.underlying_storage(renderer),
+            Self::NamedPointer(elem) => elem.underlying_storage(renderer),
+            Self::SolidColor(elem) => elem.underlying_storage(renderer),
+            Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
+        }
+    }
+}
+
+impl<R: NiriRenderer> From<MonitorRenderElement<R>> for OutputRenderElements<R> {
+    fn from(x: MonitorRenderElement<R>) -> Self {
+        Self::Monitor(x)
+    }
+}
+
+impl<R: NiriRenderer> From<WaylandSurfaceRenderElement<R>> for OutputRenderElements<R> {
+    fn from(x: WaylandSurfaceRenderElement<R>) -> Self {
+        Self::Wayland(x)
+    }
+}
+
+impl<R: NiriRenderer> From<PrimaryGpuTextureRenderElement> for OutputRenderElements<R> {
+    fn from(x: PrimaryGpuTextureRenderElement) -> Self {
+        Self::NamedPointer(x)
+    }
+}
+
+impl<R: NiriRenderer> From<SolidColorRenderElement> for OutputRenderElements<R> {
+    fn from(x: SolidColorRenderElement) -> Self {
+        Self::SolidColor(x)
+    }
+}
+
+impl<R: NiriRenderer> From<ScreenshotUiRenderElement> for OutputRenderElements<R> {
+    fn from(x: ScreenshotUiRenderElement) -> Self {
+        Self::ScreenshotUi(x)
+    }
 }

@@ -898,7 +898,7 @@ impl Tty {
         let renderer = &mut device.gles;
 
         // Render the elements.
-        let elements = niri.render(renderer, output, true);
+        let elements = niri.render::<GlesRenderer>(renderer, output, true);
 
         // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;
