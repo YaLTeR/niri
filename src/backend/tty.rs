@@ -32,6 +32,7 @@ use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
     connector, crtc, property, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags,
 };
+use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols;
@@ -1234,10 +1235,16 @@ fn surface_dmabuf_feedback(
 
     // We limit the scan-out trache to formats we can also render from so that there is always a
     // fallback render path available in case the supplied buffer can not be scanned out directly.
-    let scanout_formats = plane_formats
+    let mut scanout_formats = plane_formats
         .intersection(&primary_formats)
         .copied()
         .collect::<Vec<_>>();
+
+    // HACK: AMD iGPU + dGPU systems share some modifiers between the two, and yet cross-device
+    // buffers produce a glitched scanout if the modifier is not Linear...
+    if primary_render_node != surface_render_node {
+        scanout_formats.retain(|f| f.modifier == Modifier::Linear);
+    }
 
     let builder = DmabufFeedbackBuilder::new(primary_render_node.dev_id(), primary_formats);
 
