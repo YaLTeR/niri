@@ -817,12 +817,16 @@ impl State {
 
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {
+            frame = frame
+                .relative_direction(Axis::Horizontal, event.relative_direction(Axis::Horizontal));
             frame = frame.value(Axis::Horizontal, horizontal_amount);
             if let Some(discrete) = horizontal_amount_discrete {
                 frame = frame.v120(Axis::Horizontal, discrete as i32);
             }
         }
         if vertical_amount != 0.0 {
+            frame =
+                frame.relative_direction(Axis::Vertical, event.relative_direction(Axis::Vertical));
             frame = frame.value(Axis::Vertical, vertical_amount);
             if let Some(discrete) = vertical_amount_discrete {
                 frame = frame.v120(Axis::Vertical, discrete as i32);
