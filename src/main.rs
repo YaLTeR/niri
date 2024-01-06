@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
-    let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
+    let spawn_at_startup = mem::take(&mut config.clients.spawn_at_startup);
 
     // Create the compositor.
     let mut event_loop = EventLoop::try_new().unwrap();

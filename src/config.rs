@@ -14,12 +14,10 @@ pub struct Config {
     pub input: Input,
     #[knuffel(children(name = "output"))]
     pub outputs: Vec<Output>,
-    #[knuffel(children(name = "spawn-at-startup"))]
-    pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(child, default)]
     pub layout: Layout,
     #[knuffel(child, default)]
-    pub prefer_no_csd: bool,
+    pub clients: Clients,
     #[knuffel(child, default)]
     pub cursor: Cursor,
     #[knuffel(child, default)]
@@ -225,6 +223,14 @@ impl From<Color> for [f32; 4] {
     fn from(c: Color) -> Self {
         [c.r, c.g, c.b, c.a].map(|x| x as f32 / 255.)
     }
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
+pub struct Clients {
+    #[knuffel(child, default)]
+    pub prefer_no_csd: bool,
+    #[knuffel(children(name = "spawn-at-startup"))]
+    pub spawn_at_startup: Vec<SpawnAtStartup>,
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
@@ -663,9 +669,11 @@ mod tests {
                 }
             }
 
-            spawn-at-startup "alacritty" "-e" "fish"
+            clients {
+                prefer-no-csd
 
-            prefer-no-csd
+                spawn-at-startup "alacritty" "-e" "fish"
+            }
 
             cursor {
                 xcursor-theme "breeze_cursors"
@@ -774,10 +782,12 @@ mod tests {
                         bottom: 0,
                     },
                 },
-                spawn_at_startup: vec![SpawnAtStartup {
-                    command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
-                }],
-                prefer_no_csd: true,
+                clients: Clients {
+                    spawn_at_startup: vec![SpawnAtStartup {
+                        command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
+                    }],
+                    prefer_no_csd: true,
+                },
                 cursor: Cursor {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,

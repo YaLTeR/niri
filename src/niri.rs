@@ -643,7 +643,7 @@ impl Niri {
         let xdg_decoration_state = XdgDecorationState::new::<State>(&display_handle);
         let kde_decoration_state = KdeDecorationState::new::<State>(
             &display_handle,
-            if config_.prefer_no_csd {
+            if config_.clients.prefer_no_csd {
                 KdeDecorationsMode::Server
             } else {
                 KdeDecorationsMode::Client

@@ -136,11 +136,6 @@ layout {
     }
 }
 
-// Add lines like this to spawn processes at startup.
-// Note that running niri as a session supports xdg-desktop-autostart,
-// which may be more convenient to use.
-// spawn-at-startup "alacritty" "-e" "fish"
-
 cursor {
     // Change the theme and size of the cursor as well as set the
     // `XCURSOR_THEME` and `XCURSOR_SIZE` env variables.
@@ -148,10 +143,17 @@ cursor {
     // xcursor-size 24
 }
 
-// Uncomment this line to ask the clients to omit their client-side decorations if possible.
-// If the client will specifically ask for CSD, the request will be honored.
-// Additionally, clients will be informed that they are tiled, removing some rounded corners.
-// prefer-no-csd
+clients {
+    // Uncomment this line to ask the clients to omit their client-side decorations if possible.
+    // If the client will specifically ask for CSD, the request will be honored.
+    // Additionally, clients will be informed that they are tiled, removing some rounded corners.
+    // prefer-no-csd
+
+    // Add lines like this to spawn processes at startup.
+    // Note that running niri as a session supports xdg-desktop-autostart,
+    // which may be more convenient to use.
+    // spawn-at-startup "alacritty" "-e" "fish"
+}
 
 screenshot-ui {
     // You can change the path where screenshots are saved.

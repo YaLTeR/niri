@@ -39,7 +39,7 @@ impl XdgShellHandler for State {
         // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
         // rid of the various client-side rounded corners also by using the tiled state.
         let config = self.niri.config.borrow();
-        if config.prefer_no_csd {
+        if config.clients.prefer_no_csd {
             window.toplevel().with_pending_state(|state| {
                 state.states.set(xdg_toplevel::State::TiledLeft);
                 state.states.set(xdg_toplevel::State::TiledRight);
@@ -192,7 +192,7 @@ delegate_xdg_shell!(State);
 
 impl XdgDecorationHandler for State {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
-        let mode = if self.niri.config.borrow().prefer_no_csd {
+        let mode = if self.niri.config.borrow().clients.prefer_no_csd {
             Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
         } else {
             None
@@ -214,7 +214,7 @@ impl XdgDecorationHandler for State {
     }
 
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
-        let mode = if self.niri.config.borrow().prefer_no_csd {
+        let mode = if self.niri.config.borrow().clients.prefer_no_csd {
             Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
         } else {
             None
