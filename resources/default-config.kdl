@@ -75,36 +75,71 @@ input {
     position x=1280 y=0
 }
 
+layout {
+    // You can change how the focus ring looks.
+    focus-ring {
+        // Uncomment this line to disable the focus ring.
+        // off
+
+        // How many logical pixels the ring extends out from the windows.
+        width 4
+
+        // Color of the ring on the active monitor: red, green, blue, alpha.
+        active-color 127 200 255 255
+
+        // Color of the ring on inactive monitors: red, green, blue, alpha.
+        inactive-color 80 80 80 255
+    }
+
+    // You can also add a border. It's similar to the focus ring, but always visible.
+    border {
+        // The settings are the same as for the focus ring.
+        // If you enable the border, you probably want to disable the focus ring.
+        off
+
+        width 4
+        active-color 255 200 127 255
+        inactive-color 80 80 80 255
+    }
+
+    // You can customize the widths that "switch-preset-column-width" (Mod+R) toggles between.
+    preset-column-widths {
+        // Proportion sets the width as a fraction of the output width, taking gaps into account.
+        // For example, you can perfectly fit four windows sized "proportion 0.25" on an output.
+        // The default preset widths are 1/3, 1/2 and 2/3 of the output.
+        proportion 0.333
+        proportion 0.5
+        proportion 0.667
+
+        // Fixed sets the width in logical pixels exactly.
+        // fixed 1920
+    }
+
+    // You can change the default width of the new windows.
+    default-column-width { proportion 0.5; }
+    // If you leave the brackets empty, the windows themselves will decide their initial width.
+    // default-column-width {}
+
+    // Set gaps around windows in logical pixels.
+    gaps 16
+
+    // Struts shrink the area occupied by windows, similarly to layer-shell panels.
+    // You can think of them as a kind of outer gaps. They are set in logical pixels.
+    // Left and right struts will cause the next window to the side to always be visible.
+    // Top and bottom struts will simply add outer gaps in addition to the area occupied by
+    // layer-shell panels and regular gaps.
+    struts {
+        // left 64
+        // right 64
+        // top 64
+        // bottom 64
+    }
+}
+
 // Add lines like this to spawn processes at startup.
 // Note that running niri as a session supports xdg-desktop-autostart,
 // which may be more convenient to use.
 // spawn-at-startup "alacritty" "-e" "fish"
-
-// You can change how the focus ring looks.
-focus-ring {
-    // Uncomment this line to disable the focus ring.
-    // off
-
-    // How many logical pixels the ring extends out from the windows.
-    width 4
-
-    // Color of the ring on the active monitor: red, green, blue, alpha.
-    active-color 127 200 255 255
-
-    // Color of the ring on inactive monitors: red, green, blue, alpha.
-    inactive-color 80 80 80 255
-}
-
-// You can also add a border. It's similar to the focus ring, but always visible.
-border {
-    // The settings are the same as for the focus ring.
-    // If you enable the border, you probably want to disable the focus ring.
-    off
-
-    width 4
-    active-color 255 200 127 255
-    inactive-color 80 80 80 255
-}
 
 cursor {
     // Change the theme and size of the cursor as well as set the
@@ -117,39 +152,6 @@ cursor {
 // If the client will specifically ask for CSD, the request will be honored.
 // Additionally, clients will be informed that they are tiled, removing some rounded corners.
 // prefer-no-csd
-
-// You can customize the widths that "switch-preset-column-width" (Mod+R) toggles between.
-preset-column-widths {
-    // Proportion sets the width as a fraction of the output width, taking gaps into account.
-    // For example, you can perfectly fit four windows sized "proportion 0.25" on an output.
-    // The default preset widths are 1/3, 1/2 and 2/3 of the output.
-    proportion 0.333
-    proportion 0.5
-    proportion 0.667
-
-    // Fixed sets the width in logical pixels exactly.
-    // fixed 1920
-}
-
-// You can change the default width of the new windows.
-default-column-width { proportion 0.5; }
-// If you leave the brackets empty, the windows themselves will decide their initial width.
-// default-column-width {}
-
-// Set gaps around windows in logical pixels.
-gaps 16
-
-// Struts shrink the area occupied by windows, similarly to layer-shell panels.
-// You can think of them as a kind of outer gaps. They are set in logical pixels.
-// Left and right struts will cause the next window to the side to always be visible.
-// Top and bottom struts will simply add outer gaps in addition to the area occupied by
-// layer-shell panels and regular gaps.
-struts {
-    // left 64
-    // right 64
-    // top 64
-    // bottom 64
-}
 
 // You can change the path where screenshots are saved.
 // A ~ at the front will be expanded to the home directory.
