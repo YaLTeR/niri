@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -195,7 +196,14 @@ impl Tty {
             .node_with_type(NodeType::Render)
             .unwrap()
             .unwrap();
-        info!("using {} as the primary GPU", primary_render_node);
+
+        let mut node_path = String::new();
+        if let Some(path) = primary_render_node.dev_path() {
+            write!(node_path, "{:?}", path).unwrap();
+        } else {
+            write!(node_path, "{}", primary_render_node).unwrap();
+        }
+        info!("using as the render node: {}", node_path);
 
         Self {
             config,
