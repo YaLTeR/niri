@@ -17,21 +17,11 @@ pub struct Config {
     #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(child, default)]
-    pub focus_ring: FocusRing,
-    #[knuffel(child, default = default_border())]
-    pub border: FocusRing,
+    pub layout: Layout,
     #[knuffel(child, default)]
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
     pub cursor: Cursor,
-    #[knuffel(child, unwrap(children), default)]
-    pub preset_column_widths: Vec<PresetWidth>,
-    #[knuffel(child)]
-    pub default_column_width: Option<DefaultColumnWidth>,
-    #[knuffel(child, unwrap(argument), default = 16)]
-    pub gaps: u16,
-    #[knuffel(child, default)]
-    pub struts: Struts,
     #[knuffel(
         child,
         unwrap(argument),
@@ -163,6 +153,22 @@ pub struct Mode {
     pub width: u16,
     pub height: u16,
     pub refresh: Option<f64>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct Layout {
+    #[knuffel(child, default)]
+    pub focus_ring: FocusRing,
+    #[knuffel(child, default = default_border())]
+    pub border: FocusRing,
+    #[knuffel(child, unwrap(children), default)]
+    pub preset_column_widths: Vec<PresetWidth>,
+    #[knuffel(child)]
+    pub default_column_width: Option<DefaultColumnWidth>,
+    #[knuffel(child, unwrap(argument), default = 16)]
+    pub gaps: u16,
+    #[knuffel(child, default)]
+    pub struts: Struts,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
@@ -607,42 +613,44 @@ mod tests {
                 mode "1920x1080@144"
             }
 
+            layout {
+                focus-ring {
+                    width 5
+                    active-color 0 100 200 255
+                    inactive-color 255 200 100 0
+                }
+
+                border {
+                    width 3
+                    active-color 0 100 200 255
+                    inactive-color 255 200 100 0
+                }
+
+                preset-column-widths {
+                    proportion 0.25
+                    proportion 0.5
+                    fixed 960
+                    fixed 1280
+                }
+
+                default-column-width { proportion 0.25; }
+
+                gaps 8
+
+                struts {
+                    left 1
+                    right 2
+                    top 3
+                }
+            }
+
             spawn-at-startup "alacritty" "-e" "fish"
-
-            focus-ring {
-                width 5
-                active-color 0 100 200 255
-                inactive-color 255 200 100 0
-            }
-
-            border {
-                width 3
-                active-color 0 100 200 255
-                inactive-color 255 200 100 0
-            }
 
             prefer-no-csd
 
             cursor {
                 xcursor-theme "breeze_cursors"
                 xcursor-size 16
-            }
-
-            preset-column-widths {
-                proportion 0.25
-                proportion 0.5
-                fixed 960
-                fixed 1280
-            }
-
-            default-column-width { proportion 0.25; }
-
-            gaps 8
-
-            struts {
-                left 1
-                right 2
-                top 3
             }
 
             screenshot-path "~/Screenshots/screenshot.png"
@@ -694,59 +702,63 @@ mod tests {
                         refresh: Some(144.),
                     }),
                 }],
+                layout: Layout {
+                    focus_ring: FocusRing {
+                        off: false,
+                        width: 5,
+                        active_color: Color {
+                            r: 0,
+                            g: 100,
+                            b: 200,
+                            a: 255,
+                        },
+                        inactive_color: Color {
+                            r: 255,
+                            g: 200,
+                            b: 100,
+                            a: 0,
+                        },
+                    },
+                    border: FocusRing {
+                        off: false,
+                        width: 3,
+                        active_color: Color {
+                            r: 0,
+                            g: 100,
+                            b: 200,
+                            a: 255,
+                        },
+                        inactive_color: Color {
+                            r: 255,
+                            g: 200,
+                            b: 100,
+                            a: 0,
+                        },
+                    },
+                    preset_column_widths: vec![
+                        PresetWidth::Proportion(0.25),
+                        PresetWidth::Proportion(0.5),
+                        PresetWidth::Fixed(960),
+                        PresetWidth::Fixed(1280),
+                    ],
+                    default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(
+                        0.25,
+                    )])),
+                    gaps: 8,
+                    struts: Struts {
+                        left: 1,
+                        right: 2,
+                        top: 3,
+                        bottom: 0,
+                    },
+                },
                 spawn_at_startup: vec![SpawnAtStartup {
                     command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
                 }],
-                focus_ring: FocusRing {
-                    off: false,
-                    width: 5,
-                    active_color: Color {
-                        r: 0,
-                        g: 100,
-                        b: 200,
-                        a: 255,
-                    },
-                    inactive_color: Color {
-                        r: 255,
-                        g: 200,
-                        b: 100,
-                        a: 0,
-                    },
-                },
-                border: FocusRing {
-                    off: false,
-                    width: 3,
-                    active_color: Color {
-                        r: 0,
-                        g: 100,
-                        b: 200,
-                        a: 255,
-                    },
-                    inactive_color: Color {
-                        r: 255,
-                        g: 200,
-                        b: 100,
-                        a: 0,
-                    },
-                },
                 prefer_no_csd: true,
                 cursor: Cursor {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,
-                },
-                preset_column_widths: vec![
-                    PresetWidth::Proportion(0.25),
-                    PresetWidth::Proportion(0.5),
-                    PresetWidth::Fixed(960),
-                    PresetWidth::Fixed(1280),
-                ],
-                default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(0.25)])),
-                gaps: 8,
-                struts: Struts {
-                    left: 1,
-                    right: 2,
-                    top: 3,
-                    bottom: 0,
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
                 binds: Binds(vec![

@@ -164,7 +164,8 @@ impl Default for Options {
 
 impl Options {
     fn from_config(config: &Config) -> Self {
-        let preset_column_widths = &config.preset_column_widths;
+        let layout = &config.layout;
+        let preset_column_widths = &layout.preset_column_widths;
 
         let preset_widths = if preset_column_widths.is_empty() {
             Options::default().preset_widths
@@ -178,17 +179,17 @@ impl Options {
 
         // Missing default_column_width maps to Some(ColumnWidth::Proportion(0.5)),
         // while present, but empty, maps to None.
-        let default_width = config
+        let default_width = layout
             .default_column_width
             .as_ref()
             .map(|w| w.0.first().copied().map(ColumnWidth::from))
             .unwrap_or(Some(ColumnWidth::Proportion(0.5)));
 
         Self {
-            gaps: config.gaps.into(),
-            struts: config.struts,
-            focus_ring: config.focus_ring,
-            border: config.border,
+            gaps: layout.gaps.into(),
+            struts: layout.struts,
+            focus_ring: layout.focus_ring,
+            border: layout.border,
             preset_widths,
             default_width,
         }
