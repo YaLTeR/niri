@@ -41,10 +41,11 @@ pub fn output_size(output: &Output) -> Size<i32, Logical> {
 }
 
 pub fn make_screenshot_path(config: &Config) -> anyhow::Result<Option<PathBuf>> {
-    let Some(path) = &config.screenshot_path else {
+    if config.screenshot_ui.disable_saving_to_disk {
         return Ok(None);
-    };
+    }
 
+    let path = &config.screenshot_ui.screenshot_path;
     let format = CString::new(path.clone()).context("path must not contain nul bytes")?;
 
     let mut buf = [0u8; 2048];

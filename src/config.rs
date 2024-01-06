@@ -22,14 +22,8 @@ pub struct Config {
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
     pub cursor: Cursor,
-    #[knuffel(
-        child,
-        unwrap(argument),
-        default = Some(String::from(
-            "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
-        )))
-    ]
-    pub screenshot_path: Option<String>,
+    #[knuffel(child, default)]
+    pub screenshot_ui: ScreenshotUi,
     #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
@@ -269,6 +263,31 @@ pub struct Struts {
     pub top: u16,
     #[knuffel(child, unwrap(argument), default)]
     pub bottom: u16,
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+pub struct ScreenshotUi {
+    #[knuffel(child)]
+    pub disable_saving_to_disk: bool,
+    #[knuffel(
+        child,
+        unwrap(argument),
+        default = String::from(
+            "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+        ))
+    ]
+    pub screenshot_path: String,
+}
+
+impl Default for ScreenshotUi {
+    fn default() -> Self {
+        Self {
+            disable_saving_to_disk: false,
+            screenshot_path: String::from(
+                "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png",
+            ),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -653,7 +672,10 @@ mod tests {
                 xcursor-size 16
             }
 
-            screenshot-path "~/Screenshots/screenshot.png"
+            screenshot-ui {
+                screenshot-path "~/Screenshots/screenshot.png"
+                disable-saving-to-disk
+            }
 
             binds {
                 Mod+T { spawn "alacritty"; }
@@ -760,7 +782,10 @@ mod tests {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,
                 },
-                screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
+                screenshot_ui: ScreenshotUi {
+                    disable_saving_to_disk: true,
+                    screenshot_path: String::from("~/Screenshots/screenshot.png"),
+                },
                 binds: Binds(vec![
                     Bind {
                         key: Key {
