@@ -245,6 +245,7 @@ impl State {
             }
             Action::ToggleDebugTint => {
                 self.backend.toggle_debug_tint();
+                self.niri.queue_redraw_all();
             }
             Action::Spawn(command) => {
                 spawn(command);
