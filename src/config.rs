@@ -381,6 +381,8 @@ pub struct DebugConfig {
     pub enable_overlay_planes: bool,
     #[knuffel(child)]
     pub disable_cursor_plane: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub render_drm_device: Option<PathBuf>,
 }
 
 impl Default for DebugConfig {
@@ -392,6 +394,7 @@ impl Default for DebugConfig {
             enable_color_transformations_capability: false,
             enable_overlay_planes: false,
             disable_cursor_plane: false,
+            render_drm_device: None,
         }
     }
 }
@@ -655,6 +658,7 @@ mod tests {
 
             debug {
                 animation-slowdown 2.0
+                render-drm-device "/dev/dri/renderD129"
             }
             "#,
             Config {
@@ -791,6 +795,7 @@ mod tests {
                 ]),
                 debug: DebugConfig {
                     animation_slowdown: 2.,
+                    render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
                 },
             },

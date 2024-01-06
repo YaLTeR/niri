@@ -190,12 +190,16 @@ impl Tty {
         let api = GbmGlesBackend::with_factory(Box::new(create_renderer));
         let gpu_manager = GpuManager::new(api).unwrap();
 
-        let primary_gpu_path = udev::primary_gpu(&seat_name).unwrap().unwrap();
-        let primary_node = DrmNode::from_path(primary_gpu_path).unwrap();
-        let primary_render_node = primary_node
-            .node_with_type(NodeType::Render)
-            .unwrap()
-            .unwrap();
+        let (primary_node, primary_render_node) = primary_node_from_config(&config.borrow())
+            .unwrap_or_else(|| {
+                let primary_gpu_path = udev::primary_gpu(&seat_name).unwrap().unwrap();
+                let primary_node = DrmNode::from_path(primary_gpu_path).unwrap();
+                let primary_render_node = primary_node
+                    .node_with_type(NodeType::Render)
+                    .unwrap()
+                    .unwrap();
+                (primary_node, primary_render_node)
+            });
 
         let mut node_path = String::new();
         if let Some(path) = primary_render_node.dev_path() {
@@ -1222,6 +1226,35 @@ impl Tty {
             }
         }
     }
+}
+
+fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
+    let path = config.debug.render_drm_device.as_ref()?;
+    debug!("attempting to use render node from config: {path:?}");
+
+    match DrmNode::from_path(path) {
+        Ok(node) => {
+            if node.ty() == NodeType::Render {
+                match node.node_with_type(NodeType::Primary) {
+                    Some(Ok(primary_node)) => {
+                        return Some((primary_node, node));
+                    }
+                    Some(Err(err)) => {
+                        warn!("error opening primary node for render node {path:?}: {err:?}");
+                    }
+                    None => {
+                        warn!("error opening primary node for render node {path:?}");
+                    }
+                }
+            } else {
+                warn!("DRM node {path:?} is not a render node");
+            }
+        }
+        Err(err) => {
+            warn!("error opening {path:?} as DRM node: {err:?}");
+        }
+    }
+    None
 }
 
 fn surface_dmabuf_feedback(
