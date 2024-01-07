@@ -193,16 +193,25 @@ delegate_xdg_shell!(State);
 impl XdgDecorationHandler for State {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         let mode = if self.niri.config.borrow().prefer_no_csd {
-            Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
+            zxdg_toplevel_decoration_v1::Mode::ServerSide
         } else {
-            None
+            zxdg_toplevel_decoration_v1::Mode::ClientSide
         };
         toplevel.with_pending_state(|state| {
-            state.decoration_mode = mode;
+            state.decoration_mode = Some(mode);
         });
     }
 
-    fn request_mode(&mut self, toplevel: ToplevelSurface, mode: zxdg_toplevel_decoration_v1::Mode) {
+    fn request_mode(
+        &mut self,
+        toplevel: ToplevelSurface,
+        mut mode: zxdg_toplevel_decoration_v1::Mode,
+    ) {
+        // If prefer-no-csd is unset, then insist on CSD.
+        if !self.niri.config.borrow().prefer_no_csd {
+            mode = zxdg_toplevel_decoration_v1::Mode::ClientSide;
+        }
+
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(mode);
         });
@@ -215,12 +224,12 @@ impl XdgDecorationHandler for State {
 
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
         let mode = if self.niri.config.borrow().prefer_no_csd {
-            Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
+            zxdg_toplevel_decoration_v1::Mode::ServerSide
         } else {
-            None
+            zxdg_toplevel_decoration_v1::Mode::ClientSide
         };
         toplevel.with_pending_state(|state| {
-            state.decoration_mode = mode;
+            state.decoration_mode = Some(mode);
         });
 
         // Only send configure if it's non-initial.
