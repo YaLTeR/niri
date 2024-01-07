@@ -5,6 +5,7 @@ use std::mem;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
+use niri_config::Action;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{ButtonState, MouseButton};
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
@@ -18,7 +19,6 @@ use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
-use crate::config::Action;
 use crate::render_helpers::PrimaryGpuTextureRenderElement;
 
 const BORDER: i32 = 2;

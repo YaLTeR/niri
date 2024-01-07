@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use niri_config::Config;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -18,7 +19,6 @@ use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
 
 use super::RenderResult;
-use crate::config::Config;
 use crate::niri::{RedrawState, State};
 use crate::utils::get_monotonic_time;
 use crate::Niri;

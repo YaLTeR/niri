@@ -1,9 +1,12 @@
+#[macro_use]
+extern crate tracing;
+
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use bitflags::bitflags;
 use directories::ProjectDirs;
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
@@ -407,6 +410,10 @@ impl Default for DebugConfig {
 
 impl Config {
     pub fn load(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
+        Self::load_internal(path).context("error loading config")
+    }
+
+    fn load_internal(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
         let path = if let Some(path) = path {
             path
         } else {
@@ -436,7 +443,7 @@ impl Default for Config {
     fn default() -> Self {
         Config::parse(
             "default-config.kdl",
-            include_str!("../resources/default-config.kdl"),
+            include_str!("../../resources/default-config.kdl"),
         )
         .unwrap()
     }
@@ -562,6 +569,10 @@ impl FromStr for SizeChange {
             }
         }
     }
+}
+
+pub fn set_miette_hook() -> Result<(), miette::InstallError> {
+    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())))
 }
 
 #[cfg(test)]

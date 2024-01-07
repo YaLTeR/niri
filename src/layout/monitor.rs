@@ -2,6 +2,7 @@ use std::cmp::min;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::SizeChange;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
@@ -15,7 +16,6 @@ use super::workspace::{
 };
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
-use crate::config::SizeChange;
 use crate::utils::output_size;
 
 #[derive(Debug)]

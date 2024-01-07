@@ -9,6 +9,7 @@ use std::{io, mem};
 
 use anyhow::{anyhow, Context};
 use libc::dev_t;
+use niri_config::Config;
 use smithay::backend::allocator::dmabuf::{Dmabuf, DmabufAllocator};
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format, Fourcc};
@@ -46,7 +47,6 @@ use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
 use super::RenderResult;
-use crate::config::Config;
 use crate::niri::{RedrawState, State};
 use crate::render_helpers::AsGlesRenderer;
 use crate::utils::get_monotonic_time;

@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::collections::HashSet;
 
+use niri_config::{Action, Binds, LayoutAction, Modifiers};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -20,7 +21,6 @@ use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
-use crate::config::{Action, Binds, LayoutAction, Modifiers};
 use crate::niri::State;
 use crate::screenshot_ui::ScreenshotUi;
 use crate::utils::{center, get_monotonic_time, spawn};
@@ -1338,8 +1338,9 @@ fn allowed_during_screenshot(action: &Action) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use niri_config::{Action, Bind, Binds, Key, Modifiers};
+
     use super::*;
-    use crate::config::{Action, Bind, Binds, Key, Modifiers};
 
     #[test]
     fn bindings_suppress_keys() {

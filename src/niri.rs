@@ -10,6 +10,7 @@ use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
+use niri_config::{Config, TrackLayout};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
@@ -86,7 +87,6 @@ use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use crate::animation;
 use crate::backend::tty::{SurfaceDmabufFeedback, TtyFrame, TtyRenderer, TtyRendererError};
 use crate::backend::{Backend, RenderResult, Tty, Winit};
-use crate::config::{Config, TrackLayout};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};

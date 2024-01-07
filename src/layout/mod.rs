@@ -33,6 +33,7 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::{self, Config, SizeChange, Struts};
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
@@ -51,7 +52,6 @@ use self::workspace::{
     compute_working_area, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
 };
 use crate::animation::Animation;
-use crate::config::{self, Config, SizeChange, Struts};
 use crate::utils::output_size;
 
 mod focus_ring;
@@ -137,8 +137,8 @@ pub struct Options {
     gaps: i32,
     /// Extra padding around the working area in logical pixels.
     struts: Struts,
-    focus_ring: config::FocusRing,
-    border: config::FocusRing,
+    focus_ring: niri_config::FocusRing,
+    border: niri_config::FocusRing,
     /// Column widths that `toggle_width()` switches between.
     preset_widths: Vec<ColumnWidth>,
     /// Initial width for new columns.
@@ -151,7 +151,7 @@ impl Default for Options {
             gaps: 16,
             struts: Default::default(),
             focus_ring: Default::default(),
-            border: config::default_border(),
+            border: niri_config::default_border(),
             preset_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
                 ColumnWidth::Proportion(0.5),

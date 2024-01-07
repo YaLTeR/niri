@@ -3,7 +3,6 @@ extern crate tracing;
 
 mod animation;
 mod backend;
-mod config;
 mod cursor;
 #[cfg(feature = "dbus")]
 mod dbus;
@@ -28,12 +27,11 @@ use std::process::Command;
 use std::{env, mem};
 
 use clap::{Parser, Subcommand};
-use config::Config;
 #[cfg(not(feature = "xdp-gnome-screencast"))]
 use dummy_pw_utils as pw_utils;
 use git_version::git_version;
-use miette::{Context, NarratableReportHandler};
 use niri::{Niri, State};
+use niri_config::Config;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
 use smithay::reexports::calloop::{self, EventLoop};
@@ -110,13 +108,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _client = tracy_client::Client::start();
 
     // Set a better error printer for config loading.
-    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new()))).unwrap();
+    niri_config::set_miette_hook().unwrap();
 
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
         match subcommand {
             Sub::Validate { config } => {
-                Config::load(config).context("error loading config")?;
+                Config::load(config)?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -130,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Load the config.
-    let (mut config, path) = match Config::load(cli.config).context("error loading config") {
+    let (mut config, path) = match Config::load(cli.config) {
         Ok((config, path)) => (config, Some(path)),
         Err(err) => {
             warn!("{err:?}");

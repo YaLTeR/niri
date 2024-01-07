@@ -1704,11 +1704,10 @@ dependencies = [
  "directories",
  "git-version",
  "keyframe",
- "knuffel",
  "libc",
  "log",
  "logind-zbus",
- "miette",
+ "niri-config",
  "notify-rust",
  "pipewire",
  "png",
@@ -1726,6 +1725,18 @@ dependencies = [
  "url",
  "xcursor",
  "zbus",
+]
+
+[[package]]
+name = "niri-config"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "bitflags 2.4.1",
+ "directories",
+ "knuffel",
+ "miette",
+ "smithay",
+ "tracing",
 ]
 
 [[package]]

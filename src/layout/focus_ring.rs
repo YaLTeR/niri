@@ -1,11 +1,10 @@
 use std::iter::zip;
 
 use arrayvec::ArrayVec;
+use niri_config::{self, Color};
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::utils::{Logical, Point, Scale, Size};
-
-use crate::config::{self, Color};
 
 #[derive(Debug)]
 pub struct FocusRing {
@@ -21,7 +20,7 @@ pub struct FocusRing {
 pub type FocusRingRenderElement = SolidColorRenderElement;
 
 impl FocusRing {
-    pub fn new(config: config::FocusRing) -> Self {
+    pub fn new(config: niri_config::FocusRing) -> Self {
         Self {
             buffers: Default::default(),
             locations: Default::default(),
@@ -33,7 +32,7 @@ impl FocusRing {
         }
     }
 
-    pub fn update_config(&mut self, config: config::FocusRing) {
+    pub fn update_config(&mut self, config: niri_config::FocusRing) {
         self.is_off = config.off;
         self.width = config.width.into();
         self.active_color = config.active_color;
