@@ -96,6 +96,10 @@ debug = "line-tables-only"
 overflow-checks = true
 lto = "thin"
 
+[profile.release.package.niri-config]
+# knuffel with chomsky generates a metric ton of debuginfo.
+debug = false
+
 [package.metadata.generate-rpm]
 version = "0.1.0~alpha.3"
 assets = [
