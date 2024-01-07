@@ -831,9 +831,8 @@ impl Niri {
         let config = self
             .config
             .borrow()
-            .outputs
-            .iter()
-            .find(|o| o.name == name)
+            .output
+            .get(&name)
             .cloned()
             .unwrap_or_default();
 

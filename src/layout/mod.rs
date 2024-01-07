@@ -181,8 +181,7 @@ impl Options {
         // while present, but empty, maps to None.
         let default_width = layout
             .default_column_width
-            .as_ref()
-            .map(|w| w.0.first().copied().map(ColumnWidth::from))
+            .map(|w| Some(ColumnWidth::from(w))) // TODO
             .unwrap_or(Some(ColumnWidth::Proportion(0.5)));
 
         Self {

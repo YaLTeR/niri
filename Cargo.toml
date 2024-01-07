@@ -20,11 +20,9 @@ clap = { version = "4.4.13", features = ["derive"] }
 directories = "5.0.1"
 git-version = "0.3.9"
 keyframe = { version = "1.1.1", default-features = false }
-knuffel = "3.2.0"
 libc = "0.2.151"
 logind-zbus = { version = "3.1.2", optional = true }
 log = { version = "0.4.20", features = ["max_level_trace", "release_max_level_debug"] }
-miette = "5.10.0"
 notify-rust = { version = "4.10.0", optional = true }
 pipewire = { version = "0.7.2", optional = true }
 png = "0.17.10"
@@ -32,6 +30,8 @@ portable-atomic = { version = "1.6.0", default-features = false, features = ["fl
 profiling = "1.0.13"
 sd-notify = "0.4.1"
 serde = { version = "1.0.195", features = ["derive"] }
+serde_with = "3.4.0"
+toml = { version = "0.8.8", default-features = false, features = ["parse"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracy-client = { version = "0.16.5", default-features = false }

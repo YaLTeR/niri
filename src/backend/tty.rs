@@ -595,9 +595,8 @@ impl Tty {
         let config = self
             .config
             .borrow()
-            .outputs
-            .iter()
-            .find(|o| o.name == output_name)
+            .output
+            .get(&output_name)
             .cloned()
             .unwrap_or_default();
 

@@ -41,9 +41,8 @@ impl Winit {
 
         let output_config = config
             .borrow()
-            .outputs
-            .iter()
-            .find(|o| o.name == "winit")
+            .output
+            .get("winit")
             .cloned()
             .unwrap_or_default();
 

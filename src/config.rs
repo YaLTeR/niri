@@ -1,71 +1,88 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use anyhow::{bail, Context};
 use bitflags::bitflags;
 use directories::ProjectDirs;
-use miette::{miette, Context, IntoDiagnostic};
+use serde::Deserialize;
+use serde_with::DeserializeFromStr;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
-    #[knuffel(child, default)]
+    #[serde(default)]
     pub input: Input,
-    #[knuffel(children(name = "output"))]
-    pub outputs: Vec<Output>,
-    #[knuffel(child, default)]
+    #[serde(default)]
+    pub output: HashMap<String, Output>,
+    #[serde(default)]
     pub layout: Layout,
-    #[knuffel(child, default)]
+    #[serde(default)]
     pub clients: Clients,
-    #[knuffel(child, default)]
+    #[serde(default)]
     pub cursor: Cursor,
-    #[knuffel(child, default)]
+    #[serde(default)]
     pub screenshot_ui: ScreenshotUi,
-    #[knuffel(child, default)]
-    pub binds: Binds,
-    #[knuffel(child, default)]
+    // Running niri without binds doesn't make much sense.
+    pub binds: HashMap<Key, Action>,
+    #[serde(default)]
     pub debug: DebugConfig,
 }
 
 // FIXME: Add other devices.
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(Deserialize, Debug, Default, PartialEq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Input {
-    #[knuffel(child, default)]
     pub keyboard: Keyboard,
-    #[knuffel(child, default)]
     pub touchpad: Touchpad,
-    #[knuffel(child, default)]
     pub tablet: Tablet,
-    #[knuffel(child)]
     pub disable_power_key_handling: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
+#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Keyboard {
-    #[knuffel(child, default)]
     pub xkb: Xkb,
-    // The defaults were chosen to match wlroots and sway.
-    #[knuffel(child, unwrap(argument), default = 600)]
     pub repeat_delay: u16,
-    #[knuffel(child, unwrap(argument), default = 25)]
     pub repeat_rate: u8,
-    #[knuffel(child, unwrap(argument), default)]
     pub track_layout: TrackLayout,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq, Clone)]
+impl Default for Keyboard {
+    fn default() -> Self {
+        Self {
+            xkb: Default::default(),
+            // The defaults were chosen to match wlroots and sway.
+            repeat_delay: 600,
+            repeat_rate: 25,
+            track_layout: Default::default(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(deny_unknown_fields, default)]
 pub struct Xkb {
-    #[knuffel(child, unwrap(argument), default)]
     pub rules: String,
-    #[knuffel(child, unwrap(argument), default)]
     pub model: String,
-    #[knuffel(child, unwrap(argument))]
-    pub layout: Option<String>,
-    #[knuffel(child, unwrap(argument), default)]
+    pub layout: String,
     pub variant: String,
-    #[knuffel(child, unwrap(argument))]
     pub options: Option<String>,
+}
+
+impl Default for Xkb {
+    fn default() -> Self {
+        Self {
+            rules: String::new(),
+            model: String::new(),
+            layout: String::from("us"),
+            variant: String::new(),
+            options: None,
+        }
+    }
 }
 
 impl Xkb {
@@ -73,14 +90,15 @@ impl Xkb {
         XkbConfig {
             rules: &self.rules,
             model: &self.model,
-            layout: self.layout.as_deref().unwrap_or("us"),
+            layout: &self.layout,
             variant: &self.variant,
             options: self.options.clone(),
         }
     }
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum TrackLayout {
     /// The layout change is global.
     #[default]
@@ -90,33 +108,26 @@ pub enum TrackLayout {
 }
 
 // FIXME: Add the rest of the settings.
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(Deserialize, Debug, Default, PartialEq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Touchpad {
-    #[knuffel(child)]
     pub tap: bool,
-    #[knuffel(child)]
     pub natural_scroll: bool,
-    #[knuffel(child, unwrap(argument), default)]
     pub accel_speed: f64,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(Deserialize, Debug, Default, PartialEq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Tablet {
-    #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Output {
-    #[knuffel(child)]
     pub off: bool,
-    #[knuffel(argument)]
-    pub name: String,
-    #[knuffel(child, unwrap(argument), default = 1.)]
     pub scale: f64,
-    #[knuffel(child)]
     pub position: Option<Position>,
-    #[knuffel(child, unwrap(argument, str))]
     pub mode: Option<Mode>,
 }
 
@@ -124,7 +135,6 @@ impl Default for Output {
     fn default() -> Self {
         Self {
             off: false,
-            name: String::new(),
             scale: 1.,
             position: None,
             mode: None,
@@ -132,52 +142,55 @@ impl Default for Output {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Position {
-    #[knuffel(property)]
     pub x: i32,
-    #[knuffel(property)]
     pub y: i32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(DeserializeFromStr, Debug, Clone, PartialEq)]
 pub struct Mode {
     pub width: u16,
     pub height: u16,
     pub refresh: Option<f64>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Layout {
-    #[knuffel(child, default)]
     pub focus_ring: FocusRing,
-    #[knuffel(child, default = default_border())]
     pub border: FocusRing,
-    #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetWidth>,
-    #[knuffel(child)]
-    pub default_column_width: Option<DefaultColumnWidth>,
-    #[knuffel(child, unwrap(argument), default = 16)]
+    // TODO
+    pub default_column_width: Option<PresetWidth>,
     pub gaps: u16,
-    #[knuffel(child, default)]
     pub struts: Struts,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
-pub struct SpawnAtStartup {
-    #[knuffel(arguments)]
-    pub command: Vec<String>,
+impl Default for Layout {
+    fn default() -> Self {
+        Self {
+            focus_ring: Default::default(),
+            border: default_border(),
+            preset_column_widths: vec![
+                PresetWidth::Proportion(0.333),
+                PresetWidth::Proportion(0.5),
+                PresetWidth::Proportion(0.667),
+            ],
+            default_column_width: Some(PresetWidth::Proportion(0.5)),
+            gaps: 16,
+            struts: Default::default(),
+        }
+    }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+#[serde(deny_unknown_fields, default)]
 pub struct FocusRing {
-    #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = 4)]
     pub width: u16,
-    #[knuffel(child, default = Color::new(127, 200, 255, 255))]
     pub active_color: Color,
-    #[knuffel(child, default = Color::new(80, 80, 80, 255))]
     pub inactive_color: Color,
 }
 
@@ -201,15 +214,12 @@ pub const fn default_border() -> FocusRing {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(from = "[u8; 4]")]
 pub struct Color {
-    #[knuffel(argument)]
     pub r: u8,
-    #[knuffel(argument)]
     pub g: u8,
-    #[knuffel(argument)]
     pub b: u8,
-    #[knuffel(argument)]
     pub a: u8,
 }
 
@@ -225,19 +235,30 @@ impl From<Color> for [f32; 4] {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
+impl From<[u8; 4]> for Color {
+    fn from(value: [u8; 4]) -> Self {
+        let [r, g, b, a] = value;
+        Self { r, g, b, a }
+    }
+}
+
+#[derive(Deserialize, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Clients {
-    #[knuffel(child, default)]
     pub prefer_no_csd: bool,
-    #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SpawnAtStartup {
+    pub command: Vec<String>,
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Cursor {
-    #[knuffel(child, unwrap(argument), default = String::from("default"))]
     pub xcursor_theme: String,
-    #[knuffel(child, unwrap(argument), default = 24)]
     pub xcursor_size: u8,
 }
 
@@ -250,38 +271,26 @@ impl Default for Cursor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum PresetWidth {
-    Proportion(#[knuffel(argument)] f64),
-    Fixed(#[knuffel(argument)] i32),
+    Proportion(f64),
+    Fixed(i32),
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
-pub struct DefaultColumnWidth(#[knuffel(children)] pub Vec<PresetWidth>);
-
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(deny_unknown_fields, default)]
 pub struct Struts {
-    #[knuffel(child, unwrap(argument), default)]
     pub left: u16,
-    #[knuffel(child, unwrap(argument), default)]
     pub right: u16,
-    #[knuffel(child, unwrap(argument), default)]
     pub top: u16,
-    #[knuffel(child, unwrap(argument), default)]
     pub bottom: u16,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields, default)]
 pub struct ScreenshotUi {
-    #[knuffel(child)]
     pub disable_saving_to_disk: bool,
-    #[knuffel(
-        child,
-        unwrap(argument),
-        default = String::from(
-            "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
-        ))
-    ]
     pub screenshot_path: String,
 }
 
@@ -296,25 +305,14 @@ impl Default for ScreenshotUi {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
-pub struct Binds(#[knuffel(children)] pub Vec<Bind>);
-
-#[derive(knuffel::Decode, Debug, PartialEq)]
-pub struct Bind {
-    #[knuffel(node_name)]
-    pub key: Key,
-    #[knuffel(children)]
-    pub actions: Vec<Action>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(DeserializeFromStr, Debug, PartialEq, Eq, Hash)]
 pub struct Key {
     pub keysym: Keysym,
     pub modifiers: Modifiers,
 }
 
 bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Modifiers : u8 {
         const CTRL = 1;
         const SHIFT = 2;
@@ -324,18 +322,19 @@ bitflags! {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum Action {
     Quit,
-    #[knuffel(skip)]
+    #[serde(skip)]
     ChangeVt(i32),
     Suspend,
     PowerOffMonitors,
     ToggleDebugTint,
-    Spawn(#[knuffel(arguments)] Vec<String>),
-    #[knuffel(skip)]
+    Spawn(Vec<String>),
+    #[serde(skip)]
     ConfirmScreenshot,
-    #[knuffel(skip)]
+    #[serde(skip)]
     CancelScreenshot,
     Screenshot,
     ScreenshotScreen,
@@ -363,10 +362,10 @@ pub enum Action {
     CenterColumn,
     FocusWorkspaceDown,
     FocusWorkspaceUp,
-    FocusWorkspace(#[knuffel(argument)] u8),
+    FocusWorkspace(u8),
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
-    MoveWindowToWorkspace(#[knuffel(argument)] u8),
+    MoveWindowToWorkspace(u8),
     MoveWorkspaceDown,
     MoveWorkspaceUp,
     FocusMonitorLeft,
@@ -377,14 +376,14 @@ pub enum Action {
     MoveWindowToMonitorRight,
     MoveWindowToMonitorDown,
     MoveWindowToMonitorUp,
-    SetWindowHeight(#[knuffel(argument, str)] SizeChange),
+    SetWindowHeight(SizeChange),
     SwitchPresetColumnWidth,
     MaximizeColumn,
-    SetColumnWidth(#[knuffel(argument, str)] SizeChange),
-    SwitchLayout(#[knuffel(argument)] LayoutAction),
+    SetColumnWidth(SizeChange),
+    SwitchLayout(LayoutAction),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(DeserializeFromStr, Debug, Clone, Copy, PartialEq)]
 pub enum SizeChange {
     SetFixed(i32),
     SetProportion(f64),
@@ -392,27 +391,22 @@ pub enum SizeChange {
     AdjustProportion(f64),
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum LayoutAction {
     Next,
     Prev,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(deny_unknown_fields, default)]
 pub struct DebugConfig {
-    #[knuffel(child, unwrap(argument), default = 1.)]
     pub animation_slowdown: f64,
-    #[knuffel(child)]
     pub dbus_interfaces_in_non_session_instances: bool,
-    #[knuffel(child)]
     pub wait_for_frame_completion_before_queueing: bool,
-    #[knuffel(child)]
     pub enable_color_transformations_capability: bool,
-    #[knuffel(child)]
     pub enable_overlay_planes: bool,
-    #[knuffel(child)]
     pub disable_cursor_plane: bool,
-    #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
 }
 
@@ -431,67 +425,55 @@ impl Default for DebugConfig {
 }
 
 impl Config {
-    pub fn load(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
+    pub fn load(path: Option<PathBuf>) -> anyhow::Result<(Self, PathBuf)> {
         let path = if let Some(path) = path {
             path
         } else {
             let mut path = ProjectDirs::from("", "", "niri")
-                .ok_or_else(|| miette!("error retrieving home directory"))?
+                .context("error retrieving home directory")?
                 .config_dir()
                 .to_owned();
             path.push("config.kdl");
             path
         };
 
-        let contents = std::fs::read_to_string(&path)
-            .into_diagnostic()
-            .with_context(|| format!("error reading {path:?}"))?;
+        let contents =
+            std::fs::read_to_string(&path).with_context(|| format!("error reading {path:?}"))?;
 
-        let config = Self::parse("config.kdl", &contents).context("error parsing")?;
+        let config = Self::parse(&contents).context("error parsing")?;
         debug!("loaded config from {path:?}");
         Ok((config, path))
     }
 
-    pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
-        knuffel::parse(filename, text)
+    pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
+        toml::from_str(text)
     }
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config::parse(
-            "default-config.kdl",
-            include_str!("../resources/default-config.kdl"),
-        )
-        .unwrap()
+        Config::parse(include_str!("../resources/default-config.kdl"))
+            .context("error parsing default config")
+            .unwrap()
     }
 }
 
 impl FromStr for Mode {
-    type Err = miette::Error;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let Some((width, rest)) = s.split_once('x') else {
-            return Err(miette!("no 'x' separator found"));
-        };
+        let (width, rest) = s.split_once('x').context("no 'x' separator found")?;
 
         let (height, refresh) = match rest.split_once('@') {
             Some((height, refresh)) => (height, Some(refresh)),
             None => (rest, None),
         };
 
-        let width = width
-            .parse()
-            .into_diagnostic()
-            .context("error parsing width")?;
-        let height = height
-            .parse()
-            .into_diagnostic()
-            .context("error parsing height")?;
+        let width = width.parse().context("error parsing width")?;
+        let height = height.parse().context("error parsing height")?;
         let refresh = refresh
             .map(str::parse)
             .transpose()
-            .into_diagnostic()
             .context("error parsing refresh rate")?;
 
         Ok(Self {
@@ -503,7 +485,7 @@ impl FromStr for Mode {
 }
 
 impl FromStr for Key {
-    type Err = miette::Error;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut modifiers = Modifiers::empty();
@@ -524,13 +506,13 @@ impl FromStr for Key {
             } else if part.eq_ignore_ascii_case("super") || part.eq_ignore_ascii_case("win") {
                 modifiers |= Modifiers::SUPER;
             } else {
-                return Err(miette!("invalid modifier: {part}"));
+                bail!("invalid modifier: {part}");
             }
         }
 
         let keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
         if keysym.raw() == KEY_NoSymbol {
-            return Err(miette!("invalid key: {key}"));
+            bail!("invalid key: {key}");
         }
 
         Ok(Key { keysym, modifiers })
@@ -538,51 +520,39 @@ impl FromStr for Key {
 }
 
 impl FromStr for SizeChange {
-    type Err = miette::Error;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.split_once('%') {
             Some((value, empty)) => {
                 if !empty.is_empty() {
-                    return Err(miette!("trailing characters after '%' are not allowed"));
+                    bail!("trailing characters after '%' are not allowed");
                 }
 
                 match value.bytes().next() {
                     Some(b'-' | b'+') => {
-                        let value = value
-                            .parse()
-                            .into_diagnostic()
-                            .context("error parsing value")?;
+                        let value = value.parse().context("error parsing value")?;
                         Ok(Self::AdjustProportion(value))
                     }
                     Some(_) => {
-                        let value = value
-                            .parse()
-                            .into_diagnostic()
-                            .context("error parsing value")?;
+                        let value = value.parse().context("error parsing value")?;
                         Ok(Self::SetProportion(value))
                     }
-                    None => Err(miette!("value is missing")),
+                    None => bail!("value is missing"),
                 }
             }
             None => {
                 let value = s;
                 match value.bytes().next() {
                     Some(b'-' | b'+') => {
-                        let value = value
-                            .parse()
-                            .into_diagnostic()
-                            .context("error parsing value")?;
+                        let value = value.parse().context("error parsing value")?;
                         Ok(Self::AdjustFixed(value))
                     }
                     Some(_) => {
-                        let value = value
-                            .parse()
-                            .into_diagnostic()
-                            .context("error parsing value")?;
+                        let value = value.parse().context("error parsing value")?;
                         Ok(Self::SetFixed(value))
                     }
-                    None => Err(miette!("value is missing")),
+                    None => bail!("value is missing"),
                 }
             }
         }
@@ -591,17 +561,11 @@ impl FromStr for SizeChange {
 
 #[cfg(test)]
 mod tests {
-    use miette::NarratableReportHandler;
-
     use super::*;
 
     #[track_caller]
     fn check(text: &str, expected: Config) {
-        let _ = miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())));
-
-        let parsed = Config::parse("test.kdl", text)
-            .map_err(miette::Report::new)
-            .unwrap();
+        let parsed = Config::parse(text).map_err(anyhow::Error::new).unwrap();
         assert_eq!(parsed, expected);
     }
 
@@ -609,101 +573,80 @@ mod tests {
     fn parse() {
         check(
             r#"
-            input {
-                keyboard {
-                    repeat-delay 600
-                    repeat-rate 25
-                    track-layout "window"
-                    xkb {
-                        layout "us,ru"
-                        options "grp:win_space_toggle"
-                    }
-                }
+            [input]
+            disable_power_key_handling = true
 
-                touchpad {
-                    tap
-                    accel-speed 0.2
-                }
+            [input.keyboard]
+            repeat_delay = 600
+            repeat_rate = 25
+            track_layout = 'window'
+            xkb.layout = 'us,ru'
+            xkb.options = 'grp:win_space_toggle'
 
-                tablet {
-                    map-to-output "eDP-1"
-                }
+            [input.touchpad]
+            tap = true
+            accel_speed = 0.2
 
-                disable-power-key-handling
-            }
+            [input.tablet]
+            map_to_output = 'eDP-1'
 
-            output "eDP-1" {
-                scale 2.0
-                position x=10 y=20
-                mode "1920x1080@144"
-            }
+            [output.'eDP-1']
+            scale = 2.0
+            position = { x = 10, y = 20 }
+            mode = '1920x1080@144'
 
-            layout {
-                focus-ring {
-                    width 5
-                    active-color 0 100 200 255
-                    inactive-color 255 200 100 0
-                }
+            [layout]
+            gaps = 8
+            preset_column_widths = [
+                { proportion = 0.25 },
+                { proportion = 0.5 },
+                { fixed = 960 },
+                { fixed = 1280 },
+            ]
+            default_column_width = { proportion = 0.25 }
+            struts = { left = 1, right = 2, top = 3 }
 
-                border {
-                    width 3
-                    active-color 0 100 200 255
-                    inactive-color 255 200 100 0
-                }
+            [layout.focus_ring]
+            width = 5
+            active_color = [0, 100, 200, 255]
+            inactive_color = [255, 200, 100, 0]
 
-                preset-column-widths {
-                    proportion 0.25
-                    proportion 0.5
-                    fixed 960
-                    fixed 1280
-                }
+            [layout.border]
+            width = 3
+            active_color = [0, 100, 200, 255]
+            inactive_color = [255, 200, 100, 0]
 
-                default-column-width { proportion 0.25; }
+            [clients]
+            prefer_no_csd = true
+            spawn_at_startup = [
+                { command = ['alacritty', '-e', 'fish'] },
+            ]
 
-                gaps 8
+            [cursor]
+            xcursor_theme = 'breeze_cursors'
+            xcursor_size = 16
 
-                struts {
-                    left 1
-                    right 2
-                    top 3
-                }
-            }
+            [screenshot_ui]
+            screenshot_path = '~/Screenshots/screenshot.png'
+            disable_saving_to_disk = true
 
-            clients {
-                prefer-no-csd
+            [binds]
+            'Mod+T' = { spawn = ['alacritty'] }
+            'Mod+Q' = 'close_window'
+            'Mod+Shift+H' = 'focus_monitor_left'
+            'Mod+Ctrl+Shift+L' = 'move_window_to_monitor_right'
+            'Mod+Comma' = 'consume_window_into_column'
+            'Mod+1' = { focus_workspace = 1 }
 
-                spawn-at-startup "alacritty" "-e" "fish"
-            }
-
-            cursor {
-                xcursor-theme "breeze_cursors"
-                xcursor-size 16
-            }
-
-            screenshot-ui {
-                screenshot-path "~/Screenshots/screenshot.png"
-                disable-saving-to-disk
-            }
-
-            binds {
-                Mod+T { spawn "alacritty"; }
-                Mod+Q { close-window; }
-                Mod+Shift+H { focus-monitor-left; }
-                Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
-                Mod+Comma { consume-window-into-column; }
-                Mod+1 { focus-workspace 1;}
-            }
-
-            debug {
-                animation-slowdown 2.0
-                render-drm-device "/dev/dri/renderD129"
-            }
+            [debug]
+            animation_slowdown = 2.0
+            render_drm_device = '/dev/dri/renderD129'
             "#,
             Config {
                 input: Input {
                     keyboard: Keyboard {
                         xkb: Xkb {
-                            layout: Some("us,ru".to_owned()),
+                            layout: "us,ru".to_owned(),
                             options: Some("grp:win_space_toggle".to_owned()),
                             ..Default::default()
                         },
@@ -721,17 +664,19 @@ mod tests {
                     },
                     disable_power_key_handling: true,
                 },
-                outputs: vec![Output {
-                    off: false,
-                    name: "eDP-1".to_owned(),
-                    scale: 2.,
-                    position: Some(Position { x: 10, y: 20 }),
-                    mode: Some(Mode {
-                        width: 1920,
-                        height: 1080,
-                        refresh: Some(144.),
-                    }),
-                }],
+                output: HashMap::from([(
+                    "eDP-1".to_owned(),
+                    Output {
+                        off: false,
+                        scale: 2.,
+                        position: Some(Position { x: 10, y: 20 }),
+                        mode: Some(Mode {
+                            width: 1920,
+                            height: 1080,
+                            refresh: Some(144.),
+                        }),
+                    },
+                )]),
                 layout: Layout {
                     focus_ring: FocusRing {
                         off: false,
@@ -771,9 +716,7 @@ mod tests {
                         PresetWidth::Fixed(960),
                         PresetWidth::Fixed(1280),
                     ],
-                    default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(
-                        0.25,
-                    )])),
+                    default_column_width: Some(PresetWidth::Proportion(0.25)),
                     gaps: 8,
                     struts: Struts {
                         left: 1,
@@ -796,49 +739,49 @@ mod tests {
                     disable_saving_to_disk: true,
                     screenshot_path: String::from("~/Screenshots/screenshot.png"),
                 },
-                binds: Binds(vec![
-                    Bind {
-                        key: Key {
+                binds: HashMap::from([
+                    (
+                        Key {
                             keysym: Keysym::t,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::Spawn(vec!["alacritty".to_owned()])],
-                    },
-                    Bind {
-                        key: Key {
+                        Action::Spawn(vec!["alacritty".to_owned()]),
+                    ),
+                    (
+                        Key {
                             keysym: Keysym::q,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::CloseWindow],
-                    },
-                    Bind {
-                        key: Key {
+                        Action::CloseWindow,
+                    ),
+                    (
+                        Key {
                             keysym: Keysym::h,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
-                        actions: vec![Action::FocusMonitorLeft],
-                    },
-                    Bind {
-                        key: Key {
+                        Action::FocusMonitorLeft,
+                    ),
+                    (
+                        Key {
                             keysym: Keysym::l,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
                         },
-                        actions: vec![Action::MoveWindowToMonitorRight],
-                    },
-                    Bind {
-                        key: Key {
+                        Action::MoveWindowToMonitorRight,
+                    ),
+                    (
+                        Key {
                             keysym: Keysym::comma,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::ConsumeWindowIntoColumn],
-                    },
-                    Bind {
-                        key: Key {
+                        Action::ConsumeWindowIntoColumn,
+                    ),
+                    (
+                        Key {
                             keysym: Keysym::_1,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::FocusWorkspace(1)],
-                    },
+                        Action::FocusWorkspace(1),
+                    ),
                 ]),
                 debug: DebugConfig {
                     animation_slowdown: 2.,

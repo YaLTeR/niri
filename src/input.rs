@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -20,7 +20,7 @@ use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
-use crate::config::{Action, Binds, LayoutAction, Modifiers};
+use crate::config::{Action, Key, LayoutAction, Modifiers};
 use crate::niri::State;
 use crate::screenshot_ui::ScreenshotUi;
 use crate::utils::{center, get_monotonic_time, spawn};
@@ -1179,7 +1179,7 @@ impl State {
 #[allow(clippy::too_many_arguments)]
 fn should_intercept_key(
     suppressed_keys: &mut HashSet<u32>,
-    bindings: &Binds,
+    bindings: &HashMap<Key, Action>,
     comp_mod: CompositorMod,
     key_code: u32,
     modified: Keysym,
@@ -1235,7 +1235,7 @@ fn should_intercept_key(
 }
 
 fn action(
-    bindings: &Binds,
+    bindings: &HashMap<Key, Action>,
     comp_mod: CompositorMod,
     modified: Keysym,
     raw: Option<Keysym>,
@@ -1284,13 +1284,13 @@ fn action(
         return None;
     };
 
-    for bind in &bindings.0 {
-        if bind.key.keysym != raw {
+    for (key, action) in bindings {
+        if key.keysym != raw {
             continue;
         }
 
-        if bind.key.modifiers | comp_mod == modifiers {
-            return bind.actions.first().cloned();
+        if key.modifiers | comp_mod == modifiers {
+            return Some(action.clone());
         }
     }
 
@@ -1339,18 +1339,18 @@ fn allowed_during_screenshot(action: &Action) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Action, Bind, Binds, Key, Modifiers};
+    use crate::config::{Action, Key, Modifiers};
 
     #[test]
     fn bindings_suppress_keys() {
         let close_keysym = Keysym::q;
-        let bindings = Binds(vec![Bind {
-            key: Key {
+        let bindings = HashMap::from([(
+            Key {
                 keysym: close_keysym,
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
             },
-            actions: vec![Action::CloseWindow],
-        }]);
+            Action::CloseWindow,
+        )]);
 
         let comp_mod = CompositorMod::Super;
         let mut suppressed_keys = HashSet::new();

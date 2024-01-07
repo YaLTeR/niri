@@ -27,12 +27,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::{env, mem};
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use config::Config;
 #[cfg(not(feature = "xdp-gnome-screencast"))]
 use dummy_pw_utils as pw_utils;
 use git_version::git_version;
-use miette::{Context, NarratableReportHandler};
 use niri::{Niri, State};
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -108,9 +108,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let _client = tracy_client::Client::start();
-
-    // Set a better error printer for config loading.
-    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new()))).unwrap();
 
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
