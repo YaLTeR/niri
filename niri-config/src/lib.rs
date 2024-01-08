@@ -10,6 +10,7 @@ use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
+use smithay::reexports::input;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
@@ -109,6 +110,23 @@ pub struct Touchpad {
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
     pub accel_speed: f64,
+    #[knuffel(child, unwrap(argument, str))]
+    pub accel_profile: Option<AccelProfile>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccelProfile {
+    Adaptive,
+    Flat,
+}
+
+impl From<AccelProfile> for input::AccelProfile {
+    fn from(value: AccelProfile) -> Self {
+        match value {
+            AccelProfile::Adaptive => Self::Adaptive,
+            AccelProfile::Flat => Self::Flat,
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -571,6 +589,20 @@ impl FromStr for SizeChange {
     }
 }
 
+impl FromStr for AccelProfile {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "adaptive" => Ok(Self::Adaptive),
+            "flat" => Ok(Self::Flat),
+            _ => Err(miette!(
+                r#"invalid accel profile, can be "adaptive" or "flat""#
+            )),
+        }
+    }
+}
+
 pub fn set_miette_hook() -> Result<(), miette::InstallError> {
     miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())))
 }
@@ -609,6 +641,7 @@ mod tests {
                 touchpad {
                     tap
                     accel-speed 0.2
+                    accel-profile "flat"
                 }
 
                 tablet {
@@ -696,6 +729,7 @@ mod tests {
                         tap: true,
                         natural_scroll: false,
                         accel_speed: 0.2,
+                        accel_profile: Some(AccelProfile::Flat),
                     },
                     tablet: Tablet {
                         map_to_output: Some("eDP-1".to_owned()),

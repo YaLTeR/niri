@@ -96,6 +96,10 @@ impl State {
                     let _ = device.config_tap_set_enabled(c.tap);
                     let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
                     let _ = device.config_accel_set_speed(c.accel_speed);
+
+                    if let Some(accel_profile) = c.accel_profile {
+                        let _ = device.config_accel_set_profile(accel_profile.into());
+                    }
                 }
 
                 if device.has_capability(input::DeviceCapability::TabletTool) {
