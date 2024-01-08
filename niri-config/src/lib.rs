@@ -107,6 +107,8 @@ pub struct Touchpad {
     #[knuffel(child)]
     pub tap: bool,
     #[knuffel(child)]
+    pub dwt: bool,
+    #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
     pub accel_speed: f64,
@@ -640,6 +642,7 @@ mod tests {
 
                 touchpad {
                     tap
+                    dwt
                     accel-speed 0.2
                     accel-profile "flat"
                 }
@@ -727,6 +730,7 @@ mod tests {
                     },
                     touchpad: Touchpad {
                         tap: true,
+                        dwt: true,
                         natural_scroll: false,
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),
