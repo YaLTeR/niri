@@ -38,6 +38,8 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 >
 > NixOS users, check out https://github.com/sodiboo/niri-flake
 
+For Nix users, there is a flake provided. This provides a devshell with all required dependencies, and can be built with `nix build`. If running on non-NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary.
+
 First, install the dependencies for your distribution.
 
 - Ubuntu:
