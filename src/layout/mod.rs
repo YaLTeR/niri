@@ -33,7 +33,7 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{self, Config, SizeChange, Struts};
+use niri_config::{self, CenterFocusedColumn, Config, SizeChange, Struts};
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
@@ -139,7 +139,7 @@ pub struct Options {
     struts: Struts,
     focus_ring: niri_config::FocusRing,
     border: niri_config::FocusRing,
-    center_focused_column: niri_config::CenterFocusedColumn,
+    center_focused_column: CenterFocusedColumn,
     /// Column widths that `toggle_width()` switches between.
     preset_widths: Vec<ColumnWidth>,
     /// Initial width for new columns.
@@ -2190,8 +2190,67 @@ mod tests {
         check_ops_with_options(options, &ops);
     }
 
-    fn arbitrary_border() -> impl Strategy<Value = u16> {
-        prop_oneof![Just(0), (1..=u16::MAX)]
+    fn arbitrary_spacing() -> impl Strategy<Value = u16> {
+        // Give equal weight to:
+        // - 0: the element is disabled
+        // - 4: some reasonable value
+        // - random value, likely unreasonably big
+        prop_oneof![Just(0), Just(4), (1..=u16::MAX)]
+    }
+
+    fn arbitrary_struts() -> impl Strategy<Value = Struts> {
+        (
+            arbitrary_spacing(),
+            arbitrary_spacing(),
+            arbitrary_spacing(),
+            arbitrary_spacing(),
+        )
+            .prop_map(|(left, right, top, bottom)| Struts {
+                left,
+                right,
+                top,
+                bottom,
+            })
+    }
+
+    fn arbitrary_center_focused_column() -> impl Strategy<Value = CenterFocusedColumn> {
+        prop_oneof![
+            Just(CenterFocusedColumn::Never),
+            Just(CenterFocusedColumn::OnOverflow),
+            Just(CenterFocusedColumn::Always),
+        ]
+    }
+
+    prop_compose! {
+        fn arbitrary_focus_ring()(
+            off in any::<bool>(),
+            width in arbitrary_spacing(),
+        ) -> niri_config::FocusRing {
+            niri_config::FocusRing {
+                off,
+                width,
+                ..Default::default()
+            }
+        }
+    }
+
+    prop_compose! {
+        fn arbitrary_options()(
+            gaps in arbitrary_spacing(),
+            struts in arbitrary_struts(),
+            focus_ring in arbitrary_focus_ring(),
+            border in arbitrary_focus_ring(),
+            center_focused_column in arbitrary_center_focused_column(),
+        ) -> Options {
+            Options {
+                gaps: gaps.into(),
+                struts,
+                center_focused_column,
+                focus_ring,
+                border,
+                ..Default::default()
+            }
+        }
     }
 
     proptest! {
@@ -2206,13 +2265,7 @@ mod tests {
         })]
 
         #[test]
-        fn random_operations_dont_panic(ops: Vec<Op>, border in arbitrary_border()) {
-            let mut options = Options::default();
-            if border != 0 {
-                options.border.off = false;
-                options.border.width = border;
-            }
-
+        fn random_operations_dont_panic(ops: Vec<Op>, options in arbitrary_options()) {
             // eprintln!("{ops:?}");
             check_ops_with_options(options, &ops);
         }
