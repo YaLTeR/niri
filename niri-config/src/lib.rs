@@ -94,6 +94,18 @@ impl Xkb {
     }
 }
 
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum CenterFocusedColumn {
+    /// Focusing a column will not center the column.
+    #[default]
+    Never,
+    /// The focused column will always be centered.
+    Always,
+    /// Focusing a column will center it if it doesn't fit on the screen together with the
+    /// previously focused column.
+    OnOverflow,
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
 pub enum TrackLayout {
     /// The layout change is global.
@@ -217,6 +229,8 @@ pub struct Layout {
     pub preset_column_widths: Vec<PresetWidth>,
     #[knuffel(child)]
     pub default_column_width: Option<DefaultColumnWidth>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub center_focused_column: CenterFocusedColumn,
     #[knuffel(child, unwrap(argument), default = 16)]
     pub gaps: u16,
     #[knuffel(child, default)]
@@ -739,6 +753,8 @@ mod tests {
                     right 2
                     top 3
                 }
+
+                center-focused-column "on-overflow"
             }
 
             spawn-at-startup "alacritty" "-e" "fish"
@@ -856,6 +872,7 @@ mod tests {
                         top: 3,
                         bottom: 0,
                     },
+                    center_focused_column: CenterFocusedColumn::OnOverflow,
                 },
                 spawn_at_startup: vec![SpawnAtStartup {
                     command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],

@@ -143,6 +143,14 @@ layout {
         // top 64
         // bottom 64
     }
+
+    // When to center a column when changing focus, options are:
+    // - "never", default behavior, focusing an off-screen column will keep at the left
+    //   or right edge of the screen.
+    // - "on-overflow", focusing a column will center it if it doesn't fit
+    //   together with the previously focused column.
+    // - "always", the focused column will always be centered.
+    center-focused-column "never"
 }
 
 // Add lines like this to spawn processes at startup.
