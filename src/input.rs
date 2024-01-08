@@ -101,6 +101,10 @@ impl State {
                     if let Some(accel_profile) = c.accel_profile {
                         let _ = device.config_accel_set_profile(accel_profile.into());
                     }
+
+                    if let Some(tap_button_map) = c.tap_button_map {
+                        let _ = device.config_tap_set_button_map(tap_button_map.into());
+                    }
                 }
 
                 if device.has_capability(input::DeviceCapability::TabletTool) {

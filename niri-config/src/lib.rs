@@ -114,6 +114,8 @@ pub struct Touchpad {
     pub accel_speed: f64,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub tap_button_map: Option<TapButtonMap>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,6 +129,21 @@ impl From<AccelProfile> for input::AccelProfile {
         match value {
             AccelProfile::Adaptive => Self::Adaptive,
             AccelProfile::Flat => Self::Flat,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TapButtonMap {
+    LeftRightMiddle,
+    LeftMiddleRight,
+}
+
+impl From<TapButtonMap> for input::TapButtonMap {
+    fn from(value: TapButtonMap) -> Self {
+        match value {
+            TapButtonMap::LeftRightMiddle => Self::LeftRightMiddle,
+            TapButtonMap::LeftMiddleRight => Self::LeftMiddleRight,
         }
     }
 }
@@ -605,6 +622,20 @@ impl FromStr for AccelProfile {
     }
 }
 
+impl FromStr for TapButtonMap {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "left-right-middle" => Ok(Self::LeftRightMiddle),
+            "left-middle-right" => Ok(Self::LeftMiddleRight),
+            _ => Err(miette!(
+                r#"invalid tap button map, can be "left-right-middle" or "left-middle-right""#
+            )),
+        }
+    }
+}
+
 pub fn set_miette_hook() -> Result<(), miette::InstallError> {
     miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())))
 }
@@ -645,6 +676,7 @@ mod tests {
                     dwt
                     accel-speed 0.2
                     accel-profile "flat"
+                    tap-button-map "left-middle-right"
                 }
 
                 tablet {
@@ -734,6 +766,7 @@ mod tests {
                         natural_scroll: false,
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),
+                        tap_button_map: Some(TapButtonMap::LeftMiddleRight),
                     },
                     tablet: Tablet {
                         map_to_output: Some("eDP-1".to_owned()),
