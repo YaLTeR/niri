@@ -119,6 +119,35 @@ impl State {
                         }
                     }
                 }
+
+                // This is how Mutter tells apart mice.
+                let mut is_trackball = false;
+                let mut is_trackpoint = false;
+                if let Some(udev_device) = unsafe { device.udev_device() } {
+                    if udev_device.property_value("ID_INPUT_TRACKBALL").is_some() {
+                        is_trackball = true;
+                    }
+                    if udev_device
+                        .property_value("ID_INPUT_POINTINGSTICK")
+                        .is_some()
+                    {
+                        is_trackpoint = true;
+                    }
+                }
+
+                let is_mouse = device.has_capability(input::DeviceCapability::Pointer)
+                    && !is_touchpad
+                    && !is_trackball
+                    && !is_trackpoint;
+                if is_mouse {
+                    let c = &self.niri.config.borrow().input.mouse;
+                    let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
+                    let _ = device.config_accel_set_speed(c.accel_speed);
+
+                    if let Some(accel_profile) = c.accel_profile {
+                        let _ = device.config_accel_set_profile(accel_profile.into());
+                    }
+                }
             }
             InputEvent::DeviceRemoved { device } => {
                 self.niri.tablets.remove(device);

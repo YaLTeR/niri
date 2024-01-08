@@ -34,6 +34,12 @@ input {
         // tap-button-map "left-middle-right"
     }
 
+    mouse {
+        // natural-scroll
+        // accel-speed 0.2
+        // accel-profile "flat"
+    }
+
     tablet {
         // Set the name of the output (see below) which the tablet will map to.
         // If this is unset or the output doesn't exist, the tablet maps to one of the

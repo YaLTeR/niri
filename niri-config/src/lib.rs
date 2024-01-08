@@ -48,6 +48,8 @@ pub struct Input {
     #[knuffel(child, default)]
     pub touchpad: Touchpad,
     #[knuffel(child, default)]
+    pub mouse: Mouse,
+    #[knuffel(child, default)]
     pub tablet: Tablet,
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
@@ -116,6 +118,16 @@ pub struct Touchpad {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+pub struct Mouse {
+    #[knuffel(child)]
+    pub natural_scroll: bool,
+    #[knuffel(child, unwrap(argument), default)]
+    pub accel_speed: f64,
+    #[knuffel(child, unwrap(argument, str))]
+    pub accel_profile: Option<AccelProfile>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -679,6 +691,12 @@ mod tests {
                     tap-button-map "left-middle-right"
                 }
 
+                mouse {
+                    natural-scroll
+                    accel-speed 0.4
+                    accel-profile "flat"
+                }
+
                 tablet {
                     map-to-output "eDP-1"
                 }
@@ -767,6 +785,11 @@ mod tests {
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),
                         tap_button_map: Some(TapButtonMap::LeftMiddleRight),
+                    },
+                    mouse: Mouse {
+                        natural_scroll: true,
+                        accel_speed: 0.4,
+                        accel_profile: Some(AccelProfile::Flat),
                     },
                     tablet: Tablet {
                         map_to_output: Some("eDP-1".to_owned()),
