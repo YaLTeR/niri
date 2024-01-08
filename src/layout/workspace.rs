@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{PresetWidth, SizeChange, Struts};
+use niri_config::{CenterFocusedColumn, PresetWidth, SizeChange, Struts};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RelocateRenderElement;
 use smithay::backend::renderer::{ImportAll, Renderer};
@@ -397,9 +397,7 @@ impl<W: LayoutElement> Workspace<W> {
         new_offset - self.working_area.loc.x
     }
 
-    fn animate_view_offset_to_column(&mut self, current_x: i32, idx: usize) {
-        let new_view_offset = self.compute_new_view_offset_for_column(current_x, idx);
-
+    fn animate_view_offset(&mut self, current_x: i32, idx: usize, new_view_offset: i32) {
         let new_col_x = self.column_x(idx);
         let from_view_offset = current_x - new_col_x;
         self.view_offset = from_view_offset;
@@ -426,13 +424,78 @@ impl<W: LayoutElement> Workspace<W> {
         ));
     }
 
+    fn animate_view_offset_to_column(&mut self, current_x: i32, idx: usize) {
+        let new_view_offset = self.compute_new_view_offset_for_column(current_x, idx);
+        self.animate_view_offset(current_x, idx, new_view_offset);
+    }
+
+    fn animate_view_offset_to_column_centered(&mut self, current_x: i32, idx: usize) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &self.columns[idx];
+        if col.is_fullscreen {
+            self.animate_view_offset_to_column(current_x, idx);
+            return;
+        }
+
+        let width = col.width();
+
+        // If the column is wider than the working area, then on commit it will be shifted to left
+        // edge alignment by the usual positioning code, so there's no use in trying to center it
+        // here.
+        if self.working_area.size.w <= width {
+            self.animate_view_offset_to_column(current_x, idx);
+            return;
+        }
+
+        let new_view_offset = -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+
+        self.animate_view_offset(current_x, idx, new_view_offset);
+    }
+
     fn activate_column(&mut self, idx: usize) {
         if self.active_column_idx == idx {
             return;
         }
 
         let current_x = self.view_pos();
-        self.animate_view_offset_to_column(current_x, idx);
+        match self.options.center_focused_column {
+            CenterFocusedColumn::Always => {
+                self.animate_view_offset_to_column_centered(current_x, idx)
+            }
+            CenterFocusedColumn::OnOverflow => {
+                // Always take the left or right neighbor of the target as the source.
+                let source_idx = if self.active_column_idx > idx {
+                    min(idx + 1, self.columns.len() - 1)
+                } else {
+                    idx.saturating_sub(1)
+                };
+
+                let source_x = self.column_x(source_idx);
+                let source_width = self.columns[source_idx].width();
+
+                let target_x = self.column_x(idx);
+                let target_width = self.columns[idx].width();
+
+                let total_width = if source_x < target_x {
+                    // Source is left from target.
+                    target_x - source_x + target_width
+                } else {
+                    // Source is right from target.
+                    source_x - target_x + source_width
+                } + self.options.gaps * 2;
+
+                // If it fits together, do a normal animation, otherwise center the new column.
+                if total_width <= self.working_area.size.w {
+                    self.animate_view_offset_to_column(current_x, idx);
+                } else {
+                    self.animate_view_offset_to_column_centered(current_x, idx);
+                }
+            }
+            CenterFocusedColumn::Never => self.animate_view_offset_to_column(current_x, idx),
+        };
 
         self.active_column_idx = idx;
 
@@ -488,15 +551,21 @@ impl<W: LayoutElement> Workspace<W> {
             width,
             is_full_width,
         );
+        let width = column.width();
         self.columns.insert(idx, column);
 
         if activate {
             // If this is the first window on an empty workspace, skip the animation from whatever
             // view_offset was left over.
             if was_empty {
-                // Try to make the code produce a left-aligned offset, even in presence of left
-                // exclusive zones.
-                self.view_offset = self.compute_new_view_offset_for_column(self.column_x(0), 0);
+                if self.options.center_focused_column == CenterFocusedColumn::Always {
+                    self.view_offset =
+                        -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+                } else {
+                    // Try to make the code produce a left-aligned offset, even in presence of left
+                    // exclusive zones.
+                    self.view_offset = self.compute_new_view_offset_for_column(self.column_x(0), 0);
+                }
                 self.view_offset_anim = None;
             }
 
@@ -574,7 +643,14 @@ impl<W: LayoutElement> Workspace<W> {
         if idx == self.active_column_idx {
             // We might need to move the view to ensure the resized window is still visible.
             let current_x = self.view_pos();
-            self.animate_view_offset_to_column(current_x, idx);
+
+            if self.options.center_focused_column == CenterFocusedColumn::Always {
+                // FIXME: we will want to skip the animation in some cases here to make
+                // continuously resizing windows not look janky.
+                self.animate_view_offset_to_column_centered(current_x, idx);
+            } else {
+                self.animate_view_offset_to_column(current_x, idx);
+            }
         }
     }
 
@@ -654,6 +730,7 @@ impl<W: LayoutElement> Workspace<W> {
         let column = self.columns.remove(self.active_column_idx);
         self.columns.insert(new_idx, column);
 
+        // FIXME: should this be different when always centering?
         self.view_offset =
             self.compute_new_view_offset_for_column(current_x, self.active_column_idx);
 
@@ -738,42 +815,8 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn center_column(&mut self) {
-        if self.columns.is_empty() {
-            return;
-        }
-
-        let col = &self.columns[self.active_column_idx];
-        if col.is_fullscreen {
-            return;
-        }
-
-        let width = col.width();
-
-        // If the column is wider than the working area, then on commit it will be shifted to left
-        // edge alignment by the usual positioning code, so there's no use in doing anything here.
-        if self.working_area.size.w <= width {
-            return;
-        }
-
-        let new_view_offset = -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
-
-        // If we're already animating towards that, don't restart it.
-        if let Some(anim) = &self.view_offset_anim {
-            if anim.to().round() as i32 == new_view_offset {
-                return;
-            }
-        }
-
-        // If our view offset is already this, we don't need to do anything.
-        if self.view_offset == new_view_offset {
-            return;
-        }
-
-        self.view_offset_anim = Some(Animation::new(
-            self.view_offset as f64,
-            new_view_offset as f64,
-            Duration::from_millis(250),
-        ));
+        let center_x = self.view_pos();
+        self.animate_view_offset_to_column_centered(center_x, self.active_column_idx);
     }
 
     fn view_pos(&self) -> i32 {

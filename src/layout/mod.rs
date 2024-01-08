@@ -139,6 +139,7 @@ pub struct Options {
     struts: Struts,
     focus_ring: niri_config::FocusRing,
     border: niri_config::FocusRing,
+    center_focused_column: niri_config::CenterFocusedColumn,
     /// Column widths that `toggle_width()` switches between.
     preset_widths: Vec<ColumnWidth>,
     /// Initial width for new columns.
@@ -152,6 +153,7 @@ impl Default for Options {
             struts: Default::default(),
             focus_ring: Default::default(),
             border: niri_config::default_border(),
+            center_focused_column: Default::default(),
             preset_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
                 ColumnWidth::Proportion(0.5),
@@ -190,6 +192,7 @@ impl Options {
             struts: layout.struts,
             focus_ring: layout.focus_ring,
             border: layout.border,
+            center_focused_column: layout.center_focused_column,
             preset_widths,
             default_width,
         }
