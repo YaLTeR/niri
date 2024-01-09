@@ -190,3 +190,9 @@ pub fn show_screenshot_notification(image_path: Option<PathBuf>) {
         warn!("error showing screenshot notification: {err:?}");
     }
 }
+
+pub fn cause_panic() {
+    let a = Duration::from_secs(1);
+    let b = Duration::from_secs(2);
+    let _ = a - b;
+}

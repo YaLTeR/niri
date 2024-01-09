@@ -40,7 +40,7 @@ use tracing_subscriber::EnvFilter;
 use utils::spawn;
 use watcher::Watcher;
 
-use crate::utils::{REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
+use crate::utils::{cause_panic, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -67,6 +67,8 @@ enum Sub {
         #[arg(short, long)]
         config: Option<PathBuf>,
     },
+    /// Cause a panic to check if the backtraces are good.
+    Panic,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -118,6 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 info!("config is valid");
                 return Ok(());
             }
+            Sub::Panic => cause_panic(),
         }
     }
 
