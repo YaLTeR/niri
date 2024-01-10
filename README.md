@@ -57,19 +57,9 @@ Next, build niri with `cargo build --release`.
 
 ### NixOS/Nix
 
-For NixOS and Nix users, there is a flake provided. This provides a devshell with all required dependencies. To build the binary:
-
-```
-nix build
-```
-
-To execute the resulting binary:
-
-```
-./results/bin/niri
-```
+We have a community-maintained flake which provides a devshell with required dependencies. Use `nix build` to build niri, and then run `./results/bin/niri`.
     
-For Nix users not on NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary:
+If you're not on NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary:
 
 ```
 nix run --impure github:guibou/nixGL -- ./results/bin/niri
