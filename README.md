@@ -35,10 +35,6 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 > [!TIP]
 > For Fedora users, there's a COPR with built and packaged niri: https://copr.fedorainfracloud.org/coprs/yalter/niri/
->
-> NixOS users, check out https://github.com/sodiboo/niri-flake
-
-For Nix users, there is a flake provided. This provides a devshell with all required dependencies, and can be built with `nix build`. If running on non-NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary.
 
 First, install the dependencies for your distribution.
 
@@ -59,6 +55,26 @@ First, install the dependencies for your distribution.
 
 Next, build niri with `cargo build --release`.
 
+### NixOS/Nix
+
+For NixOS and Nix users, there is a flake provided. This provides a devshell with all required dependencies. To build the binary:
+
+```
+nix build
+```
+
+To execute the resulting binary:
+
+```
+./results/bin/niri
+```
+    
+For Nix users not on NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary:
+
+```
+nix run --impure github:guibou/nixGL -- ./results/bin/niri
+```
+
 ## Installation
 
 The recommended way to install and run niri is as a standalone desktop session.
@@ -74,6 +90,10 @@ To do that, put files into the correct directories according to this table.
 | `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
 
 Doing this will make niri appear in GDM and, presumably, other display managers.
+
+### NixOS
+
+For NixOS users, check out https://github.com/sodiboo/niri-flake
 
 ## Running
 
