@@ -10,19 +10,24 @@ use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
+use niri_config::{Config, TrackLayout};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::utils::select_dmabuf_feedback;
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, render_elements, AsRenderElements, Kind, RenderElement,
-    RenderElementStates,
+    default_primary_scanout_output_compare, AsRenderElements, Element, Id, Kind, RenderElement,
+    RenderElementStates, UnderlyingStorage,
 };
-use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{
+    GlesError, GlesFrame, GlesMapping, GlesRenderer, GlesTexture,
+};
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Bind, ExportMem, Frame, ImportAll, Offscreen, Renderer};
+use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::{Bind, ExportMem, Frame, Offscreen, Renderer};
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -50,7 +55,7 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{
-    ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
+    Buffer, ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
     SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
@@ -58,7 +63,7 @@ use smithay::wayland::compositor::{
     CompositorState, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
-use smithay::wayland::dmabuf::DmabufFeedback;
+use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
@@ -80,8 +85,8 @@ use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
 use crate::animation;
+use crate::backend::tty::{SurfaceDmabufFeedback, TtyFrame, TtyRenderer, TtyRendererError};
 use crate::backend::{Backend, RenderResult, Tty, Winit};
-use crate::config::{Config, TrackLayout};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -90,10 +95,13 @@ use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
 use crate::input::TabletData;
-use crate::layout::{output_size, Layout, MonitorRenderElement};
+use crate::layout::{Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
+use crate::render_helpers::{NiriRenderer, PrimaryGpuTextureRenderElement};
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
-use crate::utils::{center, get_monotonic_time, make_screenshot_path, write_png_rgba8};
+use crate::utils::{
+    center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
+};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -136,6 +144,7 @@ pub struct Niri {
     pub session_lock_state: SessionLockManagerState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
+    pub dmabuf_state: DmabufState,
     pub seat_state: SeatState<State>,
     pub tablet_state: TabletManagerState,
     pub text_input_state: TextInputManagerState,
@@ -577,31 +586,32 @@ impl State {
         let ScreenshotToNiri::TakeScreenshot { include_cursor } = msg;
         let _span = tracy_client::span!("TakeScreenshot");
 
-        let Some(renderer) = self.backend.renderer() else {
-            let msg = NiriToScreenshot::ScreenshotResult(None);
-            if let Err(err) = to_screenshot.send_blocking(msg) {
-                warn!("error sending None to screenshot: {err:?}");
-            }
-            return;
-        };
+        let rv = self.backend.with_primary_renderer(|renderer| {
+            let on_done = {
+                let to_screenshot = to_screenshot.clone();
+                move |path| {
+                    let msg = NiriToScreenshot::ScreenshotResult(Some(path));
+                    if let Err(err) = to_screenshot.send_blocking(msg) {
+                        warn!("error sending path to screenshot: {err:?}");
+                    }
+                }
+            };
 
-        let on_done = {
-            let to_screenshot = to_screenshot.clone();
-            move |path| {
-                let msg = NiriToScreenshot::ScreenshotResult(Some(path));
+            let res = self
+                .niri
+                .screenshot_all_outputs(renderer, include_cursor, on_done);
+
+            if let Err(err) = res {
+                warn!("error taking a screenshot: {err:?}");
+
+                let msg = NiriToScreenshot::ScreenshotResult(None);
                 if let Err(err) = to_screenshot.send_blocking(msg) {
-                    warn!("error sending path to screenshot: {err:?}");
+                    warn!("error sending None to screenshot: {err:?}");
                 }
             }
-        };
+        });
 
-        let res = self
-            .niri
-            .screenshot_all_outputs(renderer, include_cursor, on_done);
-
-        if let Err(err) = res {
-            warn!("error taking a screenshot: {err:?}");
-
+        if rv.is_none() {
             let msg = NiriToScreenshot::ScreenshotResult(None);
             if let Err(err) = to_screenshot.send_blocking(msg) {
                 warn!("error sending None to screenshot: {err:?}");
@@ -645,6 +655,7 @@ impl Niri {
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let output_manager_state =
             OutputManagerState::new_with_xdg_output::<State>(&display_handle);
+        let dmabuf_state = DmabufState::new();
         let mut seat_state = SeatState::new();
         let tablet_state = TabletManagerState::new::<State>(&display_handle);
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
@@ -758,6 +769,7 @@ impl Niri {
             virtual_keyboard_state,
             shm_state,
             output_manager_state,
+            dmabuf_state,
             seat_state,
             tablet_state,
             pointer_gestures_state,
@@ -1033,6 +1045,10 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
+    /// Returns the window under the position to be activated.
+    ///
+    /// The cursor may be inside the window's activation region, but not within the window's input
+    /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Window> {
         if self.is_locked() || self.screenshot_ui.is_open() {
             return None;
@@ -1043,6 +1059,10 @@ impl Niri {
         Some(window)
     }
 
+    /// Returns the window under the cursor to be activated.
+    ///
+    /// The cursor may be inside the window's activation region, but not within the window's input
+    /// region.
     pub fn window_under_cursor(&self) -> Option<&Window> {
         let pos = self.seat.get_pointer().unwrap().current_location();
         self.window_under(pos)
@@ -1101,6 +1121,7 @@ impl Niri {
             self.layout
                 .window_under(output, pos_within_output)
                 .and_then(|(window, win_pos_within_output)| {
+                    let win_pos_within_output = win_pos_within_output?;
                     window
                         .surface_under(
                             pos_within_output - win_pos_within_output.to_f64(),
@@ -1220,7 +1241,7 @@ impl Niri {
             .or_else(|| self.global_space.outputs().next())
     }
 
-    pub fn output_for_root(&self, root: &WlSurface) -> Option<Output> {
+    pub fn output_for_root(&self, root: &WlSurface) -> Option<&Output> {
         // Check the main layout.
         let win_out = self.layout.find_window_and_output(root);
         let layout_output = win_out.map(|(_, output)| output);
@@ -1231,7 +1252,7 @@ impl Niri {
                 .layer_for_surface(root, WindowSurfaceType::TOPLEVEL)
                 .is_some()
         };
-        let layer_shell_output = || self.layout.outputs().find(has_layer_surface).cloned();
+        let layer_shell_output = || self.layout.outputs().find(has_layer_surface);
 
         layout_output.or_else(layer_shell_output)
     }
@@ -1288,11 +1309,11 @@ impl Niri {
         };
     }
 
-    pub fn pointer_element(
+    pub fn pointer_element<R: NiriRenderer>(
         &self,
-        renderer: &mut GlesRenderer,
+        renderer: &mut R,
         output: &Output,
-    ) -> Vec<OutputRenderElements<GlesRenderer>> {
+    ) -> Vec<OutputRenderElements<R>> {
         let _span = tracy_client::span!("Niri::pointer_element");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
@@ -1336,19 +1357,23 @@ impl Niri {
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                let texture = self
-                    .cursor_texture_cache
-                    .get(renderer, icon, scale, &cursor, idx);
+                let texture = self.cursor_texture_cache.get(
+                    renderer.as_gles_renderer(),
+                    icon,
+                    scale,
+                    &cursor,
+                    idx,
+                );
 
                 let pointer_elements = vec![OutputRenderElements::NamedPointer(
-                    TextureRenderElement::from_texture_buffer(
+                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                         pointer_pos.to_f64(),
                         &texture,
                         None,
                         None,
                         None,
                         Kind::Cursor,
-                    ),
+                    )),
                 )];
 
                 (pointer_elements, pointer_pos)
@@ -1481,12 +1506,12 @@ impl Niri {
         }
     }
 
-    fn render(
+    pub fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut GlesRenderer,
+        renderer: &mut R,
         output: &Output,
         include_pointer: bool,
-    ) -> Vec<OutputRenderElements<GlesRenderer>> {
+    ) -> Vec<OutputRenderElements<R>> {
         let _span = tracy_client::span!("Niri::render");
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
@@ -1558,8 +1583,7 @@ impl Niri {
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
-        let mut extend_from_layer = |elements: &mut Vec<OutputRenderElements<GlesRenderer>>,
-                                     layer| {
+        let mut extend_from_layer = |elements: &mut Vec<OutputRenderElements<R>>, layer| {
             let iter = layer_map
                 .layers_on(layer)
                 .filter_map(|surface| {
@@ -1606,75 +1630,50 @@ impl Niri {
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
-        let monitors_active = self.monitors_active;
-
+        // Verify our invariant.
         let state = self.output_state.get_mut(output).unwrap();
         assert!(matches!(
             state.redraw_state,
             RedrawState::Queued(_) | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
         ));
 
-        // FIXME: make this not cursed.
-        let mut reset = || {
-            let state = self.output_state.get_mut(output).unwrap();
+        let target_presentation_time = state.frame_clock.next_presentation_time();
+
+        let mut res = RenderResult::Skipped;
+        if self.monitors_active {
+            // Update from the config and advance the animations.
+            self.layout.advance_animations(target_presentation_time);
+            state.unfinished_animations_remain = self
+                .layout
+                .monitor_for_output(output)
+                .unwrap()
+                .are_animations_ongoing();
+
+            // Also keep redrawing if the current cursor is animated.
+            state.unfinished_animations_remain |= self
+                .cursor_manager
+                .is_current_cursor_animated(output.current_scale().integer_scale());
+
+            // Render.
+            res = backend.render(self, output, target_presentation_time);
+        }
+
+        let is_locked = self.is_locked();
+        let state = self.output_state.get_mut(output).unwrap();
+
+        if res == RenderResult::Skipped {
+            // Update the redraw state on failed render.
             state.redraw_state =
-                if let RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) =
+                if let RedrawState::WaitingForEstimatedVBlank(token)
+                | RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) =
                     state.redraw_state
                 {
                     RedrawState::WaitingForEstimatedVBlank(token)
                 } else {
                     RedrawState::Idle
                 };
-
-            if matches!(self.lock_state, LockState::Locking { .. })
-                && state.lock_render_state == LockRenderState::Unlocked
-            {
-                // We needed to redraw this output for locking and failed.
-                self.unlock();
-            }
-        };
-
-        if !monitors_active {
-            reset();
-            return;
-        }
-
-        if !backend.is_active() {
-            reset();
-            return;
-        }
-
-        let Some(renderer) = backend.renderer() else {
-            reset();
-            return;
-        };
-
-        let state = self.output_state.get_mut(output).unwrap();
-        let target_presentation_time = state.frame_clock.next_presentation_time();
-
-        // Update from the config and advance the animations.
-        self.layout.advance_animations(target_presentation_time);
-        state.unfinished_animations_remain = self
-            .layout
-            .monitor_for_output(output)
-            .unwrap()
-            .are_animations_ongoing();
-
-        // Also keep redrawing if the current cursor is animated.
-        state.unfinished_animations_remain |= self
-            .cursor_manager
-            .is_current_cursor_animated(output.current_scale().integer_scale());
-
-        // Render the elements.
-        let elements = self.render(renderer, output, true);
-
-        // Hand it over to the backend.
-        let res = backend.render(self, output, &elements, target_presentation_time);
-
-        // Update the lock render state on successful render.
-        let is_locked = self.is_locked();
-        let state = self.output_state.get_mut(output).unwrap();
-        if res != RenderResult::Error {
+        } else {
+            // Update the lock render state on successful render.
             state.lock_render_state = if is_locked {
                 LockRenderState::Locked
             } else {
@@ -1685,7 +1684,7 @@ impl Niri {
         // If we're in process of locking the session, check if the requirements were met.
         match mem::take(&mut self.lock_state) {
             LockState::Locking(confirmation) => {
-                if res == RenderResult::Error {
+                if res == RenderResult::Skipped {
                     if state.lock_render_state == LockRenderState::Unlocked {
                         // We needed to render a locked frame on this output but failed.
                         self.unlock();
@@ -1728,10 +1727,9 @@ impl Niri {
         // Render and send to PipeWire screencast streams.
         #[cfg(feature = "xdp-gnome-screencast")]
         {
-            let renderer = backend
-                .renderer()
-                .expect("renderer must not have disappeared");
-            self.send_for_screen_cast(renderer, output, &elements, target_presentation_time);
+            backend.with_primary_renderer(|renderer| {
+                self.render_for_screen_cast(renderer, output, target_presentation_time);
+            });
         }
     }
 
@@ -1833,18 +1831,45 @@ impl Niri {
         }
     }
 
-    pub fn send_dmabuf_feedbacks(&self, output: &Output, feedback: &DmabufFeedback) {
+    pub fn send_dmabuf_feedbacks(
+        &self,
+        output: &Output,
+        feedback: &SurfaceDmabufFeedback,
+        render_element_states: &RenderElementStates,
+    ) {
         let _span = tracy_client::span!("Niri::send_dmabuf_feedbacks");
 
         // We can unconditionally send the current output's feedback to regular and layer-shell
         // surfaces, as they can only be displayed on a single output at a time. Even if a surface
         // is currently invisible, this is the DMABUF feedback that it should know about.
         for win in self.layout.windows_for_output(output) {
-            win.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
+            win.send_dmabuf_feedback(
+                output,
+                |_, _| Some(output.clone()),
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
+            );
         }
 
         for surface in layer_map_for_output(output).layers() {
-            surface.send_dmabuf_feedback(output, |_, _| Some(output.clone()), |_, _| feedback);
+            surface.send_dmabuf_feedback(
+                output,
+                |_, _| Some(output.clone()),
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
+            );
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
@@ -1852,7 +1877,14 @@ impl Niri {
                 surface.wl_surface(),
                 output,
                 |_, _| Some(output.clone()),
-                |_, _| feedback,
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
             );
         }
 
@@ -1861,7 +1893,14 @@ impl Niri {
                 surface,
                 output,
                 surface_primary_scanout_output,
-                |_, _| feedback,
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
             );
         }
 
@@ -1870,7 +1909,14 @@ impl Niri {
                 surface,
                 output,
                 surface_primary_scanout_output,
-                |_, _| feedback,
+                |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        &feedback.render,
+                        &feedback.scanout,
+                    )
+                },
             );
         }
     }
@@ -2010,19 +2056,21 @@ impl Niri {
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
-    fn send_for_screen_cast(
+    fn render_for_screen_cast(
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
     ) {
-        let _span = tracy_client::span!("Niri::send_for_screen_cast");
+        let _span = tracy_client::span!("Niri::render_for_screen_cast");
 
         let size = output.current_mode().unwrap().size;
         let scale = Scale::from(output.current_scale().fractional_scale());
 
-        for cast in &mut self.casts {
+        let mut elements = None;
+
+        let mut casts = mem::take(&mut self.casts);
+        for cast in &mut casts {
             if !cast.is_active.get() {
                 continue;
             }
@@ -2068,6 +2116,9 @@ impl Niri {
                 let dmabuf = cast.dmabufs.borrow()[&fd].clone();
 
                 // FIXME: Hidden / embedded / metadata cursor
+                let elements = elements
+                    .get_or_insert_with(|| self.render::<GlesRenderer>(renderer, output, true));
+
                 if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
                     error!("error rendering to dmabuf: {err:?}");
                     continue;
@@ -2081,6 +2132,7 @@ impl Niri {
 
             cast.last_frame_time = target_presentation_time;
         }
+        self.casts = casts;
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -2132,7 +2184,7 @@ impl Niri {
             .filter_map(|output| {
                 let size = output.current_mode().unwrap().size;
                 let scale = Scale::from(output.current_scale().fractional_scale());
-                let elements = self.render(renderer, &output, true);
+                let elements = self.render::<GlesRenderer>(renderer, &output, true);
 
                 let res = render_to_texture(renderer, size, scale, Fourcc::Abgr8888, &elements);
                 let screenshot = match res {
@@ -2159,7 +2211,7 @@ impl Niri {
 
         let size = output.current_mode().unwrap().size;
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let elements = self.render(renderer, output, true);
+        let elements = self.render::<GlesRenderer>(renderer, output, true);
         let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, &elements)?;
 
         self.save_screenshot(size, pixels)
@@ -2283,7 +2335,7 @@ impl Niri {
             size.w = max(size.w, geom.loc.x + geom.size.w);
             size.h = max(size.h, geom.loc.y + geom.size.h);
 
-            let output_elements = self.render(renderer, &output, include_pointer);
+            let output_elements = self.render::<GlesRenderer>(renderer, &output, include_pointer);
             elements.extend(output_elements.into_iter().map(|elem| {
                 RelocateRenderElement::from_element(elem, geom.loc, Relocate::Relative)
             }));
@@ -2388,16 +2440,6 @@ impl Niri {
     }
 }
 
-render_elements! {
-    #[derive(Debug)]
-    pub OutputRenderElements<R> where R: ImportAll;
-    Monitor = MonitorRenderElement<R>,
-    Wayland = WaylandSurfaceRenderElement<R>,
-    NamedPointer = TextureRenderElement<<R as Renderer>::TextureId>,
-    SolidColor = SolidColorRenderElement,
-    ScreenshotUi = ScreenshotUiRenderElement<R>,
-}
-
 #[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
@@ -2488,8 +2530,6 @@ fn render_to_dmabuf(
     scale: Scale<f64>,
     elements: &[OutputRenderElements<GlesRenderer>],
 ) -> anyhow::Result<()> {
-    use smithay::backend::renderer::element::Element;
-
     let _span = tracy_client::span!("render_to_dmabuf");
 
     let output_rect = Rectangle::from_loc_and_size((0, 0), size);
@@ -2510,4 +2550,213 @@ fn render_to_dmabuf(
     let _sync_point = frame.finish().context("error finishing frame")?;
 
     Ok(())
+}
+
+// Manual RenderElement implementation due to AsGlesFrame requirement.
+#[derive(Debug)]
+pub enum OutputRenderElements<R: NiriRenderer> {
+    Monitor(MonitorRenderElement<R>),
+    Wayland(WaylandSurfaceRenderElement<R>),
+    NamedPointer(PrimaryGpuTextureRenderElement),
+    SolidColor(SolidColorRenderElement),
+    ScreenshotUi(ScreenshotUiRenderElement),
+}
+
+impl<R: NiriRenderer> Element for OutputRenderElements<R> {
+    fn id(&self) -> &Id {
+        match self {
+            Self::Monitor(elem) => elem.id(),
+            Self::Wayland(elem) => elem.id(),
+            Self::NamedPointer(elem) => elem.id(),
+            Self::SolidColor(elem) => elem.id(),
+            Self::ScreenshotUi(elem) => elem.id(),
+        }
+    }
+
+    fn current_commit(&self) -> CommitCounter {
+        match self {
+            Self::Monitor(elem) => elem.current_commit(),
+            Self::Wayland(elem) => elem.current_commit(),
+            Self::NamedPointer(elem) => elem.current_commit(),
+            Self::SolidColor(elem) => elem.current_commit(),
+            Self::ScreenshotUi(elem) => elem.current_commit(),
+        }
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        match self {
+            Self::Monitor(elem) => elem.geometry(scale),
+            Self::Wayland(elem) => elem.geometry(scale),
+            Self::NamedPointer(elem) => elem.geometry(scale),
+            Self::SolidColor(elem) => elem.geometry(scale),
+            Self::ScreenshotUi(elem) => elem.geometry(scale),
+        }
+    }
+
+    fn transform(&self) -> Transform {
+        match self {
+            Self::Monitor(elem) => elem.transform(),
+            Self::Wayland(elem) => elem.transform(),
+            Self::NamedPointer(elem) => elem.transform(),
+            Self::SolidColor(elem) => elem.transform(),
+            Self::ScreenshotUi(elem) => elem.transform(),
+        }
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        match self {
+            Self::Monitor(elem) => elem.src(),
+            Self::Wayland(elem) => elem.src(),
+            Self::NamedPointer(elem) => elem.src(),
+            Self::SolidColor(elem) => elem.src(),
+            Self::ScreenshotUi(elem) => elem.src(),
+        }
+    }
+
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            Self::Monitor(elem) => elem.damage_since(scale, commit),
+            Self::Wayland(elem) => elem.damage_since(scale, commit),
+            Self::NamedPointer(elem) => elem.damage_since(scale, commit),
+            Self::SolidColor(elem) => elem.damage_since(scale, commit),
+            Self::ScreenshotUi(elem) => elem.damage_since(scale, commit),
+        }
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            Self::Monitor(elem) => elem.opaque_regions(scale),
+            Self::Wayland(elem) => elem.opaque_regions(scale),
+            Self::NamedPointer(elem) => elem.opaque_regions(scale),
+            Self::SolidColor(elem) => elem.opaque_regions(scale),
+            Self::ScreenshotUi(elem) => elem.opaque_regions(scale),
+        }
+    }
+
+    fn alpha(&self) -> f32 {
+        match self {
+            Self::Monitor(elem) => elem.alpha(),
+            Self::Wayland(elem) => elem.alpha(),
+            Self::NamedPointer(elem) => elem.alpha(),
+            Self::SolidColor(elem) => elem.alpha(),
+            Self::ScreenshotUi(elem) => elem.alpha(),
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        match self {
+            Self::Monitor(elem) => elem.kind(),
+            Self::Wayland(elem) => elem.kind(),
+            Self::NamedPointer(elem) => elem.kind(),
+            Self::SolidColor(elem) => elem.kind(),
+            Self::ScreenshotUi(elem) => elem.kind(),
+        }
+    }
+}
+
+impl RenderElement<GlesRenderer> for OutputRenderElements<GlesRenderer> {
+    fn draw(
+        &self,
+        frame: &mut GlesFrame<'_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), GlesError> {
+        match self {
+            Self::Monitor(elem) => elem.draw(frame, src, dst, damage),
+            Self::Wayland(elem) => elem.draw(frame, src, dst, damage),
+            Self::NamedPointer(elem) => {
+                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::SolidColor(elem) => {
+                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::ScreenshotUi(elem) => {
+                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
+            }
+        }
+    }
+
+    fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+        match self {
+            Self::Monitor(elem) => elem.underlying_storage(renderer),
+            Self::Wayland(elem) => elem.underlying_storage(renderer),
+            Self::NamedPointer(elem) => elem.underlying_storage(renderer),
+            Self::SolidColor(elem) => elem.underlying_storage(renderer),
+            Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
+        }
+    }
+}
+
+impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
+    for OutputRenderElements<TtyRenderer<'render, 'alloc>>
+{
+    fn draw(
+        &self,
+        frame: &mut TtyFrame<'render, 'alloc, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), TtyRendererError<'render, 'alloc>> {
+        match self {
+            Self::Monitor(elem) => elem.draw(frame, src, dst, damage),
+            Self::Wayland(elem) => elem.draw(frame, src, dst, damage),
+            Self::NamedPointer(elem) => {
+                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::SolidColor(elem) => {
+                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+            }
+            Self::ScreenshotUi(elem) => {
+                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+            }
+        }
+    }
+
+    fn underlying_storage(
+        &self,
+        renderer: &mut TtyRenderer<'render, 'alloc>,
+    ) -> Option<UnderlyingStorage> {
+        match self {
+            Self::Monitor(elem) => elem.underlying_storage(renderer),
+            Self::Wayland(elem) => elem.underlying_storage(renderer),
+            Self::NamedPointer(elem) => elem.underlying_storage(renderer),
+            Self::SolidColor(elem) => elem.underlying_storage(renderer),
+            Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
+        }
+    }
+}
+
+impl<R: NiriRenderer> From<MonitorRenderElement<R>> for OutputRenderElements<R> {
+    fn from(x: MonitorRenderElement<R>) -> Self {
+        Self::Monitor(x)
+    }
+}
+
+impl<R: NiriRenderer> From<WaylandSurfaceRenderElement<R>> for OutputRenderElements<R> {
+    fn from(x: WaylandSurfaceRenderElement<R>) -> Self {
+        Self::Wayland(x)
+    }
+}
+
+impl<R: NiriRenderer> From<PrimaryGpuTextureRenderElement> for OutputRenderElements<R> {
+    fn from(x: PrimaryGpuTextureRenderElement) -> Self {
+        Self::NamedPointer(x)
+    }
+}
+
+impl<R: NiriRenderer> From<SolidColorRenderElement> for OutputRenderElements<R> {
+    fn from(x: SolidColorRenderElement) -> Self {
+        Self::SolidColor(x)
+    }
+}
+
+impl<R: NiriRenderer> From<ScreenshotUiRenderElement> for OutputRenderElements<R> {
+    fn from(x: ScreenshotUiRenderElement) -> Self {
+        Self::ScreenshotUi(x)
+    }
 }

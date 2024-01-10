@@ -5,9 +5,11 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use niri_config::Config;
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::{DebugFlags, Renderer};
+use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
@@ -17,8 +19,7 @@ use smithay::reexports::winit::window::WindowBuilder;
 use smithay::utils::Transform;
 
 use super::RenderResult;
-use crate::config::Config;
-use crate::niri::{OutputRenderElements, RedrawState, State};
+use crate::niri::{RedrawState, State};
 use crate::utils::get_monotonic_time;
 use crate::Niri;
 
@@ -113,17 +114,14 @@ impl Winit {
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
-        // For some reason, binding the display here causes damage tracker artifacts.
-        //
-        // use smithay::backend::renderer::ImportEgl;
-        //
-        // if let Err(err) = self
-        //     .backend
-        //     .renderer()
-        //     .bind_wl_display(&niri.display_handle)
-        // {
-        //     warn!("error binding renderer wl_display: {err}");
-        // }
+        if let Err(err) = self
+            .backend
+            .renderer()
+            .bind_wl_display(&niri.display_handle)
+        {
+            warn!("error binding renderer wl_display: {err}");
+        }
+
         niri.add_output(self.output.clone(), None);
     }
 
@@ -131,23 +129,25 @@ impl Winit {
         "winit".to_owned()
     }
 
-    pub fn renderer(&mut self) -> &mut GlesRenderer {
-        self.backend.renderer()
+    pub fn with_primary_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut GlesRenderer) -> T,
+    ) -> Option<T> {
+        Some(f(self.backend.renderer()))
     }
 
-    pub fn render(
-        &mut self,
-        niri: &mut Niri,
-        output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
-    ) -> RenderResult {
+    pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
 
+        // Render the elements.
+        let elements = niri.render::<GlesRenderer>(self.backend.renderer(), output, true);
+
+        // Hand them over to winit.
         self.backend.bind().unwrap();
         let age = self.backend.buffer_age().unwrap();
         let res = self
             .damage_tracker
-            .render_output(self.backend.renderer(), age, elements, [0.; 4])
+            .render_output(self.backend.renderer(), age, &elements, [0.; 4])
             .unwrap();
 
         niri.update_primary_scanout_output(output, &res.states);
@@ -200,6 +200,16 @@ impl Winit {
     pub fn toggle_debug_tint(&mut self) {
         let renderer = self.backend.renderer();
         renderer.set_debug_flags(renderer.debug_flags() ^ DebugFlags::TINT);
+    }
+
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+        match self.backend.renderer().import_dmabuf(dmabuf, None) {
+            Ok(_texture) => Ok(()),
+            Err(err) => {
+                debug!("error importing dmabuf: {err:?}");
+                Err(())
+            }
+        }
     }
 
     pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {

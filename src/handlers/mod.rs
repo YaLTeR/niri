@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::thread;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::renderer::ImportDma;
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatHandler, SeatState};
@@ -43,8 +42,8 @@ use smithay::{
     delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
-use crate::layout::output_size;
 use crate::niri::State;
+use crate::utils::output_size;
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -193,7 +192,7 @@ delegate_presentation!(State);
 
 impl DmabufHandler for State {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
-        self.backend.tty().dmabuf_state()
+        &mut self.niri.dmabuf_state
     }
 
     fn dmabuf_imported(
@@ -202,15 +201,11 @@ impl DmabufHandler for State {
         dmabuf: Dmabuf,
         notifier: ImportNotifier,
     ) {
-        let renderer = self.backend.renderer().expect(
-            "the dmabuf global must be created and destroyed together with the output device",
-        );
-        match renderer.import_dmabuf(&dmabuf, None) {
-            Ok(_texture) => {
+        match self.backend.import_dmabuf(&dmabuf) {
+            Ok(_) => {
                 let _ = notifier.successful::<State>();
             }
-            Err(err) => {
-                debug!("error importing dmabuf: {err:?}");
+            Err(_) => {
                 notifier.failed();
             }
         }

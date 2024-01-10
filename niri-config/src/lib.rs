@@ -1,12 +1,16 @@
+#[macro_use]
+extern crate tracing;
+
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use bitflags::bitflags;
 use directories::ProjectDirs;
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
+use smithay::reexports::input;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
@@ -17,19 +21,11 @@ pub struct Config {
     #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(child, default)]
-    pub focus_ring: FocusRing,
+    pub layout: Layout,
     #[knuffel(child, default)]
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
     pub cursor: Cursor,
-    #[knuffel(child, unwrap(children), default)]
-    pub preset_column_widths: Vec<PresetWidth>,
-    #[knuffel(child)]
-    pub default_column_width: Option<DefaultColumnWidth>,
-    #[knuffel(child, unwrap(argument), default = 16)]
-    pub gaps: u16,
-    #[knuffel(child, default)]
-    pub struts: Struts,
     #[knuffel(
         child,
         unwrap(argument),
@@ -52,7 +48,11 @@ pub struct Input {
     #[knuffel(child, default)]
     pub touchpad: Touchpad,
     #[knuffel(child, default)]
+    pub mouse: Mouse,
+    #[knuffel(child, default)]
     pub tablet: Tablet,
+    #[knuffel(child)]
+    pub disable_power_key_handling: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -94,6 +94,18 @@ impl Xkb {
     }
 }
 
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum CenterFocusedColumn {
+    /// Focusing a column will not center the column.
+    #[default]
+    Never,
+    /// The focused column will always be centered.
+    Always,
+    /// Focusing a column will center it if it doesn't fit on the screen together with the
+    /// previously focused column.
+    OnOverflow,
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
 pub enum TrackLayout {
     /// The layout change is global.
@@ -109,9 +121,55 @@ pub struct Touchpad {
     #[knuffel(child)]
     pub tap: bool,
     #[knuffel(child)]
+    pub dwt: bool,
+    #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
     pub accel_speed: f64,
+    #[knuffel(child, unwrap(argument, str))]
+    pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub tap_button_map: Option<TapButtonMap>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+pub struct Mouse {
+    #[knuffel(child)]
+    pub natural_scroll: bool,
+    #[knuffel(child, unwrap(argument), default)]
+    pub accel_speed: f64,
+    #[knuffel(child, unwrap(argument, str))]
+    pub accel_profile: Option<AccelProfile>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccelProfile {
+    Adaptive,
+    Flat,
+}
+
+impl From<AccelProfile> for input::AccelProfile {
+    fn from(value: AccelProfile) -> Self {
+        match value {
+            AccelProfile::Adaptive => Self::Adaptive,
+            AccelProfile::Flat => Self::Flat,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TapButtonMap {
+    LeftRightMiddle,
+    LeftMiddleRight,
+}
+
+impl From<TapButtonMap> for input::TapButtonMap {
+    fn from(value: TapButtonMap) -> Self {
+        match value {
+            TapButtonMap::LeftRightMiddle => Self::LeftRightMiddle,
+            TapButtonMap::LeftMiddleRight => Self::LeftMiddleRight,
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -161,6 +219,24 @@ pub struct Mode {
     pub refresh: Option<f64>,
 }
 
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct Layout {
+    #[knuffel(child, default)]
+    pub focus_ring: FocusRing,
+    #[knuffel(child, default = default_border())]
+    pub border: FocusRing,
+    #[knuffel(child, unwrap(children), default)]
+    pub preset_column_widths: Vec<PresetWidth>,
+    #[knuffel(child)]
+    pub default_column_width: Option<DefaultColumnWidth>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub center_focused_column: CenterFocusedColumn,
+    #[knuffel(child, unwrap(argument), default = 16)]
+    pub gaps: u16,
+    #[knuffel(child, default)]
+    pub struts: Struts,
+}
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct SpawnAtStartup {
     #[knuffel(arguments)]
@@ -190,6 +266,15 @@ impl Default for FocusRing {
     }
 }
 
+pub const fn default_border() -> FocusRing {
+    FocusRing {
+        off: true,
+        width: 4,
+        active_color: Color::new(255, 200, 127, 255),
+        inactive_color: Color::new(80, 80, 80, 255),
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     #[knuffel(argument)]
@@ -203,7 +288,7 @@ pub struct Color {
 }
 
 impl Color {
-    pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
 }
@@ -300,12 +385,16 @@ pub enum Action {
     FullscreenWindow,
     FocusColumnLeft,
     FocusColumnRight,
+    FocusColumnFirst,
+    FocusColumnLast,
     FocusWindowDown,
     FocusWindowUp,
     FocusWindowOrWorkspaceDown,
     FocusWindowOrWorkspaceUp,
     MoveColumnLeft,
     MoveColumnRight,
+    MoveColumnToFirst,
+    MoveColumnToLast,
     MoveWindowDown,
     MoveWindowUp,
     MoveWindowDownOrToWorkspaceDown,
@@ -362,6 +451,10 @@ pub struct DebugConfig {
     pub enable_color_transformations_capability: bool,
     #[knuffel(child)]
     pub enable_overlay_planes: bool,
+    #[knuffel(child)]
+    pub disable_cursor_plane: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub render_drm_device: Option<PathBuf>,
 }
 
 impl Default for DebugConfig {
@@ -372,12 +465,18 @@ impl Default for DebugConfig {
             wait_for_frame_completion_before_queueing: false,
             enable_color_transformations_capability: false,
             enable_overlay_planes: false,
+            disable_cursor_plane: false,
+            render_drm_device: None,
         }
     }
 }
 
 impl Config {
     pub fn load(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
+        Self::load_internal(path).context("error loading config")
+    }
+
+    fn load_internal(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
         let path = if let Some(path) = path {
             path
         } else {
@@ -407,7 +506,7 @@ impl Default for Config {
     fn default() -> Self {
         Config::parse(
             "default-config.kdl",
-            include_str!("../resources/default-config.kdl"),
+            include_str!("../../resources/default-config.kdl"),
         )
         .unwrap()
     }
@@ -535,6 +634,38 @@ impl FromStr for SizeChange {
     }
 }
 
+impl FromStr for AccelProfile {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "adaptive" => Ok(Self::Adaptive),
+            "flat" => Ok(Self::Flat),
+            _ => Err(miette!(
+                r#"invalid accel profile, can be "adaptive" or "flat""#
+            )),
+        }
+    }
+}
+
+impl FromStr for TapButtonMap {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "left-right-middle" => Ok(Self::LeftRightMiddle),
+            "left-middle-right" => Ok(Self::LeftMiddleRight),
+            _ => Err(miette!(
+                r#"invalid tap button map, can be "left-right-middle" or "left-middle-right""#
+            )),
+        }
+    }
+}
+
+pub fn set_miette_hook() -> Result<(), miette::InstallError> {
+    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())))
+}
+
 #[cfg(test)]
 mod tests {
     use miette::NarratableReportHandler;
@@ -568,12 +699,23 @@ mod tests {
 
                 touchpad {
                     tap
+                    dwt
                     accel-speed 0.2
+                    accel-profile "flat"
+                    tap-button-map "left-middle-right"
+                }
+
+                mouse {
+                    natural-scroll
+                    accel-speed 0.4
+                    accel-profile "flat"
                 }
 
                 tablet {
                     map-to-output "eDP-1"
                 }
+
+                disable-power-key-handling
             }
 
             output "eDP-1" {
@@ -582,36 +724,46 @@ mod tests {
                 mode "1920x1080@144"
             }
 
-            spawn-at-startup "alacritty" "-e" "fish"
+            layout {
+                focus-ring {
+                    width 5
+                    active-color 0 100 200 255
+                    inactive-color 255 200 100 0
+                }
 
-            focus-ring {
-                width 5
-                active-color 0 100 200 255
-                inactive-color 255 200 100 0
+                border {
+                    width 3
+                    active-color 0 100 200 255
+                    inactive-color 255 200 100 0
+                }
+
+                preset-column-widths {
+                    proportion 0.25
+                    proportion 0.5
+                    fixed 960
+                    fixed 1280
+                }
+
+                default-column-width { proportion 0.25; }
+
+                gaps 8
+
+                struts {
+                    left 1
+                    right 2
+                    top 3
+                }
+
+                center-focused-column "on-overflow"
             }
+
+            spawn-at-startup "alacritty" "-e" "fish"
 
             prefer-no-csd
 
             cursor {
                 xcursor-theme "breeze_cursors"
                 xcursor-size 16
-            }
-
-            preset-column-widths {
-                proportion 0.25
-                proportion 0.5
-                fixed 960
-                fixed 1280
-            }
-
-            default-column-width { proportion 0.25; }
-
-            gaps 8
-
-            struts {
-                left 1
-                right 2
-                top 3
             }
 
             screenshot-path "~/Screenshots/screenshot.png"
@@ -627,6 +779,7 @@ mod tests {
 
             debug {
                 animation-slowdown 2.0
+                render-drm-device "/dev/dri/renderD129"
             }
             "#,
             Config {
@@ -643,12 +796,21 @@ mod tests {
                     },
                     touchpad: Touchpad {
                         tap: true,
+                        dwt: true,
                         natural_scroll: false,
                         accel_speed: 0.2,
+                        accel_profile: Some(AccelProfile::Flat),
+                        tap_button_map: Some(TapButtonMap::LeftMiddleRight),
+                    },
+                    mouse: Mouse {
+                        natural_scroll: true,
+                        accel_speed: 0.4,
+                        accel_profile: Some(AccelProfile::Flat),
                     },
                     tablet: Tablet {
                         map_to_output: Some("eDP-1".to_owned()),
                     },
+                    disable_power_key_handling: true,
                 },
                 outputs: vec![Output {
                     off: false,
@@ -661,43 +823,64 @@ mod tests {
                         refresh: Some(144.),
                     }),
                 }],
+                layout: Layout {
+                    focus_ring: FocusRing {
+                        off: false,
+                        width: 5,
+                        active_color: Color {
+                            r: 0,
+                            g: 100,
+                            b: 200,
+                            a: 255,
+                        },
+                        inactive_color: Color {
+                            r: 255,
+                            g: 200,
+                            b: 100,
+                            a: 0,
+                        },
+                    },
+                    border: FocusRing {
+                        off: false,
+                        width: 3,
+                        active_color: Color {
+                            r: 0,
+                            g: 100,
+                            b: 200,
+                            a: 255,
+                        },
+                        inactive_color: Color {
+                            r: 255,
+                            g: 200,
+                            b: 100,
+                            a: 0,
+                        },
+                    },
+                    preset_column_widths: vec![
+                        PresetWidth::Proportion(0.25),
+                        PresetWidth::Proportion(0.5),
+                        PresetWidth::Fixed(960),
+                        PresetWidth::Fixed(1280),
+                    ],
+                    default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(
+                        0.25,
+                    )])),
+                    gaps: 8,
+                    struts: Struts {
+                        left: 1,
+                        right: 2,
+                        top: 3,
+                        bottom: 0,
+                    },
+                    center_focused_column: CenterFocusedColumn::OnOverflow,
+                },
                 spawn_at_startup: vec![SpawnAtStartup {
                     command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
                 }],
-                focus_ring: FocusRing {
-                    off: false,
-                    width: 5,
-                    active_color: Color {
-                        r: 0,
-                        g: 100,
-                        b: 200,
-                        a: 255,
-                    },
-                    inactive_color: Color {
-                        r: 255,
-                        g: 200,
-                        b: 100,
-                        a: 0,
-                    },
-                },
                 prefer_no_csd: true,
                 cursor: Cursor {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,
-                },
-                preset_column_widths: vec![
-                    PresetWidth::Proportion(0.25),
-                    PresetWidth::Proportion(0.5),
-                    PresetWidth::Fixed(960),
-                    PresetWidth::Fixed(1280),
-                ],
-                default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(0.25)])),
-                gaps: 8,
-                struts: Struts {
-                    left: 1,
-                    right: 2,
-                    top: 3,
-                    bottom: 0,
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
                 binds: Binds(vec![
@@ -746,6 +929,7 @@ mod tests {
                 ]),
                 debug: DebugConfig {
                     animation_slowdown: 2.,
+                    render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
                 },
             },

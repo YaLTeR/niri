@@ -11,10 +11,14 @@ use std::time::Duration;
 
 use anyhow::{ensure, Context};
 use directories::UserDirs;
+use niri_config::Config;
+use smithay::output::Output;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 
-use crate::config::Config;
+pub fn clone2<T: Clone, U: Clone>(t: (&T, &U)) -> (T, U) {
+    (t.0.clone(), t.1.clone())
+}
 
 pub fn get_monotonic_time() -> Duration {
     let ts = clock_gettime(ClockId::Monotonic);
@@ -23,6 +27,16 @@ pub fn get_monotonic_time() -> Duration {
 
 pub fn center(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
     rect.loc + rect.size.downscale(2).to_point()
+}
+
+pub fn output_size(output: &Output) -> Size<i32, Logical> {
+    let output_scale = output.current_scale().integer_scale();
+    let output_transform = output.current_transform();
+    let output_mode = output.current_mode().unwrap();
+
+    output_transform
+        .transform_size(output_mode.size)
+        .to_logical(output_scale)
 }
 
 pub fn make_screenshot_path(config: &Config) -> anyhow::Result<Option<PathBuf>> {
@@ -175,4 +189,10 @@ pub fn show_screenshot_notification(image_path: Option<PathBuf>) {
     if let Err(err) = notification.show() {
         warn!("error showing screenshot notification: {err:?}");
     }
+}
+
+pub fn cause_panic() {
+    let a = Duration::from_secs(1);
+    let b = Duration::from_secs(2);
+    let _ = a - b;
 }

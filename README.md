@@ -33,7 +33,10 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 ## Building
 
-For Fedora users, there's a COPR with built and packaged niri: https://copr.fedorainfracloud.org/coprs/yalter/niri/
+> [!TIP]
+> For Fedora users, there's a COPR with built and packaged niri: https://copr.fedorainfracloud.org/coprs/yalter/niri/
+>
+> NixOS users, check out https://github.com/sodiboo/niri-flake
 
 For Nix users, there is a flake provided. This provides a devshell with all required dependencies, and can be built with `nix build`. If running on non-NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary.
 
@@ -93,6 +96,10 @@ A step-by-step process for this is explained [on the wiki](https://github.com/Ya
 Niri also works with some parts of xdg-desktop-portal-gnome.
 In particular, it supports file choosers and monitor screencasting (e.g. to [OBS]).
 
+### Xwayland
+
+See [the wiki page](https://github.com/YaLTeR/niri/wiki/Xwayland) to learn how to use Xwayland with niri.
+
 ## Default Hotkeys
 
 When running on a TTY, the Mod key is <kbd>Super</kbd>.
@@ -114,6 +121,8 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>→</kbd> | Move the focused column to the right |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>↓</kbd> | Move the focused window below in a column |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>↑</kbd> | Move the focused window above in a column |
+| <kbd>Mod</kbd><kbd>Home</kbd> and <kbd>Mod</kbd><kbd>End</kbd> | Focus the first or the last column |
+| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Home</kbd> and <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>End</kbd> | Move the focused column to the very start or to the very end |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd> | Focus the monitor to the side |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd> | Move the focused window to the monitor to the side |
 | <kbd>Mod</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>PageDown</kbd> | Switch to the workspace below |

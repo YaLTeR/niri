@@ -1,48 +1,56 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::mem;
-use std::path::{Path, PathBuf};
+use std::fmt::Write;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{io, mem};
 
 use anyhow::{anyhow, Context};
 use libc::dev_t;
-use smithay::backend::allocator::dmabuf::Dmabuf;
+use niri_config::Config;
+use smithay::backend::allocator::dmabuf::{Dmabuf, DmabufAllocator};
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
-use smithay::backend::allocator::{Format as DrmFormat, Fourcc};
+use smithay::backend::allocator::{Format, Fourcc};
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventTime, DrmEventMetadata};
+use smithay::backend::drm::{
+    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
+};
 use smithay::backend::egl::context::ContextPriority;
-use smithay::backend::egl::{EGLContext, EGLDisplay};
+use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture, Capability};
-use smithay::backend::renderer::{Bind, DebugFlags, ImportDma, ImportEgl};
+use smithay::backend::renderer::gles::{Capability, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
+use smithay::backend::renderer::multigpu::{GpuManager, MultiFrame, MultiRenderer};
+use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
-use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel, Scale};
-use smithay::reexports::calloop::timer::{Timer, TimeoutAction};
+use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Scale, Subpixel};
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
-    connector, crtc, Mode as DrmMode, ModeFlags, ModeTypeFlags, Device, property,
+    connector, crtc, property, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags,
 };
+use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
-use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
-use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
+use smithay::reexports::wayland_protocols;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::DeviceFd;
-use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState, DmabufFeedback};
+use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal};
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
-
-use crate::config::Config;
-use crate::niri::{OutputRenderElements, State, RedrawState};
-use crate::utils::get_monotonic_time;
-use crate::Niri;
+use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
+use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
 use super::RenderResult;
+use crate::niri::{RedrawState, State};
+use crate::render_helpers::AsGlesRenderer;
+use crate::utils::get_monotonic_time;
+use crate::Niri;
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
@@ -51,10 +59,41 @@ pub struct Tty {
     session: LibSeatSession,
     udev_dispatcher: Dispatcher<'static, UdevBackend, State>,
     libinput: Libinput,
-    primary_gpu_path: PathBuf,
-    output_device: Option<OutputDevice>,
+    gpu_manager: GpuManager<GbmGlesBackend<GlesRenderer>>,
+    // DRM node corresponding to the primary GPU. May or may not be the same as
+    // primary_render_node.
+    primary_node: DrmNode,
+    // DRM render node corresponding to the primary GPU.
+    primary_render_node: DrmNode,
+    // Devices indexed by DRM node (not necessarily the render node).
+    devices: HashMap<DrmNode, OutputDevice>,
+    // The dma-buf global corresponds to the output device (the primary GPU). It is only `Some()`
+    // if we have a device corresponding to the primary GPU.
+    dmabuf_global: Option<DmabufGlobal>,
+    // The allocator for the primary GPU. It is only `Some()` if we have a device corresponding to
+    // the primary GPU.
+    primary_allocator: Option<DmabufAllocator<GbmAllocator<DrmDeviceFd>>>,
     connectors: Arc<Mutex<HashMap<String, Output>>>,
 }
+
+pub type TtyRenderer<'render, 'alloc> = MultiRenderer<
+    'render,
+    'render,
+    'alloc,
+    GbmGlesBackend<GlesRenderer>,
+    GbmGlesBackend<GlesRenderer>,
+>;
+
+pub type TtyFrame<'render, 'alloc, 'frame> = MultiFrame<
+    'render,
+    'render,
+    'alloc,
+    'frame,
+    GbmGlesBackend<GlesRenderer>,
+    GbmGlesBackend<GlesRenderer>,
+>;
+
+pub type TtyRendererError<'render, 'alloc> = <TtyRenderer<'render, 'alloc> as Renderer>::Error;
 
 type GbmDrmCompositor = DrmCompositor<
     GbmAllocator<DrmDeviceFd>,
@@ -64,14 +103,10 @@ type GbmDrmCompositor = DrmCompositor<
 >;
 
 struct OutputDevice {
-    id: dev_t,
     token: RegistrationToken,
-    gles: GlesRenderer,
-    formats: HashSet<DrmFormat>,
+    render_node: DrmNode,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
-    dmabuf_state: DmabufState,
-    dmabuf_global: DmabufGlobal,
     // SAFETY: drop after all the objects used with them are dropped.
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
@@ -80,14 +115,14 @@ struct OutputDevice {
 
 #[derive(Debug, Clone, Copy)]
 struct TtyOutputState {
-    device_id: dev_t,
+    node: DrmNode,
     crtc: crtc::Handle,
 }
 
 struct Surface {
     name: String,
     compositor: GbmDrmCompositor,
-    dmabuf_feedback: DmabufFeedback,
+    dmabuf_feedback: Option<SurfaceDmabufFeedback>,
     /// Tracy frame that goes from vblank to vblank.
     vblank_frame: Option<tracy_client::Frame>,
     /// Frame name for the VBlank frame.
@@ -97,6 +132,11 @@ struct Surface {
     /// Plot name for the presentation misprediction plot.
     presentation_misprediction_plot_name: tracy_client::PlotName,
     sequence_delta_plot_name: tracy_client::PlotName,
+}
+
+pub struct SurfaceDmabufFeedback {
+    pub render: DmabufFeedback,
+    pub scanout: DmabufFeedback,
 }
 
 impl Tty {
@@ -129,15 +169,57 @@ impl Tty {
             })
             .unwrap();
 
-        let primary_gpu_path = udev::primary_gpu(&seat_name).unwrap().unwrap();
+        let config_ = config.clone();
+        let create_renderer = move |display: &EGLDisplay| {
+            let color_transforms = config_
+                .borrow()
+                .debug
+                .enable_color_transformations_capability;
+
+            let egl_context = EGLContext::new_with_priority(display, ContextPriority::High)?;
+            let gles = if color_transforms {
+                unsafe { GlesRenderer::new(egl_context)? }
+            } else {
+                let capabilities = unsafe { GlesRenderer::supported_capabilities(&egl_context) }?
+                    .into_iter()
+                    .filter(|c| *c != Capability::ColorTransformations);
+                unsafe { GlesRenderer::with_capabilities(egl_context, capabilities)? }
+            };
+            Ok(gles)
+        };
+        let api = GbmGlesBackend::with_factory(Box::new(create_renderer));
+        let gpu_manager = GpuManager::new(api).unwrap();
+
+        let (primary_node, primary_render_node) = primary_node_from_config(&config.borrow())
+            .unwrap_or_else(|| {
+                let primary_gpu_path = udev::primary_gpu(&seat_name).unwrap().unwrap();
+                let primary_node = DrmNode::from_path(primary_gpu_path).unwrap();
+                let primary_render_node = primary_node
+                    .node_with_type(NodeType::Render)
+                    .unwrap()
+                    .unwrap();
+                (primary_node, primary_render_node)
+            });
+
+        let mut node_path = String::new();
+        if let Some(path) = primary_render_node.dev_path() {
+            write!(node_path, "{:?}", path).unwrap();
+        } else {
+            write!(node_path, "{}", primary_render_node).unwrap();
+        }
+        info!("using as the render node: {}", node_path);
 
         Self {
             config,
             session,
             udev_dispatcher,
             libinput,
-            primary_gpu_path,
-            output_device: None,
+            gpu_manager,
+            primary_node,
+            primary_render_node,
+            devices: HashMap::new(),
+            dmabuf_global: None,
+            primary_allocator: None,
             connectors: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -192,8 +274,8 @@ impl Tty {
 
                 self.libinput.suspend();
 
-                if let Some(output_device) = &self.output_device {
-                    output_device.drm.pause();
+                for device in self.devices.values() {
+                    device.drm.pause();
                 }
             }
             SessionEvent::ActivateSession => {
@@ -203,69 +285,85 @@ impl Tty {
                     error!("error resuming libinput");
                 }
 
-                if let Some(output_device) = &mut self.output_device {
-                    // We had an output device, check if it's been removed.
-                    let output_device_id = output_device.id;
-                    if !self
-                        .udev_dispatcher
-                        .as_source_ref()
-                        .device_list()
-                        .any(|(device_id, _)| device_id == output_device_id)
-                    {
-                        // The output device, if we had any, has been removed.
-                        self.device_removed(output_device_id, niri);
-                    } else {
-                        // It hasn't been removed, update its state as usual.
-                        output_device.drm.activate();
+                let mut device_list = self
+                    .udev_dispatcher
+                    .as_source_ref()
+                    .device_list()
+                    .map(|(device_id, path)| (device_id, path.to_owned()))
+                    .collect::<HashMap<_, _>>();
 
-                        // HACK: force reset the connectors to make resuming work across
-                        // sleep.
-                        let output_device = self.output_device.as_mut().unwrap();
-                        let crtcs: Vec<_> = output_device
-                            .drm_scanner
-                            .crtcs()
-                            .map(|(conn, crtc)| (conn.clone(), crtc))
-                            .collect();
-                        for (conn, crtc) in crtcs {
-                            self.connector_disconnected(niri, conn, crtc);
-                        }
+                let removed_devices = self
+                    .devices
+                    .keys()
+                    .filter(|node| !device_list.contains_key(&node.dev_id()))
+                    .copied()
+                    .collect::<Vec<_>>();
 
-                        let output_device = self.output_device.as_mut().unwrap();
-                        let _ = output_device
-                            .drm_scanner
-                            .scan_connectors(&output_device.drm);
-                        let crtcs: Vec<_> = output_device
-                            .drm_scanner
-                            .crtcs()
-                            .map(|(conn, crtc)| (conn.clone(), crtc))
-                            .collect();
-                        for (conn, crtc) in crtcs {
-                            if let Err(err) = self.connector_connected(niri, conn, crtc) {
-                                warn!("error connecting connector: {err:?}");
-                            }
-                        }
+                let remained_devices = self
+                    .devices
+                    .keys()
+                    .filter(|node| device_list.contains_key(&node.dev_id()))
+                    .copied()
+                    .collect::<Vec<_>>();
 
-                        // // Refresh the connectors.
-                        // self.device_changed(output_device_id, niri);
+                // Remove removed devices.
+                for node in removed_devices {
+                    device_list.remove(&node.dev_id());
+                    self.device_removed(node.dev_id(), niri);
+                }
 
-                        // // Refresh the state on unchanged connectors.
-                        // let output_device = self.output_device.as_mut().unwrap();
-                        // for drm_compositor in output_device.surfaces.values_mut() {
-                        //     if let Err(err) = drm_compositor.surface().reset_state() {
-                        //         warn!("error resetting DRM surface state: {err}");
-                        //     }
-                        //     drm_compositor.reset_buffers();
-                        // }
+                // Update remained devices.
+                for node in remained_devices {
+                    device_list.remove(&node.dev_id());
 
-                        // niri.queue_redraw_all();
+                    // It hasn't been removed, update its state as usual.
+                    let device = &self.devices[&node];
+                    device.drm.activate();
+
+                    // HACK: force reset the connectors to make resuming work across sleep.
+                    let device = &self.devices[&node];
+                    let crtcs: Vec<_> = device
+                        .drm_scanner
+                        .crtcs()
+                        .map(|(conn, crtc)| (conn.clone(), crtc))
+                        .collect();
+                    for (conn, crtc) in crtcs {
+                        self.connector_disconnected(niri, node, conn, crtc);
                     }
-                } else {
-                    // We didn't have an output device, check if it's been added.
-                    let udev_dispatcher = self.udev_dispatcher.clone();
-                    for (device_id, path) in udev_dispatcher.as_source_ref().device_list() {
-                        if let Err(err) = self.device_added(device_id, path, niri) {
-                            warn!("error adding device: {err:?}");
+
+                    let device = self.devices.get_mut(&node).unwrap();
+                    let _ = device.drm_scanner.scan_connectors(&device.drm);
+                    let crtcs: Vec<_> = device
+                        .drm_scanner
+                        .crtcs()
+                        .map(|(conn, crtc)| (conn.clone(), crtc))
+                        .collect();
+                    for (conn, crtc) in crtcs {
+                        if let Err(err) = self.connector_connected(niri, node, conn, crtc) {
+                            warn!("error connecting connector: {err:?}");
                         }
+                    }
+
+                    // // Refresh the connectors.
+                    // self.device_changed(node.dev_id(), niri);
+
+                    // // Refresh the state on unchanged connectors.
+                    // let device = self.devices.get_mut(&node).unwrap();
+                    // for surface in device.surfaces.values_mut() {
+                    //     let compositor = &mut surface.compositor;
+                    //     if let Err(err) = compositor.surface().reset_state() {
+                    //         warn!("error resetting DRM surface state: {err}");
+                    //     }
+                    //     compositor.reset_buffers();
+                    // }
+
+                    // niri.queue_redraw_all();
+                }
+
+                // Add new devices.
+                for (device_id, path) in device_list.into_iter() {
+                    if let Err(err) = self.device_added(device_id, &path, niri) {
+                        warn!("error adding device: {err:?}");
                     }
                 }
             }
@@ -278,13 +376,9 @@ impl Tty {
         path: &Path,
         niri: &mut Niri,
     ) -> anyhow::Result<()> {
-        if path != self.primary_gpu_path {
-            debug!("skipping non-primary device {path:?}");
-            return Ok(());
-        }
+        debug!("device added: {device_id} {path:?}");
 
-        debug!("adding device {path:?}");
-        assert!(self.output_device.is_none());
+        let node = DrmNode::from_dev_id(device_id)?;
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = self.session.open(path, open_flags)?;
@@ -294,24 +388,70 @@ impl Tty {
         let gbm = GbmDevice::new(device_fd)?;
 
         let display = EGLDisplay::new(gbm.clone())?;
-        let egl_context = EGLContext::new_with_priority(&display, ContextPriority::High)?;
+        let egl_device = EGLDevice::device_for_display(&display)?;
 
-        // ColorTransformations is disabled by default as it makes rendering slightly slower.
-        let mut gles = if self
-            .config
-            .borrow()
-            .debug
-            .enable_color_transformations_capability
-        {
-            unsafe { GlesRenderer::new(egl_context)? }
-        } else {
-            let capabilities = unsafe { GlesRenderer::supported_capabilities(&egl_context) }?
-                .into_iter()
-                .filter(|c| *c != Capability::ColorTransformations);
-            unsafe { GlesRenderer::with_capabilities(egl_context, capabilities)? }
-        };
+        // HACK: There's an issue in Smithay where the display created by GpuManager will be the
+        // same as the one we just created here, so when ours is dropped at the end of the scope,
+        // it will also close the long-lived display in GpuManager. Thus, we need to drop ours
+        // beforehand.
+        drop(display);
 
-        gles.bind_wl_display(&niri.display_handle)?;
+        let render_node = egl_device
+            .try_get_render_node()?
+            .context("no render node")?;
+        self.gpu_manager
+            .as_mut()
+            .add_node(render_node, gbm.clone())
+            .context("error adding render node to GPU manager")?;
+
+        if node == self.primary_node {
+            debug!("this is the primary node");
+
+            let mut renderer = self
+                .gpu_manager
+                .single_renderer(&render_node)
+                .context("error creating renderer")?;
+
+            renderer.bind_wl_display(&niri.display_handle)?;
+
+            // Create the dmabuf global.
+            let primary_formats = renderer.dmabuf_formats().collect::<HashSet<_>>();
+            let default_feedback =
+                DmabufFeedbackBuilder::new(render_node.dev_id(), primary_formats.clone())
+                    .build()
+                    .context("error building default dmabuf feedback")?;
+            let dmabuf_global = niri
+                .dmabuf_state
+                .create_global_with_default_feedback::<State>(
+                    &niri.display_handle,
+                    &default_feedback,
+                );
+            assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
+
+            // Create the primary allocator.
+            let primary_allocator =
+                DmabufAllocator(GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING));
+            assert!(self.primary_allocator.replace(primary_allocator).is_none());
+
+            // Update the dmabuf feedbacks for all surfaces.
+            for device in self.devices.values_mut() {
+                for surface in device.surfaces.values_mut() {
+                    match surface_dmabuf_feedback(
+                        &surface.compositor,
+                        primary_formats.clone(),
+                        self.primary_render_node,
+                        device.render_node,
+                    ) {
+                        Ok(feedback) => {
+                            surface.dmabuf_feedback = Some(feedback);
+                        }
+                        Err(err) => {
+                            warn!("error building dmabuf feedback: {err:?}");
+                        }
+                    }
+                }
+            }
+        }
 
         let token = niri
             .event_loop
@@ -320,34 +460,22 @@ impl Tty {
                 match event {
                     DrmEvent::VBlank(crtc) => {
                         let meta = meta.expect("VBlank events must have metadata");
-                        tty.on_vblank(&mut state.niri, crtc, meta);
+                        tty.on_vblank(&mut state.niri, node, crtc, meta);
                     }
                     DrmEvent::Error(error) => error!("DRM error: {error}"),
                 };
             })
             .unwrap();
 
-        let formats = Bind::<Dmabuf>::supported_formats(&gles).unwrap_or_default();
-
-        let mut dmabuf_state = DmabufState::new();
-        let default_feedback = DmabufFeedbackBuilder::new(device_id, gles.dmabuf_formats())
-            .build()
-            .context("error building default dmabuf feedback")?;
-        let dmabuf_global = dmabuf_state
-            .create_global_with_default_feedback::<State>(&niri.display_handle, &default_feedback);
-
-        self.output_device = Some(OutputDevice {
-            id: device_id,
+        let device = OutputDevice {
             token,
+            render_node,
             drm,
             gbm,
-            gles,
-            formats,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
-            dmabuf_state,
-            dmabuf_global,
-        });
+        };
+        assert!(self.devices.insert(node, device).is_none());
 
         self.device_changed(device_id, niri);
 
@@ -355,13 +483,17 @@ impl Tty {
     }
 
     fn device_changed(&mut self, device_id: dev_t, niri: &mut Niri) {
-        let Some(device) = &mut self.output_device else {
+        debug!("device changed: {device_id}");
+
+        let Ok(node) = DrmNode::from_dev_id(device_id) else {
+            warn!("error creating DrmNode");
             return;
         };
-        if device.id != device_id {
+
+        let Some(device) = self.devices.get_mut(&node) else {
+            warn!("no such device");
             return;
-        }
-        debug!("output device changed");
+        };
 
         for event in device.drm_scanner.scan_connectors(&device.drm) {
             match event {
@@ -369,26 +501,31 @@ impl Tty {
                     connector,
                     crtc: Some(crtc),
                 } => {
-                    if let Err(err) = self.connector_connected(niri, connector, crtc) {
+                    if let Err(err) = self.connector_connected(niri, node, connector, crtc) {
                         warn!("error connecting connector: {err:?}");
                     }
                 }
                 DrmScanEvent::Disconnected {
                     connector,
                     crtc: Some(crtc),
-                } => self.connector_disconnected(niri, connector, crtc),
+                } => self.connector_disconnected(niri, node, connector, crtc),
                 _ => (),
             }
         }
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
-        let Some(device) = &mut self.output_device else {
+        debug!("device removed: {device_id}");
+
+        let Ok(node) = DrmNode::from_dev_id(device_id) else {
+            warn!("error creating DrmNode");
             return;
         };
-        if device_id != device.id {
+
+        let Some(device) = self.devices.get_mut(&node) else {
+            warn!("no such device");
             return;
-        }
+        };
 
         let crtcs: Vec<_> = device
             .drm_scanner
@@ -397,21 +534,54 @@ impl Tty {
             .collect();
 
         for (connector, crtc) in crtcs {
-            self.connector_disconnected(niri, connector, crtc);
+            self.connector_disconnected(niri, node, connector, crtc);
         }
 
-        let mut device = self.output_device.take().unwrap();
-        device
-            .dmabuf_state
-            .destroy_global::<State>(&niri.display_handle, device.dmabuf_global);
-        device.gles.unbind_wl_display();
+        let device = self.devices.remove(&node).unwrap();
 
+        if node == self.primary_node {
+            match self.gpu_manager.single_renderer(&device.render_node) {
+                Ok(mut renderer) => renderer.unbind_wl_display(),
+                Err(err) => {
+                    error!("error creating renderer during device removal: {err}");
+                }
+            }
+
+            // Disable and destroy the dmabuf global.
+            let global = self.dmabuf_global.take().unwrap();
+            niri.dmabuf_state
+                .disable_global::<State>(&niri.display_handle, &global);
+            niri.event_loop
+                .insert_source(
+                    Timer::from_duration(Duration::from_secs(10)),
+                    move |_, _, state| {
+                        state
+                            .niri
+                            .dmabuf_state
+                            .destroy_global::<State>(&state.niri.display_handle, global);
+                        TimeoutAction::Drop
+                    },
+                )
+                .unwrap();
+
+            self.primary_allocator = None;
+
+            // Clear the dmabuf feedbacks for all surfaces.
+            for device in self.devices.values_mut() {
+                for surface in device.surfaces.values_mut() {
+                    surface.dmabuf_feedback = None;
+                }
+            }
+        }
+
+        self.gpu_manager.as_mut().remove_node(&device.render_node);
         niri.event_loop.remove(device.token);
     }
 
     fn connector_connected(
         &mut self,
         niri: &mut Niri,
+        node: DrmNode,
         connector: connector::Info,
         crtc: crtc::Handle,
     ) -> anyhow::Result<()> {
@@ -436,10 +606,7 @@ impl Tty {
             return Ok(());
         }
 
-        let device = self
-            .output_device
-            .as_mut()
-            .context("missing output device")?;
+        let device = self.devices.get_mut(&node).context("missing device")?;
 
         // FIXME: print modes here until we have a better way to list all modes.
         for m in connector.modes() {
@@ -549,27 +716,30 @@ impl Tty {
         output.change_current_state(Some(wl_mode), None, Some(Scale::Integer(scale)), None);
         output.set_preferred(wl_mode);
 
-        output.user_data().insert_if_missing(|| TtyOutputState {
-            device_id: device.id,
-            crtc,
-        });
+        output
+            .user_data()
+            .insert_if_missing(|| TtyOutputState { node, crtc });
 
         let mut planes = surface.planes().clone();
 
+        let config = self.config.borrow();
+
         // Overlay planes are disabled by default as they cause weird performance issues on my
         // system.
-        if !self.config.borrow().debug.enable_overlay_planes {
+        if !config.debug.enable_overlay_planes {
             planes.overlay.clear();
         }
 
-        let scanout_formats = planes
-            .primary
-            .formats
-            .iter()
-            .chain(planes.overlay.iter().flat_map(|p| &p.formats))
-            .copied()
-            .collect::<HashSet<_>>();
-        let scanout_formats = scanout_formats.intersection(&device.formats).copied();
+        // Cursor planes have bugs on some systems.
+        let cursor_plane_gbm = if config.debug.disable_cursor_plane {
+            None
+        } else {
+            Some(device.gbm.clone())
+        };
+
+        let renderer = self.gpu_manager.single_renderer(&device.render_node)?;
+        let egl_context = renderer.as_ref().egl_context();
+        let render_formats = egl_context.dmabuf_render_formats();
 
         // Create the compositor.
         let compositor = DrmCompositor::new(
@@ -579,15 +749,31 @@ impl Tty {
             allocator,
             device.gbm.clone(),
             SUPPORTED_COLOR_FORMATS,
-            device.formats.clone(),
+            // This is only used to pick a good internal format, so it can use the surface's render
+            // formats, even though we only ever render on the primary GPU.
+            render_formats.clone(),
             device.drm.cursor_size(),
-            Some(device.gbm.clone()),
+            cursor_plane_gbm,
         )?;
 
-        let dmabuf_feedback = DmabufFeedbackBuilder::new(device.id, device.formats.clone())
-            .add_preference_tranche(device.id, Some(TrancheFlags::Scanout), scanout_formats)
-            .build()
-            .context("error building dmabuf feedback")?;
+        let mut dmabuf_feedback = None;
+        if let Ok(primary_renderer) = self.gpu_manager.single_renderer(&self.primary_render_node) {
+            let primary_formats = primary_renderer.dmabuf_formats().collect::<HashSet<_>>();
+
+            match surface_dmabuf_feedback(
+                &compositor,
+                primary_formats,
+                self.primary_render_node,
+                device.render_node,
+            ) {
+                Ok(feedback) => {
+                    dmabuf_feedback = Some(feedback);
+                }
+                Err(err) => {
+                    warn!("error building dmabuf feedback: {err:?}");
+                }
+            }
+        }
 
         let vblank_frame_name =
             tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
@@ -631,12 +817,14 @@ impl Tty {
     fn connector_disconnected(
         &mut self,
         niri: &mut Niri,
+        node: DrmNode,
         connector: connector::Info,
         crtc: crtc::Handle,
     ) {
         debug!("disconnecting connector: {connector:?}");
-        let Some(device) = self.output_device.as_mut() else {
-            error!("missing output device");
+
+        let Some(device) = self.devices.get_mut(&node) else {
+            error!("missing device");
             return;
         };
 
@@ -650,7 +838,7 @@ impl Tty {
             .outputs()
             .find(|output| {
                 let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                tty_state.device_id == device.id && tty_state.crtc == crtc
+                tty_state.node == node && tty_state.crtc == crtc
             })
             .cloned();
         if let Some(output) = output {
@@ -662,14 +850,20 @@ impl Tty {
         self.connectors.lock().unwrap().remove(&surface.name);
     }
 
-    fn on_vblank(&mut self, niri: &mut Niri, crtc: crtc::Handle, meta: DrmEventMetadata) {
+    fn on_vblank(
+        &mut self,
+        niri: &mut Niri,
+        node: DrmNode,
+        crtc: crtc::Handle,
+        meta: DrmEventMetadata,
+    ) {
         let span = tracy_client::span!("Tty::on_vblank");
 
         let now = get_monotonic_time();
 
-        let Some(device) = self.output_device.as_mut() else {
+        let Some(device) = self.devices.get_mut(&node) else {
             // I've seen it happen.
-            error!("missing output device in vblank callback for crtc {crtc:?}");
+            error!("missing device in vblank callback for crtc {crtc:?}");
             return;
         };
 
@@ -721,7 +915,7 @@ impl Tty {
             .outputs()
             .find(|output| {
                 let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                tty_state.device_id == device.id && tty_state.crtc == crtc
+                tty_state.node == node && tty_state.crtc == crtc
             })
             .cloned()
         else {
@@ -837,27 +1031,33 @@ impl Tty {
         self.session.seat()
     }
 
-    pub fn renderer(&mut self) -> Option<&mut GlesRenderer> {
-        self.output_device.as_mut().map(|d| &mut d.gles)
+    pub fn with_primary_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut GlesRenderer) -> T,
+    ) -> Option<T> {
+        let mut renderer = self
+            .gpu_manager
+            .single_renderer(&self.primary_render_node)
+            .ok()?;
+        Some(f(renderer.as_gles_renderer()))
     }
 
     pub fn render(
         &mut self,
         niri: &mut Niri,
         output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
     ) -> RenderResult {
         let span = tracy_client::span!("Tty::render");
 
-        let mut rv = RenderResult::Error;
+        let mut rv = RenderResult::Skipped;
 
-        let Some(device) = self.output_device.as_mut() else {
+        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+        let Some(device) = self.devices.get_mut(&tty_state.node) else {
             error!("missing output device");
             return rv;
         };
 
-        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
         let Some(surface) = device.surfaces.get_mut(&tty_state.crtc) else {
             error!("missing surface");
             return rv;
@@ -865,9 +1065,35 @@ impl Tty {
 
         span.emit_text(&surface.name);
 
+        if !device.drm.is_active() {
+            warn!("device is inactive");
+            return rv;
+        }
+
+        let Some(allocator) = self.primary_allocator.as_mut() else {
+            warn!("no primary allocator");
+            return rv;
+        };
+
+        let mut renderer = match self.gpu_manager.renderer(
+            &self.primary_render_node,
+            &device.render_node,
+            allocator,
+            surface.compositor.format(),
+        ) {
+            Ok(renderer) => renderer,
+            Err(err) => {
+                error!("error creating renderer for primary GPU: {err:?}");
+                return rv;
+            }
+        };
+
+        // Render the elements.
+        let elements = niri.render::<TtyRenderer>(&mut renderer, output, true);
+
+        // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;
-        match drm_compositor.render_frame::<_, _, GlesTexture>(&mut device.gles, elements, [0.; 4])
-        {
+        match drm_compositor.render_frame::<_, _, GlesTexture>(&mut renderer, &elements, [0.; 4]) {
             Ok(res) => {
                 if self
                     .config
@@ -882,7 +1108,9 @@ impl Tty {
                 }
 
                 niri.update_primary_scanout_output(output, &res.states);
-                niri.send_dmabuf_feedbacks(output, &surface.dmabuf_feedback);
+                if let Some(dmabuf_feedback) = surface.dmabuf_feedback.as_ref() {
+                    niri.send_dmabuf_feedbacks(output, dmabuf_feedback, &res.states);
+                }
 
                 if res.damage.is_some() {
                     let presentation_feedbacks =
@@ -944,7 +1172,7 @@ impl Tty {
     }
 
     pub fn toggle_debug_tint(&mut self) {
-        if let Some(device) = self.output_device.as_mut() {
+        for device in self.devices.values_mut() {
             for surface in device.surfaces.values_mut() {
                 let compositor = &mut surface.compositor;
                 compositor.set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
@@ -952,11 +1180,34 @@ impl Tty {
         }
     }
 
-    pub fn dmabuf_state(&mut self) -> &mut DmabufState {
-        let device = self.output_device.as_mut().expect(
-            "the dmabuf global must be created and destroyed together with the output device",
-        );
-        &mut device.dmabuf_state
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+        let mut renderer = match self.gpu_manager.single_renderer(&self.primary_render_node) {
+            Ok(renderer) => renderer,
+            Err(err) => {
+                debug!("error creating renderer for primary GPU: {err:?}");
+                return Err(());
+            }
+        };
+
+        match renderer.import_dmabuf(dmabuf, None) {
+            Ok(_texture) => Ok(()),
+            Err(err) => {
+                debug!("error importing dmabuf: {err:?}");
+                Err(())
+            }
+        }
+    }
+
+    pub fn early_import(&mut self, surface: &WlSurface) {
+        if let Err(err) = self.gpu_manager.early_import(
+            // We always advertise the primary GPU in dmabuf feedback.
+            Some(self.primary_render_node),
+            // We always render on the primary GPU.
+            self.primary_render_node,
+            surface,
+        ) {
+            warn!("error doing early import: {err:?}");
+        }
     }
 
     pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
@@ -964,27 +1215,98 @@ impl Tty {
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
-    pub fn gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
-        self.output_device.as_ref().map(|d| d.gbm.clone())
-    }
-
-    pub fn is_active(&self) -> bool {
-        let Some(device) = &self.output_device else {
-            return false;
-        };
-
-        device.drm.is_active()
+    pub fn primary_gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
+        self.devices.get(&self.primary_node).map(|d| d.gbm.clone())
     }
 
     pub fn set_monitors_active(&self, active: bool) {
-        let Some(device) = &self.output_device else {
-            return;
-        };
-
-        for crtc in device.surfaces.keys() {
-            set_crtc_active(&device.drm, *crtc, active);
+        for device in self.devices.values() {
+            for crtc in device.surfaces.keys() {
+                set_crtc_active(&device.drm, *crtc, active);
+            }
         }
     }
+}
+
+fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
+    let path = config.debug.render_drm_device.as_ref()?;
+    debug!("attempting to use render node from config: {path:?}");
+
+    match DrmNode::from_path(path) {
+        Ok(node) => {
+            if node.ty() == NodeType::Render {
+                match node.node_with_type(NodeType::Primary) {
+                    Some(Ok(primary_node)) => {
+                        return Some((primary_node, node));
+                    }
+                    Some(Err(err)) => {
+                        warn!("error opening primary node for render node {path:?}: {err:?}");
+                    }
+                    None => {
+                        warn!("error opening primary node for render node {path:?}");
+                    }
+                }
+            } else {
+                warn!("DRM node {path:?} is not a render node");
+            }
+        }
+        Err(err) => {
+            warn!("error opening {path:?} as DRM node: {err:?}");
+        }
+    }
+    None
+}
+
+fn surface_dmabuf_feedback(
+    compositor: &GbmDrmCompositor,
+    primary_formats: HashSet<Format>,
+    primary_render_node: DrmNode,
+    surface_render_node: DrmNode,
+) -> Result<SurfaceDmabufFeedback, io::Error> {
+    let surface = compositor.surface();
+    let planes = surface.planes();
+
+    let plane_formats = planes
+        .primary
+        .formats
+        .iter()
+        .chain(planes.overlay.iter().flat_map(|p| p.formats.iter()))
+        .copied()
+        .collect::<HashSet<_>>();
+
+    // We limit the scan-out trache to formats we can also render from so that there is always a
+    // fallback render path available in case the supplied buffer can not be scanned out directly.
+    let mut scanout_formats = plane_formats
+        .intersection(&primary_formats)
+        .copied()
+        .collect::<Vec<_>>();
+
+    // HACK: AMD iGPU + dGPU systems share some modifiers between the two, and yet cross-device
+    // buffers produce a glitched scanout if the modifier is not Linear...
+    if primary_render_node != surface_render_node {
+        scanout_formats.retain(|f| f.modifier == Modifier::Linear);
+    }
+
+    let builder = DmabufFeedbackBuilder::new(primary_render_node.dev_id(), primary_formats);
+
+    let scanout = builder
+        .clone()
+        .add_preference_tranche(
+            surface_render_node.dev_id(),
+            Some(TrancheFlags::Scanout),
+            scanout_formats,
+        )
+        .build()?;
+
+    // If this is the primary node surface, send scanout formats in both tranches to avoid
+    // duplication.
+    let render = if primary_render_node == surface_render_node {
+        scanout.clone()
+    } else {
+        builder.build()?
+    };
+
+    Ok(SurfaceDmabufFeedback { render, scanout })
 }
 
 fn find_drm_property(drm: &DrmDevice, crtc: crtc::Handle, name: &str) -> Option<property::Handle> {

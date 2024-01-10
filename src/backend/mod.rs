@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::input::CompositorMod;
-use crate::niri::OutputRenderElements;
 use crate::Niri;
 
 pub mod tty;
@@ -26,8 +27,8 @@ pub enum RenderResult {
     Submitted,
     /// Rendering succeeded, but there was no damage.
     NoDamage,
-    /// An error has occurred, the frame was not submitted.
-    Error,
+    /// The frame was not rendered and submitted, due to an error or otherwise.
+    Skipped,
 }
 
 impl Backend {
@@ -45,10 +46,13 @@ impl Backend {
         }
     }
 
-    pub fn renderer(&mut self) -> Option<&mut GlesRenderer> {
+    pub fn with_primary_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut GlesRenderer) -> T,
+    ) -> Option<T> {
         match self {
-            Backend::Tty(tty) => tty.renderer(),
-            Backend::Winit(winit) => Some(winit.renderer()),
+            Backend::Tty(tty) => tty.with_primary_renderer(f),
+            Backend::Winit(winit) => winit.with_primary_renderer(f),
         }
     }
 
@@ -56,12 +60,11 @@ impl Backend {
         &mut self,
         niri: &mut Niri,
         output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
         target_presentation_time: Duration,
     ) -> RenderResult {
         match self {
-            Backend::Tty(tty) => tty.render(niri, output, elements, target_presentation_time),
-            Backend::Winit(winit) => winit.render(niri, output, elements),
+            Backend::Tty(tty) => tty.render(niri, output, target_presentation_time),
+            Backend::Winit(winit) => winit.render(niri, output),
         }
     }
 
@@ -93,6 +96,20 @@ impl Backend {
         }
     }
 
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+        match self {
+            Backend::Tty(tty) => tty.import_dmabuf(dmabuf),
+            Backend::Winit(winit) => winit.import_dmabuf(dmabuf),
+        }
+    }
+
+    pub fn early_import(&mut self, surface: &WlSurface) {
+        match self {
+            Backend::Tty(tty) => tty.early_import(surface),
+            Backend::Winit(_) => (),
+        }
+    }
+
     #[cfg_attr(not(feature = "dbus"), allow(unused))]
     pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
         match self {
@@ -107,15 +124,8 @@ impl Backend {
     ) -> Option<smithay::backend::allocator::gbm::GbmDevice<smithay::backend::drm::DrmDeviceFd>>
     {
         match self {
-            Backend::Tty(tty) => tty.gbm_device(),
+            Backend::Tty(tty) => tty.primary_gbm_device(),
             Backend::Winit(_) => None,
-        }
-    }
-
-    pub fn is_active(&self) -> bool {
-        match self {
-            Backend::Tty(tty) => tty.is_active(),
-            Backend::Winit(_) => true,
         }
     }
 

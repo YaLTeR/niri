@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::collections::HashSet;
 
+use niri_config::{Action, Binds, LayoutAction, Modifiers};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -20,7 +21,6 @@ use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
-use crate::config::{Action, Binds, LayoutAction, Modifiers};
 use crate::niri::State;
 use crate::screenshot_ui::ScreenshotUi;
 use crate::utils::{center, get_monotonic_time, spawn};
@@ -94,8 +94,17 @@ impl State {
                 if is_touchpad {
                     let c = &self.niri.config.borrow().input.touchpad;
                     let _ = device.config_tap_set_enabled(c.tap);
+                    let _ = device.config_dwt_set_enabled(c.dwt);
                     let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
                     let _ = device.config_accel_set_speed(c.accel_speed);
+
+                    if let Some(accel_profile) = c.accel_profile {
+                        let _ = device.config_accel_set_profile(accel_profile.into());
+                    }
+
+                    if let Some(tap_button_map) = c.tap_button_map {
+                        let _ = device.config_tap_set_button_map(tap_button_map.into());
+                    }
                 }
 
                 if device.has_capability(input::DeviceCapability::TabletTool) {
@@ -108,6 +117,35 @@ impl State {
                         None => {
                             warn!("tablet tool device has no size");
                         }
+                    }
+                }
+
+                // This is how Mutter tells apart mice.
+                let mut is_trackball = false;
+                let mut is_trackpoint = false;
+                if let Some(udev_device) = unsafe { device.udev_device() } {
+                    if udev_device.property_value("ID_INPUT_TRACKBALL").is_some() {
+                        is_trackball = true;
+                    }
+                    if udev_device
+                        .property_value("ID_INPUT_POINTINGSTICK")
+                        .is_some()
+                    {
+                        is_trackpoint = true;
+                    }
+                }
+
+                let is_mouse = device.has_capability(input::DeviceCapability::Pointer)
+                    && !is_touchpad
+                    && !is_trackball
+                    && !is_trackpoint;
+                if is_mouse {
+                    let c = &self.niri.config.borrow().input.mouse;
+                    let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
+                    let _ = device.config_accel_set_speed(c.accel_speed);
+
+                    if let Some(accel_profile) = c.accel_profile {
+                        let _ = device.config_accel_set_profile(accel_profile.into());
                     }
                 }
             }
@@ -209,6 +247,7 @@ impl State {
                     pressed,
                     *mods,
                     &this.niri.screenshot_ui,
+                    this.niri.config.borrow().input.disable_power_key_handling,
                 )
             },
         ) else {
@@ -244,6 +283,7 @@ impl State {
             }
             Action::ToggleDebugTint => {
                 self.backend.toggle_debug_tint();
+                self.niri.queue_redraw_all();
             }
             Action::Spawn(command) => {
                 spawn(command);
@@ -251,15 +291,15 @@ impl State {
             Action::ScreenshotScreen => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
-                    if let Some(renderer) = self.backend.renderer() {
+                    self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot(renderer, &active) {
                             warn!("error taking screenshot: {err:?}");
                         }
-                    }
+                    });
                 }
             }
             Action::ConfirmScreenshot => {
-                if let Some(renderer) = self.backend.renderer() {
+                self.backend.with_primary_renderer(|renderer| {
                     match self.niri.screenshot_ui.capture(renderer) {
                         Ok((size, pixels)) => {
                             if let Err(err) = self.niri.save_screenshot(size, pixels) {
@@ -270,7 +310,7 @@ impl State {
                             warn!("error capturing screenshot: {err:?}");
                         }
                     }
-                }
+                });
 
                 self.niri.screenshot_ui.close();
                 self.niri
@@ -286,18 +326,18 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::Screenshot => {
-                if let Some(renderer) = self.backend.renderer() {
+                self.backend.with_primary_renderer(|renderer| {
                     self.niri.open_screenshot_ui(renderer);
-                }
+                });
             }
             Action::ScreenshotWindow => {
                 let active = self.niri.layout.active_window();
                 if let Some((window, output)) = active {
-                    if let Some(renderer) = self.backend.renderer() {
-                        if let Err(err) = self.niri.screenshot_window(renderer, &output, &window) {
+                    self.backend.with_primary_renderer(|renderer| {
+                        if let Err(err) = self.niri.screenshot_window(renderer, output, window) {
                             warn!("error taking screenshot: {err:?}");
                         }
-                    }
+                    });
                 }
             }
             Action::CloseWindow => {
@@ -330,6 +370,16 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::MoveColumnToFirst => {
+                self.niri.layout.move_column_to_first();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveColumnToLast => {
+                self.niri.layout.move_column_to_last();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::MoveWindowDown => {
                 self.niri.layout.move_down();
                 // FIXME: granular
@@ -355,6 +405,12 @@ impl State {
             }
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
+            }
+            Action::FocusColumnFirst => {
+                self.niri.layout.focus_column_first();
+            }
+            Action::FocusColumnLast => {
+                self.niri.layout.focus_column_last();
             }
             Action::FocusWindowDown => {
                 self.niri.layout.focus_down();
@@ -800,12 +856,16 @@ impl State {
 
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {
+            frame = frame
+                .relative_direction(Axis::Horizontal, event.relative_direction(Axis::Horizontal));
             frame = frame.value(Axis::Horizontal, horizontal_amount);
             if let Some(discrete) = horizontal_amount_discrete {
                 frame = frame.v120(Axis::Horizontal, discrete as i32);
             }
         }
         if vertical_amount != 0.0 {
+            frame =
+                frame.relative_direction(Axis::Vertical, event.relative_direction(Axis::Vertical));
             frame = frame.value(Axis::Vertical, vertical_amount);
             if let Some(discrete) = vertical_amount_discrete {
                 frame = frame.v120(Axis::Vertical, discrete as i32);
@@ -1165,6 +1225,7 @@ fn should_intercept_key(
     pressed: bool,
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
+    disable_power_key_handling: bool,
 ) -> FilterResult<Option<Action>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -1173,7 +1234,14 @@ fn should_intercept_key(
         return FilterResult::Forward;
     }
 
-    let mut final_action = action(bindings, comp_mod, modified, raw, mods);
+    let mut final_action = action(
+        bindings,
+        comp_mod,
+        modified,
+        raw,
+        mods,
+        disable_power_key_handling,
+    );
 
     // Allow only a subset of compositor actions while the screenshot UI is open, since the user
     // cannot see the screen.
@@ -1210,6 +1278,7 @@ fn action(
     modified: Keysym,
     raw: Option<Keysym>,
     mods: ModifiersState,
+    disable_power_key_handling: bool,
 ) -> Option<Action> {
     use keysyms::*;
 
@@ -1220,7 +1289,7 @@ fn action(
             let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
             return Some(Action::ChangeVt(vt));
         }
-        KEY_XF86PowerOff => return Some(Action::Suspend),
+        KEY_XF86PowerOff if !disable_power_key_handling => return Some(Action::Suspend),
         _ => (),
     }
 
@@ -1307,8 +1376,9 @@ fn allowed_during_screenshot(action: &Action) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use niri_config::{Action, Bind, Binds, Key, Modifiers};
+
     use super::*;
-    use crate::config::{Action, Bind, Binds, Key, Modifiers};
 
     #[test]
     fn bindings_suppress_keys() {
@@ -1325,6 +1395,7 @@ mod tests {
         let mut suppressed_keys = HashSet::new();
 
         let screenshot_ui = ScreenshotUi::new();
+        let disable_power_key_handling = false;
 
         // The key_code we pick is arbitrary, the only thing
         // that matters is that they are different between cases.
@@ -1341,6 +1412,7 @@ mod tests {
                 pressed,
                 mods,
                 &screenshot_ui,
+                disable_power_key_handling,
             )
         };
 
@@ -1356,6 +1428,7 @@ mod tests {
                 pressed,
                 mods,
                 &screenshot_ui,
+                disable_power_key_handling,
             )
         };
 
