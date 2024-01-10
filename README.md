@@ -35,6 +35,8 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 > [!TIP]
 > For Fedora users, there's a COPR with built and packaged niri: https://copr.fedorainfracloud.org/coprs/yalter/niri/
+>
+> For NixOS users, check out https://github.com/sodiboo/niri-flake
 
 First, install the dependencies for your distribution.
 
@@ -80,10 +82,6 @@ To do that, put files into the correct directories according to this table.
 | `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
 
 Doing this will make niri appear in GDM and, presumably, other display managers.
-
-### NixOS
-
-For NixOS users, check out https://github.com/sodiboo/niri-flake
 
 ## Running
 
