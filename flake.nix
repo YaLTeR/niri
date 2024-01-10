@@ -40,6 +40,7 @@
             root = ./.;
             include = [
               ./src
+              ./niri-config
               ./Cargo.toml
               ./Cargo.lock
               ./resources
