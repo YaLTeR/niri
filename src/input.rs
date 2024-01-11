@@ -1318,9 +1318,7 @@ fn action(
         comp_mod = Modifiers::empty();
     }
 
-    let Some(raw) = raw else {
-        return None;
-    };
+    let raw = raw?;
 
     for bind in &bindings.0 {
         if bind.key.keysym != raw {
