@@ -16,6 +16,7 @@ use super::Start;
 pub struct ScreenCast {
     connectors: Arc<Mutex<HashMap<String, Output>>>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
+    #[allow(clippy::type_complexity)]
     sessions: Arc<Mutex<Vec<(Session, InterfaceRef<Session>)>>>,
 }
 
@@ -24,6 +25,7 @@ pub struct Session {
     id: usize,
     connectors: Arc<Mutex<HashMap<String, Output>>>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
+    #[allow(clippy::type_complexity)]
     streams: Arc<Mutex<Vec<(Stream, InterfaceRef<Stream>)>>>,
 }
 
