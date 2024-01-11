@@ -191,6 +191,7 @@ pub fn show_screenshot_notification(image_path: Option<PathBuf>) {
     }
 }
 
+#[inline(never)]
 pub fn cause_panic() {
     let a = Duration::from_secs(1);
     let b = Duration::from_secs(2);
