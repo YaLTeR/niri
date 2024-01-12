@@ -1,7 +1,9 @@
 use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, LayerSurface,
-    PopupKind, PopupManager, Window, WindowSurfaceType,
+    PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
+    WindowSurfaceType,
 };
+use smithay::input::pointer::Focus;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::ConstraintAdjustment;
@@ -12,6 +14,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
+use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
@@ -19,7 +22,7 @@ use smithay::wayland::shell::xdg::{
 };
 use smithay::{delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_shell};
 
-use crate::niri::State;
+use crate::niri::{PopupGrabState, State};
 use crate::utils::clone2;
 
 impl XdgShellHandler for State {
@@ -90,8 +93,93 @@ impl XdgShellHandler for State {
         surface.send_repositioned(token);
     }
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
-        // FIXME popup grabs
+    fn grab(&mut self, surface: PopupSurface, _seat: WlSeat, serial: Serial) {
+        let popup = PopupKind::Xdg(surface);
+        let Ok(root) = find_popup_root_surface(&popup) else {
+            return;
+        };
+
+        // We need to hand out the grab in a way consistent with what update_keyboard_focus()
+        // thinks the current focus is, otherwise it will desync and cause weird issues with
+        // keyboard focus being at the wrong place.
+        if self.niri.is_locked() {
+            if Some(&root) != self.niri.lock_surface_focus().as_ref() {
+                let _ = PopupManager::dismiss_popup(&root, &popup);
+                return;
+            }
+        } else if self.niri.screenshot_ui.is_open() {
+            let _ = PopupManager::dismiss_popup(&root, &popup);
+            return;
+        } else if let Some(output) = self.niri.layout.active_output() {
+            let layers = layer_map_for_output(output);
+
+            if let Some(layer_surface) =
+                layers.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
+            {
+                if !matches!(layer_surface.layer(), Layer::Overlay | Layer::Top) {
+                    let _ = PopupManager::dismiss_popup(&root, &popup);
+                    return;
+                }
+            } else {
+                if layers
+                    .layers_on(Layer::Overlay)
+                    .any(|l| l.can_receive_keyboard_focus())
+                {
+                    let _ = PopupManager::dismiss_popup(&root, &popup);
+                    return;
+                }
+
+                let mon = self.niri.layout.monitor_for_output(output).unwrap();
+                if !mon.render_above_top_layer()
+                    && layers
+                        .layers_on(Layer::Top)
+                        .any(|l| l.can_receive_keyboard_focus())
+                {
+                    let _ = PopupManager::dismiss_popup(&root, &popup);
+                    return;
+                }
+
+                let layout_focus = self.niri.layout.focus();
+                if Some(&root) != layout_focus.map(|win| win.toplevel().wl_surface()) {
+                    let _ = PopupManager::dismiss_popup(&root, &popup);
+                    return;
+                }
+            }
+        } else {
+            let _ = PopupManager::dismiss_popup(&root, &popup);
+            return;
+        }
+
+        let seat = &self.niri.seat;
+        let Ok(mut grab) = self
+            .niri
+            .popups
+            .grab_popup(root.clone(), popup, seat, serial)
+        else {
+            return;
+        };
+
+        let keyboard = seat.get_keyboard().unwrap();
+        let pointer = seat.get_pointer().unwrap();
+
+        let keyboard_grab_mismatches = keyboard.is_grabbed()
+            && !(keyboard.has_grab(serial)
+                || grab
+                    .previous_serial()
+                    .map_or(true, |s| keyboard.has_grab(s)));
+        let pointer_grab_mismatches = pointer.is_grabbed()
+            && !(pointer.has_grab(serial)
+                || grab.previous_serial().map_or(true, |s| pointer.has_grab(s)));
+        if keyboard_grab_mismatches || pointer_grab_mismatches {
+            grab.ungrab(PopupUngrabStrategy::All);
+            return;
+        }
+
+        trace!("new grab for root {:?}", root);
+        keyboard.set_focus(self, grab.current_grab(), serial);
+        keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
+        pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+        self.niri.popup_grab = Some(PopupGrabState { root, grab });
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {

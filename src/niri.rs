@@ -35,7 +35,8 @@ use smithay::desktop::utils::{
     under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
 use smithay::desktop::{
-    layer_map_for_output, LayerSurface, PopupManager, Space, Window, WindowSurfaceType,
+    layer_map_for_output, LayerSurface, PopupGrab, PopupManager, PopupUngrabStrategy, Space,
+    Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbContextHandler};
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
@@ -157,6 +158,7 @@ pub struct Niri {
     pub primary_selection_state: PrimarySelectionState,
     pub data_control_state: DataControlState,
     pub popups: PopupManager,
+    pub popup_grab: Option<PopupGrabState>,
     pub presentation_state: PresentationState,
 
     pub seat: Seat<State>,
@@ -224,6 +226,11 @@ pub enum RedrawState {
     WaitingForEstimatedVBlank(RegistrationToken),
     /// A redraw is queued on top of the above.
     WaitingForEstimatedVBlankAndQueued((RegistrationToken, Idle<'static>)),
+}
+
+pub struct PopupGrabState {
+    pub root: WlSurface,
+    pub grab: PopupGrab<State>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -303,6 +310,7 @@ impl State {
         self.niri.cursor_manager.check_cursor_image_surface_alive();
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
+        self.niri.refresh_popup_grab();
         self.update_keyboard_focus();
         self.refresh_pointer_focus();
 
@@ -405,6 +413,17 @@ impl State {
             let mon = self.niri.layout.monitor_for_output(output).unwrap();
             let layers = layer_map_for_output(output);
 
+            // Explicitly check for layer-shell popup grabs here, our keyboard focus will stay on
+            // the root layer surface while it has grabs.
+            let layer_grab = self.niri.popup_grab.as_ref().and_then(|g| {
+                layers
+                    .layer_for_surface(&g.root, WindowSurfaceType::TOPLEVEL)
+                    .map(|l| (&g.root, l.layer()))
+            });
+            let grab_on_layer = |layer: Layer| {
+                layer_grab.and_then(move |(s, l)| if l == layer { Some(s.clone()) } else { None })
+            };
+
             let layout_focus = || {
                 self.niri
                     .layout
@@ -417,7 +436,14 @@ impl State {
                     .then(|| surface.wl_surface().clone())
             };
 
-            let mut surface = layers.layers_on(Layer::Overlay).find_map(layer_focus);
+            let mut surface = grab_on_layer(Layer::Overlay);
+            // FIXME: we shouldn't prioritize the top layer grabs over regular overlay input or a
+            // fullscreen layout window. This will need tracking in grab() to avoid handing it out
+            // in the first place. Or a better way to structure this code.
+            surface = surface.or_else(|| grab_on_layer(Layer::Top));
+
+            surface = surface.or_else(|| layers.layers_on(Layer::Overlay).find_map(layer_focus));
+
             if mon.render_above_top_layer() {
                 surface = surface.or_else(layout_focus);
                 surface = surface.or_else(|| layers.layers_on(Layer::Top).find_map(layer_focus));
@@ -433,6 +459,31 @@ impl State {
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         if self.niri.keyboard_focus != focus {
+            trace!(
+                "keyboard focus changed from {:?} to {:?}",
+                self.niri.keyboard_focus,
+                focus
+            );
+
+            if let Some(grab) = self.niri.popup_grab.as_mut() {
+                if Some(&grab.root) != focus.as_ref() {
+                    trace!(
+                        "grab root {:?} is not the new focus {:?}, ungrabbing",
+                        grab.root,
+                        focus
+                    );
+
+                    grab.grab.ungrab(PopupUngrabStrategy::All);
+                    keyboard.unset_grab();
+                    self.niri.seat.get_pointer().unwrap().unset_grab(
+                        self,
+                        SERIAL_COUNTER.next_serial(),
+                        get_monotonic_time().as_millis() as u32,
+                    );
+                    self.niri.popup_grab = None;
+                }
+            }
+
             if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
                 let current_layout =
                     keyboard.with_xkb_state(self, |context| context.active_layout());
@@ -783,6 +834,7 @@ impl Niri {
             primary_selection_state,
             data_control_state,
             popups: PopupManager::default(),
+            popup_grab: None,
             suppressed_keys: HashSet::new(),
             presentation_state,
 
@@ -1275,7 +1327,7 @@ impl Niri {
         layout_output.or_else(layer_shell_output)
     }
 
-    fn lock_surface_focus(&self) -> Option<WlSurface> {
+    pub fn lock_surface_focus(&self) -> Option<WlSurface> {
         let output_under_cursor = self.output_under_cursor();
         let output = output_under_cursor
             .as_ref()
@@ -1284,6 +1336,14 @@ impl Niri {
 
         let state = self.output_state.get(output)?;
         state.lock_surface.as_ref().map(|s| s.wl_surface()).cloned()
+    }
+
+    pub fn refresh_popup_grab(&mut self) {
+        if let Some(grab) = &self.popup_grab {
+            if grab.grab.has_ended() {
+                self.popup_grab = None;
+            }
+        }
     }
 
     /// Schedules an immediate redraw on all outputs if one is not already scheduled.
