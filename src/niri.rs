@@ -1055,6 +1055,19 @@ impl Niri {
         }
 
         let (output, pos_within_output) = self.output_under(pos)?;
+
+        // Check if some layer-shell surface is on top.
+        let layers = layer_map_for_output(output);
+        let layer_under = |layer| layers.layer_under(layer, pos_within_output).is_some();
+        if layer_under(Layer::Overlay) {
+            return None;
+        }
+
+        let mon = self.layout.monitor_for_output(output).unwrap();
+        if !mon.render_above_top_layer() && layer_under(Layer::Top) {
+            return None;
+        }
+
         let (window, _loc) = self.layout.window_under(output, pos_within_output)?;
         Some(window)
     }
