@@ -299,7 +299,7 @@ impl State {
         self.niri.cursor_manager.check_cursor_image_surface_alive();
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
-        self.update_focus();
+        self.update_keyboard_focus();
         self.refresh_pointer_focus();
 
         {
@@ -392,7 +392,7 @@ impl State {
         self.move_cursor(center(geo).to_f64());
     }
 
-    pub fn update_focus(&mut self) {
+    pub fn update_keyboard_focus(&mut self) {
         let focus = if self.niri.is_locked() {
             self.niri.lock_surface_focus()
         } else if self.niri.screenshot_ui.is_open() {
