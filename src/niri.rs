@@ -162,6 +162,10 @@ pub struct Niri {
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<u32>,
+    // This is always a toplevel surface focused as far as niri's logic is concerned, even when
+    // popup grabs are active (which means the real keyboard focus is on a popup descending from
+    // this toplevel surface).
+    pub keyboard_focus: Option<WlSurface>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -428,15 +432,14 @@ impl State {
         };
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
-        let current_focus = keyboard.current_focus();
-        if current_focus != focus {
+        if self.niri.keyboard_focus != focus {
             if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
                 let current_layout =
                     keyboard.with_xkb_state(self, |context| context.active_layout());
 
                 let mut new_layout = current_layout;
                 // Store the currently active layout for the surface.
-                if let Some(current_focus) = current_focus.as_ref() {
+                if let Some(current_focus) = self.niri.keyboard_focus.as_ref() {
                     with_states(current_focus, |data| {
                         let cell = data
                             .data_map
@@ -463,6 +466,7 @@ impl State {
                 }
             }
 
+            self.niri.keyboard_focus = focus.clone();
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
 
             // FIXME: can be more granular.
@@ -783,6 +787,7 @@ impl Niri {
             presentation_state,
 
             seat,
+            keyboard_focus: None,
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
