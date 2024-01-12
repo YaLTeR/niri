@@ -116,9 +116,6 @@ impl XdgShellHandler for State {
             .capabilities
             .contains(xdg_toplevel::WmCapabilities::Fullscreen)
         {
-            // NOTE: This is only one part of the solution. We can set the
-            // location and configure size here, but the surface should be rendered fullscreen
-            // independently from its buffer size
             if let Some((window, current_output)) = self
                 .niri
                 .layout
