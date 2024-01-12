@@ -796,8 +796,14 @@ impl State {
             if let Some(window) = self.niri.window_under_cursor() {
                 let window = window.clone();
                 self.niri.layout.activate_window(&window);
+
+                // FIXME: granular.
+                self.niri.queue_redraw_all();
             } else if let Some(output) = self.niri.output_under_cursor() {
                 self.niri.layout.activate_output(&output);
+
+                // FIXME: granular.
+                self.niri.queue_redraw_all();
             }
         };
 
