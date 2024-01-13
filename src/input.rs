@@ -349,6 +349,8 @@ impl State {
                 let focus = self.niri.layout.focus().cloned();
                 if let Some(window) = focus {
                     self.niri.layout.toggle_fullscreen(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
                 }
             }
             Action::SwitchLayout(action) => {
@@ -402,21 +404,33 @@ impl State {
             }
             Action::FocusColumnLeft => {
                 self.niri.layout.focus_left();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::FocusColumnFirst => {
                 self.niri.layout.focus_column_first();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::FocusColumnLast => {
                 self.niri.layout.focus_column_last();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::FocusWindowDown => {
                 self.niri.layout.focus_down();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::FocusWindowUp => {
                 self.niri.layout.focus_up();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::FocusWindowOrWorkspaceDown => {
                 self.niri.layout.focus_window_or_workspace_down();
