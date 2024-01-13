@@ -806,7 +806,7 @@ impl State {
 
         let button_state = event.state();
 
-        if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
+        if ButtonState::Pressed == button_state {
             if let Some(window) = self.niri.window_under_cursor() {
                 let window = window.clone();
                 self.niri.layout.activate_window(&window);
