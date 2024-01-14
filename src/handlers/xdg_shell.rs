@@ -288,6 +288,14 @@ impl XdgDecorationHandler for State {
     }
 
     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: zxdg_toplevel_decoration_v1::Mode) {
+        // Set whatever the client wants, rather than our preferred mode. This especially matters
+        // for SDL2 which has a bug where forcing a different (client-side) decoration mode during
+        // their window creation sequence would leave the window permanently hidden.
+        //
+        // https://github.com/libsdl-org/SDL/issues/8173
+        //
+        // The bug has been fixed, but there's a ton of apps which will use the buggy version for a
+        // long while...
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(mode);
         });
