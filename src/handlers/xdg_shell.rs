@@ -301,9 +301,10 @@ impl XdgDecorationHandler for State {
             state.decoration_mode = Some(mode);
         });
 
-        // Only send configure if it's non-initial.
+        // A configure is required in response to this event. However, if an initial configure
+        // wasn't sent, then we will send this as part of the initial configure later.
         if initial_configure_sent(&toplevel) {
-            toplevel.send_pending_configure();
+            toplevel.send_configure();
         }
     }
 
@@ -317,9 +318,10 @@ impl XdgDecorationHandler for State {
             state.decoration_mode = Some(mode);
         });
 
-        // Only send configure if it's non-initial.
+        // A configure is required in response to this event. However, if an initial configure
+        // wasn't sent, then we will send this as part of the initial configure later.
         if initial_configure_sent(&toplevel) {
-            toplevel.send_pending_configure();
+            toplevel.send_configure();
         }
     }
 }
