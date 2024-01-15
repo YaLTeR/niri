@@ -25,9 +25,12 @@ impl ServiceChannel {
         }
 
         let (sock1, sock2) = UnixStream::pair().unwrap();
-        self.display
-            .insert_client(sock2, Arc::new(ClientState::default()))
-            .unwrap();
+        let data = Arc::new(ClientState {
+            compositor_state: Default::default(),
+            // Would be nice to thread config here but for now it's fine.
+            can_view_decoration_globals: false,
+        });
+        self.display.insert_client(sock2, data).unwrap();
         Ok(unsafe { zbus::zvariant::OwnedFd::from_raw_fd(sock1.into_raw_fd()) })
     }
 }

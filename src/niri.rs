@@ -695,13 +695,22 @@ impl Niri {
             &display_handle,
             [WmCapabilities::Fullscreen],
         );
-        let xdg_decoration_state = XdgDecorationState::new::<State>(&display_handle);
-        let kde_decoration_state = KdeDecorationState::new::<State>(
+        let xdg_decoration_state =
+            XdgDecorationState::new_with_filter::<State, _>(&display_handle, |client| {
+                client
+                    .get_data::<ClientState>()
+                    .unwrap()
+                    .can_view_decoration_globals
+            });
+        let kde_decoration_state = KdeDecorationState::new_with_filter::<State, _>(
             &display_handle,
-            if config_.prefer_no_csd {
-                KdeDecorationsMode::Server
-            } else {
-                KdeDecorationsMode::Client
+            // If we want CSD we will hide the global.
+            KdeDecorationsMode::Server,
+            |client| {
+                client
+                    .get_data::<ClientState>()
+                    .unwrap()
+                    .can_view_decoration_globals
             },
         );
         let layer_shell_state = WlrLayerShellState::new::<State>(&display_handle);
@@ -768,7 +777,12 @@ impl Niri {
         let socket_name = socket_source.socket_name().to_os_string();
         event_loop
             .insert_source(socket_source, move |client, _, state| {
-                let data = Arc::new(ClientState::default());
+                let config = state.niri.config.borrow();
+                let data = Arc::new(ClientState {
+                    compositor_state: Default::default(),
+                    can_view_decoration_globals: config.prefer_no_csd,
+                });
+
                 if let Err(err) = state.niri.display_handle.insert_client(client, data) {
                     error!("error inserting client: {err}");
                 }
@@ -2518,9 +2532,9 @@ impl Niri {
     }
 }
 
-#[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
+    pub can_view_decoration_globals: bool,
 }
 
 impl ClientData for ClientState {

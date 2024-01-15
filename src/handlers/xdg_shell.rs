@@ -277,13 +277,9 @@ delegate_xdg_shell!(State);
 
 impl XdgDecorationHandler for State {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
-        let mode = if self.niri.config.borrow().prefer_no_csd {
-            Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
-        } else {
-            None
-        };
+        // If we want CSD, we hide this global altogether.
         toplevel.with_pending_state(|state| {
-            state.decoration_mode = mode;
+            state.decoration_mode = Some(zxdg_toplevel_decoration_v1::Mode::ServerSide);
         });
     }
 
@@ -308,13 +304,9 @@ impl XdgDecorationHandler for State {
     }
 
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
-        let mode = if self.niri.config.borrow().prefer_no_csd {
-            Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
-        } else {
-            None
-        };
+        // If we want CSD, we hide this global altogether.
         toplevel.with_pending_state(|state| {
-            state.decoration_mode = mode;
+            state.decoration_mode = Some(zxdg_toplevel_decoration_v1::Mode::ServerSide);
         });
 
         // A configure is required in response to this event. However, if an initial configure
