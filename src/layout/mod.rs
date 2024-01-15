@@ -49,7 +49,7 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch, WorkspaceSwitchGesture};
 use self::workspace::{
-    compute_working_area, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
+    compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
 };
 use crate::animation::Animation;
 use crate::utils::output_size;
@@ -451,6 +451,29 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         monitors[monitor_idx].add_window(workspace_idx, window, activate, width, is_full_width);
+
+        if activate {
+            *active_monitor_idx = monitor_idx;
+        }
+    }
+
+    pub fn add_column_by_idx(
+        &mut self,
+        monitor_idx: usize,
+        workspace_idx: usize,
+        column: Column<W>,
+        activate: bool,
+    ) {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            panic!()
+        };
+
+        monitors[monitor_idx].add_column(workspace_idx, column, activate);
 
         if activate {
             *active_monitor_idx = monitor_idx;
@@ -1205,6 +1228,30 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn move_column_to_output(&mut self, output: &Output) {
+        if let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        {
+            let new_idx = monitors
+                .iter()
+                .position(|mon| &mon.output == output)
+                .unwrap();
+
+            let current = &mut monitors[*active_monitor_idx];
+            let ws = current.active_workspace();
+            if !ws.has_windows() {
+                return;
+            }
+            let column = ws.remove_column_by_idx(ws.active_column_idx);
+
+            let workspace_idx = monitors[new_idx].active_workspace_idx;
+            self.add_column_by_idx(new_idx, workspace_idx, column, true);
+        }
+    }
+
     pub fn move_window_to_output(&mut self, window: W, output: &Output) {
         if !matches!(&self.monitor_set, MonitorSet::Normal { .. }) {
             return;
@@ -1635,6 +1682,7 @@ mod tests {
         MoveWorkspaceDown,
         MoveWorkspaceUp,
         MoveWindowToOutput(#[proptest(strategy = "1..=5u8")] u8),
+        MoveColumnToOutput(#[proptest(strategy = "1..=5u8")] u8),
         SwitchPresetColumnWidth,
         MaximizeColumn,
         SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
@@ -1763,6 +1811,14 @@ mod tests {
                     };
 
                     layout.move_to_output(&output);
+                }
+                Op::MoveColumnToOutput(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+
+                    layout.move_column_to_output(&output);
                 }
                 Op::MoveWorkspaceDown => layout.move_workspace_down(),
                 Op::MoveWorkspaceUp => layout.move_workspace_up(),
