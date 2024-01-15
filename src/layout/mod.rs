@@ -897,6 +897,27 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace(idx);
     }
 
+    pub fn move_column_to_workspace_up(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_column_to_workspace_up();
+    }
+
+    pub fn move_column_to_workspace_down(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_column_to_workspace_down();
+    }
+
+    pub fn move_column_to_workspace(&mut self, idx: usize) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.move_column_to_workspace(idx);
+    }
+
     pub fn switch_workspace_up(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1608,6 +1629,9 @@ mod tests {
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
         MoveWindowToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
+        MoveColumnToWorkspaceDown,
+        MoveColumnToWorkspaceUp,
+        MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
         MoveWorkspaceDown,
         MoveWorkspaceUp,
         MoveWindowToOutput(#[proptest(strategy = "1..=5u8")] u8),
@@ -1729,6 +1753,9 @@ mod tests {
                 Op::MoveWindowToWorkspaceDown => layout.move_to_workspace_down(),
                 Op::MoveWindowToWorkspaceUp => layout.move_to_workspace_up(),
                 Op::MoveWindowToWorkspace(idx) => layout.move_to_workspace(idx),
+                Op::MoveColumnToWorkspaceDown => layout.move_column_to_workspace_down(),
+                Op::MoveColumnToWorkspaceUp => layout.move_column_to_workspace_up(),
+                Op::MoveColumnToWorkspace(idx) => layout.move_column_to_workspace(idx),
                 Op::MoveWindowToOutput(id) => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
@@ -1855,6 +1882,11 @@ mod tests {
             Op::MoveWindowToWorkspace(1),
             Op::MoveWindowToWorkspace(2),
             Op::MoveWindowToWorkspace(3),
+            Op::MoveColumnToWorkspaceDown,
+            Op::MoveColumnToWorkspaceUp,
+            Op::MoveColumnToWorkspace(1),
+            Op::MoveColumnToWorkspace(2),
+            Op::MoveColumnToWorkspace(3),
             Op::MoveWindowDown,
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
@@ -1977,6 +2009,11 @@ mod tests {
             Op::MoveWindowToWorkspace(1),
             Op::MoveWindowToWorkspace(2),
             Op::MoveWindowToWorkspace(3),
+            Op::MoveColumnToWorkspaceDown,
+            Op::MoveColumnToWorkspaceUp,
+            Op::MoveColumnToWorkspace(1),
+            Op::MoveColumnToWorkspace(2),
+            Op::MoveColumnToWorkspace(3),
             Op::MoveWindowDown,
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,

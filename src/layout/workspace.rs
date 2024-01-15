@@ -574,6 +574,43 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn add_column(&mut self, mut column: Column<W>, activate: bool) {
+        for tile in &column.tiles {
+            self.enter_output_for_window(tile.window());
+        }
+
+        let was_empty = self.columns.is_empty();
+
+        let idx = if self.columns.is_empty() {
+            0
+        } else {
+            self.active_column_idx + 1
+        };
+
+        column.set_view_size(self.view_size, self.working_area);
+        let width = column.width();
+        self.columns.insert(idx, column);
+
+        if activate {
+            // If this is the first window on an empty workspace, skip the animation from whatever
+            // view_offset was left over.
+            if was_empty {
+                if self.options.center_focused_column == CenterFocusedColumn::Always {
+                    self.view_offset =
+                        -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+                } else {
+                    // Try to make the code produce a left-aligned offset, even in presence of left
+                    // exclusive zones.
+                    self.view_offset = self.compute_new_view_offset_for_column(self.column_x(0), 0);
+                }
+                self.view_offset_anim = None;
+            }
+
+            self.activate_column(idx);
+            self.activate_prev_column_on_removal = true;
+        }
+    }
+
     pub fn remove_window_by_idx(&mut self, column_idx: usize, window_idx: usize) -> W {
         let column = &mut self.columns[column_idx];
         let window = column.tiles.remove(window_idx).into_window();
@@ -616,6 +653,42 @@ impl<W: LayoutElement> Workspace<W> {
         column.update_tile_sizes();
 
         window
+    }
+
+    pub fn remove_column_by_idx(&mut self, column_idx: usize) -> Column<W> {
+        let column = self.columns.remove(column_idx);
+
+        if let Some(output) = &self.output {
+            for tile in &column.tiles {
+                tile.window().output_leave(output);
+            }
+        }
+
+        if column_idx + 1 == self.active_column_idx {
+            // The previous column, that we were going to activate upon removal of the active
+            // column, has just been itself removed.
+            self.activate_prev_column_on_removal = false;
+        }
+
+        // FIXME: activate_column below computes current view position to compute the new view
+        // position, which can include the column we're removing here. This leads to unwanted
+        // view jumps.
+        if self.columns.is_empty() {
+            return column;
+        }
+
+        if self.active_column_idx > column_idx
+            || (self.active_column_idx == column_idx && self.activate_prev_column_on_removal)
+        {
+            // A column to the left was removed; preserve the current position.
+            // FIXME: preserve activate_prev_column_on_removal.
+            // Or, the active column was removed, and we needed to activate the previous column.
+            self.activate_column(self.active_column_idx.saturating_sub(1));
+        } else {
+            self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
+        }
+
+        column
     }
 
     pub fn remove_window(&mut self, window: &W) {

@@ -12,7 +12,7 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale};
 
 use super::workspace::{
-    compute_working_area, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
+    compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
 };
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
@@ -112,6 +112,25 @@ impl<W: LayoutElement> Monitor<W> {
         let workspace = &mut self.workspaces[workspace_idx];
 
         workspace.add_window(window, activate, width, is_full_width);
+
+        // After adding a new window, workspace becomes this output's own.
+        workspace.original_output = OutputId::new(&self.output);
+
+        if workspace_idx == self.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            let ws = Workspace::new(self.output.clone(), self.options.clone());
+            self.workspaces.push(ws);
+        }
+
+        if activate {
+            self.activate_workspace(workspace_idx);
+        }
+    }
+
+    pub fn add_column(&mut self, workspace_idx: usize, column: Column<W>, activate: bool) {
+        let workspace = &mut self.workspaces[workspace_idx];
+
+        workspace.add_column(column, activate);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -316,6 +335,62 @@ impl<W: LayoutElement> Monitor<W> {
             workspace.remove_window_by_idx(workspace.active_column_idx, column.active_tile_idx);
 
         self.add_window(new_idx, window, true, width, is_full_width);
+
+        // Don't animate this action.
+        self.workspace_switch = None;
+
+        self.clean_up_workspaces();
+    }
+
+    pub fn move_column_to_workspace_up(&mut self) {
+        let source_workspace_idx = self.active_workspace_idx;
+
+        let new_idx = source_workspace_idx.saturating_sub(1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.columns.is_empty() {
+            return;
+        }
+
+        let column = workspace.remove_column_by_idx(workspace.active_column_idx);
+        self.add_column(new_idx, column, true);
+    }
+
+    pub fn move_column_to_workspace_down(&mut self) {
+        let source_workspace_idx = self.active_workspace_idx;
+
+        let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.columns.is_empty() {
+            return;
+        }
+
+        let column = workspace.remove_column_by_idx(workspace.active_column_idx);
+        self.add_column(new_idx, column, true);
+    }
+
+    pub fn move_column_to_workspace(&mut self, idx: usize) {
+        let source_workspace_idx = self.active_workspace_idx;
+
+        let new_idx = min(idx, self.workspaces.len() - 1);
+        if new_idx == source_workspace_idx {
+            return;
+        }
+
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.columns.is_empty() {
+            return;
+        }
+
+        let column = workspace.remove_column_by_idx(workspace.active_column_idx);
+        self.add_column(new_idx, column, true);
 
         // Don't animate this action.
         self.workspace_switch = None;

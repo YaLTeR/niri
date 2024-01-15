@@ -458,6 +458,22 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::MoveColumnToWorkspaceDown => {
+                self.niri.layout.move_column_to_workspace_down();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveColumnToWorkspaceUp => {
+                self.niri.layout.move_column_to_workspace_up();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveColumnToWorkspace(idx) => {
+                let idx = idx.saturating_sub(1) as usize;
+                self.niri.layout.move_column_to_workspace(idx);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWorkspaceDown => {
                 self.niri.layout.switch_workspace_down();
                 // FIXME: granular
