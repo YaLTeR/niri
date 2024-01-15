@@ -71,6 +71,7 @@ use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerCons
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
+use smithay::wayland::security_context::SecurityContextState;
 use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
@@ -160,6 +161,7 @@ pub struct Niri {
     pub popups: PopupManager,
     pub popup_grab: Option<PopupGrabState>,
     pub presentation_state: PresentationState,
+    pub security_context_state: SecurityContextState,
 
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
@@ -713,9 +715,14 @@ impl Niri {
                     .can_view_decoration_globals
             },
         );
-        let layer_shell_state = WlrLayerShellState::new::<State>(&display_handle);
+        let layer_shell_state =
+            WlrLayerShellState::new_with_filter::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
         let session_lock_state =
-            SessionLockManagerState::new::<State, _>(&display_handle, |_| true);
+            SessionLockManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let output_manager_state =
             OutputManagerState::new_with_xdg_output::<State>(&display_handle);
@@ -730,16 +737,24 @@ impl Niri {
         let data_control_state = DataControlState::new::<State, _>(
             &display_handle,
             Some(&primary_selection_state),
-            |_| true,
+            |client| !client.get_data::<ClientState>().unwrap().restricted,
         );
         let presentation_state =
             PresentationState::new::<State>(&display_handle, Monotonic::ID as u32);
+        let security_context_state =
+            SecurityContextState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
 
         let text_input_state = TextInputManagerState::new::<State>(&display_handle);
         let input_method_state =
-            InputMethodManagerState::new::<State, _>(&display_handle, |_| true);
+            InputMethodManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
         let virtual_keyboard_state =
-            VirtualKeyboardManagerState::new::<State, _>(&display_handle, |_| true);
+            VirtualKeyboardManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -781,6 +796,7 @@ impl Niri {
                 let data = Arc::new(ClientState {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
+                    restricted: false,
                 });
 
                 if let Err(err) = state.niri.display_handle.insert_client(client, data) {
@@ -851,6 +867,7 @@ impl Niri {
             popup_grab: None,
             suppressed_keys: HashSet::new(),
             presentation_state,
+            security_context_state,
 
             seat,
             keyboard_focus: None,
@@ -2535,6 +2552,8 @@ impl Niri {
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
     pub can_view_decoration_globals: bool,
+    /// Whether this client is denied from the restricted protocols such as security-context.
+    pub restricted: bool,
 }
 
 impl ClientData for ClientState {

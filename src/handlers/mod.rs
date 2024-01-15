@@ -22,6 +22,9 @@ use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
+use smithay::wayland::security_context::{
+    SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
+};
 use smithay::wayland::selection::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
@@ -38,11 +41,11 @@ use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
     delegate_input_method_manager, delegate_output, delegate_pointer_constraints,
     delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
-    delegate_relative_pointer, delegate_seat, delegate_session_lock, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_virtual_keyboard_manager,
+    delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
+    delegate_tablet_manager, delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
-use crate::niri::State;
+use crate::niri::{ClientState, State};
 use crate::utils::output_size;
 
 impl SeatHandler for State {
@@ -251,3 +254,26 @@ pub fn configure_lock_surface(surface: &LockSurface, output: &Output) {
     });
     surface.send_configure();
 }
+
+impl SecurityContextHandler for State {
+    fn context_created(&mut self, source: SecurityContextListenerSource, context: SecurityContext) {
+        self.niri
+            .event_loop
+            .insert_source(source, move |client, _, state| {
+                let config = state.niri.config.borrow();
+                let data = Arc::new(ClientState {
+                    compositor_state: Default::default(),
+                    can_view_decoration_globals: config.prefer_no_csd,
+                    restricted: true,
+                });
+
+                if let Err(err) = state.niri.display_handle.insert_client(client, data) {
+                    error!("error inserting client: {err}");
+                } else {
+                    debug!("inserted a new restricted client, context={context:?}");
+                }
+            })
+            .unwrap();
+    }
+}
+delegate_security_context!(State);
