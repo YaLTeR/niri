@@ -32,7 +32,7 @@ use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpix
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
-    connector, crtc, property, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags,
+    self, connector, crtc, property, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags,
 };
 use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
@@ -620,74 +620,26 @@ impl Tty {
             trace!("{m:?}");
         }
 
-        let mut mode = None;
-
-        if let Some(target) = &config.mode {
-            let refresh = target.refresh.map(|r| (r * 1000.).round() as i32);
-
-            for m in connector.modes() {
-                if m.size() != (target.width, target.height) {
-                    continue;
-                }
-
-                if let Some(refresh) = refresh {
-                    // If refresh is set, only pick modes with matching refresh.
-                    let wl_mode = Mode::from(*m);
-                    if wl_mode.refresh == refresh {
-                        mode = Some(m);
-                    }
-                } else if let Some(curr) = mode {
-                    // If refresh isn't set, pick the mode with the highest refresh.
-                    if curr.vrefresh() < m.vrefresh() {
-                        mode = Some(m);
-                    }
+        let (mode, fallback) =
+            pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?;
+        if fallback {
+            let target = config.mode.unwrap();
+            warn!(
+                "configured mode {}x{}{} could not be found, falling back to preferred",
+                target.width,
+                target.height,
+                if let Some(refresh) = target.refresh {
+                    format!("@{refresh}")
                 } else {
-                    mode = Some(m);
-                }
-            }
-
-            if mode.is_none() {
-                warn!(
-                    "configured mode {}x{}{} could not be found, falling back to preferred",
-                    target.width,
-                    target.height,
-                    if let Some(refresh) = target.refresh {
-                        format!("@{refresh}")
-                    } else {
-                        String::new()
-                    },
-                );
-            }
+                    String::new()
+                },
+            );
         }
-
-        if mode.is_none() {
-            // Pick a preferred mode.
-            for m in connector.modes() {
-                if !m.mode_type().contains(ModeTypeFlags::PREFERRED) {
-                    continue;
-                }
-
-                if let Some(curr) = mode {
-                    if curr.vrefresh() < m.vrefresh() {
-                        mode = Some(m);
-                    }
-                } else {
-                    mode = Some(m);
-                }
-            }
-        }
-
-        if mode.is_none() {
-            // Last attempt.
-            mode = connector.modes().first();
-        }
-
-        let mode = mode.ok_or_else(|| anyhow!("no mode"))?;
         debug!("picking mode: {mode:?}");
 
         let surface = device
             .drm
-            .create_surface(crtc, *mode, &[connector.handle()])?;
+            .create_surface(crtc, mode, &[connector.handle()])?;
 
         // Create GBM allocator.
         let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
@@ -710,7 +662,7 @@ impl Tty {
             },
         );
 
-        let wl_mode = Mode::from(*mode);
+        let wl_mode = Mode::from(mode);
         output.change_current_state(Some(wl_mode), None, None, None);
         output.set_preferred(wl_mode);
 
@@ -801,7 +753,7 @@ impl Tty {
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
 
-        niri.add_output(output.clone(), Some(refresh_interval(*mode)));
+        niri.add_output(output.clone(), Some(refresh_interval(mode)));
 
         // Power on all monitors if necessary and queue a redraw on the new one.
         niri.event_loop.insert_idle(move |state| {
@@ -1458,4 +1410,65 @@ fn queue_estimated_vblank_timer(
         })
         .unwrap();
     output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
+}
+
+fn pick_mode(
+    connector: &connector::Info,
+    target: Option<niri_config::Mode>,
+) -> Option<(control::Mode, bool)> {
+    let mut mode = None;
+    let mut fallback = false;
+
+    if let Some(target) = target {
+        let refresh = target.refresh.map(|r| (r * 1000.).round() as i32);
+
+        for m in connector.modes() {
+            if m.size() != (target.width, target.height) {
+                continue;
+            }
+
+            if let Some(refresh) = refresh {
+                // If refresh is set, only pick modes with matching refresh.
+                let wl_mode = Mode::from(*m);
+                if wl_mode.refresh == refresh {
+                    mode = Some(m);
+                }
+            } else if let Some(curr) = mode {
+                // If refresh isn't set, pick the mode with the highest refresh.
+                if curr.vrefresh() < m.vrefresh() {
+                    mode = Some(m);
+                }
+            } else {
+                mode = Some(m);
+            }
+        }
+
+        if mode.is_none() {
+            fallback = true;
+        }
+    }
+
+    if mode.is_none() {
+        // Pick a preferred mode.
+        for m in connector.modes() {
+            if !m.mode_type().contains(ModeTypeFlags::PREFERRED) {
+                continue;
+            }
+
+            if let Some(curr) = mode {
+                if curr.vrefresh() < m.vrefresh() {
+                    mode = Some(m);
+                }
+            } else {
+                mode = Some(m);
+            }
+        }
+    }
+
+    if mode.is_none() {
+        // Last attempt.
+        mode = connector.modes().first();
+    }
+
+    mode.map(|m| (*m, fallback))
 }
