@@ -480,6 +480,7 @@ impl Default for DebugConfig {
 
 impl Config {
     pub fn load(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
+        let _span = tracy_client::span!("Config::load");
         Self::load_internal(path).context("error loading config")
     }
 
@@ -505,6 +506,7 @@ impl Config {
     }
 
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
+        let _span = tracy_client::span!("Config::parse");
         knuffel::parse(filename, text)
     }
 }

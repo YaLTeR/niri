@@ -1737,6 +1737,7 @@ dependencies = [
  "miette",
  "smithay",
  "tracing",
+ "tracy-client",
 ]
 
 [[package]]
