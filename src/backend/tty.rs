@@ -325,10 +325,10 @@ impl Tty {
                     let crtcs: Vec<_> = device
                         .drm_scanner
                         .crtcs()
-                        .map(|(conn, crtc)| (conn.clone(), crtc))
+                        .map(|(_conn, crtc)| crtc)
                         .collect();
-                    for (conn, crtc) in crtcs {
-                        self.connector_disconnected(niri, node, conn, crtc);
+                    for crtc in crtcs {
+                        self.connector_disconnected(niri, node, crtc);
                     }
 
                     let device = self.devices.get_mut(&node).unwrap();
@@ -506,9 +506,8 @@ impl Tty {
                     }
                 }
                 DrmScanEvent::Disconnected {
-                    connector,
-                    crtc: Some(crtc),
-                } => self.connector_disconnected(niri, node, connector, crtc),
+                    crtc: Some(crtc), ..
+                } => self.connector_disconnected(niri, node, crtc),
                 _ => (),
             }
         }
@@ -530,11 +529,11 @@ impl Tty {
         let crtcs: Vec<_> = device
             .drm_scanner
             .crtcs()
-            .map(|(info, crtc)| (info.clone(), crtc))
+            .map(|(_info, crtc)| crtc)
             .collect();
 
-        for (connector, crtc) in crtcs {
-            self.connector_disconnected(niri, node, connector, crtc);
+        for crtc in crtcs {
+            self.connector_disconnected(niri, node, crtc);
         }
 
         let device = self.devices.remove(&node).unwrap();
@@ -813,24 +812,20 @@ impl Tty {
         Ok(())
     }
 
-    fn connector_disconnected(
-        &mut self,
-        niri: &mut Niri,
-        node: DrmNode,
-        connector: connector::Info,
-        crtc: crtc::Handle,
-    ) {
-        debug!("disconnecting connector: {connector:?}");
-
+    fn connector_disconnected(&mut self, niri: &mut Niri, node: DrmNode, crtc: crtc::Handle) {
         let Some(device) = self.devices.get_mut(&node) else {
+            debug!("disconnecting connector for crtc: {crtc:?}");
             error!("missing device");
             return;
         };
 
         let Some(surface) = device.surfaces.remove(&crtc) else {
+            debug!("disconnecting connector for crtc: {crtc:?}");
             debug!("crtc wasn't enabled");
             return;
         };
+
+        debug!("disconnecting connector: {:?}", surface.name);
 
         let output = niri
             .global_space
