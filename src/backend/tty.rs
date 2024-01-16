@@ -28,7 +28,7 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
-use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Scale, Subpixel};
+use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
@@ -712,8 +712,7 @@ impl Tty {
         );
 
         let wl_mode = Mode::from(*mode);
-        let scale = config.scale.clamp(1., 10.).ceil() as i32;
-        output.change_current_state(Some(wl_mode), None, Some(Scale::Integer(scale)), None);
+        output.change_current_state(Some(wl_mode), None, None, None);
         output.set_preferred(wl_mode);
 
         output

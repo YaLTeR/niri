@@ -1043,6 +1043,20 @@ impl Niri {
     pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {
         let global = output.create_global::<State>(&self.display_handle);
 
+        let name = output.name();
+        let scale = self
+            .config
+            .borrow()
+            .outputs
+            .iter()
+            .find(|o| o.name == name)
+            .map(|c| c.scale)
+            .unwrap_or(1.);
+        let scale = scale.clamp(1., 10.).ceil() as i32;
+
+        // Set scale before adding to the layout since that will read the output size.
+        output.change_current_state(None, None, Some(output::Scale::Integer(scale)), None);
+
         self.layout.add_output(output.clone());
 
         let lock_render_state = if self.is_locked() {
@@ -1066,7 +1080,7 @@ impl Niri {
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
-        let rv = self.output_by_name.insert(output.name(), output.clone());
+        let rv = self.output_by_name.insert(name, output.clone());
         assert!(rv.is_none(), "output was already tracked");
 
         // Must be last since it will call queue_redraw(output) which needs things to be filled-in.

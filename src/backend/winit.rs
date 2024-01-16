@@ -11,7 +11,7 @@ use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
-use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
+use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::winit::dpi::LogicalSize;
@@ -39,14 +39,6 @@ impl Winit {
             .with_title("niri");
         let (backend, winit) = winit::init_from_builder(builder).unwrap();
 
-        let output_config = config
-            .borrow()
-            .outputs
-            .iter()
-            .find(|o| o.name == "winit")
-            .cloned()
-            .unwrap_or_default();
-
         let output = Output::new(
             "winit".to_string(),
             PhysicalProperties {
@@ -61,13 +53,7 @@ impl Winit {
             size: backend.window_size(),
             refresh: 60_000,
         };
-        let scale = output_config.scale.clamp(1., 10.).ceil() as i32;
-        output.change_current_state(
-            Some(mode),
-            Some(Transform::Flipped180),
-            Some(Scale::Integer(scale)),
-            None,
-        );
+        output.change_current_state(Some(mode), Some(Transform::Flipped180), None, None);
         output.set_preferred(mode);
 
         let connectors = Arc::new(Mutex::new(HashMap::from([(
