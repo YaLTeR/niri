@@ -864,6 +864,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let source_column_idx = self.active_column_idx + 1;
         let window = self.remove_window_by_idx(source_column_idx, 0);
+        self.enter_output_for_window(&window);
 
         let target_column = &mut self.columns[self.active_column_idx];
         target_column.add_window(window);
