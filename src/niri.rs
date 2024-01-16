@@ -542,6 +542,7 @@ impl State {
         animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
 
         let mut reload_xkb = None;
+        let mut output_config_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
@@ -568,6 +569,10 @@ impl State {
             );
         }
 
+        if config.outputs != old_config.outputs {
+            output_config_changed = true;
+        }
+
         *old_config = config;
 
         // Release the borrow.
@@ -579,6 +584,10 @@ impl State {
             if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
                 warn!("error updating xkb config: {err:?}");
             }
+        }
+
+        if output_config_changed {
+            self.niri.reposition_outputs(None);
         }
 
         self.niri.queue_redraw_all();

@@ -165,7 +165,7 @@ Please use the default configuration file as the starting point for your custom 
 
 Niri will live-reload many of the configuration settings, like key binds or gaps, as you change the config file.
 Though, some settings are still missing live-reload support.
-Notably, output modes and positions will only apply when the output is reconnected.
+Notably, output modes will only apply when the output is reconnected.
 
 [PaperWM]: https://github.com/paperwm/PaperWM
 [mako]: https://github.com/emersion/mako
