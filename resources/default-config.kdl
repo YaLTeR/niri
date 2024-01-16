@@ -191,6 +191,9 @@ binds {
     Mod+D { spawn "fuzzel"; }
     Mod+Alt+L { spawn "swaylock"; }
 
+    // You can also use a shell:
+    // Mod+T { spawn "bash" "-c" "notify-send hello && exec alacritty"; }
+
     // Example volume keys mappings for PipeWire & WirePlumber.
     XF86AudioRaiseVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1+"; }
     XF86AudioLowerVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1-"; }
