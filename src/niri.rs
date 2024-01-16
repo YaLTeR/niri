@@ -41,7 +41,7 @@ use smithay::desktop::{
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbContextHandler};
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
-use smithay::output::Output;
+use smithay::output::{self, Output};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
@@ -587,11 +587,37 @@ impl State {
         }
 
         if output_config_changed {
+            let mut resized_outputs = vec![];
+            for output in self.niri.global_space.outputs() {
+                let name = output.name();
+                let scale = self
+                    .niri
+                    .config
+                    .borrow()
+                    .outputs
+                    .iter()
+                    .find(|o| o.name == name)
+                    .map(|c| c.scale)
+                    .unwrap_or(1.);
+                let scale = scale.clamp(1., 10.).ceil() as i32;
+                if output.current_scale().integer_scale() != scale {
+                    output.change_current_state(
+                        None,
+                        None,
+                        Some(output::Scale::Integer(scale)),
+                        None,
+                    );
+                    resized_outputs.push(output.clone());
+                }
+            }
+            for output in resized_outputs {
+                self.niri.output_resized(output);
+            }
+
             self.niri.reposition_outputs(None);
         }
 
         self.niri.queue_redraw_all();
-        // FIXME: apply output scale and whatnot.
         // FIXME: apply libinput device settings.
         // FIXME: apply xdg decoration settings.
     }
@@ -1168,11 +1194,14 @@ impl Niri {
         }
 
         // If the output size changed with an open screenshot UI, close the screenshot UI.
-        if let Some(old_size) = self.screenshot_ui.output_size(&output) {
+        if let Some((old_size, old_scale)) = self.screenshot_ui.output_size(&output) {
             let output_transform = output.current_transform();
             let output_mode = output.current_mode().unwrap();
             let size = output_transform.transform_size(output_mode.size);
-            if old_size != size {
+            let scale = output.current_scale().integer_scale();
+            // FIXME: scale changes shouldn't matter but they currently do since I haven't quite
+            // figured out how to draw the screenshot textures in physical coordinates.
+            if old_size != size || old_scale != scale {
                 self.screenshot_ui.close();
                 self.cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());

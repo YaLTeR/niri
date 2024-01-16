@@ -637,6 +637,8 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn update_output_size(&mut self, output: &Output) {
+        let _span = tracy_client::span!("Layout::update_output_size");
+
         let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
             panic!()
         };
@@ -648,6 +650,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 for ws in &mut mon.workspaces {
                     ws.set_view_size(view_size, working_area);
+                    ws.update_output_scale_transform();
                 }
 
                 break;

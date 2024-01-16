@@ -41,6 +41,7 @@ pub enum ScreenshotUi {
 
 pub struct OutputData {
     size: Size<i32, Physical>,
+    scale: i32,
     texture: GlesTexture,
     texture_buffer: TextureBuffer<GlesTexture>,
     buffers: [SolidColorBuffer; 8],
@@ -106,10 +107,11 @@ impl ScreenshotUi {
                 let output_transform = output.current_transform();
                 let output_mode = output.current_mode().unwrap();
                 let size = output_transform.transform_size(output_mode.size);
+                let scale = output.current_scale().integer_scale();
                 let texture_buffer = TextureBuffer::from_texture(
                     renderer,
                     texture.clone(),
-                    output.current_scale().integer_scale(),
+                    scale,
                     Transform::Normal,
                     None,
                 );
@@ -126,6 +128,7 @@ impl ScreenshotUi {
                 let locations = [Default::default(); 8];
                 let data = OutputData {
                     size,
+                    scale,
                     texture,
                     texture_buffer,
                     buffers,
@@ -330,9 +333,10 @@ impl ScreenshotUi {
         }
     }
 
-    pub fn output_size(&self, output: &Output) -> Option<Size<i32, Physical>> {
+    pub fn output_size(&self, output: &Output) -> Option<(Size<i32, Physical>, i32)> {
         if let Self::Open { output_data, .. } = self {
-            Some(output_data.get(output)?.size)
+            let data = output_data.get(output)?;
+            Some((data.size, data.scale))
         } else {
             None
         }

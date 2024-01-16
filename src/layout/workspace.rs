@@ -308,7 +308,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn enter_output_for_window(&self, window: &W) {
         if let Some(output) = &self.output {
-            prepare_for_output(window, output);
+            set_preferred_scale_transform(window, output);
             window.output_enter(output);
         }
     }
@@ -327,6 +327,15 @@ impl<W: LayoutElement> Workspace<W> {
 
         for col in &mut self.columns {
             col.set_view_size(self.view_size, self.working_area);
+        }
+    }
+
+    pub fn update_output_scale_transform(&mut self) {
+        let Some(output) = self.output.as_ref() else {
+            return;
+        };
+        for window in self.windows() {
+            set_preferred_scale_transform(window, output);
         }
     }
 
@@ -363,7 +372,7 @@ impl<W: LayoutElement> Workspace<W> {
         let bounds = self.toplevel_bounds();
 
         if let Some(output) = self.output.as_ref() {
-            prepare_for_output(window, output);
+            set_preferred_scale_transform(window, output);
         }
 
         window.toplevel().with_pending_state(|state| {
@@ -1626,7 +1635,8 @@ fn compute_new_view_offset(
     }
 }
 
-fn prepare_for_output(window: &impl LayoutElement, output: &Output) {
+fn set_preferred_scale_transform(window: &impl LayoutElement, output: &Output) {
+    // FIXME: cache this on the workspace.
     let scale = output.current_scale().integer_scale();
     let transform = output.current_transform();
     window.set_preferred_scale_transform(scale, transform);
