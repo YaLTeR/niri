@@ -634,8 +634,12 @@ impl State {
             self.backend.on_output_config_changed(&mut self.niri);
         }
 
+        // Can't really update xdg-decoration settings since we have to hide the globals for CSD
+        // due to the SDL2 bug... I don't imagine clients are prepared for the xdg-decoration
+        // global suddenly appearing? Either way, right now it's live-reloaded in a sense that new
+        // clients will use the new xdg-decoration setting.
+
         self.niri.queue_redraw_all();
-        // FIXME: apply xdg decoration settings.
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
