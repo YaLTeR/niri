@@ -89,6 +89,7 @@ impl State {
 
         match event {
             InputEvent::DeviceAdded { device } => {
+                self.niri.devices.insert(device.clone());
 
                 if device.has_capability(input::DeviceCapability::TabletTool) {
                     match device.size() {
@@ -107,6 +108,7 @@ impl State {
             }
             InputEvent::DeviceRemoved { device } => {
                 self.niri.tablets.remove(device);
+                self.niri.devices.remove(device);
             }
             _ => (),
         }

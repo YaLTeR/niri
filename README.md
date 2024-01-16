@@ -163,9 +163,7 @@ Niri will load configuration from `$XDG_CONFIG_HOME/.config/niri/config.kdl` or 
 If this fails, it will load [the default configuration file](resources/default-config.kdl).
 Please use the default configuration file as the starting point for your custom configuration.
 
-Niri will live-reload many of the configuration settings, like key binds or gaps, as you change the config file.
-Though, some settings are still missing live-reload support.
-Notably, input device libinput settings will only apply when the input device is reconnected.
+Niri will live-reload most of the configuration settings, like key binds or gaps or output modes, as you change the config file.
 
 [PaperWM]: https://github.com/paperwm/PaperWM
 [mako]: https://github.com/emersion/mako

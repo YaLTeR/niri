@@ -96,7 +96,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
-use crate::input::TabletData;
+use crate::input::{apply_libinput_settings, TabletData};
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::{NiriRenderer, PrimaryGpuTextureRenderElement};
@@ -135,6 +135,7 @@ pub struct Niri {
     // When false, we're idling with monitors powered off.
     pub monitors_active: bool,
 
+    pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
 
     // Smithay state.
@@ -542,6 +543,7 @@ impl State {
         animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
 
         let mut reload_xkb = None;
+        let mut libinput_config_changed = false;
         let mut output_config_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
@@ -569,6 +571,12 @@ impl State {
             );
         }
 
+        if config.input.touchpad != old_config.input.touchpad
+            || config.input.mouse != old_config.input.mouse
+        {
+            libinput_config_changed = true;
+        }
+
         if config.outputs != old_config.outputs {
             output_config_changed = true;
         }
@@ -583,6 +591,13 @@ impl State {
             let keyboard = self.niri.seat.get_keyboard().unwrap();
             if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
                 warn!("error updating xkb config: {err:?}");
+            }
+        }
+
+        if libinput_config_changed {
+            let config = self.niri.config.borrow();
+            for mut device in self.niri.devices.iter().cloned() {
+                apply_libinput_settings(&config.input, &mut device);
             }
         }
 
@@ -620,7 +635,6 @@ impl State {
         }
 
         self.niri.queue_redraw_all();
-        // FIXME: apply libinput device settings.
         // FIXME: apply xdg decoration settings.
     }
 
@@ -878,6 +892,7 @@ impl Niri {
             unmapped_windows: HashMap::new(),
             monitors_active: true,
 
+            devices: HashSet::new(),
             tablets: HashMap::new(),
 
             compositor_state,
