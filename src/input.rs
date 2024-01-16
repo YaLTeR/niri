@@ -89,23 +89,6 @@ impl State {
 
         match event {
             InputEvent::DeviceAdded { device } => {
-                // According to Mutter code, this setting is specific to touchpads.
-                let is_touchpad = device.config_tap_finger_count() > 0;
-                if is_touchpad {
-                    let c = &self.niri.config.borrow().input.touchpad;
-                    let _ = device.config_tap_set_enabled(c.tap);
-                    let _ = device.config_dwt_set_enabled(c.dwt);
-                    let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-                    let _ = device.config_accel_set_speed(c.accel_speed);
-
-                    if let Some(accel_profile) = c.accel_profile {
-                        let _ = device.config_accel_set_profile(accel_profile.into());
-                    }
-
-                    if let Some(tap_button_map) = c.tap_button_map {
-                        let _ = device.config_tap_set_button_map(tap_button_map.into());
-                    }
-                }
 
                 if device.has_capability(input::DeviceCapability::TabletTool) {
                     match device.size() {
@@ -120,34 +103,7 @@ impl State {
                     }
                 }
 
-                // This is how Mutter tells apart mice.
-                let mut is_trackball = false;
-                let mut is_trackpoint = false;
-                if let Some(udev_device) = unsafe { device.udev_device() } {
-                    if udev_device.property_value("ID_INPUT_TRACKBALL").is_some() {
-                        is_trackball = true;
-                    }
-                    if udev_device
-                        .property_value("ID_INPUT_POINTINGSTICK")
-                        .is_some()
-                    {
-                        is_trackpoint = true;
-                    }
-                }
-
-                let is_mouse = device.has_capability(input::DeviceCapability::Pointer)
-                    && !is_touchpad
-                    && !is_trackball
-                    && !is_trackpoint;
-                if is_mouse {
-                    let c = &self.niri.config.borrow().input.mouse;
-                    let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-                    let _ = device.config_accel_set_speed(c.accel_speed);
-
-                    if let Some(accel_profile) = c.accel_profile {
-                        let _ = device.config_accel_set_profile(accel_profile.into());
-                    }
-                }
+                apply_libinput_settings(&self.niri.config.borrow().input, device);
             }
             InputEvent::DeviceRemoved { device } => {
                 self.niri.tablets.remove(device);
@@ -1430,6 +1386,61 @@ fn allowed_during_screenshot(action: &Action) -> bool {
         action,
         Action::Quit | Action::ChangeVt(_) | Action::Suspend | Action::PowerOffMonitors
     )
+}
+
+pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::Device) {
+    // According to Mutter code, this setting is specific to touchpads.
+    let is_touchpad = device.config_tap_finger_count() > 0;
+    if is_touchpad {
+        let c = &config.touchpad;
+        let _ = device.config_tap_set_enabled(c.tap);
+        let _ = device.config_dwt_set_enabled(c.dwt);
+        let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
+        let _ = device.config_accel_set_speed(c.accel_speed);
+
+        if let Some(accel_profile) = c.accel_profile {
+            let _ = device.config_accel_set_profile(accel_profile.into());
+        } else if let Some(default) = device.config_accel_default_profile() {
+            let _ = device.config_accel_set_profile(default);
+        }
+
+        if let Some(tap_button_map) = c.tap_button_map {
+            let _ = device.config_tap_set_button_map(tap_button_map.into());
+        } else if let Some(default) = device.config_tap_default_button_map() {
+            let _ = device.config_tap_set_button_map(default);
+        }
+    }
+
+    // This is how Mutter tells apart mice.
+    let mut is_trackball = false;
+    let mut is_trackpoint = false;
+    if let Some(udev_device) = unsafe { device.udev_device() } {
+        if udev_device.property_value("ID_INPUT_TRACKBALL").is_some() {
+            is_trackball = true;
+        }
+        if udev_device
+            .property_value("ID_INPUT_POINTINGSTICK")
+            .is_some()
+        {
+            is_trackpoint = true;
+        }
+    }
+
+    let is_mouse = device.has_capability(input::DeviceCapability::Pointer)
+        && !is_touchpad
+        && !is_trackball
+        && !is_trackpoint;
+    if is_mouse {
+        let c = &config.mouse;
+        let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
+        let _ = device.config_accel_set_speed(c.accel_speed);
+
+        if let Some(accel_profile) = c.accel_profile {
+            let _ = device.config_accel_set_profile(accel_profile.into());
+        } else if let Some(default) = device.config_accel_default_profile() {
+            let _ = device.config_accel_set_profile(default);
+        }
+    }
 }
 
 #[cfg(test)]
