@@ -47,6 +47,7 @@ use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
 use super::RenderResult;
+use crate::frame_clock::FrameClock;
 use crate::niri::{RedrawState, State};
 use crate::render_helpers::AsGlesRenderer;
 use crate::utils::get_monotonic_time;
@@ -1177,8 +1178,10 @@ impl Tty {
         let mut to_disconnect = vec![];
         let mut to_connect = vec![];
 
-        for (node, device) in &self.devices {
-            for surface in device.surfaces.values() {
+        for (&node, device) in &mut self.devices {
+            for surface in device.surfaces.values_mut() {
+                let crtc = surface.compositor.crtc();
+
                 let config = self
                     .config
                     .borrow()
@@ -1187,14 +1190,78 @@ impl Tty {
                     .find(|o| o.name == surface.name)
                     .cloned()
                     .unwrap_or_default();
-
                 if config.off {
-                    let crtc = surface.compositor.crtc();
-                    to_disconnect.push((*node, crtc));
+                    to_disconnect.push((node, crtc));
+                    continue;
                 }
+
+                // Check if we need to change the mode.
+                let connector = surface
+                    .compositor
+                    .current_connectors()
+                    .into_iter()
+                    .next()
+                    .unwrap();
+                let Some(connector) = device.drm_scanner.connectors().get(&connector) else {
+                    error!("missing enabled connector in drm_scanner");
+                    continue;
+                };
+
+                let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
+                    error!("couldn't pick mode for enabled connector");
+                    continue;
+                };
+
+                if surface.compositor.current_mode() == mode {
+                    continue;
+                }
+
+                let output = niri
+                    .global_space
+                    .outputs()
+                    .find(|output| {
+                        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                        tty_state.node == node && tty_state.crtc == crtc
+                    })
+                    .cloned();
+                let Some(output) = output else {
+                    error!("missing output for crtc: {crtc:?}");
+                    continue;
+                };
+                let Some(output_state) = niri.output_state.get_mut(&output) else {
+                    error!("missing state for output {:?}", surface.name);
+                    continue;
+                };
+
+                if fallback {
+                    let target = config.mode.unwrap();
+                    warn!(
+                        "output {:?}: configured mode {}x{}{} could not be found, \
+                         falling back to preferred",
+                        surface.name,
+                        target.width,
+                        target.height,
+                        if let Some(refresh) = target.refresh {
+                            format!("@{refresh}")
+                        } else {
+                            String::new()
+                        },
+                    );
+                }
+
+                debug!("output {:?}: picking mode: {mode:?}", surface.name);
+                if let Err(err) = surface.compositor.use_mode(mode) {
+                    warn!("error changing mode: {err:?}");
+                    continue;
+                }
+
+                let wl_mode = Mode::from(mode);
+                output.change_current_state(Some(wl_mode), None, None, None);
+                output.set_preferred(wl_mode);
+                output_state.frame_clock = FrameClock::new(Some(refresh_interval(mode)));
+                niri.output_resized(output);
             }
 
-            // Check if any disabled connectors need to be enabled.
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 // Check if connected.
                 if connector.state() != connector::State::Connected {
@@ -1222,7 +1289,7 @@ impl Tty {
                     .unwrap_or_default();
 
                 if !config.off {
-                    to_connect.push((*node, connector.clone(), crtc));
+                    to_connect.push((node, connector.clone(), crtc));
                 }
             }
         }
