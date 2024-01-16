@@ -615,6 +615,8 @@ impl State {
             }
 
             self.niri.reposition_outputs(None);
+
+            self.backend.on_output_config_changed(&mut self.niri);
         }
 
         self.niri.queue_redraw_all();

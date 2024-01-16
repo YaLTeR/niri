@@ -136,6 +136,13 @@ impl Backend {
         }
     }
 
+    pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
+        match self {
+            Backend::Tty(tty) => tty.on_output_config_changed(niri),
+            Backend::Winit(_) => (),
+        }
+    }
+
     pub fn tty(&mut self) -> &mut Tty {
         if let Self::Tty(v) = self {
             v

@@ -1220,6 +1220,71 @@ impl Tty {
             }
         }
     }
+
+    pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
+        let mut to_disconnect = vec![];
+        let mut to_connect = vec![];
+
+        for (node, device) in &self.devices {
+            for surface in device.surfaces.values() {
+                let config = self
+                    .config
+                    .borrow()
+                    .outputs
+                    .iter()
+                    .find(|o| o.name == surface.name)
+                    .cloned()
+                    .unwrap_or_default();
+
+                if config.off {
+                    let crtc = surface.compositor.crtc();
+                    to_disconnect.push((*node, crtc));
+                }
+            }
+
+            // Check if any disabled connectors need to be enabled.
+            for (connector, crtc) in device.drm_scanner.crtcs() {
+                // Check if connected.
+                if connector.state() != connector::State::Connected {
+                    continue;
+                }
+
+                // Check if already enabled.
+                if device.surfaces.contains_key(&crtc) {
+                    continue;
+                }
+
+                let output_name = format!(
+                    "{}-{}",
+                    connector.interface().as_str(),
+                    connector.interface_id(),
+                );
+
+                let config = self
+                    .config
+                    .borrow()
+                    .outputs
+                    .iter()
+                    .find(|o| o.name == output_name)
+                    .cloned()
+                    .unwrap_or_default();
+
+                if !config.off {
+                    to_connect.push((*node, connector.clone(), crtc));
+                }
+            }
+        }
+
+        for (node, crtc) in to_disconnect {
+            self.connector_disconnected(niri, node, crtc);
+        }
+
+        for (node, connector, crtc) in to_connect {
+            if let Err(err) = self.connector_connected(niri, node, connector, crtc) {
+                warn!("error connecting connector: {err:?}");
+            }
+        }
+    }
 }
 
 fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
