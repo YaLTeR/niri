@@ -1114,6 +1114,10 @@ impl Niri {
     }
 
     pub fn remove_output(&mut self, output: &Output) {
+        for layer in layer_map_for_output(output).layers() {
+            layer.layer_surface().send_close();
+        }
+
         self.layout.remove_output(output);
         self.global_space.unmap_output(output);
         self.reposition_outputs(None);
