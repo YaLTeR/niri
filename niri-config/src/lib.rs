@@ -204,7 +204,7 @@ impl Default for Output {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     #[knuffel(property)]
     pub x: i32,
@@ -212,7 +212,7 @@ pub struct Position {
     pub y: i32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mode {
     pub width: u16,
     pub height: u16,

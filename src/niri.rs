@@ -912,72 +912,129 @@ impl Niri {
         Ok(())
     }
 
+    /// Repositions all outputs, optionally adding a new output.
+    pub fn reposition_outputs(&mut self, new_output: Option<&Output>) {
+        let _span = tracy_client::span!("Niri::reposition_outputs");
+
+        #[derive(Debug)]
+        struct Data {
+            output: Output,
+            name: String,
+            position: Option<Point<i32, Logical>>,
+            config: Option<niri_config::Position>,
+        }
+
+        let config = self.config.borrow();
+        let mut outputs = vec![];
+        for output in self.global_space.outputs().chain(new_output) {
+            let name = output.name();
+            let position = self.global_space.output_geometry(output).map(|geo| geo.loc);
+            let config = config
+                .outputs
+                .iter()
+                .find(|o| o.name == name)
+                .and_then(|c| c.position);
+
+            outputs.push(Data {
+                output: output.clone(),
+                name,
+                position,
+                config,
+            });
+        }
+        drop(config);
+
+        for Data { output, .. } in &outputs {
+            self.global_space.unmap_output(output);
+        }
+
+        // Connectors can appear in udev in any order. If we sort by name then we get output
+        // positioning that does not depend on the order they appeared.
+        //
+        // All outputs must have different (connector) names.
+        outputs.sort_unstable_by(|a, b| Ord::cmp(&a.name, &b.name));
+
+        // Place all outputs with explicitly configured position first, then the unconfigured ones.
+        outputs.sort_by_key(|d| d.config.is_none());
+
+        trace!(
+            "placing outputs in order: {:?}",
+            outputs.iter().map(|d| &d.name)
+        );
+
+        for data in outputs.into_iter() {
+            let Data {
+                output,
+                name,
+                position,
+                config,
+            } = data;
+
+            let size = output_size(&output);
+
+            let new_position = config
+                .map(|pos| Point::from((pos.x, pos.y)))
+                .filter(|pos| {
+                    // Ensure that the requested position does not overlap any existing output.
+                    let target_geom = Rectangle::from_loc_and_size(*pos, size);
+
+                    let overlap = self
+                        .global_space
+                        .outputs()
+                        .map(|output| self.global_space.output_geometry(output).unwrap())
+                        .find(|geom| geom.overlaps(target_geom));
+
+                    if let Some(overlap) = overlap {
+                        warn!(
+                            "output {name} at x={} y={} sized {}x{} \
+                             overlaps an existing output at x={} y={} sized {}x{}, \
+                             falling back to automatic placement",
+                            pos.x,
+                            pos.y,
+                            size.w,
+                            size.h,
+                            overlap.loc.x,
+                            overlap.loc.y,
+                            overlap.size.w,
+                            overlap.size.h,
+                        );
+
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .unwrap_or_else(|| {
+                    let x = self
+                        .global_space
+                        .outputs()
+                        .map(|output| self.global_space.output_geometry(output).unwrap())
+                        .map(|geom| geom.loc.x + geom.size.w)
+                        .max()
+                        .unwrap_or(0);
+
+                    Point::from((x, 0))
+                });
+
+            self.global_space.map_output(&output, new_position);
+
+            // By passing new_output as an Option, rather than mapping it into a bogus location
+            // in global_space, we ensure that this branch always runs for it.
+            if Some(new_position) != position {
+                debug!(
+                    "putting output {name} at x={} y={}",
+                    new_position.x, new_position.y
+                );
+                output.change_current_state(None, None, None, Some(new_position));
+                self.queue_redraw(output);
+            }
+        }
+    }
+
     pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {
         let global = output.create_global::<State>(&self.display_handle);
 
-        let name = output.name();
-        let config = self
-            .config
-            .borrow()
-            .outputs
-            .iter()
-            .find(|o| o.name == name)
-            .cloned()
-            .unwrap_or_default();
-
-        let size = output_size(&output);
-        let position = config
-            .position
-            .map(|pos| Point::from((pos.x, pos.y)))
-            .filter(|pos| {
-                // Ensure that the requested position does not overlap any existing output.
-                let target_geom = Rectangle::from_loc_and_size(*pos, size);
-
-                let overlap = self
-                    .global_space
-                    .outputs()
-                    .map(|output| self.global_space.output_geometry(output).unwrap())
-                    .find(|geom| geom.overlaps(target_geom));
-
-                if let Some(overlap) = overlap {
-                    warn!(
-                        "new output {name} at x={} y={} sized {}x{} \
-                         overlaps an existing output at x={} y={} sized {}x{}, \
-                         falling back to automatic placement",
-                        pos.x,
-                        pos.y,
-                        size.w,
-                        size.h,
-                        overlap.loc.x,
-                        overlap.loc.y,
-                        overlap.size.w,
-                        overlap.size.h,
-                    );
-
-                    false
-                } else {
-                    true
-                }
-            })
-            .unwrap_or_else(|| {
-                let x = self
-                    .global_space
-                    .outputs()
-                    .map(|output| self.global_space.output_geometry(output).unwrap())
-                    .map(|geom| geom.loc.x + geom.size.w)
-                    .max()
-                    .unwrap_or(0);
-
-                Point::from((x, 0))
-            });
-
-        debug!(
-            "putting new output {name} at x={} y={}",
-            position.x, position.y
-        );
-        self.global_space.map_output(&output, position);
         self.layout.add_output(output.clone());
-        output.change_current_state(None, None, None, Some(position));
 
         let lock_render_state = if self.is_locked() {
             // We haven't rendered anything yet so it's as good as locked.
@@ -986,6 +1043,7 @@ impl Niri {
             LockRenderState::Unlocked
         };
 
+        let size = output_size(&output);
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
@@ -999,14 +1057,17 @@ impl Niri {
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
-        let rv = self.output_by_name.insert(name, output);
+        let rv = self.output_by_name.insert(output.name(), output.clone());
         assert!(rv.is_none(), "output was already tracked");
+
+        // Must be last since it will call queue_redraw(output) which needs things to be filled-in.
+        self.reposition_outputs(Some(&output));
     }
 
     pub fn remove_output(&mut self, output: &Output) {
         self.layout.remove_output(output);
         self.global_space.unmap_output(output);
-        // FIXME: reposition outputs so they are adjacent.
+        self.reposition_outputs(None);
 
         let state = self.output_state.remove(output).unwrap();
         self.output_by_name.remove(&output.name()).unwrap();
