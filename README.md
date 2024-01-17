@@ -108,6 +108,17 @@ In particular, it supports file choosers and monitor screencasting (e.g. to [OBS
 
 See [the wiki page](https://github.com/YaLTeR/niri/wiki/Xwayland) to learn how to use Xwayland with niri.
 
+### IPC
+
+You can communicate with the running niri instance over an IPC socket.
+Check `niri msg --help` for available commands.
+
+The `--json` flag prints the response in JSON, rather than formatted.
+For example, `niri msg --json outputs`.
+
+For programmatic access, check the [niri-ipc sub-crate](./niri-ipc/) which defines the types.
+The communication over the IPC socket happens in JSON.
+
 ## Default Hotkeys
 
 When running on a TTY, the Mod key is <kbd>Super</kbd>.

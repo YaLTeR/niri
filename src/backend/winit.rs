@@ -28,6 +28,7 @@ pub struct Winit {
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
+    ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
     enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
 
@@ -56,6 +57,23 @@ impl Winit {
         output.change_current_state(Some(mode), Some(Transform::Flipped180), None, None);
         output.set_preferred(mode);
 
+        let physical_properties = output.physical_properties();
+        let ipc_outputs = Rc::new(RefCell::new(HashMap::from([(
+            "winit".to_owned(),
+            niri_ipc::Output {
+                name: output.name(),
+                make: physical_properties.make,
+                model: physical_properties.model,
+                physical_size: None,
+                modes: vec![niri_ipc::Mode {
+                    width: backend.window_size().w.clamp(0, u16::MAX as i32) as u16,
+                    height: backend.window_size().h.clamp(0, u16::MAX as i32) as u16,
+                    refresh_rate: 60_000,
+                }],
+                current_mode: Some(0),
+            },
+        )])));
+
         let enabled_outputs = Arc::new(Mutex::new(HashMap::from([(
             "winit".to_owned(),
             output.clone(),
@@ -76,6 +94,12 @@ impl Winit {
                         None,
                         None,
                     );
+
+                    let mut ipc_outputs = winit.ipc_outputs.borrow_mut();
+                    let mode = &mut ipc_outputs.get_mut("winit").unwrap().modes[0];
+                    mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
+                    mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
+
                     state.niri.output_resized(winit.output.clone());
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
@@ -95,6 +119,7 @@ impl Winit {
             output,
             backend,
             damage_tracker,
+            ipc_outputs,
             enabled_outputs,
         }
     }
@@ -196,6 +221,10 @@ impl Winit {
                 Err(())
             }
         }
+    }
+
+    pub fn ipc_outputs(&self) -> Rc<RefCell<HashMap<String, niri_ipc::Output>>> {
+        self.ipc_outputs.clone()
     }
 
     pub fn enabled_outputs(&self) -> Arc<Mutex<HashMap<String, Output>>> {

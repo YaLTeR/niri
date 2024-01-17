@@ -44,6 +44,7 @@
             include = [
               ./src
               ./niri-config
+              ./niri-ipc
               ./Cargo.toml
               ./Cargo.lock
               ./resources

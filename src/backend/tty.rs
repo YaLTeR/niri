@@ -74,6 +74,7 @@ pub struct Tty {
     // The allocator for the primary GPU. It is only `Some()` if we have a device corresponding to
     // the primary GPU.
     primary_allocator: Option<DmabufAllocator<GbmAllocator<DrmDeviceFd>>>,
+    ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
     enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
 
@@ -221,6 +222,7 @@ impl Tty {
             devices: HashMap::new(),
             dmabuf_global: None,
             primary_allocator: None,
+            ipc_outputs: Rc::new(RefCell::new(HashMap::new())),
             enabled_outputs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -367,6 +369,8 @@ impl Tty {
                         warn!("error adding device: {err:?}");
                     }
                 }
+
+                self.refresh_ipc_outputs();
             }
         }
     }
@@ -512,6 +516,8 @@ impl Tty {
                 _ => (),
             }
         }
+
+        self.refresh_ipc_outputs();
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
@@ -576,6 +582,8 @@ impl Tty {
 
         self.gpu_manager.as_mut().remove_node(&device.render_node);
         niri.event_loop.remove(device.token);
+
+        self.refresh_ipc_outputs();
     }
 
     fn connector_connected(
@@ -608,16 +616,7 @@ impl Tty {
 
         let device = self.devices.get_mut(&node).context("missing device")?;
 
-        // FIXME: print modes here until we have a better way to list all modes.
         for m in connector.modes() {
-            let wl_mode = Mode::from(*m);
-            debug!(
-                "mode: {}x{}@{:.3}",
-                m.size().0,
-                m.size().1,
-                wl_mode.refresh as f64 / 1000.,
-            );
-
             trace!("{m:?}");
         }
 
@@ -1157,6 +1156,64 @@ impl Tty {
         }
     }
 
+    fn refresh_ipc_outputs(&self) {
+        let _span = tracy_client::span!("Tty::refresh_ipc_outputs");
+
+        let mut ipc_outputs = HashMap::new();
+
+        for device in self.devices.values() {
+            for (connector, crtc) in device.drm_scanner.crtcs() {
+                let connector_name = format!(
+                    "{}-{}",
+                    connector.interface().as_str(),
+                    connector.interface_id(),
+                );
+
+                let physical_size = connector.size();
+
+                let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
+                    .map(|info| (info.manufacturer, info.model))
+                    .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
+
+                let modes = connector
+                    .modes()
+                    .iter()
+                    .map(|m| niri_ipc::Mode {
+                        width: m.size().0,
+                        height: m.size().1,
+                        refresh_rate: Mode::from(*m).refresh as u32,
+                    })
+                    .collect();
+
+                let mut output = niri_ipc::Output {
+                    name: connector_name.clone(),
+                    make,
+                    model,
+                    physical_size,
+                    modes,
+                    current_mode: None,
+                };
+
+                if let Some(surface) = device.surfaces.get(&crtc) {
+                    let current = surface.compositor.pending_mode();
+                    if let Some(current) = connector.modes().iter().position(|m| *m == current) {
+                        output.current_mode = Some(current);
+                    } else {
+                        error!("connector mode list missing current mode");
+                    }
+                }
+
+                ipc_outputs.insert(connector_name, output);
+            }
+        }
+
+        self.ipc_outputs.replace(ipc_outputs);
+    }
+
+    pub fn ipc_outputs(&self) -> Rc<RefCell<HashMap<String, niri_ipc::Output>>> {
+        self.ipc_outputs.clone()
+    }
+
     pub fn enabled_outputs(&self) -> Arc<Mutex<HashMap<String, Output>>> {
         self.enabled_outputs.clone()
     }
@@ -1305,6 +1362,8 @@ impl Tty {
                 warn!("error connecting connector: {err:?}");
             }
         }
+
+        self.refresh_ipc_outputs();
     }
 }
 

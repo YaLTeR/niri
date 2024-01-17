@@ -98,6 +98,7 @@ use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
 use crate::input::{apply_libinput_settings, TabletData};
+use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::{NiriRenderer, PrimaryGpuTextureRenderElement};
@@ -189,6 +190,8 @@ pub struct Niri {
     pub dbus: Option<crate::dbus::DBusServers>,
     #[cfg(feature = "dbus")]
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
+
+    pub ipc_server: Option<IpcServer>,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
@@ -865,6 +868,14 @@ impl Niri {
             })
             .unwrap();
 
+        let ipc_server = match IpcServer::start(&event_loop, &socket_name.to_string_lossy()) {
+            Ok(server) => Some(server),
+            Err(err) => {
+                warn!("error starting IPC server: {err:?}");
+                None
+            }
+        };
+
         let pipewire = match PipeWire::new(&event_loop) {
             Ok(pipewire) => Some(pipewire),
             Err(err) => {
@@ -948,6 +959,8 @@ impl Niri {
             dbus: None,
             #[cfg(feature = "dbus")]
             inhibit_power_key_fd: None,
+
+            ipc_server,
 
             pipewire,
             casts: vec![],

@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -107,6 +109,13 @@ impl Backend {
         match self {
             Backend::Tty(tty) => tty.early_import(surface),
             Backend::Winit(_) => (),
+        }
+    }
+
+    pub fn ipc_outputs(&self) -> Rc<RefCell<HashMap<String, niri_ipc::Output>>> {
+        match self {
+            Backend::Tty(tty) => tty.ipc_outputs(),
+            Backend::Winit(winit) => winit.ipc_outputs(),
         }
     }
 

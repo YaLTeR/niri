@@ -54,7 +54,8 @@ input {
     // disable-power-key-handling
 }
 
-// You can configure outputs by their name, which you can find with wayland-info(1).
+// You can configure outputs by their name, which you can find
+// by running `niri msg outputs` while inside a niri instance.
 // The built-in laptop monitor is usually called "eDP-1".
 // Remember to uncommend the node by removing "/-"!
 /-output "eDP-1" {
@@ -69,7 +70,7 @@ input {
     // If the refresh rate is omitted, niri will pick the highest refresh rate
     // for the resolution.
     // If the mode is omitted altogether or is invalid, niri will pick one automatically.
-    // All valid modes are listed in niri's debug output when an output is connected.
+    // Run `niri msg outputs` while inside a niri instance to list all outputs and their modes.
     mode "1920x1080@144"
 
     // Position of the output in the global coordinate space.

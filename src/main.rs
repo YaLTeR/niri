@@ -9,6 +9,7 @@ mod dbus;
 mod frame_clock;
 mod handlers;
 mod input;
+mod ipc;
 mod layout;
 mod niri;
 mod render_helpers;
@@ -40,6 +41,7 @@ use tracing_subscriber::EnvFilter;
 use utils::spawn;
 use watcher::Watcher;
 
+use crate::ipc::client::handle_msg;
 use crate::utils::{cause_panic, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
 
 #[derive(Parser)]
@@ -67,8 +69,22 @@ enum Sub {
         #[arg(short, long)]
         config: Option<PathBuf>,
     },
+    /// Communicate with the running niri instance.
+    Msg {
+        #[command(subcommand)]
+        msg: Msg,
+        /// Format output as JSON.
+        #[arg(short, long)]
+        json: bool,
+    },
     /// Cause a panic to check if the backtraces are good.
     Panic,
+}
+
+#[derive(Subcommand)]
+enum Msg {
+    /// List connected outputs.
+    Outputs,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -120,6 +136,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 info!("config is valid");
                 return Ok(());
             }
+            Sub::Msg { msg, json } => {
+                handle_msg(msg, json)?;
+                return Ok(());
+            }
             Sub::Panic => cause_panic(),
         }
     }
@@ -158,6 +178,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "listening on Wayland socket: {}",
         socket_name.to_string_lossy()
     );
+
+    // Set NIRI_SOCKET for children.
+    if let Some(ipc) = &state.niri.ipc_server {
+        env::set_var(niri_ipc::SOCKET_PATH_ENV, &ipc.socket_path);
+        info!("IPC listening on: {}", ipc.socket_path.to_string_lossy());
+    }
 
     if is_systemd_service {
         // We're starting as a systemd service. Export our variables.
