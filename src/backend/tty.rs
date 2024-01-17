@@ -1175,6 +1175,8 @@ impl Tty {
     }
 
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
+        let _span = tracy_client::span!("Tty::on_output_config_changed");
+
         let mut to_disconnect = vec![];
         let mut to_connect = vec![];
 
