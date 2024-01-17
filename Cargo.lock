@@ -474,7 +474,9 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b50b5a44d59a98c55a9eeb518f39bf7499ba19fd98ee7d22618687f3f10adbf"
 dependencies = [
+ "async-task",
  "bitflags 2.4.1",
+ "futures-io",
  "log",
  "polling 3.3.1",
  "rustix 0.38.28",
@@ -1700,6 +1702,7 @@ dependencies = [
  "async-channel",
  "async-io 1.13.0",
  "bitflags 2.4.1",
+ "calloop",
  "clap",
  "directories",
  "git-version",

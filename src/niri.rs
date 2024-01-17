@@ -10,6 +10,7 @@ use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::Context;
+use calloop::futures::Scheduler;
 use niri_config::{Config, TrackLayout};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
@@ -112,6 +113,7 @@ pub struct Niri {
     pub config: Rc<RefCell<Config>>,
 
     pub event_loop: LoopHandle<'static, State>,
+    pub scheduler: Scheduler<()>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
     pub socket_name: OsString,
@@ -742,6 +744,9 @@ impl Niri {
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
+        let (executor, scheduler) = calloop::futures::executor().unwrap();
+        event_loop.insert_source(executor, |_, _, _| ()).unwrap();
+
         let display_handle = display.handle();
         let config_ = config.borrow();
 
@@ -884,6 +889,7 @@ impl Niri {
             config,
 
             event_loop,
+            scheduler,
             stop_signal,
             socket_name,
             display_handle,
