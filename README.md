@@ -1,8 +1,33 @@
-# niri
+<h1 align="center">niri</h1>
+<p align="center">A scrollable-tiling Wayland compositor.</p>
+<p align="center">
+    <a href="https://matrix.to/#/#niri:matrix.org"><img alt="Matrix" src="https://img.shields.io/matrix/niri%3Amatrix.org?logo=matrix&label=matrix"></a>
+    <a href="https://github.com/YaLTeR/niri/blob/main/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/YaLTeR/niri"></a>
+    <a href="https://github.com/YaLTeR/niri/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/YaLTeR/niri?logo=github"></a>
+</p>
 
-A scrollable-tiling Wayland compositor.
+![](https://github.com/YaLTeR/niri/assets/1794388/16f87a4a-afac-49aa-b3e6-5e6f16c943a9)
 
-![](https://github.com/YaLTeR/niri/assets/1794388/e35fd9e1-105b-4bd5-94c9-207fd6fb3c18)
+## About
+
+Windows are arranged in columns on an infinite strip going to the right.
+Opening a new window never causes existing windows to resize.
+
+Every monitor has its own separate window strip.
+Windows can never "overflow" onto an adjacent monitor.
+
+Since windows go left-to-right horizontally, workspaces are arranged vertically.
+Every monitor has an independent set of workspaces, and there's always one empty workspace present all the way down.
+
+## Features
+
+- Scrollable tiling
+- Dynamic workspaces like in GNOME
+- Built-in screenshot UI
+- Monitor screencasting through xdg-desktop-portal-gnome
+- Touchpad gesture to switch workspaces
+- Configurable layout: gaps, borders, struts, window sizes
+- Live-reloading config
 
 ## Status
 
@@ -12,21 +37,12 @@ Have your waybars and fuzzels ready: niri is not a complete desktop environment.
 
 https://github.com/YaLTeR/niri/assets/1794388/5d355694-7b06-4f00-8920-8dce54a8721c
 
-## Idea
+## Inspiration
 
-Niri implements scrollable tiling, heavily inspired by [PaperWM].
-Windows are arranged in columns on an infinite strip going to the right.
-Every column takes up a full monitor worth of height, divided among its windows.
+Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top of GNOME Shell.
 
-With multiple monitors, every monitor has its own separate window strip.
-Windows can never "overflow" onto an adjacent monitor.
-
-This is one of the reasons that prompted me to try writing my own compositor.
-PaperWM is a solid implementation, but, being a GNOME Shell extension, it has to work around Shell's global window coordinate space to prevent windows from overflowing.
-
-Niri also has dynamic workspaces which work similar to GNOME Shell.
-Since windows go left-to-right horizontally, workspaces are arranged vertically.
-Every monitor has an independent set of workspaces, and there's always one empty workspace present all the way down.
+One of the reasons that prompted me to try writing my own compositor is being able to properly separate the monitors.
+Being a GNOME Shell extension, PaperWM has to work against Shell's global window coordinate space to prevent windows from overflowing.
 
 Niri tries to preserve the workspace arrangement as much as possible upon disconnecting and connecting monitors.
 When a monitor disconnects, its workspaces will move to another monitor, but upon reconnection they will move back to the original monitor.
@@ -175,6 +191,10 @@ If this fails, it will load [the default configuration file](resources/default-c
 Please use the default configuration file as the starting point for your custom configuration.
 
 Niri will live-reload most of the configuration settings, like key binds or gaps or output modes, as you change the config file.
+
+## Contact
+
+We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
 
 [PaperWM]: https://github.com/paperwm/PaperWM
 [mako]: https://github.com/emersion/mako
