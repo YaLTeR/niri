@@ -74,7 +74,7 @@ pub struct Tty {
     // The allocator for the primary GPU. It is only `Some()` if we have a device corresponding to
     // the primary GPU.
     primary_allocator: Option<DmabufAllocator<GbmAllocator<DrmDeviceFd>>>,
-    connectors: Arc<Mutex<HashMap<String, Output>>>,
+    enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
 
 pub type TtyRenderer<'render, 'alloc> = MultiRenderer<
@@ -221,7 +221,7 @@ impl Tty {
             devices: HashMap::new(),
             dmabuf_global: None,
             primary_allocator: None,
-            connectors: Arc::new(Mutex::new(HashMap::new())),
+            enabled_outputs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -736,7 +736,7 @@ impl Tty {
         let sequence_delta_plot_name =
             tracy_client::PlotName::new_leak(format!("{output_name} sequence delta"));
 
-        self.connectors
+        self.enabled_outputs
             .lock()
             .unwrap()
             .insert(output_name.clone(), output.clone());
@@ -794,7 +794,7 @@ impl Tty {
             error!("missing output for crtc {crtc:?}");
         };
 
-        self.connectors.lock().unwrap().remove(&surface.name);
+        self.enabled_outputs.lock().unwrap().remove(&surface.name);
     }
 
     fn on_vblank(
@@ -1157,8 +1157,8 @@ impl Tty {
         }
     }
 
-    pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
-        self.connectors.clone()
+    pub fn enabled_outputs(&self) -> Arc<Mutex<HashMap<String, Output>>> {
+        self.enabled_outputs.clone()
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]

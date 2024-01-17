@@ -45,7 +45,7 @@ impl DBusServers {
         }
 
         if is_session_instance || config.debug.dbus_interfaces_in_non_session_instances {
-            let display_config = DisplayConfig::new(backend.connectors());
+            let display_config = DisplayConfig::new(backend.enabled_outputs());
             dbus.conn_display_config = try_start(display_config);
 
             let (to_niri, from_screenshot) = calloop::channel::channel();
@@ -75,7 +75,7 @@ impl DBusServers {
                         }
                     })
                     .unwrap();
-                let screen_cast = ScreenCast::new(backend.connectors(), to_niri);
+                let screen_cast = ScreenCast::new(backend.enabled_outputs(), to_niri);
                 dbus.conn_screen_cast = try_start(screen_cast);
             }
         }

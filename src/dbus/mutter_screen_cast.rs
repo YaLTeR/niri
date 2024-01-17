@@ -14,7 +14,7 @@ use super::Start;
 
 #[derive(Clone)]
 pub struct ScreenCast {
-    connectors: Arc<Mutex<HashMap<String, Output>>>,
+    enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     #[allow(clippy::type_complexity)]
     sessions: Arc<Mutex<Vec<(Session, InterfaceRef<Session>)>>>,
@@ -23,7 +23,7 @@ pub struct ScreenCast {
 #[derive(Clone)]
 pub struct Session {
     id: usize,
-    connectors: Arc<Mutex<HashMap<String, Output>>>,
+    enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     #[allow(clippy::type_complexity)]
     streams: Arc<Mutex<Vec<(Stream, InterfaceRef<Stream>)>>>,
@@ -84,7 +84,11 @@ impl ScreenCast {
         let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
         let path = OwnedObjectPath::try_from(path).unwrap();
 
-        let session = Session::new(session_id, self.connectors.clone(), self.to_niri.clone());
+        let session = Session::new(
+            session_id,
+            self.enabled_outputs.clone(),
+            self.to_niri.clone(),
+        );
         match server.at(&path, session.clone()).await {
             Ok(true) => {
                 let iface = server.interface(&path).await.unwrap();
@@ -151,7 +155,7 @@ impl Session {
     ) -> fdo::Result<OwnedObjectPath> {
         debug!(connector, ?properties, "record_monitor");
 
-        let Some(output) = self.connectors.lock().unwrap().get(connector).cloned() else {
+        let Some(output) = self.enabled_outputs.lock().unwrap().get(connector).cloned() else {
             return Err(fdo::Error::Failed("no such monitor".to_owned()));
         };
 
@@ -194,11 +198,11 @@ impl Stream {
 
 impl ScreenCast {
     pub fn new(
-        connectors: Arc<Mutex<HashMap<String, Output>>>,
+        enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
         Self {
-            connectors,
+            enabled_outputs,
             to_niri,
             sessions: Arc::new(Mutex::new(vec![])),
         }
@@ -223,12 +227,12 @@ impl Start for ScreenCast {
 impl Session {
     pub fn new(
         id: usize,
-        connectors: Arc<Mutex<HashMap<String, Output>>>,
+        enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
         Self {
             id,
-            connectors,
+            enabled_outputs,
             streams: Arc::new(Mutex::new(vec![])),
             to_niri,
         }

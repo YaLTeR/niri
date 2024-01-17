@@ -111,10 +111,10 @@ impl Backend {
     }
 
     #[cfg_attr(not(feature = "dbus"), allow(unused))]
-    pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
+    pub fn enabled_outputs(&self) -> Arc<Mutex<HashMap<String, Output>>> {
         match self {
-            Backend::Tty(tty) => tty.connectors(),
-            Backend::Winit(winit) => winit.connectors(),
+            Backend::Tty(tty) => tty.enabled_outputs(),
+            Backend::Winit(winit) => winit.enabled_outputs(),
         }
     }
 

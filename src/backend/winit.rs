@@ -28,7 +28,7 @@ pub struct Winit {
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
-    connectors: Arc<Mutex<HashMap<String, Output>>>,
+    enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
 
 impl Winit {
@@ -56,7 +56,7 @@ impl Winit {
         output.change_current_state(Some(mode), Some(Transform::Flipped180), None, None);
         output.set_preferred(mode);
 
-        let connectors = Arc::new(Mutex::new(HashMap::from([(
+        let enabled_outputs = Arc::new(Mutex::new(HashMap::from([(
             "winit".to_owned(),
             output.clone(),
         )])));
@@ -95,7 +95,7 @@ impl Winit {
             output,
             backend,
             damage_tracker,
-            connectors,
+            enabled_outputs,
         }
     }
 
@@ -198,7 +198,7 @@ impl Winit {
         }
     }
 
-    pub fn connectors(&self) -> Arc<Mutex<HashMap<String, Output>>> {
-        self.connectors.clone()
+    pub fn enabled_outputs(&self) -> Arc<Mutex<HashMap<String, Output>>> {
+        self.enabled_outputs.clone()
     }
 }

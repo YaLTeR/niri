@@ -10,7 +10,7 @@ use zbus::{dbus_interface, fdo};
 use super::Start;
 
 pub struct DisplayConfig {
-    connectors: Arc<Mutex<HashMap<String, Output>>>,
+    enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
 
 #[derive(Serialize, Type)]
@@ -54,7 +54,7 @@ impl DisplayConfig {
     )> {
         // Construct the DBus response.
         let monitors: Vec<Monitor> = self
-            .connectors
+            .enabled_outputs
             .lock()
             .unwrap()
             .keys()
@@ -85,8 +85,8 @@ impl DisplayConfig {
 }
 
 impl DisplayConfig {
-    pub fn new(connectors: Arc<Mutex<HashMap<String, Output>>>) -> Self {
-        Self { connectors }
+    pub fn new(enabled_outputs: Arc<Mutex<HashMap<String, Output>>>) -> Self {
+        Self { enabled_outputs }
     }
 }
 
