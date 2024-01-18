@@ -9,7 +9,6 @@ repository.workspace = true
 
 [dependencies]
 bitflags.workspace = true
-directories.workspace = true
 knuffel = "3.2.0"
 miette = "5.10.0"
 smithay.workspace = true

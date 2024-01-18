@@ -28,6 +28,7 @@ use std::process::Command;
 use std::{env, mem};
 
 use clap::{Parser, Subcommand};
+use directories::ProjectDirs;
 #[cfg(not(feature = "xdp-gnome-screencast"))]
 use dummy_pw_utils as pw_utils;
 use git_version::git_version;
@@ -132,7 +133,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(subcommand) = cli.subcommand {
         match subcommand {
             Sub::Validate { config } => {
-                Config::load(config)?;
+                let path = config
+                    .or_else(default_config_path)
+                    .expect("error getting config path");
+                Config::load(&path)?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -151,13 +155,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Load the config.
-    let (mut config, path) = match Config::load(cli.config) {
-        Ok((config, path)) => (config, Some(path)),
-        Err(err) => {
-            warn!("{err:?}");
-            (Config::default(), None)
-        }
-    };
+    let path = cli.config.or_else(default_config_path);
+
+    let mut config = path
+        .as_deref()
+        .and_then(|path| match Config::load(path) {
+            Ok(config) => Some(config),
+            Err(err) => {
+                warn!("{err:?}");
+                None
+            }
+        })
+        .unwrap_or_default();
+
     animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
 
@@ -263,4 +273,15 @@ fn import_env_to_systemd() {
             warn!("error spawning shell to import environment into systemd: {err:?}");
         }
     }
+}
+
+fn default_config_path() -> Option<PathBuf> {
+    let Some(dirs) = ProjectDirs::from("", "", "niri") else {
+        warn!("error retrieving home directory");
+        return None;
+    };
+
+    let mut path = dirs.config_dir().to_owned();
+    path.push("config.kdl");
+    Some(path)
 }

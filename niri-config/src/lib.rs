@@ -1,11 +1,10 @@
 #[macro_use]
 extern crate tracing;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use bitflags::bitflags;
-use directories::ProjectDirs;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
@@ -479,30 +478,19 @@ impl Default for DebugConfig {
 }
 
 impl Config {
-    pub fn load(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
+    pub fn load(path: &Path) -> miette::Result<Self> {
         let _span = tracy_client::span!("Config::load");
         Self::load_internal(path).context("error loading config")
     }
 
-    fn load_internal(path: Option<PathBuf>) -> miette::Result<(Self, PathBuf)> {
-        let path = if let Some(path) = path {
-            path
-        } else {
-            let mut path = ProjectDirs::from("", "", "niri")
-                .ok_or_else(|| miette!("error retrieving home directory"))?
-                .config_dir()
-                .to_owned();
-            path.push("config.kdl");
-            path
-        };
-
-        let contents = std::fs::read_to_string(&path)
+    fn load_internal(path: &Path) -> miette::Result<Self> {
+        let contents = std::fs::read_to_string(path)
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;
 
         let config = Self::parse("config.kdl", &contents).context("error parsing")?;
         debug!("loaded config from {path:?}");
-        Ok((config, path))
+        Ok(config)
     }
 
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {

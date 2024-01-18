@@ -536,8 +536,8 @@ impl State {
     pub fn reload_config(&mut self, path: PathBuf) {
         let _span = tracy_client::span!("State::reload_config");
 
-        let config = match Config::load(Some(path)) {
-            Ok((config, _)) => config,
+        let config = match Config::load(&path) {
+            Ok(config) => config,
             Err(err) => {
                 warn!("{:?}", err.context("error loading config"));
                 return;
