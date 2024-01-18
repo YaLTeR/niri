@@ -429,6 +429,7 @@ pub enum Action {
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     SwitchLayout(#[knuffel(argument)] LayoutAction),
+    ShowHotkeyOverlay,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

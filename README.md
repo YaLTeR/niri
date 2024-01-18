@@ -144,6 +144,7 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 
 | Hotkey | Description |
 | ------ | ----------- |
+| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>/</kbd> | Show a list of important niri hotkeys |
 | <kbd>Mod</kbd><kbd>T</kbd> | Spawn `alacritty` (terminal) |
 | <kbd>Mod</kbd><kbd>D</kbd> | Spawn `fuzzel` (application launcher) |
 | <kbd>Mod</kbd><kbd>Alt</kbd><kbd>L</kbd> | Spawn `swaylock` (screen locker) |

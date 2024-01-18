@@ -54,6 +54,9 @@ impl State {
             self.niri.activate_monitors(&self.backend);
         }
 
+        let hide_hotkey_overlay =
+            self.niri.hotkey_overlay.is_open() && should_hide_hotkey_overlay(&event);
+
         use InputEvent::*;
         match event {
             DeviceAdded { device } => self.on_device_added(device),
@@ -81,6 +84,12 @@ impl State {
             TouchCancel { .. } => (),
             TouchFrame { .. } => (),
             Special(_) => (),
+        }
+
+        // Do this last so that screenshot still gets it.
+        // FIXME: do this in a less cursed fashion somehow.
+        if hide_hotkey_overlay && self.niri.hotkey_overlay.hide() {
+            self.niri.queue_redraw_all();
         }
     }
 
@@ -556,6 +565,11 @@ impl State {
             }
             Action::SetWindowHeight(change) => {
                 self.niri.layout.set_window_height(change);
+            }
+            Action::ShowHotkeyOverlay => {
+                if self.niri.hotkey_overlay.show() {
+                    self.niri.queue_redraw_all();
+                }
             }
         }
     }
@@ -1368,6 +1382,21 @@ fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
         | InputEvent::TabletToolTip { .. }
         | InputEvent::TabletToolButton { .. } => true,
         // Ignore events like device additions and removals, key releases, gesture ends.
+        _ => false,
+    }
+}
+
+fn should_hide_hotkey_overlay<I: InputBackend>(event: &InputEvent<I>) -> bool {
+    match event {
+        InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
+        InputEvent::PointerButton { .. }
+        | InputEvent::PointerAxis { .. }
+        | InputEvent::GestureSwipeBegin { .. }
+        | InputEvent::GesturePinchBegin { .. }
+        | InputEvent::TouchDown { .. }
+        | InputEvent::TouchMotion { .. }
+        | InputEvent::TabletToolTip { .. }
+        | InputEvent::TabletToolButton { .. } => true,
         _ => false,
     }
 }

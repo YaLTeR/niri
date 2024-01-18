@@ -9,6 +9,7 @@ mod cursor;
 mod dbus;
 mod frame_clock;
 mod handlers;
+mod hotkey_overlay;
 mod input;
 mod ipc;
 mod layout;

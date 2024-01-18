@@ -100,6 +100,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
+use crate::hotkey_overlay::HotkeyOverlay;
 use crate::input::{apply_libinput_settings, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
@@ -189,6 +190,7 @@ pub struct Niri {
 
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
+    pub hotkey_overlay: HotkeyOverlay,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -594,6 +596,10 @@ impl State {
             output_config_changed = true;
         }
 
+        if config.binds != old_config.binds {
+            self.niri.hotkey_overlay.on_hotkey_config_updated();
+        }
+
         *old_config = config;
 
         // Release the borrow.
@@ -859,6 +865,7 @@ impl Niri {
 
         let screenshot_ui = ScreenshotUi::new();
         let config_error_notification = ConfigErrorNotification::new();
+        let hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
@@ -964,6 +971,7 @@ impl Niri {
 
             screenshot_ui,
             config_error_notification,
+            hotkey_overlay,
 
             #[cfg(feature = "dbus")]
             dbus: None,
@@ -1856,6 +1864,11 @@ impl Niri {
             elements.push(background);
 
             return elements;
+        }
+
+        // Draw the hotkey overlay on top.
+        if let Some(element) = self.hotkey_overlay.render(renderer, output) {
+            elements.push(element.into());
         }
 
         // Get monitor elements.
