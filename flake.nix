@@ -67,6 +67,7 @@
             fontconfig
             stdenv.cc.cc.lib
             pipewire
+            pango
           ];
 
           runtimeDependencies = with pkgs; [

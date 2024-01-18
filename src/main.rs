@@ -3,6 +3,7 @@ extern crate tracing;
 
 mod animation;
 mod backend;
+mod config_error_notification;
 mod cursor;
 #[cfg(feature = "dbus")]
 mod dbus;
@@ -157,12 +158,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load the config.
     let path = cli.config.or_else(default_config_path);
 
+    let mut config_errored = false;
     let mut config = path
         .as_deref()
         .and_then(|path| match Config::load(path) {
             Ok(config) => Some(config),
             Err(err) => {
                 warn!("{err:?}");
+                config_errored = true;
                 None
             }
         })
@@ -237,6 +240,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for elem in spawn_at_startup {
         spawn(elem.command);
+    }
+
+    // Show the config error notification right away if needed.
+    if config_errored {
+        state.niri.config_error_notification.show();
     }
 
     // Run the compositor.

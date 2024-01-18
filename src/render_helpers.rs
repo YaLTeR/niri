@@ -3,7 +3,9 @@ use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::CommitCounter;
-use smithay::backend::renderer::{Bind, ExportMem, ImportAll, Offscreen, Renderer, Texture};
+use smithay::backend::renderer::{
+    Bind, ExportMem, ImportAll, ImportMem, Offscreen, Renderer, Texture,
+};
 use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
@@ -11,6 +13,7 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 /// Trait with our main renderer requirements to save on the typing.
 pub trait NiriRenderer:
     ImportAll
+    + ImportMem
     + ExportMem
     + Bind<Dmabuf>
     + Offscreen<GlesTexture>
@@ -28,7 +31,7 @@ pub trait NiriRenderer:
 
 impl<R> NiriRenderer for R
 where
-    R: ImportAll + ExportMem + Bind<Dmabuf> + Offscreen<GlesTexture> + AsGlesRenderer,
+    R: ImportAll + ImportMem + ExportMem + Bind<Dmabuf> + Offscreen<GlesTexture> + AsGlesRenderer,
     R::TextureId: Texture + Clone + 'static,
     R::Error: std::error::Error + Send + Sync + From<<GlesRenderer as Renderer>::Error> + 'static,
 {

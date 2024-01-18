@@ -90,6 +90,9 @@ use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use crate::animation;
 use crate::backend::tty::{SurfaceDmabufFeedback, TtyFrame, TtyRenderer, TtyRendererError};
 use crate::backend::{Backend, RenderResult, Tty, Winit};
+use crate::config_error_notification::{
+    ConfigErrorNotification, ConfigErrorNotificationRenderElement,
+};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -185,6 +188,7 @@ pub struct Niri {
     pub lock_state: LockState,
 
     pub screenshot_ui: ScreenshotUi,
+    pub config_error_notification: ConfigErrorNotification,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -540,9 +544,13 @@ impl State {
             Ok(config) => config,
             Err(err) => {
                 warn!("{:?}", err.context("error loading config"));
+                self.niri.config_error_notification.show();
+                self.niri.queue_redraw_all();
                 return;
             }
         };
+
+        self.niri.config_error_notification.hide();
 
         self.niri.layout.update_config(&config);
         animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
@@ -850,6 +858,7 @@ impl Niri {
             });
 
         let screenshot_ui = ScreenshotUi::new();
+        let config_error_notification = ConfigErrorNotification::new();
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
@@ -954,6 +963,7 @@ impl Niri {
             lock_state: LockState::Unlocked,
 
             screenshot_ui,
+            config_error_notification,
 
             #[cfg(feature = "dbus")]
             dbus: None,
@@ -1788,6 +1798,11 @@ impl Niri {
             elements = self.pointer_element(renderer, output);
         }
 
+        // The config error notification too.
+        if let Some(element) = self.config_error_notification.render(renderer, output) {
+            elements.push(element.into());
+        }
+
         // If the session is locked, draw the lock surface.
         if self.is_locked() {
             let state = self.output_state.get(output).unwrap();
@@ -1914,6 +1929,11 @@ impl Niri {
                 .monitor_for_output(output)
                 .unwrap()
                 .are_animations_ongoing();
+
+            self.config_error_notification
+                .advance_animations(target_presentation_time);
+            state.unfinished_animations_remain |=
+                self.config_error_notification.are_animations_ongoing();
 
             // Also keep redrawing if the current cursor is animated.
             state.unfinished_animations_remain |= self
@@ -2828,6 +2848,7 @@ pub enum OutputRenderElements<R: NiriRenderer> {
     NamedPointer(PrimaryGpuTextureRenderElement),
     SolidColor(SolidColorRenderElement),
     ScreenshotUi(ScreenshotUiRenderElement),
+    ConfigErrorNotification(ConfigErrorNotificationRenderElement<R>),
 }
 
 impl<R: NiriRenderer> Element for OutputRenderElements<R> {
@@ -2838,6 +2859,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.id(),
             Self::SolidColor(elem) => elem.id(),
             Self::ScreenshotUi(elem) => elem.id(),
+            Self::ConfigErrorNotification(elem) => elem.id(),
         }
     }
 
@@ -2848,6 +2870,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.current_commit(),
             Self::SolidColor(elem) => elem.current_commit(),
             Self::ScreenshotUi(elem) => elem.current_commit(),
+            Self::ConfigErrorNotification(elem) => elem.current_commit(),
         }
     }
 
@@ -2858,6 +2881,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.geometry(scale),
             Self::SolidColor(elem) => elem.geometry(scale),
             Self::ScreenshotUi(elem) => elem.geometry(scale),
+            Self::ConfigErrorNotification(elem) => elem.geometry(scale),
         }
     }
 
@@ -2868,6 +2892,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.transform(),
             Self::SolidColor(elem) => elem.transform(),
             Self::ScreenshotUi(elem) => elem.transform(),
+            Self::ConfigErrorNotification(elem) => elem.transform(),
         }
     }
 
@@ -2878,6 +2903,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.src(),
             Self::SolidColor(elem) => elem.src(),
             Self::ScreenshotUi(elem) => elem.src(),
+            Self::ConfigErrorNotification(elem) => elem.src(),
         }
     }
 
@@ -2892,6 +2918,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.damage_since(scale, commit),
             Self::SolidColor(elem) => elem.damage_since(scale, commit),
             Self::ScreenshotUi(elem) => elem.damage_since(scale, commit),
+            Self::ConfigErrorNotification(elem) => elem.damage_since(scale, commit),
         }
     }
 
@@ -2902,6 +2929,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.opaque_regions(scale),
             Self::SolidColor(elem) => elem.opaque_regions(scale),
             Self::ScreenshotUi(elem) => elem.opaque_regions(scale),
+            Self::ConfigErrorNotification(elem) => elem.opaque_regions(scale),
         }
     }
 
@@ -2912,6 +2940,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.alpha(),
             Self::SolidColor(elem) => elem.alpha(),
             Self::ScreenshotUi(elem) => elem.alpha(),
+            Self::ConfigErrorNotification(elem) => elem.alpha(),
         }
     }
 
@@ -2922,6 +2951,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.kind(),
             Self::SolidColor(elem) => elem.kind(),
             Self::ScreenshotUi(elem) => elem.kind(),
+            Self::ConfigErrorNotification(elem) => elem.kind(),
         }
     }
 }
@@ -2946,6 +2976,7 @@ impl RenderElement<GlesRenderer> for OutputRenderElements<GlesRenderer> {
             Self::ScreenshotUi(elem) => {
                 RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
             }
+            Self::ConfigErrorNotification(elem) => elem.draw(frame, src, dst, damage),
         }
     }
 
@@ -2956,6 +2987,7 @@ impl RenderElement<GlesRenderer> for OutputRenderElements<GlesRenderer> {
             Self::NamedPointer(elem) => elem.underlying_storage(renderer),
             Self::SolidColor(elem) => elem.underlying_storage(renderer),
             Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
+            Self::ConfigErrorNotification(elem) => elem.underlying_storage(renderer),
         }
     }
 }
@@ -2982,6 +3014,7 @@ impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
             Self::ScreenshotUi(elem) => {
                 RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
             }
+            Self::ConfigErrorNotification(elem) => elem.draw(frame, src, dst, damage),
         }
     }
 
@@ -2995,6 +3028,7 @@ impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
             Self::NamedPointer(elem) => elem.underlying_storage(renderer),
             Self::SolidColor(elem) => elem.underlying_storage(renderer),
             Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
+            Self::ConfigErrorNotification(elem) => elem.underlying_storage(renderer),
         }
     }
 }
@@ -3026,5 +3060,11 @@ impl<R: NiriRenderer> From<SolidColorRenderElement> for OutputRenderElements<R> 
 impl<R: NiriRenderer> From<ScreenshotUiRenderElement> for OutputRenderElements<R> {
     fn from(x: ScreenshotUiRenderElement) -> Self {
         Self::ScreenshotUi(x)
+    }
+}
+
+impl<R: NiriRenderer> From<ConfigErrorNotificationRenderElement<R>> for OutputRenderElements<R> {
+    fn from(x: ConfigErrorNotificationRenderElement<R>) -> Self {
+        Self::ConfigErrorNotification(x)
     }
 }

@@ -62,13 +62,13 @@ First, install the dependencies for your distribution.
     sudo apt-get install -y software-properties-common
     sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
     sudo apt-get update -y
-    sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev
+    sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev
     ```
 
 - Fedora:
 
     ```sh
-    sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel clang
+    sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel clang
     ```
 
 Next, build niri with `cargo build --release`.

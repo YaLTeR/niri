@@ -52,6 +52,7 @@ logind-zbus = { version = "3.1.2", optional = true }
 niri-config = { version = "0.1.0-alpha.3", path = "niri-config" }
 niri-ipc = { version = "0.1.0-alpha.3", path = "niri-ipc" }
 notify-rust = { version = "4.10.0", optional = true }
+pangocairo = "0.18.0"
 pipewire = { version = "0.7.2", optional = true }
 png = "0.17.10"
 portable-atomic = { version = "1.6.0", default-features = false, features = ["float"] }
