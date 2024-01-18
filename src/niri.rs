@@ -705,6 +705,7 @@ impl State {
                 }
             }
             ScreenCastToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
+            ScreenCastToNiri::Redraw(output) => self.niri.queue_redraw(output),
         }
     }
 

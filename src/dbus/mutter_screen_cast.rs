@@ -64,6 +64,7 @@ pub enum ScreenCastToNiri {
     StopCast {
         session_id: usize,
     },
+    Redraw(Output),
 }
 
 #[dbus_interface(name = "org.gnome.Mutter.ScreenCast")]

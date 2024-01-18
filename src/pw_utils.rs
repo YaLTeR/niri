@@ -95,9 +95,18 @@ impl PipeWire {
     ) -> anyhow::Result<Cast> {
         let _span = tracy_client::span!("PipeWire::start_cast");
 
+        let to_niri_ = to_niri.clone();
         let stop_cast = move || {
-            if let Err(err) = to_niri.send(ScreenCastToNiri::StopCast { session_id }) {
+            if let Err(err) = to_niri_.send(ScreenCastToNiri::StopCast { session_id }) {
                 warn!("error sending StopCast to niri: {err:?}");
+            }
+        };
+        let weak = output.downgrade();
+        let redraw = move || {
+            if let Some(output) = weak.upgrade() {
+                if let Err(err) = to_niri.send(ScreenCastToNiri::Redraw(output)) {
+                    warn!("error sending Redraw to niri: {err:?}");
+                }
             }
         };
 
@@ -158,6 +167,7 @@ impl PipeWire {
                         StreamState::Connecting => (),
                         StreamState::Streaming => {
                             is_active.set(true);
+                            redraw();
                         }
                     }
                 }
