@@ -47,8 +47,8 @@ futures-util = { version = "0.3.30", default-features = false, features = ["std"
 git-version = "0.3.9"
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.151"
-logind-zbus = { version = "3.1.2", optional = true }
 log = { version = "0.4.20", features = ["max_level_trace", "release_max_level_debug"] }
+logind-zbus = { version = "3.1.2", optional = true }
 niri-config = { version = "0.1.0-alpha.3", path = "niri-config" }
 niri-ipc = { version = "0.1.0-alpha.3", path = "niri-ipc" }
 notify-rust = { version = "4.10.0", optional = true }
