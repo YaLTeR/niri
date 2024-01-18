@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use smithay::output::Output;
 use zbus::fdo::RequestNameFlags;
-use zbus::zvariant::{OwnedValue, Type};
+use zbus::zvariant::{self, OwnedValue, Type};
 use zbus::{dbus_interface, fdo};
 
 use super::Start;
@@ -53,17 +53,48 @@ impl DisplayConfig {
         HashMap<String, OwnedValue>,
     )> {
         // Construct the DBus response.
-        let monitors: Vec<Monitor> = self
+        let mut monitors: Vec<Monitor> = self
             .enabled_outputs
             .lock()
             .unwrap()
             .keys()
-            .map(|c| Monitor {
-                names: (c.clone(), String::new(), String::new(), String::new()),
-                modes: vec![],
-                properties: HashMap::new(),
+            .map(|c| {
+                // Loosely matches the check in Mutter.
+                let is_laptop_panel = matches!(c.get(..4), Some("eDP-" | "LVDS" | "DSI-"));
+
+                // FIXME: use proper serial when we have libdisplay-info.
+                // A serial is required for correct session restore by xdp-gnome.
+                let serial = c.clone();
+
+                let mut properties = HashMap::new();
+                if is_laptop_panel {
+                    properties.insert(
+                        String::from("display-name"),
+                        OwnedValue::from(zvariant::Str::from_static("Built-in display")),
+                    );
+                }
+                properties.insert(
+                    String::from("is-builtin"),
+                    OwnedValue::from(is_laptop_panel),
+                );
+
+                Monitor {
+                    names: (c.clone(), String::new(), String::new(), serial),
+                    modes: vec![],
+                    properties,
+                }
             })
             .collect();
+
+        // Sort the built-in monitor first, then by connector name.
+        monitors.sort_unstable_by(|a, b| {
+            let a_is_builtin = a.properties.contains_key("display-name");
+            let b_is_builtin = b.properties.contains_key("display-name");
+            a_is_builtin
+                .cmp(&b_is_builtin)
+                .reverse()
+                .then_with(|| a.names.0.cmp(&b.names.0))
+        });
 
         let logical_monitors = monitors
             .iter()
