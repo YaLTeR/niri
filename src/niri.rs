@@ -98,6 +98,7 @@ use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
+use crate::exit_confirm_dialog::ExitConfirmDialog;
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
 use crate::hotkey_overlay::HotkeyOverlay;
@@ -191,6 +192,7 @@ pub struct Niri {
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
+    pub exit_confirm_dialog: Option<ExitConfirmDialog>,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -867,6 +869,13 @@ impl Niri {
         let screenshot_ui = ScreenshotUi::new();
         let config_error_notification = ConfigErrorNotification::new();
         let hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
+        let exit_confirm_dialog = match ExitConfirmDialog::new() {
+            Ok(x) => Some(x),
+            Err(err) => {
+                warn!("error creating the exit confirm dialog: {err:?}");
+                None
+            }
+        };
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
@@ -973,6 +982,7 @@ impl Niri {
             screenshot_ui,
             config_error_notification,
             hotkey_overlay,
+            exit_confirm_dialog,
 
             #[cfg(feature = "dbus")]
             dbus: None,
@@ -1807,7 +1817,14 @@ impl Niri {
             elements = self.pointer_element(renderer, output);
         }
 
-        // The config error notification too.
+        // Next, the exit confirm dialog.
+        if let Some(dialog) = &self.exit_confirm_dialog {
+            if let Some(element) = dialog.render(renderer, output) {
+                elements.push(element.into());
+            }
+        }
+
+        // Next, the config error notification too.
         if let Some(element) = self.config_error_notification.render(renderer, output) {
             elements.push(element.into());
         }

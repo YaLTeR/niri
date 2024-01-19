@@ -7,6 +7,7 @@ mod config_error_notification;
 mod cursor;
 #[cfg(feature = "dbus")]
 mod dbus;
+mod exit_confirm_dialog;
 mod frame_clock;
 mod handlers;
 mod hotkey_overlay;
