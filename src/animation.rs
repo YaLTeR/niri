@@ -50,4 +50,9 @@ impl Animation {
     pub fn to(&self) -> f64 {
         self.to
     }
+
+    #[cfg(test)]
+    pub fn from(&self) -> f64 {
+        self.from
+    }
 }

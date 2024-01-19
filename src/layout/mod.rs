@@ -310,10 +310,20 @@ impl<W: LayoutElement> Layout<W> {
             } => {
                 let primary = &mut monitors[primary_idx];
 
+                let mut stopped_primary_ws_switch = false;
+
                 let mut workspaces = vec![];
                 for i in (0..primary.workspaces.len()).rev() {
                     if primary.workspaces[i].original_output == id {
                         let ws = primary.workspaces.remove(i);
+
+                        // FIXME: this can be coded in a way that the workspace switch won't be
+                        // affected if the removed workspace is invisible. But this is good enough
+                        // for now.
+                        if primary.workspace_switch.is_some() {
+                            primary.workspace_switch = None;
+                            stopped_primary_ws_switch = true;
+                        }
 
                         // The user could've closed a window while remaining on this workspace, on
                         // another monitor. However, we will add an empty workspace in the end
@@ -328,6 +338,12 @@ impl<W: LayoutElement> Layout<W> {
                         }
                     }
                 }
+
+                // If we stopped a workspace switch, then we might need to clean up workspaces.
+                if stopped_primary_ws_switch {
+                    primary.clean_up_workspaces();
+                }
+
                 workspaces.reverse();
 
                 // Make sure there's always an empty workspace.
@@ -1061,6 +1077,14 @@ impl<W: LayoutElement> Layout<W> {
                 monitor.options, self.options,
                 "monitor options must be synchronized with layout"
             );
+
+            if let Some(WorkspaceSwitch::Animation(anim)) = &monitor.workspace_switch {
+                let before_idx = anim.from() as usize;
+                let after_idx = anim.to() as usize;
+
+                assert!(before_idx < monitor.workspaces.len());
+                assert!(after_idx < monitor.workspaces.len());
+            }
 
             let monitor_id = OutputId::new(&monitor.output);
 
@@ -2298,6 +2322,68 @@ mod tests {
             },
             Op::FocusWorkspaceDown,
             Op::CloseWindow(1),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn workspace_transfer_during_switch() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::AddOutput(2),
+            Op::FocusOutput(2),
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::RemoveOutput(1),
+            Op::FocusWorkspaceDown,
+            Op::FocusWorkspaceDown,
+            Op::AddOutput(1),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn workspace_transfer_during_switch_from_last() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::AddOutput(2),
+            Op::RemoveOutput(1),
+            Op::FocusWorkspaceUp,
+            Op::AddOutput(1),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn workspace_transfer_during_switch_gets_cleaned_up() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::RemoveOutput(1),
+            Op::AddOutput(2),
+            Op::MoveColumnToWorkspaceDown,
+            Op::MoveColumnToWorkspaceDown,
+            Op::AddOutput(1),
         ];
 
         check_ops(&ops);

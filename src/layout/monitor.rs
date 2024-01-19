@@ -146,7 +146,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    fn clean_up_workspaces(&mut self) {
+    pub fn clean_up_workspaces(&mut self) {
         assert!(self.workspace_switch.is_none());
 
         for idx in (0..self.workspaces.len() - 1).rev() {
