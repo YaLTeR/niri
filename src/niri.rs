@@ -1660,16 +1660,19 @@ impl Niri {
                     idx,
                 );
 
-                let pointer_elements = vec![OutputRenderElements::NamedPointer(
-                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                        pointer_pos.to_f64(),
-                        &texture,
-                        None,
-                        None,
-                        None,
-                        Kind::Cursor,
-                    )),
-                )];
+                let mut pointer_elements = vec![];
+                if let Some(texture) = texture {
+                    pointer_elements.push(OutputRenderElements::NamedPointer(
+                        PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                            pointer_pos.to_f64(),
+                            &texture,
+                            None,
+                            None,
+                            None,
+                            Kind::Cursor,
+                        )),
+                    ));
+                }
 
                 (pointer_elements, pointer_pos)
             }

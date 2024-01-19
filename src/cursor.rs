@@ -224,7 +224,7 @@ pub enum RenderCursor {
     },
 }
 
-type TextureCache = HashMap<(CursorIcon, i32), Vec<TextureBuffer<GlesTexture>>>;
+type TextureCache = HashMap<(CursorIcon, i32), Vec<Option<TextureBuffer<GlesTexture>>>>;
 
 #[derive(Default)]
 pub struct CursorTextureCache {
@@ -243,7 +243,7 @@ impl CursorTextureCache {
         scale: i32,
         cursor: &XCursor,
         idx: usize,
-    ) -> TextureBuffer<GlesTexture> {
+    ) -> Option<TextureBuffer<GlesTexture>> {
         self.cache
             .borrow_mut()
             .entry((icon, scale))
@@ -254,7 +254,7 @@ impl CursorTextureCache {
                     .map(|frame| {
                         let _span = tracy_client::span!("create TextureBuffer");
 
-                        TextureBuffer::from_memory(
+                        let buffer = TextureBuffer::from_memory(
                             renderer,
                             &frame.pixels_rgba,
                             Fourcc::Abgr8888,
@@ -263,8 +263,15 @@ impl CursorTextureCache {
                             scale,
                             Transform::Normal,
                             None,
-                        )
-                        .unwrap()
+                        );
+
+                        match buffer {
+                            Ok(x) => Some(x),
+                            Err(err) => {
+                                warn!("error creating a cursor texture: {err:?}");
+                                None
+                            }
+                        }
                     })
                     .collect()
             })[idx]
