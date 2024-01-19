@@ -418,6 +418,7 @@ fn prettify_keysym_name(name: &str) -> String {
         "Next" => "Page Down",
         "Prior" => "Page Up",
         "Print" => "PrtSc",
+        "Return" => "Enter",
         _ => name,
     };
 
