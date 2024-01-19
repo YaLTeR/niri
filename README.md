@@ -120,6 +120,8 @@ A step-by-step process for this is explained [on the wiki](https://github.com/Ya
 Niri also works with some parts of xdg-desktop-portal-gnome.
 In particular, it supports file choosers and monitor screencasting (e.g. to [OBS]).
 
+[This wiki page](https://github.com/YaLTeR/niri/wiki/Important-Software) explains how to run important software required for normal desktop use, including portals.
+
 ### Xwayland
 
 See [the wiki page](https://github.com/YaLTeR/niri/wiki/Xwayland) to learn how to use Xwayland with niri.
