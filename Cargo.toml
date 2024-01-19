@@ -7,7 +7,7 @@ edition = "2021"
 repository = "https://github.com/YaLTeR/niri"
 
 [workspace.dependencies]
-bitflags = "2.4.1"
+bitflags = "2.4.2"
 directories = "5.0.1"
 serde = { version = "1.0.195", features = ["derive"] }
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
@@ -39,14 +39,14 @@ anyhow = { version = "1.0.79" }
 arrayvec = "0.7.4"
 async-channel = { version = "2.1.1", optional = true }
 async-io = { version = "1.13.0", optional = true }
-bitflags = "2.4.1"
-calloop = { version = "0.12.3", features = ["executor", "futures-io"] }
-clap = { version = "4.4.13", features = ["derive"] }
+bitflags = "2.4.2"
+calloop = { version = "0.12.4", features = ["executor", "futures-io"] }
+clap = { version = "4.4.18", features = ["derive"] }
 directories = "5.0.1"
 futures-util = { version = "0.3.30", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.151"
+libc = "0.2.152"
 log = { version = "0.4.20", features = ["max_level_trace", "release_max_level_debug"] }
 logind-zbus = { version = "3.1.2", optional = true }
 niri-config = { version = "0.1.0-alpha.3", path = "niri-config" }
@@ -54,7 +54,7 @@ niri-ipc = { version = "0.1.0-alpha.3", path = "niri-ipc" }
 notify-rust = { version = "4.10.0", optional = true }
 pangocairo = "0.18.0"
 pipewire = { version = "0.7.2", optional = true }
-png = "0.17.10"
+png = "0.17.11"
 portable-atomic = { version = "1.6.0", default-features = false, features = ["float"] }
 profiling = "1.0.13"
 sd-notify = "0.4.1"
