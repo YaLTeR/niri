@@ -49,7 +49,7 @@ use crate::ipc::client::handle_msg;
 use crate::utils::{cause_panic, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version = version(), about, long_about = None)]
 #[command(args_conflicts_with_subcommands = true)]
 #[command(subcommand_value_name = "SUBCOMMAND")]
 #[command(subcommand_help_heading = "Subcommands")]
@@ -151,11 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    info!(
-        "starting version {} ({})",
-        env!("CARGO_PKG_VERSION"),
-        git_version!(fallback = "unknown commit"),
-    );
+    info!("starting version {}", &version());
 
     // Load the config.
     let path = cli.config.or_else(default_config_path);
@@ -255,6 +251,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     Ok(())
+}
+
+fn version() -> String {
+    format!(
+        "{} ({})",
+        env!("CARGO_PKG_VERSION"),
+        git_version!(fallback = "unknown commit"),
+    )
 }
 
 fn import_env_to_systemd() {

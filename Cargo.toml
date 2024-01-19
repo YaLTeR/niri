@@ -41,7 +41,7 @@ async-channel = { version = "2.1.1", optional = true }
 async-io = { version = "1.13.0", optional = true }
 bitflags = "2.4.2"
 calloop = { version = "0.12.4", features = ["executor", "futures-io"] }
-clap = { version = "4.4.18", features = ["derive"] }
+clap = { version = "4.4.18", features = ["derive", "string"] }
 directories = "5.0.1"
 futures-util = { version = "0.3.30", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
