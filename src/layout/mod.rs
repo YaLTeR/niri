@@ -542,6 +542,7 @@ impl<W: LayoutElement> Layout<W> {
                             if !ws.has_windows()
                                 && idx != mon.active_workspace_idx
                                 && idx != mon.workspaces.len() - 1
+                                && mon.workspace_switch.is_none()
                             {
                                 mon.workspaces.remove(idx);
 
@@ -2284,6 +2285,22 @@ mod tests {
         options.border.width = 1;
 
         check_ops_with_options(options, &ops);
+    }
+
+    #[test]
+    fn workspace_cleanup_during_switch() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::FocusWorkspaceDown,
+            Op::CloseWindow(1),
+        ];
+
+        check_ops(&ops);
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = u16> {
