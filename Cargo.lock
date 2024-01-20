@@ -1845,7 +1845,7 @@ dependencies = [
 
 [[package]]
 name = "niri"
-version = "0.1.0-alpha.3"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -1886,7 +1886,7 @@ dependencies = [
 
 [[package]]
 name = "niri-config"
-version = "0.1.0-alpha.3"
+version = "0.1.0-beta.1"
 dependencies = [
  "bitflags 2.4.2",
  "knuffel",
@@ -1898,7 +1898,7 @@ dependencies = [
 
 [[package]]
 name = "niri-ipc"
-version = "0.1.0-alpha.3"
+version = "0.1.0-beta.1"
 dependencies = [
  "serde",
 ]
