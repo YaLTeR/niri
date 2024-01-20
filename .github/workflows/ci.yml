@@ -107,3 +107,20 @@ jobs:
       - name: Run rustfmt
         run: cargo fmt --all -- --check
 
+  fedora:
+    runs-on: ubuntu-22.04
+    container: fedora:39
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo dnf update -y
+          sudo dnf install -y cargo gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang
+
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build
+

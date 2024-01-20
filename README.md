@@ -68,7 +68,7 @@ First, install the dependencies for your distribution.
 - Fedora:
 
     ```sh
-    sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel clang
+    sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang
     ```
 
 Next, build niri with `cargo build --release`.
