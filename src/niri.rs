@@ -868,7 +868,12 @@ impl Niri {
 
         let screenshot_ui = ScreenshotUi::new();
         let config_error_notification = ConfigErrorNotification::new();
-        let hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
+
+        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
+        if !config_.hotkey_overlay.skip_at_startup {
+            hotkey_overlay.show();
+        }
+
         let exit_confirm_dialog = match ExitConfirmDialog::new() {
             Ok(x) => Some(x),
             Err(err) => {

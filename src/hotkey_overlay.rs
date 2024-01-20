@@ -45,8 +45,7 @@ pub type HotkeyOverlayRenderElement<R> = RelocateRenderElement<MemoryRenderBuffe
 impl HotkeyOverlay {
     pub fn new(config: Rc<RefCell<Config>>, comp_mod: CompositorMod) -> Self {
         Self {
-            // Start the compositor with the overlay open.
-            is_open: true,
+            is_open: false,
             config,
             comp_mod,
             buffers: RefCell::new(HashMap::new()),

@@ -34,6 +34,8 @@ pub struct Config {
     ]
     pub screenshot_path: Option<String>,
     #[knuffel(child, default)]
+    pub hotkey_overlay: HotkeyOverlay,
+    #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
     pub debug: DebugConfig,
@@ -334,6 +336,12 @@ pub struct Struts {
     pub top: u16,
     #[knuffel(child, unwrap(argument), default)]
     pub bottom: u16,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct HotkeyOverlay {
+    #[knuffel(child)]
+    pub skip_at_startup: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -766,6 +774,10 @@ mod tests {
 
             screenshot-path "~/Screenshots/screenshot.png"
 
+            hotkey-overlay {
+                skip-at-startup
+            }
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -881,6 +893,9 @@ mod tests {
                     xcursor_size: 16,
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
+                hotkey_overlay: HotkeyOverlay {
+                    skip_at_startup: true,
+                },
                 binds: Binds(vec![
                     Bind {
                         key: Key {
