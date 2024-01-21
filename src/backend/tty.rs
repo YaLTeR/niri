@@ -74,6 +74,8 @@ pub struct Tty {
     // The allocator for the primary GPU. It is only `Some()` if we have a device corresponding to
     // the primary GPU.
     primary_allocator: Option<DmabufAllocator<GbmAllocator<DrmDeviceFd>>>,
+    // The output config had changed, but the session is paused, so we need to update it on resume.
+    update_output_config_on_resume: bool,
     ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
     enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
@@ -222,6 +224,7 @@ impl Tty {
             devices: HashMap::new(),
             dmabuf_global: None,
             primary_allocator: None,
+            update_output_config_on_resume: false,
             ipc_outputs: Rc::new(RefCell::new(HashMap::new())),
             enabled_outputs: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -368,6 +371,10 @@ impl Tty {
                     if let Err(err) = self.device_added(device_id, &path, niri) {
                         warn!("error adding device: {err:?}");
                     }
+                }
+
+                if self.update_output_config_on_resume {
+                    self.on_output_config_changed(niri);
                 }
 
                 self.refresh_ipc_outputs();
@@ -1233,6 +1240,13 @@ impl Tty {
 
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::on_output_config_changed");
+
+        // If we're inactive, we can't do anything, so just set a flag for later.
+        if !self.session.is_active() {
+            self.update_output_config_on_resume = true;
+            return;
+        }
+        self.update_output_config_on_resume = false;
 
         let mut to_disconnect = vec![];
         let mut to_connect = vec![];
