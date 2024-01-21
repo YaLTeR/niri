@@ -13,9 +13,11 @@ use niri_config::Config;
 use smithay::backend::allocator::dmabuf::{Dmabuf, DmabufAllocator};
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format, Fourcc};
-use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
+use smithay::backend::drm::compositor::{
+    DrmCompositor, FrameError, PrimaryPlaneElement, RenderFrameError,
+};
 use smithay::backend::drm::{
-    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
+    DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
 };
 use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
@@ -277,7 +279,7 @@ impl Tty {
 
                 self.libinput.suspend();
 
-                for device in self.devices.values() {
+                for device in self.devices.values_mut() {
                     device.drm.pause();
                 }
             }
@@ -320,47 +322,23 @@ impl Tty {
                     device_list.remove(&node.dev_id());
 
                     // It hasn't been removed, update its state as usual.
-                    let device = &self.devices[&node];
-                    device.drm.activate();
-
-                    // HACK: force reset the connectors to make resuming work across sleep.
-                    let device = &self.devices[&node];
-                    let crtcs: Vec<_> = device
-                        .drm_scanner
-                        .crtcs()
-                        .map(|(_conn, crtc)| crtc)
-                        .collect();
-                    for crtc in crtcs {
-                        self.connector_disconnected(niri, node, crtc);
+                    if let Err(err) = self.devices.get_mut(&node).unwrap().drm.activate(false) {
+                        error!(?err, "failed to active drm device");
                     }
 
+                    // Refresh the connectors.
+                    self.device_changed(node.dev_id(), niri);
+
+                    // Refresh the state on unchanged connectors.
                     let device = self.devices.get_mut(&node).unwrap();
-                    let _ = device.drm_scanner.scan_connectors(&device.drm);
-                    let crtcs: Vec<_> = device
-                        .drm_scanner
-                        .crtcs()
-                        .map(|(conn, crtc)| (conn.clone(), crtc))
-                        .collect();
-                    for (conn, crtc) in crtcs {
-                        if let Err(err) = self.connector_connected(niri, node, conn, crtc) {
-                            warn!("error connecting connector: {err:?}");
+                    for surface in device.surfaces.values_mut() {
+                        let compositor = &mut surface.compositor;
+                        if let Err(err) = compositor.surface().reset_state() {
+                            warn!("error resetting DRM surface state: {err}");
                         }
                     }
 
-                    // // Refresh the connectors.
-                    // self.device_changed(node.dev_id(), niri);
-
-                    // // Refresh the state on unchanged connectors.
-                    // let device = self.devices.get_mut(&node).unwrap();
-                    // for surface in device.surfaces.values_mut() {
-                    //     let compositor = &mut surface.compositor;
-                    //     if let Err(err) = compositor.surface().reset_state() {
-                    //         warn!("error resetting DRM surface state: {err}");
-                    //     }
-                    //     compositor.reset_buffers();
-                    // }
-
-                    // niri.queue_redraw_all();
+                    niri.queue_redraw_all();
                 }
 
                 // Add new devices.
@@ -1039,7 +1017,11 @@ impl Tty {
 
         // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;
-        match drm_compositor.render_frame::<_, _, GlesTexture>(&mut renderer, &elements, [0.; 4]) {
+        let needs_reset = match drm_compositor.render_frame::<_, _, GlesTexture>(
+            &mut renderer,
+            &elements,
+            [0.; 4],
+        ) {
             Ok(res) => {
                 if self
                     .config
@@ -1083,15 +1065,29 @@ impl Tty {
                         }
                         Err(err) => {
                             error!("error queueing frame: {err}");
+                            matches!(err, FrameError::DrmError(DrmError::TestFailed(_)))
                         }
                     }
                 } else {
                     rv = RenderResult::NoDamage;
+                    false
                 }
             }
             Err(err) => {
                 // Can fail if we switched to a different TTY.
                 error!("error rendering frame: {err}");
+                matches!(
+                    err,
+                    RenderFrameError::PrepareFrame(FrameError::DrmError(DrmError::TestFailed(_)))
+                )
+            }
+        };
+
+        // Reset the device in case we hit a error that we might be able
+        // to recover from by resetting the state
+        if needs_reset {
+            if let Err(err) = device.drm.reset_state() {
+                error!(?err, "failed to reset drm device");
             }
         }
 
