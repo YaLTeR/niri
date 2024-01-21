@@ -1255,12 +1255,11 @@ impl Tty {
                 }
 
                 // Check if we need to change the mode.
-                let connector = surface
-                    .compositor
-                    .current_connectors()
-                    .into_iter()
-                    .next()
-                    .unwrap();
+                let Some(connector) = surface.compositor.pending_connectors().into_iter().next()
+                else {
+                    error!("surface pending connectors is empty");
+                    continue;
+                };
                 let Some(connector) = device.drm_scanner.connectors().get(&connector) else {
                     error!("missing enabled connector in drm_scanner");
                     continue;
@@ -1271,7 +1270,7 @@ impl Tty {
                     continue;
                 };
 
-                if surface.compositor.current_mode() == mode {
+                if surface.compositor.pending_mode() == mode {
                     continue;
                 }
 
