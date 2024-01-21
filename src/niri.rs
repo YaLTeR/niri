@@ -2642,32 +2642,28 @@ impl Niri {
         include_pointer: bool,
         on_done: impl FnOnce(PathBuf) + Send + 'static,
     ) -> anyhow::Result<()> {
-        use std::cmp::max;
-
-        use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-
         let _span = tracy_client::span!("Niri::screenshot_all_outputs");
 
-        let mut elements = vec![];
-        let mut size = Size::from((0, 0));
-
         let outputs: Vec<_> = self.global_space.outputs().cloned().collect();
-        for output in outputs {
-            let geom = self.global_space.output_geometry(&output).unwrap();
-            // FIXME: this does not work when outputs can have non-1 scale.
-            let geom = geom.to_physical(1);
 
-            size.w = max(size.w, geom.loc.x + geom.size.w);
-            size.h = max(size.h, geom.loc.y + geom.size.h);
+        // FIXME: support multiple outputs, needs fixing multi-scale handling and cropping.
+        anyhow::ensure!(outputs.len() == 1);
 
-            let output_elements = self.render::<GlesRenderer>(renderer, &output, include_pointer);
-            elements.extend(output_elements.into_iter().map(|elem| {
-                RelocateRenderElement::from_element(elem, geom.loc, Relocate::Relative)
-            }));
-        }
+        let output = outputs.into_iter().next().unwrap();
+        let geom = self.global_space.output_geometry(&output).unwrap();
 
-        // FIXME: scale.
-        let pixels = render_to_vec(renderer, size, Scale::from(1.), Fourcc::Abgr8888, &elements)?;
+        let output_scale = output.current_scale().integer_scale();
+        let geom = geom.to_physical(output_scale);
+
+        let size = geom.size;
+        let elements = self.render::<GlesRenderer>(renderer, &output, include_pointer);
+        let pixels = render_to_vec(
+            renderer,
+            size,
+            Scale::from(f64::from(output_scale)),
+            Fourcc::Abgr8888,
+            &elements,
+        )?;
 
         let path = make_screenshot_path(&self.config.borrow())
             .ok()
