@@ -280,7 +280,7 @@ impl Tty {
 
                 self.libinput.suspend();
 
-                for device in self.devices.values() {
+                for device in self.devices.values_mut() {
                     device.drm.pause();
                 }
             }
@@ -323,47 +323,13 @@ impl Tty {
                     device_list.remove(&node.dev_id());
 
                     // It hasn't been removed, update its state as usual.
-                    let device = &self.devices[&node];
-                    device.drm.activate();
-
-                    // HACK: force reset the connectors to make resuming work across sleep.
-                    let device = &self.devices[&node];
-                    let crtcs: Vec<_> = device
-                        .drm_scanner
-                        .crtcs()
-                        .map(|(_conn, crtc)| crtc)
-                        .collect();
-                    for crtc in crtcs {
-                        self.connector_disconnected(niri, node, crtc);
-                    }
-
                     let device = self.devices.get_mut(&node).unwrap();
-                    let _ = device.drm_scanner.scan_connectors(&device.drm);
-                    let crtcs: Vec<_> = device
-                        .drm_scanner
-                        .crtcs()
-                        .map(|(conn, crtc)| (conn.clone(), crtc))
-                        .collect();
-                    for (conn, crtc) in crtcs {
-                        if let Err(err) = self.connector_connected(niri, node, conn, crtc) {
-                            warn!("error connecting connector: {err:?}");
-                        }
+                    if let Err(err) = device.drm.activate(true) {
+                        warn!("error activating DRM device: {err:?}");
                     }
 
-                    // // Refresh the connectors.
-                    // self.device_changed(node.dev_id(), niri);
-
-                    // // Refresh the state on unchanged connectors.
-                    // let device = self.devices.get_mut(&node).unwrap();
-                    // for surface in device.surfaces.values_mut() {
-                    //     let compositor = &mut surface.compositor;
-                    //     if let Err(err) = compositor.surface().reset_state() {
-                    //         warn!("error resetting DRM surface state: {err}");
-                    //     }
-                    //     compositor.reset_buffers();
-                    // }
-
-                    // niri.queue_redraw_all();
+                    // Refresh the connectors.
+                    self.device_changed(node.dev_id(), niri);
                 }
 
                 // Add new devices.
@@ -378,6 +344,8 @@ impl Tty {
                 }
 
                 self.refresh_ipc_outputs();
+
+                niri.queue_redraw_all();
             }
         }
     }

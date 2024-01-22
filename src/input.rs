@@ -90,6 +90,7 @@ impl State {
             TouchUp { .. } => (),
             TouchCancel { .. } => (),
             TouchFrame { .. } => (),
+            SwitchToggle { .. } => (),
             Special(_) => (),
         }
 
