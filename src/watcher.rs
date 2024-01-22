@@ -27,7 +27,18 @@ impl Watcher {
             thread::Builder::new()
                 .name(format!("Filesystem Watcher for {}", path.to_string_lossy()))
                 .spawn(move || {
-                    let mut last_mtime = path.metadata().and_then(|meta| meta.modified()).ok();
+                    // this "should" be as simple as mtime, but it does not quite work in practice;
+                    // it doesn't work if the config is a symlink, and its target changes but the
+                    // new target and old target have identical mtimes.
+                    //
+                    // in practice, this does not occur on any systems other than nix.
+                    // because, on nix practically everything is a symlink to /nix/store
+                    // and due to reproducibility, /nix/store keeps no mtime (= 1970-01-01)
+                    // so, symlink targets change frequently when mtime doesn't.
+                    let mut last_props = path
+                        .canonicalize()
+                        .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
+                        .ok();
 
                     loop {
                         thread::sleep(Duration::from_millis(500));
@@ -36,8 +47,11 @@ impl Watcher {
                             break;
                         }
 
-                        if let Ok(mtime) = path.metadata().and_then(|meta| meta.modified()) {
-                            if last_mtime != Some(mtime) {
+                        if let Ok(new_props) = path
+                            .canonicalize()
+                            .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
+                        {
+                            if last_props.as_ref() != Some(&new_props) {
                                 trace!("file changed: {}", path.to_string_lossy());
 
                                 if let Err(err) = changed.send(()) {
@@ -45,7 +59,7 @@ impl Watcher {
                                     break;
                                 }
 
-                                last_mtime = Some(mtime);
+                                last_props = Some(new_props);
                             }
                         }
                     }
