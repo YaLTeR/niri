@@ -710,13 +710,8 @@ impl Tty {
         let sequence_delta_plot_name =
             tracy_client::PlotName::new_leak(format!("{output_name} sequence delta"));
 
-        self.enabled_outputs
-            .lock()
-            .unwrap()
-            .insert(output_name.clone(), output.clone());
-
         let surface = Surface {
-            name: output_name,
+            name: output_name.clone(),
             compositor,
             dmabuf_feedback,
             vblank_frame: None,
@@ -729,6 +724,13 @@ impl Tty {
         assert!(res.is_none(), "crtc must not have already existed");
 
         niri.add_output(output.clone(), Some(refresh_interval(mode)));
+
+        self.enabled_outputs
+            .lock()
+            .unwrap()
+            .insert(output_name, output.clone());
+        #[cfg(feature = "dbus")]
+        niri.on_enabled_outputs_changed();
 
         // Power on all monitors if necessary and queue a redraw on the new one.
         niri.event_loop.insert_idle(move |state| {
@@ -769,6 +771,8 @@ impl Tty {
         };
 
         self.enabled_outputs.lock().unwrap().remove(&surface.name);
+        #[cfg(feature = "dbus")]
+        niri.on_enabled_outputs_changed();
     }
 
     fn on_vblank(

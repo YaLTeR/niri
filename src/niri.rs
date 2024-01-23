@@ -2759,6 +2759,44 @@ impl Niri {
             constraint.activate();
         });
     }
+
+    #[cfg(feature = "dbus")]
+    pub fn on_enabled_outputs_changed(&self) {
+        let _span = tracy_client::span!("Niri::on_enabled_outputs_changed");
+
+        let Some(dbus) = &self.dbus else { return };
+        let Some(conn_display_config) = dbus.conn_display_config.clone() else {
+            return;
+        };
+
+        let res = thread::Builder::new()
+            .name("DisplayConfig MonitorsChanged Emitter".to_owned())
+            .spawn(move || {
+                use crate::dbus::mutter_display_config::DisplayConfig;
+                let _span = tracy_client::span!("MonitorsChanged");
+                let iface = match conn_display_config
+                    .object_server()
+                    .interface::<_, DisplayConfig>("/org/gnome/Mutter/DisplayConfig")
+                {
+                    Ok(iface) => iface,
+                    Err(err) => {
+                        warn!("error getting DisplayConfig interface: {err:?}");
+                        return;
+                    }
+                };
+
+                async_io::block_on(async move {
+                    if let Err(err) = DisplayConfig::monitors_changed(iface.signal_context()).await
+                    {
+                        warn!("error emitting MonitorsChanged: {err:?}");
+                    }
+                });
+            });
+
+        if let Err(err) = res {
+            warn!("error spawning a thread to send MonitorsChanged: {err:?}");
+        }
+    }
 }
 
 pub struct ClientState {

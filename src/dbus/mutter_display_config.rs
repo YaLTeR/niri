@@ -5,7 +5,7 @@ use serde::Serialize;
 use smithay::output::Output;
 use zbus::fdo::RequestNameFlags;
 use zbus::zvariant::{self, OwnedValue, Type};
-use zbus::{dbus_interface, fdo};
+use zbus::{dbus_interface, fdo, SignalContext};
 
 use super::Start;
 
@@ -112,7 +112,8 @@ impl DisplayConfig {
         Ok((0, monitors, logical_monitors, HashMap::new()))
     }
 
-    // FIXME: monitors-changed signal.
+    #[dbus_interface(signal)]
+    pub async fn monitors_changed(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
 }
 
 impl DisplayConfig {
