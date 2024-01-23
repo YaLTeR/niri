@@ -66,7 +66,7 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
-use smithay::wayland::input_method::InputMethodManagerState;
+use smithay::wayland::input_method::{InputMethodManagerState, InputMethodSeat};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
 use smithay::wayland::pointer_gestures::PointerGesturesState;
@@ -326,7 +326,7 @@ impl State {
         self.niri.cursor_manager.check_cursor_image_surface_alive();
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
-        self.niri.refresh_popup_grab();
+        self.refresh_popup_grab();
         self.update_keyboard_focus();
         self.refresh_pointer_focus();
 
@@ -418,6 +418,27 @@ impl State {
     pub fn move_cursor_to_output(&mut self, output: &Output) {
         let geo = self.niri.global_space.output_geometry(output).unwrap();
         self.move_cursor(center(geo).to_f64());
+    }
+
+    pub fn refresh_popup_grab(&mut self) {
+        let keyboard_grabbed = self.niri.seat.input_method().keyboard_grabbed();
+
+        if let Some(grab) = &mut self.niri.popup_grab {
+            if grab.grab.has_ended() {
+                self.niri.popup_grab = None;
+            } else if keyboard_grabbed {
+                // HACK: remove popup grab if IME grabbed the keyboard, because we can't yet do
+                // popup grabs together with an IME grab.
+                // FIXME: do this properly.
+                grab.grab.ungrab(PopupUngrabStrategy::All);
+                self.niri.seat.get_pointer().unwrap().unset_grab(
+                    self,
+                    SERIAL_COUNTER.next_serial(),
+                    get_monotonic_time().as_millis() as u32,
+                );
+                self.niri.popup_grab = None;
+            }
+        }
     }
 
     pub fn update_keyboard_focus(&mut self) {
@@ -1558,14 +1579,6 @@ impl Niri {
 
         let state = self.output_state.get(output)?;
         state.lock_surface.as_ref().map(|s| s.wl_surface()).cloned()
-    }
-
-    pub fn refresh_popup_grab(&mut self) {
-        if let Some(grab) = &self.popup_grab {
-            if grab.grab.has_ended() {
-                self.popup_grab = None;
-            }
-        }
     }
 
     /// Schedules an immediate redraw on all outputs if one is not already scheduled.

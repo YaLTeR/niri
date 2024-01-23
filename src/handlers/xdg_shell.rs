@@ -13,6 +13,7 @@ use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::compositor::{send_surface_state, with_states};
+use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
@@ -94,6 +95,15 @@ impl XdgShellHandler for State {
     }
 
     fn grab(&mut self, surface: PopupSurface, _seat: WlSeat, serial: Serial) {
+        // HACK: ignore grabs (pretend they work without actually grabbing) if the input method has
+        // a grab. It will likely need refactors in Smithay to support properly since grabs just
+        // replace each other.
+        // FIXME: do this properly.
+        if self.niri.seat.input_method().keyboard_grabbed() {
+            trace!("ignoring popup grab because IME has keyboard grabbed");
+            return;
+        }
+
         let popup = PopupKind::Xdg(surface);
         let Ok(root) = find_popup_root_surface(&popup) else {
             return;
