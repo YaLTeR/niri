@@ -1,0 +1,4 @@
+contact_links:
+  - name: Feature request
+    url: https://github.com/YaLTeR/niri/discussions/new?category=ideas
+    about: Ideas for new features and functionality (start a Discussion)
