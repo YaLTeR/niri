@@ -7,10 +7,11 @@ use serde::Deserialize;
 use smithay::output::Output;
 use smithay::reexports::calloop;
 use zbus::fdo::RequestNameFlags;
-use zbus::zvariant::{DeserializeDict, OwnedObjectPath, Type, Value};
+use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
 use zbus::{dbus_interface, fdo, InterfaceRef, ObjectServer, SignalContext};
 
 use super::Start;
+use crate::utils::output_size;
 
 #[derive(Clone)]
 pub struct ScreenCast {
@@ -52,6 +53,13 @@ pub struct Stream {
     cursor_mode: CursorMode,
     was_started: Arc<AtomicBool>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
+}
+
+#[derive(Debug, SerializeDict, Type, Value)]
+#[zvariant(signature = "dict")]
+struct StreamParameters {
+    /// Size of the stream in logical coordinates.
+    size: (i32, i32),
 }
 
 pub enum ScreenCastToNiri {
@@ -195,6 +203,12 @@ impl Stream {
     #[dbus_interface(signal)]
     pub async fn pipe_wire_stream_added(ctxt: &SignalContext<'_>, node_id: u32)
         -> zbus::Result<()>;
+
+    #[dbus_interface(property)]
+    async fn parameters(&self) -> StreamParameters {
+        let size = output_size(&self.output).into();
+        StreamParameters { size }
+    }
 }
 
 impl ScreenCast {
