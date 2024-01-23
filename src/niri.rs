@@ -13,11 +13,11 @@ use anyhow::Context;
 use calloop::futures::Scheduler;
 use niri_config::{Config, TrackLayout};
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::select_dmabuf_feedback;
 use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, AsRenderElements, Element, Id, Kind, RenderElement,
@@ -106,7 +106,7 @@ use crate::input::{apply_libinput_settings, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::pw_utils::{Cast, PipeWire};
-use crate::render_helpers::{NiriRenderer, PrimaryGpuTextureRenderElement};
+use crate::render_helpers::NiriRenderer;
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::{
     center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
@@ -1670,26 +1670,25 @@ impl Niri {
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                let texture = self.cursor_texture_cache.get(
-                    renderer.as_gles_renderer(),
-                    icon,
-                    scale,
-                    &cursor,
-                    idx,
-                );
-
+                let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
                 let mut pointer_elements = vec![];
-                if let Some(texture) = texture {
-                    pointer_elements.push(OutputRenderElements::NamedPointer(
-                        PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                            pointer_pos.to_f64(),
-                            &texture,
-                            None,
-                            None,
-                            None,
-                            Kind::Cursor,
-                        )),
-                    ));
+                let pointer_element = match MemoryRenderBufferRenderElement::from_buffer(
+                    renderer,
+                    pointer_pos.to_f64(),
+                    &texture,
+                    None,
+                    None,
+                    None,
+                    Kind::Cursor,
+                ) {
+                    Ok(element) => Some(element),
+                    Err(err) => {
+                        warn!("error importing a cursor texture: {err:?}");
+                        None
+                    }
+                };
+                if let Some(element) = pointer_element {
+                    pointer_elements.push(OutputRenderElements::NamedPointer(element));
                 }
 
                 (pointer_elements, pointer_pos)
@@ -2931,7 +2930,7 @@ fn render_to_dmabuf(
 pub enum OutputRenderElements<R: NiriRenderer> {
     Monitor(MonitorRenderElement<R>),
     Wayland(WaylandSurfaceRenderElement<R>),
-    NamedPointer(PrimaryGpuTextureRenderElement),
+    NamedPointer(MemoryRenderBufferRenderElement<R>),
     SolidColor(SolidColorRenderElement),
     ScreenshotUi(ScreenshotUiRenderElement),
     ConfigErrorNotification(ConfigErrorNotificationRenderElement<R>),
@@ -3128,12 +3127,6 @@ impl<R: NiriRenderer> From<MonitorRenderElement<R>> for OutputRenderElements<R> 
 impl<R: NiriRenderer> From<WaylandSurfaceRenderElement<R>> for OutputRenderElements<R> {
     fn from(x: WaylandSurfaceRenderElement<R>) -> Self {
         Self::Wayland(x)
-    }
-}
-
-impl<R: NiriRenderer> From<PrimaryGpuTextureRenderElement> for OutputRenderElements<R> {
-    fn from(x: PrimaryGpuTextureRenderElement) -> Self {
-        Self::NamedPointer(x)
     }
 }
 
