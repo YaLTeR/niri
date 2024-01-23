@@ -8,8 +8,7 @@ use std::sync::Mutex;
 
 use anyhow::{anyhow, Context};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::texture::TextureBuffer;
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Transform};
@@ -224,7 +223,7 @@ pub enum RenderCursor {
     },
 }
 
-type TextureCache = HashMap<(CursorIcon, i32), Vec<Option<TextureBuffer<GlesTexture>>>>;
+type TextureCache = HashMap<(CursorIcon, i32), Vec<MemoryRenderBuffer>>;
 
 #[derive(Default)]
 pub struct CursorTextureCache {
@@ -238,12 +237,11 @@ impl CursorTextureCache {
 
     pub fn get(
         &self,
-        renderer: &mut GlesRenderer,
         icon: CursorIcon,
         scale: i32,
         cursor: &XCursor,
         idx: usize,
-    ) -> Option<TextureBuffer<GlesTexture>> {
+    ) -> MemoryRenderBuffer {
         self.cache
             .borrow_mut()
             .entry((icon, scale))
@@ -252,26 +250,14 @@ impl CursorTextureCache {
                     .frames()
                     .iter()
                     .map(|frame| {
-                        let _span = tracy_client::span!("create TextureBuffer");
-
-                        let buffer = TextureBuffer::from_memory(
-                            renderer,
+                        MemoryRenderBuffer::from_slice(
                             &frame.pixels_rgba,
-                            Fourcc::Abgr8888,
+                            Fourcc::Argb8888,
                             (frame.width as i32, frame.height as i32),
-                            false,
                             scale,
                             Transform::Normal,
                             None,
-                        );
-
-                        match buffer {
-                            Ok(x) => Some(x),
-                            Err(err) => {
-                                warn!("error creating a cursor texture: {err:?}");
-                                None
-                            }
-                        }
+                        )
                     })
                     .collect()
             })[idx]
