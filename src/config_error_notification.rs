@@ -184,7 +184,7 @@ fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
     drop(cr);
 
     let data = surface.take_data().unwrap();
-    let buffer = MemoryRenderBuffer::from_memory(
+    let buffer = MemoryRenderBuffer::from_slice(
         &data,
         Fourcc::Argb8888,
         (width, height),

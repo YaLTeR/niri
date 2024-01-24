@@ -20,7 +20,7 @@ use smithay::backend::drm::{
 use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::gles::{Capability, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{Capability, GlesRenderer};
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
 use smithay::backend::renderer::multigpu::{GpuManager, MultiFrame, MultiRenderer};
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
@@ -367,7 +367,7 @@ impl Tty {
         let (drm, drm_notifier) = DrmDevice::new(device_fd.clone(), true)?;
         let gbm = GbmDevice::new(device_fd)?;
 
-        let display = EGLDisplay::new(gbm.clone())?;
+        let display = unsafe { EGLDisplay::new(gbm.clone())? };
         let egl_device = EGLDevice::device_for_display(&display)?;
 
         // HACK: There's an issue in Smithay where the display created by GpuManager will be the
@@ -1018,7 +1018,7 @@ impl Tty {
 
         // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;
-        match drm_compositor.render_frame::<_, _, GlesTexture>(&mut renderer, &elements, [0.; 4]) {
+        match drm_compositor.render_frame::<_, _>(&mut renderer, &elements, [0.; 4]) {
             Ok(res) => {
                 if self
                     .config
