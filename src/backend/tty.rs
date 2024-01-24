@@ -370,12 +370,6 @@ impl Tty {
         let display = unsafe { EGLDisplay::new(gbm.clone())? };
         let egl_device = EGLDevice::device_for_display(&display)?;
 
-        // HACK: There's an issue in Smithay where the display created by GpuManager will be the
-        // same as the one we just created here, so when ours is dropped at the end of the scope,
-        // it will also close the long-lived display in GpuManager. Thus, we need to drop ours
-        // beforehand.
-        drop(display);
-
         let render_node = egl_device
             .try_get_render_node()?
             .context("no render node")?;
