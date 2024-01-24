@@ -338,7 +338,7 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     drop(cr);
 
     let data = surface.take_data().unwrap();
-    let buffer = MemoryRenderBuffer::from_memory(
+    let buffer = MemoryRenderBuffer::from_slice(
         &data,
         Fourcc::Argb8888,
         (width, height),
