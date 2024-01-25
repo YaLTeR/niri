@@ -16,8 +16,11 @@ Opening a new window never causes existing windows to resize.
 Every monitor has its own separate window strip.
 Windows can never "overflow" onto an adjacent monitor.
 
-Since windows go left-to-right horizontally, workspaces are arranged vertically.
+Workspaces are dynamic and arranged vertically.
 Every monitor has an independent set of workspaces, and there's always one empty workspace present all the way down.
+
+The workspace arrangement is preserved across disconnecting and connecting monitors where it makes sense.
+When a monitor disconnects, its workspaces will move to another monitor, but upon reconnection they will move back to the original monitor.
 
 ## Features
 
@@ -29,13 +32,17 @@ Every monitor has an independent set of workspaces, and there's always one empty
 - Configurable layout: gaps, borders, struts, window sizes
 - Live-reloading config
 
+## Video Demo
+
+https://github.com/YaLTeR/niri/assets/1794388/5d355694-7b06-4f00-8920-8dce54a8721c
+
 ## Status
 
 A lot of the essential functionality is implemented, plus some goodies on top.
 Feel free to give niri a try.
-Have your waybars and fuzzels ready: niri is not a complete desktop environment.
+Have your [waybar]s and [fuzzel]s ready: niri is not a complete desktop environment.
 
-https://github.com/YaLTeR/niri/assets/1794388/5d355694-7b06-4f00-8920-8dce54a8721c
+Note that NVIDIA GPUs might have rendering issues.
 
 ## Inspiration
 
@@ -44,15 +51,14 @@ Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top 
 One of the reasons that prompted me to try writing my own compositor is being able to properly separate the monitors.
 Being a GNOME Shell extension, PaperWM has to work against Shell's global window coordinate space to prevent windows from overflowing.
 
-Niri tries to preserve the workspace arrangement as much as possible upon disconnecting and connecting monitors.
-When a monitor disconnects, its workspaces will move to another monitor, but upon reconnection they will move back to the original monitor.
-
 ## Building
 
 > [!TIP]
 > For Fedora users, there's a COPR with built and packaged niri: https://copr.fedorainfracloud.org/coprs/yalter/niri/
 >
-> For NixOS users, check out https://github.com/sodiboo/niri-flake
+> NixOS users, check out https://github.com/sodiboo/niri-flake
+>
+> For Arch users, there's an AUR package: https://aur.archlinux.org/packages/niri
 
 First, install the dependencies for your distribution.
 
@@ -71,7 +77,9 @@ First, install the dependencies for your distribution.
     sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang
     ```
 
-Next, build niri with `cargo build --release`.
+Next, get latest stable Rust: https://rustup.rs/
+
+Then, build niri with `cargo build --release`.
 
 ### NixOS/Nix
 
@@ -202,4 +210,6 @@ We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#
 [PaperWM]: https://github.com/paperwm/PaperWM
 [mako]: https://github.com/emersion/mako
 [OBS]: https://flathub.org/apps/com.obsproject.Studio
+[waybar]: https://github.com/Alexays/Waybar
+[fuzzel]: https://codeberg.org/dnkl/fuzzel
 
