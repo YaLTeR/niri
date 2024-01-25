@@ -18,7 +18,7 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::utils::select_dmabuf_feedback;
+use smithay::backend::renderer::element::utils::{select_dmabuf_feedback, RelocateRenderElement};
 use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, AsRenderElements, Element, Id, Kind, RenderElement,
     RenderElementStates, UnderlyingStorage,
@@ -90,9 +90,7 @@ use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use crate::animation;
 use crate::backend::tty::{SurfaceDmabufFeedback, TtyFrame, TtyRenderer, TtyRendererError};
 use crate::backend::{Backend, RenderResult, Tty, Winit};
-use crate::config_error_notification::{
-    ConfigErrorNotification, ConfigErrorNotificationRenderElement,
-};
+use crate::config_error_notification::ConfigErrorNotification;
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -2933,7 +2931,8 @@ pub enum OutputRenderElements<R: NiriRenderer> {
     NamedPointer(MemoryRenderBufferRenderElement<R>),
     SolidColor(SolidColorRenderElement),
     ScreenshotUi(ScreenshotUiRenderElement),
-    ConfigErrorNotification(ConfigErrorNotificationRenderElement<R>),
+    // Used for the CPU-rendered panels.
+    RelocatedMemoryBuffer(RelocateRenderElement<MemoryRenderBufferRenderElement<R>>),
 }
 
 impl<R: NiriRenderer> Element for OutputRenderElements<R> {
@@ -2944,7 +2943,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.id(),
             Self::SolidColor(elem) => elem.id(),
             Self::ScreenshotUi(elem) => elem.id(),
-            Self::ConfigErrorNotification(elem) => elem.id(),
+            Self::RelocatedMemoryBuffer(elem) => elem.id(),
         }
     }
 
@@ -2955,7 +2954,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.current_commit(),
             Self::SolidColor(elem) => elem.current_commit(),
             Self::ScreenshotUi(elem) => elem.current_commit(),
-            Self::ConfigErrorNotification(elem) => elem.current_commit(),
+            Self::RelocatedMemoryBuffer(elem) => elem.current_commit(),
         }
     }
 
@@ -2966,7 +2965,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.geometry(scale),
             Self::SolidColor(elem) => elem.geometry(scale),
             Self::ScreenshotUi(elem) => elem.geometry(scale),
-            Self::ConfigErrorNotification(elem) => elem.geometry(scale),
+            Self::RelocatedMemoryBuffer(elem) => elem.geometry(scale),
         }
     }
 
@@ -2977,7 +2976,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.transform(),
             Self::SolidColor(elem) => elem.transform(),
             Self::ScreenshotUi(elem) => elem.transform(),
-            Self::ConfigErrorNotification(elem) => elem.transform(),
+            Self::RelocatedMemoryBuffer(elem) => elem.transform(),
         }
     }
 
@@ -2988,7 +2987,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.src(),
             Self::SolidColor(elem) => elem.src(),
             Self::ScreenshotUi(elem) => elem.src(),
-            Self::ConfigErrorNotification(elem) => elem.src(),
+            Self::RelocatedMemoryBuffer(elem) => elem.src(),
         }
     }
 
@@ -3003,7 +3002,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.damage_since(scale, commit),
             Self::SolidColor(elem) => elem.damage_since(scale, commit),
             Self::ScreenshotUi(elem) => elem.damage_since(scale, commit),
-            Self::ConfigErrorNotification(elem) => elem.damage_since(scale, commit),
+            Self::RelocatedMemoryBuffer(elem) => elem.damage_since(scale, commit),
         }
     }
 
@@ -3014,7 +3013,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.opaque_regions(scale),
             Self::SolidColor(elem) => elem.opaque_regions(scale),
             Self::ScreenshotUi(elem) => elem.opaque_regions(scale),
-            Self::ConfigErrorNotification(elem) => elem.opaque_regions(scale),
+            Self::RelocatedMemoryBuffer(elem) => elem.opaque_regions(scale),
         }
     }
 
@@ -3025,7 +3024,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.alpha(),
             Self::SolidColor(elem) => elem.alpha(),
             Self::ScreenshotUi(elem) => elem.alpha(),
-            Self::ConfigErrorNotification(elem) => elem.alpha(),
+            Self::RelocatedMemoryBuffer(elem) => elem.alpha(),
         }
     }
 
@@ -3036,7 +3035,7 @@ impl<R: NiriRenderer> Element for OutputRenderElements<R> {
             Self::NamedPointer(elem) => elem.kind(),
             Self::SolidColor(elem) => elem.kind(),
             Self::ScreenshotUi(elem) => elem.kind(),
-            Self::ConfigErrorNotification(elem) => elem.kind(),
+            Self::RelocatedMemoryBuffer(elem) => elem.kind(),
         }
     }
 }
@@ -3061,7 +3060,7 @@ impl RenderElement<GlesRenderer> for OutputRenderElements<GlesRenderer> {
             Self::ScreenshotUi(elem) => {
                 RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
             }
-            Self::ConfigErrorNotification(elem) => elem.draw(frame, src, dst, damage),
+            Self::RelocatedMemoryBuffer(elem) => elem.draw(frame, src, dst, damage),
         }
     }
 
@@ -3072,7 +3071,7 @@ impl RenderElement<GlesRenderer> for OutputRenderElements<GlesRenderer> {
             Self::NamedPointer(elem) => elem.underlying_storage(renderer),
             Self::SolidColor(elem) => elem.underlying_storage(renderer),
             Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
-            Self::ConfigErrorNotification(elem) => elem.underlying_storage(renderer),
+            Self::RelocatedMemoryBuffer(elem) => elem.underlying_storage(renderer),
         }
     }
 }
@@ -3099,7 +3098,7 @@ impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
             Self::ScreenshotUi(elem) => {
                 RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
             }
-            Self::ConfigErrorNotification(elem) => elem.draw(frame, src, dst, damage),
+            Self::RelocatedMemoryBuffer(elem) => elem.draw(frame, src, dst, damage),
         }
     }
 
@@ -3113,7 +3112,7 @@ impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
             Self::NamedPointer(elem) => elem.underlying_storage(renderer),
             Self::SolidColor(elem) => elem.underlying_storage(renderer),
             Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
-            Self::ConfigErrorNotification(elem) => elem.underlying_storage(renderer),
+            Self::RelocatedMemoryBuffer(elem) => elem.underlying_storage(renderer),
         }
     }
 }
@@ -3142,8 +3141,10 @@ impl<R: NiriRenderer> From<ScreenshotUiRenderElement> for OutputRenderElements<R
     }
 }
 
-impl<R: NiriRenderer> From<ConfigErrorNotificationRenderElement<R>> for OutputRenderElements<R> {
-    fn from(x: ConfigErrorNotificationRenderElement<R>) -> Self {
-        Self::ConfigErrorNotification(x)
+impl<R: NiriRenderer> From<RelocateRenderElement<MemoryRenderBufferRenderElement<R>>>
+    for OutputRenderElements<R>
+{
+    fn from(x: RelocateRenderElement<MemoryRenderBufferRenderElement<R>>) -> Self {
+        Self::RelocatedMemoryBuffer(x)
     }
 }
