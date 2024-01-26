@@ -11,8 +11,9 @@ use std::thread;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
-use smithay::input::{Seat, SeatHandler, SeatState};
+use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
+use smithay::reexports::input;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -72,6 +73,19 @@ impl SeatHandler for State {
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client.clone());
         set_primary_focus(dh, seat, client);
+    }
+
+    fn led_state_changed(&mut self, _seat: &Seat<Self>, led_state: keyboard::LedState) {
+        let keyboards = self
+            .niri
+            .devices
+            .iter()
+            .filter(|device| device.has_capability(input::DeviceCapability::Keyboard))
+            .cloned();
+
+        for mut keyboard in keyboards {
+            keyboard.led_update(led_state.into());
+        }
     }
 }
 delegate_seat!(State);

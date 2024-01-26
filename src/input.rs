@@ -127,6 +127,17 @@ impl State {
                     }
                 }
 
+                if device.has_capability(input::DeviceCapability::Keyboard) {
+                    if let Some(led_state) = self
+                        .niri
+                        .seat
+                        .get_keyboard()
+                        .map(|keyboard| keyboard.led_state())
+                    {
+                        device.led_update(led_state.into());
+                    }
+                }
+
                 apply_libinput_settings(&self.niri.config.borrow().input, device);
             }
             InputEvent::DeviceRemoved { device } => {
