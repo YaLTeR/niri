@@ -2848,9 +2848,13 @@ fn render_to_texture(
     for element in elements.iter().rev() {
         let src = element.src();
         let dst = element.geometry(scale);
-        element
-            .draw(&mut frame, src, dst, &[output_rect])
-            .context("error drawing element")?;
+
+        if let Some(mut damage) = output_rect.intersection(dst) {
+            damage.loc -= dst.loc;
+            element
+                .draw(&mut frame, src, dst, &[damage])
+                .context("error drawing element")?;
+        }
     }
 
     let sync_point = frame.finish().context("error finishing frame")?;
@@ -2913,9 +2917,13 @@ fn render_to_dmabuf(
     for element in elements.iter().rev() {
         let src = element.src();
         let dst = element.geometry(scale);
-        element
-            .draw(&mut frame, src, dst, &[output_rect])
-            .context("error drawing element")?;
+
+        if let Some(mut damage) = output_rect.intersection(dst) {
+            damage.loc -= dst.loc;
+            element
+                .draw(&mut frame, src, dst, &[damage])
+                .context("error drawing element")?;
+        }
     }
 
     let _sync_point = frame.finish().context("error finishing frame")?;
