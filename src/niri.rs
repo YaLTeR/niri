@@ -2508,7 +2508,11 @@ impl Niri {
             return;
         }
 
-        let Some(default_output) = self.output_under_cursor() else {
+        let default_output = self
+            .output_under_cursor()
+            .or_else(|| self.layout.active_output().cloned())
+            .or_else(|| self.global_space.outputs().next().cloned());
+        let Some(default_output) = default_output else {
             return;
         };
 
