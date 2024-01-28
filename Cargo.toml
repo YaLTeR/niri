@@ -14,12 +14,14 @@ tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_leve
 tracy-client = { version = "0.16.5", default-features = false }
 
 [workspace.dependencies.smithay]
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/kchibisov/smithay.git"
+branch = "send-mods-on-grab"
 # path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/kchibisov/smithay.git"
+branch = "send-mods-on-grab"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
