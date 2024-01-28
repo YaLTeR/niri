@@ -1310,7 +1310,7 @@ impl Niri {
         self.queue_redraw(output);
     }
 
-    pub fn deactivate_monitors(&mut self, backend: &Backend) {
+    pub fn deactivate_monitors(&mut self, backend: &mut Backend) {
         if !self.monitors_active {
             return;
         }
@@ -1319,7 +1319,7 @@ impl Niri {
         backend.set_monitors_active(false);
     }
 
-    pub fn activate_monitors(&mut self, backend: &Backend) {
+    pub fn activate_monitors(&mut self, backend: &mut Backend) {
         if self.monitors_active {
             return;
         }

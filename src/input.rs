@@ -51,7 +51,7 @@ impl State {
 
         // Power on monitors if they were off.
         if should_activate_monitors(&event) {
-            self.niri.activate_monitors(&self.backend);
+            self.niri.activate_monitors(&mut self.backend);
         }
 
         let hide_hotkey_overlay =
@@ -284,7 +284,7 @@ impl State {
                 self.niri.suppressed_keys.clear();
             }
             Action::PowerOffMonitors => {
-                self.niri.deactivate_monitors(&self.backend);
+                self.niri.deactivate_monitors(&mut self.backend);
             }
             Action::ToggleDebugTint => {
                 self.backend.toggle_debug_tint();
