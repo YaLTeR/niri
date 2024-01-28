@@ -187,6 +187,8 @@ pub struct Output {
     pub name: String,
     #[knuffel(child, unwrap(argument), default = 1.)]
     pub scale: f64,
+    #[knuffel(child, unwrap(argument, str), default = Transform::Normal)]
+    pub transform: Transform,
     #[knuffel(child)]
     pub position: Option<Position>,
     #[knuffel(child, unwrap(argument, str))]
@@ -199,8 +201,58 @@ impl Default for Output {
             off: false,
             name: String::new(),
             scale: 1.,
+            transform: Transform::Normal,
             position: None,
             mode: None,
+        }
+    }
+}
+
+/// Output transform, which goes counter-clockwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transform {
+    Normal,
+    _90,
+    _180,
+    _270,
+    Flipped,
+    Flipped90,
+    Flipped180,
+    Flipped270,
+}
+
+impl FromStr for Transform {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "normal" => Ok(Self::Normal),
+            "90" => Ok(Self::_90),
+            "180" => Ok(Self::_180),
+            "270" => Ok(Self::_270),
+            "flipped" => Ok(Self::Flipped),
+            "flipped-90" => Ok(Self::Flipped90),
+            "flipped-180" => Ok(Self::Flipped180),
+            "flipped-270" => Ok(Self::Flipped270),
+            _ => Err(miette!(concat!(
+                r#"invalid transform, can be "90", "180", "270", "#,
+                r#""flipped", "flipped-90", "flipped-180" or "flipped-270""#
+            ))),
+        }
+    }
+}
+
+impl From<Transform> for smithay::utils::Transform {
+    fn from(value: Transform) -> Self {
+        match value {
+            Transform::Normal => Self::Normal,
+            Transform::_90 => Self::_90,
+            Transform::_180 => Self::_180,
+            Transform::_270 => Self::_270,
+            Transform::Flipped => Self::Flipped,
+            Transform::Flipped90 => Self::Flipped90,
+            Transform::Flipped180 => Self::Flipped180,
+            Transform::Flipped270 => Self::Flipped270,
         }
     }
 }
@@ -726,6 +778,7 @@ mod tests {
 
             output "eDP-1" {
                 scale 2.0
+                transform "flipped-90"
                 position x=10 y=20
                 mode "1920x1080@144"
             }
@@ -826,6 +879,7 @@ mod tests {
                     off: false,
                     name: "eDP-1".to_owned(),
                     scale: 2.,
+                    transform: Transform::Flipped90,
                     position: Some(Position { x: 10, y: 20 }),
                     mode: Some(Mode {
                         width: 1920,

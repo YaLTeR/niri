@@ -112,6 +112,8 @@ impl PipeWire {
 
         let mode = output.current_mode().unwrap();
         let size = mode.size;
+        let transform = output.current_transform();
+        let size = transform.transform_size(size);
         let refresh = mode.refresh;
 
         let stream = Stream::new(&self.core, "niri-screen-cast-src", Properties::new())

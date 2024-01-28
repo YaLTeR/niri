@@ -42,6 +42,7 @@ pub enum ScreenshotUi {
 pub struct OutputData {
     size: Size<i32, Physical>,
     scale: i32,
+    transform: Transform,
     texture: GlesTexture,
     texture_buffer: TextureBuffer<GlesTexture>,
     buffers: [SolidColorBuffer; 8],
@@ -94,6 +95,7 @@ impl ScreenshotUi {
                 )
             }
         };
+
         let scale = selection.0.current_scale().integer_scale();
         let selection = (
             selection.0,
@@ -104,9 +106,9 @@ impl ScreenshotUi {
         let output_data = screenshots
             .into_iter()
             .map(|(output, texture)| {
-                let output_transform = output.current_transform();
+                let transform = output.current_transform();
                 let output_mode = output.current_mode().unwrap();
-                let size = output_transform.transform_size(output_mode.size);
+                let size = transform.transform_size(output_mode.size);
                 let scale = output.current_scale().integer_scale();
                 let texture_buffer = TextureBuffer::from_texture(
                     renderer,
@@ -129,6 +131,7 @@ impl ScreenshotUi {
                 let data = OutputData {
                     size,
                     scale,
+                    transform,
                     texture,
                     texture_buffer,
                     buffers,
@@ -333,10 +336,10 @@ impl ScreenshotUi {
         }
     }
 
-    pub fn output_size(&self, output: &Output) -> Option<(Size<i32, Physical>, i32)> {
+    pub fn output_size(&self, output: &Output) -> Option<(Size<i32, Physical>, i32, Transform)> {
         if let Self::Open { output_data, .. } = self {
             let data = output_data.get(output)?;
-            Some((data.size, data.scale))
+            Some((data.size, data.scale, data.transform))
         } else {
             None
         }
