@@ -648,20 +648,22 @@ impl State {
             let mut resized_outputs = vec![];
             for output in self.niri.global_space.outputs() {
                 let name = output.name();
-                let scale = self
-                    .niri
-                    .config
-                    .borrow()
-                    .outputs
-                    .iter()
-                    .find(|o| o.name == name)
-                    .map(|c| c.scale)
-                    .unwrap_or(1.);
+                let config = self.niri.config.borrow_mut();
+                let config = config.outputs.iter().find(|o| o.name == name);
+
+                let scale = config.map(|c| c.scale).unwrap_or(1.);
                 let scale = scale.clamp(1., 10.).ceil() as i32;
-                if output.current_scale().integer_scale() != scale {
+
+                let transform = config
+                    .map(|c| c.transform.into())
+                    .unwrap_or(Transform::Normal);
+
+                if output.current_scale().integer_scale() != scale
+                    || output.current_transform() != transform
+                {
                     output.change_current_state(
                         None,
-                        None,
+                        Some(transform),
                         Some(output::Scale::Integer(scale)),
                         None,
                     );
@@ -1172,18 +1174,21 @@ impl Niri {
         let global = output.create_global::<State>(&self.display_handle);
 
         let name = output.name();
-        let scale = self
-            .config
-            .borrow()
-            .outputs
-            .iter()
-            .find(|o| o.name == name)
-            .map(|c| c.scale)
-            .unwrap_or(1.);
-        let scale = scale.clamp(1., 10.).ceil() as i32;
 
-        // Set scale before adding to the layout since that will read the output size.
-        output.change_current_state(None, None, Some(output::Scale::Integer(scale)), None);
+        let config = self.config.borrow();
+        let c = config.outputs.iter().find(|o| o.name == name);
+        let scale = c.map(|c| c.scale).unwrap_or(1.);
+        let scale = scale.clamp(1., 10.).ceil() as i32;
+        let transform = c.map(|c| c.transform.into()).unwrap_or(Transform::Normal);
+        drop(config);
+
+        // Set scale and transform before adding to the layout since that will read the output size.
+        output.change_current_state(
+            None,
+            Some(transform),
+            Some(output::Scale::Integer(scale)),
+            None,
+        );
 
         self.layout.add_output(output.clone());
 
@@ -1300,14 +1305,16 @@ impl Niri {
         }
 
         // If the output size changed with an open screenshot UI, close the screenshot UI.
-        if let Some((old_size, old_scale)) = self.screenshot_ui.output_size(&output) {
-            let output_transform = output.current_transform();
+        if let Some((old_size, old_scale, old_transform)) = self.screenshot_ui.output_size(&output)
+        {
+            let transform = output.current_transform();
             let output_mode = output.current_mode().unwrap();
-            let size = output_transform.transform_size(output_mode.size);
+            let size = transform.transform_size(output_mode.size);
             let scale = output.current_scale().integer_scale();
-            // FIXME: scale changes shouldn't matter but they currently do since I haven't quite
-            // figured out how to draw the screenshot textures in physical coordinates.
-            if old_size != size || old_scale != scale {
+            // FIXME: scale changes and transform flips shouldn't matter but they currently do since
+            // I haven't quite figured out how to draw the screenshot textures in
+            // physical coordinates.
+            if old_size != size || old_scale != scale || old_transform != transform {
                 self.screenshot_ui.close();
                 self.cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());
@@ -1747,7 +1754,9 @@ impl Niri {
                 // FIXME we basically need to pick the largest scale factor across the overlapping
                 // outputs, this is how it's usually done in clients as well.
                 let mut cursor_scale = 1;
+                let mut cursor_transform = Transform::Normal;
                 let mut dnd_scale = 1;
+                let mut dnd_transform = Transform::Normal;
                 for output in self.global_space.outputs() {
                     let geo = self.global_space.output_geometry(output).unwrap();
 
@@ -1755,6 +1764,9 @@ impl Niri {
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlap.loc -= surface_pos;
                         cursor_scale = cursor_scale.max(output.current_scale().integer_scale());
+                        // FIXME: using the largest overlapping or "primary" output transform would
+                        // make more sense here.
+                        cursor_transform = output.current_transform();
                         output_update(output, Some(overlap), surface);
                     } else {
                         output_update(output, None, surface);
@@ -1765,6 +1777,9 @@ impl Niri {
                         if let Some(mut overlap) = geo.intersection(bbox) {
                             overlap.loc -= surface_pos;
                             dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
+                            // FIXME: using the largest overlapping or "primary" output transform
+                            // would make more sense here.
+                            dnd_transform = output.current_transform();
                             output_update(output, Some(overlap), surface);
                         } else {
                             output_update(output, None, surface);
@@ -1773,11 +1788,11 @@ impl Niri {
                 }
 
                 with_states(surface, |data| {
-                    send_surface_state(surface, data, cursor_scale, Transform::Normal);
+                    send_surface_state(surface, data, cursor_scale, cursor_transform);
                 });
                 if let Some((surface, _)) = dnd {
                     with_states(surface, |data| {
-                        send_surface_state(surface, data, dnd_scale, Transform::Normal);
+                        send_surface_state(surface, data, dnd_scale, dnd_transform);
                     });
                 }
             }
@@ -1794,6 +1809,7 @@ impl Niri {
                 };
 
                 let mut dnd_scale = 1;
+                let mut dnd_transform = Transform::Normal;
                 for output in self.global_space.outputs() {
                     let geo = self.global_space.output_geometry(output).unwrap();
 
@@ -1815,15 +1831,18 @@ impl Niri {
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlap.loc -= surface_pos;
                         dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
+                        // FIXME: using the largest overlapping or "primary" output transform would
+                        // make more sense here.
+                        dnd_transform = output.current_transform();
                         output_update(output, Some(overlap), surface);
                     } else {
                         output_update(output, None, surface);
                     }
-
-                    with_states(surface, |data| {
-                        send_surface_state(surface, data, dnd_scale, Transform::Normal);
-                    });
                 }
+
+                with_states(surface, |data| {
+                    send_surface_state(surface, data, dnd_scale, dnd_transform);
+                });
             }
         }
     }
@@ -2409,6 +2428,9 @@ impl Niri {
         let _span = tracy_client::span!("Niri::render_for_screen_cast");
 
         let size = output.current_mode().unwrap().size;
+        let transform = output.current_transform();
+        let size = transform.transform_size(size);
+
         let scale = Scale::from(output.current_scale().fractional_scale());
 
         let mut elements = None;
@@ -2531,6 +2553,9 @@ impl Niri {
             .cloned()
             .filter_map(|output| {
                 let size = output.current_mode().unwrap().size;
+                let transform = output.current_transform();
+                let size = transform.transform_size(size);
+
                 let scale = Scale::from(output.current_scale().fractional_scale());
                 let elements = self.render::<GlesRenderer>(renderer, &output, true);
 
@@ -2558,6 +2583,9 @@ impl Niri {
         let _span = tracy_client::span!("Niri::screenshot");
 
         let size = output.current_mode().unwrap().size;
+        let transform = output.current_transform();
+        let size = transform.transform_size(size);
+
         let scale = Scale::from(output.current_scale().fractional_scale());
         let elements = self.render::<GlesRenderer>(renderer, output, true);
         let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, &elements)?;
@@ -2679,6 +2707,9 @@ impl Niri {
         let geom = geom.to_physical(output_scale);
 
         let size = geom.size;
+        let transform = output.current_transform();
+        let size = transform.transform_size(size);
+
         let elements = self.render::<GlesRenderer>(renderer, &output, include_pointer);
         let pixels = render_to_vec(
             renderer,
