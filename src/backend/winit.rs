@@ -107,10 +107,7 @@ impl Winit {
                 WinitEvent::Redraw => state
                     .niri
                     .queue_redraw(state.backend.winit().output.clone()),
-                WinitEvent::CloseRequested => {
-                    state.niri.stop_signal.stop();
-                    state.niri.remove_output(&state.backend.winit().output);
-                }
+                WinitEvent::CloseRequested => state.niri.stop_signal.stop(),
             })
             .unwrap();
 
