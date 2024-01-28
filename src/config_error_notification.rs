@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use pangocairo::cairo::{self, ImageSurface};
@@ -26,6 +27,10 @@ const BORDER: i32 = 4;
 pub struct ConfigErrorNotification {
     state: State,
     buffers: RefCell<HashMap<i32, Option<MemoryRenderBuffer>>>,
+
+    // If set, this is a "Created config at {path}" notification. If unset, this is a config error
+    // notification.
+    created_path: Option<PathBuf>,
 }
 
 enum State {
@@ -43,10 +48,25 @@ impl ConfigErrorNotification {
         Self {
             state: State::Hidden,
             buffers: RefCell::new(HashMap::new()),
+            created_path: None,
         }
     }
 
+    pub fn show_created(&mut self, created_path: Option<PathBuf>) {
+        if self.created_path != created_path {
+            self.created_path = created_path;
+            self.buffers.borrow_mut().clear();
+        }
+
+        self.state = State::Showing(Animation::new(0., 1., Duration::from_millis(250)));
+    }
+
     pub fn show(&mut self) {
+        if self.created_path.is_some() {
+            self.created_path = None;
+            self.buffers.borrow_mut().clear();
+        }
+
         // Show from scratch even if already showing to bring attention.
         self.state = State::Showing(Animation::new(0., 1., Duration::from_millis(250)));
     }
@@ -65,7 +85,15 @@ impl ConfigErrorNotification {
             State::Showing(anim) => {
                 anim.set_current_time(target_presentation_time);
                 if anim.is_done() {
-                    self.state = State::Shown(target_presentation_time + Duration::from_secs(4));
+                    let duration = if self.created_path.is_some() {
+                        // Make this quite a bit longer because it comes with a monitor modeset
+                        // (can take a while) and an important hotkeys popup diverting the
+                        // attention.
+                        Duration::from_secs(8)
+                    } else {
+                        Duration::from_secs(4)
+                    };
+                    self.state = State::Shown(target_presentation_time + duration);
                 }
             }
             State::Shown(deadline) => {
@@ -96,11 +124,12 @@ impl ConfigErrorNotification {
         }
 
         let scale = output.current_scale().integer_scale();
+        let path = self.created_path.as_deref();
 
         let mut buffers = self.buffers.borrow_mut();
         let buffer = buffers
             .entry(scale)
-            .or_insert_with_key(move |&scale| render(scale).ok());
+            .or_insert_with_key(move |&scale| render(scale, path).ok());
         let buffer = buffer.as_ref()?;
 
         let elem = MemoryRenderBufferRenderElement::from_buffer(
@@ -138,10 +167,21 @@ impl ConfigErrorNotification {
     }
 }
 
-fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
+fn render(scale: i32, created_path: Option<&Path>) -> anyhow::Result<MemoryRenderBuffer> {
     let _span = tracy_client::span!("config_error_notification::render");
 
     let padding = PADDING * scale;
+
+    let mut text = String::from(TEXT);
+    let mut border_color = (1., 0.3, 0.3);
+    if let Some(path) = created_path {
+        text = format!(
+            "Created a default config file at \
+             <span face='monospace' bgcolor='#000000'>{:?}</span>",
+            path
+        );
+        border_color = (0.5, 1., 0.5);
+    };
 
     let mut font = FontDescription::from_string(FONT);
     font.set_absolute_size((font.size() * scale).into());
@@ -150,7 +190,7 @@ fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
     let cr = cairo::Context::new(&surface)?;
     let layout = pangocairo::create_layout(&cr);
     layout.set_font_description(Some(&font));
-    layout.set_markup(TEXT);
+    layout.set_markup(&text);
 
     let (mut width, mut height) = layout.pixel_size();
     width += padding * 2;
@@ -168,7 +208,7 @@ fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
     cr.move_to(padding.into(), padding.into());
     let layout = pangocairo::create_layout(&cr);
     layout.set_font_description(Some(&font));
-    layout.set_markup(TEXT);
+    layout.set_markup(&text);
 
     cr.set_source_rgb(1., 1., 1.);
     pangocairo::show_layout(&cr, &layout);
@@ -178,7 +218,7 @@ fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
     cr.line_to(width.into(), height.into());
     cr.line_to(0., height.into());
     cr.line_to(0., 0.);
-    cr.set_source_rgb(1., 0.3, 0.3);
+    cr.set_source_rgb(border_color.0, border_color.1, border_color.2);
     cr.set_line_width((BORDER * scale).into());
     cr.stroke()?;
     drop(cr);

@@ -156,6 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("starting version {}", &version());
 
     // Load the config.
+    let mut config_created = false;
     let path = cli.config.or_else(|| {
         let default_path = default_config_path()?;
         let default_parent = default_path.parent().unwrap();
@@ -179,6 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let default = include_bytes!("../resources/default-config.kdl");
                 match new_file.write_all(default) {
                     Ok(()) => {
+                        config_created = true;
                         info!("wrote default config to {:?}", &default_path);
                     }
                     Err(err) => {
@@ -255,7 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Set up config file watcher.
-    let _watcher = if let Some(path) = path {
+    let _watcher = if let Some(path) = path.clone() {
         let (tx, rx) = calloop::channel::sync_channel(1);
         let watcher = Watcher::new(path.clone(), tx);
         event_loop
@@ -280,6 +282,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Show the config error notification right away if needed.
     if config_errored {
         state.niri.config_error_notification.show();
+    } else if config_created {
+        state.niri.config_error_notification.show_created(path);
     }
 
     // Run the compositor.
