@@ -26,6 +26,8 @@ mod dummy_pw_utils;
 mod pw_utils;
 
 use std::ffi::OsString;
+use std::fs::{self, File};
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::{env, mem};
@@ -154,7 +156,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("starting version {}", &version());
 
     // Load the config.
-    let path = cli.config.or_else(default_config_path);
+    let path = cli.config.or_else(|| {
+        let default_path = default_config_path()?;
+        let default_parent = default_path.parent().unwrap();
+
+        if let Err(err) = fs::create_dir_all(default_parent) {
+            warn!(
+                "error creating config directories {:?}: {err:?}",
+                default_parent
+            );
+            return Some(default_path);
+        }
+
+        // Create the config and fill it with the default config if it doesn't exist.
+        let new_file = File::options()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&default_path);
+        match new_file {
+            Ok(mut new_file) => {
+                let default = include_bytes!("../resources/default-config.kdl");
+                match new_file.write_all(default) {
+                    Ok(()) => {
+                        info!("wrote default config to {:?}", &default_path);
+                    }
+                    Err(err) => {
+                        warn!("error writing config file at {:?}: {err:?}", &default_path)
+                    }
+                }
+            }
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(err) => warn!("error creating config file at {:?}: {err:?}", &default_path),
+        }
+
+        Some(default_path)
+    });
 
     let mut config_errored = false;
     let mut config = path
