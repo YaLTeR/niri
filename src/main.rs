@@ -86,7 +86,7 @@ enum Sub {
 }
 
 #[derive(Subcommand)]
-enum Msg {
+pub enum Msg {
     /// List connected outputs.
     Outputs,
 }
