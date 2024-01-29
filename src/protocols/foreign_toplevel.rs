@@ -12,7 +12,9 @@ use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 use smithay::wayland::compositor::with_states;
-use smithay::wayland::shell::xdg::{ToplevelStateSet, XdgToplevelSurfaceData};
+use smithay::wayland::shell::xdg::{
+    ToplevelStateSet, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
+};
 use wayland_protocols_wlr::foreign_toplevel::v1::server::{
     zwlr_foreign_toplevel_handle_v1, zwlr_foreign_toplevel_manager_v1,
 };
@@ -89,6 +91,10 @@ pub fn refresh(state: &mut State) {
     });
 
     // Handle new and existing windows.
+    //
+    // Save the focused window for last, this way when the focus changes, we will first deactivate
+    // the previous window and only then activate the newly focused window.
+    let mut focused = None;
     state.niri.layout.with_windows(|window, output| {
         let wl_surface = window.toplevel().wl_surface();
 
@@ -100,125 +106,150 @@ pub fn refresh(state: &mut State) {
                 .lock()
                 .unwrap();
 
-            let has_focus = state.niri.keyboard_focus.as_ref() == Some(wl_surface);
-            let states = to_state_vec(&role.current.states, has_focus);
-
-            match protocol_state.toplevels.entry(wl_surface.clone()) {
-                Entry::Occupied(entry) => {
-                    // Existing window, check if anything changed.
-                    let data = entry.into_mut();
-
-                    let mut new_title = None;
-                    if data.title != role.title {
-                        data.title = role.title.clone();
-                        new_title = role.title.as_deref();
-
-                        if new_title.is_none() {
-                            error!("toplevel title changed to None");
-                        }
-                    }
-
-                    let mut new_app_id = None;
-                    if data.app_id != role.app_id {
-                        data.app_id = role.app_id.clone();
-                        new_app_id = role.app_id.as_deref();
-
-                        if new_app_id.is_none() {
-                            error!("toplevel app_id changed to None");
-                        }
-                    }
-
-                    let mut states_changed = false;
-                    if data.states != states {
-                        data.states = states;
-                        states_changed = true;
-                    }
-
-                    let mut output_changed = false;
-                    if data.output.as_ref() != output {
-                        data.output = output.cloned();
-                        output_changed = true;
-                    }
-
-                    let something_changed = new_title.is_some()
-                        || new_app_id.is_some()
-                        || states_changed
-                        || output_changed;
-
-                    if something_changed {
-                        for (instance, outputs) in &mut data.instances {
-                            if let Some(new_title) = new_title {
-                                instance.title(new_title.to_owned());
-                            }
-                            if let Some(new_app_id) = new_app_id {
-                                instance.app_id(new_app_id.to_owned());
-                            }
-                            if states_changed {
-                                instance.state(
-                                    data.states.iter().flat_map(|x| x.to_ne_bytes()).collect(),
-                                );
-                            }
-                            if output_changed {
-                                for wl_output in outputs.drain(..) {
-                                    instance.output_leave(&wl_output);
-                                }
-                                if let Some(output) = &data.output {
-                                    if let Some(client) = instance.client() {
-                                        for wl_output in output.client_outputs(&client) {
-                                            instance.output_enter(&wl_output);
-                                            outputs.push(wl_output);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    for (instance, outputs) in &mut data.instances {
-                        // Clean up dead wl_outputs.
-                        outputs.retain(|x| x.is_alive());
-
-                        let mut send_done = something_changed;
-
-                        // If the client bound any more wl_outputs, send enter for them.
-                        if let Some(output) = &data.output {
-                            if let Some(client) = instance.client() {
-                                for wl_output in output.client_outputs(&client) {
-                                    if !outputs.iter().any(|x| x == &wl_output) {
-                                        instance.output_enter(&wl_output);
-                                        outputs.push(wl_output);
-                                        send_done = true;
-                                    }
-                                }
-                            }
-                        }
-
-                        if send_done {
-                            instance.done();
-                        }
-                    }
-                }
-                Entry::Vacant(entry) => {
-                    // New window, start tracking it.
-                    let mut data = ToplevelData {
-                        title: role.title.clone(),
-                        app_id: role.app_id.clone(),
-                        states,
-                        output: output.cloned(),
-                        instances: HashMap::new(),
-                    };
-
-                    for manager in &protocol_state.instances {
-                        if let Some(client) = manager.client() {
-                            data.add_instance::<State>(&protocol_state.display, &client, manager);
-                        }
-                    }
-
-                    entry.insert(data);
-                }
+            if state.niri.keyboard_focus.as_ref() == Some(wl_surface) {
+                focused = Some((window.clone(), output.cloned()));
+            } else {
+                refresh_toplevel(protocol_state, wl_surface, &role, output, false);
             }
         });
     });
+
+    // Finally, refresh the focused window.
+    if let Some((window, output)) = focused {
+        let wl_surface = window.toplevel().wl_surface();
+
+        with_states(wl_surface, |states| {
+            let role = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            refresh_toplevel(protocol_state, wl_surface, &role, output.as_ref(), true);
+        });
+    }
+}
+
+fn refresh_toplevel(
+    protocol_state: &mut ForeignToplevelManagerState,
+    wl_surface: &WlSurface,
+    role: &XdgToplevelSurfaceRoleAttributes,
+    output: Option<&Output>,
+    has_focus: bool,
+) {
+    let states = to_state_vec(&role.current.states, has_focus);
+
+    match protocol_state.toplevels.entry(wl_surface.clone()) {
+        Entry::Occupied(entry) => {
+            // Existing window, check if anything changed.
+            let data = entry.into_mut();
+
+            let mut new_title = None;
+            if data.title != role.title {
+                data.title = role.title.clone();
+                new_title = role.title.as_deref();
+
+                if new_title.is_none() {
+                    error!("toplevel title changed to None");
+                }
+            }
+
+            let mut new_app_id = None;
+            if data.app_id != role.app_id {
+                data.app_id = role.app_id.clone();
+                new_app_id = role.app_id.as_deref();
+
+                if new_app_id.is_none() {
+                    error!("toplevel app_id changed to None");
+                }
+            }
+
+            let mut states_changed = false;
+            if data.states != states {
+                data.states = states;
+                states_changed = true;
+            }
+
+            let mut output_changed = false;
+            if data.output.as_ref() != output {
+                data.output = output.cloned();
+                output_changed = true;
+            }
+
+            let something_changed =
+                new_title.is_some() || new_app_id.is_some() || states_changed || output_changed;
+
+            if something_changed {
+                for (instance, outputs) in &mut data.instances {
+                    if let Some(new_title) = new_title {
+                        instance.title(new_title.to_owned());
+                    }
+                    if let Some(new_app_id) = new_app_id {
+                        instance.app_id(new_app_id.to_owned());
+                    }
+                    if states_changed {
+                        instance.state(data.states.iter().flat_map(|x| x.to_ne_bytes()).collect());
+                    }
+                    if output_changed {
+                        for wl_output in outputs.drain(..) {
+                            instance.output_leave(&wl_output);
+                        }
+                        if let Some(output) = &data.output {
+                            if let Some(client) = instance.client() {
+                                for wl_output in output.client_outputs(&client) {
+                                    instance.output_enter(&wl_output);
+                                    outputs.push(wl_output);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (instance, outputs) in &mut data.instances {
+                // Clean up dead wl_outputs.
+                outputs.retain(|x| x.is_alive());
+
+                let mut send_done = something_changed;
+
+                // If the client bound any more wl_outputs, send enter for them.
+                if let Some(output) = &data.output {
+                    if let Some(client) = instance.client() {
+                        for wl_output in output.client_outputs(&client) {
+                            if !outputs.iter().any(|x| x == &wl_output) {
+                                instance.output_enter(&wl_output);
+                                outputs.push(wl_output);
+                                send_done = true;
+                            }
+                        }
+                    }
+                }
+
+                if send_done {
+                    instance.done();
+                }
+            }
+        }
+        Entry::Vacant(entry) => {
+            // New window, start tracking it.
+            let mut data = ToplevelData {
+                title: role.title.clone(),
+                app_id: role.app_id.clone(),
+                states,
+                output: output.cloned(),
+                instances: HashMap::new(),
+            };
+
+            for manager in &protocol_state.instances {
+                if let Some(client) = manager.client() {
+                    data.add_instance::<State>(&protocol_state.display, &client, manager);
+                }
+            }
+
+            entry.insert(data);
+        }
+    }
 }
 
 impl ToplevelData {
