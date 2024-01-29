@@ -100,7 +100,8 @@ pub fn refresh(state: &mut State) {
                 .lock()
                 .unwrap();
 
-            let states = foreign_toplevel_state(&role.current.states);
+            let has_focus = state.niri.keyboard_focus.as_ref() == Some(wl_surface);
+            let states = to_state_vec(&role.current.states, has_focus);
 
             match protocol_state.toplevels.entry(wl_surface.clone()) {
                 Entry::Occupied(entry) => {
@@ -387,17 +388,27 @@ where
     }
 }
 
-fn foreign_toplevel_state(states: &ToplevelStateSet) -> ArrayVec<u32, 3> {
+fn to_state_vec(states: &ToplevelStateSet, has_focus: bool) -> ArrayVec<u32, 3> {
     let mut rv = ArrayVec::new();
     if states.contains(xdg_toplevel::State::Maximized) {
         rv.push(zwlr_foreign_toplevel_handle_v1::State::Maximized as u32);
     }
-    if states.contains(xdg_toplevel::State::Activated) {
-        rv.push(zwlr_foreign_toplevel_handle_v1::State::Activated as u32);
-    }
     if states.contains(xdg_toplevel::State::Fullscreen) {
         rv.push(zwlr_foreign_toplevel_handle_v1::State::Fullscreen as u32);
     }
+
+    // HACK: wlr-foreign-toplevel-management states:
+    //
+    // These have the same meaning as the states with the same names defined in xdg-toplevel
+    //
+    // However, clients such as sfwbar and fcitx seem to treat the activated state as keyboard
+    // focus, i.e. they don't expect multiple windows to have it set at once. Even Waybar which
+    // handles multiple activated windows correctly uses it in its design in such a way that
+    // keyboard focus would make more sense. Let's do what the clients expect.
+    if has_focus {
+        rv.push(zwlr_foreign_toplevel_handle_v1::State::Activated as u32);
+    }
+
     rv
 }
 
