@@ -2434,6 +2434,7 @@ impl Niri {
         let scale = Scale::from(output.current_scale().fractional_scale());
 
         let mut elements = None;
+        let mut casts_to_stop = vec![];
 
         let mut casts = mem::take(&mut self.casts);
         for cast in &mut casts {
@@ -2442,6 +2443,12 @@ impl Niri {
             }
 
             if &cast.output != output {
+                continue;
+            }
+
+            if cast.size != size {
+                debug!("stopping screencast due to output size change");
+                casts_to_stop.push(cast.session_id);
                 continue;
             }
 
@@ -2499,6 +2506,10 @@ impl Niri {
             cast.last_frame_time = target_presentation_time;
         }
         self.casts = casts;
+
+        for id in casts_to_stop {
+            self.stop_cast(id);
+        }
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
