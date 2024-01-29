@@ -103,6 +103,7 @@ use crate::hotkey_overlay::HotkeyOverlay;
 use crate::input::{apply_libinput_settings, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
+use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::NiriRenderer;
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
@@ -151,6 +152,7 @@ pub struct Niri {
     pub kde_decoration_state: KdeDecorationState,
     pub layer_shell_state: WlrLayerShellState,
     pub session_lock_state: SessionLockManagerState,
+    pub foreign_toplevel_state: ForeignToplevelManagerState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
@@ -327,6 +329,7 @@ impl State {
         self.refresh_popup_grab();
         self.update_keyboard_focus();
         self.refresh_pointer_focus();
+        foreign_toplevel::refresh(self);
 
         {
             let _span = tracy_client::span!("flush_clients");
@@ -855,6 +858,11 @@ impl Niri {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
 
+        let foreign_toplevel_state =
+            ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
+
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
@@ -972,6 +980,7 @@ impl Niri {
             kde_decoration_state,
             layer_shell_state,
             session_lock_state,
+            foreign_toplevel_state,
             text_input_state,
             input_method_state,
             virtual_keyboard_state,
