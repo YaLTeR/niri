@@ -776,6 +776,27 @@ impl<W: LayoutElement> Layout<W> {
         mon.workspaces.iter().flat_map(|ws| ws.windows())
     }
 
+    pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>)) {
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mon.workspaces {
+                        for win in ws.windows() {
+                            f(win, Some(&mon.output));
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    for win in ws.windows() {
+                        f(win, None);
+                    }
+                }
+            }
+        }
+    }
+
     fn active_monitor(&mut self) -> Option<&mut Monitor<W>> {
         let MonitorSet::Normal {
             monitors,
