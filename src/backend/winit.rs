@@ -16,7 +16,6 @@ use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
-use smithay::utils::Transform;
 
 use super::RenderResult;
 use crate::niri::{RedrawState, State};
@@ -54,7 +53,7 @@ impl Winit {
             size: backend.window_size(),
             refresh: 60_000,
         };
-        output.change_current_state(Some(mode), Some(Transform::Flipped180), None, None);
+        output.change_current_state(Some(mode), None, None, None);
         output.set_preferred(mode);
 
         let physical_properties = output.physical_properties();

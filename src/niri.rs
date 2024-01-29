@@ -654,9 +654,13 @@ impl State {
                 let scale = config.map(|c| c.scale).unwrap_or(1.);
                 let scale = scale.clamp(1., 10.).ceil() as i32;
 
-                let transform = config
+                let mut transform = config
                     .map(|c| c.transform.into())
                     .unwrap_or(Transform::Normal);
+                // FIXME: fix winit damage on other transforms.
+                if name == "winit" {
+                    transform = Transform::Flipped180;
+                }
 
                 if output.current_scale().integer_scale() != scale
                     || output.current_transform() != transform
@@ -1179,7 +1183,11 @@ impl Niri {
         let c = config.outputs.iter().find(|o| o.name == name);
         let scale = c.map(|c| c.scale).unwrap_or(1.);
         let scale = scale.clamp(1., 10.).ceil() as i32;
-        let transform = c.map(|c| c.transform.into()).unwrap_or(Transform::Normal);
+        let mut transform = c.map(|c| c.transform.into()).unwrap_or(Transform::Normal);
+        // FIXME: fix winit damage on other transforms.
+        if name == "winit" {
+            transform = Transform::Flipped180;
+        }
         drop(config);
 
         // Set scale and transform before adding to the layout since that will read the output size.
