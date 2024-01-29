@@ -27,6 +27,7 @@ use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{self, Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
+use smithay::utils::{Physical, Size};
 use zbus::SignalContext;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri};
@@ -43,6 +44,7 @@ pub struct Cast {
     _listener: StreamListener<()>,
     pub is_active: Rc<Cell<bool>>,
     pub output: Output,
+    pub size: Size<i32, Physical>,
     pub cursor_mode: CursorMode,
     pub last_frame_time: Duration,
     pub min_time_between_frames: Rc<Cell<Duration>>,
@@ -385,6 +387,7 @@ impl PipeWire {
             _listener: listener,
             is_active,
             output,
+            size,
             cursor_mode,
             last_frame_time: Duration::ZERO,
             min_time_between_frames,
