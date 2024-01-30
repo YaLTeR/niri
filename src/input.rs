@@ -720,11 +720,19 @@ impl State {
             let point = (point - geom.loc.to_f64())
                 .to_physical(output.current_scale().fractional_scale())
                 .to_i32_round();
-            let window_hovered = self.niri.window_under_cursor().map(|window| {
-                window
-                    .geometry()
-                    .to_physical_precise_round(output.current_scale().fractional_scale())
-            });
+            let window_hovered = self
+                .niri
+                .layout
+                .window_under(
+                    output,
+                    self.niri.seat.get_pointer().unwrap().current_location(),
+                )
+                .map(|(window, buf_loc)| {
+                    let mut window_geom = window.geometry();
+                    window_geom.loc = buf_loc.unwrap_or_default() - window.buf_loc();
+
+                    window_geom.to_physical_precise_round(output.current_scale().fractional_scale())
+                });
             self.niri
                 .screenshot_ui
                 .pointer_motion(point, window_hovered);
@@ -827,13 +835,19 @@ impl State {
             let point = (point - geom.loc.to_f64())
                 .to_physical(output.current_scale().fractional_scale())
                 .to_i32_round();
-            let window_hovered = self.niri.window_under_cursor().map(|window| {
-                let mut window_geom = window.geometry();
-                window_geom.loc += window.buf_loc();
+            let window_hovered = self
+                .niri
+                .layout
+                .window_under(
+                    output,
+                    self.niri.seat.get_pointer().unwrap().current_location(),
+                )
+                .map(|(window, buf_loc)| {
+                    let mut window_geom = window.geometry();
+                    window_geom.loc = buf_loc.unwrap_or_default() - window.buf_loc();
 
-                window_geom.to_physical_precise_round(output.current_scale().fractional_scale())
-            });
-            dbg!(&window_hovered);
+                    window_geom.to_physical_precise_round(output.current_scale().fractional_scale())
+                });
             self.niri
                 .screenshot_ui
                 .pointer_motion(point, window_hovered);

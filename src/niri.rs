@@ -1348,7 +1348,7 @@ impl Niri {
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Window> {
-        if self.is_locked() {
+        if self.is_locked() || self.screenshot_ui.is_open() {
             return None;
         }
 

@@ -1,7 +1,6 @@
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::iter::zip;
-use std::mem;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
@@ -28,15 +27,19 @@ const BORDER: i32 = 2;
 // allows only single-output selections for now.
 //
 // As a consequence of this, selection coordinates are in output-local coordinate space.
-pub enum ScreenshotUi {
-    Closed {
-        last_selection: Option<(WeakOutput, Rectangle<i32, Physical>)>,
-    },
+pub struct ScreenshotUi {
+    state: ScreenshotUiState,
+    highlight_region: Option<Rectangle<i32, Physical>>,
+    output_data: HashMap<Output, OutputData>,
+}
+
+pub enum ScreenshotUiState {
     Open {
         selection: (Output, Point<i32, Physical>, Point<i32, Physical>),
-        highlight_region: Option<Rectangle<i32, Physical>>,
-        output_data: HashMap<Output, OutputData>,
         mouse_down: bool,
+    },
+    Closed {
+        last_selection: Option<(WeakOutput, Rectangle<i32, Physical>)>,
     },
 }
 
@@ -57,8 +60,12 @@ pub enum ScreenshotUiRenderElement {
 
 impl ScreenshotUi {
     pub fn new() -> Self {
-        Self::Closed {
-            last_selection: None,
+        Self {
+            state: ScreenshotUiState::Closed {
+                last_selection: None,
+            },
+            highlight_region: None,
+            output_data: HashMap::new(),
         }
     }
 
@@ -72,37 +79,8 @@ impl ScreenshotUi {
             return false;
         }
 
-        let Self::Closed { last_selection } = self else {
-            return false;
-        };
-
-        let last_selection = last_selection
-            .take()
-            .and_then(|(weak, sel)| weak.upgrade().map(|output| (output, sel)));
-        let selection = match last_selection {
-            Some(selection) if screenshots.contains_key(&selection.0) => selection,
-            _ => {
-                let output = default_output;
-                let output_transform = output.current_transform();
-                let output_mode = output.current_mode().unwrap();
-                let size = output_transform.transform_size(output_mode.size);
-                (
-                    output,
-                    Rectangle::from_loc_and_size(
-                        (size.w / 4, size.h / 4),
-                        (size.w / 2, size.h / 2),
-                    ),
-                )
-            }
-        };
-        let scale = selection.0.current_scale().integer_scale();
-        let selection = (
-            selection.0,
-            selection.1.loc,
-            selection.1.loc + selection.1.size - Size::from((scale, scale)),
-        );
-
-        let output_data = screenshots
+        self.output_data = screenshots
+            .clone()
             .into_iter()
             .map(|(output, texture)| {
                 let output_transform = output.current_transform();
@@ -140,10 +118,40 @@ impl ScreenshotUi {
             })
             .collect();
 
-        *self = Self::Open {
+        let ScreenshotUiState::Closed { last_selection } = &mut self.state else {
+            self.update_buffers();
+
+            return false;
+        };
+
+        let last_selection = last_selection
+            .as_ref()
+            .and_then(|(weak, sel)| weak.upgrade().map(|output| (output, sel)));
+        let selection = match last_selection {
+            Some((output, rectangle)) if screenshots.contains_key(&output) => (output, *rectangle),
+            _ => {
+                let output = default_output;
+                let output_transform = output.current_transform();
+                let output_mode = output.current_mode().unwrap();
+                let size = output_transform.transform_size(output_mode.size);
+                (
+                    output,
+                    Rectangle::from_loc_and_size(
+                        (size.w / 4, size.h / 4),
+                        (size.w / 2, size.h / 2),
+                    ),
+                )
+            }
+        };
+        let scale = selection.0.current_scale().integer_scale();
+        let selection = (
+            selection.0,
+            selection.1.loc,
+            selection.1.loc + selection.1.size - Size::from((scale, scale)),
+        );
+
+        self.state = ScreenshotUiState::Open {
             selection,
-            output_data,
-            highlight_region: None,
             mouse_down: false,
         };
 
@@ -153,104 +161,112 @@ impl ScreenshotUi {
     }
 
     pub fn close(&mut self) -> bool {
-        let selection = match mem::take(self) {
-            Self::Open { selection, .. } => selection,
-            closed @ Self::Closed { .. } => {
-                // Put it back.
-                *self = closed;
-                return false;
+        match &mut self.state {
+            ScreenshotUiState::Open { selection, .. } => {
+                let scale = selection.0.current_scale().integer_scale();
+                let last_selection = Some((
+                    selection.0.downgrade(),
+                    rect_from_corner_points(selection.1, selection.2, scale),
+                ));
+
+                self.state = ScreenshotUiState::Closed { last_selection };
+
+                true
             }
-        };
-
-        let scale = selection.0.current_scale().integer_scale();
-        let last_selection = Some((
-            selection.0.downgrade(),
-            rect_from_corner_points(selection.1, selection.2, scale),
-        ));
-
-        *self = Self::Closed { last_selection };
-
-        true
+            ScreenshotUiState::Closed { .. } => false,
+        }
     }
 
     pub fn is_open(&self) -> bool {
-        matches!(self, ScreenshotUi::Open { .. })
+        matches!(self.state, ScreenshotUiState::Open { .. })
     }
 
     fn update_buffers(&mut self) {
-        let Self::Open {
-            selection,
-            output_data,
-            highlight_region,
-            ..
-        } = self
-        else {
-            panic!("screenshot UI must be open to update buffers");
-        };
+        if let ScreenshotUiState::Open { selection, .. } = &mut self.state {
+            let (selection_output, a, b) = selection;
+            let scale = selection_output.current_scale().integer_scale();
+            let mut rect = rect_from_corner_points(*a, *b, scale);
 
-        let (selection_output, a, b) = selection;
-        let scale = selection_output.current_scale().integer_scale();
-        let mut rect = rect_from_corner_points(*a, *b, scale);
+            for (output, data) in &mut self.output_data {
+                let buffers = &mut data.buffers;
+                let locations = &mut data.locations;
+                let size = data.size;
 
-        for (output, data) in output_data {
-            let buffers = &mut data.buffers;
-            let locations = &mut data.locations;
-            let size = data.size;
+                if output == selection_output {
+                    let scale = output.current_scale().integer_scale();
 
-            if output == selection_output {
-                let scale = output.current_scale().integer_scale();
+                    // Check if the selection is still valid. If not, reset it back to default.
+                    if !Rectangle::from_loc_and_size((0, 0), size).contains_rect(rect) {
+                        rect = Rectangle::from_loc_and_size(
+                            (size.w / 4, size.h / 4),
+                            (size.w / 2, size.h / 2),
+                        );
+                        *a = rect.loc;
+                        *b = rect.loc + rect.size - Size::from((scale, scale));
+                    }
 
-                // Check if the selection is still valid. If not, reset it back to default.
-                if !Rectangle::from_loc_and_size((0, 0), size).contains_rect(rect) {
-                    rect = Rectangle::from_loc_and_size(
-                        (size.w / 4, size.h / 4),
-                        (size.w / 2, size.h / 2),
-                    );
-                    *a = rect.loc;
-                    *b = rect.loc + rect.size - Size::from((scale, scale));
-                }
+                    let border = BORDER * scale;
 
-                let border = BORDER * scale;
+                    buffers[0].resize((rect.size.w + border * 2, border));
+                    buffers[1].resize((rect.size.w + border * 2, border));
+                    buffers[2].resize((border, rect.size.h));
+                    buffers[3].resize((border, rect.size.h));
 
-                buffers[0].resize((rect.size.w + border * 2, border));
-                buffers[1].resize((rect.size.w + border * 2, border));
-                buffers[2].resize((border, rect.size.h));
-                buffers[3].resize((border, rect.size.h));
+                    buffers[4].resize((size.w, rect.loc.y));
+                    buffers[5].resize((size.w, size.h - rect.loc.y - rect.size.h));
+                    buffers[6].resize((rect.loc.x, rect.size.h));
+                    buffers[7].resize((size.w - rect.loc.x - rect.size.w, rect.size.h));
 
-                buffers[4].resize((size.w, rect.loc.y));
-                buffers[5].resize((size.w, size.h - rect.loc.y - rect.size.h));
-                buffers[6].resize((rect.loc.x, rect.size.h));
-                buffers[7].resize((size.w - rect.loc.x - rect.size.w, rect.size.h));
+                    buffers[8].resize((0, 0));
 
-                locations[0] = Point::from((rect.loc.x - border, rect.loc.y - border));
-                locations[1] = Point::from((rect.loc.x - border, rect.loc.y + rect.size.h));
-                locations[2] = Point::from((rect.loc.x - border, rect.loc.y));
-                locations[3] = Point::from((rect.loc.x + rect.size.w, rect.loc.y));
+                    locations[0] = Point::from((rect.loc.x - border, rect.loc.y - border));
+                    locations[1] = Point::from((rect.loc.x - border, rect.loc.y + rect.size.h));
+                    locations[2] = Point::from((rect.loc.x - border, rect.loc.y));
+                    locations[3] = Point::from((rect.loc.x + rect.size.w, rect.loc.y));
 
-                locations[5] = Point::from((0, rect.loc.y + rect.size.h));
-                locations[6] = Point::from((0, rect.loc.y));
-                locations[7] = Point::from((rect.loc.x + rect.size.w, rect.loc.y));
-
-                if let Some(hrect) = highlight_region.and_then(|hrect| {
-                    hrect.intersection(Rectangle::from_loc_and_size((0, 0), size))
-                }) {
-                    buffers[8].resize((hrect.size.w + border * 2, hrect.size.h + border * 2));
-                    locations[8] = Point::from((hrect.loc.x + border, hrect.loc.y + border));
+                    locations[5] = Point::from((0, rect.loc.y + rect.size.h));
+                    locations[6] = Point::from((0, rect.loc.y));
+                    locations[7] = Point::from((rect.loc.x + rect.size.w, rect.loc.y));
                 } else {
+                    buffers[0].resize((0, 0));
+                    buffers[1].resize((0, 0));
+                    buffers[2].resize((0, 0));
+                    buffers[3].resize((0, 0));
+
+                    buffers[4].resize(size.to_logical(1));
+                    buffers[5].resize((0, 0));
+                    buffers[6].resize((0, 0));
+                    buffers[7].resize((0, 0));
+
                     buffers[8].resize((0, 0));
                 }
-            } else {
-                buffers[0].resize((0, 0));
-                buffers[1].resize((0, 0));
-                buffers[2].resize((0, 0));
-                buffers[3].resize((0, 0));
+            }
+        }
 
-                buffers[4].resize(size.to_logical(1));
-                buffers[5].resize((0, 0));
-                buffers[6].resize((0, 0));
-                buffers[7].resize((0, 0));
+        // Draw the highlight region if button is not pressed and selected
+        // region doesn't equal the highlighted region.
+        if let Some(hrect) = self.highlight_region {
+            if !matches!(
+                &self.state,
+                ScreenshotUiState::Open {
+                    mouse_down,
+                    selection
+                } if selection.1 == hrect.loc && selection.2 == hrect.loc + hrect.size || *mouse_down)
+            {
+                self.output_data.iter_mut().for_each(|(_, data)| {
+                    let buffers = &mut data.buffers;
+                    let locations = &mut data.locations;
+                    let size = data.size;
 
-                buffers[8].resize((0, 0));
+                    if let Some(hrect) =
+                        hrect.intersection(Rectangle::from_loc_and_size((0, 0), size))
+                    {
+                        buffers[8].resize((hrect.size.w, hrect.size.h));
+                        locations[8] = hrect.loc;
+                    } else {
+                        buffers[8].resize((0, 0));
+                    }
+                });
             }
         }
     }
@@ -258,13 +274,9 @@ impl ScreenshotUi {
     pub fn render_output(&self, output: &Output) -> ArrayVec<ScreenshotUiRenderElement, 10> {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
-        let Self::Open { output_data, .. } = self else {
-            panic!("screenshot UI must be open to render it");
-        };
-
         let mut elements = ArrayVec::new();
 
-        let Some(output_data) = output_data.get(output) else {
+        let Some(output_data) = self.output_data.get(output) else {
             return elements;
         };
 
@@ -302,16 +314,11 @@ impl ScreenshotUi {
     ) -> anyhow::Result<(Size<i32, Physical>, Vec<u8>)> {
         let _span = tracy_client::span!("ScreenshotUi::capture");
 
-        let Self::Open {
-            selection,
-            output_data,
-            ..
-        } = self
-        else {
+        let ScreenshotUiState::Open { selection, .. } = &self.state else {
             panic!("screenshot UI must be open to capture");
         };
 
-        let data = &output_data[&selection.0];
+        let data = &self.output_data[&selection.0];
         let scale = selection.0.current_scale().integer_scale();
         let rect = rect_from_corner_points(selection.1, selection.2, scale);
         let buf_rect = rect
@@ -329,7 +336,7 @@ impl ScreenshotUi {
     }
 
     pub fn action(&self, raw: Option<Keysym>, mods: ModifiersState) -> Option<Action> {
-        if !matches!(self, Self::Open { .. }) {
+        if !matches!(self.state, ScreenshotUiState::Open { .. }) {
             return None;
         }
 
@@ -337,10 +344,10 @@ impl ScreenshotUi {
     }
 
     pub fn selection_output(&self) -> Option<&Output> {
-        if let Self::Open {
+        if let ScreenshotUiState::Open {
             selection: (output, _, _),
             ..
-        } = self
+        } = &self.state
         {
             Some(output)
         } else {
@@ -349,12 +356,8 @@ impl ScreenshotUi {
     }
 
     pub fn output_size(&self, output: &Output) -> Option<(Size<i32, Physical>, i32)> {
-        if let Self::Open { output_data, .. } = self {
-            let data = output_data.get(output)?;
-            Some((data.size, data.scale))
-        } else {
-            None
-        }
+        let data = self.output_data.get(output)?;
+        Some((data.size, data.scale))
     }
 
     /// The pointer has moved to `point` relative to the current selection output.
@@ -363,18 +366,16 @@ impl ScreenshotUi {
         point: Point<i32, Physical>,
         highlight_region_target: Option<Rectangle<i32, Physical>>,
     ) {
-        let Self::Open {
+        if let ScreenshotUiState::Open {
             selection,
             mouse_down: true,
-            highlight_region,
             ..
-        } = self
-        else {
-            return;
-        };
+        } = &mut self.state
+        {
+            selection.2 = point;
+        }
 
-        selection.2 = point;
-        *highlight_region = highlight_region_target;
+        self.highlight_region = highlight_region_target;
 
         self.update_buffers();
     }
@@ -386,12 +387,10 @@ impl ScreenshotUi {
         button: MouseButton,
         state: ButtonState,
     ) -> bool {
-        let Self::Open {
+        let ScreenshotUiState::Open {
             selection,
-            output_data,
             mouse_down,
-            highlight_region,
-        } = self
+        } = &mut self.state
         else {
             return false;
         };
@@ -405,7 +404,7 @@ impl ScreenshotUi {
             return false;
         }
 
-        if down && !output_data.contains_key(&output) {
+        if down && !self.output_data.contains_key(&output) {
             return false;
         }
 
@@ -414,19 +413,25 @@ impl ScreenshotUi {
         if down {
             *selection = (output, point, point);
         } else {
-            // Check if the resulting selection is zero-sized, and try to come up with a small
-            // default rectangle.
+            // Check if the resulting selection is zero-sized, choose the selected region and if
+            // that doesn't exist try to come up with a small default rectangle.
             let (output, a, b) = selection;
             let scale = output.current_scale().integer_scale();
             let mut rect = rect_from_corner_points(*a, *b, scale);
             if rect.size.is_empty() || rect.size == Size::from((scale, scale)) {
-                let data = &output_data[output];
-                rect = Rectangle::from_loc_and_size((rect.loc.x - 16, rect.loc.y - 16), (32, 32))
-                    .intersection(Rectangle::from_loc_and_size((0, 0), data.size))
-                    .unwrap_or_default();
-                let scale = output.current_scale().integer_scale();
-                *a = rect.loc;
-                *b = rect.loc + rect.size - Size::from((scale, scale));
+                if let Some(highlight_region) = self.highlight_region {
+                    selection.1 = highlight_region.loc;
+                    selection.2 = highlight_region.loc + highlight_region.size;
+                } else {
+                    let data = &self.output_data[output];
+                    rect =
+                        Rectangle::from_loc_and_size((rect.loc.x - 16, rect.loc.y - 16), (32, 32))
+                            .intersection(Rectangle::from_loc_and_size((0, 0), data.size))
+                            .unwrap_or_default();
+                    let scale = output.current_scale().integer_scale();
+                    *a = rect.loc;
+                    *b = rect.loc + rect.size - Size::from((scale, scale));
+                }
             }
         }
 
