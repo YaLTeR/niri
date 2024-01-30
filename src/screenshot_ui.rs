@@ -34,6 +34,7 @@ pub enum ScreenshotUi {
     },
     Open {
         selection: (Output, Point<i32, Physical>, Point<i32, Physical>),
+        highlight_region: Option<Rectangle<i32, Physical>>,
         output_data: HashMap<Output, OutputData>,
         mouse_down: bool,
     },
@@ -44,8 +45,8 @@ pub struct OutputData {
     scale: i32,
     texture: GlesTexture,
     texture_buffer: TextureBuffer<GlesTexture>,
-    buffers: [SolidColorBuffer; 8],
-    locations: [Point<i32, Physical>; 8],
+    buffers: [SolidColorBuffer; 9],
+    locations: [Point<i32, Physical>; 9],
 }
 
 #[derive(Debug)]
@@ -124,8 +125,9 @@ impl ScreenshotUi {
                     SolidColorBuffer::new((0, 0), [0., 0., 0., 0.5]),
                     SolidColorBuffer::new((0, 0), [0., 0., 0., 0.5]),
                     SolidColorBuffer::new((0, 0), [0., 0., 0., 0.5]),
+                    SolidColorBuffer::new((0, 0), [0.5, 0.5, 1., 0.5]),
                 ];
-                let locations = [Default::default(); 8];
+                let locations = [Default::default(); 9];
                 let data = OutputData {
                     size,
                     scale,
@@ -141,6 +143,7 @@ impl ScreenshotUi {
         *self = Self::Open {
             selection,
             output_data,
+            highlight_region: None,
             mouse_down: false,
         };
 
@@ -178,6 +181,7 @@ impl ScreenshotUi {
         let Self::Open {
             selection,
             output_data,
+            highlight_region,
             ..
         } = self
         else {
@@ -226,6 +230,15 @@ impl ScreenshotUi {
                 locations[5] = Point::from((0, rect.loc.y + rect.size.h));
                 locations[6] = Point::from((0, rect.loc.y));
                 locations[7] = Point::from((rect.loc.x + rect.size.w, rect.loc.y));
+
+                if let Some(hrect) = highlight_region.and_then(|hrect| {
+                    hrect.intersection(Rectangle::from_loc_and_size((0, 0), size))
+                }) {
+                    buffers[8].resize((hrect.size.w + border * 2, hrect.size.h + border * 2));
+                    locations[8] = Point::from((hrect.loc.x + border, hrect.loc.y + border));
+                } else {
+                    buffers[8].resize((0, 0));
+                }
             } else {
                 buffers[0].resize((0, 0));
                 buffers[1].resize((0, 0));
@@ -236,11 +249,13 @@ impl ScreenshotUi {
                 buffers[5].resize((0, 0));
                 buffers[6].resize((0, 0));
                 buffers[7].resize((0, 0));
+
+                buffers[8].resize((0, 0));
             }
         }
     }
 
-    pub fn render_output(&self, output: &Output) -> ArrayVec<ScreenshotUiRenderElement, 9> {
+    pub fn render_output(&self, output: &Output) -> ArrayVec<ScreenshotUiRenderElement, 10> {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
         let Self::Open { output_data, .. } = self else {
@@ -343,10 +358,15 @@ impl ScreenshotUi {
     }
 
     /// The pointer has moved to `point` relative to the current selection output.
-    pub fn pointer_motion(&mut self, point: Point<i32, Physical>) {
+    pub fn pointer_motion(
+        &mut self,
+        point: Point<i32, Physical>,
+        highlight_region_target: Option<Rectangle<i32, Physical>>,
+    ) {
         let Self::Open {
             selection,
             mouse_down: true,
+            highlight_region,
             ..
         } = self
         else {
@@ -354,6 +374,8 @@ impl ScreenshotUi {
         };
 
         selection.2 = point;
+        *highlight_region = highlight_region_target;
+
         self.update_buffers();
     }
 
@@ -368,6 +390,7 @@ impl ScreenshotUi {
             selection,
             output_data,
             mouse_down,
+            highlight_region,
         } = self
         else {
             return false;

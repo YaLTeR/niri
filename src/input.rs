@@ -21,6 +21,7 @@ use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
+use crate::layout::LayoutElement;
 use crate::niri::State;
 use crate::screenshot_ui::ScreenshotUi;
 use crate::utils::{center, get_monotonic_time, spawn};
@@ -719,7 +720,14 @@ impl State {
             let point = (point - geom.loc.to_f64())
                 .to_physical(output.current_scale().fractional_scale())
                 .to_i32_round();
-            self.niri.screenshot_ui.pointer_motion(point);
+            let window_hovered = self.niri.window_under_cursor().map(|window| {
+                window
+                    .geometry()
+                    .to_physical_precise_round(output.current_scale().fractional_scale())
+            });
+            self.niri
+                .screenshot_ui
+                .pointer_motion(point, window_hovered);
         }
 
         let under = self.niri.surface_under_and_global_space(new_pos);
@@ -819,7 +827,16 @@ impl State {
             let point = (point - geom.loc.to_f64())
                 .to_physical(output.current_scale().fractional_scale())
                 .to_i32_round();
-            self.niri.screenshot_ui.pointer_motion(point);
+            let window_hovered = self.niri.window_under_cursor().map(|window| {
+                let mut window_geom = window.geometry();
+                window_geom.loc += window.buf_loc();
+
+                window_geom.to_physical_precise_round(output.current_scale().fractional_scale())
+            });
+            dbg!(&window_hovered);
+            self.niri
+                .screenshot_ui
+                .pointer_motion(point, window_hovered);
         }
 
         let under = self.niri.surface_under_and_global_space(pos);
