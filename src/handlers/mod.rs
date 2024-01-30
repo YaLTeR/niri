@@ -23,6 +23,7 @@ use smithay::utils::{Logical, Rectangle, Size};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
+use smithay::wayland::output::OutputHandler;
 use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
@@ -49,7 +50,9 @@ use smithay::{
 
 use crate::delegate_foreign_toplevel;
 use crate::niri::{ClientState, State};
-use crate::protocols::foreign_toplevel::{ForeignToplevelHandler, ForeignToplevelManagerState};
+use crate::protocols::foreign_toplevel::{
+    self, ForeignToplevelHandler, ForeignToplevelManagerState,
+};
 use crate::utils::output_size;
 
 impl SeatHandler for State {
@@ -206,6 +209,11 @@ impl DataControlHandler for State {
 
 delegate_data_control!(State);
 
+impl OutputHandler for State {
+    fn output_bound(&mut self, output: Output, wl_output: WlOutput) {
+        foreign_toplevel::on_output_bound(self, &output, &wl_output);
+    }
+}
 delegate_output!(State);
 
 delegate_presentation!(State);

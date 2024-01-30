@@ -131,6 +131,31 @@ pub fn refresh(state: &mut State) {
     }
 }
 
+pub fn on_output_bound(state: &mut State, output: &Output, wl_output: &WlOutput) {
+    let _span = tracy_client::span!("foreign_toplevel::on_output_bound");
+
+    let Some(client) = wl_output.client() else {
+        return;
+    };
+
+    let protocol_state = &mut state.niri.foreign_toplevel_state;
+    for data in protocol_state.toplevels.values_mut() {
+        if data.output.as_ref() != Some(output) {
+            continue;
+        }
+
+        for (instance, outputs) in &mut data.instances {
+            if instance.client().as_ref() != Some(&client) {
+                continue;
+            }
+
+            instance.output_enter(wl_output);
+            instance.done();
+            outputs.push(wl_output.clone());
+        }
+    }
+}
+
 fn refresh_toplevel(
     protocol_state: &mut ForeignToplevelManagerState,
     wl_surface: &WlSurface,
@@ -204,31 +229,13 @@ fn refresh_toplevel(
                             }
                         }
                     }
+                    instance.done();
                 }
             }
 
-            for (instance, outputs) in &mut data.instances {
+            for outputs in data.instances.values_mut() {
                 // Clean up dead wl_outputs.
                 outputs.retain(|x| x.is_alive());
-
-                let mut send_done = something_changed;
-
-                // If the client bound any more wl_outputs, send enter for them.
-                if let Some(output) = &data.output {
-                    if let Some(client) = instance.client() {
-                        for wl_output in output.client_outputs(&client) {
-                            if !outputs.iter().any(|x| x == &wl_output) {
-                                instance.output_enter(&wl_output);
-                                outputs.push(wl_output);
-                                send_done = true;
-                            }
-                        }
-                    }
-                }
-
-                if send_done {
-                    instance.done();
-                }
             }
         }
         Entry::Vacant(entry) => {
