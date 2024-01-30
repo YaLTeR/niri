@@ -57,8 +57,6 @@ Being a GNOME Shell extension, PaperWM has to work against Shell's global window
 > For Fedora users, there's a COPR with built and packaged niri: https://copr.fedorainfracloud.org/coprs/yalter/niri/
 >
 > NixOS users, check out https://github.com/sodiboo/niri-flake
->
-> For Arch users, there's an AUR package: https://aur.archlinux.org/packages/niri
 
 First, install the dependencies for your distribution.
 

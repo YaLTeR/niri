@@ -15,6 +15,7 @@ mod input;
 mod ipc;
 mod layout;
 mod niri;
+mod protocols;
 mod render_helpers;
 mod screenshot_ui;
 mod utils;

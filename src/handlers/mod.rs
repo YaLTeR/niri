@@ -14,6 +14,7 @@ use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::input;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -22,6 +23,7 @@ use smithay::utils::{Logical, Rectangle, Size};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
+use smithay::wayland::output::OutputHandler;
 use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
@@ -46,7 +48,11 @@ use smithay::{
     delegate_tablet_manager, delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
+use crate::delegate_foreign_toplevel;
 use crate::niri::{ClientState, State};
+use crate::protocols::foreign_toplevel::{
+    self, ForeignToplevelHandler, ForeignToplevelManagerState,
+};
 use crate::utils::output_size;
 
 impl SeatHandler for State {
@@ -203,6 +209,11 @@ impl DataControlHandler for State {
 
 delegate_data_control!(State);
 
+impl OutputHandler for State {
+    fn output_bound(&mut self, output: Output, wl_output: WlOutput) {
+        foreign_toplevel::on_output_bound(self, &output, &wl_output);
+    }
+}
 delegate_output!(State);
 
 delegate_presentation!(State);
@@ -291,3 +302,57 @@ impl SecurityContextHandler for State {
     }
 }
 delegate_security_context!(State);
+
+impl ForeignToplevelHandler for State {
+    fn foreign_toplevel_manager_state(&mut self) -> &mut ForeignToplevelManagerState {
+        &mut self.niri.foreign_toplevel_state
+    }
+
+    fn activate(&mut self, wl_surface: WlSurface) {
+        if let Some((window, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
+            let window = window.clone();
+            self.niri.layout.activate_window(&window);
+            self.niri.queue_redraw_all();
+        }
+    }
+
+    fn close(&mut self, wl_surface: WlSurface) {
+        if let Some((window, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
+            window.toplevel().send_close();
+        }
+    }
+
+    fn set_fullscreen(&mut self, wl_surface: WlSurface, wl_output: Option<WlOutput>) {
+        if let Some((window, current_output)) = self.niri.layout.find_window_and_output(&wl_surface)
+        {
+            if !window
+                .toplevel()
+                .current_state()
+                .capabilities
+                .contains(xdg_toplevel::WmCapabilities::Fullscreen)
+            {
+                return;
+            }
+
+            let window = window.clone();
+
+            if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
+                if &requested_output != current_output {
+                    self.niri
+                        .layout
+                        .move_window_to_output(window.clone(), &requested_output);
+                }
+            }
+
+            self.niri.layout.set_fullscreen(&window, true);
+        }
+    }
+
+    fn unset_fullscreen(&mut self, wl_surface: WlSurface) {
+        if let Some((window, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
+            let window = window.clone();
+            self.niri.layout.set_fullscreen(&window, false);
+        }
+    }
+}
+delegate_foreign_toplevel!(State);
