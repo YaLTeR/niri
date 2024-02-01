@@ -220,7 +220,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_loop.handle(),
         event_loop.get_signal(),
         display,
-    );
+    )
+    .unwrap();
 
     // Set WAYLAND_DISPLAY for children.
     let socket_name = &state.niri.socket_name;

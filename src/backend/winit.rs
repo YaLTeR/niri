@@ -32,12 +32,15 @@ pub struct Winit {
 }
 
 impl Winit {
-    pub fn new(config: Rc<RefCell<Config>>, event_loop: LoopHandle<State>) -> Self {
+    pub fn new(
+        config: Rc<RefCell<Config>>,
+        event_loop: LoopHandle<State>,
+    ) -> Result<Self, winit::Error> {
         let builder = WindowBuilder::new()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
             .with_title("niri");
-        let (backend, winit) = winit::init_from_builder(builder).unwrap();
+        let (backend, winit) = winit::init_from_builder(builder)?;
 
         let output = Output::new(
             "winit".to_string(),
@@ -110,14 +113,14 @@ impl Winit {
             })
             .unwrap();
 
-        Self {
+        Ok(Self {
             config,
             output,
             backend,
             damage_tracker,
             ipc_outputs,
             enabled_outputs,
-        }
+        })
     }
 
     pub fn init(&mut self, niri: &mut Niri) {

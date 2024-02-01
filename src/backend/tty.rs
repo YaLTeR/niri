@@ -144,11 +144,19 @@ pub struct SurfaceDmabufFeedback {
 }
 
 impl Tty {
-    pub fn new(config: Rc<RefCell<Config>>, event_loop: LoopHandle<'static, State>) -> Self {
-        let (session, notifier) = LibSeatSession::new().unwrap();
+    pub fn new(
+        config: Rc<RefCell<Config>>,
+        event_loop: LoopHandle<'static, State>,
+    ) -> anyhow::Result<Self> {
+        let (session, notifier) = LibSeatSession::new().context(
+            "Error creating a session. This might mean that you're trying to run niri on a TTY \
+             that is already busy, for example if you're running this inside tmux that had been \
+             originally started on a different TTY",
+        )?;
         let seat_name = session.seat();
 
-        let udev_backend = UdevBackend::new(session.seat()).unwrap();
+        let udev_backend =
+            UdevBackend::new(session.seat()).context("error creating a udev backend")?;
         let udev_dispatcher = Dispatcher::new(udev_backend, move |event, _, state: &mut State| {
             state.backend.tty().on_udev_event(&mut state.niri, event);
         });
@@ -157,7 +165,9 @@ impl Tty {
             .unwrap();
 
         let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
-        libinput.udev_assign_seat(&seat_name).unwrap();
+        libinput
+            .udev_assign_seat(&seat_name)
+            .map_err(|()| anyhow!("error assigning the seat to libinput"))?;
 
         let input_backend = LibinputInputBackend::new(libinput.clone());
         event_loop
@@ -192,18 +202,23 @@ impl Tty {
             Ok(gles)
         };
         let api = GbmGlesBackend::with_factory(Box::new(create_renderer));
-        let gpu_manager = GpuManager::new(api).unwrap();
+        let gpu_manager = GpuManager::new(api).context("error creating the GPU manager")?;
 
         let (primary_node, primary_render_node) = primary_node_from_config(&config.borrow())
-            .unwrap_or_else(|| {
-                let primary_gpu_path = udev::primary_gpu(&seat_name).unwrap().unwrap();
-                let primary_node = DrmNode::from_path(primary_gpu_path).unwrap();
+            .ok_or(())
+            .or_else(|()| {
+                let primary_gpu_path = udev::primary_gpu(&seat_name)
+                    .context("error getting the primary GPU")?
+                    .context("couldn't find a GPU")?;
+                let primary_node = DrmNode::from_path(primary_gpu_path)
+                    .context("error opening the primary GPU DRM node")?;
                 let primary_render_node = primary_node
                     .node_with_type(NodeType::Render)
-                    .unwrap()
-                    .unwrap();
-                (primary_node, primary_render_node)
-            });
+                    .context("error getting the render node for the primary GPU")?
+                    .context("error getting the render node for the primary GPU")?;
+
+                Ok::<_, anyhow::Error>((primary_node, primary_render_node))
+            })?;
 
         let mut node_path = String::new();
         if let Some(path) = primary_render_node.dev_path() {
@@ -213,7 +228,7 @@ impl Tty {
         }
         info!("using as the render node: {}", node_path);
 
-        Self {
+        Ok(Self {
             config,
             session,
             udev_dispatcher,
@@ -227,7 +242,7 @@ impl Tty {
             update_output_config_on_resume: false,
             ipc_outputs: Rc::new(RefCell::new(HashMap::new())),
             enabled_outputs: Arc::new(Mutex::new(HashMap::new())),
-        }
+        })
     }
 
     pub fn init(&mut self, niri: &mut Niri) {

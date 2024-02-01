@@ -298,7 +298,7 @@ impl State {
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
-    ) -> Self {
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
         let config = Rc::new(RefCell::new(config));
@@ -307,15 +307,18 @@ impl State {
             env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
 
         let mut backend = if has_display {
-            Backend::Winit(Winit::new(config.clone(), event_loop.clone()))
+            let winit = Winit::new(config.clone(), event_loop.clone())?;
+            Backend::Winit(winit)
         } else {
-            Backend::Tty(Tty::new(config.clone(), event_loop.clone()))
+            let tty = Tty::new(config.clone(), event_loop.clone())
+                .context("error initializing the TTY backend")?;
+            Backend::Tty(tty)
         };
 
         let mut niri = Niri::new(config.clone(), event_loop, stop_signal, display, &backend);
         backend.init(&mut niri);
 
-        Self { backend, niri }
+        Ok(Self { backend, niri })
     }
 
     pub fn refresh_and_flush_clients(&mut self) {
