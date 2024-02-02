@@ -9,7 +9,7 @@ repository = "https://github.com/YaLTeR/niri"
 [workspace.dependencies]
 bitflags = "2.4.2"
 directories = "5.0.1"
-serde = { version = "1.0.195", features = ["derive"] }
+serde = { version = "1.0.196", features = ["derive"] }
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracy-client = { version = "0.16.5", default-features = false }
 
@@ -46,7 +46,7 @@ directories = "5.0.1"
 futures-util = { version = "0.3.30", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.152"
+libc = "0.2.153"
 log = { version = "0.4.20", features = ["max_level_trace", "release_max_level_debug"] }
 logind-zbus = { version = "3.1.2", optional = true }
 niri-config = { version = "0.1.0", path = "niri-config" }
@@ -56,10 +56,10 @@ pangocairo = "0.18.0"
 pipewire = { version = "0.7.2", optional = true }
 png = "0.17.11"
 portable-atomic = { version = "1.6.0", default-features = false, features = ["float"] }
-profiling = "1.0.13"
+profiling = "1.0.14"
 sd-notify = "0.4.1"
 serde.workspace = true
-serde_json = "1.0.111"
+serde_json = "1.0.113"
 smithay-drm-extras.workspace = true
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing.workspace = true
