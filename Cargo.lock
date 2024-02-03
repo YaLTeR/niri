@@ -1585,6 +1585,7 @@ dependencies = [
  "input-sys",
  "io-lifetimes 1.0.11",
  "libc",
+ "log",
  "udev",
 ]
 
@@ -2057,6 +2058,7 @@ dependencies = [
  "directories",
  "futures-util",
  "git-version",
+ "input",
  "keyframe",
  "libc",
  "log",
