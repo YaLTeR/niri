@@ -29,6 +29,7 @@
 //! compromise we only keep the first workspace there, and move the rest to the primary output,
 //! making the primary output their original output.
 
+use std::cmp::min;
 use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
@@ -1364,7 +1365,12 @@ impl<W: LayoutElement> Layout<W> {
             .position(|mon| &mon.output == output)
             .unwrap();
         let target = &mut monitors[target_idx];
-        target.workspaces.insert(target.active_workspace_idx, ws);
+
+        // Insert the workspace after the currently active one. Unless the currently active one is
+        // the last empty workspace, then insert before.
+        let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
+        target.workspaces.insert(target_ws_idx, ws);
+        target.active_workspace_idx = target_ws_idx;
         target.workspace_switch = None;
         target.clean_up_workspaces();
 
