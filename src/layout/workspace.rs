@@ -330,6 +330,10 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn view_size(&self) -> Size<i32, Logical> {
+        self.view_size
+    }
+
     pub fn update_output_scale_transform(&mut self) {
         let Some(output) = self.output.as_ref() else {
             return;
@@ -351,7 +355,7 @@ impl<W: LayoutElement> Workspace<W> {
         ))
     }
 
-    pub fn configure_new_window(&self, window: &Window) {
+    pub fn new_window_size(&self) -> Size<i32, Logical> {
         let width = if let Some(width) = self.options.default_width {
             let mut width = width.resolve(&self.options, self.working_area.size.w);
             if !self.options.border.off {
@@ -367,8 +371,11 @@ impl<W: LayoutElement> Workspace<W> {
             height -= self.options.border.width as i32 * 2;
         }
 
-        let size = Size::from((width, max(height, 1)));
+        Size::from((width, max(height, 1)))
+    }
 
+    pub fn configure_new_window(&self, window: &Window) {
+        let size = self.new_window_size();
         let bounds = self.toplevel_bounds();
 
         if let Some(output) = self.output.as_ref() {
@@ -1151,7 +1158,13 @@ impl<W: LayoutElement> Column<W> {
             options,
         };
 
+        let is_pending_fullscreen = window.is_pending_fullscreen();
+
         rv.add_window(window);
+
+        if is_pending_fullscreen {
+            rv.set_fullscreen(true);
+        }
 
         rv
     }

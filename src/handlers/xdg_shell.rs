@@ -230,6 +230,13 @@ impl XdgShellHandler for State {
                 }
 
                 self.niri.layout.set_fullscreen(&window, true);
+            } else if let Some(window) = self.niri.unmapped_windows.get(surface.wl_surface()) {
+                if let Some(ws) = self.niri.layout.active_workspace() {
+                    window.toplevel().with_pending_state(|state| {
+                        state.size = Some(ws.view_size());
+                        state.states.set(xdg_toplevel::State::Fullscreen);
+                    });
+                }
             }
         }
 
@@ -246,6 +253,13 @@ impl XdgShellHandler for State {
         {
             let window = window.clone();
             self.niri.layout.set_fullscreen(&window, false);
+        } else if let Some(window) = self.niri.unmapped_windows.get(surface.wl_surface()) {
+            if let Some(ws) = self.niri.layout.active_workspace() {
+                window.toplevel().with_pending_state(|state| {
+                    state.size = Some(ws.new_window_size());
+                    state.states.unset(xdg_toplevel::State::Fullscreen);
+                });
+            }
         }
     }
 
