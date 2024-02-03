@@ -1462,7 +1462,7 @@ impl<W: LayoutElement> Layout<W> {
         for monitor in monitors {
             if let Some(WorkspaceSwitch::Gesture(gesture)) = &mut monitor.workspace_switch {
                 // Normalize like GNOME Shell's workspace switching.
-                let delta_y = -delta_y / 400.;
+                let delta_y = delta_y / 400.;
 
                 let min = gesture.center_idx.saturating_sub(1) as f64;
                 let max = (gesture.center_idx + 1).min(monitor.workspaces.len() - 1) as f64;

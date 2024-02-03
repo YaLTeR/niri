@@ -1156,11 +1156,20 @@ impl State {
         );
     }
 
-    fn on_gesture_swipe_update<I: InputBackend>(&mut self, event: I::GestureSwipeUpdateEvent) {
-        let res = self
-            .niri
-            .layout
-            .workspace_switch_gesture_update(event.delta_y());
+    fn on_gesture_swipe_update<I: InputBackend>(&mut self, event: I::GestureSwipeUpdateEvent)
+    where
+        I::Device: 'static,
+    {
+        let mut delta_y = event.delta_y();
+
+        let device = event.device();
+        if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
+            if device.config_scroll_natural_scroll_enabled() {
+                delta_y = -delta_y;
+            }
+        }
+
+        let res = self.niri.layout.workspace_switch_gesture_update(delta_y);
         if let Some(output) = res {
             if let Some(output) = output {
                 self.niri.queue_redraw(output);
