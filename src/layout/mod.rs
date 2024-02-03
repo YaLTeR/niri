@@ -898,6 +898,20 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_up_or_to_workspace_up();
     }
 
+    pub fn consume_or_expel_window_left(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.consume_or_expel_window_left();
+    }
+
+    pub fn consume_or_expel_window_right(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.consume_or_expel_window_right();
+    }
+
     pub fn focus_left(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1780,6 +1794,8 @@ mod tests {
         MoveWindowUp,
         MoveWindowDownOrToWorkspaceDown,
         MoveWindowUpOrToWorkspaceUp,
+        ConsumeOrExpelWindowLeft,
+        ConsumeOrExpelWindowRight,
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
         CenterColumn,
@@ -1906,6 +1922,8 @@ mod tests {
                 Op::MoveWindowUp => layout.move_up(),
                 Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),
                 Op::MoveWindowUpOrToWorkspaceUp => layout.move_up_or_to_workspace_up(),
+                Op::ConsumeOrExpelWindowLeft => layout.consume_or_expel_window_left(),
+                Op::ConsumeOrExpelWindowRight => layout.consume_or_expel_window_right(),
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
                 Op::CenterColumn => layout.center_column(),
@@ -2072,6 +2090,8 @@ mod tests {
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
             Op::MoveWindowUpOrToWorkspaceUp,
+            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowRight,
             Op::MoveWorkspaceToOutput(1),
         ];
 
@@ -2203,6 +2223,8 @@ mod tests {
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
             Op::MoveWindowUpOrToWorkspaceUp,
+            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowRight,
         ];
 
         for third in every_op {

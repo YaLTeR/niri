@@ -407,6 +407,16 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::ConsumeOrExpelWindowLeft => {
+                self.niri.layout.consume_or_expel_window_left();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::ConsumeOrExpelWindowRight => {
+                self.niri.layout.consume_or_expel_window_right();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusColumnLeft => {
                 self.niri.layout.focus_left();
                 // FIXME: granular

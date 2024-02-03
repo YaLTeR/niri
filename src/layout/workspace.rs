@@ -866,6 +866,70 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns[self.active_column_idx].move_up();
     }
 
+    pub fn consume_or_expel_window_left(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let source_column = &self.columns[self.active_column_idx];
+        if source_column.tiles.len() == 1 {
+            if self.active_column_idx == 0 {
+                return;
+            }
+
+            // Move into adjacent column.
+            let target_column_idx = self.active_column_idx - 1;
+            let window = self.remove_window_by_idx(self.active_column_idx, 0);
+            self.enter_output_for_window(&window);
+
+            let target_column = &mut self.columns[target_column_idx];
+            target_column.add_window(window);
+            target_column.focus_last();
+            self.activate_column(target_column_idx);
+        } else {
+            // Move out of column.
+            let width = source_column.width;
+            let is_full_width = source_column.is_full_width;
+            let window =
+                self.remove_window_by_idx(self.active_column_idx, source_column.active_tile_idx);
+
+            self.add_window(window, true, width, is_full_width);
+            // Window was added to the right of current column, so move the new column left.
+            self.move_left();
+        }
+    }
+
+    pub fn consume_or_expel_window_right(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let source_column = &self.columns[self.active_column_idx];
+        if source_column.tiles.len() == 1 {
+            if self.active_column_idx + 1 == self.columns.len() {
+                return;
+            }
+
+            // Move into adjacent column.
+            let target_column_idx = self.active_column_idx;
+            let window = self.remove_window_by_idx(self.active_column_idx, 0);
+            self.enter_output_for_window(&window);
+
+            let target_column = &mut self.columns[target_column_idx];
+            target_column.add_window(window);
+            target_column.focus_last();
+            self.activate_column(target_column_idx);
+        } else {
+            // Move out of column.
+            let width = source_column.width;
+            let is_full_width = source_column.is_full_width;
+            let window =
+                self.remove_window_by_idx(self.active_column_idx, source_column.active_tile_idx);
+
+            self.add_window(window, true, width, is_full_width);
+        }
+    }
+
     pub fn consume_into_column(&mut self) {
         if self.columns.len() < 2 {
             return;
@@ -1412,6 +1476,10 @@ impl<W: LayoutElement> Column<W> {
 
     fn focus_down(&mut self) {
         self.active_tile_idx = min(self.active_tile_idx + 1, self.tiles.len() - 1);
+    }
+
+    fn focus_last(&mut self) {
+        self.active_tile_idx = self.tiles.len() - 1;
     }
 
     fn move_up(&mut self) {

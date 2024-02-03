@@ -459,6 +459,8 @@ pub enum Action {
     MoveWindowUp,
     MoveWindowDownOrToWorkspaceDown,
     MoveWindowUpOrToWorkspaceUp,
+    ConsumeOrExpelWindowLeft,
+    ConsumeOrExpelWindowRight,
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
     CenterColumn,

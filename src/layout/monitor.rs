@@ -215,6 +215,14 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn consume_or_expel_window_left(&mut self) {
+        self.active_workspace().consume_or_expel_window_left();
+    }
+
+    pub fn consume_or_expel_window_right(&mut self) {
+        self.active_workspace().consume_or_expel_window_right();
+    }
+
     pub fn focus_left(&mut self) {
         self.active_workspace().focus_left();
     }
