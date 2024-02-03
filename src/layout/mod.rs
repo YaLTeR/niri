@@ -104,6 +104,11 @@ pub trait LayoutElement: PartialEq {
     ///
     /// This will *not* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
     fn is_fullscreen(&self) -> bool;
+
+    /// Whether we're requesting the element to be fullscreen.
+    ///
+    /// This *will* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
+    fn is_pending_fullscreen(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -289,6 +294,11 @@ impl LayoutElement for Window {
             .current_state()
             .states
             .contains(xdg_toplevel::State::Fullscreen)
+    }
+
+    fn is_pending_fullscreen(&self) -> bool {
+        self.toplevel()
+            .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
     }
 }
 
@@ -1586,6 +1596,7 @@ mod tests {
         requested_size: Cell<Option<Size<i32, Logical>>>,
         min_size: Size<i32, Logical>,
         max_size: Size<i32, Logical>,
+        pending_fullscreen: Cell<bool>,
     }
 
     #[derive(Debug, Clone)]
@@ -1605,6 +1616,7 @@ mod tests {
                 requested_size: Cell::new(None),
                 min_size,
                 max_size,
+                pending_fullscreen: Cell::new(false),
             }))
         }
 
@@ -1661,9 +1673,12 @@ mod tests {
 
         fn request_size(&self, size: Size<i32, Logical>) {
             self.0.requested_size.set(Some(size));
+            self.0.pending_fullscreen.set(false);
         }
 
-        fn request_fullscreen(&self, _size: Size<i32, Logical>) {}
+        fn request_fullscreen(&self, _size: Size<i32, Logical>) {
+            self.0.pending_fullscreen.set(true);
+        }
 
         fn min_size(&self) -> Size<i32, Logical> {
             self.0.min_size
@@ -1689,6 +1704,10 @@ mod tests {
 
         fn is_fullscreen(&self) -> bool {
             false
+        }
+
+        fn is_pending_fullscreen(&self) -> bool {
+            self.0.pending_fullscreen.get()
         }
     }
 
@@ -2017,6 +2036,9 @@ mod tests {
             Op::CloseWindow(0),
             Op::CloseWindow(1),
             Op::CloseWindow(2),
+            Op::FullscreenWindow(1),
+            Op::FullscreenWindow(2),
+            Op::FullscreenWindow(3),
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
             Op::FocusWindowUp,
@@ -2145,6 +2167,9 @@ mod tests {
             Op::CloseWindow(0),
             Op::CloseWindow(1),
             Op::CloseWindow(2),
+            Op::FullscreenWindow(1),
+            Op::FullscreenWindow(2),
+            Op::FullscreenWindow(3),
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
             Op::FocusWindowUp,
@@ -2496,6 +2521,21 @@ mod tests {
         assert_eq!(monitors[1].active_workspace_idx, 0);
         assert_eq!(monitors[1].workspaces.len(), 2);
         assert!(monitors[1].workspaces[0].has_windows());
+    }
+
+    #[test]
+    fn fullscreen() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::FullscreenWindow(1),
+        ];
+
+        check_ops(&ops);
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = u16> {

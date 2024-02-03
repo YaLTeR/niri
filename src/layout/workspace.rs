@@ -1441,6 +1441,10 @@ impl<W: LayoutElement> Column<W> {
         if self.is_fullscreen {
             assert_eq!(self.tiles.len(), 1);
         }
+
+        for tile in &self.tiles {
+            assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
+        }
     }
 
     fn toggle_width(&mut self) {
