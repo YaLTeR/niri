@@ -7,7 +7,6 @@ use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
 use smithay::backend::renderer::{ImportAll, Renderer};
-use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale};
 
@@ -578,9 +577,7 @@ impl<W: LayoutElement> Monitor<W> {
         let ws = &self.workspaces[self.active_workspace_idx];
         ws.render_above_top_layer()
     }
-}
 
-impl Monitor<Window> {
     pub fn render_elements<R: Renderer + ImportAll>(
         &self,
         renderer: &mut R,
