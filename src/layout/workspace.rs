@@ -5,7 +5,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetWidth, SizeChange, Struts};
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RelocateRenderElement;
 use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
@@ -17,7 +16,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::tile::Tile;
-use super::{LayoutElement, Options};
+use super::{LayoutElement, LayoutElementRenderElement, Options};
 use crate::animation::Animation;
 use crate::utils::output_size;
 
@@ -83,7 +82,7 @@ pub struct OutputId(String);
 render_elements! {
     #[derive(Debug)]
     pub WorkspaceRenderElement<R> where R: ImportAll;
-    Wayland = WaylandSurfaceRenderElement<R>,
+    LayoutElement = LayoutElementRenderElement<R>,
     FocusRing = FocusRingRenderElement,
     Border = RelocateRenderElement<FocusRingRenderElement>,
 }

@@ -35,6 +35,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{self, CenterFocusedColumn, Config, SizeChange, Struts};
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
@@ -43,15 +45,14 @@ use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::render_elements;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch, WorkspaceSwitchGesture};
-use self::workspace::{
-    compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
-};
+use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::animation::Animation;
 use crate::utils::output_size;
 
@@ -59,6 +60,13 @@ mod focus_ring;
 mod monitor;
 mod tile;
 mod workspace;
+
+render_elements! {
+    #[derive(Debug)]
+    pub LayoutElementRenderElement<R> where R: ImportAll;
+    Wayland = WaylandSurfaceRenderElement<R>,
+    SolidColor = SolidColorRenderElement,
+}
 
 pub trait LayoutElement: PartialEq {
     /// Visual size of the element.
@@ -86,7 +94,7 @@ pub trait LayoutElement: PartialEq {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-    ) -> Vec<WorkspaceRenderElement<R>>
+    ) -> Vec<LayoutElementRenderElement<R>>
     where
         <R as Renderer>::TextureId: 'static;
 
@@ -224,7 +232,7 @@ impl LayoutElement for Window {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-    ) -> Vec<WorkspaceRenderElement<R>>
+    ) -> Vec<LayoutElementRenderElement<R>>
     where
         <R as Renderer>::TextureId: 'static,
     {
@@ -1667,7 +1675,7 @@ mod tests {
             _renderer: &mut R,
             _location: Point<i32, Logical>,
             _scale: Scale<f64>,
-        ) -> Vec<WorkspaceRenderElement<R>> {
+        ) -> Vec<LayoutElementRenderElement<R>> {
             vec![]
         }
 

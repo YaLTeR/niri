@@ -244,7 +244,12 @@ impl<W: LayoutElement> Tile<W> {
         let mut rv = Vec::new();
 
         let window_pos = location + self.window_loc();
-        rv.extend(self.window.render(renderer, window_pos, scale));
+        rv.extend(
+            self.window
+                .render(renderer, window_pos, scale)
+                .into_iter()
+                .map(Into::into),
+        );
 
         if self.effective_border_width().is_some() {
             rv.extend(
