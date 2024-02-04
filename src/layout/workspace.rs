@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 use std::iter::zip;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -913,6 +914,45 @@ impl<W: LayoutElement> Workspace<W> {
         self.column_x(self.active_column_idx) + self.view_offset
     }
 
+    fn with_tiles_in_render_order<'a, F, B>(&'a self, mut f: F) -> Option<B>
+    where
+        F: FnMut(&'a Tile<W>, Point<i32, Logical>) -> ControlFlow<B>,
+    {
+        let view_pos = self.view_pos();
+
+        // Start with the active window since it's drawn on top.
+        let col = &self.columns[self.active_column_idx];
+        let tile = &col.tiles[col.active_tile_idx];
+        let tile_pos = Point::from((
+            self.column_x(self.active_column_idx) - view_pos,
+            col.tile_y(col.active_tile_idx),
+        ));
+
+        if let ControlFlow::Break(rv) = f(tile, tile_pos) {
+            return Some(rv);
+        }
+
+        let mut x = -view_pos;
+        for (col_idx, col) in self.columns.iter().enumerate() {
+            for (tile_idx, (tile, y)) in zip(&col.tiles, col.tile_ys()).enumerate() {
+                if col_idx == self.active_column_idx && tile_idx == col.active_tile_idx {
+                    // Already handled it above.
+                    continue;
+                }
+
+                let tile_pos = Point::from((x, y));
+
+                if let ControlFlow::Break(rv) = f(tile, tile_pos) {
+                    return Some(rv);
+                }
+            }
+
+            x += col.width() + self.options.gaps;
+        }
+
+        None
+    }
+
     pub fn window_under(
         &self,
         pos: Point<f64, Logical>,
@@ -921,45 +961,18 @@ impl<W: LayoutElement> Workspace<W> {
             return None;
         }
 
-        let view_pos = self.view_pos();
+        self.with_tiles_in_render_order(|tile, tile_pos| {
+            let pos_within_tile = pos - tile_pos.to_f64();
 
-        // Prefer the active window since it's drawn on top.
-        let col = &self.columns[self.active_column_idx];
-        let active_tile = &col.tiles[col.active_tile_idx];
-        let tile_pos = Point::from((
-            self.column_x(self.active_column_idx) - view_pos,
-            col.tile_y(col.active_tile_idx),
-        ));
-        let pos_within_tile = pos - tile_pos.to_f64();
-        if active_tile.is_in_input_region(pos_within_tile) {
-            let pos_within_surface = tile_pos + active_tile.buf_loc();
-            return Some((active_tile.window(), Some(pos_within_surface)));
-        } else if active_tile.is_in_activation_region(pos_within_tile) {
-            return Some((active_tile.window(), None));
-        }
-
-        let mut x = -view_pos;
-        for col in &self.columns {
-            for (tile, y) in zip(&col.tiles, col.tile_ys()) {
-                if tile.window() == active_tile.window() {
-                    // Already handled it above.
-                    continue;
-                }
-
-                let tile_pos = Point::from((x, y));
-                let pos_within_tile = pos - tile_pos.to_f64();
-                if tile.is_in_input_region(pos_within_tile) {
-                    let pos_within_surface = tile_pos + tile.buf_loc();
-                    return Some((tile.window(), Some(pos_within_surface)));
-                } else if tile.is_in_activation_region(pos_within_tile) {
-                    return Some((tile.window(), None));
-                }
+            if tile.is_in_input_region(pos_within_tile) {
+                let pos_within_surface = tile_pos + tile.buf_loc();
+                return ControlFlow::Break((tile.window(), Some(pos_within_surface)));
+            } else if tile.is_in_activation_region(pos_within_tile) {
+                return ControlFlow::Break((tile.window(), None));
             }
 
-            x += col.width() + self.options.gaps;
-        }
-
-        None
+            ControlFlow::Continue(())
+        })
     }
 
     pub fn toggle_width(&mut self) {
@@ -1079,36 +1092,20 @@ impl<W: LayoutElement> Workspace<W> {
             .unwrap_or(Scale::from(1.));
 
         let mut rv = vec![];
-        let view_pos = self.view_pos();
+        let mut first = true;
 
-        // Draw the active window on top.
-        let col = &self.columns[self.active_column_idx];
-        let active_tile = &col.tiles[col.active_tile_idx];
-        let tile_pos = Point::from((
-            self.column_x(self.active_column_idx) - view_pos,
-            col.tile_y(col.active_tile_idx),
-        ));
+        self.with_tiles_in_render_order(|tile, tile_pos| {
+            // Draw the window itself.
+            rv.extend(tile.render(renderer, tile_pos, output_scale));
 
-        // Draw the window itself.
-        rv.extend(active_tile.render(renderer, tile_pos, output_scale));
-
-        // Draw the focus ring.
-        rv.extend(self.focus_ring.render(output_scale).map(Into::into));
-
-        let mut x = -view_pos;
-        for col in &self.columns {
-            for (tile, y) in zip(&col.tiles, col.tile_ys()) {
-                if tile.window() == active_tile.window() {
-                    // Already handled it above.
-                    continue;
-                }
-
-                let tile_pos = Point::from((x, y));
-                rv.extend(tile.render(renderer, tile_pos, output_scale));
+            // For the active tile (which comes first), draw the focus ring.
+            if first {
+                rv.extend(self.focus_ring.render(output_scale).map(Into::into));
+                first = false;
             }
 
-            x += col.width() + self.options.gaps;
-        }
+            ControlFlow::<()>::Continue(())
+        });
 
         rv
     }
