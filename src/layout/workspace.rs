@@ -5,7 +5,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetWidth, SizeChange, Struts};
-use smithay::backend::renderer::element::utils::RelocateRenderElement;
 use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -15,8 +14,8 @@ use smithay::render_elements;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
-use super::tile::Tile;
-use super::{LayoutElement, LayoutElementRenderElement, Options};
+use super::tile::{Tile, TileRenderElement};
+use super::{LayoutElement, Options};
 use crate::animation::Animation;
 use crate::utils::output_size;
 
@@ -82,9 +81,8 @@ pub struct OutputId(String);
 render_elements! {
     #[derive(Debug)]
     pub WorkspaceRenderElement<R> where R: ImportAll;
-    LayoutElement = LayoutElementRenderElement<R>,
+    Tile = TileRenderElement<R>,
     FocusRing = FocusRingRenderElement,
-    Border = RelocateRenderElement<FocusRingRenderElement>,
 }
 
 /// Width of a column.
@@ -1095,7 +1093,11 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.with_tiles_in_render_order(|tile, tile_pos| {
             // Draw the window itself.
-            rv.extend(tile.render(renderer, tile_pos, output_scale));
+            rv.extend(
+                tile.render(renderer, tile_pos, output_scale)
+                    .into_iter()
+                    .map(Into::into),
+            );
 
             // For the active tile (which comes first), draw the focus ring.
             if first {

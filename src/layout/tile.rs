@@ -6,11 +6,11 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::{ImportAll, Renderer};
+use smithay::render_elements;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::FocusRing;
-use super::workspace::WorkspaceRenderElement;
-use super::{LayoutElement, Options};
+use super::{LayoutElement, LayoutElementRenderElement, Options};
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -35,6 +35,13 @@ pub struct Tile<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     options: Rc<Options>,
+}
+
+render_elements! {
+    #[derive(Debug)]
+    pub TileRenderElement<R> where R: ImportAll;
+    LayoutElement = LayoutElementRenderElement<R>,
+    SolidColor = RelocateRenderElement<SolidColorRenderElement>,
 }
 
 impl<W: LayoutElement> Tile<W> {
@@ -237,7 +244,7 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-    ) -> Vec<WorkspaceRenderElement<R>>
+    ) -> Vec<TileRenderElement<R>>
     where
         <R as Renderer>::TextureId: 'static,
     {
@@ -274,7 +281,7 @@ impl<W: LayoutElement> Tile<W> {
                 1.,
                 Kind::Unspecified,
             );
-            rv.push(elem.into());
+            rv.push(RelocateRenderElement::from_element(elem, (0, 0), Relocate::Relative).into());
         }
 
         rv
