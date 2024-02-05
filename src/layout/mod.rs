@@ -56,10 +56,10 @@ use crate::niri_render_elements;
 use crate::render_helpers::NiriRenderer;
 use crate::utils::output_size;
 
-mod focus_ring;
-mod monitor;
-mod tile;
-mod workspace;
+pub mod focus_ring;
+pub mod monitor;
+pub mod tile;
+pub mod workspace;
 
 niri_render_elements! {
     LayoutElementRenderElement => {
@@ -146,16 +146,16 @@ enum MonitorSet<W: LayoutElement> {
 #[derive(Debug, PartialEq)]
 pub struct Options {
     /// Padding around windows in logical pixels.
-    gaps: i32,
+    pub gaps: i32,
     /// Extra padding around the working area in logical pixels.
-    struts: Struts,
-    focus_ring: niri_config::FocusRing,
-    border: niri_config::FocusRing,
-    center_focused_column: CenterFocusedColumn,
+    pub struts: Struts,
+    pub focus_ring: niri_config::FocusRing,
+    pub border: niri_config::FocusRing,
+    pub center_focused_column: CenterFocusedColumn,
     /// Column widths that `toggle_width()` switches between.
-    preset_widths: Vec<ColumnWidth>,
+    pub preset_widths: Vec<ColumnWidth>,
     /// Initial width for new columns.
-    default_width: Option<ColumnWidth>,
+    pub default_width: Option<ColumnWidth>,
 }
 
 impl Default for Options {
