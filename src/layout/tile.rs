@@ -244,36 +244,30 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-    ) -> Vec<TileRenderElement<R>>
+    ) -> impl Iterator<Item = TileRenderElement<R>>
     where
         <R as Renderer>::TextureId: 'static,
     {
-        let mut rv = Vec::new();
-
         let window_pos = location + self.window_loc();
-        rv.extend(
-            self.window
-                .render(renderer, window_pos, scale)
-                .into_iter()
-                .map(Into::into),
-        );
+        let rv = self
+            .window
+            .render(renderer, window_pos, scale)
+            .into_iter()
+            .map(Into::into);
 
-        if self.effective_border_width().is_some() {
-            rv.extend(
-                self.border
-                    .render(scale)
-                    .map(|elem| {
-                        RelocateRenderElement::from_element(
-                            elem,
-                            location.to_physical_precise_round(scale),
-                            Relocate::Relative,
-                        )
-                    })
-                    .map(Into::into),
-            );
-        }
+        let elem = self.effective_border_width().map(|_| {
+            self.border.render(scale).map(move |elem| {
+                RelocateRenderElement::from_element(
+                    elem,
+                    location.to_physical_precise_round(scale),
+                    Relocate::Relative,
+                )
+                .into()
+            })
+        });
+        let rv = rv.chain(elem.into_iter().flatten());
 
-        if self.is_fullscreen {
+        let elem = self.is_fullscreen.then(|| {
             let elem = SolidColorRenderElement::from_buffer(
                 &self.fullscreen_backdrop,
                 location.to_physical_precise_round(scale),
@@ -281,9 +275,8 @@ impl<W: LayoutElement> Tile<W> {
                 1.,
                 Kind::Unspecified,
             );
-            rv.push(RelocateRenderElement::from_element(elem, (0, 0), Relocate::Relative).into());
-        }
-
-        rv
+            RelocateRenderElement::from_element(elem, (0, 0), Relocate::Relative).into()
+        });
+        rv.chain(elem)
     }
 }

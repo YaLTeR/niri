@@ -1095,7 +1095,6 @@ impl<W: LayoutElement> Workspace<W> {
             // Draw the window itself.
             rv.extend(
                 tile.render(renderer, tile_pos, output_scale)
-                    .into_iter()
                     .map(Into::into),
             );
 
