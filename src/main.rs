@@ -1,31 +1,6 @@
 #[macro_use]
 extern crate tracing;
 
-mod animation;
-mod backend;
-mod config_error_notification;
-mod cursor;
-#[cfg(feature = "dbus")]
-mod dbus;
-mod exit_confirm_dialog;
-mod frame_clock;
-mod handlers;
-mod hotkey_overlay;
-mod input;
-mod ipc;
-mod layout;
-mod niri;
-mod protocols;
-mod render_helpers;
-mod screenshot_ui;
-mod utils;
-mod watcher;
-
-#[cfg(not(feature = "xdp-gnome-screencast"))]
-mod dummy_pw_utils;
-#[cfg(feature = "xdp-gnome-screencast")]
-mod pw_utils;
-
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -35,21 +10,20 @@ use std::{env, mem};
 
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
-#[cfg(not(feature = "xdp-gnome-screencast"))]
-use dummy_pw_utils as pw_utils;
 use git_version::git_version;
-use niri::{Niri, State};
+#[cfg(feature = "dbus")]
+use niri::dbus;
+use niri::ipc::client::handle_msg;
+use niri::niri::State;
+use niri::utils::{cause_panic, spawn, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
+use niri::watcher::Watcher;
+use niri::{animation, Msg};
 use niri_config::Config;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
 use smithay::reexports::calloop::{self, EventLoop};
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
-use utils::spawn;
-use watcher::Watcher;
-
-use crate::ipc::client::handle_msg;
-use crate::utils::{cause_panic, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
 
 #[derive(Parser)]
 #[command(author, version = version(), about, long_about = None)]
@@ -86,12 +60,6 @@ enum Sub {
     },
     /// Cause a panic to check if the backtraces are good.
     Panic,
-}
-
-#[derive(Subcommand)]
-pub enum Msg {
-    /// List connected outputs.
-    Outputs,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

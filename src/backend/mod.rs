@@ -10,7 +10,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::input::CompositorMod;
-use crate::Niri;
+use crate::niri::Niri;
 
 pub mod tty;
 pub use tty::Tty;

@@ -18,9 +18,8 @@ use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
 
 use super::RenderResult;
-use crate::niri::{RedrawState, State};
+use crate::niri::{Niri, RedrawState, State};
 use crate::utils::get_monotonic_time;
-use crate::Niri;
 
 pub struct Winit {
     config: Rc<RefCell<Config>>,

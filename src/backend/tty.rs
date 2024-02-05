@@ -48,10 +48,9 @@ use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
 use super::RenderResult;
 use crate::frame_clock::FrameClock;
-use crate::niri::{RedrawState, State};
+use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::AsGlesRenderer;
 use crate::utils::get_monotonic_time;
-use crate::Niri;
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
