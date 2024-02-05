@@ -20,14 +20,11 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::element::utils::{select_dmabuf_feedback, RelocateRenderElement};
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, AsRenderElements, Element, Id, Kind, RenderElement,
-    RenderElementStates, UnderlyingStorage,
+    default_primary_scanout_output_compare, AsRenderElements, Element, Kind, RenderElement,
+    RenderElementStates,
 };
-use smithay::backend::renderer::gles::{
-    GlesError, GlesFrame, GlesMapping, GlesRenderer, GlesTexture,
-};
+use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, ExportMem, Frame, Offscreen, Renderer};
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
@@ -57,7 +54,7 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{
-    Buffer, ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
+    ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
     SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
@@ -87,8 +84,7 @@ use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatTrait};
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
-use crate::animation;
-use crate::backend::tty::{SurfaceDmabufFeedback, TtyFrame, TtyRenderer, TtyRendererError};
+use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, RenderResult, Tty, Winit};
 use crate::config_error_notification::ConfigErrorNotification;
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
@@ -110,6 +106,7 @@ use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::{
     center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };
+use crate::{animation, niri_render_elements};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -2997,228 +2994,14 @@ fn render_to_dmabuf(
     Ok(())
 }
 
-// Manual RenderElement implementation due to AsGlesFrame requirement.
-#[derive(Debug)]
-pub enum OutputRenderElements<R: NiriRenderer> {
-    Monitor(MonitorRenderElement<R>),
-    Wayland(WaylandSurfaceRenderElement<R>),
-    NamedPointer(MemoryRenderBufferRenderElement<R>),
-    SolidColor(SolidColorRenderElement),
-    ScreenshotUi(ScreenshotUiRenderElement),
-    // Used for the CPU-rendered panels.
-    RelocatedMemoryBuffer(RelocateRenderElement<MemoryRenderBufferRenderElement<R>>),
-}
-
-impl<R: NiriRenderer> Element for OutputRenderElements<R> {
-    fn id(&self) -> &Id {
-        match self {
-            Self::Monitor(elem) => elem.id(),
-            Self::Wayland(elem) => elem.id(),
-            Self::NamedPointer(elem) => elem.id(),
-            Self::SolidColor(elem) => elem.id(),
-            Self::ScreenshotUi(elem) => elem.id(),
-            Self::RelocatedMemoryBuffer(elem) => elem.id(),
-        }
-    }
-
-    fn current_commit(&self) -> CommitCounter {
-        match self {
-            Self::Monitor(elem) => elem.current_commit(),
-            Self::Wayland(elem) => elem.current_commit(),
-            Self::NamedPointer(elem) => elem.current_commit(),
-            Self::SolidColor(elem) => elem.current_commit(),
-            Self::ScreenshotUi(elem) => elem.current_commit(),
-            Self::RelocatedMemoryBuffer(elem) => elem.current_commit(),
-        }
-    }
-
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        match self {
-            Self::Monitor(elem) => elem.geometry(scale),
-            Self::Wayland(elem) => elem.geometry(scale),
-            Self::NamedPointer(elem) => elem.geometry(scale),
-            Self::SolidColor(elem) => elem.geometry(scale),
-            Self::ScreenshotUi(elem) => elem.geometry(scale),
-            Self::RelocatedMemoryBuffer(elem) => elem.geometry(scale),
-        }
-    }
-
-    fn transform(&self) -> Transform {
-        match self {
-            Self::Monitor(elem) => elem.transform(),
-            Self::Wayland(elem) => elem.transform(),
-            Self::NamedPointer(elem) => elem.transform(),
-            Self::SolidColor(elem) => elem.transform(),
-            Self::ScreenshotUi(elem) => elem.transform(),
-            Self::RelocatedMemoryBuffer(elem) => elem.transform(),
-        }
-    }
-
-    fn src(&self) -> Rectangle<f64, Buffer> {
-        match self {
-            Self::Monitor(elem) => elem.src(),
-            Self::Wayland(elem) => elem.src(),
-            Self::NamedPointer(elem) => elem.src(),
-            Self::SolidColor(elem) => elem.src(),
-            Self::ScreenshotUi(elem) => elem.src(),
-            Self::RelocatedMemoryBuffer(elem) => elem.src(),
-        }
-    }
-
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
-        match self {
-            Self::Monitor(elem) => elem.damage_since(scale, commit),
-            Self::Wayland(elem) => elem.damage_since(scale, commit),
-            Self::NamedPointer(elem) => elem.damage_since(scale, commit),
-            Self::SolidColor(elem) => elem.damage_since(scale, commit),
-            Self::ScreenshotUi(elem) => elem.damage_since(scale, commit),
-            Self::RelocatedMemoryBuffer(elem) => elem.damage_since(scale, commit),
-        }
-    }
-
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        match self {
-            Self::Monitor(elem) => elem.opaque_regions(scale),
-            Self::Wayland(elem) => elem.opaque_regions(scale),
-            Self::NamedPointer(elem) => elem.opaque_regions(scale),
-            Self::SolidColor(elem) => elem.opaque_regions(scale),
-            Self::ScreenshotUi(elem) => elem.opaque_regions(scale),
-            Self::RelocatedMemoryBuffer(elem) => elem.opaque_regions(scale),
-        }
-    }
-
-    fn alpha(&self) -> f32 {
-        match self {
-            Self::Monitor(elem) => elem.alpha(),
-            Self::Wayland(elem) => elem.alpha(),
-            Self::NamedPointer(elem) => elem.alpha(),
-            Self::SolidColor(elem) => elem.alpha(),
-            Self::ScreenshotUi(elem) => elem.alpha(),
-            Self::RelocatedMemoryBuffer(elem) => elem.alpha(),
-        }
-    }
-
-    fn kind(&self) -> Kind {
-        match self {
-            Self::Monitor(elem) => elem.kind(),
-            Self::Wayland(elem) => elem.kind(),
-            Self::NamedPointer(elem) => elem.kind(),
-            Self::SolidColor(elem) => elem.kind(),
-            Self::ScreenshotUi(elem) => elem.kind(),
-            Self::RelocatedMemoryBuffer(elem) => elem.kind(),
-        }
-    }
-}
-
-impl RenderElement<GlesRenderer> for OutputRenderElements<GlesRenderer> {
-    fn draw(
-        &self,
-        frame: &mut GlesFrame<'_>,
-        src: Rectangle<f64, Buffer>,
-        dst: Rectangle<i32, Physical>,
-        damage: &[Rectangle<i32, Physical>],
-    ) -> Result<(), GlesError> {
-        match self {
-            Self::Monitor(elem) => elem.draw(frame, src, dst, damage),
-            Self::Wayland(elem) => elem.draw(frame, src, dst, damage),
-            Self::NamedPointer(elem) => {
-                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
-            }
-            Self::SolidColor(elem) => {
-                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
-            }
-            Self::ScreenshotUi(elem) => {
-                RenderElement::<GlesRenderer>::draw(&elem, frame, src, dst, damage)
-            }
-            Self::RelocatedMemoryBuffer(elem) => elem.draw(frame, src, dst, damage),
-        }
-    }
-
-    fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
-        match self {
-            Self::Monitor(elem) => elem.underlying_storage(renderer),
-            Self::Wayland(elem) => elem.underlying_storage(renderer),
-            Self::NamedPointer(elem) => elem.underlying_storage(renderer),
-            Self::SolidColor(elem) => elem.underlying_storage(renderer),
-            Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
-            Self::RelocatedMemoryBuffer(elem) => elem.underlying_storage(renderer),
-        }
-    }
-}
-
-impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
-    for OutputRenderElements<TtyRenderer<'render, 'alloc>>
-{
-    fn draw(
-        &self,
-        frame: &mut TtyFrame<'render, 'alloc, '_>,
-        src: Rectangle<f64, Buffer>,
-        dst: Rectangle<i32, Physical>,
-        damage: &[Rectangle<i32, Physical>],
-    ) -> Result<(), TtyRendererError<'render, 'alloc>> {
-        match self {
-            Self::Monitor(elem) => elem.draw(frame, src, dst, damage),
-            Self::Wayland(elem) => elem.draw(frame, src, dst, damage),
-            Self::NamedPointer(elem) => {
-                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
-            }
-            Self::SolidColor(elem) => {
-                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
-            }
-            Self::ScreenshotUi(elem) => {
-                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
-            }
-            Self::RelocatedMemoryBuffer(elem) => elem.draw(frame, src, dst, damage),
-        }
-    }
-
-    fn underlying_storage(
-        &self,
-        renderer: &mut TtyRenderer<'render, 'alloc>,
-    ) -> Option<UnderlyingStorage> {
-        match self {
-            Self::Monitor(elem) => elem.underlying_storage(renderer),
-            Self::Wayland(elem) => elem.underlying_storage(renderer),
-            Self::NamedPointer(elem) => elem.underlying_storage(renderer),
-            Self::SolidColor(elem) => elem.underlying_storage(renderer),
-            Self::ScreenshotUi(elem) => elem.underlying_storage(renderer),
-            Self::RelocatedMemoryBuffer(elem) => elem.underlying_storage(renderer),
-        }
-    }
-}
-
-impl<R: NiriRenderer> From<MonitorRenderElement<R>> for OutputRenderElements<R> {
-    fn from(x: MonitorRenderElement<R>) -> Self {
-        Self::Monitor(x)
-    }
-}
-
-impl<R: NiriRenderer> From<WaylandSurfaceRenderElement<R>> for OutputRenderElements<R> {
-    fn from(x: WaylandSurfaceRenderElement<R>) -> Self {
-        Self::Wayland(x)
-    }
-}
-
-impl<R: NiriRenderer> From<SolidColorRenderElement> for OutputRenderElements<R> {
-    fn from(x: SolidColorRenderElement) -> Self {
-        Self::SolidColor(x)
-    }
-}
-
-impl<R: NiriRenderer> From<ScreenshotUiRenderElement> for OutputRenderElements<R> {
-    fn from(x: ScreenshotUiRenderElement) -> Self {
-        Self::ScreenshotUi(x)
-    }
-}
-
-impl<R: NiriRenderer> From<RelocateRenderElement<MemoryRenderBufferRenderElement<R>>>
-    for OutputRenderElements<R>
-{
-    fn from(x: RelocateRenderElement<MemoryRenderBufferRenderElement<R>>) -> Self {
-        Self::RelocatedMemoryBuffer(x)
+niri_render_elements! {
+    OutputRenderElements => {
+        Monitor = MonitorRenderElement<R>,
+        Wayland = WaylandSurfaceRenderElement<R>,
+        NamedPointer = MemoryRenderBufferRenderElement<R>,
+        SolidColor = SolidColorRenderElement,
+        ScreenshotUi = ScreenshotUiRenderElement,
+        // Used for the CPU-rendered panels.
+        RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
     }
 }
