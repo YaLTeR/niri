@@ -20,7 +20,7 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::element::utils::{select_dmabuf_feedback, RelocateRenderElement};
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, AsRenderElements, Element, Kind, RenderElement,
+    default_primary_scanout_output_compare, AsRenderElements, Kind, RenderElement,
     RenderElementStates,
 };
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
@@ -2968,6 +2968,8 @@ fn render_to_dmabuf(
     scale: Scale<f64>,
     elements: &[OutputRenderElements<GlesRenderer>],
 ) -> anyhow::Result<()> {
+    use smithay::backend::renderer::element::Element;
+
     let _span = tracy_client::span!("render_to_dmabuf");
 
     let output_rect = Rectangle::from_loc_and_size((0, 0), size);
