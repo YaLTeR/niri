@@ -5,12 +5,12 @@ use std::time::Duration;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
-use smithay::backend::renderer::{ImportAll, Renderer};
-use smithay::render_elements;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::FocusRing;
 use super::{LayoutElement, LayoutElementRenderElement, Options};
+use crate::niri_render_elements;
+use crate::render_helpers::NiriRenderer;
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -37,11 +37,11 @@ pub struct Tile<W: LayoutElement> {
     options: Rc<Options>,
 }
 
-render_elements! {
-    #[derive(Debug)]
-    pub TileRenderElement<R> where R: ImportAll;
-    LayoutElement = LayoutElementRenderElement<R>,
-    SolidColor = RelocateRenderElement<SolidColorRenderElement>,
+niri_render_elements! {
+    TileRenderElement => {
+        LayoutElement = LayoutElementRenderElement<R>,
+        SolidColor = RelocateRenderElement<SolidColorRenderElement>,
+    }
 }
 
 impl<W: LayoutElement> Tile<W> {
@@ -239,15 +239,12 @@ impl<W: LayoutElement> Tile<W> {
         self.effective_border_width().is_some() || self.window.has_ssd()
     }
 
-    pub fn render<R: Renderer + ImportAll>(
+    pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-    ) -> impl Iterator<Item = TileRenderElement<R>>
-    where
-        <R as Renderer>::TextureId: 'static,
-    {
+    ) -> impl Iterator<Item = TileRenderElement<R>> {
         let window_pos = location + self.window_loc();
         let rv = self
             .window

@@ -6,7 +6,6 @@ use niri_config::SizeChange;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
-use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale};
 
@@ -15,6 +14,7 @@ use super::workspace::{
 };
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
+use crate::render_helpers::NiriRenderer;
 use crate::utils::output_size;
 
 #[derive(Debug)]
@@ -578,13 +578,10 @@ impl<W: LayoutElement> Monitor<W> {
         ws.render_above_top_layer()
     }
 
-    pub fn render_elements<R: Renderer + ImportAll>(
+    pub fn render_elements<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-    ) -> Vec<MonitorRenderElement<R>>
-    where
-        <R as Renderer>::TextureId: 'static,
-    {
+    ) -> Vec<MonitorRenderElement<R>> {
         let _span = tracy_client::span!("Monitor::render_elements");
 
         let output_scale = Scale::from(self.output.current_scale().fractional_scale());

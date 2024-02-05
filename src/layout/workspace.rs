@@ -4,18 +4,18 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetWidth, SizeChange, Struts};
-use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::render_elements;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::tile::{Tile, TileRenderElement};
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
+use crate::niri_render_elements;
+use crate::render_helpers::NiriRenderer;
 use crate::utils::output_size;
 
 #[derive(Debug)]
@@ -77,11 +77,11 @@ pub struct Workspace<W: LayoutElement> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
 
-render_elements! {
-    #[derive(Debug)]
-    pub WorkspaceRenderElement<R> where R: ImportAll;
-    Tile = TileRenderElement<R>,
-    FocusRing = FocusRingRenderElement,
+niri_render_elements! {
+    WorkspaceRenderElement => {
+        Tile = TileRenderElement<R>,
+        FocusRing = FocusRingRenderElement,
+    }
 }
 
 /// Width of a column.
@@ -1068,13 +1068,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns[self.active_column_idx].is_fullscreen
     }
 
-    pub fn render_elements<R: Renderer + ImportAll>(
+    pub fn render_elements<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-    ) -> Vec<WorkspaceRenderElement<R>>
-    where
-        <R as Renderer>::TextureId: 'static,
-    {
+    ) -> Vec<WorkspaceRenderElement<R>> {
         if self.columns.is_empty() {
             return vec![];
         }

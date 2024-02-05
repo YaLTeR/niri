@@ -38,14 +38,12 @@ use niri_config::{self, CenterFocusedColumn, Config, SizeChange, Struts};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::AsRenderElements;
-use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::render_elements;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::xdg::SurfaceCachedState;
@@ -54,6 +52,8 @@ pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch, WorkspaceSwitchGesture};
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::animation::Animation;
+use crate::niri_render_elements;
+use crate::render_helpers::NiriRenderer;
 use crate::utils::output_size;
 
 mod focus_ring;
@@ -61,11 +61,11 @@ mod monitor;
 mod tile;
 mod workspace;
 
-render_elements! {
-    #[derive(Debug)]
-    pub LayoutElementRenderElement<R> where R: ImportAll;
-    Wayland = WaylandSurfaceRenderElement<R>,
-    SolidColor = SolidColorRenderElement,
+niri_render_elements! {
+    LayoutElementRenderElement => {
+        Wayland = WaylandSurfaceRenderElement<R>,
+        SolidColor = SolidColorRenderElement,
+    }
 }
 
 pub trait LayoutElement: PartialEq {
@@ -89,14 +89,12 @@ pub trait LayoutElement: PartialEq {
     ///
     /// The element should be rendered in such a way that its visual geometry ends up at the given
     /// location.
-    fn render<R: Renderer + ImportAll>(
+    fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-    ) -> Vec<LayoutElementRenderElement<R>>
-    where
-        <R as Renderer>::TextureId: 'static;
+    ) -> Vec<LayoutElementRenderElement<R>>;
 
     fn request_size(&self, size: Size<i32, Logical>);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
@@ -227,15 +225,12 @@ impl LayoutElement for Window {
         SpaceElement::is_in_input_region(self, &surace_local)
     }
 
-    fn render<R: Renderer + ImportAll>(
+    fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-    ) -> Vec<LayoutElementRenderElement<R>>
-    where
-        <R as Renderer>::TextureId: 'static,
-    {
+    ) -> Vec<LayoutElementRenderElement<R>> {
         let buf_pos = location - self.geometry().loc;
         self.render_elements(
             renderer,
@@ -1670,7 +1665,7 @@ mod tests {
             false
         }
 
-        fn render<R: Renderer + ImportAll>(
+        fn render<R: NiriRenderer>(
             &self,
             _renderer: &mut R,
             _location: Point<i32, Logical>,
