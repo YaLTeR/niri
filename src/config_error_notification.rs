@@ -167,6 +167,12 @@ impl ConfigErrorNotification {
     }
 }
 
+impl Default for ConfigErrorNotification {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn render(scale: i32, created_path: Option<&Path>) -> anyhow::Result<MemoryRenderBuffer> {
     let _span = tracy_client::span!("config_error_notification::render");
 

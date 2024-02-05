@@ -1113,20 +1113,20 @@ impl Tty {
         }
     }
 
-    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
         let mut renderer = match self.gpu_manager.single_renderer(&self.primary_render_node) {
             Ok(renderer) => renderer,
             Err(err) => {
                 debug!("error creating renderer for primary GPU: {err:?}");
-                return Err(());
+                return false;
             }
         };
 
         match renderer.import_dmabuf(dmabuf, None) {
-            Ok(_texture) => Ok(()),
+            Ok(_texture) => true,
             Err(err) => {
                 debug!("error importing dmabuf: {err:?}");
-                Err(())
+                false
             }
         }
     }

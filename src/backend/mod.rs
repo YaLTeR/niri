@@ -98,7 +98,7 @@ impl Backend {
         }
     }
 
-    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
         match self {
             Backend::Tty(tty) => tty.import_dmabuf(dmabuf),
             Backend::Winit(winit) => winit.import_dmabuf(dmabuf),

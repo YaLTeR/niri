@@ -229,13 +229,10 @@ impl DmabufHandler for State {
         dmabuf: Dmabuf,
         notifier: ImportNotifier,
     ) {
-        match self.backend.import_dmabuf(&dmabuf) {
-            Ok(_) => {
-                let _ = notifier.successful::<State>();
-            }
-            Err(_) => {
-                notifier.failed();
-            }
+        if self.backend.import_dmabuf(&dmabuf) {
+            let _ = notifier.successful::<State>();
+        } else {
+            notifier.failed();
         }
     }
 }

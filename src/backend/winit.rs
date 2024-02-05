@@ -211,12 +211,12 @@ impl Winit {
         renderer.set_debug_flags(renderer.debug_flags() ^ DebugFlags::TINT);
     }
 
-    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> Result<(), ()> {
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
         match self.backend.renderer().import_dmabuf(dmabuf, None) {
-            Ok(_texture) => Ok(()),
+            Ok(_texture) => true,
             Err(err) => {
                 debug!("error importing dmabuf: {err:?}");
-                Err(())
+                false
             }
         }
     }
