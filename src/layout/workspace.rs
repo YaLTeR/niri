@@ -1,6 +1,5 @@
 use std::cmp::{max, min};
-use std::iter::zip;
-use std::ops::ControlFlow;
+use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -911,10 +910,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.column_x(self.active_column_idx) + self.view_offset
     }
 
-    fn with_tiles_in_render_order<'a, F, B>(&'a self, mut f: F) -> Option<B>
-    where
-        F: FnMut(&'a Tile<W>, Point<i32, Logical>) -> ControlFlow<B>,
-    {
+    fn tiles_in_render_order(&self) -> impl Iterator<Item = (&'_ Tile<W>, Point<i32, Logical>)> {
         let view_pos = self.view_pos();
 
         // Start with the active window since it's drawn on top.
@@ -924,30 +920,33 @@ impl<W: LayoutElement> Workspace<W> {
             self.column_x(self.active_column_idx) - view_pos,
             col.tile_y(col.active_tile_idx),
         ));
-
-        if let ControlFlow::Break(rv) = f(tile, tile_pos) {
-            return Some(rv);
-        }
+        let first = iter::once((tile, tile_pos));
 
         let mut x = -view_pos;
-        for (col_idx, col) in self.columns.iter().enumerate() {
-            for (tile_idx, (tile, y)) in zip(&col.tiles, col.tile_ys()).enumerate() {
-                if col_idx == self.active_column_idx && tile_idx == col.active_tile_idx {
-                    // Already handled it above.
-                    continue;
-                }
+        let rest = self
+            .columns
+            .iter()
+            .enumerate()
+            // Keep track of column X position.
+            .map(move |(col_idx, col)| {
+                let rv = (col_idx, col, x);
+                x += col.width() + self.options.gaps;
+                rv
+            })
+            .flat_map(move |(col_idx, col, x)| {
+                zip(&col.tiles, col.tile_ys()).enumerate().filter_map(
+                    move |(tile_idx, (tile, y))| {
+                        if col_idx == self.active_column_idx && tile_idx == col.active_tile_idx {
+                            // Active tile comes first.
+                            return None;
+                        }
 
-                let tile_pos = Point::from((x, y));
-
-                if let ControlFlow::Break(rv) = f(tile, tile_pos) {
-                    return Some(rv);
-                }
-            }
-
-            x += col.width() + self.options.gaps;
-        }
-
-        None
+                        let tile_pos = Point::from((x, y));
+                        Some((tile, tile_pos))
+                    },
+                )
+            });
+        first.chain(rest)
     }
 
     pub fn window_under(
@@ -958,17 +957,17 @@ impl<W: LayoutElement> Workspace<W> {
             return None;
         }
 
-        self.with_tiles_in_render_order(|tile, tile_pos| {
+        self.tiles_in_render_order().find_map(|(tile, tile_pos)| {
             let pos_within_tile = pos - tile_pos.to_f64();
 
             if tile.is_in_input_region(pos_within_tile) {
                 let pos_within_surface = tile_pos + tile.buf_loc();
-                return ControlFlow::Break((tile.window(), Some(pos_within_surface)));
+                return Some((tile.window(), Some(pos_within_surface)));
             } else if tile.is_in_activation_region(pos_within_tile) {
-                return ControlFlow::Break((tile.window(), None));
+                return Some((tile.window(), None));
             }
 
-            ControlFlow::Continue(())
+            None
         })
     }
 
@@ -1091,7 +1090,7 @@ impl<W: LayoutElement> Workspace<W> {
         let mut rv = vec![];
         let mut first = true;
 
-        self.with_tiles_in_render_order(|tile, tile_pos| {
+        for (tile, tile_pos) in self.tiles_in_render_order() {
             // Draw the window itself.
             rv.extend(
                 tile.render(renderer, tile_pos, output_scale)
@@ -1103,9 +1102,7 @@ impl<W: LayoutElement> Workspace<W> {
                 rv.extend(self.focus_ring.render(output_scale).map(Into::into));
                 first = false;
             }
-
-            ControlFlow::<()>::Continue(())
-        });
+        }
 
         rv
     }
