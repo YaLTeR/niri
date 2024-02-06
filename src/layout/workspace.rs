@@ -224,12 +224,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
-            for (tile_idx, tile) in col.tiles.iter_mut().enumerate() {
-                let is_active = is_active
-                    && col_idx == self.active_column_idx
-                    && tile_idx == col.active_tile_idx;
-                tile.advance_animations(current_time, is_active);
-            }
+            let is_active = is_active && col_idx == self.active_column_idx;
+            col.advance_animations(current_time, is_active);
         }
     }
 
@@ -1239,6 +1235,13 @@ impl<W: LayoutElement> Column<W> {
         self.width = width;
         self.is_full_width = false;
         self.update_tile_sizes();
+    }
+
+    pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
+        for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
+            let is_active = is_active && tile_idx == self.active_tile_idx;
+            tile.advance_animations(current_time, is_active);
+        }
     }
 
     pub fn contains(&self, window: &W) -> bool {
