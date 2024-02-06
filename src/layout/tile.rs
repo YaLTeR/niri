@@ -258,10 +258,9 @@ impl<W: LayoutElement> Tile<W> {
         scale: Scale<f64>,
         focus_ring: bool,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
-        let window_pos = location + self.window_loc();
         let rv = self
             .window
-            .render(renderer, window_pos, scale)
+            .render(renderer, location + self.window_loc(), scale)
             .into_iter()
             .map(Into::into);
 
