@@ -2499,6 +2499,7 @@ impl Niri {
                 // FIXME: Hidden / embedded / metadata cursor
                 let elements = elements
                     .get_or_insert_with(|| self.render::<GlesRenderer>(renderer, output, true));
+                let elements = elements.iter().rev();
 
                 if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
                     error!("error rendering to dmabuf: {err:?}");
@@ -2577,8 +2578,9 @@ impl Niri {
 
                 let scale = Scale::from(output.current_scale().fractional_scale());
                 let elements = self.render::<GlesRenderer>(renderer, &output, true);
+                let elements = elements.iter().rev();
 
-                let res = render_to_texture(renderer, size, scale, Fourcc::Abgr8888, &elements);
+                let res = render_to_texture(renderer, size, scale, Fourcc::Abgr8888, elements);
                 let screenshot = match res {
                     Ok((texture, _)) => texture,
                     Err(err) => {
@@ -2607,7 +2609,8 @@ impl Niri {
 
         let scale = Scale::from(output.current_scale().fractional_scale());
         let elements = self.render::<GlesRenderer>(renderer, output, true);
-        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, &elements)?;
+        let elements = elements.iter().rev();
+        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -2632,7 +2635,8 @@ impl Niri {
             scale,
             1.,
         );
-        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, &elements)?;
+        let elements = elements.iter().rev();
+        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -2730,12 +2734,13 @@ impl Niri {
         let size = transform.transform_size(size);
 
         let elements = self.render::<GlesRenderer>(renderer, &output, include_pointer);
+        let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
             size,
             Scale::from(f64::from(output_scale)),
             Fourcc::Abgr8888,
-            &elements,
+            elements,
         )?;
 
         let path = make_screenshot_path(&self.config.borrow())

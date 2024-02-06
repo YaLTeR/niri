@@ -15,7 +15,7 @@ pub fn render_to_texture(
     size: Size<i32, Physical>,
     scale: Scale<f64>,
     fourcc: Fourcc,
-    elements: &[impl RenderElement<GlesRenderer>],
+    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
 ) -> anyhow::Result<(GlesTexture, SyncPoint)> {
     let _span = tracy_client::span!();
 
@@ -34,7 +34,7 @@ pub fn render_to_texture(
         .render(size, Transform::Normal)
         .context("error starting frame")?;
 
-    for element in elements.iter().rev() {
+    for element in elements {
         let src = element.src();
         let dst = element.geometry(scale);
 
@@ -55,7 +55,7 @@ pub fn render_and_download(
     size: Size<i32, Physical>,
     scale: Scale<f64>,
     fourcc: Fourcc,
-    elements: &[impl RenderElement<GlesRenderer>],
+    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
 ) -> anyhow::Result<GlesMapping> {
     let _span = tracy_client::span!();
 
@@ -74,7 +74,7 @@ pub fn render_to_vec(
     size: Size<i32, Physical>,
     scale: Scale<f64>,
     fourcc: Fourcc,
-    elements: &[impl RenderElement<GlesRenderer>],
+    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
 ) -> anyhow::Result<Vec<u8>> {
     let _span = tracy_client::span!();
 
@@ -92,7 +92,7 @@ pub fn render_to_dmabuf(
     dmabuf: smithay::backend::allocator::dmabuf::Dmabuf,
     size: Size<i32, Physical>,
     scale: Scale<f64>,
-    elements: &[impl RenderElement<GlesRenderer>],
+    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
 ) -> anyhow::Result<()> {
     let _span = tracy_client::span!();
 
@@ -103,7 +103,7 @@ pub fn render_to_dmabuf(
         .render(size, Transform::Normal)
         .context("error starting frame")?;
 
-    for element in elements.iter().rev() {
+    for element in elements {
         let src = element.src();
         let dst = element.geometry(scale);
 
