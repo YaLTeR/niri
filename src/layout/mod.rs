@@ -307,9 +307,13 @@ impl LayoutElement for Window {
 
 impl<W: LayoutElement> Layout<W> {
     pub fn new(config: &Config) -> Self {
+        Self::with_options(Options::from_config(config))
+    }
+
+    pub fn with_options(options: Options) -> Self {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
-            options: Rc::new(Options::from_config(config)),
+            options: Rc::new(options),
         }
     }
 
@@ -1598,10 +1602,7 @@ mod tests {
 
     impl<W: LayoutElement> Default for Layout<W> {
         fn default() -> Self {
-            Self {
-                monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
-                options: Rc::new(Options::default()),
-            }
+            Self::with_options(Default::default())
         }
     }
 
@@ -2016,10 +2017,7 @@ mod tests {
 
     #[track_caller]
     fn check_ops_with_options(options: Options, ops: &[Op]) {
-        let mut layout = Layout {
-            options: Rc::new(options),
-            ..Default::default()
-        };
+        let mut layout = Layout::with_options(options);
 
         for op in ops {
             op.apply(&mut layout);
