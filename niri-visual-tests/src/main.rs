@@ -1,0 +1,142 @@
+#[macro_use]
+extern crate tracing;
+
+use std::env;
+use std::sync::atomic::Ordering;
+
+use adw::prelude::{AdwApplicationWindowExt, NavigationPageExt};
+use cases::tile::JustTile;
+use cases::window::JustWindow;
+use gtk::prelude::{
+    AdjustmentExt, ApplicationExt, ApplicationExtManual, BoxExt, GtkWindowExt, WidgetExt,
+};
+use gtk::{gdk, gio, glib};
+use niri::animation::ANIMATION_SLOWDOWN;
+use smithay::utils::{Logical, Size};
+use smithay_view::SmithayView;
+use tracing_subscriber::EnvFilter;
+
+use crate::cases::TestCase;
+
+mod cases;
+mod smithay_view;
+mod test_window;
+
+fn main() -> glib::ExitCode {
+    let directives =
+        env::var("RUST_LOG").unwrap_or_else(|_| "niri-visual-tests=debug,niri=debug".to_owned());
+    let env_filter = EnvFilter::builder().parse_lossy(directives);
+    tracing_subscriber::fmt()
+        .compact()
+        .with_env_filter(env_filter)
+        .init();
+
+    let app = adw::Application::new(None::<&str>, gio::ApplicationFlags::NON_UNIQUE);
+    app.connect_startup(on_startup);
+    app.connect_activate(build_ui);
+    app.run()
+}
+
+fn on_startup(_app: &adw::Application) {
+    // Load our CSS.
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(include_str!("../resources/style.css"));
+    if let Some(display) = gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+}
+
+fn build_ui(app: &adw::Application) {
+    let stack = gtk::Stack::new();
+
+    struct S {
+        stack: gtk::Stack,
+    }
+
+    impl S {
+        fn add<T: TestCase + 'static>(
+            &self,
+            make: impl Fn(Size<i32, Logical>) -> T + 'static,
+            title: &str,
+        ) {
+            let view = SmithayView::new(make);
+            self.stack.add_titled(&view, None, title);
+        }
+    }
+
+    let s = S {
+        stack: stack.clone(),
+    };
+
+    s.add(JustWindow::freeform, "Freeform Window");
+    s.add(JustWindow::fixed_size, "Fixed Size Window");
+    s.add(
+        JustWindow::fixed_size_with_csd_shadow,
+        "Fixed Size Window - CSD Shadow",
+    );
+    s.add(JustTile::freeform, "Freeform Tile");
+    s.add(JustTile::fixed_size, "Fixed Size Tile");
+    s.add(
+        JustTile::fixed_size_with_csd_shadow,
+        "Fixed Size Tile - CSD Shadow",
+    );
+
+    let content_headerbar = adw::HeaderBar::new();
+
+    let anim_adjustment = gtk::Adjustment::new(1., 0., 10., 0.1, 0.5, 0.);
+    anim_adjustment
+        .connect_value_changed(|adj| ANIMATION_SLOWDOWN.store(adj.value(), Ordering::SeqCst));
+    let anim_scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&anim_adjustment));
+    anim_scale.set_hexpand(true);
+
+    let anim_control_bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    anim_control_bar.add_css_class("anim-control-bar");
+    anim_control_bar.append(&gtk::Label::new(Some("Slowdown")));
+    anim_control_bar.append(&anim_scale);
+
+    let content_view = adw::ToolbarView::new();
+    content_view.set_top_bar_style(adw::ToolbarStyle::RaisedBorder);
+    content_view.set_bottom_bar_style(adw::ToolbarStyle::RaisedBorder);
+    content_view.add_top_bar(&content_headerbar);
+    content_view.add_bottom_bar(&anim_control_bar);
+    content_view.set_content(Some(&stack));
+    let content = adw::NavigationPage::new(
+        &content_view,
+        stack
+            .page(&stack.visible_child().unwrap())
+            .title()
+            .as_deref()
+            .unwrap(),
+    );
+
+    let sidebar_header = adw::HeaderBar::new();
+    let stack_sidebar = gtk::StackSidebar::new();
+    stack_sidebar.set_stack(&stack);
+    let sidebar_view = adw::ToolbarView::new();
+    sidebar_view.add_top_bar(&sidebar_header);
+    sidebar_view.set_content(Some(&stack_sidebar));
+    let sidebar = adw::NavigationPage::new(&sidebar_view, "Tests");
+
+    let split_view = adw::NavigationSplitView::new();
+    split_view.set_content(Some(&content));
+    split_view.set_sidebar(Some(&sidebar));
+
+    stack.connect_visible_child_notify(move |stack| {
+        content.set_title(
+            stack
+                .visible_child()
+                .and_then(|c| stack.page(&c).title())
+                .as_deref()
+                .unwrap_or_default(),
+        )
+    });
+
+    let window = adw::ApplicationWindow::new(app);
+    window.set_title(Some("niri visual tests"));
+    window.set_content(Some(&split_view));
+    window.present();
+}

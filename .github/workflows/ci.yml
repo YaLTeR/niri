@@ -52,10 +52,35 @@ jobs:
         run: cargo build ${{ matrix.release-flag }} --features profile-with-tracy
 
       - name: Build Tests
-        run: cargo test --no-run --all ${{ matrix.release-flag }}
+        run: cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
 
       - name: Test
-        run: cargo test --all ${{ matrix.release-flag }} -- --nocapture
+        run: cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
+
+  visual-tests:
+    strategy:
+      fail-fast: false
+
+    name: visual tests
+    runs-on: ubuntu-22.04
+    container: ubuntu:23.10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          apt-get update -y
+          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --package niri-visual-tests
 
   clippy:
     strategy:
@@ -73,7 +98,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev
+          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -113,8 +138,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo dnf update -y
-          sudo dnf install -y cargo gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang
+          sudo dnf install -y cargo gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang libadwaita-devel
 
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build
+      - run: cargo build --all
 
