@@ -62,13 +62,10 @@ Being a GNOME Shell extension, PaperWM has to work against Shell's global window
 
 First, install the dependencies for your distribution.
 
-- Ubuntu:
+- Ubuntu 23.10:
 
     ```sh
-    sudo apt-get install -y software-properties-common
-    sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
-    sudo apt-get update -y
-    sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev
+    sudo apt-get install -y gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev
     ```
 
 - Fedora:
