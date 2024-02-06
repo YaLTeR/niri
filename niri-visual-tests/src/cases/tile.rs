@@ -76,7 +76,7 @@ impl TestCase for JustTile {
         let location = Point::from(((size.w - tile_size.w) / 2, (size.h - tile_size.h) / 2));
 
         self.tile
-            .render(renderer, location, Scale::from(1.))
+            .render(renderer, location, Scale::from(1.), true)
             .map(|elem| Box::new(elem) as _)
             .collect()
     }

@@ -21,6 +21,12 @@ pub struct Tile<W: LayoutElement> {
     /// The border around the window.
     border: FocusRing,
 
+    /// The focus ring around the window.
+    ///
+    /// It's supposed to be on the Workspace, but for the sake of a nicer open animation it's
+    /// currently here.
+    focus_ring: FocusRing,
+
     /// Whether this tile is fullscreen.
     ///
     /// This will update only when the `window` actually goes fullscreen, rather than right away,
@@ -49,6 +55,7 @@ impl<W: LayoutElement> Tile<W> {
         Self {
             window,
             border: FocusRing::new(options.border),
+            focus_ring: FocusRing::new(options.focus_ring),
             is_fullscreen: false, // FIXME: up-to-date fullscreen right away, but we need size.
             fullscreen_backdrop: SolidColorBuffer::new((0, 0), [0., 0., 0., 1.]),
             fullscreen_size: Default::default(),
@@ -58,6 +65,7 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn update_config(&mut self, options: Rc<Options>) {
         self.border.update_config(options.border);
+        self.focus_ring.update_config(options.focus_ring);
         self.options = options;
     }
 
@@ -76,6 +84,10 @@ impl<W: LayoutElement> Tile<W> {
             self.window.has_ssd(),
         );
         self.border.set_active(is_active);
+
+        self.focus_ring
+            .update((0, 0).into(), self.tile_size(), self.has_ssd());
+        self.focus_ring.set_active(is_active);
     }
 
     pub fn window(&self) -> &W {
@@ -244,6 +256,7 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
+        focus_ring: bool,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
         let window_pos = location + self.window_loc();
         let rv = self
@@ -254,6 +267,18 @@ impl<W: LayoutElement> Tile<W> {
 
         let elem = self.effective_border_width().map(|_| {
             self.border.render(scale).map(move |elem| {
+                RelocateRenderElement::from_element(
+                    elem,
+                    location.to_physical_precise_round(scale),
+                    Relocate::Relative,
+                )
+                .into()
+            })
+        });
+        let rv = rv.chain(elem.into_iter().flatten());
+
+        let elem = focus_ring.then(|| {
+            self.focus_ring.render(scale).map(move |elem| {
                 RelocateRenderElement::from_element(
                     elem,
                     location.to_physical_precise_round(scale),

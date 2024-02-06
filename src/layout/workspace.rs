@@ -10,7 +10,6 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
-use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::tile::{Tile, TileRenderElement};
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
@@ -47,9 +46,6 @@ pub struct Workspace<W: LayoutElement> {
     /// Index of the currently active column, if any.
     pub active_column_idx: usize,
 
-    /// Focus ring buffer and parameters.
-    focus_ring: FocusRing,
-
     /// Offset of the view computed from the active column.
     ///
     /// Any gaps, including left padding from work area left exclusive zone, is handled
@@ -80,7 +76,6 @@ pub struct OutputId(String);
 niri_render_elements! {
     WorkspaceRenderElement => {
         Tile = TileRenderElement<R>,
-        FocusRing = FocusRingRenderElement,
     }
 }
 
@@ -194,7 +189,6 @@ impl<W: LayoutElement> Workspace<W> {
             output: Some(output),
             columns: vec![],
             active_column_idx: 0,
-            focus_ring: FocusRing::new(options.focus_ring),
             view_offset: 0,
             view_offset_anim: None,
             activate_prev_column_on_removal: false,
@@ -210,7 +204,6 @@ impl<W: LayoutElement> Workspace<W> {
             working_area: Rectangle::from_loc_and_size((0, 0), (1280, 720)),
             columns: vec![],
             active_column_idx: 0,
-            focus_ring: FocusRing::new(options.focus_ring),
             view_offset: 0,
             view_offset_anim: None,
             activate_prev_column_on_removal: false,
@@ -230,8 +223,6 @@ impl<W: LayoutElement> Workspace<W> {
             None => (),
         }
 
-        let view_pos = self.view_pos();
-
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
             for (tile_idx, tile) in col.tiles.iter_mut().enumerate() {
                 let is_active = is_active
@@ -240,22 +231,6 @@ impl<W: LayoutElement> Workspace<W> {
                 tile.advance_animations(current_time, is_active);
             }
         }
-
-        // This shall one day become a proper animation.
-        if !self.columns.is_empty() {
-            let col = &self.columns[self.active_column_idx];
-            let active_tile = &col.tiles[col.active_tile_idx];
-            let size = active_tile.tile_size();
-            let has_ssd = active_tile.has_ssd();
-
-            let tile_pos = Point::from((
-                self.column_x(self.active_column_idx) - view_pos,
-                col.tile_y(col.active_tile_idx),
-            ));
-
-            self.focus_ring.update(tile_pos, size, has_ssd);
-            self.focus_ring.set_active(is_active);
-        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -263,9 +238,6 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
-        self.focus_ring.update_config(options.focus_ring);
-        // The focus ring buffer will be updated in a subsequent update_animations call.
-
         for column in &mut self.columns {
             column.update_config(options.clone());
         }
@@ -1152,17 +1124,14 @@ impl<W: LayoutElement> Workspace<W> {
         let mut first = true;
 
         for (tile, tile_pos) in self.tiles_in_render_order() {
-            // Draw the window itself.
+            // For the active tile (which comes first), draw the focus ring.
+            let focus_ring = first;
+            first = false;
+
             rv.extend(
-                tile.render(renderer, tile_pos, output_scale)
+                tile.render(renderer, tile_pos, output_scale, focus_ring)
                     .map(Into::into),
             );
-
-            // For the active tile (which comes first), draw the focus ring.
-            if first {
-                rv.extend(self.focus_ring.render(output_scale).map(Into::into));
-                first = false;
-            }
         }
 
         rv
