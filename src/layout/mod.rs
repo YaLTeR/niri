@@ -1842,7 +1842,7 @@ mod tests {
                     output.change_current_state(
                         Some(Mode {
                             size: Size::from((1280, 720)),
-                            refresh: 60,
+                            refresh: 60000,
                         }),
                         None,
                         None,
