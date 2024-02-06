@@ -10,7 +10,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use super::focus_ring::FocusRing;
 use super::{LayoutElement, LayoutElementRenderElement, Options};
 use crate::niri_render_elements;
-use crate::render_helpers::NiriRenderer;
+use crate::render_helpers::renderer::NiriRenderer;
 
 /// Toplevel window with decorations.
 #[derive(Debug)]

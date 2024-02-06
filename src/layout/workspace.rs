@@ -15,7 +15,7 @@ use super::tile::{Tile, TileRenderElement};
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
 use crate::niri_render_elements;
-use crate::render_helpers::NiriRenderer;
+use crate::render_helpers::renderer::NiriRenderer;
 use crate::utils::output_size;
 
 #[derive(Debug)]

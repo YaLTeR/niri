@@ -101,7 +101,7 @@ use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::pw_utils::{Cast, PipeWire};
-use crate::render_helpers::NiriRenderer;
+use crate::render_helpers::renderer::NiriRenderer;
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::{
     center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,

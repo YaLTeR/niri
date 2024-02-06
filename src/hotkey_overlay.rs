@@ -18,7 +18,7 @@ use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Physical, Size, Transform};
 
 use crate::input::CompositorMod;
-use crate::render_helpers::NiriRenderer;
+use crate::render_helpers::renderer::NiriRenderer;
 
 const PADDING: i32 = 8;
 const MARGIN: i32 = PADDING * 2;

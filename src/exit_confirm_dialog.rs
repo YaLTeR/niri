@@ -12,7 +12,7 @@ use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::Transform;
 
-use crate::render_helpers::NiriRenderer;
+use crate::render_helpers::renderer::NiriRenderer;
 
 const TEXT: &str = "Are you sure you want to exit niri?\n\n\
                     Press <span face='mono' bgcolor='#2C2C2C'> Enter </span> to confirm.";

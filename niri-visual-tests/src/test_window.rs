@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use std::rc::Rc;
 
 use niri::layout::{LayoutElement, LayoutElementRenderElement};
-use niri::render_helpers::NiriRenderer;
+use niri::render_helpers::renderer::NiriRenderer;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::output::Output;

@@ -19,7 +19,7 @@ use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
-use crate::render_helpers::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 
 const BORDER: i32 = 2;
 

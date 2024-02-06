@@ -15,7 +15,7 @@ use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::Transform;
 
 use crate::animation::Animation;
-use crate::render_helpers::NiriRenderer;
+use crate::render_helpers::renderer::NiriRenderer;
 
 const TEXT: &str = "Failed to parse the config file. \
                     Please run <span face='monospace' bgcolor='#000000'>niri validate</span> \

@@ -53,7 +53,7 @@ use self::monitor::{Monitor, WorkspaceSwitch, WorkspaceSwitchGesture};
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::animation::Animation;
 use crate::niri_render_elements;
-use crate::render_helpers::NiriRenderer;
+use crate::render_helpers::renderer::NiriRenderer;
 use crate::utils::output_size;
 
 pub mod focus_ring;
