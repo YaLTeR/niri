@@ -78,6 +78,7 @@ fn build_ui(app: &adw::Application) {
         JustWindow::fixed_size_with_csd_shadow,
         "Fixed Size Window - CSD Shadow",
     );
+
     s.add(JustTile::freeform, "Freeform Tile");
     s.add(JustTile::fixed_size, "Fixed Size Tile");
     s.add(
