@@ -20,12 +20,9 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::element::utils::{select_dmabuf_feedback, RelocateRenderElement};
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, AsRenderElements, Kind, RenderElement,
-    RenderElementStates,
+    default_primary_scanout_output_compare, AsRenderElements, Kind, RenderElementStates,
 };
-use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
-use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Bind, ExportMem, Frame, Offscreen, Renderer};
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -102,6 +99,7 @@ use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::{render_to_texture, render_to_vec};
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::{
     center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
@@ -2433,6 +2431,8 @@ impl Niri {
         output: &Output,
         target_presentation_time: Duration,
     ) {
+        use crate::render_helpers::render_to_dmabuf;
+
         let _span = tracy_client::span!("Niri::render_for_screen_cast");
 
         let size = output.current_mode().unwrap().size;
@@ -2882,118 +2882,6 @@ pub struct ClientState {
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
-}
-
-fn render_to_texture(
-    renderer: &mut GlesRenderer,
-    size: Size<i32, Physical>,
-    scale: Scale<f64>,
-    fourcc: Fourcc,
-    elements: &[impl RenderElement<GlesRenderer>],
-) -> anyhow::Result<(GlesTexture, SyncPoint)> {
-    let _span = tracy_client::span!("render_to_texture");
-
-    let output_rect = Rectangle::from_loc_and_size((0, 0), size);
-    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
-
-    let texture: GlesTexture = renderer
-        .create_buffer(fourcc, buffer_size)
-        .context("error creating texture")?;
-
-    renderer
-        .bind(texture.clone())
-        .context("error binding texture")?;
-
-    let mut frame = renderer
-        .render(size, Transform::Normal)
-        .context("error starting frame")?;
-
-    for element in elements.iter().rev() {
-        let src = element.src();
-        let dst = element.geometry(scale);
-
-        if let Some(mut damage) = output_rect.intersection(dst) {
-            damage.loc -= dst.loc;
-            element
-                .draw(&mut frame, src, dst, &[damage])
-                .context("error drawing element")?;
-        }
-    }
-
-    let sync_point = frame.finish().context("error finishing frame")?;
-    Ok((texture, sync_point))
-}
-
-fn render_and_download(
-    renderer: &mut GlesRenderer,
-    size: Size<i32, Physical>,
-    scale: Scale<f64>,
-    fourcc: Fourcc,
-    elements: &[impl RenderElement<GlesRenderer>],
-) -> anyhow::Result<GlesMapping> {
-    let _span = tracy_client::span!("render_and_download");
-
-    let (_, sync_point) = render_to_texture(renderer, size, scale, fourcc, elements)?;
-    sync_point.wait();
-
-    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
-    let mapping = renderer
-        .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), buffer_size), fourcc)
-        .context("error copying framebuffer")?;
-    Ok(mapping)
-}
-
-fn render_to_vec(
-    renderer: &mut GlesRenderer,
-    size: Size<i32, Physical>,
-    scale: Scale<f64>,
-    fourcc: Fourcc,
-    elements: &[impl RenderElement<GlesRenderer>],
-) -> anyhow::Result<Vec<u8>> {
-    let _span = tracy_client::span!("render_to_vec");
-
-    let mapping =
-        render_and_download(renderer, size, scale, fourcc, elements).context("error rendering")?;
-    let copy = renderer
-        .map_texture(&mapping)
-        .context("error mapping texture")?;
-    Ok(copy.to_vec())
-}
-
-#[cfg(feature = "xdp-gnome-screencast")]
-fn render_to_dmabuf(
-    renderer: &mut GlesRenderer,
-    dmabuf: smithay::backend::allocator::dmabuf::Dmabuf,
-    size: Size<i32, Physical>,
-    scale: Scale<f64>,
-    elements: &[OutputRenderElements<GlesRenderer>],
-) -> anyhow::Result<()> {
-    use smithay::backend::renderer::element::Element;
-
-    let _span = tracy_client::span!("render_to_dmabuf");
-
-    let output_rect = Rectangle::from_loc_and_size((0, 0), size);
-
-    renderer.bind(dmabuf).context("error binding texture")?;
-    let mut frame = renderer
-        .render(size, Transform::Normal)
-        .context("error starting frame")?;
-
-    for element in elements.iter().rev() {
-        let src = element.src();
-        let dst = element.geometry(scale);
-
-        if let Some(mut damage) = output_rect.intersection(dst) {
-            damage.loc -= dst.loc;
-            element
-                .draw(&mut frame, src, dst, &[damage])
-                .context("error drawing element")?;
-        }
-    }
-
-    let _sync_point = frame.finish().context("error finishing frame")?;
-
-    Ok(())
 }
 
 niri_render_elements! {
