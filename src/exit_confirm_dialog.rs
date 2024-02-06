@@ -111,7 +111,7 @@ fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
-    let layout = pangocairo::create_layout(&cr);
+    let layout = pangocairo::functions::create_layout(&cr);
     layout.set_font_description(Some(&font));
     layout.set_alignment(Alignment::Center);
     layout.set_markup(TEXT);
@@ -130,13 +130,13 @@ fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
     cr.paint()?;
 
     cr.move_to(padding.into(), padding.into());
-    let layout = pangocairo::create_layout(&cr);
+    let layout = pangocairo::functions::create_layout(&cr);
     layout.set_font_description(Some(&font));
     layout.set_alignment(Alignment::Center);
     layout.set_markup(TEXT);
 
     cr.set_source_rgb(1., 1., 1.);
-    pangocairo::show_layout(&cr, &layout);
+    pangocairo::functions::show_layout(&cr, &layout);
 
     cr.move_to(0., 0.);
     cr.line_to(width.into(), 0.);

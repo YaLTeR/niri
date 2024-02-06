@@ -194,7 +194,7 @@ fn render(scale: i32, created_path: Option<&Path>) -> anyhow::Result<MemoryRende
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
-    let layout = pangocairo::create_layout(&cr);
+    let layout = pangocairo::functions::create_layout(&cr);
     layout.set_font_description(Some(&font));
     layout.set_markup(&text);
 
@@ -212,12 +212,12 @@ fn render(scale: i32, created_path: Option<&Path>) -> anyhow::Result<MemoryRende
     cr.paint()?;
 
     cr.move_to(padding.into(), padding.into());
-    let layout = pangocairo::create_layout(&cr);
+    let layout = pangocairo::functions::create_layout(&cr);
     layout.set_font_description(Some(&font));
     layout.set_markup(&text);
 
     cr.set_source_rgb(1., 1., 1.);
-    pangocairo::show_layout(&cr, &layout);
+    pangocairo::functions::show_layout(&cr, &layout);
 
     cr.move_to(0., 0.);
     cr.line_to(width.into(), 0.);

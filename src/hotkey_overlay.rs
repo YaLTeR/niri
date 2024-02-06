@@ -243,7 +243,7 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
-    let layout = pangocairo::create_layout(&cr);
+    let layout = pangocairo::functions::create_layout(&cr);
     layout.set_font_description(Some(&font));
 
     let bold = AttrList::new();
@@ -298,7 +298,7 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     cr.paint()?;
 
     cr.move_to(padding.into(), padding.into());
-    let layout = pangocairo::create_layout(&cr);
+    let layout = pangocairo::functions::create_layout(&cr);
     layout.set_font_description(Some(&font));
 
     cr.set_source_rgb(1., 1., 1.);
@@ -306,20 +306,20 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     cr.move_to(((width - title_size.0) / 2).into(), padding.into());
     layout.set_attributes(Some(&bold));
     layout.set_text(TITLE);
-    pangocairo::show_layout(&cr, &layout);
+    pangocairo::functions::show_layout(&cr, &layout);
 
     cr.move_to(padding.into(), (padding + title_size.1 + padding).into());
 
     for ((key, action), ((_, key_h), (_, act_h))) in zip(&strings, zip(&key_sizes, &action_sizes)) {
         layout.set_attributes(Some(&attrs));
         layout.set_text(key);
-        pangocairo::show_layout(&cr, &layout);
+        pangocairo::functions::show_layout(&cr, &layout);
 
         cr.rel_move_to((key_width + padding).into(), 0.);
 
         layout.set_attributes(None);
         layout.set_markup(action);
-        pangocairo::show_layout(&cr, &layout);
+        pangocairo::functions::show_layout(&cr, &layout);
 
         cr.rel_move_to(
             (-(key_width + padding)).into(),
