@@ -28,6 +28,8 @@ impl OffscreenRenderElement {
         elements: &[impl RenderElement<GlesRenderer>],
         result_alpha: f32,
     ) -> Self {
+        let _span = tracy_client::span!("OffscreenRenderElement::new");
+
         let geo = elements
             .iter()
             .map(|ele| ele.geometry(Scale::from(f64::from(scale))))
