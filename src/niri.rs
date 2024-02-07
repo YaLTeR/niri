@@ -20,7 +20,8 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::element::utils::{select_dmabuf_feedback, RelocateRenderElement};
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, AsRenderElements, Kind, RenderElementStates,
+    default_primary_scanout_output_compare, AsRenderElements, Id, Kind, PrimaryScanoutOutput,
+    RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::utils::{
@@ -273,6 +274,9 @@ struct SurfaceFrameThrottlingState {
     /// Output and sequence that the frame callback was last sent at.
     last_sent_at: RefCell<Option<(Output, u32)>>,
 }
+
+#[derive(Default)]
+pub struct WindowOffscreenId(pub RefCell<Option<Id>>);
 
 impl Default for SurfaceFrameThrottlingState {
     fn default() -> Self {
@@ -2156,15 +2160,30 @@ impl Niri {
         // not in a unified way with the pointer surfaces, which makes the logic elsewhere simpler.
 
         for win in self.layout.windows_for_output(output) {
+            let offscreen_id = win
+                .user_data()
+                .get_or_insert(WindowOffscreenId::default)
+                .0
+                .borrow();
+            let offscreen_id = offscreen_id.as_ref();
+
             win.with_surfaces(|surface, states| {
-                update_surface_primary_scanout_output(
-                    surface,
-                    output,
-                    states,
-                    render_element_states,
-                    // Windows are shown only on one output at a time.
-                    |_, _, output, _| output,
-                );
+                states
+                    .data_map
+                    .insert_if_missing_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
+                let surface_primary_scanout_output = states
+                    .data_map
+                    .get::<Mutex<PrimaryScanoutOutput>>()
+                    .unwrap();
+                surface_primary_scanout_output
+                    .lock()
+                    .unwrap()
+                    .update_from_render_element_states(
+                        offscreen_id.cloned().unwrap_or_else(|| surface.into()),
+                        output,
+                        render_element_states,
+                        |_, _, output, _| output,
+                    );
             });
         }
 
