@@ -1,7 +1,6 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri::layout::tile::Tile;
 use niri::layout::Options;
 use niri_config::Color;
 use smithay::backend::renderer::element::RenderElement;
@@ -11,12 +10,12 @@ use smithay::utils::{Logical, Physical, Point, Scale, Size};
 use super::TestCase;
 use crate::test_window::TestWindow;
 
-pub struct JustTile {
+pub struct Tile {
     window: TestWindow,
-    tile: Tile<TestWindow>,
+    tile: niri::layout::tile::Tile<TestWindow>,
 }
 
-impl JustTile {
+impl Tile {
     pub fn freeform(size: Size<i32, Logical>) -> Self {
         let window = TestWindow::freeform(0);
         let mut rv = Self::with_window(window);
@@ -56,12 +55,12 @@ impl JustTile {
             },
             ..Default::default()
         };
-        let tile = Tile::new(window.clone(), Rc::new(options));
+        let tile = niri::layout::tile::Tile::new(window.clone(), Rc::new(options));
         Self { window, tile }
     }
 }
 
-impl TestCase for JustTile {
+impl TestCase for Tile {
     fn resize(&mut self, width: i32, height: i32) {
         self.tile.request_tile_size(Size::from((width, height)));
         self.window.communicate();

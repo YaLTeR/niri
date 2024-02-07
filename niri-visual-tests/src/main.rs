@@ -5,8 +5,8 @@ use std::env;
 use std::sync::atomic::Ordering;
 
 use adw::prelude::{AdwApplicationWindowExt, NavigationPageExt};
-use cases::tile::JustTile;
-use cases::window::JustWindow;
+use cases::tile::Tile;
+use cases::window::Window;
 use gtk::prelude::{
     AdjustmentExt, ApplicationExt, ApplicationExtManual, BoxExt, GtkWindowExt, WidgetExt,
 };
@@ -72,17 +72,17 @@ fn build_ui(app: &adw::Application) {
         stack: stack.clone(),
     };
 
-    s.add(JustWindow::freeform, "Freeform Window");
-    s.add(JustWindow::fixed_size, "Fixed Size Window");
+    s.add(Window::freeform, "Freeform Window");
+    s.add(Window::fixed_size, "Fixed Size Window");
     s.add(
-        JustWindow::fixed_size_with_csd_shadow,
+        Window::fixed_size_with_csd_shadow,
         "Fixed Size Window - CSD Shadow",
     );
 
-    s.add(JustTile::freeform, "Freeform Tile");
-    s.add(JustTile::fixed_size, "Fixed Size Tile");
+    s.add(Tile::freeform, "Freeform Tile");
+    s.add(Tile::fixed_size, "Fixed Size Tile");
     s.add(
-        JustTile::fixed_size_with_csd_shadow,
+        Tile::fixed_size_with_csd_shadow,
         "Fixed Size Tile - CSD Shadow",
     );
 

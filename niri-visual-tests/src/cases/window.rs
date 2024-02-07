@@ -6,11 +6,11 @@ use smithay::utils::{Logical, Physical, Point, Scale, Size};
 use super::TestCase;
 use crate::test_window::TestWindow;
 
-pub struct JustWindow {
+pub struct Window {
     window: TestWindow,
 }
 
-impl JustWindow {
+impl Window {
     pub fn freeform(size: Size<i32, Logical>) -> Self {
         let window = TestWindow::freeform(0);
         window.request_size(size);
@@ -34,7 +34,7 @@ impl JustWindow {
     }
 }
 
-impl TestCase for JustWindow {
+impl TestCase for Window {
     fn resize(&mut self, width: i32, height: i32) {
         self.window.request_size(Size::from((width, height)));
         self.window.communicate();
