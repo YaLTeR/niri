@@ -564,6 +564,58 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    /// Adds a new window to the layout immediately to the right of another window.
+    ///
+    /// If that another window was active, activates the new window.
+    ///
+    /// Returns an output that the window was added to, if there were any outputs.
+    pub fn add_window_right_of(
+        &mut self,
+        right_of: &W,
+        window: W,
+        width: Option<ColumnWidth>,
+        is_full_width: bool,
+    ) -> Option<&Output> {
+        let width = width
+            .or(self.options.default_width)
+            .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal {
+                monitors,
+                active_monitor_idx,
+                ..
+            } => {
+                let mon_idx = monitors
+                    .iter()
+                    .position(|mon| mon.workspaces.iter().any(|ws| ws.has_window(right_of)))
+                    .unwrap();
+                let mon = &mut monitors[mon_idx];
+
+                let mut activate = false;
+                if mon_idx == *active_monitor_idx {
+                    let active_ws = &mon.workspaces[mon.active_workspace_idx];
+                    if !active_ws.columns.is_empty() {
+                        let active_col = &active_ws.columns[active_ws.active_column_idx];
+                        let active_tile = &active_col.tiles[active_col.active_tile_idx];
+                        activate = active_tile.window() == right_of;
+                    }
+                }
+
+                mon.add_window_right_of(right_of, window, activate, width, is_full_width);
+                Some(&mon.output)
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                let ws = workspaces
+                    .iter_mut()
+                    .find(|ws| ws.has_window(right_of))
+                    .unwrap();
+                ws.add_window_right_of(right_of, window, true, width, is_full_width);
+                None
+            }
+        }
+    }
+
     pub fn remove_window(&mut self, window: &W) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -1777,6 +1829,16 @@ mod tests {
             #[proptest(strategy = "arbitrary_min_max_size()")]
             min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
         },
+        AddWindowRightOf {
+            #[proptest(strategy = "1..=5usize")]
+            id: usize,
+            #[proptest(strategy = "1..=5usize")]
+            right_of_id: usize,
+            #[proptest(strategy = "arbitrary_bbox()")]
+            bbox: Rectangle<i32, Logical>,
+            #[proptest(strategy = "arbitrary_min_max_size()")]
+            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
+        },
         CloseWindow(#[proptest(strategy = "1..=5usize")] usize),
         FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
         FocusColumnLeft,
@@ -1896,6 +1958,58 @@ mod tests {
 
                     let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
                     layout.add_window(win, None, false);
+                }
+                Op::AddWindowRightOf {
+                    id,
+                    right_of_id,
+                    bbox,
+                    min_max_size,
+                } => {
+                    let mut found_right_of = false;
+
+                    match &mut layout.monitor_set {
+                        MonitorSet::Normal { monitors, .. } => {
+                            for mon in monitors {
+                                for ws in &mut mon.workspaces {
+                                    for win in ws.windows() {
+                                        if win.0.id == id {
+                                            return;
+                                        }
+
+                                        if win.0.id == right_of_id {
+                                            found_right_of = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        MonitorSet::NoOutputs { workspaces, .. } => {
+                            for ws in workspaces {
+                                for win in ws.windows() {
+                                    if win.0.id == id {
+                                        return;
+                                    }
+
+                                    if win.0.id == right_of_id {
+                                        found_right_of = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !found_right_of {
+                        return;
+                    }
+
+                    let right_of_win = TestWindow::new(
+                        right_of_id,
+                        Rectangle::default(),
+                        Size::default(),
+                        Size::default(),
+                    );
+                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
+                    layout.add_window_right_of(&right_of_win, win, None, false);
                 }
                 Op::CloseWindow(id) => {
                     let dummy =
@@ -2052,6 +2166,18 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
+            Op::AddWindowRightOf {
+                id: 3,
+                right_of_id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindowRightOf {
+                id: 4,
+                right_of_id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
             Op::CloseWindow(2),
@@ -2182,6 +2308,18 @@ mod tests {
             },
             Op::AddWindow {
                 id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindowRightOf {
+                id: 6,
+                right_of_id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindowRightOf {
+                id: 7,
+                right_of_id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },

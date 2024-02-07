@@ -104,8 +104,22 @@ impl CompositorHandler for State {
                     let window = entry.remove();
                     window.on_commit();
 
-                    if let Some(output) = self.niri.layout.add_window(window, None, false).cloned()
-                    {
+                    let parent = window
+                        .toplevel()
+                        .parent()
+                        .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
+                        .map(|(win, _)| win.clone());
+
+                    let win = window.clone();
+
+                    // Open dialogs immediately to the right of their parent window.
+                    let output = if let Some(p) = parent {
+                        self.niri.layout.add_window_right_of(&p, win, None, false)
+                    } else {
+                        self.niri.layout.add_window(win, None, false)
+                    };
+
+                    if let Some(output) = output.cloned() {
                         self.niri.queue_redraw(output);
                     }
                     return;

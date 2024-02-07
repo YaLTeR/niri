@@ -555,6 +555,43 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn add_window_right_of(
+        &mut self,
+        right_of: &W,
+        window: W,
+        activate: bool,
+        width: ColumnWidth,
+        is_full_width: bool,
+    ) {
+        self.enter_output_for_window(&window);
+
+        let idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(right_of))
+            .unwrap()
+            + 1;
+
+        let column = Column::new(
+            window,
+            self.view_size,
+            self.working_area,
+            self.options.clone(),
+            width,
+            is_full_width,
+        );
+        self.columns.insert(idx, column);
+
+        if self.active_column_idx >= idx {
+            self.active_column_idx += 1;
+        }
+
+        if activate {
+            self.activate_column(idx);
+            self.activate_prev_column_on_removal = true;
+        }
+    }
+
     pub fn add_column(&mut self, mut column: Column<W>, activate: bool) {
         for tile in &column.tiles {
             self.enter_output_for_window(tile.window());

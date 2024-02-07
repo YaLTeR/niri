@@ -126,6 +126,31 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn add_window_right_of(
+        &mut self,
+        right_of: &W,
+        window: W,
+        activate: bool,
+        width: ColumnWidth,
+        is_full_width: bool,
+    ) {
+        let workspace_idx = self
+            .workspaces
+            .iter_mut()
+            .position(|ws| ws.has_window(right_of))
+            .unwrap();
+        let workspace = &mut self.workspaces[workspace_idx];
+
+        workspace.add_window_right_of(right_of, window, activate, width, is_full_width);
+
+        // After adding a new window, workspace becomes this output's own.
+        workspace.original_output = OutputId::new(&self.output);
+
+        if activate {
+            self.activate_workspace(workspace_idx);
+        }
+    }
+
     pub fn add_column(&mut self, workspace_idx: usize, column: Column<W>, activate: bool) {
         let workspace = &mut self.workspaces[workspace_idx];
 
