@@ -559,18 +559,17 @@ impl<W: LayoutElement> Workspace<W> {
         &mut self,
         right_of: &W,
         window: W,
-        activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
     ) {
         self.enter_output_for_window(&window);
 
-        let idx = self
+        let right_of_idx = self
             .columns
             .iter()
             .position(|col| col.contains(right_of))
-            .unwrap()
-            + 1;
+            .unwrap();
+        let idx = right_of_idx + 1;
 
         let column = Column::new(
             window,
@@ -582,13 +581,12 @@ impl<W: LayoutElement> Workspace<W> {
         );
         self.columns.insert(idx, column);
 
-        if self.active_column_idx >= idx {
-            self.active_column_idx += 1;
-        }
-
-        if activate {
+        // Activate the new window if right_of was active.
+        if self.active_column_idx == right_of_idx {
             self.activate_column(idx);
             self.activate_prev_column_on_removal = true;
+        } else if idx <= self.active_column_idx {
+            self.active_column_idx += 1;
         }
     }
 

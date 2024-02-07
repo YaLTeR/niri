@@ -581,28 +581,13 @@ impl<W: LayoutElement> Layout<W> {
             .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
 
         match &mut self.monitor_set {
-            MonitorSet::Normal {
-                monitors,
-                active_monitor_idx,
-                ..
-            } => {
-                let mon_idx = monitors
-                    .iter()
-                    .position(|mon| mon.workspaces.iter().any(|ws| ws.has_window(right_of)))
+            MonitorSet::Normal { monitors, .. } => {
+                let mon = monitors
+                    .iter_mut()
+                    .find(|mon| mon.workspaces.iter().any(|ws| ws.has_window(right_of)))
                     .unwrap();
-                let mon = &mut monitors[mon_idx];
 
-                let mut activate = false;
-                if mon_idx == *active_monitor_idx {
-                    let active_ws = &mon.workspaces[mon.active_workspace_idx];
-                    if !active_ws.columns.is_empty() {
-                        let active_col = &active_ws.columns[active_ws.active_column_idx];
-                        let active_tile = &active_col.tiles[active_col.active_tile_idx];
-                        activate = active_tile.window() == right_of;
-                    }
-                }
-
-                mon.add_window_right_of(right_of, window, activate, width, is_full_width);
+                mon.add_window_right_of(right_of, window, width, is_full_width);
                 Some(&mon.output)
             }
             MonitorSet::NoOutputs { workspaces } => {
@@ -610,7 +595,7 @@ impl<W: LayoutElement> Layout<W> {
                     .iter_mut()
                     .find(|ws| ws.has_window(right_of))
                     .unwrap();
-                ws.add_window_right_of(right_of, window, true, width, is_full_width);
+                ws.add_window_right_of(right_of, window, width, is_full_width);
                 None
             }
         }
@@ -2697,6 +2682,49 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn open_right_of_on_different_workspace() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::FocusWorkspaceDown,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::AddWindowRightOf {
+                id: 3,
+                right_of_id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+        ];
+
+        let mut layout = Layout::default();
+        for op in ops {
+            op.apply(&mut layout);
+        }
+
+        let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+            unreachable!()
+        };
+
+        let mon = monitors.into_iter().next().unwrap();
+        assert_eq!(
+            mon.active_workspace_idx, 1,
+            "the second workspace must remain active"
+        );
+        assert_eq!(
+            mon.workspaces[0].active_column_idx, 1,
+            "the new window must become active"
+        );
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = u16> {

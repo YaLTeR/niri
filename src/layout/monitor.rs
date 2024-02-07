@@ -130,7 +130,6 @@ impl<W: LayoutElement> Monitor<W> {
         &mut self,
         right_of: &W,
         window: W,
-        activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
     ) {
@@ -141,14 +140,10 @@ impl<W: LayoutElement> Monitor<W> {
             .unwrap();
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_window_right_of(right_of, window, activate, width, is_full_width);
+        workspace.add_window_right_of(right_of, window, width, is_full_width);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
-
-        if activate {
-            self.activate_workspace(workspace_idx);
-        }
     }
 
     pub fn add_column(&mut self, workspace_idx: usize, column: Column<W>, activate: bool) {
