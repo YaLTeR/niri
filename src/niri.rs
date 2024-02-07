@@ -585,7 +585,7 @@ impl State {
         let slowdown = if config.animations.off {
             0.
         } else {
-            config.animations.slowdown
+            config.animations.slowdown.clamp(0., 100.)
         };
         animation::ANIMATION_SLOWDOWN.store(slowdown, Ordering::Relaxed);
 
