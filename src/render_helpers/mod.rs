@@ -34,6 +34,10 @@ pub fn render_to_texture(
         .render(size, Transform::Normal)
         .context("error starting frame")?;
 
+    frame
+        .clear([0., 0., 0., 0.], &[output_rect])
+        .context("error clearing")?;
+
     for element in elements {
         let src = element.src();
         let dst = element.geometry(scale);
@@ -102,6 +106,10 @@ pub fn render_to_dmabuf(
     let mut frame = renderer
         .render(size, Transform::Normal)
         .context("error starting frame")?;
+
+    frame
+        .clear([0., 0., 0., 0.], &[output_rect])
+        .context("error clearing")?;
 
     for element in elements {
         let src = element.src();
