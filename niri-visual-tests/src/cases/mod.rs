@@ -4,6 +4,7 @@ use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Size};
 
+pub mod layout;
 pub mod tile;
 pub mod window;
 

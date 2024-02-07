@@ -120,6 +120,7 @@ impl CompositorHandler for State {
                     };
 
                     if let Some(output) = output.cloned() {
+                        self.niri.layout.start_open_animation_for_window(&window);
                         self.niri.queue_redraw(output);
                     }
                     return;

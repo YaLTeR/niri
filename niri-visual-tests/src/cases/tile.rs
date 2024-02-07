@@ -41,6 +41,27 @@ impl Tile {
         rv
     }
 
+    pub fn freeform_open(size: Size<i32, Logical>) -> Self {
+        let mut rv = Self::freeform(size);
+        rv.window.set_color([0.1, 0.1, 0.1, 1.]);
+        rv.tile.start_open_animation();
+        rv
+    }
+
+    pub fn fixed_size_open(size: Size<i32, Logical>) -> Self {
+        let mut rv = Self::fixed_size(size);
+        rv.window.set_color([0.1, 0.1, 0.1, 1.]);
+        rv.tile.start_open_animation();
+        rv
+    }
+
+    pub fn fixed_size_with_csd_shadow_open(size: Size<i32, Logical>) -> Self {
+        let mut rv = Self::fixed_size_with_csd_shadow(size);
+        rv.window.set_color([0.1, 0.1, 0.1, 1.]);
+        rv.tile.start_open_animation();
+        rv
+    }
+
     pub fn with_window(window: TestWindow) -> Self {
         let options = Options {
             focus_ring: niri_config::FocusRing {
@@ -64,6 +85,10 @@ impl TestCase for Tile {
     fn resize(&mut self, width: i32, height: i32) {
         self.tile.request_tile_size(Size::from((width, height)));
         self.window.communicate();
+    }
+
+    fn are_animations_ongoing(&self) -> bool {
+        self.tile.are_animations_ongoing()
     }
 
     fn advance_animations(&mut self, current_time: Duration) {

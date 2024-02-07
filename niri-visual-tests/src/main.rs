@@ -16,6 +16,7 @@ use smithay::utils::{Logical, Size};
 use smithay_view::SmithayView;
 use tracing_subscriber::EnvFilter;
 
+use crate::cases::layout::Layout;
 use crate::cases::TestCase;
 
 mod cases;
@@ -84,6 +85,27 @@ fn build_ui(app: &adw::Application) {
     s.add(
         Tile::fixed_size_with_csd_shadow,
         "Fixed Size Tile - CSD Shadow",
+    );
+    s.add(Tile::freeform_open, "Freeform Tile - Open");
+    s.add(Tile::fixed_size_open, "Fixed Size Tile - Open");
+    s.add(
+        Tile::fixed_size_with_csd_shadow_open,
+        "Fixed Size Tile - CSD Shadow - Open",
+    );
+
+    s.add(Layout::open_in_between, "Layout - Open In-Between");
+    s.add(
+        Layout::open_multiple_quickly,
+        "Layout - Open Multiple Quickly",
+    );
+    s.add(
+        Layout::open_multiple_quickly_big,
+        "Layout - Open Multiple Quickly - Big",
+    );
+    s.add(Layout::open_to_the_left, "Layout - Open To The Left");
+    s.add(
+        Layout::open_to_the_left_big,
+        "Layout - Open To The Left - Big",
     );
 
     let content_headerbar = adw::HeaderBar::new();

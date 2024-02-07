@@ -3,13 +3,17 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::element::utils::{
+    Relocate, RelocateRenderElement, RescaleRenderElement,
+};
+use smithay::backend::renderer::element::{Element, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::FocusRing;
 use super::{LayoutElement, LayoutElementRenderElement, Options};
+use crate::animation::{Animation, Curve};
 use crate::niri_render_elements;
+use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 
 /// Toplevel window with decorations.
@@ -39,6 +43,9 @@ pub struct Tile<W: LayoutElement> {
     /// The size we were requested to fullscreen into.
     fullscreen_size: Size<i32, Logical>,
 
+    /// The animation upon opening a window.
+    open_animation: Option<Animation>,
+
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -47,6 +54,7 @@ niri_render_elements! {
     TileRenderElement => {
         LayoutElement = LayoutElementRenderElement<R>,
         SolidColor = RelocateRenderElement<SolidColorRenderElement>,
+        Offscreen = RescaleRenderElement<OffscreenRenderElement>,
     }
 }
 
@@ -59,6 +67,7 @@ impl<W: LayoutElement> Tile<W> {
             is_fullscreen: false, // FIXME: up-to-date fullscreen right away, but we need size.
             fullscreen_backdrop: SolidColorBuffer::new((0, 0), [0., 0., 0., 1.]),
             fullscreen_size: Default::default(),
+            open_animation: None,
             options,
         }
     }
@@ -76,7 +85,7 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    pub fn advance_animations(&mut self, _current_time: Duration, is_active: bool) {
+    pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
         let width = self.border.width();
         self.border.update(
             (width, width).into(),
@@ -88,6 +97,25 @@ impl<W: LayoutElement> Tile<W> {
         self.focus_ring
             .update((0, 0).into(), self.tile_size(), self.has_ssd());
         self.focus_ring.set_active(is_active);
+
+        match &mut self.open_animation {
+            Some(anim) => {
+                anim.set_current_time(current_time);
+                if anim.is_done() {
+                    self.open_animation = None;
+                }
+            }
+            None => (),
+        }
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        self.open_animation.is_some()
+    }
+
+    pub fn start_open_animation(&mut self) {
+        self.open_animation =
+            Some(Animation::new(0., 1., Duration::from_millis(150)).with_curve(Curve::EaseOutExpo));
     }
 
     pub fn window(&self) -> &W {
@@ -158,6 +186,22 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn window_size(&self) -> Size<i32, Logical> {
         self.window.size()
+    }
+
+    /// Returns an animated size of the tile for rendering and input.
+    ///
+    /// During the window opening animation, windows to the right should gradually slide further to
+    /// the right. This is what this visual size is used for. Other things like window resizes or
+    /// transactions or new view position calculation always use the real size, instead of this
+    /// visual size.
+    pub fn visual_tile_size(&self) -> Size<i32, Logical> {
+        let size = self.tile_size();
+        let v = self
+            .open_animation
+            .as_ref()
+            .map(|anim| anim.value())
+            .unwrap_or(1.);
+        Size::from(((f64::from(size.w) * v).round() as i32, size.h))
     }
 
     pub fn buf_loc(&self) -> Point<i32, Logical> {
@@ -251,7 +295,7 @@ impl<W: LayoutElement> Tile<W> {
         self.effective_border_width().is_some() || self.window.has_ssd()
     }
 
-    pub fn render<R: NiriRenderer>(
+    fn render_inner<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         location: Point<i32, Logical>,
@@ -299,5 +343,47 @@ impl<W: LayoutElement> Tile<W> {
             RelocateRenderElement::from_element(elem, (0, 0), Relocate::Relative).into()
         });
         rv.chain(elem)
+    }
+
+    pub fn render<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        focus_ring: bool,
+    ) -> impl Iterator<Item = TileRenderElement<R>> {
+        if let Some(anim) = &self.open_animation {
+            let renderer = renderer.as_gles_renderer();
+            let elements = self.render_inner(renderer, location, scale, focus_ring);
+            let elements = elements.collect::<Vec<TileRenderElement<_>>>();
+
+            let elem = OffscreenRenderElement::new(
+                renderer,
+                scale.x as i32,
+                &elements,
+                anim.value() as f32,
+            );
+            self.window()
+                .set_offscreen_element_id(Some(elem.id().clone()));
+
+            let mut center = location;
+            center.x += self.tile_size().w / 2;
+            center.y += self.tile_size().h / 2;
+
+            Some(TileRenderElement::Offscreen(
+                RescaleRenderElement::from_element(
+                    elem,
+                    center.to_physical_precise_round(scale),
+                    (anim.value() / 2. + 0.5).min(1.),
+                ),
+            ))
+            .into_iter()
+            .chain(None.into_iter().flatten())
+        } else {
+            self.window().set_offscreen_element_id(None);
+
+            let elements = self.render_inner(renderer, location, scale, focus_ring);
+            None.into_iter().chain(Some(elements).into_iter().flatten())
+        }
     }
 }

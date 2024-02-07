@@ -37,7 +37,7 @@ use std::time::Duration;
 use niri_config::{self, CenterFocusedColumn, Config, SizeChange, Struts};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::AsRenderElements;
+use smithay::backend::renderer::element::{AsRenderElements, Id};
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::Window;
 use smithay::output::Output;
@@ -52,6 +52,7 @@ pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch, WorkspaceSwitchGesture};
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::animation::Animation;
+use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::utils::output_size;
@@ -105,6 +106,7 @@ pub trait LayoutElement: PartialEq {
     fn set_preferred_scale_transform(&self, scale: i32, transform: Transform);
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
+    fn set_offscreen_element_id(&self, id: Option<Id>);
 
     /// Whether the element is currently fullscreen.
     ///
@@ -290,6 +292,11 @@ impl LayoutElement for Window {
 
     fn output_leave(&self, output: &Output) {
         SpaceElement::output_leave(self, output)
+    }
+
+    fn set_offscreen_element_id(&self, id: Option<Id>) {
+        let data = self.user_data().get_or_insert(WindowOffscreenId::default);
+        data.0.replace(id);
     }
 
     fn is_fullscreen(&self) -> bool {
@@ -1593,6 +1600,39 @@ impl<W: LayoutElement> Layout<W> {
         };
         monitor.move_workspace_up();
     }
+
+    pub fn start_open_animation_for_window(&mut self, window: &W) {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        for col in &mut ws.columns {
+                            for tile in &mut col.tiles {
+                                if tile.window() == window {
+                                    tile.start_open_animation();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        for col in &mut ws.columns {
+                            for tile in &mut col.tiles {
+                                if tile.window() == window {
+                                    tile.start_open_animation();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Layout<Window> {
@@ -1756,6 +1796,8 @@ mod tests {
         fn output_enter(&self, _output: &Output) {}
 
         fn output_leave(&self, _output: &Output) {}
+
+        fn set_offscreen_element_id(&self, _id: Option<Id>) {}
 
         fn is_fullscreen(&self) -> bool {
             false

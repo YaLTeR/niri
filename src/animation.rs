@@ -15,6 +15,13 @@ pub struct Animation {
     duration: Duration,
     start_time: Duration,
     current_time: Duration,
+    curve: Curve,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Curve {
+    EaseOutCubic,
+    EaseOutExpo,
 }
 
 impl Animation {
@@ -29,7 +36,13 @@ impl Animation {
             duration: over.mul_f64(ANIMATION_SLOWDOWN.load(Ordering::Relaxed)),
             start_time: now,
             current_time: now,
+            curve: Curve::EaseOutCubic,
         }
+    }
+
+    pub fn with_curve(mut self, curve: Curve) -> Self {
+        self.curve = curve;
+        self
     }
 
     pub fn set_current_time(&mut self, time: Duration) {
@@ -44,7 +57,7 @@ impl Animation {
         let passed = (self.current_time - self.start_time).as_secs_f64();
         let total = self.duration.as_secs_f64();
         let x = (passed / total).clamp(0., 1.);
-        EaseOutCubic.y(x) * (self.to - self.from) + self.from
+        self.curve.y(x) * (self.to - self.from) + self.from
     }
 
     pub fn to(&self) -> f64 {
@@ -54,5 +67,14 @@ impl Animation {
     #[cfg(test)]
     pub fn from(&self) -> f64 {
         self.from
+    }
+}
+
+impl Curve {
+    pub fn y(self, x: f64) -> f64 {
+        match self {
+            Curve::EaseOutCubic => EaseOutCubic.y(x),
+            Curve::EaseOutExpo => 1. - 2f64.powf(-10. * x),
+        }
     }
 }

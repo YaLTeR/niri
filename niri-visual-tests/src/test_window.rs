@@ -5,7 +5,7 @@ use std::rc::Rc;
 use niri::layout::{LayoutElement, LayoutElementRenderElement};
 use niri::render_helpers::renderer::NiriRenderer;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::element::{Id, Kind};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Size, Transform};
@@ -195,6 +195,8 @@ impl LayoutElement for TestWindow {
     fn output_enter(&self, _output: &Output) {}
 
     fn output_leave(&self, _output: &Output) {}
+
+    fn set_offscreen_element_id(&self, _id: Option<Id>) {}
 
     fn is_fullscreen(&self) -> bool {
         false
