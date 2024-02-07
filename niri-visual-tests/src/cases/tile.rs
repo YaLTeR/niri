@@ -44,6 +44,10 @@ impl JustTile {
 
     pub fn with_window(window: TestWindow) -> Self {
         let options = Options {
+            focus_ring: niri_config::FocusRing {
+                off: true,
+                ..Default::default()
+            },
             border: niri_config::FocusRing {
                 off: false,
                 width: 32,
