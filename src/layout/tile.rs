@@ -114,8 +114,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn start_open_animation(&mut self) {
-        self.open_animation =
-            Some(Animation::new(0., 1., Duration::from_millis(150)).with_curve(Curve::EaseOutExpo));
+        self.open_animation = Some(Animation::new(0., 1., 150).with_curve(Curve::EaseOutExpo));
     }
 
     pub fn window(&self) -> &W {

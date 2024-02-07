@@ -58,7 +58,7 @@ impl ConfigErrorNotification {
             self.buffers.borrow_mut().clear();
         }
 
-        self.state = State::Showing(Animation::new(0., 1., Duration::from_millis(250)));
+        self.state = State::Showing(Animation::new(0., 1., 250));
     }
 
     pub fn show(&mut self) {
@@ -68,7 +68,7 @@ impl ConfigErrorNotification {
         }
 
         // Show from scratch even if already showing to bring attention.
-        self.state = State::Showing(Animation::new(0., 1., Duration::from_millis(250)));
+        self.state = State::Showing(Animation::new(0., 1., 250));
     }
 
     pub fn hide(&mut self) {
@@ -76,7 +76,7 @@ impl ConfigErrorNotification {
             return;
         }
 
-        self.state = State::Hiding(Animation::new(1., 0., Duration::from_millis(250)));
+        self.state = State::Hiding(Animation::new(1., 0., 250));
     }
 
     pub fn advance_animations(&mut self, target_presentation_time: Duration) {

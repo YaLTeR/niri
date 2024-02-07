@@ -96,7 +96,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             current_idx,
             idx as f64,
-            Duration::from_millis(250),
+            250,
         )));
     }
 

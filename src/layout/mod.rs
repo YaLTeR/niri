@@ -1577,7 +1577,7 @@ impl<W: LayoutElement> Layout<W> {
                 monitor.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
                     current_idx,
                     idx as f64,
-                    Duration::from_millis(250),
+                    250,
                 )));
 
                 return Some(monitor.output.clone());

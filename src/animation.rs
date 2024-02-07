@@ -25,15 +25,17 @@ pub enum Curve {
 }
 
 impl Animation {
-    pub fn new(from: f64, to: f64, over: Duration) -> Self {
+    pub fn new(from: f64, to: f64, over_ms: u32) -> Self {
         // FIXME: ideally we shouldn't use current time here because animations started within the
         // same frame cycle should have the same start time to be synchronized.
         let now = get_monotonic_time();
 
+        let duration = Duration::from_millis(u64::from(over_ms))
+            .mul_f64(ANIMATION_SLOWDOWN.load(Ordering::Relaxed));
         Self {
             from,
             to,
-            duration: over.mul_f64(ANIMATION_SLOWDOWN.load(Ordering::Relaxed)),
+            duration,
             start_time: now,
             current_time: now,
             curve: Curve::EaseOutCubic,
