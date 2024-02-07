@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::Config;
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::FontDescription;
 use smithay::backend::renderer::element::memory::{
@@ -31,6 +33,8 @@ pub struct ConfigErrorNotification {
     // If set, this is a "Created config at {path}" notification. If unset, this is a config error
     // notification.
     created_path: Option<PathBuf>,
+
+    config: Rc<RefCell<Config>>,
 }
 
 enum State {
@@ -44,12 +48,23 @@ pub type ConfigErrorNotificationRenderElement<R> =
     RelocateRenderElement<MemoryRenderBufferRenderElement<R>>;
 
 impl ConfigErrorNotification {
-    pub fn new() -> Self {
+    pub fn new(config: Rc<RefCell<Config>>) -> Self {
         Self {
             state: State::Hidden,
             buffers: RefCell::new(HashMap::new()),
             created_path: None,
+            config,
         }
+    }
+
+    fn animation(&self, from: f64, to: f64) -> Animation {
+        let c = self.config.borrow();
+        Animation::new(
+            from,
+            to,
+            c.animations.config_notification_open_close,
+            niri_config::Animation::default_config_notification_open_close(),
+        )
     }
 
     pub fn show_created(&mut self, created_path: Option<PathBuf>) {
@@ -58,7 +73,7 @@ impl ConfigErrorNotification {
             self.buffers.borrow_mut().clear();
         }
 
-        self.state = State::Showing(Animation::new(0., 1., 250));
+        self.state = State::Showing(self.animation(0., 1.));
     }
 
     pub fn show(&mut self) {
@@ -68,7 +83,7 @@ impl ConfigErrorNotification {
         }
 
         // Show from scratch even if already showing to bring attention.
-        self.state = State::Showing(Animation::new(0., 1., 250));
+        self.state = State::Showing(self.animation(0., 1.));
     }
 
     pub fn hide(&mut self) {
@@ -76,7 +91,7 @@ impl ConfigErrorNotification {
             return;
         }
 
-        self.state = State::Hiding(Animation::new(1., 0., 250));
+        self.state = State::Hiding(self.animation(1., 0.));
     }
 
     pub fn advance_animations(&mut self, target_presentation_time: Duration) {
@@ -164,12 +179,6 @@ impl ConfigErrorNotification {
         let elem = RelocateRenderElement::from_element(elem, (x, y), Relocate::Absolute);
 
         Some(elem)
-    }
-}
-
-impl Default for ConfigErrorNotification {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

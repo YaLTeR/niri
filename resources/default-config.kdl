@@ -198,6 +198,52 @@ hotkey-overlay {
     // skip-at-startup
 }
 
+// Animation settings.
+animations {
+    // Uncomment to turn off all animations.
+    // off
+
+    // Slow down all animations by this factor. Values below 1 speed them up instead.
+    // slowdown 3.0
+
+    // You can configure all individual animations.
+    // Available settings are the same for all of them.
+
+    // Animation when switching workspaces up and down,
+    // including after the touchpad gesture.
+    workspace-switch {
+        // off
+        // duration-ms 250
+        // curve "ease-out-cubic"
+    }
+
+    // All horizontal camera view movement:
+    // - When a window off-screen is focused and the camera scrolls to it.
+    // - When a new window appears off-screen and the camera scrolls to it.
+    // - When a window resizes bigger and the camera scrolls to show it in full.
+    // - And so on.
+    horizontal-view-movement {
+        // off
+        // duration-ms 250
+        // curve "ease-out-cubic"
+    }
+
+    // Window opening animation. Note that this one has different defaults.
+    window-open {
+        // off
+        // duration-ms 150
+        // curve "ease-out-expo"
+    }
+
+    // Config parse error and new default config creation notification
+    // open/close animation.
+    config-notification-open-close {
+        // off
+        // duration-ms 250
+        // curve "ease-out-cubic"
+    }
+}
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program
@@ -384,9 +430,6 @@ debug {
     // Disable the use of the cursor plane.
     // The cursor will be rendered together with the rest of the frame.
     // disable-cursor-plane
-
-    // Slow down animations by this factor.
-    // animation-slowdown 3.0
 
     // Override the DRM device that niri will use for all rendering.
     // render-drm-device "/dev/dri/renderD129"

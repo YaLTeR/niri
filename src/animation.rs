@@ -25,26 +25,34 @@ pub enum Curve {
 }
 
 impl Animation {
-    pub fn new(from: f64, to: f64, over_ms: u32) -> Self {
+    pub fn new(
+        from: f64,
+        to: f64,
+        config: niri_config::Animation,
+        default: niri_config::Animation,
+    ) -> Self {
         // FIXME: ideally we shouldn't use current time here because animations started within the
         // same frame cycle should have the same start time to be synchronized.
         let now = get_monotonic_time();
 
-        let duration = Duration::from_millis(u64::from(over_ms))
+        let duration_ms = if config.off {
+            0
+        } else {
+            config.duration_ms.unwrap_or(default.duration_ms.unwrap())
+        };
+        let duration = Duration::from_millis(u64::from(duration_ms))
             .mul_f64(ANIMATION_SLOWDOWN.load(Ordering::Relaxed));
+
+        let curve = Curve::from(config.curve.unwrap_or(default.curve.unwrap()));
+
         Self {
             from,
             to,
             duration,
             start_time: now,
             current_time: now,
-            curve: Curve::EaseOutCubic,
+            curve,
         }
-    }
-
-    pub fn with_curve(mut self, curve: Curve) -> Self {
-        self.curve = curve;
-        self
     }
 
     pub fn set_current_time(&mut self, time: Duration) {
@@ -77,6 +85,15 @@ impl Curve {
         match self {
             Curve::EaseOutCubic => EaseOutCubic.y(x),
             Curve::EaseOutExpo => 1. - 2f64.powf(-10. * x),
+        }
+    }
+}
+
+impl From<niri_config::AnimationCurve> for Curve {
+    fn from(value: niri_config::AnimationCurve) -> Self {
+        match value {
+            niri_config::AnimationCurve::EaseOutCubic => Curve::EaseOutCubic,
+            niri_config::AnimationCurve::EaseOutExpo => Curve::EaseOutExpo,
         }
     }
 }

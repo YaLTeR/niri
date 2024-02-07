@@ -11,7 +11,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::FocusRing;
 use super::{LayoutElement, LayoutElementRenderElement, Options};
-use crate::animation::{Animation, Curve};
+use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -114,7 +114,12 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn start_open_animation(&mut self) {
-        self.open_animation = Some(Animation::new(0., 1., 150).with_curve(Curve::EaseOutExpo));
+        self.open_animation = Some(Animation::new(
+            0.,
+            1.,
+            self.options.animations.window_open,
+            niri_config::Animation::default_window_open(),
+        ));
     }
 
     pub fn window(&self) -> &W {

@@ -401,7 +401,8 @@ impl<W: LayoutElement> Workspace<W> {
         self.view_offset_anim = Some(Animation::new(
             self.view_offset as f64,
             new_view_offset as f64,
-            250,
+            self.options.animations.horizontal_view_movement,
+            niri_config::Animation::default_horizontal_view_movement(),
         ));
     }
 

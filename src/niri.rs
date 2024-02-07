@@ -581,7 +581,13 @@ impl State {
         self.niri.config_error_notification.hide();
 
         self.niri.layout.update_config(&config);
-        animation::ANIMATION_SLOWDOWN.store(config.debug.animation_slowdown, Ordering::Relaxed);
+
+        let slowdown = if config.animations.off {
+            0.
+        } else {
+            config.animations.slowdown
+        };
+        animation::ANIMATION_SLOWDOWN.store(slowdown, Ordering::Relaxed);
 
         let mut reload_xkb = None;
         let mut libinput_config_changed = false;
@@ -902,7 +908,7 @@ impl Niri {
             });
 
         let screenshot_ui = ScreenshotUi::new();
-        let config_error_notification = ConfigErrorNotification::new();
+        let config_error_notification = ConfigErrorNotification::new(config.clone());
 
         let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
         if !config_.hotkey_overlay.skip_at_startup {

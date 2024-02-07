@@ -36,6 +36,8 @@ pub struct Config {
     #[knuffel(child, default)]
     pub hotkey_overlay: HotkeyOverlay,
     #[knuffel(child, default)]
+    pub animations: Animations,
+    #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
     pub debug: DebugConfig,
@@ -399,6 +401,89 @@ pub struct HotkeyOverlay {
     pub skip_at_startup: bool,
 }
 
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Animations {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument), default = 1.)]
+    pub slowdown: f64,
+    #[knuffel(child, default = Animation::default_workspace_switch())]
+    pub workspace_switch: Animation,
+    #[knuffel(child, default = Animation::default_horizontal_view_movement())]
+    pub horizontal_view_movement: Animation,
+    #[knuffel(child, default = Animation::default_window_open())]
+    pub window_open: Animation,
+    #[knuffel(child, default = Animation::default_config_notification_open_close())]
+    pub config_notification_open_close: Animation,
+}
+
+impl Default for Animations {
+    fn default() -> Self {
+        Self {
+            off: false,
+            slowdown: 1.,
+            workspace_switch: Animation::default_workspace_switch(),
+            horizontal_view_movement: Animation::default_horizontal_view_movement(),
+            window_open: Animation::default_window_open(),
+            config_notification_open_close: Animation::default_config_notification_open_close(),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Animation {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub duration_ms: Option<u32>,
+    #[knuffel(child, unwrap(argument))]
+    pub curve: Option<AnimationCurve>,
+}
+
+impl Animation {
+    pub const fn unfilled() -> Self {
+        Self {
+            off: false,
+            duration_ms: None,
+            curve: None,
+        }
+    }
+
+    pub const fn default() -> Self {
+        Self {
+            off: false,
+            duration_ms: Some(250),
+            curve: Some(AnimationCurve::EaseOutCubic),
+        }
+    }
+
+    pub const fn default_workspace_switch() -> Self {
+        Self::default()
+    }
+
+    pub const fn default_horizontal_view_movement() -> Self {
+        Self::default()
+    }
+
+    pub const fn default_config_notification_open_close() -> Self {
+        Self::default()
+    }
+
+    pub const fn default_window_open() -> Self {
+        Self {
+            duration_ms: Some(150),
+            curve: Some(AnimationCurve::EaseOutExpo),
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+pub enum AnimationCurve {
+    EaseOutCubic,
+    EaseOutExpo,
+}
+
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Binds(#[knuffel(children)] pub Vec<Bind>);
 
@@ -515,10 +600,8 @@ pub enum LayoutAction {
     Prev,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct DebugConfig {
-    #[knuffel(child, unwrap(argument), default = 1.)]
-    pub animation_slowdown: f64,
     #[knuffel(child)]
     pub dbus_interfaces_in_non_session_instances: bool,
     #[knuffel(child)]
@@ -531,20 +614,6 @@ pub struct DebugConfig {
     pub disable_cursor_plane: bool,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
-}
-
-impl Default for DebugConfig {
-    fn default() -> Self {
-        Self {
-            animation_slowdown: 1.,
-            dbus_interfaces_in_non_session_instances: false,
-            wait_for_frame_completion_before_queueing: false,
-            enable_color_transformations_capability: false,
-            enable_overlay_planes: false,
-            disable_cursor_plane: false,
-            render_drm_device: None,
-        }
-    }
 }
 
 impl Config {
@@ -841,6 +910,17 @@ mod tests {
                 skip-at-startup
             }
 
+            animations {
+                slowdown 2.0
+
+                workspace-switch { off; }
+
+                horizontal-view-movement {
+                    duration-ms 100
+                    curve "ease-out-expo"
+                }
+            }
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -851,7 +931,6 @@ mod tests {
             }
 
             debug {
-                animation-slowdown 2.0
                 render-drm-device "/dev/dri/renderD129"
             }
             "#,
@@ -961,6 +1040,19 @@ mod tests {
                 hotkey_overlay: HotkeyOverlay {
                     skip_at_startup: true,
                 },
+                animations: Animations {
+                    slowdown: 2.,
+                    workspace_switch: Animation {
+                        off: true,
+                        ..Animation::unfilled()
+                    },
+                    horizontal_view_movement: Animation {
+                        duration_ms: Some(100),
+                        curve: Some(AnimationCurve::EaseOutExpo),
+                        ..Animation::unfilled()
+                    },
+                    ..Default::default()
+                },
                 binds: Binds(vec![
                     Bind {
                         key: Key {
@@ -1006,7 +1098,6 @@ mod tests {
                     },
                 ]),
                 debug: DebugConfig {
-                    animation_slowdown: 2.,
                     render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
                 },

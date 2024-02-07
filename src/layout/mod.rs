@@ -158,6 +158,7 @@ pub struct Options {
     pub preset_widths: Vec<ColumnWidth>,
     /// Initial width for new columns.
     pub default_width: Option<ColumnWidth>,
+    pub animations: niri_config::Animations,
 }
 
 impl Default for Options {
@@ -174,6 +175,7 @@ impl Default for Options {
                 ColumnWidth::Proportion(2. / 3.),
             ],
             default_width: None,
+            animations: Default::default(),
         }
     }
 }
@@ -209,6 +211,7 @@ impl Options {
             center_focused_column: layout.center_focused_column,
             preset_widths,
             default_width,
+            animations: config.animations,
         }
     }
 }
@@ -1577,7 +1580,8 @@ impl<W: LayoutElement> Layout<W> {
                 monitor.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
                     current_idx,
                     idx as f64,
-                    250,
+                    self.options.animations.workspace_switch,
+                    niri_config::Animation::default_workspace_switch(),
                 )));
 
                 return Some(monitor.output.clone());

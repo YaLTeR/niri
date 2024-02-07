@@ -96,7 +96,8 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             current_idx,
             idx as f64,
-            250,
+            self.options.animations.workspace_switch,
+            niri_config::Animation::default_workspace_switch(),
         )));
     }
 
