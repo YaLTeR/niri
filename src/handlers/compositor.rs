@@ -97,7 +97,11 @@ impl CompositorHandler for State {
             // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
             if let Entry::Occupied(entry) = self.niri.unmapped_windows.entry(surface.clone()) {
                 let is_mapped =
-                    with_renderer_surface_state(surface, |state| state.buffer().is_some());
+                    with_renderer_surface_state(surface, |state| state.buffer().is_some())
+                        .unwrap_or_else(|| {
+                            error!("no renderer surface state even though we use commit handler");
+                            false
+                        });
 
                 if is_mapped {
                     // The toplevel got mapped.
@@ -140,7 +144,11 @@ impl CompositorHandler for State {
 
                 // This is a commit of a previously-mapped toplevel.
                 let is_mapped =
-                    with_renderer_surface_state(surface, |state| state.buffer().is_some());
+                    with_renderer_surface_state(surface, |state| state.buffer().is_some())
+                        .unwrap_or_else(|| {
+                            error!("no renderer surface state even though we use commit handler");
+                            false
+                        });
 
                 if !is_mapped {
                     // The toplevel got unmapped.

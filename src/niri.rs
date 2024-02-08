@@ -50,7 +50,7 @@ use smithay::reexports::wayland_server::backend::{
     ClientData, ClientId, DisconnectReason, GlobalId,
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{Display, DisplayHandle};
+use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
 use smithay::utils::{
     ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
     SERIAL_COUNTER,
@@ -61,6 +61,8 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
+use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::input_method::{InputMethodManagerState, InputMethodSeat};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
@@ -160,6 +162,8 @@ pub struct Niri {
     pub pointer_gestures_state: PointerGesturesState,
     pub relative_pointer_state: RelativePointerManagerState,
     pub pointer_constraints_state: PointerConstraintsState,
+    pub idle_notifier_state: IdleNotifierState<State>,
+    pub idle_inhibit_manager_state: IdleInhibitManagerState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
     pub data_control_state: DataControlState,
@@ -175,6 +179,8 @@ pub struct Niri {
     // popup grabs are active (which means the real keyboard focus is on a popup descending from
     // this toplevel surface).
     pub keyboard_focus: Option<WlSurface>,
+
+    pub idle_inhibiting_surfaces: HashSet<WlSurface>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -328,6 +334,7 @@ impl State {
         self.niri.cursor_manager.check_cursor_image_surface_alive();
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
+        self.niri.refresh_idle_inhibit();
         self.refresh_popup_grab();
         self.update_keyboard_focus();
         self.refresh_pointer_focus();
@@ -848,6 +855,8 @@ impl Niri {
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
         let relative_pointer_state = RelativePointerManagerState::new::<State>(&display_handle);
         let pointer_constraints_state = PointerConstraintsState::new::<State>(&display_handle);
+        let idle_notifier_state = IdleNotifierState::new(&display_handle, event_loop.clone());
+        let idle_inhibit_manager_state = IdleInhibitManagerState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
         let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
         let data_control_state = DataControlState::new::<State, _>(
@@ -1006,6 +1015,8 @@ impl Niri {
             pointer_gestures_state,
             relative_pointer_state,
             pointer_constraints_state,
+            idle_notifier_state,
+            idle_inhibit_manager_state,
             data_device_state,
             primary_selection_state,
             data_control_state,
@@ -1017,6 +1028,7 @@ impl Niri {
 
             seat,
             keyboard_focus: None,
+            idle_inhibiting_surfaces: HashSet::new(),
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
@@ -1861,6 +1873,19 @@ impl Niri {
                 });
             }
         }
+    }
+
+    pub fn refresh_idle_inhibit(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_idle_inhibit");
+
+        self.idle_inhibiting_surfaces.retain(|s| s.is_alive());
+
+        let is_inhibited = self.idle_inhibiting_surfaces.iter().any(|surface| {
+            with_states(surface, |states| {
+                surface_primary_scanout_output(surface, states).is_some()
+            })
+        });
+        self.idle_notifier_state.set_is_inhibited(is_inhibited);
     }
 
     pub fn render<R: NiriRenderer>(

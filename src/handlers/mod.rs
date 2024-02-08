@@ -22,6 +22,8 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle, Size};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
+use smithay::wayland::idle_inhibit::IdleInhibitHandler;
+use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::output::OutputHandler;
 use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
@@ -42,10 +44,11 @@ use smithay::wayland::session_lock::{
 };
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
-    delegate_input_method_manager, delegate_output, delegate_pointer_constraints,
-    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
-    delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_virtual_keyboard_manager,
+    delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager, delegate_output,
+    delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
+    delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_session_lock, delegate_tablet_manager,
+    delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
 use crate::delegate_foreign_toplevel;
@@ -299,6 +302,24 @@ impl SecurityContextHandler for State {
     }
 }
 delegate_security_context!(State);
+
+impl IdleNotifierHandler for State {
+    fn idle_notifier_state(&mut self) -> &mut IdleNotifierState<Self> {
+        &mut self.niri.idle_notifier_state
+    }
+}
+delegate_idle_notify!(State);
+
+impl IdleInhibitHandler for State {
+    fn inhibit(&mut self, surface: WlSurface) {
+        self.niri.idle_inhibiting_surfaces.insert(surface);
+    }
+
+    fn uninhibit(&mut self, surface: WlSurface) {
+        self.niri.idle_inhibiting_surfaces.remove(&surface);
+    }
+}
+delegate_idle_inhibit!(State);
 
 impl ForeignToplevelHandler for State {
     fn foreign_toplevel_manager_state(&mut self) -> &mut ForeignToplevelManagerState {

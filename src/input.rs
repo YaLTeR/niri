@@ -49,9 +49,24 @@ impl State {
         // here.
         self.niri.layout.advance_animations(get_monotonic_time());
 
-        // Power on monitors if they were off.
-        if should_activate_monitors(&event) {
-            self.niri.activate_monitors(&mut self.backend);
+        if self.niri.monitors_active {
+            // Notify the idle-notifier of activity.
+            if should_notify_activity(&event) {
+                self.niri
+                    .idle_notifier_state
+                    .notify_activity(&self.niri.seat);
+            }
+        } else {
+            // Power on monitors if they were off.
+            if should_activate_monitors(&event) {
+                self.niri.activate_monitors(&mut self.backend);
+
+                // Notify the idle-notifier of activity only if we're also powering on the
+                // monitors.
+                self.niri
+                    .idle_notifier_state
+                    .notify_activity(&self.niri.seat);
+            }
         }
 
         let hide_hotkey_overlay =
@@ -1494,6 +1509,13 @@ fn should_hide_exit_confirm_dialog<I: InputBackend>(event: &InputEvent<I>) -> bo
         | InputEvent::TabletToolTip { .. }
         | InputEvent::TabletToolButton { .. } => true,
         _ => false,
+    }
+}
+
+fn should_notify_activity<I: InputBackend>(event: &InputEvent<I>) -> bool {
+    match event {
+        InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. } => false,
+        _ => true,
     }
 }
 
