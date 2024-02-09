@@ -1421,6 +1421,15 @@ fn action(
         _ => (),
     }
 
+    bound_action(bindings, comp_mod, raw, mods)
+}
+
+fn bound_action(
+    bindings: &Binds,
+    comp_mod: CompositorMod,
+    raw: Option<Keysym>,
+    mods: ModifiersState,
+) -> Option<Action> {
     // Handle configured binds.
     let mut modifiers = Modifiers::empty();
     if mods.ctrl {
@@ -1719,5 +1728,160 @@ mod tests {
 
         // Ensure that no keys are being suppressed.
         assert!(suppressed_keys.is_empty());
+    }
+
+    #[test]
+    fn comp_mod_handling() {
+        let bindings = Binds(vec![
+            Bind {
+                key: Key {
+                    keysym: Keysym::q,
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                actions: vec![Action::CloseWindow],
+            },
+            Bind {
+                key: Key {
+                    keysym: Keysym::h,
+                    modifiers: Modifiers::SUPER,
+                },
+                actions: vec![Action::FocusColumnLeft],
+            },
+            Bind {
+                key: Key {
+                    keysym: Keysym::j,
+                    modifiers: Modifiers::empty(),
+                },
+                actions: vec![Action::FocusWindowDown],
+            },
+            Bind {
+                key: Key {
+                    keysym: Keysym::k,
+                    modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
+                },
+                actions: vec![Action::FocusWindowUp],
+            },
+            Bind {
+                key: Key {
+                    keysym: Keysym::l,
+                    modifiers: Modifiers::SUPER | Modifiers::ALT,
+                },
+                actions: vec![Action::FocusColumnRight],
+            },
+        ]);
+
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::q),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                }
+            ),
+            Some(Action::CloseWindow)
+        );
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::q),
+                ModifiersState::default(),
+            ),
+            None,
+        );
+
+        // assert_eq!(
+        //     bound_action(
+        //         &bindings,
+        //         CompositorMod::Super,
+        //         Some(Keysym::h),
+        //         ModifiersState {
+        //             logo: true,
+        //             ..Default::default()
+        //         }
+        //     ),
+        //     Some(Action::FocusColumnLeft)
+        // );
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::h),
+                ModifiersState::default(),
+            ),
+            None,
+        );
+
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::j),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                }
+            ),
+            None,
+        );
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::j),
+                ModifiersState::default(),
+            ),
+            Some(Action::FocusWindowDown)
+        );
+
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::k),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                }
+            ),
+            Some(Action::FocusWindowUp)
+        );
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::k),
+                ModifiersState::default(),
+            ),
+            None,
+        );
+
+        // assert_eq!(
+        //     bound_action(
+        //         &bindings,
+        //         CompositorMod::Super,
+        //         Some(Keysym::l),
+        //         ModifiersState {
+        //             logo: true,
+        //             alt: true,
+        //             ..Default::default()
+        //         }
+        //     ),
+        //     Some(Action::FocusColumnRight)
+        // );
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::l),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                },
+            ),
+            None,
+        );
     }
 }
