@@ -1445,14 +1445,12 @@ fn bound_action(
         modifiers |= Modifiers::SUPER;
     }
 
-    let (mod_down, mut comp_mod) = match comp_mod {
+    let (mod_down, comp_mod) = match comp_mod {
         CompositorMod::Super => (mods.logo, Modifiers::SUPER),
         CompositorMod::Alt => (mods.alt, Modifiers::ALT),
     };
     if mod_down {
         modifiers |= Modifiers::COMPOSITOR;
-    } else {
-        comp_mod = Modifiers::empty();
     }
 
     let raw = raw?;
@@ -1462,7 +1460,14 @@ fn bound_action(
             continue;
         }
 
-        if bind.key.modifiers | comp_mod == modifiers {
+        let mut bind_modifiers = bind.key.modifiers;
+        if bind_modifiers.contains(Modifiers::COMPOSITOR) {
+            bind_modifiers |= comp_mod;
+        } else if bind_modifiers.contains(comp_mod) {
+            bind_modifiers |= Modifiers::COMPOSITOR;
+        }
+
+        if bind_modifiers == modifiers {
             return bind.actions.first().cloned();
         }
     }
@@ -1792,18 +1797,18 @@ mod tests {
             None,
         );
 
-        // assert_eq!(
-        //     bound_action(
-        //         &bindings,
-        //         CompositorMod::Super,
-        //         Some(Keysym::h),
-        //         ModifiersState {
-        //             logo: true,
-        //             ..Default::default()
-        //         }
-        //     ),
-        //     Some(Action::FocusColumnLeft)
-        // );
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::h),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                }
+            ),
+            Some(Action::FocusColumnLeft)
+        );
         assert_eq!(
             bound_action(
                 &bindings,
@@ -1858,19 +1863,19 @@ mod tests {
             None,
         );
 
-        // assert_eq!(
-        //     bound_action(
-        //         &bindings,
-        //         CompositorMod::Super,
-        //         Some(Keysym::l),
-        //         ModifiersState {
-        //             logo: true,
-        //             alt: true,
-        //             ..Default::default()
-        //         }
-        //     ),
-        //     Some(Action::FocusColumnRight)
-        // );
+        assert_eq!(
+            bound_action(
+                &bindings,
+                CompositorMod::Super,
+                Some(Keysym::l),
+                ModifiersState {
+                    logo: true,
+                    alt: true,
+                    ..Default::default()
+                }
+            ),
+            Some(Action::FocusColumnRight)
+        );
         assert_eq!(
             bound_action(
                 &bindings,
