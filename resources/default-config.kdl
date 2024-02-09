@@ -259,7 +259,7 @@ binds {
     // Suggested binds for running programs: terminal, app launcher, screen locker.
     Mod+T { spawn "alacritty"; }
     Mod+D { spawn "fuzzel"; }
-    Mod+Alt+L { spawn "swaylock"; }
+    Super+Alt+L { spawn "swaylock"; }
 
     // You can also use a shell:
     // Mod+T { spawn "bash" "-c" "notify-send hello && exec alacritty"; }
