@@ -143,3 +143,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --all
 
+  nix:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check flake inputs
+        uses: DeterminateSystems/flake-checker-action@v4
+        continue-on-error: true
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v3
+        continue-on-error: true
+
+      - run: nix build
+        continue-on-error: true
