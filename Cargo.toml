@@ -12,7 +12,6 @@ repository = "https://github.com/YaLTeR/niri"
 [workspace.dependencies]
 anyhow = "1.0.79"
 bitflags = "2.4.2"
-directories = "5.0.1"
 serde = { version = "1.0.196", features = ["derive"] }
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
