@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::SizeChange;
+use niri_ipc::SizeChange;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };

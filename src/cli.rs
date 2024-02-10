@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use niri_ipc::Action;
 
 use crate::utils::version;
 
@@ -46,4 +47,9 @@ pub enum Sub {
 pub enum Msg {
     /// List connected outputs.
     Outputs,
+    /// Perform an action.
+    Action {
+        #[command(subcommand)]
+        action: Action,
+    },
 }

@@ -19,8 +19,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
     let mut stream =
         UnixStream::connect(socket_path).context("error connecting to {socket_path}")?;
 
-    let request = match msg {
+    let request = match &msg {
         Msg::Outputs => Request::Outputs,
+        Msg::Action { action } => Request::Action(action.clone()),
     };
     let mut buf = serde_json::to_vec(&request).unwrap();
     stream
@@ -34,6 +35,14 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
     stream
         .read_to_end(&mut buf)
         .context("error reading IPC response")?;
+
+    if matches!(msg, Msg::Action { .. }) {
+        if buf.is_empty() {
+            return Ok(());
+        } else {
+            bail!("unexpected response: expected no response, got {buf:?}");
+        }
+    }
 
     let response = serde_json::from_slice(&buf).context("error parsing IPC response")?;
     match msg {
@@ -100,6 +109,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!();
             }
         }
+        Msg::Action { .. } => unreachable!(),
     }
 
     Ok(())

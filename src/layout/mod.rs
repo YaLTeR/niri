@@ -34,7 +34,8 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{self, CenterFocusedColumn, Config, SizeChange, Struts};
+use niri_config::{self, CenterFocusedColumn, Config, Struts};
+use niri_ipc::SizeChange;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::{AsRenderElements, Id};

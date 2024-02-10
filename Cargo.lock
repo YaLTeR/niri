@@ -2093,6 +2093,7 @@ dependencies = [
  "bitflags 2.4.2",
  "knuffel",
  "miette",
+ "niri-ipc",
  "smithay",
  "tracing",
  "tracy-client",
@@ -2102,6 +2103,7 @@ dependencies = [
 name = "niri-ipc"
 version = "0.1.1"
 dependencies = [
+ "clap",
  "serde",
 ]
 

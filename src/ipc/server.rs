@@ -22,6 +22,7 @@ pub struct IpcServer {
 }
 
 struct ClientCtx {
+    event_loop: LoopHandle<'static, State>,
     ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
 }
 
@@ -85,6 +86,7 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
     };
 
     let ctx = ClientCtx {
+        event_loop: state.niri.event_loop.clone(),
         ipc_outputs: state.backend.ipc_outputs(),
     };
 
@@ -114,6 +116,13 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.borrow().clone();
             Response::Outputs(ipc_outputs)
+        }
+        Request::Action(action) => {
+            let action = niri_config::Action::from(action);
+            ctx.event_loop.insert_idle(move |state| {
+                state.do_action(action);
+            });
+            return Ok(());
         }
     };
 

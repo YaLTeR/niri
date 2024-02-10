@@ -3,7 +3,8 @@ use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, PresetWidth, SizeChange, Struts};
+use niri_config::{CenterFocusedColumn, PresetWidth, Struts};
+use niri_ipc::SizeChange;
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;

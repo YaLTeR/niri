@@ -1,7 +1,8 @@
 use std::any::Any;
 use std::collections::HashSet;
 
-use niri_config::{Action, Binds, LayoutAction, Modifiers};
+use niri_config::{Action, Binds, Modifiers};
+use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -273,6 +274,10 @@ impl State {
             return;
         }
 
+        self.do_action(action);
+    }
+
+    pub fn do_action(&mut self, action: Action) {
         if self.niri.is_locked() && !allowed_when_locked(&action) {
             return;
         }
@@ -377,8 +382,8 @@ impl State {
                 self.niri.seat.get_keyboard().unwrap().with_xkb_state(
                     self,
                     |mut state| match action {
-                        LayoutAction::Next => state.cycle_next_layout(),
-                        LayoutAction::Prev => state.cycle_prev_layout(),
+                        LayoutSwitchTarget::Next => state.cycle_next_layout(),
+                        LayoutSwitchTarget::Prev => state.cycle_prev_layout(),
                     },
                 );
             }

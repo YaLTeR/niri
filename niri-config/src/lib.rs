@@ -6,6 +6,7 @@ use std::str::FromStr;
 
 use bitflags::bitflags;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
+use niri_ipc::{LayoutSwitchTarget, SizeChange};
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
@@ -512,6 +513,7 @@ bitflags! {
     }
 }
 
+// Remember to add new actions to the CLI enum too.
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub enum Action {
     Quit,
@@ -578,7 +580,7 @@ pub enum Action {
     SwitchPresetColumnWidth,
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
-    SwitchLayout(#[knuffel(argument)] LayoutAction),
+    SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
     ShowHotkeyOverlay,
     MoveWorkspaceToMonitorLeft,
     MoveWorkspaceToMonitorRight,
@@ -586,18 +588,76 @@ pub enum Action {
     MoveWorkspaceToMonitorUp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SizeChange {
-    SetFixed(i32),
-    SetProportion(f64),
-    AdjustFixed(i32),
-    AdjustProportion(f64),
-}
-
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
-pub enum LayoutAction {
-    Next,
-    Prev,
+impl From<niri_ipc::Action> for Action {
+    fn from(value: niri_ipc::Action) -> Self {
+        match value {
+            niri_ipc::Action::Quit => Self::Quit,
+            niri_ipc::Action::PowerOffMonitors => Self::PowerOffMonitors,
+            niri_ipc::Action::Spawn { command } => Self::Spawn(command),
+            niri_ipc::Action::Screenshot => Self::Screenshot,
+            niri_ipc::Action::ScreenshotScreen => Self::ScreenshotScreen,
+            niri_ipc::Action::ScreenshotWindow => Self::ScreenshotWindow,
+            niri_ipc::Action::CloseWindow => Self::CloseWindow,
+            niri_ipc::Action::FullscreenWindow => Self::FullscreenWindow,
+            niri_ipc::Action::FocusColumnLeft => Self::FocusColumnLeft,
+            niri_ipc::Action::FocusColumnRight => Self::FocusColumnRight,
+            niri_ipc::Action::FocusColumnFirst => Self::FocusColumnFirst,
+            niri_ipc::Action::FocusColumnLast => Self::FocusColumnLast,
+            niri_ipc::Action::FocusWindowDown => Self::FocusWindowDown,
+            niri_ipc::Action::FocusWindowUp => Self::FocusWindowUp,
+            niri_ipc::Action::FocusWindowOrWorkspaceDown => Self::FocusWindowOrWorkspaceDown,
+            niri_ipc::Action::FocusWindowOrWorkspaceUp => Self::FocusWindowOrWorkspaceUp,
+            niri_ipc::Action::MoveColumnLeft => Self::MoveColumnLeft,
+            niri_ipc::Action::MoveColumnRight => Self::MoveColumnRight,
+            niri_ipc::Action::MoveColumnToFirst => Self::MoveColumnToFirst,
+            niri_ipc::Action::MoveColumnToLast => Self::MoveColumnToLast,
+            niri_ipc::Action::MoveWindowDown => Self::MoveWindowDown,
+            niri_ipc::Action::MoveWindowUp => Self::MoveWindowUp,
+            niri_ipc::Action::MoveWindowDownOrToWorkspaceDown => {
+                Self::MoveWindowDownOrToWorkspaceDown
+            }
+            niri_ipc::Action::MoveWindowUpOrToWorkspaceUp => Self::MoveWindowUpOrToWorkspaceUp,
+            niri_ipc::Action::ConsumeOrExpelWindowLeft => Self::ConsumeOrExpelWindowLeft,
+            niri_ipc::Action::ConsumeOrExpelWindowRight => Self::ConsumeOrExpelWindowRight,
+            niri_ipc::Action::ConsumeWindowIntoColumn => Self::ConsumeWindowIntoColumn,
+            niri_ipc::Action::ExpelWindowFromColumn => Self::ExpelWindowFromColumn,
+            niri_ipc::Action::CenterColumn => Self::CenterColumn,
+            niri_ipc::Action::FocusWorkspaceDown => Self::FocusWorkspaceDown,
+            niri_ipc::Action::FocusWorkspaceUp => Self::FocusWorkspaceUp,
+            niri_ipc::Action::FocusWorkspace { index } => Self::FocusWorkspace(index),
+            niri_ipc::Action::MoveWindowToWorkspaceDown => Self::MoveWindowToWorkspaceDown,
+            niri_ipc::Action::MoveWindowToWorkspaceUp => Self::MoveWindowToWorkspaceUp,
+            niri_ipc::Action::MoveWindowToWorkspace { index } => Self::MoveWindowToWorkspace(index),
+            niri_ipc::Action::MoveColumnToWorkspaceDown => Self::MoveColumnToWorkspaceDown,
+            niri_ipc::Action::MoveColumnToWorkspaceUp => Self::MoveColumnToWorkspaceUp,
+            niri_ipc::Action::MoveColumnToWorkspace { index } => Self::MoveColumnToWorkspace(index),
+            niri_ipc::Action::MoveWorkspaceDown => Self::MoveWorkspaceDown,
+            niri_ipc::Action::MoveWorkspaceUp => Self::MoveWorkspaceUp,
+            niri_ipc::Action::FocusMonitorLeft => Self::FocusMonitorLeft,
+            niri_ipc::Action::FocusMonitorRight => Self::FocusMonitorRight,
+            niri_ipc::Action::FocusMonitorDown => Self::FocusMonitorDown,
+            niri_ipc::Action::FocusMonitorUp => Self::FocusMonitorUp,
+            niri_ipc::Action::MoveWindowToMonitorLeft => Self::MoveWindowToMonitorLeft,
+            niri_ipc::Action::MoveWindowToMonitorRight => Self::MoveWindowToMonitorRight,
+            niri_ipc::Action::MoveWindowToMonitorDown => Self::MoveWindowToMonitorDown,
+            niri_ipc::Action::MoveWindowToMonitorUp => Self::MoveWindowToMonitorUp,
+            niri_ipc::Action::MoveColumnToMonitorLeft => Self::MoveColumnToMonitorLeft,
+            niri_ipc::Action::MoveColumnToMonitorRight => Self::MoveColumnToMonitorRight,
+            niri_ipc::Action::MoveColumnToMonitorDown => Self::MoveColumnToMonitorDown,
+            niri_ipc::Action::MoveColumnToMonitorUp => Self::MoveColumnToMonitorUp,
+            niri_ipc::Action::SetWindowHeight { change } => Self::SetWindowHeight(change),
+            niri_ipc::Action::SwitchPresetColumnWidth => Self::SwitchPresetColumnWidth,
+            niri_ipc::Action::MaximizeColumn => Self::MaximizeColumn,
+            niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
+            niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),
+            niri_ipc::Action::ShowHotkeyOverlay => Self::ShowHotkeyOverlay,
+            niri_ipc::Action::MoveWorkspaceToMonitorLeft => Self::MoveWorkspaceToMonitorLeft,
+            niri_ipc::Action::MoveWorkspaceToMonitorRight => Self::MoveWorkspaceToMonitorRight,
+            niri_ipc::Action::MoveWorkspaceToMonitorDown => Self::MoveWorkspaceToMonitorDown,
+            niri_ipc::Action::MoveWorkspaceToMonitorUp => Self::MoveWorkspaceToMonitorUp,
+            niri_ipc::Action::ToggleDebugTint => Self::ToggleDebugTint,
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -715,58 +775,6 @@ impl FromStr for Key {
         }
 
         Ok(Key { keysym, modifiers })
-    }
-}
-
-impl FromStr for SizeChange {
-    type Err = miette::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.split_once('%') {
-            Some((value, empty)) => {
-                if !empty.is_empty() {
-                    return Err(miette!("trailing characters after '%' are not allowed"));
-                }
-
-                match value.bytes().next() {
-                    Some(b'-' | b'+') => {
-                        let value = value
-                            .parse()
-                            .into_diagnostic()
-                            .context("error parsing value")?;
-                        Ok(Self::AdjustProportion(value))
-                    }
-                    Some(_) => {
-                        let value = value
-                            .parse()
-                            .into_diagnostic()
-                            .context("error parsing value")?;
-                        Ok(Self::SetProportion(value))
-                    }
-                    None => Err(miette!("value is missing")),
-                }
-            }
-            None => {
-                let value = s;
-                match value.bytes().next() {
-                    Some(b'-' | b'+') => {
-                        let value = value
-                            .parse()
-                            .into_diagnostic()
-                            .context("error parsing value")?;
-                        Ok(Self::AdjustFixed(value))
-                    }
-                    Some(_) => {
-                        let value = value
-                            .parse()
-                            .into_diagnostic()
-                            .context("error parsing value")?;
-                        Ok(Self::SetFixed(value))
-                    }
-                    None => Err(miette!("value is missing")),
-                }
-            }
-        }
     }
 }
 
