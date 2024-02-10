@@ -216,10 +216,12 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     }
 
     // Add the spawn actions.
-    for bind in binds
-        .iter()
-        .filter(|bind| matches!(bind.actions.first(), Some(Action::Spawn(_))))
-    {
+    for bind in binds.iter().filter(|bind| {
+        matches!(bind.actions.first(), Some(Action::Spawn(_)))
+            // Only show binds with Mod or Super to filter out stuff like volume up/down.
+            && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
+                || bind.key.modifiers.contains(Modifiers::SUPER))
+    }) {
         actions.push(bind.actions.first().unwrap());
     }
 
