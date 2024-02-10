@@ -1527,10 +1527,10 @@ fn should_hide_exit_confirm_dialog<I: InputBackend>(event: &InputEvent<I>) -> bo
 }
 
 fn should_notify_activity<I: InputBackend>(event: &InputEvent<I>) -> bool {
-    match event {
-        InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. } => false,
-        _ => true,
-    }
+    !matches!(
+        event,
+        InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. }
+    )
 }
 
 fn allowed_when_locked(action: &Action) -> bool {
