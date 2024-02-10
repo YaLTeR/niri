@@ -1509,9 +1509,17 @@ fn refresh_interval(mode: DrmMode) -> Duration {
 #[cfg(feature = "dbus")]
 fn suspend() -> anyhow::Result<()> {
     let conn = zbus::blocking::Connection::system().context("error connecting to system bus")?;
-    let manager = logind_zbus::manager::ManagerProxyBlocking::new(&conn)
-        .context("error creating login manager proxy")?;
-    manager.suspend(true).context("error suspending")
+
+    conn.call_method(
+        Some("org.freedesktop.login1"),
+        "/org/freedesktop/login1",
+        Some("org.freedesktop.login1.Manager"),
+        "Suspend",
+        &(true),
+    )
+    .context("error suspending")?;
+
+    Ok(())
 }
 
 fn queue_estimated_vblank_timer(
