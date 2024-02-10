@@ -7,18 +7,22 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use anyhow::Context as _;
-use pipewire::spa::data::DataType;
-use pipewire::spa::format::{FormatProperties, MediaSubtype, MediaType};
+use pipewire::context::Context;
+use pipewire::core::Core;
+use pipewire::main_loop::MainLoop;
+use pipewire::properties::Properties;
+use pipewire::spa::buffer::DataType;
+use pipewire::spa::param::format::{FormatProperties, MediaSubtype, MediaType};
 use pipewire::spa::param::format_utils::parse_format;
 use pipewire::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pipewire::spa::param::ParamType;
 use pipewire::spa::pod::serialize::PodSerializer;
 use pipewire::spa::pod::{self, ChoiceValue, Pod, Property, PropertyFlags};
 use pipewire::spa::sys::*;
-use pipewire::spa::utils::{Choice, ChoiceEnum, ChoiceFlags, Fraction, Rectangle, SpaTypes};
-use pipewire::spa::Direction;
+use pipewire::spa::utils::{
+    Choice, ChoiceEnum, ChoiceFlags, Direction, Fraction, Rectangle, SpaTypes,
+};
 use pipewire::stream::{Stream, StreamFlags, StreamListener, StreamState};
-use pipewire::{Context, Core, MainLoop, Properties};
 use smithay::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use smithay::backend::allocator::gbm::{GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::Fourcc;
@@ -34,13 +38,13 @@ use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri};
 use crate::niri::State;
 
 pub struct PipeWire {
-    _context: Context<MainLoop>,
+    _context: Context,
     pub core: Core,
 }
 
 pub struct Cast {
     pub session_id: usize,
-    pub stream: Rc<Stream>,
+    pub stream: Stream,
     _listener: StreamListener<()>,
     pub is_active: Rc<Cell<bool>>,
     pub output: Output,
@@ -53,7 +57,7 @@ pub struct Cast {
 
 impl PipeWire {
     pub fn new(event_loop: &LoopHandle<'static, State>) -> anyhow::Result<Self> {
-        let main_loop = MainLoop::new().context("error creating MainLoop")?;
+        let main_loop = MainLoop::new(None).context("error creating MainLoop")?;
         let context = Context::new(&main_loop).context("error creating Context")?;
         let core = context.connect(None).context("error creating Core")?;
 
@@ -68,14 +72,14 @@ impl PipeWire {
         struct AsFdWrapper(MainLoop);
         impl AsFd for AsFdWrapper {
             fn as_fd(&self) -> BorrowedFd<'_> {
-                self.0.fd()
+                self.0.loop_().fd()
             }
         }
         let generic = Generic::new(AsFdWrapper(main_loop), Interest::READ, Mode::Level);
         event_loop
             .insert_source(generic, move |_, wrapper, _| {
                 let _span = tracy_client::span!("pipewire iteration");
-                wrapper.0.iterate(Duration::ZERO);
+                wrapper.0.loop_().iterate(Duration::ZERO);
                 Ok(PostAction::Continue)
             })
             .unwrap();
@@ -122,7 +126,6 @@ impl PipeWire {
             .context("error creating Stream")?;
 
         // Like in good old wayland-rs times...
-        let stream = Rc::new(stream);
         let node_id = Rc::new(Cell::new(None));
         let is_active = Rc::new(Cell::new(false));
         let min_time_between_frames = Rc::new(Cell::new(Duration::ZERO));
@@ -131,10 +134,9 @@ impl PipeWire {
         let listener = stream
             .add_local_listener_with_user_data(())
             .state_changed({
-                let stream = stream.clone();
                 let is_active = is_active.clone();
                 let stop_cast = stop_cast.clone();
-                move |old, new| {
+                move |stream, (), old, new| {
                     debug!("pw stream: state changed: {old:?} -> {new:?}");
 
                     match new {
@@ -178,7 +180,7 @@ impl PipeWire {
             })
             .param_changed({
                 let min_time_between_frames = min_time_between_frames.clone();
-                move |stream, id, _data, pod| {
+                move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
                     trace!(?id, "pw stream: param_changed");
 
@@ -260,8 +262,7 @@ impl PipeWire {
                     let mut b1 = vec![];
                     // let mut b2 = vec![];
                     let mut params = [
-                        make_pod(&mut b1, o1).as_raw_ptr().cast_const(),
-                        // make_pod(&mut b2, o2).as_raw_ptr().cast_const(),
+                        make_pod(&mut b1, o1), // make_pod(&mut b2, o2)
                     ];
                     stream.update_params(&mut params).unwrap();
                 }
@@ -269,7 +270,7 @@ impl PipeWire {
             .add_buffer({
                 let dmabufs = dmabufs.clone();
                 let stop_cast = stop_cast.clone();
-                move |buffer| {
+                move |_stream, (), buffer| {
                     trace!("pw stream: add_buffer");
 
                     unsafe {
@@ -313,7 +314,7 @@ impl PipeWire {
             })
             .remove_buffer({
                 let dmabufs = dmabufs.clone();
-                move |buffer| {
+                move |_stream, (), buffer| {
                     trace!("pw stream: remove_buffer");
 
                     unsafe {
