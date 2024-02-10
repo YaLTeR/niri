@@ -39,16 +39,12 @@
           pname = "niri";
           version = self.rev or "dirty";
 
-          src = nix-filter.lib.filter {
-            root = ./.;
-            include = [
-              ./src
-              ./niri-config
-              ./niri-ipc
-              ./Cargo.toml
-              ./Cargo.lock
-              ./resources
-            ];
+          src = nixpkgs.lib.cleanSourceWith {
+            src = craneLib.path ./.;
+            filter = path: type:
+              (builtins.match "resources" path == null) ||
+              ((craneLib.filterCargoSources path type) &&
+              (builtins.match "niri-visual-tests" path == null));
           };
 
           nativeBuildInputs = with pkgs; [
