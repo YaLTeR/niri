@@ -290,7 +290,7 @@ impl State {
             }
             Action::ChangeVt(vt) => {
                 self.backend.change_vt(vt);
-                // Changing `VT` may not deliver the key releases, so clear the state.
+                // Changing VT may not deliver the key releases, so clear the state.
                 self.niri.suppressed_keys.clear();
             }
             Action::Suspend => {
