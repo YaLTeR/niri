@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use anyhow::{ensure, Context};
 use directories::UserDirs;
+use git_version::git_version;
 use niri_config::Config;
 use smithay::output::Output;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
@@ -18,6 +19,14 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 
 pub fn clone2<T: Clone, U: Clone>(t: (&T, &U)) -> (T, U) {
     (t.0.clone(), t.1.clone())
+}
+
+pub fn version() -> String {
+    format!(
+        "{} ({})",
+        env!("CARGO_PKG_VERSION"),
+        git_version!(fallback = "unknown commit"),
+    )
 }
 
 pub fn get_monotonic_time() -> Duration {

@@ -1,66 +1,30 @@
 #[macro_use]
 extern crate tracing;
 
-use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::{env, mem};
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use directories::ProjectDirs;
-use git_version::git_version;
+use niri::animation;
+use niri::cli::{Cli, Sub};
 #[cfg(feature = "dbus")]
 use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
-use niri::utils::{cause_panic, spawn, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
+use niri::utils::{
+    cause_panic, spawn, version, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
+};
 use niri::watcher::Watcher;
-use niri::{animation, Msg};
 use niri_config::Config;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
 use smithay::reexports::calloop::{self, EventLoop};
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
-
-#[derive(Parser)]
-#[command(author, version = version(), about, long_about = None)]
-#[command(args_conflicts_with_subcommands = true)]
-#[command(subcommand_value_name = "SUBCOMMAND")]
-#[command(subcommand_help_heading = "Subcommands")]
-struct Cli {
-    /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
-    #[arg(short, long)]
-    config: Option<PathBuf>,
-    /// Command to run upon compositor startup.
-    #[arg(last = true)]
-    command: Vec<OsString>,
-
-    #[command(subcommand)]
-    subcommand: Option<Sub>,
-}
-
-#[derive(Subcommand)]
-enum Sub {
-    /// Validate the config file.
-    Validate {
-        /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
-        #[arg(short, long)]
-        config: Option<PathBuf>,
-    },
-    /// Communicate with the running niri instance.
-    Msg {
-        #[command(subcommand)]
-        msg: Msg,
-        /// Format output as JSON.
-        #[arg(short, long)]
-        json: bool,
-    },
-    /// Cause a panic to check if the backtraces are good.
-    Panic,
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set backtrace defaults if not set.
@@ -268,14 +232,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     Ok(())
-}
-
-fn version() -> String {
-    format!(
-        "{} ({})",
-        env!("CARGO_PKG_VERSION"),
-        git_version!(fallback = "unknown commit"),
-    )
 }
 
 fn import_env_to_systemd() {

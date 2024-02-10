@@ -6,7 +6,7 @@ use std::os::unix::net::UnixStream;
 use anyhow::{bail, Context};
 use niri_ipc::{Mode, Output, Request, Response};
 
-use crate::Msg;
+use crate::cli::Msg;
 
 pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
     let socket_path = env::var_os(niri_ipc::SOCKET_PATH_ENV).with_context(|| {
