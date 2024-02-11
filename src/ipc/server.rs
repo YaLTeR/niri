@@ -110,7 +110,19 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
         .await
         .context("error reading request")?;
 
-    let request: Request = serde_json::from_str(&buf).context("error parsing request")?;
+    let reply = process(&ctx, &buf).map_err(|err| {
+        warn!("error processing IPC request: {err:?}");
+        err.to_string()
+    });
+
+    let buf = serde_json::to_vec(&reply).context("error formatting reply")?;
+    write.write_all(&buf).await.context("error writing reply")?;
+
+    Ok(())
+}
+
+fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
+    let request: Request = serde_json::from_str(buf).context("error parsing request")?;
 
     let response = match request {
         Request::Outputs => {
@@ -122,15 +134,9 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
             ctx.event_loop.insert_idle(move |state| {
                 state.do_action(action);
             });
-            return Ok(());
+            Response::Handled
         }
     };
 
-    let buf = serde_json::to_vec(&response).context("error formatting response")?;
-    write
-        .write_all(&buf)
-        .await
-        .context("error writing response")?;
-
-    Ok(())
+    Ok(response)
 }

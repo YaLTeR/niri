@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
 
 /// Request from client to niri.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Request {
     /// Request information about connected outputs.
     Outputs,
@@ -18,9 +18,21 @@ pub enum Request {
     Action(Action),
 }
 
-/// Response from niri to client.
-#[derive(Debug, Serialize, Deserialize)]
+/// Reply from niri to client.
+///
+/// Every request gets one reply.
+///
+/// * If an error had occurred, it will be an `Reply::Err`.
+/// * If the request does not need any particular response, it will be
+///   `Reply::Ok(Response::Handled)`. Kind of like an `Ok(())`.
+/// * Otherwise, it will be `Reply::Ok(response)` with one of the other [`Response`] variants.
+pub type Reply = Result<Response, String>;
+
+/// Successful response from niri to client.
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Response {
+    /// A request that does not need a response was handled successfully.
+    Handled,
     /// Information about connected outputs.
     ///
     /// Map from connector name to output info.
@@ -30,7 +42,7 @@ pub enum Response {
 /// Actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most, but not all,
 // variants from niri-config should be present here.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 #[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
@@ -205,7 +217,7 @@ pub enum SizeChange {
 }
 
 /// Layout to switch to.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayoutSwitchTarget {
     /// The next configured layout.
     Next,

@@ -3,8 +3,8 @@ use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 
-use anyhow::{bail, Context};
-use niri_ipc::{Mode, Output, Request, Response};
+use anyhow::{anyhow, bail, Context};
+use niri_ipc::{Mode, Output, Reply, Request, Response};
 
 use crate::cli::Msg;
 
@@ -36,20 +36,15 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         .read_to_end(&mut buf)
         .context("error reading IPC response")?;
 
-    if matches!(msg, Msg::Action { .. }) {
-        if buf.is_empty() {
-            return Ok(());
-        } else {
-            bail!("unexpected response: expected no response, got {buf:?}");
-        }
-    }
+    let reply: Reply = serde_json::from_slice(&buf).context("error parsing IPC reply")?;
 
-    let response = serde_json::from_slice(&buf).context("error parsing IPC response")?;
+    let response = reply
+        .map_err(|msg| anyhow!(msg))
+        .context("niri could not handle the request")?;
+
     match msg {
         Msg::Outputs => {
-            #[allow(irrefutable_let_patterns)]
-            let Response::Outputs(outputs) = response
-            else {
+            let Response::Outputs(outputs) = response else {
                 bail!("unexpected response: expected Outputs, got {response:?}");
             };
 
@@ -109,7 +104,11 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!();
             }
         }
-        Msg::Action { .. } => unreachable!(),
+        Msg::Action { .. } => {
+            let Response::Handled = response else {
+                bail!("unexpected response: expected Handled, got {response:?}");
+            };
+        }
     }
 
     Ok(())
