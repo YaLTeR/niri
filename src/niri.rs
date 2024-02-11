@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, mem, thread};
@@ -181,6 +181,7 @@ pub struct Niri {
     pub keyboard_focus: Option<WlSurface>,
 
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
+    pub is_fdo_idle_inhibited: Arc<AtomicBool>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -1029,6 +1030,7 @@ impl Niri {
             seat,
             keyboard_focus: None,
             idle_inhibiting_surfaces: HashSet::new(),
+            is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
@@ -1880,11 +1882,12 @@ impl Niri {
 
         self.idle_inhibiting_surfaces.retain(|s| s.is_alive());
 
-        let is_inhibited = self.idle_inhibiting_surfaces.iter().any(|surface| {
-            with_states(surface, |states| {
-                surface_primary_scanout_output(surface, states).is_some()
-            })
-        });
+        let is_inhibited = self.is_fdo_idle_inhibited.load(Ordering::SeqCst)
+            || self.idle_inhibiting_surfaces.iter().any(|surface| {
+                with_states(surface, |states| {
+                    surface_primary_scanout_output(surface, states).is_some()
+                })
+            });
         self.idle_notifier_state.set_is_inhibited(is_inhibited);
     }
 
