@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::thread;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::drm::DrmNode;
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
@@ -22,6 +23,9 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle, Size};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
+use smithay::wayland::drm_lease::{
+    DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
+};
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
@@ -44,9 +48,9 @@ use smithay::wayland::session_lock::{
 };
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
-    delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager, delegate_output,
-    delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_drm_lease, delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager,
+    delegate_output, delegate_pointer_constraints, delegate_pointer_gestures,
+    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
     delegate_security_context, delegate_session_lock, delegate_tablet_manager,
     delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
@@ -374,3 +378,49 @@ impl ForeignToplevelHandler for State {
     }
 }
 delegate_foreign_toplevel!(State);
+
+impl DrmLeaseHandler for State {
+    fn drm_lease_state(&mut self, node: DrmNode) -> &mut DrmLeaseState {
+        &mut self
+            .backend
+            .tty()
+            .get_device_from_node(node)
+            .unwrap()
+            .drm_lease_state
+    }
+
+    fn lease_request(
+        &mut self,
+        node: DrmNode,
+        request: DrmLeaseRequest,
+    ) -> Result<DrmLeaseBuilder, LeaseRejected> {
+        debug!(
+            "Received lease request for {} connectors",
+            request.connectors.len()
+        );
+        self.backend
+            .tty()
+            .get_device_from_node(node)
+            .unwrap()
+            .lease_request(request)
+    }
+
+    fn new_active_lease(&mut self, node: DrmNode, lease: DrmLease) {
+        debug!("Lease success");
+        self.backend
+            .tty()
+            .get_device_from_node(node)
+            .unwrap()
+            .new_lease(lease);
+    }
+
+    fn lease_destroyed(&mut self, node: DrmNode, lease_id: u32) {
+        debug!("Destroyed lease");
+        self.backend
+            .tty()
+            .get_device_from_node(node)
+            .unwrap()
+            .remove_lease(lease_id);
+    }
+}
+delegate_drm_lease!(State);
