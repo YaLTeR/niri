@@ -41,6 +41,9 @@ use smithay::reexports::wayland_protocols;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::DeviceFd;
 use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal};
+use smithay::wayland::drm_lease::{
+    DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
+};
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
@@ -105,7 +108,7 @@ type GbmDrmCompositor = DrmCompositor<
     DrmDeviceFd,
 >;
 
-struct OutputDevice {
+pub struct OutputDevice {
     token: RegistrationToken,
     render_node: DrmNode,
     drm_scanner: DrmScanner,
@@ -114,6 +117,42 @@ struct OutputDevice {
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
     gbm: GbmDevice<DrmDeviceFd>,
+
+    pub drm_lease_state: DrmLeaseState,
+    non_desktop_connectors: HashSet<(connector::Handle, crtc::Handle)>,
+    active_leases: Vec<DrmLease>,
+}
+
+impl OutputDevice {
+    pub fn lease_request(
+        &self,
+        request: DrmLeaseRequest,
+    ) -> Result<DrmLeaseBuilder, LeaseRejected> {
+        let mut builder = DrmLeaseBuilder::new(&self.drm);
+        for connector in request.connectors {
+            let (_, crtc) = self
+                .non_desktop_connectors
+                .iter()
+                .find(|(conn, _)| connector == *conn)
+                .ok_or_else(|| {
+                    warn!("Attempted to lease connector that is not non-desktop");
+                    LeaseRejected::default()
+                })?;
+            builder.add_connector(connector);
+            builder.add_crtc(*crtc);
+            let planes = self.drm.planes(crtc).map_err(LeaseRejected::with_cause)?;
+            builder.add_plane(planes.primary.handle);
+        }
+        Ok(builder)
+    }
+
+    pub fn new_lease(&mut self, lease: DrmLease) {
+        self.active_leases.push(lease);
+    }
+
+    pub fn remove_lease(&mut self, lease_id: u32) {
+        self.active_leases.retain(|l| l.id() != lease_id);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -376,6 +415,8 @@ impl Tty {
         debug!("device added: {device_id} {path:?}");
 
         let node = DrmNode::from_dev_id(device_id)?;
+        let drm_lease_state = DrmLeaseState::new::<State>(&niri.display_handle, &node)
+            .context("Couldn't create DrmLeaseState")?;
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = self.session.open(path, open_flags)?;
@@ -465,6 +506,9 @@ impl Tty {
             gbm,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
+            drm_lease_state,
+            active_leases: Vec::new(),
+            non_desktop_connectors: HashSet::new(),
         };
         assert!(self.devices.insert(node, device).is_none());
 
@@ -586,6 +630,41 @@ impl Tty {
         );
         debug!("connecting connector: {output_name}");
 
+        let device = self.devices.get_mut(&node).context("missing device")?;
+
+        let non_desktop = device
+            .drm
+            .get_properties(connector.handle())
+            .ok()
+            .and_then(|props| {
+                let (info, value) = props
+                    .into_iter()
+                    .filter_map(|(handle, value)| {
+                        let info = device.drm.get_property(handle).ok()?;
+                        Some((info, value))
+                    })
+                    .find(|(info, _)| info.name().to_str() == Ok("non-desktop"))?;
+
+                info.value_type().convert_value(value).as_boolean()
+            })
+            .unwrap_or(false);
+
+        if non_desktop {
+            debug!("output is non desktop");
+            let description = EdidInfo::for_connector(&device.drm, connector.handle())
+                .map(|info| info.model)
+                .unwrap_or_else(|| "Unknown".into());
+            device.drm_lease_state.add_connector::<State>(
+                connector.handle(),
+                output_name,
+                description,
+            );
+            device
+                .non_desktop_connectors
+                .insert((connector.handle(), crtc));
+            return Ok(());
+        }
+
         let config = self
             .config
             .borrow()
@@ -599,8 +678,6 @@ impl Tty {
             debug!("output is disabled in the config");
             return Ok(());
         }
-
-        let device = self.devices.get_mut(&node).context("missing device")?;
 
         for m in connector.modes() {
             trace!("{m:?}");
@@ -1372,6 +1449,10 @@ impl Tty {
         }
 
         self.refresh_ipc_outputs();
+    }
+
+    pub fn get_device_from_node(&mut self, node: DrmNode) -> Option<&mut OutputDevice> {
+        self.devices.get_mut(&node)
     }
 }
 
