@@ -216,14 +216,21 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     }
 
     // Add the spawn actions.
+    let mut spawn_actions = Vec::new();
     for bind in binds.iter().filter(|bind| {
         matches!(bind.actions.first(), Some(Action::Spawn(_)))
             // Only show binds with Mod or Super to filter out stuff like volume up/down.
             && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
                 || bind.key.modifiers.contains(Modifiers::SUPER))
     }) {
-        actions.push(bind.actions.first().unwrap());
+        let action = bind.actions.first().unwrap();
+
+        // We only show one bind for each action, so we need to deduplicate the Spawn actions.
+        if !spawn_actions.contains(&action) {
+            spawn_actions.push(action);
+        }
     }
+    actions.extend(spawn_actions);
 
     let strings = actions
         .into_iter()
