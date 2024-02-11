@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use anyhow::Context;
 use futures_util::StreamExt;
 use zbus::fdo::{self, RequestNameFlags};
-use zbus::names::OwnedUniqueName;
+use zbus::names::{OwnedUniqueName, UniqueName};
+use zbus::zvariant::NoneValue;
 use zbus::{dbus_interface, MessageHeader, Task};
 
 use super::Start;
@@ -97,7 +98,7 @@ async fn monitor_disappeared_clients(
         .context("error creating a DBusProxy")?;
 
     let mut stream = proxy
-        .receive_name_owner_changed()
+        .receive_name_owner_changed_with_args(&[(2, UniqueName::null_value())])
         .await
         .context("error creating a NameOwnerChanged stream")?;
 
@@ -116,6 +117,8 @@ async fn monitor_disappeared_clients(
             let mut inhibitors = inhibitors.lock().unwrap();
             inhibitors.retain(|_, owner| owner != name);
             is_inhibited.store(!inhibitors.is_empty(), Ordering::SeqCst);
+        } else {
+            error!("non-null new_owner should've been filtered out");
         }
     }
 
