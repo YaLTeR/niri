@@ -20,11 +20,13 @@ tracy-client = { version = "0.16.5", default-features = false }
 
 [workspace.dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
+branch = "fix/pointer_image_stuck"
 # path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 git = "https://github.com/Smithay/smithay.git"
+branch = "fix/pointer_image_stuck"
 # path = "../smithay/smithay-drm-extras"
 
 [package]

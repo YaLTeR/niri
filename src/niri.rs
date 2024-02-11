@@ -478,7 +478,7 @@ impl State {
                 self.niri
                     .layout
                     .focus()
-                    .map(|win| win.toplevel().wl_surface().clone())
+                    .map(|win| win.toplevel().expect("no x11 support").wl_surface().clone())
             };
             let layer_focus = |surface: &LayerSurface| {
                 surface
@@ -702,6 +702,10 @@ impl State {
             self.niri.reposition_outputs(None);
 
             self.backend.on_output_config_changed(&mut self.niri);
+
+            if let Some(touch) = self.niri.seat.get_touch() {
+                touch.cancel(self);
+            }
         }
 
         // Can't really update xdg-decoration settings since we have to hide the globals for CSD

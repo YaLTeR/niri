@@ -129,6 +129,7 @@ impl CompositorHandler for State {
 
                     let parent = window
                         .toplevel()
+                        .expect("no x11 support")
                         .parent()
                         .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
                         // Only consider the parent if we configured the window for the same
@@ -168,7 +169,7 @@ impl CompositorHandler for State {
                 // The toplevel remains unmapped.
                 let unmapped = entry.get();
                 if unmapped.needs_initial_configure() {
-                    let toplevel = unmapped.window.toplevel().clone();
+                    let toplevel = unmapped.window.toplevel().expect("no x11 support").clone();
                     self.queue_initial_configure(toplevel);
                 }
                 return;

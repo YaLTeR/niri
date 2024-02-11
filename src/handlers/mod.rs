@@ -64,6 +64,7 @@ use crate::utils::output_size;
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
     type PointerFocus = WlSurface;
+    type TouchFocus = WlSurface;
 
     fn seat_state(&mut self) -> &mut SeatState<State> {
         &mut self.niri.seat_state
@@ -339,7 +340,7 @@ impl ForeignToplevelHandler for State {
 
     fn close(&mut self, wl_surface: WlSurface) {
         if let Some((window, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
-            window.toplevel().send_close();
+            window.toplevel().expect("no x11 support").send_close();
         }
     }
 
@@ -348,6 +349,7 @@ impl ForeignToplevelHandler for State {
         {
             if !window
                 .toplevel()
+                .expect("no x11 support")
                 .current_state()
                 .capabilities
                 .contains(xdg_toplevel::WmCapabilities::Fullscreen)
