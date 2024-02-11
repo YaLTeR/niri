@@ -1,74 +1,91 @@
 //! File modification watcher.
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use smithay::reexports::calloop::channel::SyncSender;
 
-pub struct Watcher {
-    should_stop: Arc<AtomicBool>,
-}
+const DEBOUNCE_DELAY: Duration = Duration::from_millis(100);
 
-impl Drop for Watcher {
-    fn drop(&mut self) {
-        self.should_stop.store(true, Ordering::SeqCst);
-    }
-}
+/// The fallback for `RecommendedWatcher` polling.
+const FALLBACK_POLLING_TIMEOUT: Duration = Duration::from_secs(1);
 
-impl Watcher {
-    pub fn new(path: PathBuf, changed: SyncSender<()>) -> Self {
-        let should_stop = Arc::new(AtomicBool::new(false));
+pub fn watch(path: PathBuf, changed: SyncSender<()>) {
+    let (tx, rx) = mpsc::channel();
+    let mut watcher = match RecommendedWatcher::new(
+        tx,
+        Config::default().with_poll_interval(FALLBACK_POLLING_TIMEOUT),
+    ) {
+        Ok(watcher) => watcher,
+        Err(err) => {
+            error!("Unable to watch config file {path:?}: {err}");
+            return;
+        }
+    };
 
-        {
-            let should_stop = should_stop.clone();
-            thread::Builder::new()
-                .name(format!("Filesystem Watcher for {}", path.to_string_lossy()))
-                .spawn(move || {
-                    // this "should" be as simple as mtime, but it does not quite work in practice;
-                    // it doesn't work if the config is a symlink, and its target changes but the
-                    // new target and old target have identical mtimes.
-                    //
-                    // in practice, this does not occur on any systems other than nix.
-                    // because, on nix practically everything is a symlink to /nix/store
-                    // and due to reproducibility, /nix/store keeps no mtime (= 1970-01-01)
-                    // so, symlink targets change frequently when mtime doesn't.
-                    let mut last_props = path
-                        .canonicalize()
-                        .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
-                        .ok();
+    thread::Builder::new()
+        .name(format!("Filesystem Watcher for {}", path.to_string_lossy()))
+        .spawn(move || {
+            // Watch the configuration file directory.
+            let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
+            if let Err(err) = watcher.watch(&parent, RecursiveMode::NonRecursive) {
+                error!("Unable to watch config directory {parent:?}: {err}");
+            }
 
-                    loop {
-                        thread::sleep(Duration::from_millis(500));
+            let mut debouncing_deadline: Option<Instant> = None;
+            let mut events_received_during_debounce = Vec::new();
 
-                        if should_stop.load(Ordering::SeqCst) {
-                            break;
+            loop {
+                let event = match debouncing_deadline.as_ref() {
+                    Some(debouncing_deadline) => rx.recv_timeout(
+                        debouncing_deadline.saturating_duration_since(Instant::now()),
+                    ),
+                    None => {
+                        let event = rx.recv().map_err(Into::into);
+
+                        debouncing_deadline = Some(Instant::now() + DEBOUNCE_DELAY);
+
+                        event
+                    }
+                };
+
+                match event {
+                    Ok(Ok(event)) => match event.kind {
+                        EventKind::Any
+                        | EventKind::Create(_)
+                        | EventKind::Modify(_)
+                        | EventKind::Other => {
+                            events_received_during_debounce.push(event);
                         }
+                        _ => (),
+                    },
+                    Err(RecvTimeoutError::Timeout) => {
+                        debouncing_deadline = None;
 
-                        if let Ok(new_props) = path
-                            .canonicalize()
-                            .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
+                        if events_received_during_debounce
+                            .drain(..)
+                            .any(|event| event.paths.contains(&path))
                         {
-                            if last_props.as_ref() != Some(&new_props) {
-                                trace!("file changed: {}", path.to_string_lossy());
-
-                                if let Err(err) = changed.send(()) {
-                                    warn!("error sending change notification: {err:?}");
-                                    break;
-                                }
-
-                                last_props = Some(new_props);
+                            if let Err(err) = changed.send(()) {
+                                warn!("error sending change notification: {err:?}");
+                                break;
                             }
                         }
                     }
+                    Ok(Err(err)) => {
+                        debug!("Config watcher errors: {err:?}");
+                    }
+                    Err(err) => {
+                        debug!("Config watcher channel dropped unexpectedly: {err}");
+                        break;
+                    }
+                }
+            }
 
-                    debug!("exiting watcher thread for {}", path.to_string_lossy());
-                })
-                .unwrap();
-        }
-
-        Self { should_stop }
-    }
+            debug!("Exiting watcher thread for {}", path.to_string_lossy());
+        })
+        .unwrap();
 }

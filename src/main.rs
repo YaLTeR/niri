@@ -9,7 +9,6 @@ use std::{env, mem};
 
 use clap::Parser;
 use directories::ProjectDirs;
-use niri::animation;
 use niri::cli::{Cli, Sub};
 #[cfg(feature = "dbus")]
 use niri::dbus;
@@ -18,7 +17,7 @@ use niri::niri::State;
 use niri::utils::{
     cause_panic, spawn, version, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
-use niri::watcher::Watcher;
+use niri::{animation, watcher};
 use niri_config::Config;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -197,9 +196,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Set up config file watcher.
-    let _watcher = if let Some(path) = path.clone() {
+    if let Some(path) = path.clone() {
         let (tx, rx) = calloop::channel::sync_channel(1);
-        let watcher = Watcher::new(path.clone(), tx);
+        watcher::watch(path.clone(), tx);
         event_loop
             .handle()
             .insert_source(rx, move |event, _, state| match event {
@@ -207,10 +206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 calloop::channel::Event::Closed => (),
             })
             .unwrap();
-        Some(watcher)
-    } else {
-        None
-    };
+    }
 
     // Spawn commands from cli and auto-start.
     spawn(cli.command);
