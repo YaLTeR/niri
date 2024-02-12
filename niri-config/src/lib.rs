@@ -281,7 +281,7 @@ pub struct Mode {
 pub struct Layout {
     #[knuffel(child, default)]
     pub focus_ring: FocusRing,
-    #[knuffel(child, default = default_border())]
+    #[knuffel(child, default = FocusRing::default_border())]
     pub border: FocusRing,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetWidth>,
@@ -324,12 +324,14 @@ impl Default for FocusRing {
     }
 }
 
-pub const fn default_border() -> FocusRing {
-    FocusRing {
-        off: true,
-        width: 4,
-        active_color: Color::new(255, 200, 127, 255),
-        inactive_color: Color::new(80, 80, 80, 255),
+impl FocusRing {
+    pub const fn default_border() -> FocusRing {
+        FocusRing {
+            off: true,
+            width: 4,
+            active_color: Color::new(255, 200, 127, 255),
+            inactive_color: Color::new(80, 80, 80, 255),
+        }
     }
 }
 

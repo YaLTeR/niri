@@ -168,7 +168,7 @@ impl Default for Options {
             gaps: 16,
             struts: Default::default(),
             focus_ring: Default::default(),
-            border: niri_config::default_border(),
+            border: niri_config::FocusRing::default_border(),
             center_focused_column: Default::default(),
             preset_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
