@@ -235,12 +235,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn import_env_to_systemd() {
+    let variables = ["WAYLAND_DISPLAY", niri_ipc::SOCKET_PATH_ENV].join(" ");
+
     let rv = Command::new("/bin/sh")
         .args([
             "-c",
-            "systemctl --user import-environment WAYLAND_DISPLAY && \
-             hash dbus-update-activation-environment 2>/dev/null && \
-             dbus-update-activation-environment WAYLAND_DISPLAY",
+            &format!(
+                "systemctl --user import-environment {variables} && \
+                 hash dbus-update-activation-environment 2>/dev/null && \
+                 dbus-update-activation-environment {variables}"
+            ),
         ])
         .spawn();
     // Wait for the import process to complete, otherwise services will start too fast without

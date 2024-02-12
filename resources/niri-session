@@ -44,4 +44,4 @@ systemctl --user --wait start niri.service
 systemctl --user start --job-mode=replace-irreversibly niri-shutdown.target
 
 # Unset environment that we've set.
-systemctl --user unset-environment WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP
+systemctl --user unset-environment WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP NIRI_SOCKET
