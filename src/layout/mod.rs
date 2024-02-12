@@ -153,7 +153,7 @@ pub struct Options {
     /// Extra padding around the working area in logical pixels.
     pub struts: Struts,
     pub focus_ring: niri_config::FocusRing,
-    pub border: niri_config::FocusRing,
+    pub border: niri_config::Border,
     pub center_focused_column: CenterFocusedColumn,
     /// Column widths that `toggle_width()` switches between.
     pub preset_widths: Vec<ColumnWidth>,
@@ -168,7 +168,7 @@ impl Default for Options {
             gaps: 16,
             struts: Default::default(),
             focus_ring: Default::default(),
-            border: niri_config::FocusRing::default_border(),
+            border: Default::default(),
             center_focused_column: Default::default(),
             preset_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
@@ -2819,11 +2819,24 @@ mod tests {
     }
 
     prop_compose! {
+        fn arbitrary_border()(
+            off in any::<bool>(),
+            width in arbitrary_spacing(),
+        ) -> niri_config::Border {
+            niri_config::Border {
+                off,
+                width,
+                ..Default::default()
+            }
+        }
+    }
+
+    prop_compose! {
         fn arbitrary_options()(
             gaps in arbitrary_spacing(),
             struts in arbitrary_struts(),
             focus_ring in arbitrary_focus_ring(),
-            border in arbitrary_focus_ring(),
+            border in arbitrary_border(),
             center_focused_column in arbitrary_center_focused_column(),
         ) -> Options {
             Options {

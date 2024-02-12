@@ -62,7 +62,7 @@ impl<W: LayoutElement> Tile<W> {
     pub fn new(window: W, options: Rc<Options>) -> Self {
         Self {
             window,
-            border: FocusRing::new(options.border),
+            border: FocusRing::new(options.border.into()),
             focus_ring: FocusRing::new(options.focus_ring),
             is_fullscreen: false, // FIXME: up-to-date fullscreen right away, but we need size.
             fullscreen_backdrop: SolidColorBuffer::new((0, 0), [0., 0., 0., 1.]),
@@ -73,7 +73,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
-        self.border.update_config(options.border);
+        self.border.update_config(options.border.into());
         self.focus_ring.update_config(options.focus_ring);
         self.options = options;
     }

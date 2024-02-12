@@ -68,7 +68,7 @@ impl Tile {
                 off: true,
                 ..Default::default()
             },
-            border: niri_config::FocusRing {
+            border: niri_config::Border {
                 off: false,
                 width: 32,
                 active_color: Color::new(255, 163, 72, 255),

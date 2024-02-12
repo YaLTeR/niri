@@ -281,8 +281,8 @@ pub struct Mode {
 pub struct Layout {
     #[knuffel(child, default)]
     pub focus_ring: FocusRing,
-    #[knuffel(child, default = FocusRing::default_border())]
-    pub border: FocusRing,
+    #[knuffel(child, default)]
+    pub border: Border,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetWidth>,
     #[knuffel(child)]
@@ -305,11 +305,11 @@ pub struct SpawnAtStartup {
 pub struct FocusRing {
     #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = 4)]
+    #[knuffel(child, unwrap(argument), default = Self::default().width)]
     pub width: u16,
-    #[knuffel(child, default = Color::new(127, 200, 255, 255))]
+    #[knuffel(child, default = Self::default().active_color)]
     pub active_color: Color,
-    #[knuffel(child, default = Color::new(80, 80, 80, 255))]
+    #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
 }
 
@@ -324,13 +324,36 @@ impl Default for FocusRing {
     }
 }
 
-impl FocusRing {
-    pub const fn default_border() -> FocusRing {
-        FocusRing {
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Border {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument), default = Self::default().width)]
+    pub width: u16,
+    #[knuffel(child, default = Self::default().active_color)]
+    pub active_color: Color,
+    #[knuffel(child, default = Self::default().inactive_color)]
+    pub inactive_color: Color,
+}
+
+impl Default for Border {
+    fn default() -> Self {
+        Self {
             off: true,
             width: 4,
             active_color: Color::new(255, 200, 127, 255),
             inactive_color: Color::new(80, 80, 80, 255),
+        }
+    }
+}
+
+impl From<Border> for FocusRing {
+    fn from(value: Border) -> Self {
+        Self {
+            off: value.off,
+            width: value.width,
+            active_color: value.active_color,
+            inactive_color: value.inactive_color,
         }
     }
 }
@@ -881,7 +904,6 @@ mod tests {
 
                 border {
                     width 3
-                    active-color 0 100 200 255
                     inactive-color 255 200 100 0
                 }
 
@@ -1005,13 +1027,13 @@ mod tests {
                             a: 0,
                         },
                     },
-                    border: FocusRing {
+                    border: Border {
                         off: false,
                         width: 3,
                         active_color: Color {
-                            r: 0,
-                            g: 100,
-                            b: 200,
+                            r: 255,
+                            g: 200,
+                            b: 127,
                             a: 255,
                         },
                         inactive_color: Color {
