@@ -284,15 +284,18 @@ impl State {
         }
 
         match action {
-            Action::Quit => {
-                if let Some(dialog) = &mut self.niri.exit_confirm_dialog {
-                    if dialog.show() {
-                        self.niri.queue_redraw_all();
+            Action::Quit(skip_confirmation) => {
+                if !skip_confirmation {
+                    if let Some(dialog) = &mut self.niri.exit_confirm_dialog {
+                        if dialog.show() {
+                            self.niri.queue_redraw_all();
+                        }
+                        return;
                     }
-                } else {
-                    info!("quitting because quit bind was pressed");
-                    self.niri.stop_signal.stop()
                 }
+
+                info!("quitting as requested");
+                self.niri.stop_signal.stop()
             }
             Action::ChangeVt(vt) => {
                 self.backend.change_vt(vt);
@@ -1542,7 +1545,7 @@ fn should_notify_activity<I: InputBackend>(event: &InputEvent<I>) -> bool {
 fn allowed_when_locked(action: &Action) -> bool {
     matches!(
         action,
-        Action::Quit
+        Action::Quit(_)
             | Action::ChangeVt(_)
             | Action::Suspend
             | Action::PowerOffMonitors
@@ -1553,7 +1556,7 @@ fn allowed_when_locked(action: &Action) -> bool {
 fn allowed_during_screenshot(action: &Action) -> bool {
     matches!(
         action,
-        Action::Quit | Action::ChangeVt(_) | Action::Suspend | Action::PowerOffMonitors
+        Action::Quit(_) | Action::ChangeVt(_) | Action::Suspend | Action::PowerOffMonitors
     )
 }
 

@@ -516,7 +516,7 @@ bitflags! {
 // Remember to add new actions to the CLI enum too.
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub enum Action {
-    Quit,
+    Quit(#[knuffel(property(name = "skip-confirmation"), default)] bool),
     #[knuffel(skip)]
     ChangeVt(i32),
     Suspend,
@@ -591,7 +591,7 @@ pub enum Action {
 impl From<niri_ipc::Action> for Action {
     fn from(value: niri_ipc::Action) -> Self {
         match value {
-            niri_ipc::Action::Quit => Self::Quit,
+            niri_ipc::Action::Quit { skip_confirmation } => Self::Quit(skip_confirmation),
             niri_ipc::Action::PowerOffMonitors => Self::PowerOffMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::Screenshot => Self::Screenshot,
@@ -936,6 +936,7 @@ mod tests {
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
+                Mod+Shift+E { quit skip-confirmation=true; }
             }
 
             debug {
@@ -1103,6 +1104,13 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         actions: vec![Action::FocusWorkspace(1)],
+                    },
+                    Bind {
+                        key: Key {
+                            keysym: Keysym::e,
+                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                        },
+                        actions: vec![Action::Quit(true)],
                     },
                 ]),
                 debug: DebugConfig {

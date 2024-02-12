@@ -48,7 +48,11 @@ pub enum Response {
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
 pub enum Action {
     /// Exit niri.
-    Quit,
+    Quit {
+        /// Skip the "Press Enter to confirm" prompt.
+        #[cfg_attr(feature = "clap", arg(short, long))]
+        skip_confirmation: bool,
+    },
     /// Power off all monitors via DPMS.
     PowerOffMonitors,
     /// Spawn a command.

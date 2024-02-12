@@ -155,13 +155,26 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     let binds = &config.binds.0;
 
     // Collect actions that we want to show.
-    let mut actions = vec![
-        &Action::ShowHotkeyOverlay,
-        &Action::Quit,
-        &Action::CloseWindow,
-    ];
+    let mut actions = vec![&Action::ShowHotkeyOverlay];
+
+    // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
+    // Quit(false).
+    if binds
+        .iter()
+        .any(|bind| bind.actions.first() == Some(&Action::Quit(false)))
+    {
+        actions.push(&Action::Quit(false));
+    } else if binds
+        .iter()
+        .any(|bind| bind.actions.first() == Some(&Action::Quit(true)))
+    {
+        actions.push(&Action::Quit(true));
+    } else {
+        actions.push(&Action::Quit(false));
+    }
 
     actions.extend(&[
+        &Action::CloseWindow,
         &Action::FocusColumnLeft,
         &Action::FocusColumnRight,
         &Action::MoveColumnLeft,
@@ -365,7 +378,7 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
 
 fn action_name(action: &Action) -> String {
     match action {
-        Action::Quit => String::from("Exit niri"),
+        Action::Quit(_) => String::from("Exit niri"),
         Action::ShowHotkeyOverlay => String::from("Show Important Hotkeys"),
         Action::CloseWindow => String::from("Close Focused Window"),
         Action::FocusColumnLeft => String::from("Focus Column to the Left"),
