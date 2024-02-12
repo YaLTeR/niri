@@ -156,5 +156,9 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@v3
         continue-on-error: true
 
-      - run: nix build
+      - name: Reuse cached builds
+        uses: DeterminateSystems/magic-nix-cache-action@main
+        continue-on-error: true
+
+      - run: nix flake check
         continue-on-error: true
