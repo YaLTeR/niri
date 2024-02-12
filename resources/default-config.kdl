@@ -207,7 +207,11 @@ animations {
     // slowdown 3.0
 
     // You can configure all individual animations.
-    // Available settings are the same for all of them.
+    // Available settings are the same for all of them:
+    // - off disables the animation.
+    // - duration-ms sets the duration of the animation in milliseconds.
+    // - curve sets the easing curve. Currently, available curves
+    //   are "ease-out-cubic" and "ease-out-expo".
 
     // Animation when switching workspaces up and down,
     // including after the touchpad gesture.
