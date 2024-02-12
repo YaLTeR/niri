@@ -935,7 +935,7 @@ mod tests {
                 Mod+Shift+H { focus-monitor-left; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
                 Mod+Comma { consume-window-into-column; }
-                Mod+1 { focus-workspace 1;}
+                Mod+1 { focus-workspace 1; }
             }
 
             debug {
