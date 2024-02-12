@@ -6,6 +6,7 @@ use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{Bind, ExportMem, Frame, Offscreen, Renderer};
 use smithay::utils::{Physical, Rectangle, Scale, Size, Transform};
 
+pub mod nearest_integer_scale;
 pub mod offscreen;
 pub mod primary_gpu_texture;
 pub mod render_elements;

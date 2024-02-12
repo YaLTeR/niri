@@ -101,6 +101,7 @@ use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::pw_utils::{Cast, PipeWire};
+use crate::render_helpers::nearest_integer_scale::NearestIntegerScale;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::{render_to_texture, render_to_vec};
 use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
@@ -1693,14 +1694,20 @@ impl Niri {
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                let pointer_elements = render_elements_from_surface_tree(
-                    renderer,
-                    &surface,
-                    pointer_pos,
-                    output_scale,
-                    1.,
-                    Kind::Cursor,
-                );
+                let pointer_elements: Vec<WaylandSurfaceRenderElement<_>> =
+                    render_elements_from_surface_tree(
+                        renderer,
+                        &surface,
+                        pointer_pos,
+                        output_scale,
+                        1.,
+                        Kind::Cursor,
+                    );
+                let pointer_elements = pointer_elements
+                    .into_iter()
+                    .map(NearestIntegerScale::from)
+                    .map(OutputRenderElements::from)
+                    .collect();
 
                 (pointer_elements, pointer_pos)
             }
@@ -1740,14 +1747,20 @@ impl Niri {
         };
 
         if let Some(dnd_icon) = &self.dnd_icon {
-            pointer_elements.extend(render_elements_from_surface_tree(
-                renderer,
-                dnd_icon,
-                pointer_pos,
-                output_scale,
-                1.,
-                Kind::Unspecified,
-            ));
+            let dnd_elements: Vec<WaylandSurfaceRenderElement<_>> =
+                render_elements_from_surface_tree(
+                    renderer,
+                    dnd_icon,
+                    pointer_pos,
+                    output_scale,
+                    1.,
+                    Kind::Unspecified,
+                );
+            let dnd_elements = dnd_elements
+                .into_iter()
+                .map(NearestIntegerScale::from)
+                .map(OutputRenderElements::from);
+            pointer_elements.extend(dnd_elements);
         }
 
         pointer_elements
@@ -1923,14 +1936,20 @@ impl Niri {
         if self.is_locked() {
             let state = self.output_state.get(output).unwrap();
             if let Some(surface) = state.lock_surface.as_ref() {
-                elements.extend(render_elements_from_surface_tree(
-                    renderer,
-                    surface.wl_surface(),
-                    (0, 0),
-                    output_scale,
-                    1.,
-                    Kind::Unspecified,
-                ));
+                let lock_elements: Vec<WaylandSurfaceRenderElement<_>> =
+                    render_elements_from_surface_tree(
+                        renderer,
+                        surface.wl_surface(),
+                        (0, 0),
+                        output_scale,
+                        1.,
+                        Kind::Unspecified,
+                    );
+                let lock_elements = lock_elements
+                    .into_iter()
+                    .map(NearestIntegerScale::from)
+                    .map(OutputRenderElements::from);
+                elements.extend(lock_elements);
             }
 
             // Draw the solid color background.
@@ -2688,7 +2707,7 @@ impl Niri {
             scale,
             1.,
         );
-        let elements = elements.iter().rev();
+        let elements = elements.iter().map(NearestIntegerScale::from).rev();
         let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
 
         self.save_screenshot(size, pixels)
@@ -2945,7 +2964,7 @@ impl ClientData for ClientState {
 niri_render_elements! {
     OutputRenderElements => {
         Monitor = MonitorRenderElement<R>,
-        Wayland = WaylandSurfaceRenderElement<R>,
+        Wayland = NearestIntegerScale<WaylandSurfaceRenderElement<R>>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         ScreenshotUi = ScreenshotUiRenderElement,
