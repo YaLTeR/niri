@@ -359,6 +359,8 @@ impl Tty {
 
                 self.refresh_ipc_outputs();
 
+                niri.idle_notifier_state.notify_activity(&niri.seat);
+
                 niri.queue_redraw_all();
             }
         }
