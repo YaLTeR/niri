@@ -248,6 +248,7 @@ impl State {
 
                 if let Some(dialog) = &this.niri.exit_confirm_dialog {
                     if dialog.is_open() && pressed && raw == Some(Keysym::Return) {
+                        info!("quitting after confirming exit dialog");
                         this.niri.stop_signal.stop();
                     }
                 }
