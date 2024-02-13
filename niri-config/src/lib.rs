@@ -277,7 +277,7 @@ pub struct Mode {
     pub refresh: Option<f64>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Layout {
     #[knuffel(child, default)]
     pub focus_ring: FocusRing,
@@ -289,10 +289,24 @@ pub struct Layout {
     pub default_column_width: Option<DefaultColumnWidth>,
     #[knuffel(child, unwrap(argument), default)]
     pub center_focused_column: CenterFocusedColumn,
-    #[knuffel(child, unwrap(argument), default = 16)]
+    #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
     pub gaps: u16,
     #[knuffel(child, default)]
     pub struts: Struts,
+}
+
+impl Default for Layout {
+    fn default() -> Self {
+        Self {
+            focus_ring: Default::default(),
+            border: Default::default(),
+            preset_column_widths: Default::default(),
+            default_column_width: Default::default(),
+            center_focused_column: Default::default(),
+            gaps: 16,
+            struts: Default::default(),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
