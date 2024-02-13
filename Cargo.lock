@@ -2130,6 +2130,7 @@ dependencies = [
  "knuffel",
  "miette",
  "niri-ipc",
+ "regex",
  "smithay",
  "tracing",
  "tracy-client",

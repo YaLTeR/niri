@@ -16,6 +16,7 @@ use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
+use super::xdg_shell::{initial_configure_sent, resolve_window_rules};
 use crate::niri::{ClientState, State};
 use crate::utils::clone2;
 
@@ -113,13 +114,28 @@ impl CompositorHandler for State {
                         .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
                         .map(|(win, _)| win.clone());
 
+                    let (width, output) = {
+                        let config = self.niri.config.borrow();
+                        let rules = resolve_window_rules(&config.window_rules, window.toplevel());
+                        let output = rules
+                            .open_on_output
+                            .and_then(|name| self.niri.output_by_name.get(name))
+                            .cloned();
+                        (rules.default_width, output)
+                    };
+
                     let win = window.clone();
 
                     // Open dialogs immediately to the right of their parent window.
                     let output = if let Some(p) = parent {
-                        self.niri.layout.add_window_right_of(&p, win, None, false)
+                        self.niri.layout.add_window_right_of(&p, win, width, false)
+                    } else if let Some(output) = &output {
+                        self.niri
+                            .layout
+                            .add_window_on_output(output, win, width, false);
+                        Some(output)
                     } else {
-                        self.niri.layout.add_window(win, None, false)
+                        self.niri.layout.add_window(win, width, false)
                     };
 
                     if let Some(output) = output.cloned() {
@@ -131,7 +147,17 @@ impl CompositorHandler for State {
 
                 // The toplevel remains unmapped.
                 let window = entry.get().clone();
-                self.send_initial_configure_if_needed(&window);
+
+                // Send the initial configure in an idle, in case the client sent some more info
+                // after the initial commit.
+                if !initial_configure_sent(window.toplevel()) {
+                    self.niri.event_loop.insert_idle(move |state| {
+                        if !window.toplevel().alive() {
+                            return;
+                        }
+                        state.send_initial_configure_if_needed(&window);
+                    });
+                }
                 return;
             }
 
