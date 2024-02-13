@@ -35,23 +35,6 @@ impl XdgShellHandler for State {
         let wl_surface = surface.wl_surface().clone();
         let window = Window::new(surface);
 
-        // Tell the surface the preferred size and bounds for its likely output.
-        if let Some(ws) = self.niri.layout.active_workspace() {
-            ws.configure_new_window(&window);
-        }
-
-        // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
-        // rid of the various client-side rounded corners also by using the tiled state.
-        let config = self.niri.config.borrow();
-        if config.prefer_no_csd {
-            window.toplevel().with_pending_state(|state| {
-                state.states.set(xdg_toplevel::State::TiledLeft);
-                state.states.set(xdg_toplevel::State::TiledRight);
-                state.states.set(xdg_toplevel::State::TiledTop);
-                state.states.set(xdg_toplevel::State::TiledBottom);
-            });
-        }
-
         // At the moment of creation, xdg toplevels must have no buffer.
         let existing = self.niri.unmapped_windows.insert(wl_surface, window);
         assert!(existing.is_none());
@@ -350,12 +333,6 @@ impl KdeDecorationHandler for State {
 
 delegate_kde_decoration!(State);
 
-pub fn send_initial_configure_if_needed(toplevel: &ToplevelSurface) {
-    if !initial_configure_sent(toplevel) {
-        toplevel.send_configure();
-    }
-}
-
 fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
     with_states(toplevel.wl_surface(), |states| {
         states
@@ -369,6 +346,32 @@ fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
 }
 
 impl State {
+    pub fn send_initial_configure_if_needed(&mut self, window: &Window) {
+        let toplevel = window.toplevel();
+        if initial_configure_sent(toplevel) {
+            return;
+        }
+
+        // Tell the surface the preferred size and bounds for its likely output.
+        if let Some(ws) = self.niri.layout.active_workspace() {
+            ws.configure_new_window(window);
+        }
+
+        // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
+        // rid of the various client-side rounded corners also by using the tiled state.
+        let config = self.niri.config.borrow();
+        if config.prefer_no_csd {
+            toplevel.with_pending_state(|state| {
+                state.states.set(xdg_toplevel::State::TiledLeft);
+                state.states.set(xdg_toplevel::State::TiledRight);
+                state.states.set(xdg_toplevel::State::TiledTop);
+                state.states.set(xdg_toplevel::State::TiledBottom);
+            });
+        }
+
+        toplevel.send_configure();
+    }
+
     /// Should be called on `WlSurface::commit`
     pub fn popups_handle_commit(&mut self, surface: &WlSurface) {
         self.niri.popups.commit(surface);

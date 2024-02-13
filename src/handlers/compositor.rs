@@ -16,7 +16,6 @@ use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
-use super::xdg_shell;
 use crate::niri::{ClientState, State};
 use crate::utils::clone2;
 
@@ -131,8 +130,8 @@ impl CompositorHandler for State {
                 }
 
                 // The toplevel remains unmapped.
-                let window = entry.get();
-                xdg_shell::send_initial_configure_if_needed(window.toplevel());
+                let window = entry.get().clone();
+                self.send_initial_configure_if_needed(&window);
                 return;
             }
 
