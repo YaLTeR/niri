@@ -633,12 +633,17 @@ impl<W: LayoutElement> Monitor<W> {
                 let before = self.workspaces[before_idx].render_elements(renderer);
                 let after = self.workspaces[after_idx].render_elements(renderer);
 
+                // HACK: crop to infinite bounds for all sides except the side where the workspaces
+                // join, otherwise it will cut pixel shaders and mess up the coordinate space.
                 let before = before.into_iter().filter_map(|elem| {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
                             elem,
                             output_scale,
-                            Rectangle::from_extemities((0, offset), (size.w, size.h)),
+                            Rectangle::from_extemities(
+                                (-i32::MAX / 2, -i32::MAX / 2),
+                                (i32::MAX / 2, size.h),
+                            ),
                         )?,
                         (0, -offset),
                         Relocate::Relative,
@@ -649,7 +654,10 @@ impl<W: LayoutElement> Monitor<W> {
                         CropRenderElement::from_element(
                             elem,
                             output_scale,
-                            Rectangle::from_extemities((0, 0), (size.w, offset)),
+                            Rectangle::from_extemities(
+                                (-i32::MAX / 2, 0),
+                                (i32::MAX / 2, i32::MAX / 2),
+                            ),
                         )?,
                         (0, -offset + size.h),
                         Relocate::Relative,
