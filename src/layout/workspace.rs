@@ -321,8 +321,17 @@ impl<W: LayoutElement> Workspace<W> {
         ))
     }
 
-    pub fn new_window_size(&self) -> Size<i32, Logical> {
-        let width = if let Some(width) = self.options.default_width {
+    pub fn new_window_size(
+        &self,
+        default_width: Option<Option<ColumnWidth>>,
+    ) -> Size<i32, Logical> {
+        let default_width = match default_width {
+            Some(Some(width)) => Some(width),
+            Some(None) => None,
+            None => self.options.default_width,
+        };
+
+        let width = if let Some(width) = default_width {
             let mut width = width.resolve(&self.options, self.working_area.size.w);
             if !self.options.border.off {
                 width -= self.options.border.width as i32 * 2;
@@ -340,8 +349,12 @@ impl<W: LayoutElement> Workspace<W> {
         Size::from((width, max(height, 1)))
     }
 
-    pub fn configure_new_window(&self, window: &Window) {
-        let size = self.new_window_size();
+    pub fn configure_new_window(
+        &self,
+        window: &Window,
+        default_width: Option<Option<ColumnWidth>>,
+    ) {
+        let size = self.new_window_size(default_width);
         let bounds = self.toplevel_bounds();
 
         if let Some(output) = self.output.as_ref() {

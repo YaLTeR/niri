@@ -7,6 +7,7 @@ use std::str::FromStr;
 use bitflags::bitflags;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{LayoutSwitchTarget, SizeChange};
+use regex::Regex;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
@@ -38,6 +39,8 @@ pub struct Config {
     pub hotkey_overlay: HotkeyOverlay,
     #[knuffel(child, default)]
     pub animations: Animations,
+    #[knuffel(children(name = "window-rule"))]
+    pub window_rules: Vec<WindowRule>,
     #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
@@ -524,6 +527,34 @@ pub enum AnimationCurve {
     EaseOutExpo,
 }
 
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct WindowRule {
+    #[knuffel(children(name = "match"))]
+    pub matches: Vec<Match>,
+    #[knuffel(children(name = "exclude"))]
+    pub excludes: Vec<Match>,
+
+    #[knuffel(child)]
+    pub default_column_width: Option<DefaultColumnWidth>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_on_output: Option<String>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone)]
+pub struct Match {
+    #[knuffel(property, str)]
+    pub app_id: Option<Regex>,
+    #[knuffel(property, str)]
+    pub title: Option<Regex>,
+}
+
+impl PartialEq for Match {
+    fn eq(&self, other: &Self) -> bool {
+        self.app_id.as_ref().map(Regex::as_str) == other.app_id.as_ref().map(Regex::as_str)
+            && self.title.as_ref().map(Regex::as_str) == other.title.as_ref().map(Regex::as_str)
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Binds(#[knuffel(children)] pub Vec<Bind>);
 
@@ -965,6 +996,13 @@ mod tests {
                 }
             }
 
+            window-rule {
+                match app-id=".*alacritty"
+                exclude title="~"
+
+                open-on-output "eDP-1"
+            }
+
             binds {
                 Mod+T { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -1098,6 +1136,18 @@ mod tests {
                     },
                     ..Default::default()
                 },
+                window_rules: vec![WindowRule {
+                    matches: vec![Match {
+                        app_id: Some(Regex::new(".*alacritty").unwrap()),
+                        title: None,
+                    }],
+                    excludes: vec![Match {
+                        app_id: None,
+                        title: Some(Regex::new("~").unwrap()),
+                    }],
+                    open_on_output: Some("eDP-1".to_owned()),
+                    ..Default::default()
+                }],
                 binds: Binds(vec![
                     Bind {
                         key: Key {

@@ -1,3 +1,4 @@
+use niri_config::{Match, WindowRule};
 use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, LayerSurface,
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -19,12 +20,90 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
-    XdgShellState, XdgToplevelSurfaceData,
+    XdgShellState, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
 };
 use smithay::{delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_shell};
 
+use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::utils::clone2;
+
+#[derive(Debug, Default)]
+pub struct ResolvedWindowRule<'a> {
+    /// Default width for this window.
+    ///
+    /// - `None`: unset.
+    /// - `Some(None)`: set to empty.
+    /// - `Some(Some(width))`: set to a particular width.
+    pub default_width: Option<Option<ColumnWidth>>,
+
+    /// Output to open this window on.
+    pub open_on_output: Option<&'a str>,
+}
+
+fn window_matches(role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
+    if let Some(app_id_re) = &m.app_id {
+        let Some(app_id) = &role.app_id else {
+            return false;
+        };
+        if !app_id_re.is_match(app_id) {
+            return false;
+        }
+    }
+
+    if let Some(title_re) = &m.title {
+        let Some(title) = &role.title else {
+            return false;
+        };
+        if !title_re.is_match(title) {
+            return false;
+        }
+    }
+
+    true
+}
+
+pub fn resolve_window_rules<'a>(
+    rules: &'a [WindowRule],
+    toplevel: &ToplevelSurface,
+) -> ResolvedWindowRule<'a> {
+    let _span = tracy_client::span!("resolve_window_rules");
+
+    let mut resolved = ResolvedWindowRule::default();
+
+    with_states(toplevel.wl_surface(), |states| {
+        let role = states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap();
+
+        for rule in rules {
+            if !(rule.matches.is_empty() || rule.matches.iter().any(|m| window_matches(&role, m))) {
+                continue;
+            }
+
+            if rule.excludes.iter().any(|m| window_matches(&role, m)) {
+                continue;
+            }
+
+            if let Some(x) = rule
+                .default_column_width
+                .as_ref()
+                .map(|d| d.0.first().copied().map(ColumnWidth::from))
+            {
+                resolved.default_width = Some(x);
+            }
+
+            if let Some(x) = rule.open_on_output.as_deref() {
+                resolved.open_on_output = Some(x);
+            }
+        }
+    });
+
+    resolved
+}
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -237,9 +316,20 @@ impl XdgShellHandler for State {
             let window = window.clone();
             self.niri.layout.set_fullscreen(&window, false);
         } else if let Some(window) = self.niri.unmapped_windows.get(surface.wl_surface()) {
-            if let Some(ws) = self.niri.layout.active_workspace() {
+            let config = self.niri.config.borrow();
+            let rules = resolve_window_rules(&config.window_rules, window.toplevel());
+
+            let output = rules
+                .open_on_output
+                .and_then(|name| self.niri.output_by_name.get(name));
+            let mon = output.map(|o| self.niri.layout.monitor_for_output(o).unwrap());
+            let ws = mon
+                .map(|mon| mon.active_workspace_ref())
+                .or_else(|| self.niri.layout.active_workspace());
+
+            if let Some(ws) = ws {
                 window.toplevel().with_pending_state(|state| {
-                    state.size = Some(ws.new_window_size());
+                    state.size = Some(ws.new_window_size(rules.default_width));
                     state.states.unset(xdg_toplevel::State::Fullscreen);
                 });
             }
@@ -333,7 +423,7 @@ impl KdeDecorationHandler for State {
 
 delegate_kde_decoration!(State);
 
-fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
+pub fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
     with_states(toplevel.wl_surface(), |states| {
         states
             .data_map
@@ -352,14 +442,26 @@ impl State {
             return;
         }
 
+        let _span = tracy_client::span!("State::send_initial_configure_if_needed");
+
+        let config = self.niri.config.borrow();
+        let rules = resolve_window_rules(&config.window_rules, toplevel);
+
+        let output = rules
+            .open_on_output
+            .and_then(|name| self.niri.output_by_name.get(name));
+        let mon = output.map(|o| self.niri.layout.monitor_for_output(o).unwrap());
+        let ws = mon
+            .map(|mon| mon.active_workspace_ref())
+            .or_else(|| self.niri.layout.active_workspace());
+
         // Tell the surface the preferred size and bounds for its likely output.
-        if let Some(ws) = self.niri.layout.active_workspace() {
-            ws.configure_new_window(window);
+        if let Some(ws) = ws {
+            ws.configure_new_window(window, rules.default_width);
         }
 
         // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
         // rid of the various client-side rounded corners also by using the tiled state.
-        let config = self.niri.config.borrow();
         if config.prefer_no_csd {
             toplevel.with_pending_state(|state| {
                 state.states.set(xdg_toplevel::State::TiledLeft);

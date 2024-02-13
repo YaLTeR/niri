@@ -76,6 +76,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn active_workspace_ref(&self) -> &Workspace<W> {
+        &self.workspaces[self.active_workspace_idx]
+    }
+
     pub fn active_workspace(&mut self) -> &mut Workspace<W> {
         &mut self.workspaces[self.active_workspace_idx]
     }
