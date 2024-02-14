@@ -652,7 +652,7 @@ impl Tty {
         if non_desktop {
             debug!("output is non desktop");
             let description = EdidInfo::for_connector(&device.drm, connector.handle())
-                .map(|info| info.model)
+                .map(|info| truncate_to_nul(info.model))
                 .unwrap_or_else(|| "Unknown".into());
             device.drm_lease_state.add_connector::<State>(
                 connector.handle(),
@@ -712,7 +712,12 @@ impl Tty {
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
 
         let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
-            .map(|info| (info.manufacturer, info.model))
+            .map(|info| {
+                (
+                    truncate_to_nul(info.manufacturer),
+                    truncate_to_nul(info.model),
+                )
+            })
             .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
 
         let output = Output::new(
@@ -1239,7 +1244,12 @@ impl Tty {
                 let physical_size = connector.size();
 
                 let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
-                    .map(|info| (info.manufacturer, info.model))
+                    .map(|info| {
+                        (
+                            truncate_to_nul(info.manufacturer),
+                            truncate_to_nul(info.model),
+                        )
+                    })
                     .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
 
                 let modes = connector
@@ -1696,4 +1706,32 @@ fn pick_mode(
     }
 
     mode.map(|m| (*m, fallback))
+}
+
+fn truncate_to_nul(mut s: String) -> String {
+    if let Some(index) = s.find('\0') {
+        s.truncate(index);
+    }
+    s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[track_caller]
+    fn check(input: &str, expected: &str) {
+        let input = String::from(input);
+        assert_eq!(truncate_to_nul(input), expected);
+    }
+
+    #[test]
+    fn truncate_to_nul_works() {
+        check("", "");
+        check("qwer", "qwer");
+        check("abc\0def", "abc");
+        check("\0as", "");
+        check("a\0\0\0b", "a");
+        check("bb😁\0cc", "bb😁");
+    }
 }
