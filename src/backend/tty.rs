@@ -1252,33 +1252,46 @@ impl Tty {
                     })
                     .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
 
+                let surface = device.surfaces.get(&crtc);
+                let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
+                let mut current_mode = None;
+
                 let modes = connector
                     .modes()
                     .iter()
-                    .map(|m| niri_ipc::Mode {
-                        width: m.size().0,
-                        height: m.size().1,
-                        refresh_rate: Mode::from(*m).refresh as u32,
+                    .filter(|m| !m.flags().contains(ModeFlags::INTERLACE))
+                    .enumerate()
+                    .map(|(idx, m)| {
+                        if Some(*m) == current_crtc_mode {
+                            current_mode = Some(idx);
+                        }
+
+                        niri_ipc::Mode {
+                            width: m.size().0,
+                            height: m.size().1,
+                            refresh_rate: Mode::from(*m).refresh as u32,
+                        }
                     })
                     .collect();
 
-                let mut output = niri_ipc::Output {
+                if let Some(crtc_mode) = current_crtc_mode {
+                    if current_mode.is_none() {
+                        if crtc_mode.flags().contains(ModeFlags::INTERLACE) {
+                            warn!("connector mode list missing current mode (interlaced)");
+                        } else {
+                            error!("connector mode list missing current mode");
+                        }
+                    }
+                }
+
+                let output = niri_ipc::Output {
                     name: connector_name.clone(),
                     make,
                     model,
                     physical_size,
                     modes,
-                    current_mode: None,
+                    current_mode,
                 };
-
-                if let Some(surface) = device.surfaces.get(&crtc) {
-                    let current = surface.compositor.pending_mode();
-                    if let Some(current) = connector.modes().iter().position(|m| *m == current) {
-                        output.current_mode = Some(current);
-                    } else {
-                        error!("connector mode list missing current mode");
-                    }
-                }
 
                 ipc_outputs.insert(connector_name, output);
             }
@@ -1659,6 +1672,11 @@ fn pick_mode(
 
         for m in connector.modes() {
             if m.size() != (target.width, target.height) {
+                continue;
+            }
+
+            // Interlaced modes don't appear to work.
+            if m.flags().contains(ModeFlags::INTERLACE) {
                 continue;
             }
 
