@@ -628,6 +628,7 @@ impl State {
 
         if config.input.touchpad != old_config.input.touchpad
             || config.input.mouse != old_config.input.mouse
+            || config.input.trackpoint != old_config.input.trackpoint
         {
             libinput_config_changed = true;
         }
