@@ -1,6 +1,6 @@
 //! File modification watcher.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,6 +14,37 @@ const DEBOUNCE_DELAY: Duration = Duration::from_millis(100);
 const FALLBACK_POLLING_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub fn watch(path: PathBuf, changed: SyncSender<()>) {
+    let Ok(path_metadata) = path.metadata() else {
+        warn!("config file {path:?} is not valid");
+        return;
+    };
+    if !path_metadata.file_type().is_file() {
+        warn!("config file {path:?} is not a file");
+        return;
+    }
+    let Ok(canonical_path) = path.canonicalize() else {
+        warn!("config file {path:?} could not be canonicalized");
+        return;
+    };
+    // When the file is a symlink check both the linked directory and the original one.
+    let paths = match canonical_path.symlink_metadata() {
+        Ok(symlink_metadata) if symlink_metadata.file_type().is_symlink() => {
+            vec![path.clone(), canonical_path]
+        }
+        _ => vec![canonical_path],
+    };
+
+    let mut parents = paths
+        .iter()
+        .map(|path| {
+            let mut path = path.clone();
+            path.pop();
+            path
+        })
+        .collect::<Vec<PathBuf>>();
+    parents.sort_unstable();
+    parents.dedup();
+
     let (tx, rx) = mpsc::channel();
     let mut watcher = match RecommendedWatcher::new(
         tx,
@@ -21,7 +52,7 @@ pub fn watch(path: PathBuf, changed: SyncSender<()>) {
     ) {
         Ok(watcher) => watcher,
         Err(err) => {
-            error!("Unable to watch config file {path:?}: {err}");
+            error!("unable to watch config file {path:?}: {err:?}");
             return;
         }
     };
@@ -29,14 +60,16 @@ pub fn watch(path: PathBuf, changed: SyncSender<()>) {
     thread::Builder::new()
         .name(format!("Filesystem Watcher for {}", path.to_string_lossy()))
         .spawn(move || {
-            // Watch the configuration file directory.
-            let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
-            if let Err(err) = watcher.watch(&parent, RecursiveMode::NonRecursive) {
-                error!("Unable to watch config directory {parent:?}: {err}");
-            }
-
             let mut debouncing_deadline: Option<Instant> = None;
             let mut events_received_during_debounce = Vec::new();
+
+            for parent in &parents {
+                // Watch the configuration file directory.
+                if let Err(err) = watcher.watch(parent, RecursiveMode::NonRecursive) {
+                    error!("unable to watch config directory {parent:?}: {err:?}");
+                    return;
+                }
+            }
 
             loop {
                 let event = match debouncing_deadline.as_ref() {
@@ -67,7 +100,8 @@ pub fn watch(path: PathBuf, changed: SyncSender<()>) {
 
                         if events_received_during_debounce
                             .drain(..)
-                            .any(|event| event.paths.contains(&path))
+                            .flat_map(|event| event.paths.into_iter())
+                            .any(|path| paths.contains(&path))
                         {
                             if let Err(err) = changed.send(()) {
                                 warn!("error sending change notification: {err:?}");
@@ -76,16 +110,16 @@ pub fn watch(path: PathBuf, changed: SyncSender<()>) {
                         }
                     }
                     Ok(Err(err)) => {
-                        debug!("Config watcher errors: {err:?}");
+                        debug!("config watcher errors: {err:?}");
                     }
                     Err(err) => {
-                        debug!("Config watcher channel dropped unexpectedly: {err}");
+                        debug!("config watcher channel dropped unexpectedly: {err:?}");
                         break;
                     }
                 }
             }
 
-            debug!("Exiting watcher thread for {}", path.to_string_lossy());
+            debug!("exiting watcher thread for {}", path.to_string_lossy());
         })
         .unwrap();
 }
