@@ -587,48 +587,56 @@ impl State {
             Action::MoveWindowToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveWindowToMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
                     self.niri.layout.move_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveWindowToMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
                     self.niri.layout.move_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveWindowToMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
                     self.niri.layout.move_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveColumnToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveColumnToMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
                     self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveColumnToMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
                     self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveColumnToMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
                     self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
