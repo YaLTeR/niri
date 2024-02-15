@@ -94,6 +94,7 @@ features = [
 [dev-dependencies]
 proptest = "1.4.0"
 proptest-derive = "0.4.0"
+xshell = "0.2.5"
 
 [features]
 default = ["dbus", "xdp-gnome-screencast"]
