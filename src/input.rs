@@ -587,48 +587,56 @@ impl State {
             Action::MoveWindowToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveWindowToMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
                     self.niri.layout.move_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveWindowToMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
                     self.niri.layout.move_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveWindowToMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
                     self.niri.layout.move_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveColumnToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveColumnToMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
                     self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveColumnToMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
                     self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
             Action::MoveColumnToMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
                     self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
                     self.move_cursor_to_output(&output);
                 }
             }
@@ -1605,6 +1613,18 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         && !is_trackpoint;
     if is_mouse {
         let c = &config.mouse;
+        let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
+        let _ = device.config_accel_set_speed(c.accel_speed);
+
+        if let Some(accel_profile) = c.accel_profile {
+            let _ = device.config_accel_set_profile(accel_profile.into());
+        } else if let Some(default) = device.config_accel_default_profile() {
+            let _ = device.config_accel_set_profile(default);
+        }
+    }
+
+    if is_trackpoint {
+        let c = &config.trackpoint;
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
 

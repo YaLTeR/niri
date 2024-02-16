@@ -2147,7 +2147,7 @@ dependencies = [
 
 [[package]]
 name = "niri"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -2184,17 +2184,19 @@ dependencies = [
  "tracy-client",
  "url",
  "xcursor",
+ "xshell",
  "zbus",
 ]
 
 [[package]]
 name = "niri-config"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bitflags 2.4.2",
  "knuffel",
  "miette",
  "niri-ipc",
+ "regex",
  "smithay",
  "tracing",
  "tracy-client",
@@ -2202,7 +2204,7 @@ dependencies = [
 
 [[package]]
 name = "niri-ipc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "serde",
@@ -2210,7 +2212,7 @@ dependencies = [
 
 [[package]]
 name = "niri-visual-tests"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "gtk4",
@@ -3087,7 +3089,7 @@ checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay.git#91e61f13501f21d66803efac947bfafed43080c5"
+source = "git+https://github.com/Smithay/smithay.git#832dee8586d783d4c60a162ef8aabca2ba7fd499"
 dependencies = [
  "appendlist",
  "bitflags 2.4.2",
@@ -3159,7 +3161,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#91e61f13501f21d66803efac947bfafed43080c5"
+source = "git+https://github.com/Smithay/smithay.git#832dee8586d783d4c60a162ef8aabca2ba7fd499"
 dependencies = [
  "drm",
  "edid-rs",
@@ -4226,6 +4228,21 @@ name = "xml-rs"
 version = "0.8.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fcb9cbac069e033553e8bb871be2fbdffcab578eb25bd0f7c508cedc6dcd75a"
+
+[[package]]
+name = "xshell"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce2107fe03e558353b4c71ad7626d58ed82efaf56c54134228608893c77023ad"
+dependencies = [
+ "xshell-macros",
+]
+
+[[package]]
+name = "xshell-macros"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e2c411759b501fb9501aac2b1b2d287a6e93e5bdcf13c25306b23e1b716dd0e"
 
 [[package]]
 name = "yansi-term"

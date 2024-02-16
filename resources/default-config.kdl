@@ -41,6 +41,12 @@ input {
         // accel-profile "flat"
     }
 
+    trackpoint {
+        // natural-scroll
+        // accel-speed 0.2
+        // accel-profile "flat"
+    }
+
     tablet {
         // Set the name of the output (see below) which the tablet will map to.
         // If this is unset or the output doesn't exist, the tablet maps to one of the
@@ -58,7 +64,7 @@ input {
 // You can configure outputs by their name, which you can find
 // by running `niri msg outputs` while inside a niri instance.
 // The built-in laptop monitor is usually called "eDP-1".
-// Remember to uncommend the node by removing "/-"!
+// Remember to uncomment the node by removing "/-"!
 /-output "eDP-1" {
     // Uncomment this line to disable this output.
     // off
@@ -76,7 +82,7 @@ input {
     // for the resolution.
     // If the mode is omitted altogether or is invalid, niri will pick one automatically.
     // Run `niri msg outputs` while inside a niri instance to list all outputs and their modes.
-    mode "1920x1080@144"
+    mode "1920x1080@120.030"
 
     // Position of the output in the global coordinate space.
     // This affects directional monitor actions like "focus-monitor-left", and cursor movement.
@@ -93,7 +99,7 @@ input {
 layout {
     // By default focus ring and border are rendered as a solid background rectangle
     // behind windows. That is, they will show up through semitransparent windows.
-    // This is because windows using client-side decoratins can have an arbitrary shape.
+    // This is because windows using client-side decorations can have an arbitrary shape.
     //
     // If you don't like that, you should uncomment `prefer-no-csd` below.
     // Niri will draw focus ring and border *around* windows that agree to omit their
@@ -246,6 +252,49 @@ animations {
         // duration-ms 250
         // curve "ease-out-cubic"
     }
+}
+
+// Window rules let you adjust behavior for individual windows.
+// They are processed in order of appearance in this file.
+// (This example rule is commented out with a "/-" in front.)
+/-window-rule {
+    // Match directives control which windows this rule will apply to.
+    // You can match by app-id and by title.
+    // The window must match all properties of the match directive.
+    match app-id="org.myapp.MyApp" title="My Cool App"
+
+    // There can be multiple match directives. A window must match any one
+    // of the rule's match directives.
+    //
+    // If there are no match directives, any window will match the rule.
+    match title="Second App"
+
+    // You can also add exclude directives which have the same properties.
+    // If a window matches any exclude directive, it won't match this rule.
+    //
+    // Both app-id and title are regular expressions.
+    // Raw KDL strings are helpful here.
+    exclude app-id=r#"\.unwanted\."#
+
+    // Here are the properties that you can set on a window rule.
+    // You can override the default column width.
+    default-column-width { proportion 0.75; }
+
+    // You can set the output that this window will initially open on.
+    // If such an output does not exist, it will open on the currently
+    // focused output as usual.
+    open-on-output "eDP-1"
+}
+
+// Here's a useful example. Work around WezTerm's initial configure bug
+// by setting an empty default-column-width.
+window-rule {
+    // This regular expression is intentionally made as specific as possible,
+    // since this is the default config, and we want no false positives.
+    // You can get away with just app-id="wezterm" if you want.
+    // The regular expression can match anywhere in the string.
+    match app-id=r#"^org\.wezfurlong\.wezterm$"#
+    default-column-width {}
 }
 
 binds {

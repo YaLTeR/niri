@@ -531,12 +531,15 @@ impl<W: LayoutElement> Layout<W> {
     pub fn add_window(
         &mut self,
         window: W,
-        width: Option<ColumnWidth>,
+        width: Option<Option<ColumnWidth>>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let width = width
-            .or(self.options.default_width)
-            .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let width = match width {
+            Some(Some(width)) => Some(width),
+            Some(None) => None,
+            None => self.options.default_width,
+        }
+        .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -584,12 +587,15 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         right_of: &W,
         window: W,
-        width: Option<ColumnWidth>,
+        width: Option<Option<ColumnWidth>>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let width = width
-            .or(self.options.default_width)
-            .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let width = match width {
+            Some(Some(width)) => Some(width),
+            Some(None) => None,
+            None => self.options.default_width,
+        }
+        .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
 
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -610,6 +616,55 @@ impl<W: LayoutElement> Layout<W> {
                 None
             }
         }
+    }
+
+    /// Adds a new window to the layout on a specific output.
+    pub fn add_window_on_output(
+        &mut self,
+        output: &Output,
+        window: W,
+        width: Option<Option<ColumnWidth>>,
+        is_full_width: bool,
+    ) {
+        let width = match width {
+            Some(Some(width)) => Some(width),
+            Some(None) => None,
+            None => self.options.default_width,
+        }
+        .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            panic!()
+        };
+
+        let (mon_idx, mon) = monitors
+            .iter_mut()
+            .enumerate()
+            .find(|(_, mon)| mon.output == *output)
+            .unwrap();
+
+        // Don't steal focus from an active fullscreen window.
+        let mut activate = true;
+        let ws = &mon.workspaces[mon.active_workspace_idx];
+        if mon_idx == *active_monitor_idx
+            && !ws.columns.is_empty()
+            && ws.columns[ws.active_column_idx].is_fullscreen
+        {
+            activate = false;
+        }
+
+        mon.add_window(
+            mon.active_workspace_idx,
+            window,
+            activate,
+            width,
+            is_full_width,
+        );
     }
 
     pub fn remove_window(&mut self, window: &W) {
