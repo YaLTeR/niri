@@ -2083,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "niri"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "niri-config"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bitflags 2.4.2",
  "knuffel",
@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "niri-ipc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "serde",
@@ -2147,7 +2147,7 @@ dependencies = [
 
 [[package]]
 name = "niri-visual-tests"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "gtk4",

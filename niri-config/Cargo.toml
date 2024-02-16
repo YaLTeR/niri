@@ -11,7 +11,7 @@ repository.workspace = true
 bitflags.workspace = true
 knuffel = "3.2.0"
 miette = "5.10.0"
-niri-ipc = { version = "0.1.1", path = "../niri-ipc" }
+niri-ipc = { version = "0.1.2", path = "../niri-ipc" }
 regex = "1.10.3"
 smithay = { workspace = true, features = ["backend_libinput"] }
 tracing.workspace = true
