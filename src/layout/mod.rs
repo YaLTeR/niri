@@ -55,6 +55,7 @@ use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Works
 use crate::animation::Animation;
 use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
+use crate::render_helpers::nearest_integer_scale::NearestIntegerScale;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::utils::output_size;
 
@@ -65,7 +66,7 @@ pub mod workspace;
 
 niri_render_elements! {
     LayoutElementRenderElement => {
-        Wayland = WaylandSurfaceRenderElement<R>,
+        Wayland = NearestIntegerScale<WaylandSurfaceRenderElement<R>>,
         SolidColor = SolidColorRenderElement,
     }
 }
@@ -238,12 +239,17 @@ impl LayoutElement for Window {
         scale: Scale<f64>,
     ) -> Vec<LayoutElementRenderElement<R>> {
         let buf_pos = location - self.geometry().loc;
-        self.render_elements(
+        let elements: Vec<WaylandSurfaceRenderElement<R>> = self.render_elements(
             renderer,
             buf_pos.to_physical_precise_round(scale),
             scale,
             1.,
-        )
+        );
+        elements
+            .into_iter()
+            .map(NearestIntegerScale::from)
+            .map(LayoutElementRenderElement::from)
+            .collect()
     }
 
     fn request_size(&self, size: Size<i32, Logical>) {
