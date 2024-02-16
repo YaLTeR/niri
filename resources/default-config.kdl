@@ -64,7 +64,7 @@ input {
 // You can configure outputs by their name, which you can find
 // by running `niri msg outputs` while inside a niri instance.
 // The built-in laptop monitor is usually called "eDP-1".
-// Remember to uncommend the node by removing "/-"!
+// Remember to uncomment the node by removing "/-"!
 /-output "eDP-1" {
     // Uncomment this line to disable this output.
     // off
@@ -99,7 +99,7 @@ input {
 layout {
     // By default focus ring and border are rendered as a solid background rectangle
     // behind windows. That is, they will show up through semitransparent windows.
-    // This is because windows using client-side decoratins can have an arbitrary shape.
+    // This is because windows using client-side decorations can have an arbitrary shape.
     //
     // If you don't like that, you should uncomment `prefer-no-csd` below.
     // Niri will draw focus ring and border *around* windows that agree to omit their
@@ -289,7 +289,7 @@ animations {
 // Here's a useful example. Work around WezTerm's initial configure bug
 // by setting an empty default-column-width.
 window-rule {
-    // This regular expression is intentially made as specific as possile,
+    // This regular expression is intentionally made as specific as possible,
     // since this is the default config, and we want no false positives.
     // You can get away with just app-id="wezterm" if you want.
     // The regular expression can match anywhere in the string.
