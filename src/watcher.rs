@@ -91,10 +91,11 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use std::sync::atomic::AtomicU8;
-    use std::time::SystemTime;
 
     use calloop::channel::sync_channel;
     use calloop::EventLoop;
+    use smithay::reexports::rustix::fs::{futimens, Timestamps};
+    use smithay::reexports::rustix::time::Timespec;
     use xshell::{cmd, Shell};
 
     use super::*;
@@ -280,7 +281,19 @@ mod tests {
                 let mut c2 = File::create(d2).unwrap();
                 write!(c2, "a")?;
                 c2.flush()?;
-                c2.set_modified(SystemTime::UNIX_EPOCH)?;
+                futimens(
+                    &c2,
+                    &Timestamps {
+                        last_access: Timespec {
+                            tv_sec: 0,
+                            tv_nsec: 0,
+                        },
+                        last_modification: Timespec {
+                            tv_sec: 0,
+                            tv_nsec: 0,
+                        },
+                    },
+                )?;
                 c2.sync_all()?;
                 drop(c2);
 
@@ -289,7 +302,19 @@ mod tests {
                 let mut c3 = File::create(d3).unwrap();
                 write!(c3, "b")?;
                 c3.flush()?;
-                c3.set_modified(SystemTime::UNIX_EPOCH)?;
+                futimens(
+                    &c3,
+                    &Timestamps {
+                        last_access: Timespec {
+                            tv_sec: 0,
+                            tv_nsec: 0,
+                        },
+                        last_modification: Timespec {
+                            tv_sec: 0,
+                            tv_nsec: 0,
+                        },
+                    },
+                )?;
                 c3.sync_all()?;
                 drop(c3);
 
