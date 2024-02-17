@@ -1495,9 +1495,9 @@ fn bound_action(
 fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
     match event {
         InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
+        InputEvent::PointerButton { event } if event.state() == ButtonState::Pressed => true,
         InputEvent::PointerMotion { .. }
         | InputEvent::PointerMotionAbsolute { .. }
-        | InputEvent::PointerButton { .. }
         | InputEvent::PointerAxis { .. }
         | InputEvent::GestureSwipeBegin { .. }
         | InputEvent::GesturePinchBegin { .. }
@@ -1516,8 +1516,8 @@ fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
 fn should_hide_hotkey_overlay<I: InputBackend>(event: &InputEvent<I>) -> bool {
     match event {
         InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
-        InputEvent::PointerButton { .. }
-        | InputEvent::PointerAxis { .. }
+        InputEvent::PointerButton { event } if event.state() == ButtonState::Pressed => true,
+        InputEvent::PointerAxis { .. }
         | InputEvent::GestureSwipeBegin { .. }
         | InputEvent::GesturePinchBegin { .. }
         | InputEvent::TouchDown { .. }
@@ -1531,8 +1531,8 @@ fn should_hide_hotkey_overlay<I: InputBackend>(event: &InputEvent<I>) -> bool {
 fn should_hide_exit_confirm_dialog<I: InputBackend>(event: &InputEvent<I>) -> bool {
     match event {
         InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
-        InputEvent::PointerButton { .. }
-        | InputEvent::PointerAxis { .. }
+        InputEvent::PointerButton { event } if event.state() == ButtonState::Pressed => true,
+        InputEvent::PointerAxis { .. }
         | InputEvent::GestureSwipeBegin { .. }
         | InputEvent::GesturePinchBegin { .. }
         | InputEvent::TouchDown { .. }
