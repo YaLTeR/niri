@@ -493,4 +493,8 @@ debug {
 
     // Override the DRM device that niri will use for all rendering.
     // render-drm-device "/dev/dri/renderD129"
+
+    // Enable the color-transformations capability of the Smithay renderer.
+    // May cause a slight decrease in rendering performance.
+    // enable-color-transformations-capability
 }
