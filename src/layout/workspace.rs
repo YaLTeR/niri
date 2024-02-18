@@ -8,6 +8,7 @@ use niri_ipc::SizeChange;
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
@@ -354,16 +355,18 @@ impl<W: LayoutElement> Workspace<W> {
         window: &Window,
         default_width: Option<Option<ColumnWidth>>,
     ) {
-        let size = self.new_window_size(default_width);
-        let bounds = self.toplevel_bounds();
-
         if let Some(output) = self.output.as_ref() {
             set_preferred_scale_transform(window, output);
         }
 
         window.toplevel().with_pending_state(|state| {
-            state.size = Some(size);
-            state.bounds = Some(bounds);
+            if state.states.contains(xdg_toplevel::State::Fullscreen) {
+                state.size = Some(self.view_size);
+            } else {
+                state.size = Some(self.new_window_size(default_width));
+            }
+
+            state.bounds = Some(self.toplevel_bounds());
         });
     }
 

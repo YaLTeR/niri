@@ -257,9 +257,11 @@ impl XdgShellHandler for State {
     fn maximize_request(&mut self, surface: ToplevelSurface) {
         // FIXME
 
-        // The protocol demands us to always reply with a configure,
-        // regardless of we fulfilled the request or not
-        surface.send_configure();
+        // A configure is required in response to this event. However, if an initial configure
+        // wasn't sent, then we will send this as part of the initial configure later.
+        if initial_configure_sent(&surface) {
+            surface.send_configure();
+        }
     }
 
     fn unmaximize_request(&mut self, _surface: ToplevelSurface) {
@@ -293,7 +295,20 @@ impl XdgShellHandler for State {
 
                 self.niri.layout.set_fullscreen(&window, true);
             } else if let Some(window) = self.niri.unmapped_windows.get(surface.wl_surface()) {
-                if let Some(ws) = self.niri.layout.active_workspace() {
+                let config = self.niri.config.borrow();
+                let rules = resolve_window_rules(&config.window_rules, window.toplevel());
+
+                // FIXME: take requested output into account (will need to thread this through to
+                // send_initial_configure_if_needed and commit handler).
+                let output = rules
+                    .open_on_output
+                    .and_then(|name| self.niri.output_by_name.get(name));
+                let mon = output.map(|o| self.niri.layout.monitor_for_output(o).unwrap());
+                let ws = mon
+                    .map(|mon| mon.active_workspace_ref())
+                    .or_else(|| self.niri.layout.active_workspace());
+
+                if let Some(ws) = ws {
                     window.toplevel().with_pending_state(|state| {
                         state.size = Some(ws.view_size());
                         state.states.set(xdg_toplevel::State::Fullscreen);
@@ -302,9 +317,11 @@ impl XdgShellHandler for State {
             }
         }
 
-        // The protocol demands us to always reply with a configure,
-        // regardless of we fulfilled the request or not
-        surface.send_configure();
+        // A configure is required in response to this event. However, if an initial configure
+        // wasn't sent, then we will send this as part of the initial configure later.
+        if initial_configure_sent(&surface) {
+            surface.send_configure();
+        }
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
