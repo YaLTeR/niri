@@ -73,16 +73,14 @@ impl RenderElement<GlesRenderer> for PrimaryGpuTextureRenderElement {
     }
 }
 
-impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
-    for PrimaryGpuTextureRenderElement
-{
+impl<'render> RenderElement<TtyRenderer<'render>> for PrimaryGpuTextureRenderElement {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'_, '_, '_>,
+        frame: &mut TtyFrame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-    ) -> Result<(), TtyRendererError<'render, 'alloc>> {
+    ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
         RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage)?;
         Ok(())
@@ -90,7 +88,7 @@ impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>>
 
     fn underlying_storage(
         &self,
-        _renderer: &mut TtyRenderer<'render, 'alloc>,
+        _renderer: &mut TtyRenderer<'render>,
     ) -> Option<UnderlyingStorage> {
         // If scanout for things other than Wayland buffers is implemented, this will need to take
         // the target GPU into account.

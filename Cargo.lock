@@ -1196,9 +1196,9 @@ dependencies = [
 
 [[package]]
 name = "gbm"
-version = "0.14.1"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f177420f6650dcd50042121adf7ff7ab265abdaf4862fe2624066e36e3a9ef34"
+checksum = "313702b30cdeb83ddc72bc14dcee67803cd0ae2d12282ea06e368c25a900c844"
 dependencies = [
  "bitflags 1.3.2",
  "drm",
@@ -3007,7 +3007,7 @@ checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay.git#832dee8586d783d4c60a162ef8aabca2ba7fd499"
+source = "git+https://github.com/Smithay/smithay.git#3de7636e6cb562a1b9f14c76e17b0e4b27381c22"
 dependencies = [
  "appendlist",
  "bitflags 2.4.2",
@@ -3079,7 +3079,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#832dee8586d783d4c60a162ef8aabca2ba7fd499"
+source = "git+https://github.com/Smithay/smithay.git#3de7636e6cb562a1b9f14c76e17b0e4b27381c22"
 dependencies = [
  "drm",
  "edid-rs",

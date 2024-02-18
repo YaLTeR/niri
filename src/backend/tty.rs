@@ -10,7 +10,7 @@ use std::{io, mem};
 use anyhow::{anyhow, Context};
 use libc::dev_t;
 use niri_config::Config;
-use smithay::backend::allocator::dmabuf::{Dmabuf, DmabufAllocator};
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format, Fourcc};
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
@@ -62,7 +62,7 @@ pub struct Tty {
     session: LibSeatSession,
     udev_dispatcher: Dispatcher<'static, UdevBackend, State>,
     libinput: Libinput,
-    gpu_manager: GpuManager<GbmGlesBackend<GlesRenderer>>,
+    gpu_manager: GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
     // DRM node corresponding to the primary GPU. May or may not be the same as
     // primary_render_node.
     primary_node: DrmNode,
@@ -73,33 +73,28 @@ pub struct Tty {
     // The dma-buf global corresponds to the output device (the primary GPU). It is only `Some()`
     // if we have a device corresponding to the primary GPU.
     dmabuf_global: Option<DmabufGlobal>,
-    // The allocator for the primary GPU. It is only `Some()` if we have a device corresponding to
-    // the primary GPU.
-    primary_allocator: Option<DmabufAllocator<GbmAllocator<DrmDeviceFd>>>,
     // The output config had changed, but the session is paused, so we need to update it on resume.
     update_output_config_on_resume: bool,
     ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
     enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
 
-pub type TtyRenderer<'render, 'alloc> = MultiRenderer<
+pub type TtyRenderer<'render> = MultiRenderer<
     'render,
     'render,
-    'alloc,
-    GbmGlesBackend<GlesRenderer>,
-    GbmGlesBackend<GlesRenderer>,
+    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
+    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
 >;
 
-pub type TtyFrame<'render, 'alloc, 'frame> = MultiFrame<
+pub type TtyFrame<'render, 'frame> = MultiFrame<
     'render,
     'render,
-    'alloc,
     'frame,
-    GbmGlesBackend<GlesRenderer>,
-    GbmGlesBackend<GlesRenderer>,
+    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
+    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
 >;
 
-pub type TtyRendererError<'render, 'alloc> = <TtyRenderer<'render, 'alloc> as Renderer>::Error;
+pub type TtyRendererError<'render> = <TtyRenderer<'render> as Renderer>::Error;
 
 type GbmDrmCompositor = DrmCompositor<
     GbmAllocator<DrmDeviceFd>,
@@ -276,7 +271,6 @@ impl Tty {
             primary_render_node,
             devices: HashMap::new(),
             dmabuf_global: None,
-            primary_allocator: None,
             update_output_config_on_resume: false,
             ipc_outputs: Rc::new(RefCell::new(HashMap::new())),
             enabled_outputs: Arc::new(Mutex::new(HashMap::new())),
@@ -460,11 +454,6 @@ impl Tty {
                 );
             assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
 
-            // Create the primary allocator.
-            let primary_allocator =
-                DmabufAllocator(GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING));
-            assert!(self.primary_allocator.replace(primary_allocator).is_none());
-
             // Update the dmabuf feedbacks for all surfaces.
             for device in self.devices.values_mut() {
                 for surface in device.surfaces.values_mut() {
@@ -599,8 +588,6 @@ impl Tty {
                     },
                 )
                 .unwrap();
-
-            self.primary_allocator = None;
 
             // Clear the dmabuf feedbacks for all surfaces.
             for device in self.devices.values_mut() {
@@ -1088,15 +1075,9 @@ impl Tty {
             return rv;
         }
 
-        let Some(allocator) = self.primary_allocator.as_mut() else {
-            warn!("no primary allocator");
-            return rv;
-        };
-
         let mut renderer = match self.gpu_manager.renderer(
             &self.primary_render_node,
             &device.render_node,
-            allocator,
             surface.compositor.format(),
         ) {
             Ok(renderer) => renderer,
@@ -1208,7 +1189,10 @@ impl Tty {
         };
 
         match renderer.import_dmabuf(dmabuf, None) {
-            Ok(_texture) => true,
+            Ok(_texture) => {
+                dmabuf.set_node(Some(self.primary_render_node));
+                true
+            }
             Err(err) => {
                 debug!("error importing dmabuf: {err:?}");
                 false
@@ -1218,8 +1202,6 @@ impl Tty {
 
     pub fn early_import(&mut self, surface: &WlSurface) {
         if let Err(err) = self.gpu_manager.early_import(
-            // We always advertise the primary GPU in dmabuf feedback.
-            Some(self.primary_render_node),
             // We always render on the primary GPU.
             self.primary_render_node,
             surface,

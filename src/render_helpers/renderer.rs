@@ -46,7 +46,7 @@ impl AsGlesRenderer for GlesRenderer {
     }
 }
 
-impl<'render, 'alloc> AsGlesRenderer for TtyRenderer<'render, 'alloc> {
+impl<'render> AsGlesRenderer for TtyRenderer<'render> {
     fn as_gles_renderer(&mut self) -> &mut GlesRenderer {
         self.as_mut()
     }
@@ -66,7 +66,7 @@ impl<'frame> AsGlesFrame<'frame> for GlesFrame<'frame> {
     }
 }
 
-impl<'render, 'alloc, 'frame> AsGlesFrame<'frame> for TtyFrame<'render, 'alloc, 'frame> {
+impl<'render, 'frame> AsGlesFrame<'frame> for TtyFrame<'render, 'frame> {
     fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame> {
         self.as_mut()
     }

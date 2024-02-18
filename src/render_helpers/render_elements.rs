@@ -90,26 +90,26 @@ macro_rules! niri_render_elements {
             }
         }
 
-        impl<'render, 'alloc> smithay::backend::renderer::element::RenderElement<$crate::backend::tty::TtyRenderer<'render, 'alloc>>
-            for $name<$crate::backend::tty::TtyRenderer<'render, 'alloc>>
+        impl<'render> smithay::backend::renderer::element::RenderElement<$crate::backend::tty::TtyRenderer<'render>>
+            for $name<$crate::backend::tty::TtyRenderer<'render>>
         {
             fn draw(
                 &self,
-                frame: &mut $crate::backend::tty::TtyFrame<'render, 'alloc, '_>,
+                frame: &mut $crate::backend::tty::TtyFrame<'render, '_>,
                 src: smithay::utils::Rectangle<f64, smithay::utils::Buffer>,
                 dst: smithay::utils::Rectangle<i32, smithay::utils::Physical>,
                 damage: &[smithay::utils::Rectangle<i32, smithay::utils::Physical>],
-            ) -> Result<(), $crate::backend::tty::TtyRendererError<'render, 'alloc>> {
+            ) -> Result<(), $crate::backend::tty::TtyRendererError<'render>> {
                 match self {
                     $($name::$variant(elem) => {
-                        smithay::backend::renderer::element::RenderElement::<$crate::backend::tty::TtyRenderer<'render, 'alloc>>::draw(elem, frame, src, dst, damage)
+                        smithay::backend::renderer::element::RenderElement::<$crate::backend::tty::TtyRenderer<'render>>::draw(elem, frame, src, dst, damage)
                     })+
                 }
             }
 
             fn underlying_storage(
                 &self,
-                renderer: &mut $crate::backend::tty::TtyRenderer<'render, 'alloc>,
+                renderer: &mut $crate::backend::tty::TtyRenderer<'render>,
             ) -> Option<smithay::backend::renderer::element::UnderlyingStorage> {
                 match self {
                     $($name::$variant(elem) => elem.underlying_storage(renderer)),+

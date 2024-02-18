@@ -547,27 +547,27 @@ impl RenderElement<GlesRenderer> for ScreenshotUiRenderElement {
     }
 }
 
-impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>> for ScreenshotUiRenderElement {
+impl<'render> RenderElement<TtyRenderer<'render>> for ScreenshotUiRenderElement {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'render, 'alloc, '_>,
+        frame: &mut TtyFrame<'render, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-    ) -> Result<(), TtyRendererError<'render, 'alloc>> {
+    ) -> Result<(), TtyRendererError<'render>> {
         match self {
             Self::Screenshot(elem) => {
-                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+                RenderElement::<TtyRenderer<'render>>::draw(&elem, frame, src, dst, damage)
             }
             Self::SolidColor(elem) => {
-                RenderElement::<TtyRenderer<'render, 'alloc>>::draw(&elem, frame, src, dst, damage)
+                RenderElement::<TtyRenderer<'render>>::draw(&elem, frame, src, dst, damage)
             }
         }
     }
 
     fn underlying_storage(
         &self,
-        _renderer: &mut TtyRenderer<'render, 'alloc>,
+        _renderer: &mut TtyRenderer<'render>,
     ) -> Option<UnderlyingStorage> {
         // If scanout for things other than Wayland buffers is implemented, this will need to take
         // the target GPU into account.

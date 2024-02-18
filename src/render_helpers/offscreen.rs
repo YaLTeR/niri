@@ -188,14 +188,14 @@ impl RenderElement<GlesRenderer> for OffscreenRenderElement {
     }
 }
 
-impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>> for OffscreenRenderElement {
+impl<'render> RenderElement<TtyRenderer<'render>> for OffscreenRenderElement {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'_, '_, '_>,
+        frame: &mut TtyFrame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-    ) -> Result<(), TtyRendererError<'render, 'alloc>> {
+    ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
         if let Some(texture) = &self.texture {
             RenderElement::<GlesRenderer>::draw(texture, gles_frame, src, dst, damage)?;
@@ -205,10 +205,7 @@ impl<'render, 'alloc> RenderElement<TtyRenderer<'render, 'alloc>> for OffscreenR
         Ok(())
     }
 
-    fn underlying_storage(
-        &self,
-        renderer: &mut TtyRenderer<'render, 'alloc>,
-    ) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut TtyRenderer<'render>) -> Option<UnderlyingStorage> {
         if let Some(texture) = &self.texture {
             texture.underlying_storage(renderer)
         } else {
