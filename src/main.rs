@@ -16,7 +16,8 @@ use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
 use niri::utils::{
-    cause_panic, spawn, version, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
+    cause_panic, spawn, version, IS_SYSTEMD_SERVICE, REMOVE_ENV_RUST_BACKTRACE,
+    REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::watcher::Watcher;
 use niri_config::Config;
@@ -38,6 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let is_systemd_service = env::var_os("NOTIFY_SOCKET").is_some();
+    IS_SYSTEMD_SERVICE.store(is_systemd_service, Ordering::Relaxed);
 
     let directives = env::var("RUST_LOG").unwrap_or_else(|_| "niri=debug".to_owned());
     let env_filter = EnvFilter::builder().parse_lossy(directives);

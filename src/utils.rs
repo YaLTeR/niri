@@ -13,6 +13,7 @@ use std::time::Duration;
 use anyhow::{ensure, Context};
 use directories::UserDirs;
 use git_version::git_version;
+use libc::close_range;
 use niri_config::Config;
 use smithay::output::Output;
 use smithay::reexports::rustix;
@@ -126,10 +127,33 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
         process.env_remove("RUST_LIB_BACKTRACE");
     }
 
+    // When running as a systemd session, we want to put children into their own transient scopes
+    // in order to separate them from the niri process. This is helpful for example to prevent the
+    // OOM killer from taking down niri together with a misbehaving client.
+    //
+    // Putting a child into a scope is done by calling systemd's StartTransientUnit D-Bus method
+    // with a PID. Unfortunately, there seems to be a race in systemd where if the child exits at
+    // just the right time, the transient unit will be created but empty, so it will linger around
+    // forever.
+    //
+    // To prevent this, we'll use our double-fork (done for a separate reason) to help. In our
+    // intermediate child we will send back the grandchild PID, and in niri we will create a
+    // transient scope with both our intermediate child and the grandchild PIDs set. Only then we
+    // will signal our intermediate child to exit. This way, even if the grandchild exits quickly,
+    // a non-empty scope will be created (with just our intermediate child), then cleaned up when
+    // our intermediate child exits.
+
     // Make a pipe to receive the grandchild PID.
     let (pipe_pid_read, pipe_pid_write) = pipe_with(PipeFlags::CLOEXEC)
         .map_err(|err| {
             warn!("error creating a pipe to transfer child PID: {err:?}");
+        })
+        .ok()
+        .unzip();
+    // Make a pipe to wait in the intermediate child.
+    let (pipe_wait_read, pipe_wait_write) = pipe_with(PipeFlags::CLOEXEC)
+        .map_err(|err| {
+            warn!("error creating a pipe for child to wait on: {err:?}");
         })
         .ok()
         .unzip();
@@ -139,15 +163,23 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
         // the raw fd inside so that it's not closed any extra times.
         let mut pipe_pid_read_fd = pipe_pid_read.as_ref().map(|fd| fd.as_raw_fd());
         let mut pipe_pid_write_fd = pipe_pid_write.as_ref().map(|fd| fd.as_raw_fd());
+        let mut pipe_wait_read_fd = pipe_wait_read.as_ref().map(|fd| fd.as_raw_fd());
+        let mut pipe_wait_write_fd = pipe_wait_write.as_ref().map(|fd| fd.as_raw_fd());
 
         // Double-fork to avoid having to waitpid the child.
         process.pre_exec(move || {
+            // Close FDs that we don't need. Especially important for the write ones to unblock the
+            // readers.
             if let Some(fd) = pipe_pid_read_fd.take() {
+                close(fd);
+            }
+            if let Some(fd) = pipe_wait_write_fd.take() {
                 close(fd);
             }
 
             // Convert the our FDs to OwnedFd, which will close them in all of our fork paths.
             let pipe_pid_write = pipe_pid_write_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
+            let pipe_wait_read = pipe_wait_read_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
 
             match libc::fork() {
                 -1 => return Err(io::Error::last_os_error()),
@@ -156,6 +188,17 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
                     // Send back the PID.
                     if let Some(pipe) = pipe_pid_write {
                         let _ = write_all(pipe, &grandchild_pid.to_ne_bytes());
+                    }
+
+                    // Wait until the parent signals us to exit.
+                    if let Some(pipe) = pipe_wait_read {
+                        // We're going to exit afterwards. Close all other FDs to allow
+                        // Command::spawn() to return in the parent process.
+                        let raw = pipe.as_raw_fd() as u32;
+                        let _ = close_range(0, raw - 1, 0);
+                        let _ = close_range(raw + 1, !0, 0);
+
+                        let _ = read_all(pipe, &mut [0]);
                     }
 
                     libc::_exit(0)
@@ -175,6 +218,7 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
     };
 
     drop(pipe_pid_write);
+    drop(pipe_wait_read);
 
     // Wait for the grandchild PID.
     if let Some(pipe) = pipe_pid_read {
@@ -183,12 +227,22 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
             Ok(()) => {
                 let pid = i32::from_ne_bytes(buf);
                 trace!("spawned PID: {pid}");
+
+                // Start a systemd scope for the grandchild.
+                #[cfg(feature = "dbus")]
+                if let Err(err) = start_systemd_scope(command, child.id(), pid as u32) {
+                    trace!("error starting systemd scope for spawned command: {err:?}");
+                }
             }
             Err(err) => {
                 warn!("error reading child PID: {err:?}");
             }
         }
     }
+
+    // Signal the intermediate child to exit now that we're done trying to creating a systemd scope.
+    trace!("signaling child to exit");
+    drop(pipe_wait_write);
 
     match child.wait() {
         Ok(status) => {
@@ -230,6 +284,88 @@ fn read_all(fd: impl AsFd, buf: &mut [u8]) -> rustix::io::Result<()> {
             return Ok(());
         }
     }
+}
+
+pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
+
+/// Puts a (newly spawned) pid into a transient systemd scope.
+///
+/// This separates the pid from the compositor scope, which for example prevents the OOM killer
+/// from bringing down the compositor together with a misbehaving client.
+#[cfg(feature = "dbus")]
+fn start_systemd_scope(name: &OsStr, intermediate_pid: u32, child_pid: u32) -> anyhow::Result<()> {
+    use std::fmt::Write as _;
+    use std::path::Path;
+    use std::sync::OnceLock;
+
+    use zbus::zvariant::{OwnedObjectPath, Value};
+
+    // We only start transient scopes if we're a systemd service ourselves.
+    if !IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+
+    let _span = tracy_client::span!();
+
+    // Extract the basename.
+    let name = Path::new(name).file_name().unwrap_or(name);
+
+    let mut scope_name = String::from("app-niri-");
+
+    // Escape for systemd similarly to libgnome-desktop, which says it had adapted this from
+    // systemd source.
+    for &c in name.as_bytes() {
+        if c.is_ascii_alphanumeric() || matches!(c, b':' | b'_' | b'.') {
+            scope_name.push(char::from(c));
+        } else {
+            let _ = write!(scope_name, "\\x{c:02x}");
+        }
+    }
+
+    let _ = write!(scope_name, "-{child_pid}.scope");
+
+    // Ask systemd to start a transient scope.
+    static CONNECTION: OnceLock<zbus::Result<zbus::blocking::Connection>> = OnceLock::new();
+    let conn = CONNECTION
+        .get_or_init(zbus::blocking::Connection::session)
+        .clone()
+        .context("error connecting to session bus")?;
+
+    let proxy = zbus::blocking::Proxy::new(
+        &conn,
+        "org.freedesktop.systemd1",
+        "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager",
+    )
+    .context("error creating a Proxy")?;
+
+    let signals = proxy
+        .receive_signal("JobRemoved")
+        .context("error creating a signal iterator")?;
+
+    let pids: &[_] = &[intermediate_pid, child_pid];
+    let properties: &[_] = &[
+        ("PIDs", Value::new(pids)),
+        ("CollectMode", Value::new("inactive-or-failed")),
+    ];
+    let aux: &[(&str, &[(&str, Value)])] = &[];
+
+    let job: OwnedObjectPath = proxy
+        .call("StartTransientUnit", &(scope_name, "fail", properties, aux))
+        .context("error calling StartTransientUnit")?;
+
+    trace!("waiting for JobRemoved");
+    for message in signals {
+        let body: (u32, OwnedObjectPath, &str, &str) =
+            message.body().context("error parsing signal")?;
+
+        if body.1 == job {
+            // Our transient unit had started, we're good to exit the intermediate child.
+            break;
+        }
+    }
+
+    Ok(())
 }
 
 pub fn write_png_rgba8(
