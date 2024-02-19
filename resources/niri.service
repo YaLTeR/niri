@@ -9,5 +9,6 @@ Wants=xdg-desktop-autostart.target
 Before=xdg-desktop-autostart.target
 
 [Service]
+Slice=session.slice
 Type=notify
 ExecStart=/usr/bin/niri
