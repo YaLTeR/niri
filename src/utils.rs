@@ -1,5 +1,6 @@
 use std::ffi::{CString, OsStr};
 use std::io::{self, Write};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::prelude::OsStrExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -14,6 +15,9 @@ use directories::UserDirs;
 use git_version::git_version;
 use niri_config::Config;
 use smithay::output::Output;
+use smithay::reexports::rustix;
+use smithay::reexports::rustix::io::{close, read, retry_on_intr, write};
+use smithay::reexports::rustix::pipe::{pipe_with, PipeFlags};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
@@ -122,13 +126,40 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
         process.env_remove("RUST_LIB_BACKTRACE");
     }
 
-    // Double-fork to avoid having to waitpid the child.
+    // Make a pipe to receive the grandchild PID.
+    let (pipe_pid_read, pipe_pid_write) = pipe_with(PipeFlags::CLOEXEC)
+        .map_err(|err| {
+            warn!("error creating a pipe to transfer child PID: {err:?}");
+        })
+        .ok()
+        .unzip();
+
     unsafe {
-        process.pre_exec(|| {
+        // The fds will be duplicated after a fork and closed on exec or exit automatically. Get
+        // the raw fd inside so that it's not closed any extra times.
+        let mut pipe_pid_read_fd = pipe_pid_read.as_ref().map(|fd| fd.as_raw_fd());
+        let mut pipe_pid_write_fd = pipe_pid_write.as_ref().map(|fd| fd.as_raw_fd());
+
+        // Double-fork to avoid having to waitpid the child.
+        process.pre_exec(move || {
+            if let Some(fd) = pipe_pid_read_fd.take() {
+                close(fd);
+            }
+
+            // Convert the our FDs to OwnedFd, which will close them in all of our fork paths.
+            let pipe_pid_write = pipe_pid_write_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
+
             match libc::fork() {
                 -1 => return Err(io::Error::last_os_error()),
                 0 => (),
-                _ => libc::_exit(0),
+                grandchild_pid => {
+                    // Send back the PID.
+                    if let Some(pipe) = pipe_pid_write {
+                        let _ = write_all(pipe, &grandchild_pid.to_ne_bytes());
+                    }
+
+                    libc::_exit(0)
+                }
             }
 
             Ok(())
@@ -143,6 +174,22 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
         }
     };
 
+    drop(pipe_pid_write);
+
+    // Wait for the grandchild PID.
+    if let Some(pipe) = pipe_pid_read {
+        let mut buf = [0; 4];
+        match read_all(pipe, &mut buf) {
+            Ok(()) => {
+                let pid = i32::from_ne_bytes(buf);
+                trace!("spawned PID: {pid}");
+            }
+            Err(err) => {
+                warn!("error reading child PID: {err:?}");
+            }
+        }
+    }
+
     match child.wait() {
         Ok(status) => {
             if !status.success() {
@@ -151,6 +198,36 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
         }
         Err(err) => {
             warn!("error waiting for child: {err:?}");
+        }
+    }
+}
+
+fn write_all(fd: impl AsFd, buf: &[u8]) -> rustix::io::Result<()> {
+    let mut written = 0;
+    loop {
+        let n = retry_on_intr(|| write(&fd, &buf[written..]))?;
+        if n == 0 {
+            return Err(rustix::io::Errno::CANCELED);
+        }
+
+        written += n;
+        if written == buf.len() {
+            return Ok(());
+        }
+    }
+}
+
+fn read_all(fd: impl AsFd, buf: &mut [u8]) -> rustix::io::Result<()> {
+    let mut start = 0;
+    loop {
+        let n = retry_on_intr(|| read(&fd, &mut buf[start..]))?;
+        if n == 0 {
+            return Err(rustix::io::Errno::CANCELED);
+        }
+
+        start += n;
+        if start == buf.len() {
+            return Ok(());
         }
     }
 }
