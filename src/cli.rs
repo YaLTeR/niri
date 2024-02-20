@@ -15,6 +15,13 @@ pub struct Cli {
     /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
     #[arg(short, long)]
     pub config: Option<PathBuf>,
+    /// Import environment globally to systemd and D-Bus, run D-Bus services.
+    ///
+    /// Set this flag in a systemd service started by your display manager, or when running
+    /// manually as your main compositor instance. Do not set when running as a nested window, or
+    /// on a TTY as your non-main compositor instance, to avoid messing up the global environment.
+    #[arg(long)]
+    pub session: bool,
     /// Command to run upon compositor startup.
     #[arg(last = true)]
     pub command: Vec<OsString>,
