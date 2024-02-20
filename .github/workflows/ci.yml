@@ -42,11 +42,20 @@ jobs:
         with:
           key: ${{ matrix.configuration }}
 
-      - name: Build (no default features)
-        run: cargo build ${{ matrix.release-flag }} --no-default-features
+      - name: Check (no default features)
+        run: cargo check ${{ matrix.release-flag }} --no-default-features
 
-      - name: Build
-        run: cargo build ${{ matrix.release-flag }}
+      - name: Check (just dbus)
+        run: cargo check ${{ matrix.release-flag }} --no-default-features --features dbus
+
+      - name: Check (just systemd)
+        run: cargo check ${{ matrix.release-flag }} --no-default-features --features systemd
+
+      - name: Check (just xdp-gnome-screencast)
+        run: cargo check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
+
+      - name: Check
+        run: cargo check ${{ matrix.release-flag }}
 
       - name: Build (with profiling)
         run: cargo build ${{ matrix.release-flag }} --features profile-with-tracy
