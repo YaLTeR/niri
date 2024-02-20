@@ -20,12 +20,6 @@ fi
 # Reset failed state of all user units.
 systemctl --user reset-failed
 
-# Set the current desktop for xdg-desktop-portal.
-export XDG_CURRENT_DESKTOP=niri
-
-# Ensure the session type is set to Wayland for xdg-autostart apps.
-export XDG_SESSION_TYPE=wayland
-
 # Import the login manager environment.
 systemctl --user import-environment
 

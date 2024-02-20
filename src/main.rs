@@ -61,6 +61,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             debug!("running as a session but WAYLAND_DISPLAY is set, removing it");
             env::remove_var("WAYLAND_DISPLAY");
         }
+
+        // Set the current desktop for xdg-desktop-portal.
+        env::set_var("XDG_CURRENT_DESKTOP", "niri");
+        // Ensure the session type is set to Wayland for xdg-autostart and Qt apps.
+        env::set_var("XDG_SESSION_TYPE", "wayland");
     }
 
     let _client = tracy_client::Client::start();
@@ -236,7 +241,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn import_environment() {
-    let variables = ["WAYLAND_DISPLAY", niri_ipc::SOCKET_PATH_ENV].join(" ");
+    let variables = [
+        "WAYLAND_DISPLAY",
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_TYPE",
+        niri_ipc::SOCKET_PATH_ENV,
+    ]
+    .join(" ");
 
     let rv = Command::new("/bin/sh")
         .args([
