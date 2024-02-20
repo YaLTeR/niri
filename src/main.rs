@@ -62,11 +62,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // DISPLAY or WAYLAND_DISPLAY from our environment if they are set, since they will cause
         // the winit backend to be selected instead.
         if env::var_os("DISPLAY").is_some() {
-            debug!("running as a session but DISPLAY is set, removing it");
+            warn!("running as a session but DISPLAY is set, removing it");
             env::remove_var("DISPLAY");
         }
         if env::var_os("WAYLAND_DISPLAY").is_some() {
-            debug!("running as a session but WAYLAND_DISPLAY is set, removing it");
+            warn!("running as a session but WAYLAND_DISPLAY is set, removing it");
             env::remove_var("WAYLAND_DISPLAY");
         }
 
