@@ -229,7 +229,7 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
                 trace!("spawned PID: {pid}");
 
                 // Start a systemd scope for the grandchild.
-                #[cfg(feature = "dbus")]
+                #[cfg(feature = "systemd")]
                 if let Err(err) = start_systemd_scope(command, child.id(), pid as u32) {
                     trace!("error starting systemd scope for spawned command: {err:?}");
                 }
@@ -292,7 +292,7 @@ pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
 ///
 /// This separates the pid from the compositor scope, which for example prevents the OOM killer
 /// from bringing down the compositor together with a misbehaving client.
-#[cfg(feature = "dbus")]
+#[cfg(feature = "systemd")]
 fn start_systemd_scope(name: &OsStr, intermediate_pid: u32, child_pid: u32) -> anyhow::Result<()> {
     use std::fmt::Write as _;
     use std::path::Path;

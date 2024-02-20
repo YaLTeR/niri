@@ -97,9 +97,11 @@ proptest-derive = "0.4.0"
 xshell = "0.2.5"
 
 [features]
-default = ["dbus", "xdp-gnome-screencast"]
-# Enables DBus support (required for xdp-gnome and power button inhibiting).
+default = ["dbus", "systemd", "xdp-gnome-screencast"]
+# Enables D-Bus support (serve various freedesktop and GNOME interfaces, power button handling).
 dbus = ["zbus", "async-channel", "async-io", "notify-rust", "url"]
+# Enables systemd integration (global environment, apps in transient scopes).
+systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
 xdp-gnome-screencast = ["dbus", "pipewire"]
 # Enables the Tracy profiler instrumentation.

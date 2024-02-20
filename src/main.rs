@@ -38,7 +38,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         REMOVE_ENV_RUST_LIB_BACKTRACE.store(true, Ordering::Relaxed);
     }
 
-    IS_SYSTEMD_SERVICE.store(env::var_os("NOTIFY_SOCKET").is_some(), Ordering::Relaxed);
+    if env::var_os("NOTIFY_SOCKET").is_some() {
+        IS_SYSTEMD_SERVICE.store(true, Ordering::Relaxed);
+
+        #[cfg(not(feature = "systemd"))]
+        warn!(
+            "running as a systemd service, but systemd support is compiled out. \
+             Are you sure you did not forget to set `--features systemd`?"
+        );
+    }
 
     let directives = env::var("RUST_LOG").unwrap_or_else(|_| "niri=debug".to_owned());
     let env_filter = EnvFilter::builder().parse_lossy(directives);
@@ -249,11 +257,16 @@ fn import_environment() {
     ]
     .join(" ");
 
+    #[cfg(feature = "systemd")]
+    let systemctl = format!("systemctl --user import-environment {variables} && ");
+    #[cfg(not(feature = "systemd"))]
+    let systemctl = String::new();
+
     let rv = Command::new("/bin/sh")
         .args([
             "-c",
             &format!(
-                "systemctl --user import-environment {variables} && \
+                "{systemctl}\
                  hash dbus-update-activation-environment 2>/dev/null && \
                  dbus-update-activation-environment {variables}"
             ),
@@ -273,7 +286,7 @@ fn import_environment() {
             }
         },
         Err(err) => {
-            warn!("error spawning shell to import environment into systemd: {err:?}");
+            warn!("error spawning shell to import environment: {err:?}");
         }
     }
 }

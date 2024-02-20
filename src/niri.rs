@@ -1063,8 +1063,6 @@ impl Niri {
     pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
         let conn = zbus::blocking::ConnectionBuilder::system()?.build()?;
 
-        // logind-zbus has a wrong signature for this method, so do it manually.
-        // https://gitlab.com/flukejones/logind-zbus/-/merge_requests/5
         let message = conn.call_method(
             Some("org.freedesktop.login1"),
             "/org/freedesktop/login1",
