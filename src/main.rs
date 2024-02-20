@@ -38,8 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         REMOVE_ENV_RUST_LIB_BACKTRACE.store(true, Ordering::Relaxed);
     }
 
-    let is_systemd_service = env::var_os("NOTIFY_SOCKET").is_some();
-    IS_SYSTEMD_SERVICE.store(is_systemd_service, Ordering::Relaxed);
+    IS_SYSTEMD_SERVICE.store(env::var_os("NOTIFY_SOCKET").is_some(), Ordering::Relaxed);
 
     let directives = env::var("RUST_LOG").unwrap_or_else(|_| "niri=debug".to_owned());
     let env_filter = EnvFilter::builder().parse_lossy(directives);
@@ -48,21 +47,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(env_filter)
         .init();
 
-    if is_systemd_service {
-        // If we're starting as a systemd service, assume that the intention is to start on a TTY.
-        // Remove DISPLAY or WAYLAND_DISPLAY from our environment if they are set, since they will
-        // cause the winit backend to be selected instead.
+    let cli = Cli::parse();
+
+    if cli.session {
+        // If we're starting as a session, assume that the intention is to start on a TTY. Remove
+        // DISPLAY or WAYLAND_DISPLAY from our environment if they are set, since they will cause
+        // the winit backend to be selected instead.
         if env::var_os("DISPLAY").is_some() {
-            debug!("we're running as a systemd service but DISPLAY is set, removing it");
+            debug!("running as a session but DISPLAY is set, removing it");
             env::remove_var("DISPLAY");
         }
         if env::var_os("WAYLAND_DISPLAY").is_some() {
-            debug!("we're running as a systemd service but WAYLAND_DISPLAY is set, removing it");
+            debug!("running as a session but WAYLAND_DISPLAY is set, removing it");
             env::remove_var("WAYLAND_DISPLAY");
         }
     }
-
-    let cli = Cli::parse();
 
     let _client = tracy_client::Client::start();
 
@@ -177,9 +176,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("IPC listening on: {}", ipc.socket_path.to_string_lossy());
     }
 
-    if is_systemd_service {
-        // We're starting as a systemd service. Export our variables.
-        import_env_to_systemd();
+    if cli.session {
+        // We're starting as a session. Import our variables.
+        import_environment();
 
         // Inhibit power key handling so we can suspend on it.
         #[cfg(feature = "dbus")]
@@ -191,7 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     #[cfg(feature = "dbus")]
-    dbus::DBusServers::start(&mut state, is_systemd_service);
+    dbus::DBusServers::start(&mut state, cli.session);
 
     // Notify systemd we're ready.
     if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
@@ -236,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn import_env_to_systemd() {
+fn import_environment() {
     let variables = ["WAYLAND_DISPLAY", niri_ipc::SOCKET_PATH_ENV].join(" ");
 
     let rv = Command::new("/bin/sh")
