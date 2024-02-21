@@ -1437,15 +1437,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn move_window_to_output(&mut self, window: W, output: &Output) {
-        if !matches!(&self.monitor_set, MonitorSet::Normal { .. }) {
-            return;
-        }
-
-        self.remove_window(&window);
+        let mut width = None;
+        let mut is_full_width = false;
 
         if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            let mut width = None;
-            let mut is_full_width = false;
             for mon in &*monitors {
                 for ws in &mon.workspaces {
                     for col in &ws.columns {
@@ -1457,8 +1452,13 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 }
             }
-            let Some(width) = width else { return };
+        }
 
+        let Some(width) = width else { return };
+
+        self.remove_window(&window);
+
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
             let new_idx = monitors
                 .iter()
                 .position(|mon| &mon.output == output)
