@@ -15,10 +15,8 @@ use niri::cli::{Cli, Sub};
 use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
-use niri::utils::{
-    cause_panic, spawn, version, IS_SYSTEMD_SERVICE, REMOVE_ENV_RUST_BACKTRACE,
-    REMOVE_ENV_RUST_LIB_BACKTRACE,
-};
+use niri::utils::spawning::{spawn, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
+use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
 use niri::watcher::Watcher;
 use niri_config::Config;
 use portable_atomic::Ordering;

@@ -24,7 +24,8 @@ use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::niri::State;
 use crate::screenshot_ui::ScreenshotUi;
-use crate::utils::{center, get_monotonic_time, spawn};
+use crate::utils::spawning::spawn;
+use crate::utils::{center, get_monotonic_time};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompositorMod {
