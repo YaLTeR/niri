@@ -15,6 +15,7 @@ use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 pub mod spawning;
+pub mod watcher;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
 

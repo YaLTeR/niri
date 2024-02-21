@@ -20,7 +20,6 @@ pub mod protocols;
 pub mod render_helpers;
 pub mod screenshot_ui;
 pub mod utils;
-pub mod watcher;
 
 #[cfg(not(feature = "xdp-gnome-screencast"))]
 pub mod dummy_pw_utils;
