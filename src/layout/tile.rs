@@ -51,7 +51,7 @@ pub struct Tile<W: LayoutElement> {
 }
 
 niri_render_elements! {
-    TileRenderElement => {
+    TileRenderElement<R> => {
         LayoutElement = LayoutElementRenderElement<R>,
         SolidColor = RelocateRenderElement<SolidColorRenderElement>,
         Offscreen = RescaleRenderElement<OffscreenRenderElement>,

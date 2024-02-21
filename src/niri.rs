@@ -2961,7 +2961,7 @@ impl ClientData for ClientState {
 }
 
 niri_render_elements! {
-    OutputRenderElements => {
+    OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,

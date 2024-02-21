@@ -64,7 +64,7 @@ pub mod tile;
 pub mod workspace;
 
 niri_render_elements! {
-    LayoutElementRenderElement => {
+    LayoutElementRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
     }

@@ -76,7 +76,7 @@ pub struct Workspace<W: LayoutElement> {
 pub struct OutputId(String);
 
 niri_render_elements! {
-    WorkspaceRenderElement => {
+    WorkspaceRenderElement<R> => {
         Tile = TileRenderElement<R>,
     }
 }
