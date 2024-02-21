@@ -2080,8 +2080,12 @@ impl Niri {
                 } else {
                     RedrawState::Idle
                 };
-        } else {
-            // Update the lock render state on successful render.
+        }
+
+        // Update the lock render state on successful render, or if monitors are inactive. When
+        // monitors are inactive on a TTY, they have no framebuffer attached, so no sensitive data
+        // from a last render will be visible.
+        if res != RenderResult::Skipped || !self.monitors_active {
             state.lock_render_state = if is_locked {
                 LockRenderState::Locked
             } else {
@@ -2092,27 +2096,23 @@ impl Niri {
         // If we're in process of locking the session, check if the requirements were met.
         match mem::take(&mut self.lock_state) {
             LockState::Locking(confirmation) => {
-                if res == RenderResult::Skipped {
-                    if state.lock_render_state == LockRenderState::Unlocked {
-                        // We needed to render a locked frame on this output but failed.
-                        self.unlock();
-                    } else {
-                        // Rendering failed but this output is already locked, so it's fine.
-                        self.lock_state = LockState::Locking(confirmation);
-                    }
+                if state.lock_render_state == LockRenderState::Unlocked {
+                    // We needed to render a locked frame on this output but failed.
+                    self.unlock();
                 } else {
-                    // Rendering succeeded, check if this was the last output.
+                    // Check if all outputs are now locked.
                     let all_locked = self
                         .output_state
                         .values()
                         .all(|state| state.lock_render_state == LockRenderState::Locked);
 
                     if all_locked {
+                        // All outputs are locked, report success.
                         let lock = confirmation.ext_session_lock().clone();
                         confirmation.lock();
                         self.lock_state = LockState::Locked(lock);
                     } else {
-                        // Still waiting.
+                        // Still waiting for other outputs.
                         self.lock_state = LockState::Locking(confirmation);
                     }
                 }
