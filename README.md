@@ -189,7 +189,6 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>PrtSc</kbd> | Take an area screenshot. Select the area to screenshot with mouse, then press Space to save the screenshot, or Escape to cancel |
 | <kbd>Alt</kbd><kbd>PrtSc</kbd> | Take a screenshot of the focused window to clipboard and to `~/Pictures/Screenshots/` |
 | <kbd>Ctrl</kbd><kbd>PrtSc</kbd> | Take a screenshot of the focused monitor to clipboard and to `~/Pictures/Screenshots/` |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd> | Toggle debug tinting of rendered elements |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>E</kbd> | Exit niri |
 
 ## Configuration

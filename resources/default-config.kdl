@@ -476,7 +476,10 @@ binds {
 
     Mod+Shift+P { power-off-monitors; }
 
-    Mod+Shift+Ctrl+T { toggle-debug-tint; }
+    // This debug bind will tint all surfaces green, unless they are being
+    // directly scanned out. It's therefore useful to check if direct scanout
+    // is working.
+    // Mod+Shift+Ctrl+T { toggle-debug-tint; }
 }
 
 // Settings for debugging. Not meant for normal use.
