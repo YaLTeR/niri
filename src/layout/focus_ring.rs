@@ -1,7 +1,7 @@
 use std::iter::zip;
 
 use arrayvec::ArrayVec;
-use niri_config::{self, Color};
+use niri_config;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::utils::{Logical, Point, Scale, Size};
@@ -10,11 +10,8 @@ use smithay::utils::{Logical, Point, Scale, Size};
 pub struct FocusRing {
     buffers: [SolidColorBuffer; 4],
     locations: [Point<i32, Logical>; 4],
-    is_off: bool,
     is_border: bool,
-    width: i32,
-    active_color: Color,
-    inactive_color: Color,
+    config: niri_config::FocusRing,
 }
 
 pub type FocusRingRenderElement = SolidColorRenderElement;
@@ -24,36 +21,32 @@ impl FocusRing {
         Self {
             buffers: Default::default(),
             locations: Default::default(),
-            is_off: config.off,
             is_border: false,
-            width: config.width.into(),
-            active_color: config.active_color,
-            inactive_color: config.inactive_color,
+            config,
         }
     }
 
     pub fn update_config(&mut self, config: niri_config::FocusRing) {
-        self.is_off = config.off;
-        self.width = config.width.into();
-        self.active_color = config.active_color;
-        self.inactive_color = config.inactive_color;
+        self.config = config;
     }
 
     pub fn update(&mut self, win_size: Size<i32, Logical>, is_border: bool) {
-        if is_border {
-            self.buffers[0].resize((win_size.w + self.width * 2, self.width));
-            self.buffers[1].resize((win_size.w + self.width * 2, self.width));
-            self.buffers[2].resize((self.width, win_size.h));
-            self.buffers[3].resize((self.width, win_size.h));
+        let width = i32::from(self.config.width);
 
-            self.locations[0] = Point::from((-self.width, -self.width));
-            self.locations[1] = Point::from((-self.width, win_size.h));
-            self.locations[2] = Point::from((-self.width, 0));
+        if is_border {
+            self.buffers[0].resize((win_size.w + width * 2, width));
+            self.buffers[1].resize((win_size.w + width * 2, width));
+            self.buffers[2].resize((width, win_size.h));
+            self.buffers[3].resize((width, win_size.h));
+
+            self.locations[0] = Point::from((-width, -width));
+            self.locations[1] = Point::from((-width, win_size.h));
+            self.locations[2] = Point::from((-width, 0));
             self.locations[3] = Point::from((win_size.w, 0));
         } else {
-            let size = win_size + Size::from((self.width * 2, self.width * 2));
+            let size = win_size + Size::from((width * 2, width * 2));
             self.buffers[0].resize(size);
-            self.locations[0] = Point::from((-self.width, -self.width));
+            self.locations[0] = Point::from((-width, -width));
         }
 
         self.is_border = is_border;
@@ -61,9 +54,9 @@ impl FocusRing {
 
     pub fn set_active(&mut self, is_active: bool) {
         let color = if is_active {
-            self.active_color.into()
+            self.config.active_color.into()
         } else {
-            self.inactive_color.into()
+            self.config.inactive_color.into()
         };
 
         for buf in &mut self.buffers {
@@ -78,7 +71,7 @@ impl FocusRing {
     ) -> impl Iterator<Item = FocusRingRenderElement> {
         let mut rv = ArrayVec::<_, 4>::new();
 
-        if self.is_off {
+        if self.config.off {
             return rv.into_iter();
         }
 
@@ -90,7 +83,7 @@ impl FocusRing {
                 1.,
                 Kind::Unspecified,
             );
-            rv.push(elem);
+            rv.push(elem.into());
         };
 
         if self.is_border {
@@ -105,10 +98,10 @@ impl FocusRing {
     }
 
     pub fn width(&self) -> i32 {
-        self.width
+        self.config.width.into()
     }
 
     pub fn is_off(&self) -> bool {
-        self.is_off
+        self.config.off
     }
 }
