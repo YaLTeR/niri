@@ -87,16 +87,13 @@ use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
 use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, RenderResult, Tty, Winit};
-use crate::config_error_notification::ConfigErrorNotification;
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
-use crate::exit_confirm_dialog::ExitConfirmDialog;
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
-use crate::hotkey_overlay::HotkeyOverlay;
 use crate::input::{apply_libinput_settings, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
@@ -104,7 +101,10 @@ use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::{render_to_texture, render_to_vec};
-use crate::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
+use crate::ui::config_error_notification::ConfigErrorNotification;
+use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
+use crate::ui::hotkey_overlay::HotkeyOverlay;
+use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::{
     center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };

@@ -23,7 +23,7 @@ use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerCons
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::niri::State;
-use crate::screenshot_ui::ScreenshotUi;
+use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time};
 
