@@ -47,7 +47,7 @@ macro_rules! niri_render_elements {
                 }
             }
 
-            fn geometry(&self, scale: smithay::utils::Scale<f64>) -> Rectangle<i32, smithay::utils::Physical> {
+            fn geometry(&self, scale: smithay::utils::Scale<f64>) -> smithay::utils::Rectangle<i32, smithay::utils::Physical> {
                 match self {
                     $($name::$variant(elem) => elem.geometry(scale)),+
                 }
