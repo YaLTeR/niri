@@ -3,9 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::utils::{
-    Relocate, RelocateRenderElement, RescaleRenderElement,
-};
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
@@ -53,7 +51,7 @@ pub struct Tile<W: LayoutElement> {
 niri_render_elements! {
     TileRenderElement<R> => {
         LayoutElement = LayoutElementRenderElement<R>,
-        SolidColor = RelocateRenderElement<SolidColorRenderElement>,
+        SolidColor = SolidColorRenderElement,
         Offscreen = RescaleRenderElement<OffscreenRenderElement>,
     }
 }
@@ -86,16 +84,11 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
-        let width = self.border.width();
-        self.border.update(
-            (width, width).into(),
-            self.window.size(),
-            self.window.has_ssd(),
-        );
+        self.border
+            .update(self.window.size(), self.window.has_ssd());
         self.border.set_active(is_active);
 
-        self.focus_ring
-            .update((0, 0).into(), self.tile_size(), self.has_ssd());
+        self.focus_ring.update(self.tile_size(), self.has_ssd());
         self.focus_ring.set_active(is_active);
 
         match &mut self.open_animation {
@@ -312,39 +305,25 @@ impl<W: LayoutElement> Tile<W> {
             .into_iter()
             .map(Into::into);
 
-        let elem = self.effective_border_width().map(|_| {
-            self.border.render(scale).map(move |elem| {
-                RelocateRenderElement::from_element(
-                    elem,
-                    location.to_physical_precise_round(scale),
-                    Relocate::Relative,
-                )
-                .into()
-            })
+        let elem = self.effective_border_width().map(|width| {
+            self.border
+                .render(location + Point::from((width, width)), scale)
+                .map(Into::into)
         });
         let rv = rv.chain(elem.into_iter().flatten());
 
-        let elem = focus_ring.then(|| {
-            self.focus_ring.render(scale).map(move |elem| {
-                RelocateRenderElement::from_element(
-                    elem,
-                    location.to_physical_precise_round(scale),
-                    Relocate::Relative,
-                )
-                .into()
-            })
-        });
+        let elem = focus_ring.then(|| self.focus_ring.render(location, scale).map(Into::into));
         let rv = rv.chain(elem.into_iter().flatten());
 
         let elem = self.is_fullscreen.then(|| {
-            let elem = SolidColorRenderElement::from_buffer(
+            SolidColorRenderElement::from_buffer(
                 &self.fullscreen_backdrop,
                 location.to_physical_precise_round(scale),
                 scale,
                 1.,
                 Kind::Unspecified,
-            );
-            RelocateRenderElement::from_element(elem, (0, 0), Relocate::Relative).into()
+            )
+            .into()
         });
         rv.chain(elem)
     }

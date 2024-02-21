@@ -39,26 +39,21 @@ impl FocusRing {
         self.inactive_color = config.inactive_color;
     }
 
-    pub fn update(
-        &mut self,
-        win_pos: Point<i32, Logical>,
-        win_size: Size<i32, Logical>,
-        is_border: bool,
-    ) {
+    pub fn update(&mut self, win_size: Size<i32, Logical>, is_border: bool) {
         if is_border {
             self.buffers[0].resize((win_size.w + self.width * 2, self.width));
             self.buffers[1].resize((win_size.w + self.width * 2, self.width));
             self.buffers[2].resize((self.width, win_size.h));
             self.buffers[3].resize((self.width, win_size.h));
 
-            self.locations[0] = win_pos + Point::from((-self.width, -self.width));
-            self.locations[1] = win_pos + Point::from((-self.width, win_size.h));
-            self.locations[2] = win_pos + Point::from((-self.width, 0));
-            self.locations[3] = win_pos + Point::from((win_size.w, 0));
+            self.locations[0] = Point::from((-self.width, -self.width));
+            self.locations[1] = Point::from((-self.width, win_size.h));
+            self.locations[2] = Point::from((-self.width, 0));
+            self.locations[3] = Point::from((win_size.w, 0));
         } else {
             let size = win_size + Size::from((self.width * 2, self.width * 2));
             self.buffers[0].resize(size);
-            self.locations[0] = win_pos - Point::from((self.width, self.width));
+            self.locations[0] = Point::from((-self.width, -self.width));
         }
 
         self.is_border = is_border;
@@ -76,7 +71,11 @@ impl FocusRing {
         }
     }
 
-    pub fn render(&self, scale: Scale<f64>) -> impl Iterator<Item = FocusRingRenderElement> {
+    pub fn render(
+        &self,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+    ) -> impl Iterator<Item = FocusRingRenderElement> {
         let mut rv = ArrayVec::<_, 4>::new();
 
         if self.is_off {
@@ -96,10 +95,10 @@ impl FocusRing {
 
         if self.is_border {
             for (buf, loc) in zip(&self.buffers, self.locations) {
-                push(buf, loc);
+                push(buf, location + loc);
             }
         } else {
-            push(&self.buffers[0], self.locations[0]);
+            push(&self.buffers[0], location + self.locations[0]);
         }
 
         rv.into_iter()
