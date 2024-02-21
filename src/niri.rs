@@ -947,7 +947,7 @@ impl Niri {
                 });
 
                 if let Err(err) = state.niri.display_handle.insert_client(client, data) {
-                    error!("error inserting client: {err}");
+                    warn!("error inserting client: {err}");
                 }
             })
             .unwrap();
@@ -2557,7 +2557,7 @@ impl Niri {
                 let elements = elements.iter().rev();
 
                 if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
-                    error!("error rendering to dmabuf: {err:?}");
+                    warn!("error rendering to dmabuf: {err:?}");
                     continue;
                 }
 

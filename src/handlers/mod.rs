@@ -297,7 +297,7 @@ impl SecurityContextHandler for State {
                 });
 
                 if let Err(err) = state.niri.display_handle.insert_client(client, data) {
-                    error!("error inserting client: {err}");
+                    warn!("error inserting client: {err}");
                 } else {
                     trace!("inserted a new restricted client, context={context:?}");
                 }

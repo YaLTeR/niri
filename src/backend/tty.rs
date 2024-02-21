@@ -338,7 +338,7 @@ impl Tty {
                 debug!("resuming session");
 
                 if self.libinput.resume().is_err() {
-                    error!("error resuming libinput");
+                    warn!("error resuming libinput");
                 }
 
                 let mut device_list = self
@@ -486,7 +486,7 @@ impl Tty {
                         let meta = meta.expect("VBlank events must have metadata");
                         tty.on_vblank(&mut state.niri, node, crtc, meta);
                     }
-                    DrmEvent::Error(error) => error!("DRM error: {error}"),
+                    DrmEvent::Error(error) => warn!("DRM error: {error}"),
                 };
             })
             .unwrap();
@@ -571,7 +571,7 @@ impl Tty {
             match self.gpu_manager.single_renderer(&device.render_node) {
                 Ok(mut renderer) => renderer.unbind_wl_display(),
                 Err(err) => {
-                    error!("error creating renderer during device removal: {err}");
+                    warn!("error creating renderer during device removal: {err}");
                 }
             }
 
@@ -970,7 +970,7 @@ impl Tty {
             }
             Ok(None) => (),
             Err(err) => {
-                error!("error marking frame as submitted: {err}");
+                warn!("error marking frame as submitted: {err}");
             }
         }
 
@@ -1088,7 +1088,7 @@ impl Tty {
         ) {
             Ok(renderer) => renderer,
             Err(err) => {
-                error!("error creating renderer for primary GPU: {err:?}");
+                warn!("error creating renderer for primary GPU: {err:?}");
                 return rv;
             }
         };
@@ -1141,7 +1141,7 @@ impl Tty {
                             return RenderResult::Submitted;
                         }
                         Err(err) => {
-                            error!("error queueing frame: {err}");
+                            warn!("error queueing frame: {err}");
                         }
                     }
                 } else {
@@ -1150,7 +1150,7 @@ impl Tty {
             }
             Err(err) => {
                 // Can fail if we switched to a different TTY.
-                error!("error rendering frame: {err}");
+                warn!("error rendering frame: {err}");
             }
         }
 
@@ -1165,7 +1165,7 @@ impl Tty {
 
     pub fn change_vt(&mut self, vt: i32) {
         if let Err(err) = self.session.change_vt(vt) {
-            error!("error changing VT: {err}");
+            warn!("error changing VT: {err}");
         }
     }
 
@@ -1368,7 +1368,7 @@ impl Tty {
                 };
 
                 let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
-                    error!("couldn't pick mode for enabled connector");
+                    warn!("couldn't pick mode for enabled connector");
                     continue;
                 };
 
