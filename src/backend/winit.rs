@@ -19,6 +19,7 @@ use smithay::reexports::winit::window::WindowBuilder;
 
 use super::RenderResult;
 use crate::niri::{Niri, RedrawState, State};
+use crate::render_helpers::shaders;
 use crate::utils::get_monotonic_time;
 
 pub struct Winit {
@@ -123,13 +124,12 @@ impl Winit {
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
-        if let Err(err) = self
-            .backend
-            .renderer()
-            .bind_wl_display(&niri.display_handle)
-        {
+        let renderer = self.backend.renderer();
+        if let Err(err) = renderer.bind_wl_display(&niri.display_handle) {
             warn!("error binding renderer wl_display: {err}");
         }
+
+        shaders::init(renderer);
 
         niri.add_output(self.output.clone(), None);
     }

@@ -6,10 +6,13 @@ use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{Bind, ExportMem, Frame, Offscreen, Renderer};
 use smithay::utils::{Physical, Rectangle, Scale, Size, Transform};
 
+pub mod gradient;
 pub mod offscreen;
+pub mod primary_gpu_pixel_shader;
 pub mod primary_gpu_texture;
 pub mod render_elements;
 pub mod renderer;
+pub mod shaders;
 
 pub fn render_to_texture(
     renderer: &mut GlesRenderer,

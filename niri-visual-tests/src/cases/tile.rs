@@ -104,7 +104,13 @@ impl TestCase for Tile {
         let location = Point::from(((size.w - tile_size.w) / 2, (size.h - tile_size.h) / 2));
 
         self.tile
-            .render(renderer, location, Scale::from(1.), true)
+            .render(
+                renderer,
+                location,
+                Scale::from(1.),
+                size.to_logical(1),
+                true,
+            )
             .map(|elem| Box::new(elem) as _)
             .collect()
     }

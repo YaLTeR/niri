@@ -340,6 +340,10 @@ pub struct FocusRing {
     pub active_color: Color,
     #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
+    #[knuffel(child)]
+    pub active_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub inactive_gradient: Option<Gradient>,
 }
 
 impl Default for FocusRing {
@@ -349,8 +353,29 @@ impl Default for FocusRing {
             width: 4,
             active_color: Color::new(127, 200, 255, 255),
             inactive_color: Color::new(80, 80, 80, 255),
+            active_gradient: None,
+            inactive_gradient: None,
         }
     }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Gradient {
+    #[knuffel(property, str)]
+    pub from: Color,
+    #[knuffel(property, str)]
+    pub to: Color,
+    #[knuffel(property, default = 180)]
+    pub angle: i16,
+    #[knuffel(property, default)]
+    pub relative_to: GradientRelativeTo,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum GradientRelativeTo {
+    #[default]
+    Window,
+    WorkspaceView,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -363,6 +388,10 @@ pub struct Border {
     pub active_color: Color,
     #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
+    #[knuffel(child)]
+    pub active_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub inactive_gradient: Option<Gradient>,
 }
 
 impl Default for Border {
@@ -372,6 +401,8 @@ impl Default for Border {
             width: 4,
             active_color: Color::new(255, 200, 127, 255),
             inactive_color: Color::new(80, 80, 80, 255),
+            active_gradient: None,
+            inactive_gradient: None,
         }
     }
 }
@@ -383,6 +414,8 @@ impl From<Border> for FocusRing {
             width: value.width,
             active_color: value.active_color,
             inactive_color: value.inactive_color,
+            active_gradient: value.active_gradient,
+            inactive_gradient: value.inactive_gradient,
         }
     }
 }
@@ -790,6 +823,15 @@ impl Default for Config {
     }
 }
 
+impl FromStr for Color {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let [r, g, b, a] = csscolorparser::parse(s).into_diagnostic()?.to_rgba8();
+        Ok(Self { r, g, b, a })
+    }
+}
+
 impl FromStr for Mode {
     type Err = miette::Error;
 
@@ -909,7 +951,7 @@ mod tests {
     #[test]
     fn parse() {
         check(
-            r#"
+            r##"
             input {
                 keyboard {
                     repeat-delay 600
@@ -961,6 +1003,7 @@ mod tests {
                     width 5
                     active-color 0 100 200 255
                     inactive-color 255 200 100 0
+                    active-gradient from="rgba(10, 20, 30, 1.0)" to="#0080ffff" relative-to="workspace-view"
                 }
 
                 border {
@@ -1034,7 +1077,7 @@ mod tests {
             debug {
                 render-drm-device "/dev/dri/renderD129"
             }
-            "#,
+            "##,
             Config {
                 input: Input {
                     keyboard: Keyboard {
@@ -1099,6 +1142,13 @@ mod tests {
                             b: 100,
                             a: 0,
                         },
+                        active_gradient: Some(Gradient {
+                            from: Color::new(10, 20, 30, 255),
+                            to: Color::new(0, 128, 255, 255),
+                            angle: 180,
+                            relative_to: GradientRelativeTo::WorkspaceView,
+                        }),
+                        inactive_gradient: None,
                     },
                     border: Border {
                         off: false,
@@ -1115,6 +1165,8 @@ mod tests {
                             b: 100,
                             a: 0,
                         },
+                        active_gradient: None,
+                        inactive_gradient: None,
                     },
                     preset_column_widths: vec![
                         PresetWidth::Proportion(0.25),

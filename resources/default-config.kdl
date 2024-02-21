@@ -118,6 +118,24 @@ layout {
 
         // Color of the ring on inactive monitors: red, green, blue, alpha.
         inactive-color 80 80 80 255
+
+        // You can also use gradients. They take precedence over solid colors.
+        // Gradients are rendered the same as CSS linear-gradient(angle, from, to).
+        // Colors can be set in a variety of ways here:
+        // - CSS named colors: from="red"
+        // - RGB hex: from="#rgb", from="#rgba", from="#rrggbb", from="#rrggbbaa"
+        // - CSS-like notation: from="rgb(255, 127, 0)", rgba(), hsl() and a few others.
+        // The angle is the same as in linear-gradient, and is optional,
+        // defaulting to 180 (top-to-bottom gradient).
+        // You can use any CSS linear-gradient tool on the web to set these up.
+        //
+        // active-gradient from="#80c8ff" to="#bbddff" angle=45
+
+        // You can also color the gradient relative to the entire view
+        // of the workspace, rather than relative to just the window itself.
+        // To do that, set relative-to="workspace-view".
+        //
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
     }
 
     // You can also add a border. It's similar to the focus ring, but always visible.
@@ -129,6 +147,9 @@ layout {
         width 4
         active-color 255 200 127 255
         inactive-color 80 80 80 255
+
+        // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
     }
 
     // You can customize the widths that "switch-preset-column-width" (Mod+R) toggles between.

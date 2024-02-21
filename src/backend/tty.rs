@@ -53,6 +53,7 @@ use super::RenderResult;
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::renderer::AsGlesRenderer;
+use crate::render_helpers::shaders;
 use crate::utils::get_monotonic_time;
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
@@ -442,6 +443,8 @@ impl Tty {
                 .context("error creating renderer")?;
 
             renderer.bind_wl_display(&niri.display_handle)?;
+
+            shaders::init(renderer.as_gles_renderer());
 
             // Create the dmabuf global.
             let primary_formats = renderer.dmabuf_formats().collect::<HashSet<_>>();

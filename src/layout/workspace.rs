@@ -1188,7 +1188,7 @@ impl<W: LayoutElement> Workspace<W> {
             first = false;
 
             rv.extend(
-                tile.render(renderer, tile_pos, output_scale, focus_ring)
+                tile.render(renderer, tile_pos, output_scale, self.view_size, focus_ring)
                     .map(Into::into),
             );
         }

@@ -7,7 +7,7 @@ use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
-use super::focus_ring::FocusRing;
+use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::{LayoutElement, LayoutElementRenderElement, Options};
 use crate::animation::Animation;
 use crate::niri_render_elements;
@@ -51,6 +51,7 @@ pub struct Tile<W: LayoutElement> {
 niri_render_elements! {
     TileRenderElement<R> => {
         LayoutElement = LayoutElementRenderElement<R>,
+        FocusRing = FocusRingRenderElement,
         SolidColor = SolidColorRenderElement,
         Offscreen = RescaleRenderElement<OffscreenRenderElement>,
     }
@@ -297,6 +298,7 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
+        view_size: Size<i32, Logical>,
         focus_ring: bool,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
         let rv = self
@@ -307,12 +309,21 @@ impl<W: LayoutElement> Tile<W> {
 
         let elem = self.effective_border_width().map(|width| {
             self.border
-                .render(location + Point::from((width, width)), scale)
+                .render(
+                    renderer,
+                    location + Point::from((width, width)),
+                    scale,
+                    view_size,
+                )
                 .map(Into::into)
         });
         let rv = rv.chain(elem.into_iter().flatten());
 
-        let elem = focus_ring.then(|| self.focus_ring.render(location, scale).map(Into::into));
+        let elem = focus_ring.then(|| {
+            self.focus_ring
+                .render(renderer, location, scale, view_size)
+                .map(Into::into)
+        });
         let rv = rv.chain(elem.into_iter().flatten());
 
         let elem = self.is_fullscreen.then(|| {
@@ -333,11 +344,12 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
+        view_size: Size<i32, Logical>,
         focus_ring: bool,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
         if let Some(anim) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
-            let elements = self.render_inner(renderer, location, scale, focus_ring);
+            let elements = self.render_inner(renderer, location, scale, view_size, focus_ring);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
 
             let elem = OffscreenRenderElement::new(
@@ -365,7 +377,7 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             self.window().set_offscreen_element_id(None);
 
-            let elements = self.render_inner(renderer, location, scale, focus_ring);
+            let elements = self.render_inner(renderer, location, scale, view_size, focus_ring);
             None.into_iter().chain(Some(elements).into_iter().flatten())
         }
     }
