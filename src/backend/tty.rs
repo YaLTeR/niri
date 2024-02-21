@@ -75,6 +75,8 @@ pub struct Tty {
     dmabuf_global: Option<DmabufGlobal>,
     // The output config had changed, but the session is paused, so we need to update it on resume.
     update_output_config_on_resume: bool,
+    // Whether the debug tinting is enabled.
+    debug_tint: bool,
     ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
     enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
@@ -272,6 +274,7 @@ impl Tty {
             devices: HashMap::new(),
             dmabuf_global: None,
             update_output_config_on_resume: false,
+            debug_tint: false,
             ipc_outputs: Rc::new(RefCell::new(HashMap::new())),
             enabled_outputs: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -747,7 +750,7 @@ impl Tty {
         let render_formats = egl_context.dmabuf_render_formats();
 
         // Create the compositor.
-        let compositor = DrmCompositor::new(
+        let mut compositor = DrmCompositor::new(
             OutputModeSource::Auto(output.clone()),
             surface,
             Some(planes),
@@ -760,6 +763,9 @@ impl Tty {
             device.drm.cursor_size(),
             cursor_plane_gbm,
         )?;
+        if self.debug_tint {
+            compositor.set_debug_flags(DebugFlags::TINT);
+        }
 
         let mut dmabuf_feedback = None;
         if let Ok(primary_renderer) = self.gpu_manager.single_renderer(&self.primary_render_node) {
@@ -1171,10 +1177,15 @@ impl Tty {
     }
 
     pub fn toggle_debug_tint(&mut self) {
+        self.debug_tint = !self.debug_tint;
+
         for device in self.devices.values_mut() {
             for surface in device.surfaces.values_mut() {
                 let compositor = &mut surface.compositor;
-                compositor.set_debug_flags(compositor.debug_flags() ^ DebugFlags::TINT);
+
+                let mut flags = compositor.debug_flags();
+                flags.set(DebugFlags::TINT, self.debug_tint);
+                compositor.set_debug_flags(flags);
             }
         }
     }
