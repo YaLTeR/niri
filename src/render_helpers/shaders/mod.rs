@@ -16,10 +16,9 @@ impl Shaders {
                 &[
                     UniformName::new("color_from", UniformType::_4f),
                     UniformName::new("color_to", UniformType::_4f),
-                    UniformName::new("angle", UniformType::_1f),
-                    UniformName::new("gradient_offset", UniformType::_2f),
-                    UniformName::new("gradient_width", UniformType::_1f),
-                    UniformName::new("gradient_total", UniformType::_1f),
+                    UniformName::new("grad_offset", UniformType::_2f),
+                    UniformName::new("grad_width", UniformType::_1f),
+                    UniformName::new("grad_vec", UniformType::_2f),
                 ],
             )
             .map_err(|err| {

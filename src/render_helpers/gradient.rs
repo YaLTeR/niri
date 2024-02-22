@@ -1,5 +1,4 @@
-use std::f32::consts::{self, FRAC_PI_2, PI};
-
+use glam::Vec2;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
@@ -23,31 +22,25 @@ impl GradientRenderElement {
         gradient_area: Rectangle<i32, Logical>,
         color_from: [f32; 4],
         color_to: [f32; 4],
-        mut angle: f32,
+        angle: f32,
     ) -> Option<Self> {
         let shader = Shaders::get(renderer).gradient_border.clone()?;
-        let g_offset = (area.loc - gradient_area.loc).to_f64().to_physical(scale);
+        let grad_offset = (area.loc - gradient_area.loc).to_f64().to_physical(scale);
 
-        let g_size = gradient_area.size.to_f64().to_physical(scale);
-        let (w, h) = (g_size.w as f32, g_size.h as f32);
-        let g_area_angle = f32::atan2(h, w);
-        let g_area_diag = f32::hypot(h, w);
+        let grad_dir = Vec2::from_angle(angle);
 
-        // Normalize the angle to [0°; 360°).
-        while angle < 0. {
-            angle += consts::TAU;
-        }
-        while angle >= consts::TAU {
-            angle -= consts::TAU;
+        let grad_area_size = gradient_area.size.to_f64().to_physical(scale);
+        let (w, h) = (grad_area_size.w as f32, grad_area_size.h as f32);
+
+        let mut grad_area_diag = Vec2::new(w, h);
+        if (grad_dir.x < 0. && 0. <= grad_dir.y) || (0. <= grad_dir.x && grad_dir.y < 0.) {
+            grad_area_diag.x = -w;
         }
 
-        let angle_diag_to_grad =
-            if (0. ..=FRAC_PI_2).contains(&angle) || (PI..=PI + FRAC_PI_2).contains(&angle) {
-                angle - g_area_angle
-            } else {
-                (PI - angle) - g_area_angle
-            };
-        let g_total = angle_diag_to_grad.cos().abs() * g_area_diag;
+        let mut grad_vec = grad_area_diag.project_onto(grad_dir);
+        if grad_dir.y <= 0. {
+            grad_vec = -grad_vec;
+        }
 
         let elem = PixelShaderElement::new(
             shader,
@@ -57,10 +50,9 @@ impl GradientRenderElement {
             vec![
                 Uniform::new("color_from", color_from),
                 Uniform::new("color_to", color_to),
-                Uniform::new("angle", angle),
-                Uniform::new("gradient_offset", (g_offset.x as f32, g_offset.y as f32)),
-                Uniform::new("gradient_width", w),
-                Uniform::new("gradient_total", g_total),
+                Uniform::new("grad_offset", (grad_offset.x as f32, grad_offset.y as f32)),
+                Uniform::new("grad_width", w),
+                Uniform::new("grad_vec", grad_vec.to_array()),
             ],
             Kind::Unspecified,
         );

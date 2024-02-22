@@ -8,33 +8,24 @@ varying vec2 v_coords;
 
 uniform vec4 color_from;
 uniform vec4 color_to;
-uniform float angle;
-uniform vec2 gradient_offset;
-uniform float gradient_width;
-uniform float gradient_total;
-
-#define FRAC_PI_2   1.57079632679
-#define PI          3.14159265359
-#define FRAC_3_PI_2 4.71238898038
-#define TAU         6.28318530718
+uniform vec2 grad_offset;
+uniform float grad_width;
+uniform vec2 grad_vec;
 
 void main() {
-    vec2 coords = v_coords * size + gradient_offset;
+    vec2 coords = v_coords * size + grad_offset;
 
-    if ((FRAC_PI_2 <= angle && angle < PI) || (FRAC_3_PI_2 <= angle && angle < TAU))
-        coords.x -= gradient_width;
+    if ((grad_vec.x < 0.0 && 0.0 <= grad_vec.y)
+            || (0.0 <= grad_vec.x && grad_vec.y < 0.0)) {
+        coords.x -= grad_width;
+    }
 
-    float frag_angle = FRAC_PI_2;
-    if (coords.x != 0.0)
-        frag_angle = atan(coords.y, coords.x);
+    float frac = dot(coords, grad_vec) / dot(grad_vec, grad_vec);
 
-    float angle_frag_to_grad = frag_angle - angle;
+    if (grad_vec.y < 0.0)
+        frac = 1.0 + frac;
 
-    float frac = cos(angle_frag_to_grad) * length(coords) / gradient_total;
-    if (PI <= angle)
-        frac += 1.0;
     frac = clamp(frac, 0.0, 1.0);
-
     vec4 out_color = mix(color_from, color_to, frac);
 
 #if defined(DEBUG_FLAGS)
