@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use smithay::reexports::calloop;
 use zbus::dbus_interface;
 use zbus::fdo::{self, RequestNameFlags};
 

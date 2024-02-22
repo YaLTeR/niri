@@ -1,4 +1,3 @@
-use smithay::reexports::calloop;
 use zbus::blocking::Connection;
 use zbus::Interface;
 

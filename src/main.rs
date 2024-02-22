@@ -21,7 +21,7 @@ use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
 use niri_config::Config;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
-use smithay::reexports::calloop::{self, EventLoop};
+use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 

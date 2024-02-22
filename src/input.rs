@@ -17,7 +17,6 @@ use smithay::input::pointer::{
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent, RelativeMotionEvent,
 };
-use smithay::reexports::input;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
@@ -1639,7 +1638,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
 #[cfg(test)]
 mod tests {
-    use niri_config::{Action, Bind, Binds, Key, Modifiers};
+    use niri_config::{Bind, Key};
 
     use super::*;
 

@@ -41,9 +41,8 @@ use smithay::output::{self, Output};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
-    self, Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
+    Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
-use smithay::reexports::input;
 use smithay::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;

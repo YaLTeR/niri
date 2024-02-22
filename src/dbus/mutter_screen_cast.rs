@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use smithay::output::Output;
-use smithay::reexports::calloop;
 use zbus::fdo::RequestNameFlags;
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
 use zbus::{dbus_interface, fdo, InterfaceRef, ObjectServer, SignalContext};

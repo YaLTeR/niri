@@ -29,7 +29,7 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::{self, Interest, LoopHandle, Mode, PostAction};
+use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
 use smithay::utils::{Physical, Size};
 use zbus::SignalContext;

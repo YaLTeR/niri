@@ -34,7 +34,7 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{self, CenterFocusedColumn, Config, Struts};
+use niri_config::{CenterFocusedColumn, Config, Struts};
 use niri_ipc::SizeChange;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -885,7 +885,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         let col = &ws.columns[ws.active_column_idx];
-        Some((&col.tiles[col.active_tile_idx].window(), &mon.output))
+        Some((col.tiles[col.active_tile_idx].window(), &mon.output))
     }
 
     pub fn windows_for_output(&self, output: &Output) -> impl Iterator<Item = &W> + '_ {
