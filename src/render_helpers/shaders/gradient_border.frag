@@ -15,15 +15,13 @@ uniform vec2 grad_vec;
 void main() {
     vec2 coords = v_coords * size + grad_offset;
 
-    if ((grad_vec.x < 0.0 && 0.0 <= grad_vec.y)
-            || (0.0 <= grad_vec.x && grad_vec.y < 0.0)) {
+    if ((grad_vec.x < 0.0 && 0.0 <= grad_vec.y) || (0.0 <= grad_vec.x && grad_vec.y < 0.0))
         coords.x -= grad_width;
-    }
 
     float frac = dot(coords, grad_vec) / dot(grad_vec, grad_vec);
 
     if (grad_vec.y < 0.0)
-        frac = 1.0 + frac;
+        frac += 1.0;
 
     frac = clamp(frac, 0.0, 1.0);
     vec4 out_color = mix(color_from, color_to, frac);
