@@ -11,6 +11,7 @@ mod imp {
     use anyhow::{ensure, Context};
     use gtk::gdk;
     use gtk::prelude::*;
+    use niri::render_helpers::shaders;
     use niri::utils::get_monotonic_time;
     use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
@@ -190,8 +191,12 @@ mod imp {
             .into_iter()
             .filter(|c| *c != Capability::ColorTransformations);
 
-        GlesRenderer::with_capabilities(egl_context, capabilities)
-            .context("error creating GlesRenderer")
+        let mut renderer = GlesRenderer::with_capabilities(egl_context, capabilities)
+            .context("error creating GlesRenderer")?;
+
+        shaders::init(&mut renderer);
+
+        Ok(renderer)
     }
 
     unsafe fn with_framebuffer_save_restore<T>(

@@ -16,6 +16,8 @@ use smithay::utils::{Logical, Size};
 use smithay_view::SmithayView;
 use tracing_subscriber::EnvFilter;
 
+use crate::cases::gradient_angle::GradientAngle;
+use crate::cases::gradient_area::GradientArea;
 use crate::cases::layout::Layout;
 use crate::cases::TestCase;
 
@@ -107,6 +109,9 @@ fn build_ui(app: &adw::Application) {
         Layout::open_to_the_left_big,
         "Layout - Open To The Left - Big",
     );
+
+    s.add(GradientAngle::new, "Gradient - Angle");
+    s.add(GradientArea::new, "Gradient - Area");
 
     let content_headerbar = adw::HeaderBar::new();
 

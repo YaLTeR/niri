@@ -4,12 +4,14 @@ use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Size};
 
+pub mod gradient_angle;
+pub mod gradient_area;
 pub mod layout;
 pub mod tile;
 pub mod window;
 
 pub trait TestCase {
-    fn resize(&mut self, width: i32, height: i32);
+    fn resize(&mut self, _width: i32, _height: i32) {}
     fn are_animations_ongoing(&self) -> bool {
         false
     }
