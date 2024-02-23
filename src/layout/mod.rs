@@ -534,7 +534,13 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let width = width.unwrap_or_else(|| {
+            let mut width = window.size().w;
+            if !self.options.border.off {
+                width += self.options.border.width as i32 * 2;
+            }
+            ColumnWidth::Fixed(width)
+        });
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -585,7 +591,13 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let width = width.unwrap_or_else(|| {
+            let mut width = window.size().w;
+            if !self.options.border.off {
+                width += self.options.border.width as i32 * 2;
+            }
+            ColumnWidth::Fixed(width)
+        });
 
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -616,7 +628,13 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) {
-        let width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let width = width.unwrap_or_else(|| {
+            let mut width = window.size().w;
+            if !self.options.border.off {
+                width += self.options.border.width as i32 * 2;
+            }
+            ColumnWidth::Fixed(width)
+        });
 
         let MonitorSet::Normal {
             monitors,
