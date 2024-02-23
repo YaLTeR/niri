@@ -264,13 +264,13 @@ impl XdgShellHandler for State {
 
     fn fullscreen_request(
         &mut self,
-        surface: ToplevelSurface,
+        toplevel: ToplevelSurface,
         wl_output: Option<wl_output::WlOutput>,
     ) {
         if let Some((window, current_output)) = self
             .niri
             .layout
-            .find_window_and_output(surface.wl_surface())
+            .find_window_and_output(toplevel.wl_surface())
         {
             let window = window.clone();
 
@@ -286,8 +286,8 @@ impl XdgShellHandler for State {
 
             // A configure is required in response to this event regardless if there are pending
             // changes.
-            surface.send_configure();
-        } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(surface.wl_surface()) {
+            toplevel.send_configure();
+        } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             match &mut unmapped.state {
                 InitialConfigureState::NotConfigured { wants_fullscreen } => {
                     *wants_fullscreen = Some(wl_output.as_ref().and_then(Output::from_resource));
@@ -298,28 +298,28 @@ impl XdgShellHandler for State {
                     // FIXME: implement this once I figure out a good way without code duplication.
 
                     // We already sent the initial configure, so we need to reconfigure.
-                    surface.send_configure();
+                    toplevel.send_configure();
                 }
             }
         } else {
             error!("couldn't find the toplevel in fullscreen_request()");
-            surface.send_configure();
+            toplevel.send_configure();
         }
     }
 
-    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+    fn unfullscreen_request(&mut self, toplevel: ToplevelSurface) {
         if let Some((window, _)) = self
             .niri
             .layout
-            .find_window_and_output(surface.wl_surface())
+            .find_window_and_output(toplevel.wl_surface())
         {
             let window = window.clone();
             self.niri.layout.set_fullscreen(&window, false);
 
             // A configure is required in response to this event regardless if there are pending
             // changes.
-            surface.send_configure();
-        } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(surface.wl_surface()) {
+            toplevel.send_configure();
+        } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             match &mut unmapped.state {
                 InitialConfigureState::NotConfigured { wants_fullscreen } => {
                     *wants_fullscreen = None;
@@ -330,12 +330,12 @@ impl XdgShellHandler for State {
                     // FIXME: implement this once I figure out a good way without code duplication.
 
                     // We already sent the initial configure, so we need to reconfigure.
-                    surface.send_configure();
+                    toplevel.send_configure();
                 }
             }
         } else {
             error!("couldn't find the toplevel in unfullscreen_request()");
-            surface.send_configure();
+            toplevel.send_configure();
         }
     }
 
