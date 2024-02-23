@@ -267,6 +267,8 @@ impl XdgShellHandler for State {
         toplevel: ToplevelSurface,
         wl_output: Option<wl_output::WlOutput>,
     ) {
+        let requested_output = wl_output.as_ref().and_then(Output::from_resource);
+
         if let Some((window, current_output)) = self
             .niri
             .layout
@@ -274,7 +276,7 @@ impl XdgShellHandler for State {
         {
             let window = window.clone();
 
-            if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
+            if let Some(requested_output) = requested_output {
                 if &requested_output != current_output {
                     self.niri
                         .layout
@@ -290,12 +292,51 @@ impl XdgShellHandler for State {
         } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             match &mut unmapped.state {
                 InitialConfigureState::NotConfigured { wants_fullscreen } => {
-                    *wants_fullscreen = Some(wl_output.as_ref().and_then(Output::from_resource));
+                    *wants_fullscreen = Some(requested_output);
 
                     // The required configure will be the initial configure.
                 }
-                InitialConfigureState::Configured { .. } => {
-                    // FIXME: implement this once I figure out a good way without code duplication.
+                InitialConfigureState::Configured { output, .. } => {
+                    // Figure out the monitor following a similar logic to initial configure.
+                    // FIXME: deduplicate.
+                    let mon = requested_output
+                        .as_ref()
+                        // If none requested, try currently configured output.
+                        .or(output.as_ref())
+                        .and_then(|o| self.niri.layout.monitor_for_output(o))
+                        .map(|mon| (mon, false))
+                        // If not, check if we have a parent with a monitor.
+                        .or_else(|| {
+                            toplevel
+                                .parent()
+                                .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
+                                .map(|(_win, output)| output)
+                                .and_then(|o| self.niri.layout.monitor_for_output(o))
+                                .map(|mon| (mon, true))
+                        })
+                        // If not, fall back to the active monitor.
+                        .or_else(|| {
+                            self.niri
+                                .layout
+                                .active_monitor_ref()
+                                .map(|mon| (mon, false))
+                        });
+
+                    *output = mon
+                        .filter(|(_, parent)| !parent)
+                        .map(|(mon, _)| mon.output.clone());
+                    let mon = mon.map(|(mon, _)| mon);
+
+                    let ws = mon
+                        .map(|mon| mon.active_workspace_ref())
+                        .or_else(|| self.niri.layout.active_workspace());
+
+                    if let Some(ws) = ws {
+                        toplevel.with_pending_state(|state| {
+                            state.states.set(xdg_toplevel::State::Fullscreen);
+                        });
+                        ws.configure_new_window(&unmapped.window, None);
+                    }
 
                     // We already sent the initial configure, so we need to reconfigure.
                     toplevel.send_configure();
@@ -326,8 +367,56 @@ impl XdgShellHandler for State {
 
                     // The required configure will be the initial configure.
                 }
-                InitialConfigureState::Configured { .. } => {
-                    // FIXME: implement this once I figure out a good way without code duplication.
+                InitialConfigureState::Configured {
+                    width,
+                    is_full_width,
+                    output,
+                    ..
+                } => {
+                    // Figure out the monitor following a similar logic to initial configure.
+                    // FIXME: deduplicate.
+                    let mon = output
+                        .as_ref()
+                        .and_then(|o| self.niri.layout.monitor_for_output(o))
+                        .map(|mon| (mon, false))
+                        // If not, check if we have a parent with a monitor.
+                        .or_else(|| {
+                            toplevel
+                                .parent()
+                                .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
+                                .map(|(_win, output)| output)
+                                .and_then(|o| self.niri.layout.monitor_for_output(o))
+                                .map(|mon| (mon, true))
+                        })
+                        // If not, fall back to the active monitor.
+                        .or_else(|| {
+                            self.niri
+                                .layout
+                                .active_monitor_ref()
+                                .map(|mon| (mon, false))
+                        });
+
+                    *output = mon
+                        .filter(|(_, parent)| !parent)
+                        .map(|(mon, _)| mon.output.clone());
+                    let mon = mon.map(|(mon, _)| mon);
+
+                    let ws = mon
+                        .map(|mon| mon.active_workspace_ref())
+                        .or_else(|| self.niri.layout.active_workspace());
+
+                    if let Some(ws) = ws {
+                        toplevel.with_pending_state(|state| {
+                            state.states.unset(xdg_toplevel::State::Fullscreen);
+                        });
+
+                        let configure_width = if *is_full_width {
+                            Some(ColumnWidth::Proportion(1.))
+                        } else {
+                            *width
+                        };
+                        ws.configure_new_window(&unmapped.window, configure_width);
+                    }
 
                     // We already sent the initial configure, so we need to reconfigure.
                     toplevel.send_configure();
