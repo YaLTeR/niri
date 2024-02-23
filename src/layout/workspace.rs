@@ -335,10 +335,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn new_window_size(&self, width: Option<ColumnWidth>) -> Size<i32, Logical> {
         let width = if let Some(width) = width {
+            let is_fixed = matches!(width, ColumnWidth::Fixed(_));
+
             let mut width = width.resolve(&self.options, self.working_area.size.w);
-            if !self.options.border.off {
+
+            if !is_fixed && !self.options.border.off {
                 width -= self.options.border.width as i32 * 2;
             }
+
             max(1, width)
         } else {
             0
