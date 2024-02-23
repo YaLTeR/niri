@@ -16,9 +16,9 @@ use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
-use super::xdg_shell::{initial_configure_sent, resolve_window_rules};
 use crate::niri::{ClientState, State};
 use crate::utils::clone2;
+use crate::window::{InitialConfigureState, Unmapped};
 
 impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
@@ -105,29 +105,41 @@ impl CompositorHandler for State {
 
                 if is_mapped {
                     // The toplevel got mapped.
-                    let window = entry.remove();
+                    let Unmapped { window, state } = entry.remove();
+
                     window.on_commit();
+
+                    let (width, output) =
+                        if let InitialConfigureState::Configured { width, output, .. } = state {
+                            // Check that the output is still connected.
+                            let output =
+                                output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
+
+                            (width, output)
+                        } else {
+                            error!("window map must happen after initial configure");
+                            (None, None)
+                        };
 
                     let parent = window
                         .toplevel()
                         .parent()
                         .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
-                        .map(|(win, _)| win.clone());
-
-                    let (width, output) = {
-                        let config = self.niri.config.borrow();
-                        let rules = resolve_window_rules(&config.window_rules, window.toplevel());
-                        let output = rules
-                            .open_on_output
-                            .and_then(|name| self.niri.output_by_name.get(name))
-                            .cloned();
-                        (rules.default_width, output)
-                    };
+                        // Only consider the parent if we configured the window for the same
+                        // output.
+                        //
+                        // Normally when we're following the parent, the configured output will be
+                        // None. If the configured output is set, that means it was set explicitly
+                        // by a window rule or a fullscreen request.
+                        .filter(|(_, parent_output)| {
+                            output.is_none() || output.as_ref() == Some(*parent_output)
+                        })
+                        .map(|(window, _)| window.clone());
 
                     let win = window.clone();
 
-                    // Open dialogs immediately to the right of their parent window.
                     let output = if let Some(p) = parent {
+                        // Open dialogs immediately to the right of their parent window.
                         self.niri.layout.add_window_right_of(&p, win, width, false)
                     } else if let Some(output) = &output {
                         self.niri
@@ -146,17 +158,10 @@ impl CompositorHandler for State {
                 }
 
                 // The toplevel remains unmapped.
-                let window = entry.get().clone();
-
-                // Send the initial configure in an idle, in case the client sent some more info
-                // after the initial commit.
-                if !initial_configure_sent(window.toplevel()) {
-                    self.niri.event_loop.insert_idle(move |state| {
-                        if !window.toplevel().alive() {
-                            return;
-                        }
-                        state.send_initial_configure_if_needed(&window);
-                    });
+                let unmapped = entry.get();
+                if unmapped.needs_initial_configure() {
+                    let toplevel = unmapped.window.toplevel().clone();
+                    self.queue_initial_configure(toplevel);
                 }
                 return;
             }
@@ -178,7 +183,12 @@ impl CompositorHandler for State {
                 if !is_mapped {
                     // The toplevel got unmapped.
                     self.niri.layout.remove_window(&window);
-                    self.niri.unmapped_windows.insert(surface.clone(), window);
+
+                    // Newly-unmapped toplevels must perform the initial commit-configure sequence
+                    // afresh.
+                    let unmapped = Unmapped::new(window);
+                    self.niri.unmapped_windows.insert(surface.clone(), unmapped);
+
                     self.niri.queue_redraw(output);
                     return;
                 }

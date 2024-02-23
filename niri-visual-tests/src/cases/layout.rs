@@ -145,8 +145,7 @@ impl Layout {
     }
 
     fn add_window(&mut self, window: TestWindow, width: Option<ColumnWidth>) {
-        self.layout
-            .add_window(window.clone(), width.map(Some), false);
+        self.layout.add_window(window.clone(), width, false);
         if window.communicate() {
             self.layout.update_window(&window);
         }
@@ -160,7 +159,7 @@ impl Layout {
         width: Option<ColumnWidth>,
     ) {
         self.layout
-            .add_window_right_of(right_of, window.clone(), width.map(Some), false);
+            .add_window_right_of(right_of, window.clone(), width, false);
         if window.communicate() {
             self.layout.update_window(&window);
         }

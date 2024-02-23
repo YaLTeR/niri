@@ -531,15 +531,10 @@ impl<W: LayoutElement> Layout<W> {
     pub fn add_window(
         &mut self,
         window: W,
-        width: Option<Option<ColumnWidth>>,
+        width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let width = match width {
-            Some(Some(width)) => Some(width),
-            Some(None) => None,
-            None => self.options.default_width,
-        }
-        .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -587,15 +582,10 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         right_of: &W,
         window: W,
-        width: Option<Option<ColumnWidth>>,
+        width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let width = match width {
-            Some(Some(width)) => Some(width),
-            Some(None) => None,
-            None => self.options.default_width,
-        }
-        .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
 
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -623,15 +613,10 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         output: &Output,
         window: W,
-        width: Option<Option<ColumnWidth>>,
+        width: Option<ColumnWidth>,
         is_full_width: bool,
     ) {
-        let width = match width {
-            Some(Some(width)) => Some(width),
-            Some(None) => None,
-            None => self.options.default_width,
-        }
-        .unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
 
         let MonitorSet::Normal {
             monitors,
@@ -929,6 +914,19 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         Some(&mut monitors[*active_monitor_idx])
+    }
+
+    pub fn active_monitor_ref(&self) -> Option<&Monitor<W>> {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &self.monitor_set
+        else {
+            return None;
+        };
+
+        Some(&monitors[*active_monitor_idx])
     }
 
     pub fn monitor_for_output(&self, output: &Output) -> Option<&Monitor<W>> {

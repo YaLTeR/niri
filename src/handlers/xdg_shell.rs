@@ -27,19 +27,7 @@ use smithay::{delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_she
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::utils::clone2;
-
-#[derive(Debug, Default)]
-pub struct ResolvedWindowRule<'a> {
-    /// Default width for this window.
-    ///
-    /// - `None`: unset.
-    /// - `Some(None)`: set to empty.
-    /// - `Some(Some(width))`: set to a particular width.
-    pub default_width: Option<Option<ColumnWidth>>,
-
-    /// Output to open this window on.
-    pub open_on_output: Option<&'a str>,
-}
+use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped};
 
 fn window_matches(role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
     if let Some(app_id_re) = &m.app_id {
@@ -63,13 +51,13 @@ fn window_matches(role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
     true
 }
 
-pub fn resolve_window_rules<'a>(
-    rules: &'a [WindowRule],
+pub fn resolve_window_rules(
+    rules: &[WindowRule],
     toplevel: &ToplevelSurface,
-) -> ResolvedWindowRule<'a> {
+) -> ResolvedWindowRules {
     let _span = tracy_client::span!("resolve_window_rules");
 
-    let mut resolved = ResolvedWindowRule::default();
+    let mut resolved = ResolvedWindowRules::default();
 
     with_states(toplevel.wl_surface(), |states| {
         let role = states
@@ -78,6 +66,8 @@ pub fn resolve_window_rules<'a>(
             .unwrap()
             .lock()
             .unwrap();
+
+        let mut open_on_output = None;
 
         for rule in rules {
             if !(rule.matches.is_empty() || rule.matches.iter().any(|m| window_matches(&role, m))) {
@@ -97,9 +87,11 @@ pub fn resolve_window_rules<'a>(
             }
 
             if let Some(x) = rule.open_on_output.as_deref() {
-                resolved.open_on_output = Some(x);
+                open_on_output = Some(x);
             }
         }
+
+        resolved.open_on_output = open_on_output.map(|x| x.to_owned());
     });
 
     resolved
@@ -112,10 +104,8 @@ impl XdgShellHandler for State {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let wl_surface = surface.wl_surface().clone();
-        let window = Window::new(surface);
-
-        // At the moment of creation, xdg toplevels must have no buffer.
-        let existing = self.niri.unmapped_windows.insert(wl_surface, window);
+        let unmapped = Unmapped::new(Window::new(surface));
+        let existing = self.niri.unmapped_windows.insert(wl_surface, unmapped);
         assert!(existing.is_none());
     }
 
@@ -273,53 +263,42 @@ impl XdgShellHandler for State {
         surface: ToplevelSurface,
         wl_output: Option<wl_output::WlOutput>,
     ) {
-        if surface
-            .current_state()
-            .capabilities
-            .contains(xdg_toplevel::WmCapabilities::Fullscreen)
+        if let Some((window, current_output)) = self
+            .niri
+            .layout
+            .find_window_and_output(surface.wl_surface())
         {
-            if let Some((window, current_output)) = self
-                .niri
-                .layout
-                .find_window_and_output(surface.wl_surface())
-            {
-                let window = window.clone();
+            let window = window.clone();
 
-                if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
-                    if &requested_output != current_output {
-                        self.niri
-                            .layout
-                            .move_window_to_output(window.clone(), &requested_output);
-                    }
-                }
-
-                self.niri.layout.set_fullscreen(&window, true);
-            } else if let Some(window) = self.niri.unmapped_windows.get(surface.wl_surface()) {
-                let config = self.niri.config.borrow();
-                let rules = resolve_window_rules(&config.window_rules, window.toplevel());
-
-                // FIXME: take requested output into account (will need to thread this through to
-                // send_initial_configure_if_needed and commit handler).
-                let output = rules
-                    .open_on_output
-                    .and_then(|name| self.niri.output_by_name.get(name));
-                let mon = output.map(|o| self.niri.layout.monitor_for_output(o).unwrap());
-                let ws = mon
-                    .map(|mon| mon.active_workspace_ref())
-                    .or_else(|| self.niri.layout.active_workspace());
-
-                if let Some(ws) = ws {
-                    window.toplevel().with_pending_state(|state| {
-                        state.size = Some(ws.view_size());
-                        state.states.set(xdg_toplevel::State::Fullscreen);
-                    });
+            if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
+                if &requested_output != current_output {
+                    self.niri
+                        .layout
+                        .move_window_to_output(window.clone(), &requested_output);
                 }
             }
-        }
 
-        // A configure is required in response to this event. However, if an initial configure
-        // wasn't sent, then we will send this as part of the initial configure later.
-        if initial_configure_sent(&surface) {
+            self.niri.layout.set_fullscreen(&window, true);
+
+            // A configure is required in response to this event regardless if there are pending
+            // changes.
+            surface.send_configure();
+        } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(surface.wl_surface()) {
+            match &mut unmapped.state {
+                InitialConfigureState::NotConfigured { wants_fullscreen } => {
+                    *wants_fullscreen = Some(wl_output.as_ref().and_then(Output::from_resource));
+
+                    // The required configure will be the initial configure.
+                }
+                InitialConfigureState::Configured { .. } => {
+                    // FIXME: implement this once I figure out a good way without code duplication.
+
+                    // We already sent the initial configure, so we need to reconfigure.
+                    surface.send_configure();
+                }
+            }
+        } else {
+            error!("couldn't find the toplevel in fullscreen_request()");
             surface.send_configure();
         }
     }
@@ -332,24 +311,27 @@ impl XdgShellHandler for State {
         {
             let window = window.clone();
             self.niri.layout.set_fullscreen(&window, false);
-        } else if let Some(window) = self.niri.unmapped_windows.get(surface.wl_surface()) {
-            let config = self.niri.config.borrow();
-            let rules = resolve_window_rules(&config.window_rules, window.toplevel());
 
-            let output = rules
-                .open_on_output
-                .and_then(|name| self.niri.output_by_name.get(name));
-            let mon = output.map(|o| self.niri.layout.monitor_for_output(o).unwrap());
-            let ws = mon
-                .map(|mon| mon.active_workspace_ref())
-                .or_else(|| self.niri.layout.active_workspace());
+            // A configure is required in response to this event regardless if there are pending
+            // changes.
+            surface.send_configure();
+        } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(surface.wl_surface()) {
+            match &mut unmapped.state {
+                InitialConfigureState::NotConfigured { wants_fullscreen } => {
+                    *wants_fullscreen = None;
 
-            if let Some(ws) = ws {
-                window.toplevel().with_pending_state(|state| {
-                    state.size = Some(ws.new_window_size(rules.default_width));
-                    state.states.unset(xdg_toplevel::State::Fullscreen);
-                });
+                    // The required configure will be the initial configure.
+                }
+                InitialConfigureState::Configured { .. } => {
+                    // FIXME: implement this once I figure out a good way without code duplication.
+
+                    // We already sent the initial configure, so we need to reconfigure.
+                    surface.send_configure();
+                }
             }
+        } else {
+            error!("couldn't find the toplevel in unfullscreen_request()");
+            surface.send_configure();
         }
     }
 
@@ -384,6 +366,14 @@ impl XdgShellHandler for State {
         if let Some(output) = self.output_for_popup(&PopupKind::Xdg(surface)) {
             self.niri.queue_redraw(output.clone());
         }
+    }
+
+    fn app_id_changed(&mut self, toplevel: ToplevelSurface) {
+        self.update_window_rules(&toplevel);
+    }
+
+    fn title_changed(&mut self, toplevel: ToplevelSurface) {
+        self.update_window_rules(&toplevel);
     }
 }
 
@@ -440,7 +430,7 @@ impl KdeDecorationHandler for State {
 
 delegate_kde_decoration!(State);
 
-pub fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
+fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
     with_states(toplevel.wl_surface(), |states| {
         states
             .data_map
@@ -453,28 +443,82 @@ pub fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
 }
 
 impl State {
-    pub fn send_initial_configure_if_needed(&mut self, window: &Window) {
-        let toplevel = window.toplevel();
-        if initial_configure_sent(toplevel) {
-            return;
-        }
+    pub fn send_initial_configure(&mut self, toplevel: &ToplevelSurface) {
+        let _span = tracy_client::span!("State::send_initial_configure");
 
-        let _span = tracy_client::span!("State::send_initial_configure_if_needed");
+        let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) else {
+            error!("window must be present in unmapped_windows in send_initial_configure()");
+            return;
+        };
+
+        let Unmapped { window, state } = unmapped;
+
+        let InitialConfigureState::NotConfigured { wants_fullscreen } = state else {
+            error!("window must not be already configured in send_initial_configure()");
+            return;
+        };
 
         let config = self.niri.config.borrow();
         let rules = resolve_window_rules(&config.window_rules, toplevel);
 
-        let output = rules
+        // Pick the target monitor. First, check if we had an output set in the window rules.
+        let mon = rules
             .open_on_output
-            .and_then(|name| self.niri.output_by_name.get(name));
-        let mon = output.map(|o| self.niri.layout.monitor_for_output(o).unwrap());
+            .as_deref()
+            .and_then(|name| self.niri.output_by_name.get(name))
+            .and_then(|o| self.niri.layout.monitor_for_output(o));
+
+        // If not, check if the window requested one for fullscreen.
+        let mon = mon.or_else(|| {
+            wants_fullscreen
+                .as_ref()
+                .and_then(|x| x.as_ref())
+                // The monitor might not exist if the output was disconnected.
+                .and_then(|o| self.niri.layout.monitor_for_output(o))
+        });
+
+        // If not, check if this is a dialog with a parent, to place it next to the parent.
+        let mon = mon.map(|mon| (mon, false)).or_else(|| {
+            toplevel
+                .parent()
+                .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
+                .map(|(_win, output)| output)
+                .and_then(|o| self.niri.layout.monitor_for_output(o))
+                .map(|mon| (mon, true))
+        });
+
+        // If not, use the active monitor.
+        let mon = mon.or_else(|| {
+            self.niri
+                .layout
+                .active_monitor_ref()
+                .map(|mon| (mon, false))
+        });
+
+        // If we're following the parent, don't set the target output, so that when the window is
+        // mapped, it fetches the possibly changed parent's output again, and shows up there.
+        let output = mon
+            .filter(|(_, parent)| !parent)
+            .map(|(mon, _)| mon.output.clone());
+        let mon = mon.map(|(mon, _)| mon);
+
+        let mut width = None;
+
+        // Tell the surface the preferred size and bounds for its likely output.
         let ws = mon
             .map(|mon| mon.active_workspace_ref())
             .or_else(|| self.niri.layout.active_workspace());
 
-        // Tell the surface the preferred size and bounds for its likely output.
         if let Some(ws) = ws {
-            ws.configure_new_window(window, rules.default_width);
+            // Set a fullscreen state if requested.
+            if wants_fullscreen.is_some() {
+                toplevel.with_pending_state(|state| {
+                    state.states.set(xdg_toplevel::State::Fullscreen);
+                });
+            }
+
+            width = ws.resolve_default_width(rules.default_width);
+            ws.configure_new_window(window, width);
         }
 
         // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
@@ -488,7 +532,30 @@ impl State {
             });
         }
 
+        // Set the configured settings.
+        *state = InitialConfigureState::Configured {
+            rules,
+            width,
+            output,
+        };
+
         toplevel.send_configure();
+    }
+
+    pub fn queue_initial_configure(&self, toplevel: ToplevelSurface) {
+        // Send the initial configure in an idle, in case the client sent some more info after the
+        // initial commit.
+        self.niri.event_loop.insert_idle(move |state| {
+            if !toplevel.alive() {
+                return;
+            }
+
+            if let Some(unmapped) = state.niri.unmapped_windows.get(toplevel.wl_surface()) {
+                if unmapped.needs_initial_configure() {
+                    state.send_initial_configure(&toplevel);
+                }
+            }
+        });
     }
 
     /// Should be called on `WlSurface::commit`
@@ -608,6 +675,16 @@ impl State {
                     }
                 }
                 PopupKind::InputMethod(_) => (),
+            }
+        }
+    }
+
+    pub fn update_window_rules(&mut self, toplevel: &ToplevelSurface) {
+        let resolve = || resolve_window_rules(&self.niri.config.borrow().window_rules, toplevel);
+
+        if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
+            if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
+                *rules = resolve();
             }
         }
     }

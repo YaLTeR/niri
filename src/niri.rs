@@ -107,6 +107,7 @@ use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::{
     center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };
+use crate::window::Unmapped;
 use crate::{animation, niri_render_elements};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
@@ -132,7 +133,7 @@ pub struct Niri {
     pub global_space: Space<Window>,
 
     // Windows which don't have a buffer attached yet.
-    pub unmapped_windows: HashMap<WlSurface, Window>,
+    pub unmapped_windows: HashMap<WlSurface, Unmapped>,
 
     pub output_state: HashMap<Output, OutputState>,
     pub output_by_name: HashMap<String, Output>,

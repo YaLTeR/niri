@@ -322,17 +322,19 @@ impl<W: LayoutElement> Workspace<W> {
         ))
     }
 
-    pub fn new_window_size(
+    pub fn resolve_default_width(
         &self,
         default_width: Option<Option<ColumnWidth>>,
-    ) -> Size<i32, Logical> {
-        let default_width = match default_width {
+    ) -> Option<ColumnWidth> {
+        match default_width {
             Some(Some(width)) => Some(width),
             Some(None) => None,
             None => self.options.default_width,
-        };
+        }
+    }
 
-        let width = if let Some(width) = default_width {
+    pub fn new_window_size(&self, width: Option<ColumnWidth>) -> Size<i32, Logical> {
+        let width = if let Some(width) = width {
             let mut width = width.resolve(&self.options, self.working_area.size.w);
             if !self.options.border.off {
                 width -= self.options.border.width as i32 * 2;
@@ -350,11 +352,7 @@ impl<W: LayoutElement> Workspace<W> {
         Size::from((width, max(height, 1)))
     }
 
-    pub fn configure_new_window(
-        &self,
-        window: &Window,
-        default_width: Option<Option<ColumnWidth>>,
-    ) {
+    pub fn configure_new_window(&self, window: &Window, width: Option<ColumnWidth>) {
         if let Some(output) = self.output.as_ref() {
             set_preferred_scale_transform(window, output);
         }
@@ -363,7 +361,7 @@ impl<W: LayoutElement> Workspace<W> {
             if state.states.contains(xdg_toplevel::State::Fullscreen) {
                 state.size = Some(self.view_size);
             } else {
-                state.size = Some(self.new_window_size(default_width));
+                state.size = Some(self.new_window_size(width));
             }
 
             state.bounds = Some(self.toplevel_bounds());
