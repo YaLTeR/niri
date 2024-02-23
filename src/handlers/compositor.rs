@@ -109,16 +109,22 @@ impl CompositorHandler for State {
 
                     window.on_commit();
 
-                    let (width, output) =
-                        if let InitialConfigureState::Configured { width, output, .. } = state {
+                    let (width, is_full_width, output) =
+                        if let InitialConfigureState::Configured {
+                            width,
+                            is_full_width,
+                            output,
+                            ..
+                        } = state
+                        {
                             // Check that the output is still connected.
                             let output =
                                 output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
 
-                            (width, output)
+                            (width, is_full_width, output)
                         } else {
                             error!("window map must happen after initial configure");
-                            (None, None)
+                            (None, false, None)
                         };
 
                     let parent = window
@@ -140,14 +146,16 @@ impl CompositorHandler for State {
 
                     let output = if let Some(p) = parent {
                         // Open dialogs immediately to the right of their parent window.
-                        self.niri.layout.add_window_right_of(&p, win, width, false)
+                        self.niri
+                            .layout
+                            .add_window_right_of(&p, win, width, is_full_width)
                     } else if let Some(output) = &output {
                         self.niri
                             .layout
-                            .add_window_on_output(output, win, width, false);
+                            .add_window_on_output(output, win, width, is_full_width);
                         Some(output)
                     } else {
-                        self.niri.layout.add_window(win, width, false)
+                        self.niri.layout.add_window(win, width, is_full_width)
                     };
 
                     if let Some(output) = output.cloned() {

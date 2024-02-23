@@ -89,6 +89,10 @@ pub fn resolve_window_rules(
             if let Some(x) = rule.open_on_output.as_deref() {
                 open_on_output = Some(x);
             }
+
+            if let Some(x) = rule.open_maximized {
+                resolved.open_maximized = Some(x);
+            }
         }
 
         resolved.open_on_output = open_on_output.map(|x| x.to_owned());
@@ -503,6 +507,7 @@ impl State {
         let mon = mon.map(|(mon, _)| mon);
 
         let mut width = None;
+        let is_full_width = rules.open_maximized.unwrap_or(false);
 
         // Tell the surface the preferred size and bounds for its likely output.
         let ws = mon
@@ -518,7 +523,13 @@ impl State {
             }
 
             width = ws.resolve_default_width(rules.default_width);
-            ws.configure_new_window(window, width);
+
+            let configure_width = if is_full_width {
+                Some(ColumnWidth::Proportion(1.))
+            } else {
+                width
+            };
+            ws.configure_new_window(window, configure_width);
         }
 
         // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
@@ -536,6 +547,7 @@ impl State {
         *state = InitialConfigureState::Configured {
             rules,
             width,
+            is_full_width,
             output,
         };
 

@@ -583,6 +583,8 @@ pub struct WindowRule {
     pub default_column_width: Option<DefaultColumnWidth>,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_maximized: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone)]
@@ -1062,6 +1064,7 @@ mod tests {
                 exclude title="~"
 
                 open-on-output "eDP-1"
+                open-maximized true
             }
 
             binds {
@@ -1221,6 +1224,7 @@ mod tests {
                         title: Some(Regex::new("~").unwrap()),
                     }],
                     open_on_output: Some("eDP-1".to_owned()),
+                    open_maximized: Some(true),
                     ..Default::default()
                 }],
                 binds: Binds(vec![

@@ -305,6 +305,9 @@ animations {
     // If such an output does not exist, it will open on the currently
     // focused output as usual.
     open-on-output "eDP-1"
+
+    // Make this window open as a maximized column.
+    open-maximized true
 }
 
 // Here's a useful example. Work around WezTerm's initial configure bug

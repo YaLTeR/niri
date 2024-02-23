@@ -29,6 +29,9 @@ pub enum InitialConfigureState {
         /// `None` means that the window will pick its own width.
         width: Option<ColumnWidth>,
 
+        /// Whether the window should open full-width.
+        is_full_width: bool,
+
         /// Output to open this window on.
         ///
         /// This can be `None` in cases like:
@@ -52,6 +55,9 @@ pub struct ResolvedWindowRules {
 
     /// Output to open this window on.
     pub open_on_output: Option<String>,
+
+    /// Whether the window should open full-width.
+    pub open_maximized: Option<bool>,
 }
 
 impl Unmapped {
