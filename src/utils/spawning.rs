@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io, thread};
@@ -9,6 +10,8 @@ use libc::close_range;
 use smithay::reexports::rustix;
 use smithay::reexports::rustix::io::{close, read, retry_on_intr, write};
 use smithay::reexports::rustix::pipe::{pipe_with, PipeFlags};
+
+use crate::utils::expand_home;
 
 pub static REMOVE_ENV_RUST_BACKTRACE: AtomicBool = AtomicBool::new(false);
 pub static REMOVE_ENV_RUST_LIB_BACKTRACE: AtomicBool = AtomicBool::new(false);
@@ -37,7 +40,17 @@ pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>) {
 fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl AsRef<OsStr>>) {
     let _span = tracy_client::span!();
 
-    let command = command.as_ref();
+    let mut command = command.as_ref();
+
+    // Expand `~` at the start.
+    let expanded = expand_home(Path::new(command));
+    match &expanded {
+        Ok(Some(expanded)) => command = expanded.as_ref(),
+        Ok(None) => (),
+        Err(err) => {
+            warn!("error expanding ~: {err:?}");
+        }
+    }
 
     let mut process = Command::new(command);
     process
@@ -221,7 +234,6 @@ fn read_all(fd: impl AsFd, buf: &mut [u8]) -> rustix::io::Result<()> {
 fn start_systemd_scope(name: &OsStr, intermediate_pid: u32, child_pid: u32) -> anyhow::Result<()> {
     use std::fmt::Write as _;
     use std::os::unix::ffi::OsStrExt;
-    use std::path::Path;
     use std::sync::OnceLock;
 
     use anyhow::Context;

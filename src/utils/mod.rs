@@ -1,7 +1,7 @@
 use std::ffi::{CString, OsStr};
 use std::io::Write;
 use std::os::unix::prelude::OsStrExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -50,6 +50,15 @@ pub fn output_size(output: &Output) -> Size<i32, Logical> {
         .to_logical(output_scale)
 }
 
+pub fn expand_home(path: &Path) -> anyhow::Result<Option<PathBuf>> {
+    if let Ok(rest) = path.strip_prefix("~") {
+        let dirs = UserDirs::new().context("error retrieving home directory")?;
+        Ok(Some([dirs.home_dir(), rest].iter().collect()))
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn make_screenshot_path(config: &Config) -> anyhow::Result<Option<PathBuf>> {
     let Some(path) = &config.screenshot_path else {
         return Ok(None);
@@ -72,9 +81,8 @@ pub fn make_screenshot_path(config: &Config) -> anyhow::Result<Option<PathBuf>> 
         path = PathBuf::from(OsStr::from_bytes(&buf[..rv]));
     }
 
-    if let Ok(rest) = path.strip_prefix("~") {
-        let dirs = UserDirs::new().context("error retrieving home directory")?;
-        path = [dirs.home_dir(), rest].iter().collect();
+    if let Some(expanded) = expand_home(&path).context("error expanding ~")? {
+        path = expanded;
     }
 
     Ok(Some(path))
