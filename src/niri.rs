@@ -478,7 +478,7 @@ impl State {
                 self.niri
                     .layout
                     .focus()
-                    .map(|win| win.toplevel().wl_surface().clone())
+                    .map(|win| win.toplevel().expect("no x11 support").wl_surface().clone())
             };
             let layer_focus = |surface: &LayerSurface| {
                 surface

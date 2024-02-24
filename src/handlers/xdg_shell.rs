@@ -112,7 +112,7 @@ impl XdgShellHandler for State {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let wl_surface = surface.wl_surface().clone();
-        let unmapped = Unmapped::new(Window::new(surface));
+        let unmapped = Unmapped::new(Window::new_wayland_window(surface));
         let existing = self.niri.unmapped_windows.insert(wl_surface, unmapped);
         assert!(existing.is_none());
     }
@@ -210,7 +210,9 @@ impl XdgShellHandler for State {
                 }
 
                 let layout_focus = self.niri.layout.focus();
-                if Some(&root) != layout_focus.map(|win| win.toplevel().wl_surface()) {
+                if Some(&root)
+                    != layout_focus.map(|win| win.toplevel().expect("no x11 support").wl_surface())
+                {
                     let _ = PopupManager::dismiss_popup(&root, &popup);
                     return;
                 }
@@ -771,7 +773,9 @@ impl State {
     pub fn update_reactive_popups(&self, window: &Window, output: &Output) {
         let _span = tracy_client::span!("Niri::update_reactive_popups");
 
-        for (popup, _) in PopupManager::popups_for_surface(window.toplevel().wl_surface()) {
+        for (popup, _) in PopupManager::popups_for_surface(
+            window.toplevel().expect("no x11 support").wl_surface(),
+        ) {
             match popup {
                 PopupKind::Xdg(ref popup) => {
                     if popup.with_pending_state(|state| state.positioner.reactive) {
