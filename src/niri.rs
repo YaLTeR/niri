@@ -144,6 +144,7 @@ pub struct Niri {
 
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
+    pub touch: HashSet<input::Device>,
 
     // Smithay state.
     pub compositor_state: CompositorState,
@@ -702,6 +703,10 @@ impl State {
             self.niri.reposition_outputs(None);
 
             self.backend.on_output_config_changed(&mut self.niri);
+
+            if let Some(touch) = self.niri.seat.get_touch() {
+                touch.cancel(self);
+            }
         }
 
         // Can't really update xdg-decoration settings since we have to hide the globals for CSD
@@ -1002,6 +1007,7 @@ impl Niri {
 
             devices: HashSet::new(),
             tablets: HashMap::new(),
+            touch: HashSet::new(),
 
             compositor_state,
             xdg_shell_state,
@@ -1597,6 +1603,14 @@ impl Niri {
     pub fn output_for_tablet(&self) -> Option<&Output> {
         let config = self.config.borrow();
         let map_to_output = config.input.tablet.map_to_output.as_ref();
+        map_to_output
+            .and_then(|name| self.output_by_name.get(name))
+            .or_else(|| self.global_space.outputs().next())
+    }
+
+    pub fn output_for_touch(&self) -> Option<&Output> {
+        let config = self.config.borrow();
+        let map_to_output = config.input.touch.map_to_output.as_ref();
         map_to_output
             .and_then(|name| self.output_by_name.get(name))
             .or_else(|| self.global_space.outputs().next())
