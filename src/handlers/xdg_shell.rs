@@ -93,6 +93,10 @@ pub fn resolve_window_rules(
             if let Some(x) = rule.open_maximized {
                 resolved.open_maximized = Some(x);
             }
+
+            if let Some(x) = rule.open_fullscreen {
+                resolved.open_fullscreen = Some(x);
+            }
         }
 
         resolved.open_on_output = open_on_output.map(|x| x.to_owned());
@@ -604,8 +608,10 @@ impl State {
             .or_else(|| self.niri.layout.active_workspace());
 
         if let Some(ws) = ws {
-            // Set a fullscreen state if requested.
-            if wants_fullscreen.is_some() {
+            // Set a fullscreen state based on window request and window rule.
+            if (wants_fullscreen.is_some() && rules.open_fullscreen.is_none())
+                || rules.open_fullscreen == Some(true)
+            {
                 toplevel.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Fullscreen);
                 });

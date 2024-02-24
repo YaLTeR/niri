@@ -58,6 +58,9 @@ pub struct ResolvedWindowRules {
 
     /// Whether the window should open full-width.
     pub open_maximized: Option<bool>,
+
+    /// Whether the window should open fullscreen.
+    pub open_fullscreen: Option<bool>,
 }
 
 impl Unmapped {

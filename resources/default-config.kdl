@@ -308,6 +308,11 @@ animations {
 
     // Make this window open as a maximized column.
     open-maximized true
+
+    // Make this window open fullscreen.
+    open-fullscreen true
+    // You can also set this to false to prevent a window from opening fullscreen.
+    // open-fullscreen false
 }
 
 // Here's a useful example. Work around WezTerm's initial configure bug

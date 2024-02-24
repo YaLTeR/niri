@@ -585,6 +585,8 @@ pub struct WindowRule {
     pub open_on_output: Option<String>,
     #[knuffel(child, unwrap(argument))]
     pub open_maximized: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_fullscreen: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone)]
@@ -1065,6 +1067,7 @@ mod tests {
 
                 open-on-output "eDP-1"
                 open-maximized true
+                open-fullscreen false
             }
 
             binds {
@@ -1225,6 +1228,7 @@ mod tests {
                     }],
                     open_on_output: Some("eDP-1".to_owned()),
                     open_maximized: Some(true),
+                    open_fullscreen: Some(false),
                     ..Default::default()
                 }],
                 binds: Binds(vec![
