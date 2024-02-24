@@ -62,6 +62,8 @@ pub struct Input {
     pub trackpoint: Trackpoint,
     #[knuffel(child, default)]
     pub tablet: Tablet,
+    #[knuffel(child, default)]
+    pub touch: Touch,
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
 }
@@ -197,6 +199,12 @@ impl From<TapButtonMap> for input::TapButtonMap {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Tablet {
+    #[knuffel(child, unwrap(argument))]
+    pub map_to_output: Option<String>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+pub struct Touch {
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
@@ -1092,6 +1100,10 @@ mod tests {
                     map-to-output "eDP-1"
                 }
 
+                touch {
+                    map-to-output "eDP-1"
+                }
+
                 disable-power-key-handling
             }
 
@@ -1221,6 +1233,9 @@ mod tests {
                         accel_profile: Some(AccelProfile::Flat),
                     },
                     tablet: Tablet {
+                        map_to_output: Some("eDP-1".to_owned()),
+                    },
+                    touch: Touch {
                         map_to_output: Some("eDP-1".to_owned()),
                     },
                     disable_power_key_handling: true,

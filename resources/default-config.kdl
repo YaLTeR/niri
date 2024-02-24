@@ -54,6 +54,13 @@ input {
         map-to-output "eDP-1"
     }
 
+    touch {
+        // Set the name of the output (see below) which touch input will map to.
+        // If this is unset or the output doesn't exist, touch input maps to one of the
+        // existing outputs.
+        map-to-output "eDP-1"
+    }
+
     // By default, niri will take over the power button to make it sleep
     // instead of power off.
     // Uncomment this if you would like to configure the power button elsewhere

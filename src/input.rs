@@ -8,7 +8,7 @@ use smithay::backend::input::{
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
     InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
@@ -17,6 +17,7 @@ use smithay::input::pointer::{
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent, RelativeMotionEvent,
 };
+use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
@@ -101,11 +102,11 @@ impl State {
             GesturePinchEnd { event } => self.on_gesture_pinch_end::<I>(event),
             GestureHoldBegin { event } => self.on_gesture_hold_begin::<I>(event),
             GestureHoldEnd { event } => self.on_gesture_hold_end::<I>(event),
-            TouchDown { .. } => (),
-            TouchMotion { .. } => (),
-            TouchUp { .. } => (),
-            TouchCancel { .. } => (),
-            TouchFrame { .. } => (),
+            TouchDown { event } => self.on_touch_down::<I>(event),
+            TouchMotion { event } => self.on_touch_motion::<I>(event),
+            TouchUp { event } => self.on_touch_up::<I>(event),
+            TouchCancel { event } => self.on_touch_cancel::<I>(event),
+            TouchFrame { event } => self.on_touch_frame::<I>(event),
             SwitchToggle { .. } => (),
             Special(_) => (),
         }
@@ -154,9 +155,14 @@ impl State {
                     }
                 }
 
+                if device.has_capability(input::DeviceCapability::Touch) {
+                    self.niri.touch.insert(device.clone());
+                }
+
                 apply_libinput_settings(&self.niri.config.borrow().input, device);
             }
             InputEvent::DeviceRemoved { device } => {
+                self.niri.touch.remove(device);
                 self.niri.tablets.remove(device);
                 self.niri.devices.remove(device);
             }
@@ -171,6 +177,9 @@ impl State {
             let desc = TabletDescriptor::from(&device);
             tablet_seat.add_tablet::<Self>(&self.niri.display_handle, &desc);
         }
+        if device.has_capability(DeviceCapability::Touch) && self.niri.seat.get_touch().is_none() {
+            self.niri.seat.add_touch();
+        }
     }
 
     fn on_device_removed(&mut self, device: impl Device) {
@@ -184,6 +193,9 @@ impl State {
             if tablet_seat.count_tablets() == 0 {
                 tablet_seat.clear_tools();
             }
+        }
+        if device.has_capability(DeviceCapability::Touch) && self.niri.touch.is_empty() {
+            self.niri.seat.remove_touch();
         }
     }
 
@@ -281,6 +293,10 @@ impl State {
     pub fn do_action(&mut self, action: Action) {
         if self.niri.is_locked() && !allowed_when_locked(&action) {
             return;
+        }
+
+        if let Some(touch) = self.niri.seat.get_touch() {
+            touch.cancel(self);
         }
 
         match action {
@@ -1353,6 +1369,116 @@ impl State {
                 cancelled: event.cancelled(),
             },
         );
+    }
+
+    /// Computes the cursor position for the touch event.
+    ///
+    /// This function handles the touch output mapping, as well as coordinate transform
+    fn compute_touch_location<I: InputBackend, E: AbsolutePositionEvent<I>>(
+        &self,
+        evt: &E,
+    ) -> Option<Point<f64, Logical>> {
+        let output = self.niri.output_for_touch()?;
+        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+        let transform = output.current_transform();
+        let size = transform.invert().transform_size(output_geo.size);
+        Some(
+            transform.transform_point_in(evt.position_transformed(size), &size.to_f64())
+                + output_geo.loc.to_f64(),
+        )
+    }
+
+    fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        let Some(touch_location) = self.compute_touch_location(&evt) else {
+            return;
+        };
+
+        if !handle.is_grabbed() {
+            let output_under_touch = self
+                .niri
+                .global_space
+                .output_under(touch_location)
+                .next()
+                .cloned();
+            if let Some(window) = self.niri.window_under(touch_location) {
+                let window = window.clone();
+                self.niri.layout.activate_window(&window);
+
+                // FIXME: granular.
+                self.niri.queue_redraw_all();
+            } else if let Some(output) = output_under_touch {
+                self.niri.layout.activate_output(&output);
+
+                // FIXME: granular.
+                self.niri.queue_redraw_all();
+            };
+        };
+
+        let serial = SERIAL_COUNTER.next_serial();
+        let under = self
+            .niri
+            .surface_under_and_global_space(touch_location)
+            .map(|under| under.surface);
+        handle.down(
+            self,
+            under,
+            &DownEvent {
+                slot: evt.slot(),
+                location: touch_location,
+                serial,
+                time: evt.time_msec(),
+            },
+        );
+    }
+    fn on_touch_up<I: InputBackend>(&mut self, evt: I::TouchUpEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        let serial = SERIAL_COUNTER.next_serial();
+        handle.up(
+            self,
+            &UpEvent {
+                slot: evt.slot(),
+                serial,
+                time: evt.time_msec(),
+            },
+        )
+    }
+    fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        let Some(touch_location) = self.compute_touch_location(&evt) else {
+            return;
+        };
+        let under = self
+            .niri
+            .surface_under_and_global_space(touch_location)
+            .map(|under| under.surface);
+        handle.motion(
+            self,
+            under,
+            &TouchMotionEvent {
+                slot: evt.slot(),
+                location: touch_location,
+                time: evt.time_msec(),
+            },
+        );
+    }
+    fn on_touch_frame<I: InputBackend>(&mut self, _evt: I::TouchFrameEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        handle.frame(self);
+    }
+    fn on_touch_cancel<I: InputBackend>(&mut self, _evt: I::TouchCancelEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        handle.cancel(self);
     }
 }
 
