@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
-use smithay::input::pointer::CursorImageStatus;
+use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -297,13 +297,52 @@ impl CompositorHandler for State {
             &self.niri.cursor_manager.cursor_image(),
             CursorImageStatus::Surface(s) if s == &root_surface
         ) {
+            // In case the cursor surface has been committed handle the role specific
+            // buffer offset by applying the offset on the cursor image hotspot
+            if surface == &root_surface {
+                with_states(surface, |states| {
+                    let cursor_image_attributes = states.data_map.get::<CursorImageSurfaceData>();
+
+                    if let Some(mut cursor_image_attributes) =
+                        cursor_image_attributes.map(|attrs| attrs.lock().unwrap())
+                    {
+                        let buffer_delta = states
+                            .cached_state
+                            .get::<SurfaceAttributes>()
+                            .current()
+                            .buffer_delta
+                            .take();
+                        if let Some(buffer_delta) = buffer_delta {
+                            cursor_image_attributes.hotspot -= buffer_delta;
+                        }
+                    }
+                });
+            }
+
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
             return;
         }
 
         // This might be a DnD icon surface.
-        if self.niri.dnd_icon.as_ref() == Some(&root_surface) {
+        if matches!(&self.niri.dnd_icon, Some(icon) if icon.surface == root_surface) {
+            let dnd_icon = self.niri.dnd_icon.as_mut().unwrap();
+
+            // In case the dnd surface has been committed handle the role specific
+            // buffer offset by applying the offset on the dnd icon offset
+            if surface == &dnd_icon.surface {
+                with_states(&dnd_icon.surface, |states| {
+                    let buffer_delta = states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .current()
+                        .buffer_delta
+                        .take()
+                        .unwrap_or_default();
+                    dnd_icon.offset += buffer_delta;
+                });
+            }
+
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
             return;
