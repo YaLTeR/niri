@@ -361,15 +361,18 @@ impl<W: LayoutElement> Workspace<W> {
             set_preferred_scale_transform(window, output);
         }
 
-        window.toplevel().with_pending_state(|state| {
-            if state.states.contains(xdg_toplevel::State::Fullscreen) {
-                state.size = Some(self.view_size);
-            } else {
-                state.size = Some(self.new_window_size(width));
-            }
+        window
+            .toplevel()
+            .expect("no x11 support")
+            .with_pending_state(|state| {
+                if state.states.contains(xdg_toplevel::State::Fullscreen) {
+                    state.size = Some(self.view_size);
+                } else {
+                    state.size = Some(self.new_window_size(width));
+                }
 
-            state.bounds = Some(self.toplevel_bounds());
-        });
+                state.bounds = Some(self.toplevel_bounds());
+            });
     }
 
     fn compute_new_view_offset_for_column(&self, current_x: i32, idx: usize) -> i32 {
@@ -1211,11 +1214,15 @@ impl Workspace<Window> {
                     && col.active_tile_idx == tile_idx;
                 win.set_activated(active);
 
-                win.toplevel().with_pending_state(|state| {
-                    state.bounds = Some(bounds);
-                });
+                win.toplevel()
+                    .expect("no x11 support")
+                    .with_pending_state(|state| {
+                        state.bounds = Some(bounds);
+                    });
 
-                win.toplevel().send_pending_configure();
+                win.toplevel()
+                    .expect("no x11 support")
+                    .send_pending_configure();
                 win.refresh();
             }
         }

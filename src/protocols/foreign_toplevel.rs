@@ -96,7 +96,7 @@ pub fn refresh(state: &mut State) {
     // the previous window and only then activate the newly focused window.
     let mut focused = None;
     state.niri.layout.with_windows(|window, output| {
-        let wl_surface = window.toplevel().wl_surface();
+        let wl_surface = window.toplevel().expect("no x11 support").wl_surface();
 
         with_states(wl_surface, |states| {
             let role = states
@@ -116,7 +116,7 @@ pub fn refresh(state: &mut State) {
 
     // Finally, refresh the focused window.
     if let Some((window, output)) = focused {
-        let wl_surface = window.toplevel().wl_surface();
+        let wl_surface = window.toplevel().expect("no x11 support").wl_surface();
 
         with_states(wl_surface, |states| {
             let role = states

@@ -371,7 +371,7 @@ impl State {
             }
             Action::CloseWindow => {
                 if let Some(window) = self.niri.layout.focus() {
-                    window.toplevel().send_close();
+                    window.toplevel().expect("no x11 support").send_close();
                 }
             }
             Action::FullscreenWindow => {
