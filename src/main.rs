@@ -15,7 +15,9 @@ use niri::cli::{Cli, Sub};
 use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
-use niri::utils::spawning::{spawn, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE};
+use niri::utils::spawning::{
+    spawn, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
+};
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
 use niri_config::Config;
@@ -161,6 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     animation::ANIMATION_SLOWDOWN.store(slowdown, Ordering::Relaxed);
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
+    *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
 
     // Create the compositor.
     let mut event_loop = EventLoop::try_new().unwrap();

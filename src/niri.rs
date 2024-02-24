@@ -104,6 +104,7 @@ use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
+use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };
@@ -577,7 +578,7 @@ impl State {
     pub fn reload_config(&mut self, path: PathBuf) {
         let _span = tracy_client::span!("State::reload_config");
 
-        let config = match Config::load(&path) {
+        let mut config = match Config::load(&path) {
             Ok(config) => config,
             Err(err) => {
                 warn!("{:?}", err.context("error loading config"));
@@ -597,6 +598,8 @@ impl State {
             config.animations.slowdown.clamp(0., 100.)
         };
         animation::ANIMATION_SLOWDOWN.store(slowdown, Ordering::Relaxed);
+
+        *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
 
         let mut reload_xkb = None;
         let mut libinput_config_changed = false;

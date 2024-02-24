@@ -39,6 +39,8 @@ pub struct Config {
     pub hotkey_overlay: HotkeyOverlay,
     #[knuffel(child, default)]
     pub animations: Animations,
+    #[knuffel(child, default)]
+    pub environment: Environment,
     #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
     #[knuffel(child, default)]
@@ -572,6 +574,17 @@ pub enum AnimationCurve {
     EaseOutExpo,
 }
 
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
+pub struct Environment(#[knuffel(children)] pub Vec<EnvironmentVariable>);
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct EnvironmentVariable {
+    #[knuffel(node_name)]
+    pub name: String,
+    #[knuffel(argument)]
+    pub value: Option<String>,
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct WindowRule {
     #[knuffel(children(name = "match"))]
@@ -1061,6 +1074,11 @@ mod tests {
                 }
             }
 
+            environment {
+                QT_QPA_PLATFORM "wayland"
+                DISPLAY null
+            }
+
             window-rule {
                 match app-id=".*alacritty"
                 exclude title="~"
@@ -1217,6 +1235,16 @@ mod tests {
                     },
                     ..Default::default()
                 },
+                environment: Environment(vec![
+                    EnvironmentVariable {
+                        name: String::from("QT_QPA_PLATFORM"),
+                        value: Some(String::from("wayland")),
+                    },
+                    EnvironmentVariable {
+                        name: String::from("DISPLAY"),
+                        value: None,
+                    },
+                ]),
                 window_rules: vec![WindowRule {
                     matches: vec![Match {
                         app_id: Some(Regex::new(".*alacritty").unwrap()),

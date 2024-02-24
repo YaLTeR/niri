@@ -4,9 +4,11 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::RwLock;
 use std::{io, thread};
 
 use libc::close_range;
+use niri_config::Environment;
 use smithay::reexports::rustix;
 use smithay::reexports::rustix::io::{close, read, retry_on_intr, write};
 use smithay::reexports::rustix::pipe::{pipe_with, PipeFlags};
@@ -15,6 +17,7 @@ use crate::utils::expand_home;
 
 pub static REMOVE_ENV_RUST_BACKTRACE: AtomicBool = AtomicBool::new(false);
 pub static REMOVE_ENV_RUST_LIB_BACKTRACE: AtomicBool = AtomicBool::new(false);
+pub static CHILD_ENV: RwLock<Environment> = RwLock::new(Environment(Vec::new()));
 
 /// Spawns the command to run independently of the compositor.
 pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>) {
@@ -66,6 +69,17 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
     if REMOVE_ENV_RUST_LIB_BACKTRACE.load(Ordering::Relaxed) {
         process.env_remove("RUST_LIB_BACKTRACE");
     }
+
+    // Set configured environment.
+    let env = CHILD_ENV.read().unwrap();
+    for var in &env.0 {
+        if let Some(value) = &var.value {
+            process.env(&var.name, value);
+        } else {
+            process.env_remove(&var.name);
+        }
+    }
+    drop(env);
 
     // When running as a systemd session, we want to put children into their own transient scopes
     // in order to separate them from the niri process. This is helpful for example to prevent the
