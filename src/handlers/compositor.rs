@@ -243,7 +243,22 @@ impl CompositorHandler for State {
         }
 
         // This might be a DnD icon surface.
-        if self.niri.dnd_icon.as_ref() == Some(surface) {
+        if let Some(dnd_icon) = self.niri.dnd_icon.as_mut().and_then(|icon| {
+            if &icon.surface == surface {
+                Some(icon)
+            } else {
+                None
+            }
+        }) {
+            with_states(surface, |states| {
+                let buffer_delta = states
+                    .cached_state
+                    .current::<SurfaceAttributes>()
+                    .buffer_delta
+                    .take()
+                    .unwrap_or_default();
+                dnd_icon.offset += buffer_delta;
+            });
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
         }

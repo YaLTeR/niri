@@ -5,13 +5,15 @@ mod xdg_shell;
 use std::fs::File;
 use std::io::Write;
 use std::os::fd::OwnedFd;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::desktop::{PopupKind, PopupManager};
-use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
+use smithay::input::pointer::{
+    CursorIcon, CursorImageAttributes, CursorImageStatus, PointerHandle,
+};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -19,6 +21,7 @@ use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
+use smithay::utils::Point;
 use smithay::utils::{Logical, Rectangle, Size};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
@@ -55,7 +58,7 @@ use smithay::{
 };
 
 use crate::delegate_foreign_toplevel;
-use crate::niri::{ClientState, State};
+use crate::niri::{ClientState, DndIcon, State};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
@@ -185,7 +188,23 @@ impl ClientDndGrabHandler for State {
         icon: Option<WlSurface>,
         _seat: Seat<Self>,
     ) {
-        self.niri.dnd_icon = icon;
+        let offset = if let CursorImageStatus::Surface(ref surface) =
+            self.niri.cursor_manager.cursor_image()
+        {
+            with_states(surface, |states| {
+                let hotspot = states
+                    .data_map
+                    .get::<Mutex<CursorImageAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .hotspot;
+                Point::from((-hotspot.x, -hotspot.y))
+            })
+        } else {
+            (0, 0).into()
+        };
+        self.niri.dnd_icon = icon.map(|surface| DndIcon { surface, offset });
         // FIXME: more granular
         self.niri.queue_redraw_all();
     }
