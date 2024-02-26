@@ -112,7 +112,7 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
+    center, center_f64, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };
 use crate::window::Unmapped;
 use crate::{animation, niri_render_elements};
@@ -197,7 +197,6 @@ pub struct Niri {
     // popup grabs are active (which means the real keyboard focus is on a popup descending from
     // this toplevel surface).
     pub keyboard_focus: Option<WlSurface>,
-
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
 
@@ -314,6 +313,11 @@ struct SurfaceFrameThrottlingState {
     last_sent_at: RefCell<Option<(Output, u32)>>,
 }
 
+pub enum CenterCoords {
+    Seperately,
+    Both,
+}
+
 #[derive(Default)]
 pub struct WindowOffscreenId(pub RefCell<Option<Id>>);
 
@@ -399,6 +403,78 @@ impl State {
         pointer.frame(self);
         // FIXME: granular
         self.niri.queue_redraw_all();
+    }
+
+    /// Moves cursor within the specified rectangle, only adjusting coordinates if needed.
+    fn move_cursor_to_rect(&mut self, rect: Rectangle<f64, Logical>, mode: CenterCoords) -> bool {
+        let pointer = &self.niri.seat.get_pointer().unwrap();
+        let cur_loc = pointer.current_location();
+        let x_in_bound = cur_loc.x >= rect.loc.x && cur_loc.x <= rect.loc.x + rect.size.w;
+        let y_in_bound = cur_loc.y >= rect.loc.y && cur_loc.y <= rect.loc.y + rect.size.h;
+
+        let p = match mode {
+            CenterCoords::Seperately => {
+                if x_in_bound && y_in_bound {
+                    return false;
+                } else if y_in_bound {
+                    // adjust x
+                    Point::from((rect.loc.x + rect.size.w / 2.0, cur_loc.y))
+                } else if x_in_bound {
+                    // adjust y
+                    Point::from((cur_loc.x, rect.loc.y + rect.size.h / 2.0))
+                } else {
+                    // adjust x and y
+                    center_f64(rect)
+                }
+            }
+            CenterCoords::Both => {
+                if x_in_bound && y_in_bound {
+                    return false;
+                } else {
+                    // adjust x and y
+                    center_f64(rect)
+                }
+            }
+        };
+
+        self.move_cursor(p);
+        true
+    }
+
+    pub fn move_cursor_to_focused_tile(&mut self, mode: CenterCoords) -> bool {
+        let Some(output) = self.niri.layout.active_output() else {
+            return false;
+        };
+        let output = output.clone();
+        let monitor = self.niri.layout.monitor_for_output(&output).unwrap();
+
+        let mut rv = false;
+        let rect = monitor.active_tile_visual_rectangle();
+
+        if let Some(rect) = rect {
+            let output_geo = self.niri.global_space.output_geometry(&output).unwrap();
+            let mut rect = rect;
+            rect.loc += output_geo.loc;
+            rv = self.move_cursor_to_rect(rect.to_f64(), mode);
+        }
+
+        rv
+    }
+
+    pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
+        if !self.niri.config.borrow().input.warp_mouse_to_focus {
+            return false;
+        }
+
+        self.move_cursor_to_focused_tile(CenterCoords::Seperately)
+    }
+
+    pub fn maybe_warp_cursor_to_focus_centered(&mut self) -> bool {
+        if !self.niri.config.borrow().input.warp_mouse_to_focus {
+            return false;
+        }
+
+        self.move_cursor_to_focused_tile(CenterCoords::Both)
     }
 
     pub fn refresh_pointer_focus(&mut self) {

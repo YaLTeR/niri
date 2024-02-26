@@ -40,6 +40,10 @@ pub fn center(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
     rect.loc + rect.size.downscale(2).to_point()
 }
 
+pub fn center_f64(rect: Rectangle<f64, Logical>) -> Point<f64, Logical> {
+    rect.loc + rect.size.downscale(2.0).to_point()
+}
+
 pub fn output_size(output: &Output) -> Size<i32, Logical> {
     let output_scale = output.current_scale().integer_scale();
     let output_transform = output.current_transform();

@@ -583,6 +583,14 @@ impl<W: LayoutElement> Monitor<W> {
         self.clean_up_workspaces();
     }
 
+    /// Returns the geometry of the active tile relative to and clamped to the output.
+    ///
+    /// During animations, assumes the final view position.
+    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<i32, Logical>> {
+        // FIXME: switch gesture.
+        self.active_workspace_ref().active_tile_visual_rectangle()
+    }
+
     pub fn window_under(
         &self,
         pos_within_output: Point<f64, Logical>,

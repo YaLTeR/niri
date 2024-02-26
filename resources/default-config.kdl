@@ -67,6 +67,9 @@ input {
     // Uncomment this if you would like to configure the power button elsewhere
     // (i.e. logind.conf).
     // disable-power-key-handling
+
+    // Uncomment this to make the mouse warp to the center of newly focused windows.
+    // warp-mouse-to-focus
 }
 
 // You can configure outputs by their name, which you can find

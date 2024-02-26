@@ -69,6 +69,8 @@ pub struct Input {
     pub touch: Touch,
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
+    #[knuffel(child)]
+    pub warp_mouse_to_focus: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -1592,6 +1594,8 @@ mod tests {
                 }
 
                 disable-power-key-handling
+
+                warp-mouse-to-focus
             }
 
             output "eDP-1" {
@@ -1731,6 +1735,7 @@ mod tests {
                         map_to_output: Some("eDP-1".to_owned()),
                     },
                     disable_power_key_handling: true,
+                    warp_mouse_to_focus: true,
                 },
                 outputs: vec![Output {
                     off: false,
