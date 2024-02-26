@@ -181,6 +181,15 @@ impl OutputId {
     }
 }
 
+impl ViewOffsetAdjustment {
+    pub fn target_view_offset(&self) -> f64 {
+        match self {
+            ViewOffsetAdjustment::Animation(anim) => anim.to(),
+            ViewOffsetAdjustment::Gesture(gesture) => gesture.current_view_offset,
+        }
+    }
+}
+
 impl ColumnWidth {
     fn resolve(self, options: &Options, view_width: i32) -> i32 {
         match self {
@@ -1124,6 +1133,31 @@ impl<W: LayoutElement> Workspace<W> {
         first.chain(rest)
     }
 
+    fn active_column_ref(&self) -> Option<&Column<W>> {
+        if self.columns.is_empty() {
+            return None;
+        }
+        Some(&self.columns[self.active_column_idx])
+    }
+
+    /// Returns the geometry of the active tile relative to and clamped to the view.
+    ///
+    /// During animations, assumes the final view position.
+    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<i32, Logical>> {
+        let col = self.active_column_ref()?;
+        let view_pos = self
+            .view_offset_adj
+            .as_ref()
+            .map_or(self.view_offset, |adj| adj.target_view_offset() as i32);
+
+        let tile_pos = Point::from((-view_pos, col.tile_y(col.active_tile_idx)));
+        let tile_size = col.active_tile_ref().tile_size();
+        let tile_rect = Rectangle::from_loc_and_size(tile_pos, tile_size);
+
+        let view = Rectangle::from_loc_and_size((0, 0), self.view_size);
+        view.intersection(tile_rect)
+    }
+
     pub fn window_under(
         &self,
         pos: Point<f64, Logical>,
@@ -2009,6 +2043,10 @@ impl<W: LayoutElement> Column<W> {
             y += tile.tile_size().h + self.options.gaps;
             pos
         })
+    }
+
+    fn active_tile_ref(&self) -> &Tile<W> {
+        &self.tiles[self.active_tile_idx]
     }
 }
 
