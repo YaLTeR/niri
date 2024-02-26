@@ -422,15 +422,11 @@ impl From<Border> for FocusRing {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
-    #[knuffel(argument)]
     pub r: u8,
-    #[knuffel(argument)]
     pub g: u8,
-    #[knuffel(argument)]
     pub b: u8,
-    #[knuffel(argument)]
     pub a: u8,
 }
 
@@ -849,6 +845,97 @@ impl FromStr for Color {
     }
 }
 
+#[derive(knuffel::Decode)]
+struct ColorRgba {
+    #[knuffel(argument)]
+    r: u8,
+    #[knuffel(argument)]
+    g: u8,
+    #[knuffel(argument)]
+    b: u8,
+    #[knuffel(argument)]
+    a: u8,
+}
+
+impl From<ColorRgba> for Color {
+    fn from(value: ColorRgba) -> Self {
+        let ColorRgba { r, g, b, a } = value;
+        Self { r, g, b, a }
+    }
+}
+
+// Manual impl to allow both one-argument string and 4-argument RGBA forms.
+impl<S> knuffel::Decode<S> for Color
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, knuffel::errors::DecodeError<S>> {
+        // Check for unexpected type name.
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+
+        // Get the first argument.
+        let mut iter_args = node.arguments.iter();
+        let val = iter_args.next().ok_or_else(|| {
+            knuffel::errors::DecodeError::missing(node, "additional argument is required")
+        })?;
+
+        // Check for unexpected type name.
+        if let Some(typ) = &val.type_name {
+            ctx.emit_error(knuffel::errors::DecodeError::TypeName {
+                span: typ.span().clone(),
+                found: Some((**typ).clone()),
+                expected: knuffel::errors::ExpectedType::no_type(),
+                rust_type: "str",
+            });
+        }
+
+        // Check the argument type.
+        let rv = match *val.literal {
+            // If it's a string, use FromStr.
+            knuffel::ast::Literal::String(ref s) => Color::from_str(s)
+                .map_err(|e| knuffel::errors::DecodeError::conversion(&val.literal, e)),
+            // Otherwise, fall back to the 4-argument RGBA form.
+            _ => return ColorRgba::decode_node(node, ctx).map(Color::from),
+        }?;
+
+        // Check for unexpected following arguments.
+        if let Some(val) = iter_args.next() {
+            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+                &val.literal,
+                "argument",
+                "unexpected argument",
+            ));
+        }
+
+        // Check for unexpected properties and children.
+        for name in node.properties.keys() {
+            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+                name,
+                "property",
+                format!("unexpected property `{}`", name.escape_default()),
+            ));
+        }
+        for child in node.children.as_ref().map(|lst| &lst[..]).unwrap_or(&[]) {
+            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+                child,
+                "node",
+                format!("unexpected node `{}`", child.node_name.escape_default()),
+            ));
+        }
+
+        Ok(rv)
+    }
+}
+
 impl FromStr for Mode {
     type Err = miette::Error;
 
@@ -1025,7 +1112,7 @@ mod tests {
 
                 border {
                     width 3
-                    inactive-color 255 200 100 0
+                    inactive-color "rgba(255, 200, 100, 0.0)"
                 }
 
                 preset-column-widths {

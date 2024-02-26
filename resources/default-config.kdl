@@ -113,18 +113,22 @@ layout {
         // How many logical pixels the ring extends out from the windows.
         width 4
 
-        // Color of the ring on the active monitor: red, green, blue, alpha.
-        active-color 127 200 255 255
+        // Colors can be set in a variety of ways:
+        // - CSS named colors: "red"
+        // - RGB hex: "#rgb", "#rgba", "#rrggbb", "#rrggbbaa"
+        // - CSS-like notation: "rgb(255, 127, 0)", rgba(), hsl() and a few others.
 
-        // Color of the ring on inactive monitors: red, green, blue, alpha.
-        inactive-color 80 80 80 255
+        // Color of the ring on the active monitor.
+        active-color "#7fc8ff"
+
+        // Color of the ring on inactive monitors.
+        inactive-color "#505050"
+
+        // Additionally, there's a legacy RGBA syntax:
+        // active-color 127 200 255 255
 
         // You can also use gradients. They take precedence over solid colors.
         // Gradients are rendered the same as CSS linear-gradient(angle, from, to).
-        // Colors can be set in a variety of ways here:
-        // - CSS named colors: from="red"
-        // - RGB hex: from="#rgb", from="#rgba", from="#rrggbb", from="#rrggbbaa"
-        // - CSS-like notation: from="rgb(255, 127, 0)", rgba(), hsl() and a few others.
         // The angle is the same as in linear-gradient, and is optional,
         // defaulting to 180 (top-to-bottom gradient).
         // You can use any CSS linear-gradient tool on the web to set these up.
@@ -145,8 +149,8 @@ layout {
         off
 
         width 4
-        active-color 255 200 127 255
-        inactive-color 80 80 80 255
+        active-color "#ffc87f"
+        inactive-color "#505050"
 
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
