@@ -247,35 +247,45 @@ impl LayoutElement for Window {
     }
 
     fn request_size(&self, size: Size<i32, Logical>) {
-        self.toplevel().with_pending_state(|state| {
-            state.size = Some(size);
-            state.states.unset(xdg_toplevel::State::Fullscreen);
-        });
+        self.toplevel()
+            .expect("no x11 support")
+            .with_pending_state(|state| {
+                state.size = Some(size);
+                state.states.unset(xdg_toplevel::State::Fullscreen);
+            });
     }
 
     fn request_fullscreen(&self, size: Size<i32, Logical>) {
-        self.toplevel().with_pending_state(|state| {
-            state.size = Some(size);
-            state.states.set(xdg_toplevel::State::Fullscreen);
-        });
+        self.toplevel()
+            .expect("no x11 support")
+            .with_pending_state(|state| {
+                state.size = Some(size);
+                state.states.set(xdg_toplevel::State::Fullscreen);
+            });
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
-        with_states(self.toplevel().wl_surface(), |state| {
-            let curr = state.cached_state.current::<SurfaceCachedState>();
-            curr.min_size
-        })
+        with_states(
+            self.toplevel().expect("no x11 support").wl_surface(),
+            |state| {
+                let curr = state.cached_state.current::<SurfaceCachedState>();
+                curr.min_size
+            },
+        )
     }
 
     fn max_size(&self) -> Size<i32, Logical> {
-        with_states(self.toplevel().wl_surface(), |state| {
-            let curr = state.cached_state.current::<SurfaceCachedState>();
-            curr.max_size
-        })
+        with_states(
+            self.toplevel().expect("no x11 support").wl_surface(),
+            |state| {
+                let curr = state.cached_state.current::<SurfaceCachedState>();
+                curr.max_size
+            },
+        )
     }
 
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool {
-        self.toplevel().wl_surface() == wl_surface
+        self.toplevel().expect("no x11 support").wl_surface() == wl_surface
     }
 
     fn set_preferred_scale_transform(&self, scale: i32, transform: Transform) {
@@ -285,7 +295,10 @@ impl LayoutElement for Window {
     }
 
     fn has_ssd(&self) -> bool {
-        self.toplevel().current_state().decoration_mode
+        self.toplevel()
+            .expect("no x11 support")
+            .current_state()
+            .decoration_mode
             == Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
     }
 
@@ -305,6 +318,7 @@ impl LayoutElement for Window {
 
     fn is_fullscreen(&self) -> bool {
         self.toplevel()
+            .expect("no x11 support")
             .current_state()
             .states
             .contains(xdg_toplevel::State::Fullscreen)
@@ -312,6 +326,7 @@ impl LayoutElement for Window {
 
     fn is_pending_fullscreen(&self) -> bool {
         self.toplevel()
+            .expect("no x11 support")
             .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
     }
 }

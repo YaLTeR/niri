@@ -188,7 +188,7 @@ pub struct Niri {
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
-    pub dnd_icon: Option<WlSurface>,
+    pub dnd_icon: Option<DndIcon>,
     pub pointer_focus: Option<PointerFocus>,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
 
@@ -209,6 +209,12 @@ pub struct Niri {
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
     pub pipewire: Option<PipeWire>,
+}
+
+#[derive(Debug)]
+pub struct DndIcon {
+    pub surface: WlSurface,
+    pub offset: Point<i32, Logical>,
 }
 
 pub struct OutputState {
@@ -478,7 +484,7 @@ impl State {
                 self.niri
                     .layout
                     .focus()
-                    .map(|win| win.toplevel().wl_surface().clone())
+                    .map(|win| win.toplevel().expect("no x11 support").wl_surface().clone())
             };
             let layer_focus = |surface: &LayerSurface| {
                 surface
@@ -702,6 +708,10 @@ impl State {
             self.niri.reposition_outputs(None);
 
             self.backend.on_output_config_changed(&mut self.niri);
+
+            if let Some(touch) = self.niri.seat.get_touch() {
+                touch.cancel(self);
+            }
         }
 
         // Can't really update xdg-decoration settings since we have to hide the globals for CSD
@@ -1691,8 +1701,8 @@ impl Niri {
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
-        let (mut pointer_elements, pointer_pos) = match render_cursor {
-            RenderCursor::Hidden => (vec![], pointer_pos.to_physical_precise_round(output_scale)),
+        let mut pointer_elements = match render_cursor {
+            RenderCursor::Hidden => vec![],
             RenderCursor::Surface { surface, hotspot } => {
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
@@ -1706,7 +1716,7 @@ impl Niri {
                     Kind::Cursor,
                 );
 
-                (pointer_elements, pointer_pos)
+                pointer_elements
             }
             RenderCursor::Named {
                 icon,
@@ -1722,7 +1732,7 @@ impl Niri {
                 let mut pointer_elements = vec![];
                 let pointer_element = match MemoryRenderBufferRenderElement::from_buffer(
                     renderer,
-                    pointer_pos.to_f64(),
+                    pointer_pos,
                     &texture,
                     None,
                     None,
@@ -1739,14 +1749,16 @@ impl Niri {
                     pointer_elements.push(OutputRenderElements::NamedPointer(element));
                 }
 
-                (pointer_elements, pointer_pos)
+                pointer_elements
             }
         };
 
-        if let Some(dnd_icon) = &self.dnd_icon {
+        if let Some(dnd_icon) = self.dnd_icon.as_ref() {
+            let pointer_pos =
+                (pointer_pos + dnd_icon.offset.to_f64()).to_physical_precise_round(output_scale);
             pointer_elements.extend(render_elements_from_surface_tree(
                 renderer,
-                dnd_icon,
+                &dnd_icon.surface,
                 pointer_pos,
                 output_scale,
                 1.,
@@ -1783,6 +1795,7 @@ impl Niri {
                 let dnd = self
                     .dnd_icon
                     .as_ref()
+                    .map(|icon| &icon.surface)
                     .map(|surface| (surface, bbox_from_surface_tree(surface, surface_pos)));
 
                 // FIXME we basically need to pick the largest scale factor across the overlapping
@@ -1832,7 +1845,7 @@ impl Niri {
             }
             cursor_image => {
                 // There's no cursor surface, but there might be a DnD icon.
-                let Some(surface) = &self.dnd_icon else {
+                let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) else {
                     return;
                 };
 
@@ -2174,7 +2187,7 @@ impl Niri {
             );
         }
 
-        if let Some(surface) = &self.dnd_icon {
+        if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
             with_surface_tree_downward(
                 surface,
                 (),
@@ -2315,7 +2328,7 @@ impl Niri {
             );
         }
 
-        if let Some(surface) = &self.dnd_icon {
+        if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
             send_dmabuf_feedback_surface_tree(
                 surface,
                 output,
@@ -2410,7 +2423,7 @@ impl Niri {
             );
         }
 
-        if let Some(surface) = &self.dnd_icon {
+        if let Some(surface) = &self.dnd_icon.as_ref().map(|icon| &icon.surface) {
             send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
         }
 
@@ -2437,7 +2450,7 @@ impl Niri {
             );
         }
 
-        if let Some(surface) = &self.dnd_icon {
+        if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
             take_presentation_feedback_surface_tree(
                 surface,
                 &mut feedback,

@@ -8,7 +8,7 @@ use smithay::backend::input::{
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
     InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
@@ -17,6 +17,7 @@ use smithay::input::pointer::{
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent, RelativeMotionEvent,
 };
+use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
@@ -101,11 +102,11 @@ impl State {
             GesturePinchEnd { event } => self.on_gesture_pinch_end::<I>(event),
             GestureHoldBegin { event } => self.on_gesture_hold_begin::<I>(event),
             GestureHoldEnd { event } => self.on_gesture_hold_end::<I>(event),
-            TouchDown { .. } => (),
-            TouchMotion { .. } => (),
-            TouchUp { .. } => (),
-            TouchCancel { .. } => (),
-            TouchFrame { .. } => (),
+            TouchDown { event } => self.on_touch_down::<I>(event),
+            TouchMotion { event } => self.on_touch_motion::<I>(event),
+            TouchUp { event } => self.on_touch_up::<I>(event),
+            TouchCancel { event } => self.on_touch_cancel::<I>(event),
+            TouchFrame { event } => self.on_touch_frame::<I>(event),
             SwitchToggle { .. } => (),
             Special(_) => (),
         }
@@ -170,6 +171,9 @@ impl State {
 
             let desc = TabletDescriptor::from(&device);
             tablet_seat.add_tablet::<Self>(&self.niri.display_handle, &desc);
+        }
+        if device.has_capability(DeviceCapability::Touch) && self.niri.seat.get_touch().is_none() {
+            self.niri.seat.add_touch();
         }
     }
 
@@ -283,6 +287,10 @@ impl State {
             return;
         }
 
+        if let Some(touch) = self.niri.seat.get_touch() {
+            touch.cancel(self);
+        }
+
         match action {
             Action::Quit(skip_confirmation) => {
                 if !skip_confirmation {
@@ -371,7 +379,7 @@ impl State {
             }
             Action::CloseWindow => {
                 if let Some(window) = self.niri.layout.focus() {
-                    window.toplevel().send_close();
+                    window.toplevel().expect("no x11 support").send_close();
                 }
             }
             Action::FullscreenWindow => {
@@ -1353,6 +1361,104 @@ impl State {
                 cancelled: event.cancelled(),
             },
         );
+    }
+
+    fn touch_location_transformed<I: InputBackend, E: AbsolutePositionEvent<I>>(
+        &self,
+        evt: &E,
+    ) -> Option<Point<f64, Logical>> {
+        let output = self
+            .niri
+            .global_space
+            .outputs()
+            .find(|output| output.name().starts_with("eDP"))
+            .or_else(|| self.niri.global_space.outputs().next());
+
+        let Some(output) = output else {
+            return None;
+        };
+
+        let Some(output_geometry) = self.niri.global_space.output_geometry(output) else {
+            return None;
+        };
+
+        let transform = output.current_transform();
+        let size = transform.invert().transform_size(output_geometry.size);
+        Some(
+            transform.transform_point_in(evt.position_transformed(size), &size.to_f64())
+                + output_geometry.loc.to_f64(),
+        )
+    }
+
+    fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        let Some(touch_location) = self.touch_location_transformed(&evt) else {
+            return;
+        };
+        let serial = SERIAL_COUNTER.next_serial();
+        let under = self
+            .niri
+            .surface_under_and_global_space(touch_location)
+            .map(|under| under.surface);
+        handle.down(
+            self,
+            under,
+            &DownEvent {
+                slot: evt.slot(),
+                location: touch_location,
+                serial,
+                time: evt.time_msec(),
+            },
+        );
+    }
+    fn on_touch_up<I: InputBackend>(&mut self, evt: I::TouchUpEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        let serial = SERIAL_COUNTER.next_serial();
+        handle.up(
+            self,
+            &UpEvent {
+                slot: evt.slot(),
+                serial,
+                time: evt.time_msec(),
+            },
+        )
+    }
+    fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        let Some(touch_location) = self.touch_location_transformed(&evt) else {
+            return;
+        };
+        let under = self
+            .niri
+            .surface_under_and_global_space(touch_location)
+            .map(|under| under.surface);
+        handle.motion(
+            self,
+            under,
+            &TouchMotionEvent {
+                slot: evt.slot(),
+                location: touch_location,
+                time: evt.time_msec(),
+            },
+        );
+    }
+    fn on_touch_frame<I: InputBackend>(&mut self, _evt: I::TouchFrameEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        handle.frame(self);
+    }
+    fn on_touch_cancel<I: InputBackend>(&mut self, _evt: I::TouchCancelEvent) {
+        let Some(handle) = self.niri.seat.get_touch() else {
+            return;
+        };
+        handle.cancel(self);
     }
 }
 

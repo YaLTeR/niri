@@ -129,6 +129,7 @@ impl CompositorHandler for State {
 
                     let parent = window
                         .toplevel()
+                        .expect("no x11 support")
                         .parent()
                         .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
                         // Only consider the parent if we configured the window for the same
@@ -168,7 +169,7 @@ impl CompositorHandler for State {
                 // The toplevel remains unmapped.
                 let unmapped = entry.get();
                 if unmapped.needs_initial_configure() {
-                    let toplevel = unmapped.window.toplevel().clone();
+                    let toplevel = unmapped.window.toplevel().expect("no x11 support").clone();
                     self.queue_initial_configure(toplevel);
                 }
                 return;
@@ -242,7 +243,22 @@ impl CompositorHandler for State {
         }
 
         // This might be a DnD icon surface.
-        if self.niri.dnd_icon.as_ref() == Some(surface) {
+        if let Some(dnd_icon) = self.niri.dnd_icon.as_mut().and_then(|icon| {
+            if &icon.surface == surface {
+                Some(icon)
+            } else {
+                None
+            }
+        }) {
+            with_states(surface, |states| {
+                let buffer_delta = states
+                    .cached_state
+                    .current::<SurfaceAttributes>()
+                    .buffer_delta
+                    .take()
+                    .unwrap_or_default();
+                dnd_icon.offset += buffer_delta;
+            });
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
         }
