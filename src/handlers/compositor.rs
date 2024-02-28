@@ -75,7 +75,7 @@ impl CompositorHandler for State {
                     }
                 }
             }
-        })
+        });
     }
 
     fn commit(&mut self, surface: &WlSurface) {
