@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use bitflags::bitflags;
+use knuffel::errors::DecodeError;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{LayoutSwitchTarget, SizeChange};
 use regex::Regex;
@@ -474,8 +475,8 @@ pub enum PresetWidth {
     Fixed(#[knuffel(argument)] i32),
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
-pub struct DefaultColumnWidth(#[knuffel(children)] pub Vec<PresetWidth>);
+#[derive(Debug, Clone, PartialEq)]
+pub struct DefaultColumnWidth(pub Option<PresetWidth>);
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Struts {
@@ -880,10 +881,10 @@ where
     fn decode_node(
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
-    ) -> Result<Self, knuffel::errors::DecodeError<S>> {
+    ) -> Result<Self, DecodeError<S>> {
         // Check for unexpected type name.
         if let Some(type_name) = &node.type_name {
-            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+            ctx.emit_error(DecodeError::unexpected(
                 type_name,
                 "type name",
                 "no type name expected for this node",
@@ -892,13 +893,13 @@ where
 
         // Get the first argument.
         let mut iter_args = node.arguments.iter();
-        let val = iter_args.next().ok_or_else(|| {
-            knuffel::errors::DecodeError::missing(node, "additional argument is required")
-        })?;
+        let val = iter_args
+            .next()
+            .ok_or_else(|| DecodeError::missing(node, "additional argument is required"))?;
 
         // Check for unexpected type name.
         if let Some(typ) = &val.type_name {
-            ctx.emit_error(knuffel::errors::DecodeError::TypeName {
+            ctx.emit_error(DecodeError::TypeName {
                 span: typ.span().clone(),
                 found: Some((**typ).clone()),
                 expected: knuffel::errors::ExpectedType::no_type(),
@@ -909,15 +910,16 @@ where
         // Check the argument type.
         let rv = match *val.literal {
             // If it's a string, use FromStr.
-            knuffel::ast::Literal::String(ref s) => Color::from_str(s)
-                .map_err(|e| knuffel::errors::DecodeError::conversion(&val.literal, e)),
+            knuffel::ast::Literal::String(ref s) => {
+                Color::from_str(s).map_err(|e| DecodeError::conversion(&val.literal, e))
+            }
             // Otherwise, fall back to the 4-argument RGBA form.
             _ => return ColorRgba::decode_node(node, ctx).map(Color::from),
         }?;
 
         // Check for unexpected following arguments.
         if let Some(val) = iter_args.next() {
-            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+            ctx.emit_error(DecodeError::unexpected(
                 &val.literal,
                 "argument",
                 "unexpected argument",
@@ -926,14 +928,14 @@ where
 
         // Check for unexpected properties and children.
         for name in node.properties.keys() {
-            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+            ctx.emit_error(DecodeError::unexpected(
                 name,
                 "property",
                 format!("unexpected property `{}`", name.escape_default()),
             ));
         }
         for child in node.children.as_ref().map(|lst| &lst[..]).unwrap_or(&[]) {
-            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+            ctx.emit_error(DecodeError::unexpected(
                 child,
                 "node",
                 format!("unexpected node `{}`", child.node_name.escape_default()),
@@ -941,6 +943,64 @@ where
         }
 
         Ok(rv)
+    }
+}
+
+fn expect_only_children<S>(
+    node: &knuffel::ast::SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) where
+    S: knuffel::traits::ErrorSpan,
+{
+    if let Some(type_name) = &node.type_name {
+        ctx.emit_error(DecodeError::unexpected(
+            type_name,
+            "type name",
+            "no type name expected for this node",
+        ));
+    }
+
+    for val in node.arguments.iter() {
+        ctx.emit_error(DecodeError::unexpected(
+            &val.literal,
+            "argument",
+            "no arguments expected for this node",
+        ))
+    }
+
+    for name in node.properties.keys() {
+        ctx.emit_error(DecodeError::unexpected(
+            name,
+            "property",
+            "no properties expected for this node",
+        ))
+    }
+}
+
+impl<S> knuffel::Decode<S> for DefaultColumnWidth
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let mut children = node.children();
+
+        if let Some(child) = children.next() {
+            if let Some(unwanted_child) = children.next() {
+                ctx.emit_error(DecodeError::unexpected(
+                    unwanted_child,
+                    "node",
+                    "expected no more than one child",
+                ));
+            }
+            PresetWidth::decode_node(child, ctx).map(Some).map(Self)
+        } else {
+            Ok(Self(None))
+        }
     }
 }
 
@@ -1300,9 +1360,9 @@ mod tests {
                         PresetWidth::Fixed(960),
                         PresetWidth::Fixed(1280),
                     ],
-                    default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(
+                    default_column_width: Some(DefaultColumnWidth(Some(PresetWidth::Proportion(
                         0.25,
-                    )])),
+                    )))),
                     gaps: 8,
                     struts: Struts {
                         left: 1,

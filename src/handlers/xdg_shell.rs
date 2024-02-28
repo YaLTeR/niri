@@ -81,7 +81,7 @@ pub fn resolve_window_rules(
             if let Some(x) = rule
                 .default_column_width
                 .as_ref()
-                .map(|d| d.0.first().copied().map(ColumnWidth::from))
+                .map(|d| d.0.map(ColumnWidth::from))
             {
                 resolved.default_width = Some(x);
             }
