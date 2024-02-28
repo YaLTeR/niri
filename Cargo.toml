@@ -19,12 +19,14 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracy-client = { version = "0.17.0", default-features = false }
 
 [workspace.dependencies.smithay]
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/cmeissl/smithay.git"
+branch = "perf/reduce_mem_allocations"
 # path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/cmeissl/smithay.git"
+branch = "perf/reduce_mem_allocations"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
