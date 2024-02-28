@@ -159,15 +159,9 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
 
     // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
     // Quit(false).
-    if binds
-        .iter()
-        .any(|bind| bind.actions.first() == Some(&Action::Quit(false)))
-    {
+    if binds.iter().any(|bind| bind.action == Action::Quit(false)) {
         actions.push(&Action::Quit(false));
-    } else if binds
-        .iter()
-        .any(|bind| bind.actions.first() == Some(&Action::Quit(true)))
-    {
+    } else if binds.iter().any(|bind| bind.action == Action::Quit(true)) {
         actions.push(&Action::Quit(true));
     } else {
         actions.push(&Action::Quit(false));
@@ -186,12 +180,12 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
     if binds
         .iter()
-        .any(|bind| bind.actions.first() == Some(&Action::MoveColumnToWorkspaceDown))
+        .any(|bind| bind.action == Action::MoveColumnToWorkspaceDown)
     {
         actions.push(&Action::MoveColumnToWorkspaceDown);
     } else if binds
         .iter()
-        .any(|bind| bind.actions.first() == Some(&Action::MoveWindowToWorkspaceDown))
+        .any(|bind| bind.action == Action::MoveWindowToWorkspaceDown)
     {
         actions.push(&Action::MoveWindowToWorkspaceDown);
     } else {
@@ -201,12 +195,12 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     // Same for -up.
     if binds
         .iter()
-        .any(|bind| bind.actions.first() == Some(&Action::MoveColumnToWorkspaceUp))
+        .any(|bind| bind.action == Action::MoveColumnToWorkspaceUp)
     {
         actions.push(&Action::MoveColumnToWorkspaceUp);
     } else if binds
         .iter()
-        .any(|bind| bind.actions.first() == Some(&Action::MoveWindowToWorkspaceUp))
+        .any(|bind| bind.action == Action::MoveWindowToWorkspaceUp)
     {
         actions.push(&Action::MoveWindowToWorkspaceUp);
     } else {
@@ -221,22 +215,19 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     ]);
 
     // Screenshot is not as important, can omit if not bound.
-    if binds
-        .iter()
-        .any(|bind| bind.actions.first() == Some(&Action::Screenshot))
-    {
+    if binds.iter().any(|bind| bind.action == Action::Screenshot) {
         actions.push(&Action::Screenshot);
     }
 
     // Add the spawn actions.
     let mut spawn_actions = Vec::new();
     for bind in binds.iter().filter(|bind| {
-        matches!(bind.actions.first(), Some(Action::Spawn(_)))
+        matches!(bind.action, Action::Spawn(_))
             // Only show binds with Mod or Super to filter out stuff like volume up/down.
             && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
                 || bind.key.modifiers.contains(Modifiers::SUPER))
     }) {
-        let action = bind.actions.first().unwrap();
+        let action = &bind.action;
 
         // We only show one bind for each action, so we need to deduplicate the Spawn actions.
         if !spawn_actions.contains(&action) {
@@ -252,7 +243,7 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
                 .binds
                 .0
                 .iter()
-                .find(|bind| bind.actions.first() == Some(action))
+                .find(|bind| bind.action == *action)
                 .map(|bind| key_name(comp_mod, &bind.key))
                 .unwrap_or_else(|| String::from("(not bound)"));
 

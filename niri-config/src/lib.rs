@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate tracing;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -622,25 +623,23 @@ impl PartialEq for Match {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
-pub struct Binds(#[knuffel(children)] pub Vec<Bind>);
+#[derive(Debug, Default, PartialEq)]
+pub struct Binds(pub Vec<Bind>);
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Bind {
-    #[knuffel(node_name)]
     pub key: Key,
-    #[knuffel(children)]
-    pub actions: Vec<Action>,
+    pub action: Action,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Key {
     pub keysym: Keysym,
     pub modifiers: Modifiers,
 }
 
 bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Modifiers : u8 {
         const CTRL = 1;
         const SHIFT = 2;
@@ -1000,6 +999,87 @@ where
             PresetWidth::decode_node(child, ctx).map(Some).map(Self)
         } else {
             Ok(Self(None))
+        }
+    }
+}
+
+impl<S> knuffel::Decode<S> for Binds
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let mut seen_keys = HashSet::new();
+
+        let mut binds = Vec::new();
+
+        for child in node.children() {
+            match Bind::decode_node(child, ctx) {
+                Err(e) => {
+                    ctx.emit_error(e);
+                }
+                Ok(bind) => {
+                    if seen_keys.insert(bind.key) {
+                        binds.push(bind);
+                    } else {
+                        // TODO: add context of the source span for the original bind?
+                        // i couldn't figure out how to easily do this
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "keybind",
+                            "duplicate keybind",
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(Self(binds))
+    }
+}
+
+impl<S> knuffel::Decode<S> for Bind
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let key = node
+            .node_name
+            .parse::<Key>()
+            .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
+
+        let mut children = node.children();
+
+        if let Some(child) = children.next() {
+            for unwanted_child in children {
+                ctx.emit_error(DecodeError::unexpected(
+                    unwanted_child,
+                    "node",
+                    "only one action is allowed per keybind",
+                ));
+            }
+            let action = Action::decode_node(child, ctx)?;
+            Ok(Self { key, action })
+        } else {
+            ctx.emit_error(DecodeError::missing(
+                node,
+                "expected an action for this keybind",
+            ));
+            // This value isn't used. Decoding will not succeed, because we just emitted an error.
+            // Even if it somehow were used, spawn without args is a no-op.
+            Ok(Self {
+                key,
+                action: Action::Spawn(vec![]),
+            })
         }
     }
 }
@@ -1427,49 +1507,49 @@ mod tests {
                             keysym: Keysym::t,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::Spawn(vec!["alacritty".to_owned()])],
+                        action: Action::Spawn(vec!["alacritty".to_owned()]),
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::q,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::CloseWindow],
+                        action: Action::CloseWindow,
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::h,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
-                        actions: vec![Action::FocusMonitorLeft],
+                        action: Action::FocusMonitorLeft,
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::l,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
                         },
-                        actions: vec![Action::MoveWindowToMonitorRight],
+                        action: Action::MoveWindowToMonitorRight,
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::comma,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::ConsumeWindowIntoColumn],
+                        action: Action::ConsumeWindowIntoColumn,
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::_1,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::FocusWorkspace(1)],
+                        action: Action::FocusWorkspace(1),
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::e,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
-                        actions: vec![Action::Quit(true)],
+                        action: Action::Quit(true),
                     },
                 ]),
                 debug: DebugConfig {
