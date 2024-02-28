@@ -51,6 +51,10 @@
             pkg-config
             autoPatchelfHook
             clang
+            gdk-pixbuf
+            graphene
+            gtk4
+            libadwaita
           ];
 
           buildInputs = with pkgs; [
