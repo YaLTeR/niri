@@ -10,13 +10,13 @@ edition = "2021"
 repository = "https://github.com/YaLTeR/niri"
 
 [workspace.dependencies]
-anyhow = "1.0.79"
+anyhow = "1.0.80"
 bitflags = "2.4.2"
-clap = { version = "4.4.18", features = ["derive"] }
-serde = { version = "1.0.196", features = ["derive"] }
+clap = { version = "~4.4.18", features = ["derive"] }
+serde = { version = "1.0.197", features = ["derive"] }
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-tracy-client = { version = "0.16.5", default-features = false }
+tracy-client = { version = "0.17.0", default-features = false }
 
 [workspace.dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
@@ -58,21 +58,21 @@ log = { version = "0.4.20", features = ["max_level_trace", "release_max_level_de
 niri-config = { version = "0.1.2", path = "niri-config" }
 niri-ipc = { version = "0.1.2", path = "niri-ipc", features = ["clap"] }
 notify-rust = { version = "4.10.0", optional = true }
-pangocairo = "0.19.1"
+pangocairo = "0.19.2"
 pipewire = { version = "0.8.0", optional = true }
-png = "0.17.11"
+png = "0.17.13"
 portable-atomic = { version = "1.6.0", default-features = false, features = ["float"] }
-profiling = "1.0.14"
+profiling = "1.0.15"
 sd-notify = "0.4.1"
 serde.workspace = true
-serde_json = "1.0.113"
+serde_json = "1.0.114"
 smithay-drm-extras.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
 url = { version = "2.5.0", optional = true }
 xcursor = "0.3.5"
-zbus = { version = "3.15.0", optional = true }
+zbus = { version = "~3.15.2", optional = true }
 
 [dependencies.smithay]
 workspace = true
