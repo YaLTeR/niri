@@ -428,7 +428,7 @@ impl<W: LayoutElement> Workspace<W> {
         ));
     }
 
-    fn animate_view_offset_to_column(&mut self, current_x: i32, idx: usize) {
+    fn animate_view_offset_to_column_fit(&mut self, current_x: i32, idx: usize) {
         let new_view_offset = self.compute_new_view_offset_for_column(current_x, idx);
         self.animate_view_offset(current_x, idx, new_view_offset);
     }
@@ -440,7 +440,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let col = &self.columns[idx];
         if col.is_fullscreen {
-            self.animate_view_offset_to_column(current_x, idx);
+            self.animate_view_offset_to_column_fit(current_x, idx);
             return;
         }
 
@@ -450,7 +450,7 @@ impl<W: LayoutElement> Workspace<W> {
         // edge alignment by the usual positioning code, so there's no use in trying to center it
         // here.
         if self.working_area.size.w <= width {
-            self.animate_view_offset_to_column(current_x, idx);
+            self.animate_view_offset_to_column_fit(current_x, idx);
             return;
         }
 
@@ -493,12 +493,12 @@ impl<W: LayoutElement> Workspace<W> {
 
                 // If it fits together, do a normal animation, otherwise center the new column.
                 if total_width <= self.working_area.size.w {
-                    self.animate_view_offset_to_column(current_x, idx);
+                    self.animate_view_offset_to_column_fit(current_x, idx);
                 } else {
                     self.animate_view_offset_to_column_centered(current_x, idx);
                 }
             }
-            CenterFocusedColumn::Never => self.animate_view_offset_to_column(current_x, idx),
+            CenterFocusedColumn::Never => self.animate_view_offset_to_column_fit(current_x, idx),
         };
 
         self.active_column_idx = idx;
@@ -771,7 +771,7 @@ impl<W: LayoutElement> Workspace<W> {
                 // continuously resizing windows not look janky.
                 self.animate_view_offset_to_column_centered(current_x, idx);
             } else {
-                self.animate_view_offset_to_column(current_x, idx);
+                self.animate_view_offset_to_column_fit(current_x, idx);
             }
         }
     }
