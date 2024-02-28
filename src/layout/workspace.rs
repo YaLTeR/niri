@@ -459,12 +459,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.animate_view_offset(current_x, idx, new_view_offset);
     }
 
-    fn activate_column(&mut self, idx: usize) {
-        if self.active_column_idx == idx {
-            return;
-        }
-
-        let current_x = self.view_pos();
+    fn animate_view_offset_to_column(&mut self, current_x: i32, idx: usize) {
         match self.options.center_focused_column {
             CenterFocusedColumn::Always => {
                 self.animate_view_offset_to_column_centered(current_x, idx)
@@ -500,6 +495,15 @@ impl<W: LayoutElement> Workspace<W> {
             }
             CenterFocusedColumn::Never => self.animate_view_offset_to_column_fit(current_x, idx),
         };
+    }
+
+    fn activate_column(&mut self, idx: usize) {
+        if self.active_column_idx == idx {
+            return;
+        }
+
+        let current_x = self.view_pos();
+        self.animate_view_offset_to_column(current_x, idx);
 
         self.active_column_idx = idx;
 
