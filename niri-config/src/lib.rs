@@ -2,6 +2,7 @@
 extern crate tracing;
 
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -823,7 +824,13 @@ impl Config {
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;
 
-        let config = Self::parse("config.kdl", &contents).context("error parsing")?;
+        let config = Self::parse(
+            path.file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or("config.kdl"),
+            &contents,
+        )
+        .context("error parsing")?;
         debug!("loaded config from {path:?}");
         Ok(config)
     }
