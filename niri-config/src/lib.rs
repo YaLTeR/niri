@@ -1033,8 +1033,31 @@ where
                     if seen_keys.insert(bind.key) {
                         binds.push(bind);
                     } else {
-                        // TODO: add context of the source span for the original bind?
-                        // i couldn't figure out how to easily do this
+                        // ideally, this error should point to the previous instance of this keybind
+                        //
+                        // i (sodiboo) have tried to implement this in various ways:
+                        // miette!(), #[derive(Diagnostic)]
+                        // DecodeError::Custom, DecodeError::Conversion
+                        // nothing seems to work, and i suspect it's not possible.
+                        //
+                        // DecodeError is fairly restrictive.
+                        // even DecodeError::Custom just wraps a std::error::Error
+                        // and this erases all rich information from miette. (why???)
+                        //
+                        // why does knuffel do this?
+                        // from what i can tell, it doesn't even use DecodeError for much.
+                        // it only ever converts them to a Report anyways!
+                        // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
+                        //
+                        // besides like, allowing downstream users (such as us!)
+                        // to match on parse failure, i don't understand why
+                        // it doesn't just use a generic error type
+                        //
+                        // even the matching isn't consistent,
+                        // because errors can also be omitted as ctx.emit_error.
+                        // why does *that one* especially, require a DecodeError?
+                        //
+                        // anyways if you can make it format nicely, definitely do fix this
                         ctx.emit_error(DecodeError::unexpected(
                             &child.node_name,
                             "keybind",
@@ -1066,6 +1089,14 @@ where
 
         let mut children = node.children();
 
+        // If the action is invalid but the key is fine, we still want to return something.
+        // That way, the parent can handle the existence of duplicate keybinds,
+        // even if their contents are not valid.
+        let dummy = Self {
+            key,
+            action: Action::Spawn(vec![]),
+        };
+
         if let Some(child) = children.next() {
             for unwanted_child in children {
                 ctx.emit_error(DecodeError::unexpected(
@@ -1074,19 +1105,19 @@ where
                     "only one action is allowed per keybind",
                 ));
             }
-            let action = Action::decode_node(child, ctx)?;
-            Ok(Self { key, action })
+            match Action::decode_node(child, ctx) {
+                Ok(action) => Ok(Self { key, action }),
+                Err(e) => {
+                    ctx.emit_error(e);
+                    Ok(dummy)
+                }
+            }
         } else {
             ctx.emit_error(DecodeError::missing(
                 node,
                 "expected an action for this keybind",
             ));
-            // This value isn't used. Decoding will not succeed, because we just emitted an error.
-            // Even if it somehow were used, spawn without args is a no-op.
-            Ok(Self {
-                key,
-                action: Action::Spawn(vec![]),
-            })
+            Ok(dummy)
         }
     }
 }
