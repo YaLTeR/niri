@@ -459,14 +459,24 @@ impl<W: LayoutElement> Workspace<W> {
         self.animate_view_offset(current_x, idx, new_view_offset);
     }
 
-    fn animate_view_offset_to_column(&mut self, current_x: i32, idx: usize) {
+    fn animate_view_offset_to_column(
+        &mut self,
+        current_x: i32,
+        idx: usize,
+        prev_idx: Option<usize>,
+    ) {
         match self.options.center_focused_column {
             CenterFocusedColumn::Always => {
                 self.animate_view_offset_to_column_centered(current_x, idx)
             }
             CenterFocusedColumn::OnOverflow => {
+                let Some(prev_idx) = prev_idx else {
+                    self.animate_view_offset_to_column_fit(current_x, idx);
+                    return;
+                };
+
                 // Always take the left or right neighbor of the target as the source.
-                let source_idx = if self.active_column_idx > idx {
+                let source_idx = if prev_idx > idx {
                     min(idx + 1, self.columns.len() - 1)
                 } else {
                     idx.saturating_sub(1)
@@ -503,7 +513,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let current_x = self.view_pos();
-        self.animate_view_offset_to_column(current_x, idx);
+        self.animate_view_offset_to_column(current_x, idx, Some(self.active_column_idx));
 
         self.active_column_idx = idx;
 
@@ -770,13 +780,9 @@ impl<W: LayoutElement> Workspace<W> {
             // We might need to move the view to ensure the resized window is still visible.
             let current_x = self.view_pos();
 
-            if self.options.center_focused_column == CenterFocusedColumn::Always {
-                // FIXME: we will want to skip the animation in some cases here to make
-                // continuously resizing windows not look janky.
-                self.animate_view_offset_to_column_centered(current_x, idx);
-            } else {
-                self.animate_view_offset_to_column_fit(current_x, idx);
-            }
+            // FIXME: we will want to skip the animation in some cases here to make continuously
+            // resizing windows not look janky.
+            self.animate_view_offset_to_column(current_x, idx, None);
         }
     }
 
