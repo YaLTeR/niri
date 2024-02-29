@@ -192,6 +192,7 @@ pub struct Niri {
     pub dnd_icon: Option<WlSurface>,
     pub pointer_focus: Option<PointerFocus>,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
+    pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
 
     pub lock_state: LockState,
 
@@ -1048,6 +1049,7 @@ impl Niri {
             dnd_icon: None,
             pointer_focus: None,
             tablet_cursor_location: None,
+            gesture_swipe_3f_cumulative: None,
 
             lock_state: LockState::Unlocked,
 

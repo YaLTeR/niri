@@ -55,8 +55,8 @@ pub struct Workspace<W: LayoutElement> {
     /// for natural handling of fullscreen windows, which must ignore work area padding.
     view_offset: i32,
 
-    /// Animation of the view offset, if one is currently ongoing.
-    view_offset_anim: Option<Animation>,
+    /// Adjustment of the view offset, if one is currently ongoing.
+    view_offset_adj: Option<ViewOffsetAdjustment>,
 
     /// Whether to activate the previous, rather than the next, column upon column removal.
     ///
@@ -79,6 +79,17 @@ niri_render_elements! {
     WorkspaceRenderElement<R> => {
         Tile = TileRenderElement<R>,
     }
+}
+
+#[derive(Debug)]
+enum ViewOffsetAdjustment {
+    Animation(Animation),
+    Gesture(ViewGesture),
+}
+
+#[derive(Debug)]
+struct ViewGesture {
+    current_view_offset: f64,
 }
 
 /// Width of a column.
@@ -160,6 +171,15 @@ impl OutputId {
     }
 }
 
+impl ViewOffsetAdjustment {
+    pub fn current_view_offset(&self) -> f64 {
+        match self {
+            ViewOffsetAdjustment::Animation(anim) => anim.value(),
+            ViewOffsetAdjustment::Gesture(gesture) => gesture.current_view_offset,
+        }
+    }
+}
+
 impl ColumnWidth {
     fn resolve(self, options: &Options, view_width: i32) -> i32 {
         match self {
@@ -192,7 +212,7 @@ impl<W: LayoutElement> Workspace<W> {
             columns: vec![],
             active_column_idx: 0,
             view_offset: 0,
-            view_offset_anim: None,
+            view_offset_adj: None,
             activate_prev_column_on_removal: false,
             options,
         }
@@ -207,22 +227,21 @@ impl<W: LayoutElement> Workspace<W> {
             columns: vec![],
             active_column_idx: 0,
             view_offset: 0,
-            view_offset_anim: None,
+            view_offset_adj: None,
             activate_prev_column_on_removal: false,
             options,
         }
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
-        match &mut self.view_offset_anim {
-            Some(anim) => {
-                anim.set_current_time(current_time);
-                self.view_offset = anim.value().round() as i32;
-                if anim.is_done() {
-                    self.view_offset_anim = None;
-                }
+        if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
+            anim.set_current_time(current_time);
+            self.view_offset = anim.value().round() as i32;
+            if anim.is_done() {
+                self.view_offset_adj = None;
             }
-            None => (),
+        } else if let Some(ViewOffsetAdjustment::Gesture(gesture)) = &self.view_offset_adj {
+            self.view_offset = gesture.current_view_offset.round() as i32;
         }
 
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
@@ -232,7 +251,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.view_offset_anim.is_some() || self.columns.iter().any(Column::are_animations_ongoing)
+        self.view_offset_adj.is_some() || self.columns.iter().any(Column::are_animations_ongoing)
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
@@ -382,8 +401,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         let new_col_x = self.column_x(idx);
 
-        let final_x = if let Some(anim) = &self.view_offset_anim {
-            current_x - self.view_offset + anim.to().round() as i32
+        let final_x = if let Some(adj) = &self.view_offset_adj {
+            current_x - self.view_offset + adj.current_view_offset().round() as i32
         } else {
             current_x
         };
@@ -406,7 +425,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.view_offset = from_view_offset;
 
         // If we're already animating towards that, don't restart it.
-        if let Some(anim) = &self.view_offset_anim {
+        if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
             if anim.value().round() as i32 == self.view_offset
                 && anim.to().round() as i32 == new_view_offset
             {
@@ -416,16 +435,16 @@ impl<W: LayoutElement> Workspace<W> {
 
         // If our view offset is already this, we don't need to do anything.
         if self.view_offset == new_view_offset {
-            self.view_offset_anim = None;
+            self.view_offset_adj = None;
             return;
         }
 
-        self.view_offset_anim = Some(Animation::new(
+        self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
             self.view_offset as f64,
             new_view_offset as f64,
             self.options.animations.horizontal_view_movement,
             niri_config::Animation::default_horizontal_view_movement(),
-        ));
+        )));
     }
 
     fn animate_view_offset_to_column_fit(&mut self, current_x: i32, idx: usize) {
@@ -594,7 +613,7 @@ impl<W: LayoutElement> Workspace<W> {
                     // exclusive zones.
                     self.view_offset = self.compute_new_view_offset_for_column(self.column_x(0), 0);
                 }
-                self.view_offset_anim = None;
+                self.view_offset_adj = None;
             }
 
             self.activate_column(idx);
@@ -666,7 +685,7 @@ impl<W: LayoutElement> Workspace<W> {
                     // exclusive zones.
                     self.view_offset = self.compute_new_view_offset_for_column(self.column_x(0), 0);
                 }
-                self.view_offset_anim = None;
+                self.view_offset_adj = None;
             }
 
             self.activate_column(idx);
@@ -776,7 +795,9 @@ impl<W: LayoutElement> Workspace<W> {
         column.update_window(window);
         column.update_tile_sizes();
 
-        if idx == self.active_column_idx {
+        if idx == self.active_column_idx
+            && !matches!(self.view_offset_adj, Some(ViewOffsetAdjustment::Gesture(_)))
+        {
             // We might need to move the view to ensure the resized window is still visible.
             let current_x = self.view_pos();
 
@@ -1171,7 +1192,7 @@ impl<W: LayoutElement> Workspace<W> {
             return false;
         }
 
-        if self.view_offset_anim.is_some() {
+        if self.view_offset_adj.is_some() {
             return false;
         }
 
@@ -1209,6 +1230,150 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         rv
+    }
+
+    pub fn view_offset_gesture_begin(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let gesture = ViewGesture {
+            current_view_offset: self.view_offset as f64,
+        };
+        self.view_offset_adj = Some(ViewOffsetAdjustment::Gesture(gesture));
+    }
+
+    pub fn view_offset_gesture_update(&mut self, delta_x: f64) -> Option<bool> {
+        let Some(ViewOffsetAdjustment::Gesture(gesture)) = &mut self.view_offset_adj else {
+            return None;
+        };
+
+        let mut new_offset = gesture.current_view_offset + delta_x;
+        gesture.current_view_offset = new_offset;
+
+        if self.columns.is_empty() {
+            return Some(true);
+        }
+
+        // Switch the next window to be active, if necessary.
+        //
+        // The logic here is similar to PaperWM. The idea is: make the next window (in the
+        // direction of the gesture) active when it becomes "more visible" than the current active
+        // window.
+
+        // Make an iterator over column indices into the gesture direction.
+        let mut idxs_before = (0..=self.active_column_idx).rev();
+        let mut idxs_after = self.active_column_idx..self.columns.len();
+        let next_column_idxs = if delta_x < 0. {
+            &mut idxs_before as &mut dyn Iterator<Item = usize>
+        } else {
+            &mut idxs_after as &mut dyn Iterator<Item = usize>
+        };
+
+        let mut last = None;
+        for col_idx in next_column_idxs {
+            let col = &self.columns[col_idx];
+            let col_x = self.column_x(col_idx);
+            let col_w = col.width();
+
+            let mut area_for_col = if col.is_fullscreen {
+                Rectangle::from_loc_and_size((0, 0), self.view_size)
+            } else {
+                self.working_area
+            };
+
+            if let Some((last_col_x, _)) = last {
+                area_for_col.loc.x += last_col_x + new_offset.round() as i32;
+            } else {
+                // First iteration of the loop; col_idx == self.active_column_idx.
+                area_for_col.loc.x += col_x + new_offset.round() as i32;
+            }
+
+            // Check if the column is fully visible.
+            if area_for_col.loc.x <= col_x
+                && col_x + col_w <= area_for_col.loc.x + area_for_col.size.w
+            {
+                // Make it the new active column.
+                if let Some((last_col_x, _)) = last {
+                    new_offset += (last_col_x - col_x) as f64;
+                    self.active_column_idx = col_idx;
+                }
+                break;
+            }
+
+            // Check if the column is already past the working area.
+            if (delta_x >= 0. && area_for_col.loc.x + area_for_col.size.w <= col_x)
+                || (delta_x < 0. && col_x + col_w <= area_for_col.loc.x)
+            {
+                break;
+            }
+
+            // Compute the visible width (inside the working area).
+            let visible_width = col_w
+                - max(0, area_for_col.loc.x - col_x)
+                - max(
+                    0,
+                    (col_x + col_w) - (area_for_col.loc.x + area_for_col.size.w),
+                );
+            let visible_ratio = if col_w == 0 {
+                1.
+            } else {
+                visible_width as f64 / col_w as f64
+            };
+
+            if let Some((last_col_x, last_ratio)) = last {
+                // Check if we reached the first visible window.
+                if area_for_col.loc.x < col_x + col_w
+                    && col_x < area_for_col.loc.x + area_for_col.size.w
+                {
+                    // If it's more visible than the last one, make it active.
+                    if visible_ratio >= last_ratio {
+                        new_offset += (last_col_x - col_x) as f64;
+                        self.active_column_idx = col_idx;
+                    }
+
+                    break;
+                }
+
+                // Still working through invisible windows.
+                new_offset += (last_col_x - col_x) as f64;
+                self.active_column_idx = col_idx;
+            }
+
+            last = Some((col_x, visible_ratio));
+        }
+
+        let Some(ViewOffsetAdjustment::Gesture(gesture)) = &mut self.view_offset_adj else {
+            unreachable!();
+        };
+
+        gesture.current_view_offset = new_offset;
+        Some(true)
+    }
+
+    pub fn view_offset_gesture_end(&mut self, _cancelled: bool) -> bool {
+        let Some(ViewOffsetAdjustment::Gesture(gesture)) = &self.view_offset_adj else {
+            return false;
+        };
+
+        // We do not handle cancelling, just like GNOME Shell doesn't. For this gesture, proper
+        // cancelling would require keeping track of the original active column, and then updating
+        // it in all the right places (adding columns, removing columns, etc.) -- quite a bit of
+        // effort and bug potential.
+
+        // FIXME: keep track of gesture velocity and use it to compute the final point and
+        // to animate to it.
+        let offset = gesture.current_view_offset.round() as i32;
+
+        self.view_offset = offset;
+        self.view_offset_adj = None;
+
+        if !self.columns.is_empty() {
+            let current_x = self.view_pos();
+            self.animate_view_offset_to_column(current_x, self.active_column_idx, None);
+        }
+
+        true
     }
 }
 

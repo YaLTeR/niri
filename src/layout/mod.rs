@@ -1675,6 +1675,63 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn view_offset_gesture_begin(&mut self, output: &Output) {
+        let monitors = match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => monitors,
+            MonitorSet::NoOutputs { .. } => unreachable!(),
+        };
+
+        for monitor in monitors {
+            for (idx, ws) in monitor.workspaces.iter_mut().enumerate() {
+                // Cancel the gesture on other workspaces.
+                if &monitor.output != output || idx != monitor.active_workspace_idx {
+                    ws.view_offset_gesture_end(true);
+                    continue;
+                }
+
+                ws.view_offset_gesture_begin();
+            }
+        }
+    }
+
+    pub fn view_offset_gesture_update(&mut self, delta_x: f64) -> Option<Option<Output>> {
+        let monitors = match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => monitors,
+            MonitorSet::NoOutputs { .. } => return None,
+        };
+
+        for monitor in monitors {
+            for ws in &mut monitor.workspaces {
+                if let Some(refresh) = ws.view_offset_gesture_update(delta_x) {
+                    if refresh {
+                        return Some(Some(monitor.output.clone()));
+                    } else {
+                        return Some(None);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn view_offset_gesture_end(&mut self, cancelled: bool) -> Option<Output> {
+        let monitors = match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => monitors,
+            MonitorSet::NoOutputs { .. } => return None,
+        };
+
+        for monitor in monitors {
+            for ws in &mut monitor.workspaces {
+                if ws.view_offset_gesture_end(cancelled) {
+                    return Some(monitor.output.clone());
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn move_workspace_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1724,25 +1781,31 @@ impl<W: LayoutElement> Layout<W> {
 }
 
 impl Layout<Window> {
-    pub fn refresh(&self) {
+    pub fn refresh(&mut self) {
         let _span = tracy_client::span!("MonitorSet::refresh");
 
-        match &self.monitor_set {
+        match &mut self.monitor_set {
             MonitorSet::Normal {
                 monitors,
                 active_monitor_idx,
                 ..
             } => {
-                for (idx, mon) in monitors.iter().enumerate() {
+                for (idx, mon) in monitors.iter_mut().enumerate() {
                     let is_active = idx == *active_monitor_idx;
-                    for ws in &mon.workspaces {
+                    for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         ws.refresh(is_active);
+
+                        // Cancel the view offset gesture after workspace switches, moves, etc.
+                        if ws_idx != mon.active_workspace_idx {
+                            ws.view_offset_gesture_end(false);
+                        }
                     }
                 }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     ws.refresh(false);
+                    ws.view_offset_gesture_end(false);
                 }
             }
         }
@@ -1931,6 +1994,10 @@ mod tests {
         })
     }
 
+    fn arbitrary_view_offset_gesture_delta() -> impl Strategy<Value = f64> {
+        prop_oneof![(-10f64..10f64), (-50000f64..50000f64),]
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -1996,6 +2063,15 @@ mod tests {
         SetWindowHeight(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
         MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
+        ViewOffsetGestureBegin {
+            #[proptest(strategy = "1..=5usize")]
+            output_idx: usize,
+        },
+        ViewOffsetGestureUpdate {
+            #[proptest(strategy = "arbitrary_view_offset_gesture_delta()")]
+            delta: f64,
+        },
+        ViewOffsetGestureEnd,
     }
 
     impl Op {
@@ -2230,6 +2306,21 @@ mod tests {
                     };
 
                     layout.move_workspace_to_output(&output);
+                }
+                Op::ViewOffsetGestureBegin { output_idx: id } => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+
+                    layout.view_offset_gesture_begin(&output);
+                }
+                Op::ViewOffsetGestureUpdate { delta } => {
+                    layout.view_offset_gesture_update(delta);
+                }
+                Op::ViewOffsetGestureEnd => {
+                    // We don't handle cancels in this gesture.
+                    layout.view_offset_gesture_end(false);
                 }
             }
         }
