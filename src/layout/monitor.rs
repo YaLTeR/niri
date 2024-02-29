@@ -691,4 +691,66 @@ impl<W: LayoutElement> Monitor<W> {
             }
         }
     }
+
+    pub fn workspace_switch_gesture_begin(&mut self) {
+        let center_idx = self.active_workspace_idx;
+        let current_idx = self
+            .workspace_switch
+            .as_ref()
+            .map(|s| s.current_idx())
+            .unwrap_or(center_idx as f64);
+
+        let gesture = WorkspaceSwitchGesture {
+            center_idx,
+            current_idx,
+        };
+        self.workspace_switch = Some(WorkspaceSwitch::Gesture(gesture));
+    }
+
+    pub fn workspace_switch_gesture_update(&mut self, delta_y: f64) -> Option<bool> {
+        let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
+            return None;
+        };
+
+        // Normalize like GNOME Shell's workspace switching.
+        let delta_y = delta_y / 400.;
+
+        let min = gesture.center_idx.saturating_sub(1) as f64;
+        let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
+        let new_idx = (gesture.current_idx + delta_y).clamp(min, max);
+
+        if gesture.current_idx == new_idx {
+            return Some(false);
+        }
+
+        gesture.current_idx = new_idx;
+        Some(true)
+    }
+
+    pub fn workspace_switch_gesture_end(&mut self, cancelled: bool) -> bool {
+        let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
+            return false;
+        };
+
+        if cancelled {
+            self.workspace_switch = None;
+            self.clean_up_workspaces();
+            return true;
+        }
+
+        // FIXME: keep track of gesture velocity and use it to compute the final point and to
+        // animate to it.
+        let current_idx = gesture.current_idx;
+        let idx = current_idx.round() as usize;
+
+        self.active_workspace_idx = idx;
+        self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
+            current_idx,
+            idx as f64,
+            self.options.animations.workspace_switch,
+            niri_config::Animation::default_workspace_switch(),
+        )));
+
+        true
+    }
 }
