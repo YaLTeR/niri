@@ -1147,6 +1147,13 @@ impl Tty {
                                 }
                             };
 
+                            // We queued this frame successfully, so now we'll be sending frame
+                            // callbacks for the next sequence.
+                            if let Some(sequence) = output_state.current_estimated_sequence.as_mut()
+                            {
+                                *sequence = sequence.wrapping_add(1);
+                            }
+
                             return RenderResult::Submitted;
                         }
                         Err(err) => {
