@@ -557,4 +557,9 @@ debug {
     // Enable the color-transformations capability of the Smithay renderer.
     // May cause a slight decrease in rendering performance.
     // enable-color-transformations-capability
+
+    // Emulate zero (unknown) presentation time returned from DRM.
+    // This is a thing on NVIDIA proprietary drivers, so this flag can be
+    // used to test that we don't break too hard on those systems.
+    // emulate-zero-presentation-time
 }

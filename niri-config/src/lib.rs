@@ -810,6 +810,8 @@ pub struct DebugConfig {
     pub disable_cursor_plane: bool,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
+    #[knuffel(child)]
+    pub emulate_zero_presentation_time: bool,
 }
 
 impl Config {

@@ -902,6 +902,11 @@ impl Tty {
                 Duration::ZERO
             }
         };
+        let presentation_time = if niri.config.borrow().debug.emulate_zero_presentation_time {
+            Duration::ZERO
+        } else {
+            presentation_time
+        };
 
         let message = if presentation_time.is_zero() {
             format!("vblank on {name}, presentation time unknown")
