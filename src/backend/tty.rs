@@ -1649,7 +1649,22 @@ fn queue_estimated_vblank_timer(
     }
 
     let now = get_monotonic_time();
-    let timer = Timer::from_duration(target_presentation_time.saturating_sub(now));
+    let mut duration = target_presentation_time.saturating_sub(now);
+
+    // No use setting a zero timer, since we'll send frame callbacks anyway right after the call to
+    // render(). This can happen for example with unknown presentation time from DRM.
+    if duration.is_zero() {
+        duration += output_state
+            .frame_clock
+            .refresh_interval()
+            // Unknown refresh interval, i.e. winit backend. Would be good to estimate it somehow
+            // but it's not that important for this code path.
+            .unwrap_or(Duration::from_micros(16_667));
+    }
+
+    trace!("queueing estimated vblank timer to fire in {duration:?}");
+
+    let timer = Timer::from_duration(duration);
     let token = niri
         .event_loop
         .insert_source(timer, move |_, _, data| {
