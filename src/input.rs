@@ -1650,7 +1650,7 @@ fn bound_action(
         }
 
         if bind_modifiers == modifiers {
-            return bind.actions.first().cloned();
+            return Some(bind.action.clone());
         }
     }
 
@@ -1815,7 +1815,7 @@ mod tests {
                 keysym: close_keysym,
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
             },
-            actions: vec![Action::CloseWindow],
+            action: Action::CloseWindow,
         }]);
 
         let comp_mod = CompositorMod::Super;
@@ -1937,35 +1937,35 @@ mod tests {
                     keysym: Keysym::q,
                     modifiers: Modifiers::COMPOSITOR,
                 },
-                actions: vec![Action::CloseWindow],
+                action: Action::CloseWindow,
             },
             Bind {
                 key: Key {
                     keysym: Keysym::h,
                     modifiers: Modifiers::SUPER,
                 },
-                actions: vec![Action::FocusColumnLeft],
+                action: Action::FocusColumnLeft,
             },
             Bind {
                 key: Key {
                     keysym: Keysym::j,
                     modifiers: Modifiers::empty(),
                 },
-                actions: vec![Action::FocusWindowDown],
+                action: Action::FocusWindowDown,
             },
             Bind {
                 key: Key {
                     keysym: Keysym::k,
                     modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
                 },
-                actions: vec![Action::FocusWindowUp],
+                action: Action::FocusWindowUp,
             },
             Bind {
                 key: Key {
                     keysym: Keysym::l,
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
                 },
-                actions: vec![Action::FocusColumnRight],
+                action: Action::FocusColumnRight,
             },
         ]);
 

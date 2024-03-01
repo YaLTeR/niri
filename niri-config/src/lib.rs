@@ -1,10 +1,13 @@
 #[macro_use]
 extern crate tracing;
 
+use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use bitflags::bitflags;
+use knuffel::errors::DecodeError;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{LayoutSwitchTarget, SizeChange};
 use regex::Regex;
@@ -474,8 +477,8 @@ pub enum PresetWidth {
     Fixed(#[knuffel(argument)] i32),
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
-pub struct DefaultColumnWidth(#[knuffel(children)] pub Vec<PresetWidth>);
+#[derive(Debug, Clone, PartialEq)]
+pub struct DefaultColumnWidth(pub Option<PresetWidth>);
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Struts {
@@ -621,25 +624,23 @@ impl PartialEq for Match {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
-pub struct Binds(#[knuffel(children)] pub Vec<Bind>);
+#[derive(Debug, Default, PartialEq)]
+pub struct Binds(pub Vec<Bind>);
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Bind {
-    #[knuffel(node_name)]
     pub key: Key,
-    #[knuffel(children)]
-    pub actions: Vec<Action>,
+    pub action: Action,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Key {
     pub keysym: Keysym,
     pub modifiers: Modifiers,
 }
 
 bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Modifiers : u8 {
         const CTRL = 1;
         const SHIFT = 2;
@@ -825,7 +826,13 @@ impl Config {
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;
 
-        let config = Self::parse("config.kdl", &contents).context("error parsing")?;
+        let config = Self::parse(
+            path.file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or("config.kdl"),
+            &contents,
+        )
+        .context("error parsing")?;
         debug!("loaded config from {path:?}");
         Ok(config)
     }
@@ -882,10 +889,10 @@ where
     fn decode_node(
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
-    ) -> Result<Self, knuffel::errors::DecodeError<S>> {
+    ) -> Result<Self, DecodeError<S>> {
         // Check for unexpected type name.
         if let Some(type_name) = &node.type_name {
-            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+            ctx.emit_error(DecodeError::unexpected(
                 type_name,
                 "type name",
                 "no type name expected for this node",
@@ -894,13 +901,13 @@ where
 
         // Get the first argument.
         let mut iter_args = node.arguments.iter();
-        let val = iter_args.next().ok_or_else(|| {
-            knuffel::errors::DecodeError::missing(node, "additional argument is required")
-        })?;
+        let val = iter_args
+            .next()
+            .ok_or_else(|| DecodeError::missing(node, "additional argument is required"))?;
 
         // Check for unexpected type name.
         if let Some(typ) = &val.type_name {
-            ctx.emit_error(knuffel::errors::DecodeError::TypeName {
+            ctx.emit_error(DecodeError::TypeName {
                 span: typ.span().clone(),
                 found: Some((**typ).clone()),
                 expected: knuffel::errors::ExpectedType::no_type(),
@@ -911,15 +918,16 @@ where
         // Check the argument type.
         let rv = match *val.literal {
             // If it's a string, use FromStr.
-            knuffel::ast::Literal::String(ref s) => Color::from_str(s)
-                .map_err(|e| knuffel::errors::DecodeError::conversion(&val.literal, e)),
+            knuffel::ast::Literal::String(ref s) => {
+                Color::from_str(s).map_err(|e| DecodeError::conversion(&val.literal, e))
+            }
             // Otherwise, fall back to the 4-argument RGBA form.
             _ => return ColorRgba::decode_node(node, ctx).map(Color::from),
         }?;
 
         // Check for unexpected following arguments.
         if let Some(val) = iter_args.next() {
-            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+            ctx.emit_error(DecodeError::unexpected(
                 &val.literal,
                 "argument",
                 "unexpected argument",
@@ -928,14 +936,14 @@ where
 
         // Check for unexpected properties and children.
         for name in node.properties.keys() {
-            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+            ctx.emit_error(DecodeError::unexpected(
                 name,
                 "property",
                 format!("unexpected property `{}`", name.escape_default()),
             ));
         }
         for child in node.children.as_ref().map(|lst| &lst[..]).unwrap_or(&[]) {
-            ctx.emit_error(knuffel::errors::DecodeError::unexpected(
+            ctx.emit_error(DecodeError::unexpected(
                 child,
                 "node",
                 format!("unexpected node `{}`", child.node_name.escape_default()),
@@ -943,6 +951,176 @@ where
         }
 
         Ok(rv)
+    }
+}
+
+fn expect_only_children<S>(
+    node: &knuffel::ast::SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) where
+    S: knuffel::traits::ErrorSpan,
+{
+    if let Some(type_name) = &node.type_name {
+        ctx.emit_error(DecodeError::unexpected(
+            type_name,
+            "type name",
+            "no type name expected for this node",
+        ));
+    }
+
+    for val in node.arguments.iter() {
+        ctx.emit_error(DecodeError::unexpected(
+            &val.literal,
+            "argument",
+            "no arguments expected for this node",
+        ))
+    }
+
+    for name in node.properties.keys() {
+        ctx.emit_error(DecodeError::unexpected(
+            name,
+            "property",
+            "no properties expected for this node",
+        ))
+    }
+}
+
+impl<S> knuffel::Decode<S> for DefaultColumnWidth
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let mut children = node.children();
+
+        if let Some(child) = children.next() {
+            if let Some(unwanted_child) = children.next() {
+                ctx.emit_error(DecodeError::unexpected(
+                    unwanted_child,
+                    "node",
+                    "expected no more than one child",
+                ));
+            }
+            PresetWidth::decode_node(child, ctx).map(Some).map(Self)
+        } else {
+            Ok(Self(None))
+        }
+    }
+}
+
+impl<S> knuffel::Decode<S> for Binds
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let mut seen_keys = HashSet::new();
+
+        let mut binds = Vec::new();
+
+        for child in node.children() {
+            match Bind::decode_node(child, ctx) {
+                Err(e) => {
+                    ctx.emit_error(e);
+                }
+                Ok(bind) => {
+                    if seen_keys.insert(bind.key) {
+                        binds.push(bind);
+                    } else {
+                        // ideally, this error should point to the previous instance of this keybind
+                        //
+                        // i (sodiboo) have tried to implement this in various ways:
+                        // miette!(), #[derive(Diagnostic)]
+                        // DecodeError::Custom, DecodeError::Conversion
+                        // nothing seems to work, and i suspect it's not possible.
+                        //
+                        // DecodeError is fairly restrictive.
+                        // even DecodeError::Custom just wraps a std::error::Error
+                        // and this erases all rich information from miette. (why???)
+                        //
+                        // why does knuffel do this?
+                        // from what i can tell, it doesn't even use DecodeError for much.
+                        // it only ever converts them to a Report anyways!
+                        // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
+                        //
+                        // besides like, allowing downstream users (such as us!)
+                        // to match on parse failure, i don't understand why
+                        // it doesn't just use a generic error type
+                        //
+                        // even the matching isn't consistent,
+                        // because errors can also be omitted as ctx.emit_error.
+                        // why does *that one* especially, require a DecodeError?
+                        //
+                        // anyways if you can make it format nicely, definitely do fix this
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "keybind",
+                            "duplicate keybind",
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(Self(binds))
+    }
+}
+
+impl<S> knuffel::Decode<S> for Bind
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let key = node
+            .node_name
+            .parse::<Key>()
+            .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
+
+        let mut children = node.children();
+
+        // If the action is invalid but the key is fine, we still want to return something.
+        // That way, the parent can handle the existence of duplicate keybinds,
+        // even if their contents are not valid.
+        let dummy = Self {
+            key,
+            action: Action::Spawn(vec![]),
+        };
+
+        if let Some(child) = children.next() {
+            for unwanted_child in children {
+                ctx.emit_error(DecodeError::unexpected(
+                    unwanted_child,
+                    "node",
+                    "only one action is allowed per keybind",
+                ));
+            }
+            match Action::decode_node(child, ctx) {
+                Ok(action) => Ok(Self { key, action }),
+                Err(e) => {
+                    ctx.emit_error(e);
+                    Ok(dummy)
+                }
+            }
+        } else {
+            ctx.emit_error(DecodeError::missing(
+                node,
+                "expected an action for this keybind",
+            ));
+            Ok(dummy)
+        }
     }
 }
 
@@ -1302,9 +1480,9 @@ mod tests {
                         PresetWidth::Fixed(960),
                         PresetWidth::Fixed(1280),
                     ],
-                    default_column_width: Some(DefaultColumnWidth(vec![PresetWidth::Proportion(
+                    default_column_width: Some(DefaultColumnWidth(Some(PresetWidth::Proportion(
                         0.25,
-                    )])),
+                    )))),
                     gaps: 8,
                     struts: Struts {
                         left: 1,
@@ -1369,49 +1547,49 @@ mod tests {
                             keysym: Keysym::t,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::Spawn(vec!["alacritty".to_owned()])],
+                        action: Action::Spawn(vec!["alacritty".to_owned()]),
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::q,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::CloseWindow],
+                        action: Action::CloseWindow,
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::h,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
-                        actions: vec![Action::FocusMonitorLeft],
+                        action: Action::FocusMonitorLeft,
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::l,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
                         },
-                        actions: vec![Action::MoveWindowToMonitorRight],
+                        action: Action::MoveWindowToMonitorRight,
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::comma,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::ConsumeWindowIntoColumn],
+                        action: Action::ConsumeWindowIntoColumn,
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::_1,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        actions: vec![Action::FocusWorkspace(1)],
+                        action: Action::FocusWorkspace(1),
                     },
                     Bind {
                         key: Key {
                             keysym: Keysym::e,
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
-                        actions: vec![Action::Quit(true)],
+                        action: Action::Quit(true),
                     },
                 ]),
                 debug: DebugConfig {

@@ -200,7 +200,7 @@ impl Options {
         let default_width = layout
             .default_column_width
             .as_ref()
-            .map(|w| w.0.first().copied().map(ColumnWidth::from))
+            .map(|w| w.0.map(ColumnWidth::from))
             .unwrap_or(Some(ColumnWidth::Proportion(0.5)));
 
         Self {
