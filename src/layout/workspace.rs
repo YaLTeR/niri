@@ -171,15 +171,6 @@ impl OutputId {
     }
 }
 
-impl ViewOffsetAdjustment {
-    pub fn current_view_offset(&self) -> f64 {
-        match self {
-            ViewOffsetAdjustment::Animation(anim) => anim.value(),
-            ViewOffsetAdjustment::Gesture(gesture) => gesture.current_view_offset,
-        }
-    }
-}
-
 impl ColumnWidth {
     fn resolve(self, options: &Options, view_width: i32) -> i32 {
         match self {
@@ -401,8 +392,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         let new_col_x = self.column_x(idx);
 
-        let final_x = if let Some(adj) = &self.view_offset_adj {
-            current_x - self.view_offset + adj.current_view_offset().round() as i32
+        let final_x = if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
+            current_x - self.view_offset + anim.to().round() as i32
         } else {
             current_x
         };
