@@ -956,16 +956,17 @@ impl Tty {
                     .unwrap_or(Duration::ZERO);
                 // FIXME: ideally should be monotonically increasing for a surface.
                 let seq = meta.sequence as u64;
-                let flags = wp_presentation_feedback::Kind::Vsync
-                    | wp_presentation_feedback::Kind::HwClock
+                let mut flags = wp_presentation_feedback::Kind::Vsync
                     | wp_presentation_feedback::Kind::HwCompletion;
 
-                feedback.presented::<_, smithay::utils::Monotonic>(
-                    presentation_time,
-                    refresh,
-                    seq,
-                    flags,
-                );
+                let time = if presentation_time.is_zero() {
+                    now
+                } else {
+                    flags.insert(wp_presentation_feedback::Kind::HwClock);
+                    presentation_time
+                };
+
+                feedback.presented::<_, smithay::utils::Monotonic>(time, refresh, seq, flags);
 
                 if !presentation_time.is_zero() {
                     let misprediction_s =
