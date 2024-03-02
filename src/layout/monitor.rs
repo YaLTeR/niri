@@ -721,8 +721,8 @@ impl<W: LayoutElement> Monitor<W> {
 
         gesture.tracker.push(delta_y, timestamp);
 
-        // Normalize like GNOME Shell's workspace switching.
-        let pos = gesture.tracker.pos() / 400.;
+        // Normalize like AdwSwipeTracker.
+        let pos = gesture.tracker.pos() / 300.;
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
