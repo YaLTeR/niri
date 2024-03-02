@@ -199,6 +199,10 @@ impl Winit {
             RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
         }
 
+        output_state.frame_callback_sequence = output_state.frame_callback_sequence.wrapping_add(1);
+
+        // FIXME: this should wait until a frame callback from the host compositor, but it redraws
+        // right away instead.
         if output_state.unfinished_animations_remain {
             self.backend.window().request_redraw();
         }

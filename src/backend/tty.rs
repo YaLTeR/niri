@@ -983,15 +983,15 @@ impl Tty {
             }
         }
 
-        if let Some(last_sequence) = output_state.current_estimated_sequence {
+        if let Some(last_sequence) = output_state.last_drm_sequence {
             let delta = meta.sequence as f64 - last_sequence as f64;
             tracy_client::Client::running()
                 .unwrap()
                 .plot(surface.sequence_delta_plot_name, delta);
         }
+        output_state.last_drm_sequence = Some(meta.sequence);
 
         output_state.frame_clock.presented(presentation_time);
-        output_state.current_estimated_sequence = Some(meta.sequence);
 
         let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::Idle => unreachable!(),
@@ -1024,6 +1024,9 @@ impl Tty {
             return;
         };
 
+        // We waited for the timer, now we can send frame callbacks again.
+        output_state.frame_callback_sequence = output_state.frame_callback_sequence.wrapping_add(1);
+
         match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::Idle => unreachable!(),
             RedrawState::Queued(_) => unreachable!(),
@@ -1036,14 +1039,10 @@ impl Tty {
             }
         }
 
-        if let Some(sequence) = output_state.current_estimated_sequence.as_mut() {
-            *sequence = sequence.wrapping_add(1);
-
-            if output_state.unfinished_animations_remain {
-                niri.queue_redraw(output);
-            } else {
-                niri.send_frame_callbacks(&output);
-            }
+        if output_state.unfinished_animations_remain {
+            niri.queue_redraw(output);
+        } else {
+            niri.send_frame_callbacks(&output);
         }
     }
 
@@ -1147,12 +1146,11 @@ impl Tty {
                                 }
                             };
 
-                            // We queued this frame successfully, so now we'll be sending frame
-                            // callbacks for the next sequence.
-                            if let Some(sequence) = output_state.current_estimated_sequence.as_mut()
-                            {
-                                *sequence = sequence.wrapping_add(1);
-                            }
+                            // We queued this frame successfully, so the current client buffers were
+                            // latched. We can send frame callbacks now, since a new client commit
+                            // will no longer overwrite this frame and will wait for a VBlank.
+                            output_state.frame_callback_sequence =
+                                output_state.frame_callback_sequence.wrapping_add(1);
 
                             return RenderResult::Submitted;
                         }

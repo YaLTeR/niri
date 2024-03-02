@@ -219,15 +219,28 @@ pub struct OutputState {
     pub redraw_state: RedrawState,
     // After the last redraw, some ongoing animations still remain.
     pub unfinished_animations_remain: bool,
-    /// Estimated sequence currently displayed on this output.
+    /// Last sequence received in a vblank event.
+    pub last_drm_sequence: Option<u32>,
+    /// Sequence for frame callback throttling.
     ///
-    /// When a frame is presented on this output, this becomes the real sequence from the VBlank
-    /// callback. Then, as long as there are no KMS submissions, but we keep getting commits, this
-    /// sequence increases by 1 at estimated VBlank times.
+    /// We want to send frame callbacks for each surface at most once per monitor refresh cycle.
     ///
-    /// If there are no commits, then we won't have a timer running, so the estimated sequence will
-    /// not increase.
-    pub current_estimated_sequence: Option<u32>,
+    /// Even if a surface commit resulted in empty damage to the monitor, we want to delay the next
+    /// frame callback until roughly when a VBlank would occur, had the monitor been damaged. This
+    /// is necessary to prevent clients busy-looping with frame callbacks that result in empty
+    /// damage.
+    ///
+    /// This counter wrapping-increments by 1 every time we move into the next refresh cycle, as
+    /// far as frame callback throttling is concerned. Specifically, it happens:
+    ///
+    /// 1. Upon a successful DRM frame submission. Notably, we don't wait for the VBlank here,
+    ///    because the client buffers are already "latched" at the point of submission. Even if a
+    ///    client submits a new buffer right away, we will wait for a VBlank to draw it, which
+    ///    means that busy looping is avoided.
+    /// 2. If a frame resulted in empty damage, a timer is queued to fire roughly when a VBlank
+    ///    would occur, based on the last presentation time and output refresh interval. Sequence
+    ///    is incremented in that timer, before attempting a redraw or sending frame callbacks.
+    pub frame_callback_sequence: u32,
     /// Solid color buffer for the background that we use instead of clearing to avoid damage
     /// tracking issues and make screenshots easier.
     pub background_buffer: SolidColorBuffer,
@@ -1246,7 +1259,8 @@ impl Niri {
             redraw_state: RedrawState::Idle,
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval),
-            current_estimated_sequence: None,
+            last_drm_sequence: None,
+            frame_callback_sequence: 0,
             background_buffer: SolidColorBuffer::new(size, CLEAR_COLOR),
             lock_render_state,
             lock_surface: None,
@@ -2368,7 +2382,7 @@ impl Niri {
         let _span = tracy_client::span!("Niri::send_frame_callbacks");
 
         let state = self.output_state.get(output).unwrap();
-        let sequence = state.current_estimated_sequence;
+        let sequence = state.frame_callback_sequence;
 
         let should_send = |surface: &WlSurface, states: &SurfaceData| {
             // Do the standard primary scanout output check. For pointer surfaces it deduplicates
@@ -2390,16 +2404,13 @@ impl Niri {
             // If we already sent a frame callback to this surface this output refresh
             // cycle, don't send one again to prevent empty-damage commit busy loops.
             if let Some((last_output, last_sequence)) = &*last_sent_at {
-                if last_output == output && Some(*last_sequence) == sequence {
+                if last_output == output && *last_sequence == sequence {
                     send = false;
                 }
             }
 
             if send {
-                if let Some(sequence) = sequence {
-                    *last_sent_at = Some((output.clone(), sequence));
-                }
-
+                *last_sent_at = Some((output.clone(), sequence));
                 Some(output.clone())
             } else {
                 None
