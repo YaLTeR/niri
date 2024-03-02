@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::collections::HashSet;
+use std::time::Duration;
 
 use niri_config::{Action, Binds, Modifiers};
 use niri_ipc::LayoutSwitchTarget;
@@ -1242,8 +1243,13 @@ impl State {
             }
         }
 
+        let timestamp = Duration::from_micros(event.time());
+
         let mut handled = false;
-        let res = self.niri.layout.workspace_switch_gesture_update(delta_y);
+        let res = self
+            .niri
+            .layout
+            .workspace_switch_gesture_update(delta_y, timestamp);
         if let Some(output) = res {
             if let Some(output) = output {
                 self.niri.queue_redraw(output);

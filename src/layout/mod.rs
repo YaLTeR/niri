@@ -1603,14 +1603,18 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn workspace_switch_gesture_update(&mut self, delta_y: f64) -> Option<Option<Output>> {
+    pub fn workspace_switch_gesture_update(
+        &mut self,
+        delta_y: f64,
+        timestamp: Duration,
+    ) -> Option<Option<Output>> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => return None,
         };
 
         for monitor in monitors {
-            if let Some(refresh) = monitor.workspace_switch_gesture_update(delta_y) {
+            if let Some(refresh) = monitor.workspace_switch_gesture_update(delta_y, timestamp) {
                 if refresh {
                     return Some(Some(monitor.output.clone()));
                 } else {
@@ -2041,6 +2045,7 @@ mod tests {
         WorkspaceSwitchGestureUpdate {
             #[proptest(strategy = "-400f64..400f64")]
             delta: f64,
+            timestamp: Duration,
         },
         WorkspaceSwitchGestureEnd {
             cancelled: bool,
@@ -2303,8 +2308,8 @@ mod tests {
 
                     layout.workspace_switch_gesture_begin(&output);
                 }
-                Op::WorkspaceSwitchGestureUpdate { delta } => {
-                    layout.workspace_switch_gesture_update(delta);
+                Op::WorkspaceSwitchGestureUpdate { delta, timestamp } => {
+                    layout.workspace_switch_gesture_update(delta, timestamp);
                 }
                 Op::WorkspaceSwitchGestureEnd { cancelled } => {
                     layout.workspace_switch_gesture_end(cancelled);
