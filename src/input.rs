@@ -2,6 +2,7 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::time::Duration;
 
+use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{Action, Binds, Modifiers};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -40,7 +41,7 @@ pub struct TabletData {
 }
 
 impl State {
-    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>)
+    pub fn process_input_event<I: InputBackend + 'static>(&mut self, event: InputEvent<I>)
     where
         I::Device: 'static, // Needed for downcasting.
     {
@@ -1209,12 +1210,23 @@ impl State {
         );
     }
 
-    fn on_gesture_swipe_update<I: InputBackend>(&mut self, event: I::GestureSwipeUpdateEvent)
-    where
+    fn on_gesture_swipe_update<I: InputBackend + 'static>(
+        &mut self,
+        event: I::GestureSwipeUpdateEvent,
+    ) where
         I::Device: 'static,
     {
         let mut delta_x = event.delta_x();
         let mut delta_y = event.delta_y();
+
+        // FIXME: remove once X is also unaccelerated.
+        let delta_y_accel = delta_y;
+
+        if let Some(libinput_event) =
+            (&event as &dyn Any).downcast_ref::<input::event::gesture::GestureSwipeUpdateEvent>()
+        {
+            delta_y = libinput_event.dy_unaccelerated();
+        }
 
         let device = event.device();
         if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
@@ -1226,7 +1238,7 @@ impl State {
 
         if let Some((cx, cy)) = &mut self.niri.gesture_swipe_3f_cumulative {
             *cx += delta_x;
-            *cy += delta_y;
+            *cy += delta_y_accel;
 
             // Check if the gesture moved far enough to decide. Threshold copied from GNOME Shell.
             let (cx, cy) = (*cx, *cy);
