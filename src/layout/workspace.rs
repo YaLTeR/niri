@@ -17,6 +17,7 @@ use super::{LayoutElement, Options};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::swipe_tracker::SwipeTracker;
 use crate::utils::output_size;
 
 #[derive(Debug)]
@@ -90,6 +91,8 @@ enum ViewOffsetAdjustment {
 #[derive(Debug)]
 struct ViewGesture {
     current_view_offset: f64,
+    tracker: SwipeTracker,
+    delta_from_tracker: f64,
 }
 
 /// Width of a column.
@@ -1230,39 +1233,51 @@ impl<W: LayoutElement> Workspace<W> {
 
         let gesture = ViewGesture {
             current_view_offset: self.view_offset as f64,
+            tracker: SwipeTracker::new(),
+            delta_from_tracker: self.view_offset as f64,
         };
         self.view_offset_adj = Some(ViewOffsetAdjustment::Gesture(gesture));
     }
 
-    pub fn view_offset_gesture_update(&mut self, delta_x: f64) -> Option<bool> {
+    pub fn view_offset_gesture_update(
+        &mut self,
+        delta_x: f64,
+        timestamp: Duration,
+    ) -> Option<bool> {
         let Some(ViewOffsetAdjustment::Gesture(gesture)) = &mut self.view_offset_adj else {
             return None;
         };
 
-        let mut new_offset = gesture.current_view_offset + delta_x;
-        gesture.current_view_offset = new_offset;
+        gesture.tracker.push(delta_x, timestamp);
+
+        let view_offset = gesture.tracker.pos() + gesture.delta_from_tracker;
+        gesture.current_view_offset = view_offset;
 
         if self.columns.is_empty() {
             return Some(true);
         }
 
-        // Switch the next window to be active, if necessary.
-        //
-        // The logic here is similar to PaperWM. The idea is: make the next window (in the
-        // direction of the gesture) active when it becomes "more visible" than the current active
-        // window.
+        // Check if moving too slow to switch focus.
+        if delta_x.abs() < 1. {
+            return Some(true);
+        }
 
-        // Make an iterator over column indices into the gesture direction.
-        let mut idxs_before = (0..=self.active_column_idx).rev();
-        let mut idxs_after = self.active_column_idx..self.columns.len();
-        let next_column_idxs = if delta_x < 0. {
-            &mut idxs_before as &mut dyn Iterator<Item = usize>
+        // Switch focus to the furthest visible window towards the gesture direction.
+
+        // Make an iterator over column indices towards the gesture direction.
+        let mut idxs_forward = 0..self.columns.len();
+        let mut idxs_back = idxs_forward.clone().rev();
+        let idxs = if delta_x < 0. {
+            &mut idxs_back as &mut dyn Iterator<Item = usize>
         } else {
-            &mut idxs_after as &mut dyn Iterator<Item = usize>
+            &mut idxs_forward as &mut dyn Iterator<Item = usize>
         };
 
-        let mut last = None;
-        for col_idx in next_column_idxs {
+        let active_col_x = self.column_x(self.active_column_idx);
+        let mut new_col_idx = self.active_column_idx;
+        let mut new_col_x = active_col_x;
+
+        for col_idx in idxs {
             let col = &self.columns[col_idx];
             let col_x = self.column_x(col_idx);
             let col_w = col.width();
@@ -1273,24 +1288,7 @@ impl<W: LayoutElement> Workspace<W> {
                 self.working_area
             };
 
-            if let Some((last_col_x, _)) = last {
-                area_for_col.loc.x += last_col_x + new_offset.round() as i32;
-            } else {
-                // First iteration of the loop; col_idx == self.active_column_idx.
-                area_for_col.loc.x += col_x + new_offset.round() as i32;
-            }
-
-            // Check if the column is fully visible.
-            if area_for_col.loc.x <= col_x
-                && col_x + col_w <= area_for_col.loc.x + area_for_col.size.w
-            {
-                // Make it the new active column.
-                if let Some((last_col_x, _)) = last {
-                    new_offset += (last_col_x - col_x) as f64;
-                    self.active_column_idx = col_idx;
-                }
-                break;
-            }
+            area_for_col.loc.x += active_col_x + view_offset.round() as i32;
 
             // Check if the column is already past the working area.
             if (delta_x >= 0. && area_for_col.loc.x + area_for_col.size.w <= col_x)
@@ -1299,46 +1297,19 @@ impl<W: LayoutElement> Workspace<W> {
                 break;
             }
 
-            // Compute the visible width (inside the working area).
-            let visible_width = col_w
-                - max(0, area_for_col.loc.x - col_x)
-                - max(
-                    0,
-                    (col_x + col_w) - (area_for_col.loc.x + area_for_col.size.w),
-                );
-            let visible_ratio = if col_w == 0 {
-                1.
-            } else {
-                visible_width as f64 / col_w as f64
-            };
-
-            if let Some((last_col_x, last_ratio)) = last {
-                // Check if we reached the first visible window.
-                if area_for_col.loc.x < col_x + col_w
-                    && col_x < area_for_col.loc.x + area_for_col.size.w
-                {
-                    // If it's more visible than the last one, make it active.
-                    if visible_ratio >= last_ratio {
-                        new_offset += (last_col_x - col_x) as f64;
-                        self.active_column_idx = col_idx;
-                    }
-
-                    break;
-                }
-
-                // Still working through invisible windows.
-                new_offset += (last_col_x - col_x) as f64;
-                self.active_column_idx = col_idx;
-            }
-
-            last = Some((col_x, visible_ratio));
+            new_col_idx = col_idx;
+            new_col_x = col_x;
         }
 
         let Some(ViewOffsetAdjustment::Gesture(gesture)) = &mut self.view_offset_adj else {
             unreachable!();
         };
 
-        gesture.current_view_offset = new_offset;
+        let delta = (active_col_x - new_col_x) as f64;
+        gesture.delta_from_tracker += delta;
+        gesture.current_view_offset += delta;
+        self.active_column_idx = new_col_idx;
+
         Some(true)
     }
 
@@ -1354,7 +1325,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         // FIXME: keep track of gesture velocity and use it to compute the final point and
         // to animate to it.
-        let offset = gesture.current_view_offset.round() as i32;
+        let offset = gesture.tracker.pos() + gesture.delta_from_tracker;
+        let offset = offset.round() as i32;
 
         self.view_offset = offset;
         self.view_offset_adj = None;

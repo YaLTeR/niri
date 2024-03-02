@@ -1660,7 +1660,11 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn view_offset_gesture_update(&mut self, delta_x: f64) -> Option<Option<Output>> {
+    pub fn view_offset_gesture_update(
+        &mut self,
+        delta_x: f64,
+        timestamp: Duration,
+    ) -> Option<Option<Output>> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => return None,
@@ -1668,7 +1672,7 @@ impl<W: LayoutElement> Layout<W> {
 
         for monitor in monitors {
             for ws in &mut monitor.workspaces {
-                if let Some(refresh) = ws.view_offset_gesture_update(delta_x) {
+                if let Some(refresh) = ws.view_offset_gesture_update(delta_x, timestamp) {
                     if refresh {
                         return Some(Some(monitor.output.clone()));
                     } else {
@@ -2036,6 +2040,7 @@ mod tests {
         ViewOffsetGestureUpdate {
             #[proptest(strategy = "arbitrary_view_offset_gesture_delta()")]
             delta: f64,
+            timestamp: Duration,
         },
         ViewOffsetGestureEnd,
         WorkspaceSwitchGestureBegin {
@@ -2293,8 +2298,8 @@ mod tests {
 
                     layout.view_offset_gesture_begin(&output);
                 }
-                Op::ViewOffsetGestureUpdate { delta } => {
-                    layout.view_offset_gesture_update(delta);
+                Op::ViewOffsetGestureUpdate { delta, timestamp } => {
+                    layout.view_offset_gesture_update(delta, timestamp);
                 }
                 Op::ViewOffsetGestureEnd => {
                     // We don't handle cancels in this gesture.

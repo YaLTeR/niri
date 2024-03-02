@@ -1269,7 +1269,10 @@ impl State {
             handled = true;
         }
 
-        let res = self.niri.layout.view_offset_gesture_update(delta_x);
+        let res = self
+            .niri
+            .layout
+            .view_offset_gesture_update(delta_x, timestamp);
         if let Some(output) = res {
             if let Some(output) = output {
                 self.niri.queue_redraw(output);
