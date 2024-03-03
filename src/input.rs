@@ -9,7 +9,7 @@ use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
     InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
+    PointerMotionEvent, ProximityState, SwitchToggleEvent, TabletToolButtonEvent, TabletToolEvent,
     TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
@@ -109,7 +109,7 @@ impl State {
             TouchUp { event } => self.on_touch_up::<I>(event),
             TouchCancel { event } => self.on_touch_cancel::<I>(event),
             TouchFrame { event } => self.on_touch_frame::<I>(event),
-            SwitchToggle { .. } => (),
+            SwitchToggle { event } => self.on_switch_toggle::<I>(event),
             Special(_) => (),
         }
 
@@ -278,6 +278,7 @@ impl State {
                     *mods,
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
+                    this.niri.tablet_mode,
                 )
             },
         ) else {
@@ -330,6 +331,11 @@ impl State {
             }
             Action::ToggleDebugTint => {
                 self.backend.toggle_debug_tint();
+                self.niri.queue_redraw_all();
+            }
+            Action::ToggleTabletMode => {
+                self.niri.tablet_mode = !self.niri.tablet_mode;
+                // FIXME: redraw only outputs overlapping the cursor.
                 self.niri.queue_redraw_all();
             }
             Action::Spawn(command) => {
@@ -697,6 +703,10 @@ impl State {
     }
 
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
+        if self.niri.tablet_mode {
+            return;
+        }
+
         // We need an output to be able to move the pointer.
         if self.niri.global_space.outputs().next().is_none() {
             return;
@@ -932,6 +942,10 @@ impl State {
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
+        if self.niri.tablet_mode {
+            return;
+        }
+
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -997,6 +1011,9 @@ impl State {
     }
 
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
+        if self.niri.tablet_mode {
+            return;
+        }
         let source = event.source();
 
         let horizontal_amount = event
@@ -1538,6 +1555,14 @@ impl State {
         };
         handle.cancel(self);
     }
+
+    fn on_switch_toggle<B: InputBackend>(&mut self, event: B::SwitchToggleEvent) {
+        if event.switch() == Some(smithay::backend::input::Switch::TabletMode) {
+            self.niri.tablet_mode = event.state() == smithay::backend::input::SwitchState::On;
+            // FIXME: redraw only outputs overlapping the cursor.
+            self.niri.queue_redraw_all();
+        }
+    }
 }
 
 /// Check whether the key should be intercepted and mark intercepted
@@ -1555,6 +1580,7 @@ fn should_intercept_key(
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
+    tablet_mode: bool,
 ) -> FilterResult<Option<Action>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -1571,6 +1597,13 @@ fn should_intercept_key(
         mods,
         disable_power_key_handling,
     );
+
+    if tablet_mode {
+        if final_action != Some(Action::ToggleTabletMode) {
+            suppressed_keys.insert(key_code);
+            return FilterResult::Intercept(None);
+        }
+    }
 
     // Allow only a subset of compositor actions while the screenshot UI is open, since the user
     // cannot see the screen.
@@ -1842,6 +1875,7 @@ mod tests {
 
         let screenshot_ui = ScreenshotUi::new();
         let disable_power_key_handling = false;
+        let tablet_mode = false;
 
         // The key_code we pick is arbitrary, the only thing
         // that matters is that they are different between cases.
@@ -1859,6 +1893,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                tablet_mode,
             )
         };
 
@@ -1875,6 +1910,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                tablet_mode,
             )
         };
 
