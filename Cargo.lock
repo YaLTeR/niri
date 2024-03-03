@@ -2119,6 +2119,7 @@ dependencies = [
  "async-channel",
  "async-io 1.13.0",
  "bitflags 2.4.2",
+ "bytemuck",
  "calloop 0.13.0",
  "clap",
  "directories",

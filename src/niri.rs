@@ -101,6 +101,7 @@ use crate::input::{apply_libinput_settings, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
+use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
@@ -187,6 +188,7 @@ pub struct Niri {
     pub popup_grab: Option<PopupGrabState>,
     pub presentation_state: PresentationState,
     pub security_context_state: SecurityContextState,
+    pub gamma_control_manager_state: GammaControlManagerState,
 
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
@@ -929,6 +931,15 @@ impl Niri {
         let viewporter_state = ViewporterState::new::<State>(&display_handle);
         let xdg_foreign_state = XdgForeignState::new::<State>(&display_handle);
 
+        let gamma_control_manager_state = GammaControlManagerState::new::<State, _>(
+            &display_handle,
+            match backend {
+                Backend::Tty(_) => true,
+                _ => false,
+            },
+            |client| !client.get_data::<ClientState>().unwrap().restricted,
+        );
+
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
@@ -1082,6 +1093,7 @@ impl Niri {
             suppressed_keys: HashSet::new(),
             presentation_state,
             security_context_state,
+            gamma_control_manager_state,
 
             seat,
             keyboard_focus: None,
