@@ -1285,8 +1285,6 @@ impl<W: LayoutElement> Workspace<W> {
         let end_pos = gesture.tracker.projected_end_pos() * norm_factor;
         let target_view_offset = end_pos + gesture.delta_from_tracker;
 
-        // FIXME: the following logic needs to be different for center column = always.
-
         // Compute the snapping points. These are where the view aligns with column boundaries on
         // either side.
         struct Snap {
@@ -1298,40 +1296,59 @@ impl<W: LayoutElement> Workspace<W> {
 
         let mut snapping_points = Vec::new();
 
-        let view_width = self.view_size.w;
-        let mut push = |col_idx, left, right| {
-            snapping_points.push(Snap {
-                view_pos: left,
-                col_idx,
-            });
-            snapping_points.push(Snap {
-                view_pos: right - view_width,
-                col_idx,
-            });
-        };
-
         let left_strut = self.working_area.loc.x;
         let right_strut = self.view_size.w - self.working_area.size.w - self.working_area.loc.x;
 
-        let mut col_x = 0;
-        for (col_idx, col) in self.columns.iter().enumerate() {
-            let col_w = col.width();
+        if self.options.center_focused_column == CenterFocusedColumn::Always {
+            let mut col_x = 0;
+            for (col_idx, col) in self.columns.iter().enumerate() {
+                let col_w = col.width();
 
-            // Normal columns align with the working area, but fullscreen columns align with the
-            // view size.
-            if col.is_fullscreen {
-                let left = col_x;
-                let right = col_x + col_w;
-                push(col_idx, left, right);
-            } else {
-                // Logic from compute_new_view_offset.
-                let padding = ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
-                let left = col_x - padding - left_strut;
-                let right = col_x + col_w + padding + right_strut;
-                push(col_idx, left, right);
+                let view_pos = if col.is_fullscreen {
+                    col_x
+                } else if self.working_area.size.w <= col_w {
+                    col_x - left_strut
+                } else {
+                    col_x - (self.working_area.size.w - col_w) / 2 - left_strut
+                };
+                snapping_points.push(Snap { view_pos, col_idx });
+
+                col_x += col_w + self.options.gaps;
             }
+        } else {
+            let view_width = self.view_size.w;
+            let mut push = |col_idx, left, right| {
+                snapping_points.push(Snap {
+                    view_pos: left,
+                    col_idx,
+                });
+                snapping_points.push(Snap {
+                    view_pos: right - view_width,
+                    col_idx,
+                });
+            };
 
-            col_x += col_w + self.options.gaps;
+            let mut col_x = 0;
+            for (col_idx, col) in self.columns.iter().enumerate() {
+                let col_w = col.width();
+
+                // Normal columns align with the working area, but fullscreen columns align with the
+                // view size.
+                if col.is_fullscreen {
+                    let left = col_x;
+                    let right = col_x + col_w;
+                    push(col_idx, left, right);
+                } else {
+                    // Logic from compute_new_view_offset.
+                    let padding =
+                        ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
+                    let left = col_x - padding - left_strut;
+                    let right = col_x + col_w + padding + right_strut;
+                    push(col_idx, left, right);
+                }
+
+                col_x += col_w + self.options.gaps;
+            }
         }
 
         // Find the closest snapping point.
@@ -1346,48 +1363,50 @@ impl<W: LayoutElement> Workspace<W> {
 
         let mut new_col_idx = target_snap.col_idx;
 
-        // Focus the furthest window towards the direction of the gesture.
-        if target_view_offset >= current_view_offset {
-            for col_idx in (new_col_idx + 1)..self.columns.len() {
-                let col = &self.columns[col_idx];
-                let col_x = self.column_x(col_idx);
-                let col_w = col.width();
+        if self.options.center_focused_column != CenterFocusedColumn::Always {
+            // Focus the furthest window towards the direction of the gesture.
+            if target_view_offset >= current_view_offset {
+                for col_idx in (new_col_idx + 1)..self.columns.len() {
+                    let col = &self.columns[col_idx];
+                    let col_x = self.column_x(col_idx);
+                    let col_w = col.width();
 
-                if col.is_fullscreen {
-                    if target_snap.view_pos + self.view_size.w < col_x + col_w {
-                        break;
+                    if col.is_fullscreen {
+                        if target_snap.view_pos + self.view_size.w < col_x + col_w {
+                            break;
+                        }
+                    } else {
+                        let padding =
+                            ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
+                        if target_snap.view_pos + left_strut + self.working_area.size.w
+                            < col_x + col_w + padding
+                        {
+                            break;
+                        }
                     }
-                } else {
-                    let padding =
-                        ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
-                    if target_snap.view_pos + left_strut + self.working_area.size.w
-                        < col_x + col_w + padding
-                    {
-                        break;
-                    }
+
+                    new_col_idx = col_idx;
                 }
+            } else {
+                for col_idx in (0..new_col_idx).rev() {
+                    let col = &self.columns[col_idx];
+                    let col_x = self.column_x(col_idx);
+                    let col_w = col.width();
 
-                new_col_idx = col_idx;
-            }
-        } else {
-            for col_idx in (0..new_col_idx).rev() {
-                let col = &self.columns[col_idx];
-                let col_x = self.column_x(col_idx);
-                let col_w = col.width();
+                    if col.is_fullscreen {
+                        if col_x < target_snap.view_pos {
+                            break;
+                        }
+                    } else {
+                        let padding =
+                            ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
+                        if col_x - padding < target_snap.view_pos + left_strut {
+                            break;
+                        }
+                    }
 
-                if col.is_fullscreen {
-                    if col_x < target_snap.view_pos {
-                        break;
-                    }
-                } else {
-                    let padding =
-                        ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
-                    if col_x - padding < target_snap.view_pos + left_strut {
-                        break;
-                    }
+                    new_col_idx = col_idx;
                 }
-
-                new_col_idx = col_idx;
             }
         }
 
@@ -1405,8 +1424,7 @@ impl<W: LayoutElement> Workspace<W> {
             niri_config::Animation::default_horizontal_view_movement(),
         )));
 
-        // HACK: deal with things like snapping to the right edge of a larger-than-view window and
-        // center column = always.
+        // HACK: deal with things like snapping to the right edge of a larger-than-view window.
         self.animate_view_offset_to_column(self.view_pos(), new_col_idx, None);
 
         true
