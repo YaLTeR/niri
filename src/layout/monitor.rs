@@ -18,6 +18,9 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::swipe_tracker::SwipeTracker;
 use crate::utils::output_size;
 
+/// Amount of touchpad movement to scroll the height of one workspace.
+const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
+
 #[derive(Debug)]
 pub struct Monitor<W: LayoutElement> {
     /// Output for this monitor.
@@ -721,8 +724,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         gesture.tracker.push(delta_y, timestamp);
 
-        // Normalize like AdwSwipeTracker.
-        let pos = gesture.tracker.pos() / 300.;
+        let pos = gesture.tracker.pos() / WORKSPACE_GESTURE_MOVEMENT;
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
@@ -747,7 +749,7 @@ impl<W: LayoutElement> Monitor<W> {
             return true;
         }
 
-        let pos = gesture.tracker.projected_end_pos() / 400.;
+        let pos = gesture.tracker.projected_end_pos() / WORKSPACE_GESTURE_MOVEMENT;
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
