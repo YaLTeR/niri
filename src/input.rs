@@ -1219,12 +1219,10 @@ impl State {
         let mut delta_x = event.delta_x();
         let mut delta_y = event.delta_y();
 
-        // FIXME: remove once X is also unaccelerated.
-        let delta_y_accel = delta_y;
-
         if let Some(libinput_event) =
             (&event as &dyn Any).downcast_ref::<input::event::gesture::GestureSwipeUpdateEvent>()
         {
+            delta_x = libinput_event.dx_unaccelerated();
             delta_y = libinput_event.dy_unaccelerated();
         }
 
@@ -1238,7 +1236,7 @@ impl State {
 
         if let Some((cx, cy)) = &mut self.niri.gesture_swipe_3f_cumulative {
             *cx += delta_x;
-            *cy += delta_y_accel;
+            *cy += delta_y;
 
             // Check if the gesture moved far enough to decide. Threshold copied from GNOME Shell.
             let (cx, cy) = (*cx, *cy);
