@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -644,7 +645,7 @@ impl Tty {
 
         if non_desktop {
             debug!("output is non desktop");
-            let description = EdidInfo::for_connector(&device.drm, connector.handle())
+            let description = get_edid_info(&device.drm, connector.handle())
                 .map(|info| truncate_to_nul(info.model))
                 .unwrap_or_else(|| "Unknown".into());
             device.drm_lease_state.add_connector::<State>(
@@ -704,7 +705,7 @@ impl Tty {
         // Update the output mode.
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
 
-        let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
+        let (make, model) = get_edid_info(&device.drm, connector.handle())
             .map(|info| {
                 (
                     truncate_to_nul(info.manufacturer),
@@ -1250,7 +1251,7 @@ impl Tty {
 
                 let physical_size = connector.size();
 
-                let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
+                let (make, model) = get_edid_info(&device.drm, connector.handle())
                     .map(|info| {
                         (
                             truncate_to_nul(info.manufacturer),
@@ -1753,6 +1754,18 @@ fn truncate_to_nul(mut s: String) -> String {
         s.truncate(index);
     }
     s
+}
+
+fn get_edid_info(device: &DrmDevice, connector: connector::Handle) -> Option<EdidInfo> {
+    match catch_unwind(AssertUnwindSafe(move || {
+        EdidInfo::for_connector(device, connector)
+    })) {
+        Ok(info) => info,
+        Err(err) => {
+            warn!("edid-rs panicked: {err:?}");
+            None
+        }
+    }
 }
 
 #[cfg(test)]
