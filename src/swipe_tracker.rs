@@ -42,7 +42,7 @@ impl SwipeTracker {
         self.history.push_back(Event { delta, timestamp });
         self.pos += delta;
 
-        self.retain_recent();
+        self.trim_history();
     }
 
     /// Returns the current gesture position.
@@ -71,7 +71,7 @@ impl SwipeTracker {
         self.pos - vel / (1000. * DECELERATION_TOUCHPAD.ln())
     }
 
-    fn retain_recent(&mut self) {
+    fn trim_history(&mut self) {
         let Some(&Event { timestamp, .. }) = self.history.back() else {
             return;
         };
