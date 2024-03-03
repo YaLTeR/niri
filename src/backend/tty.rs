@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{io, mem};
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, bail, ensure, Context};
 use libc::dev_t;
 use niri_config::Config;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -1242,6 +1242,65 @@ impl Tty {
         ) {
             warn!("error doing early import: {err:?}");
         }
+    }
+
+    pub fn get_gamma_length(&self, output: &Output) -> Option<u32> {
+        let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
+        let device = self.devices.get(&tty_state.node)?;
+        let crtc_info = device.drm.get_crtc(tty_state.crtc.clone()).ok()?;
+        return Some(crtc_info.gamma_length());
+    }
+
+    pub fn get_gamma(&self, output: &Output) -> Option<Vec<u16>> {
+        let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
+        let device = self.devices.get(&tty_state.node)?;
+        let crtc_info = device.drm.get_crtc(tty_state.crtc.clone()).ok()?;
+        let crtc = tty_state.crtc.clone();
+        let gamma_length = crtc_info.gamma_length() as usize;
+        let mut red = vec![0; gamma_length];
+        let mut green = vec![0; gamma_length];
+        let mut blue = vec![0; gamma_length];
+        if let Err(err) = device.drm.get_gamma(crtc, &mut red, &mut green, &mut blue) {
+            warn!("error getting gamma for crtc {crtc:?}: {err:?}");
+            return None;
+        }
+        red.extend(green);
+        red.extend(blue);
+        return Some(red);
+    }
+
+    pub fn set_gamma(
+        &self,
+        niri: &mut Niri,
+        output: &Output,
+        ramp: Vec<u16>,
+    ) -> anyhow::Result<()> {
+        let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
+        let device = self
+            .devices
+            .get(&tty_state.node)
+            .context("missing device")?;
+
+        let crtc_info = device.drm.get_crtc(tty_state.crtc.clone())?;
+        let crtc = tty_state.crtc.clone();
+        let gamma_length = crtc_info.gamma_length() as usize;
+
+        ensure!(ramp.len() == gamma_length * 3, "wrong gamma length");
+        let mut red = ramp.clone();
+        red.truncate(gamma_length);
+        let mut green = ramp.clone();
+        green.drain(0..gamma_length);
+        green.truncate(gamma_length);
+        let mut blue = ramp;
+        blue.drain(0..gamma_length * 2);
+        blue.truncate(gamma_length);
+
+        device
+            .drm
+            .set_gamma(crtc, &mut red, &mut green, &mut blue)
+            .context("error setting gamma")?;
+        niri.queue_redraw(output.clone());
+        Ok(())
     }
 
     fn refresh_ipc_outputs(&self) {

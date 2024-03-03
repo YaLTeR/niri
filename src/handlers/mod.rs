@@ -8,6 +8,7 @@ use std::os::fd::OwnedFd;
 use std::sync::Arc;
 use std::thread;
 
+use anyhow::anyhow;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::desktop::{PopupKind, PopupManager};
@@ -15,6 +16,7 @@ use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_server::backend::ObjectId;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -58,9 +60,10 @@ use crate::niri::{ClientState, State};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
+use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
 use crate::utils::output_size;
-use crate::{delegate_foreign_toplevel, delegate_screencopy};
+use crate::{delegate_foreign_toplevel, delegate_gamma_control, delegate_screencopy};
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -440,3 +443,58 @@ impl DrmLeaseHandler for State {
 delegate_drm_lease!(State);
 
 delegate_viewporter!(State);
+
+impl GammaControlHandler for State {
+    fn gamma_control_manager_state(&mut self) -> &mut GammaControlManagerState {
+        &mut self.niri.gamma_control_manager_state
+    }
+
+    fn set_gamma(
+        &mut self,
+        wl_output: &WlOutput,
+        ramp: Vec<u16>,
+        gamma_size: u32,
+    ) -> anyhow::Result<()> {
+        if ramp.len() != gamma_size as usize * 3 {
+            error!(
+                "gamma length wrong (expected {}, got {})",
+                gamma_size,
+                ramp.len()
+            );
+            return Err(anyhow!("Gamma length wrong"));
+        }
+
+        let Some(output) = Output::from_resource(wl_output) else {
+            return Err(anyhow!("No Output matching WlOutput"));
+        };
+
+        self.backend.tty().set_gamma(&mut self.niri, &output, ramp)
+    }
+
+    fn get_gamma(&mut self, wl_output: &WlOutput) -> Option<Vec<u16>> {
+        let output = Output::from_resource(wl_output)?;
+
+        let gamma_ramp = self.backend.tty().get_gamma(&output);
+        if gamma_ramp.is_none() {
+            warn!("Failed to get gamma ramp");
+        }
+        gamma_ramp
+    }
+
+    fn destroy(&mut self, output_id: ObjectId) {
+        self.niri
+            .gamma_control_manager_state
+            .destroy_gamma_control(output_id)
+    }
+
+    fn get_gamma_size(&mut self, wl_output: &WlOutput) -> Option<u32> {
+        let output = Output::from_resource(wl_output)?;
+        let gamma_size = self.backend.tty().get_gamma_length(&output);
+        if gamma_size.is_none() {
+            warn!("Failed to get gamma size");
+        }
+        gamma_size
+    }
+}
+
+delegate_gamma_control!(State);
