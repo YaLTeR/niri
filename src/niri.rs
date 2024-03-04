@@ -18,7 +18,9 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::utils::{select_dmabuf_feedback, RelocateRenderElement};
+use smithay::backend::renderer::element::utils::{
+    select_dmabuf_feedback, Relocate, RelocateRenderElement,
+};
 use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, AsRenderElements, Id, Kind, PrimaryScanoutOutput,
     RenderElementStates,
@@ -97,9 +99,10 @@ use crate::input::{apply_libinput_settings, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
+use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{render_to_texture, render_to_vec};
+use crate::render_helpers::{render_to_shm, render_to_texture, render_to_vec};
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
@@ -154,6 +157,7 @@ pub struct Niri {
     pub layer_shell_state: WlrLayerShellState,
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
+    pub screencopy_state: ScreencopyManagerState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
@@ -247,6 +251,7 @@ pub struct OutputState {
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
+    pub pending_screencopy: Vec<Screencopy>,
 }
 
 #[derive(Default)]
@@ -910,6 +915,9 @@ impl Niri {
             ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
+        let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
+            !client.get_data::<ClientState>().unwrap().restricted
+        });
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -1030,6 +1038,7 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            screencopy_state,
             text_input_state,
             input_method_state,
             virtual_keyboard_state,
@@ -1265,6 +1274,7 @@ impl Niri {
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
+            pending_screencopy: Vec::new(),
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
@@ -2166,13 +2176,19 @@ impl Niri {
         // to err on the safe side.
         self.send_frame_callbacks(output);
 
-        // Render and send to PipeWire screencast streams.
-        #[cfg(feature = "xdp-gnome-screencast")]
-        {
-            backend.with_primary_renderer(|renderer| {
+        let y_invert = match backend {
+            Backend::Tty(_) => false,
+            Backend::Winit(_) => true,
+        };
+
+        backend.with_primary_renderer(|renderer| {
+            // Render and send to PipeWire screencast streams.
+            #[cfg(feature = "xdp-gnome-screencast")]
+            {
                 self.render_for_screen_cast(renderer, output, target_presentation_time);
-            });
-        }
+            }
+            self.render_for_screencopy(renderer, output, y_invert);
+        });
     }
 
     pub fn update_primary_scanout_output(
@@ -2507,6 +2523,47 @@ impl Niri {
         }
 
         feedback
+    }
+
+    fn render_for_screencopy(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        y_invert: bool,
+    ) {
+        for mut screencopy in self
+            .output_state
+            .get_mut(output)
+            .map(|s| mem::take(&mut s.pending_screencopy))
+            .unwrap_or_default()
+        {
+            let region = screencopy.region();
+            let elements = self
+                .render(renderer, output, screencopy.overlay_cursor())
+                .into_iter()
+                .rev();
+
+            let scale = output.current_scale().fractional_scale().into();
+
+            let elements = elements.map(|element| {
+                RelocateRenderElement::from_element(
+                    element,
+                    region.loc.upscale(-1),
+                    Relocate::Relative,
+                )
+            });
+
+            let damage = [Rectangle::from_loc_and_size((0, 0), region.size)];
+            screencopy.damage(&damage);
+
+            if let Err(err) =
+                render_to_shm(renderer, screencopy.buffer(), region.size, scale, elements)
+            {
+                warn!("error rendering to screencopy shm buffer: {err:?}")
+            } else {
+                screencopy.submit(y_invert);
+            }
+        }
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]

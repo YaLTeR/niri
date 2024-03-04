@@ -54,12 +54,13 @@ use smithay::{
     delegate_text_input_manager, delegate_virtual_keyboard_manager,
 };
 
-use crate::delegate_foreign_toplevel;
 use crate::niri::{ClientState, State};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
+use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
 use crate::utils::output_size;
+use crate::{delegate_foreign_toplevel, delegate_screencopy};
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -379,6 +380,19 @@ impl ForeignToplevelHandler for State {
     }
 }
 delegate_foreign_toplevel!(State);
+
+impl ScreencopyHandler for State {
+    fn frame(&mut self, screencopy: Screencopy) {
+        let output = screencopy.output().clone();
+        if let Some(state) = self.niri.output_state.get_mut(&output) {
+            state.pending_screencopy.push(screencopy);
+        }
+
+        // Force redraw, to prevent screencopy stalling.
+        self.niri.queue_redraw(output);
+    }
+}
+delegate_screencopy!(State);
 
 impl DrmLeaseHandler for State {
     fn drm_lease_state(&mut self, node: DrmNode) -> &mut DrmLeaseState {
