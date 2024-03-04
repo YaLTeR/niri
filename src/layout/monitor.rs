@@ -584,14 +584,28 @@ impl<W: LayoutElement> Monitor<W> {
                 let size = output_size(&self.output);
 
                 let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor() as usize;
-                let after_idx = render_idx.ceil() as usize;
+                let before_idx = render_idx.floor();
+                let after_idx = render_idx.ceil();
 
-                let offset = ((render_idx - before_idx as f64) * size.h as f64).round() as i32;
+                let offset = ((render_idx - before_idx) * size.h as f64).round() as i32;
+
+                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
+                    return None;
+                }
+
+                let after_idx = after_idx as usize;
 
                 let (idx, ws_offset) = if pos_within_output.y < (size.h - offset) as f64 {
-                    (before_idx, Point::from((0, offset)))
+                    if before_idx < 0. {
+                        return None;
+                    }
+
+                    (before_idx as usize, Point::from((0, offset)))
                 } else {
+                    if after_idx >= self.workspaces.len() {
+                        return None;
+                    }
+
                     (after_idx, Point::from((0, -size.h + offset)))
                 };
 
@@ -630,16 +644,48 @@ impl<W: LayoutElement> Monitor<W> {
         match &self.workspace_switch {
             Some(switch) => {
                 let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor() as usize;
-                let after_idx = render_idx.ceil() as usize;
+                let before_idx = render_idx.floor();
+                let after_idx = render_idx.ceil();
 
-                let offset = ((render_idx - before_idx as f64) * size.h as f64).round() as i32;
+                let offset = ((render_idx - before_idx) * size.h as f64).round() as i32;
 
+                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
+                    return vec![];
+                }
+
+                let after_idx = after_idx as usize;
+                let after = if after_idx < self.workspaces.len() {
+                    let after = self.workspaces[after_idx].render_elements(renderer);
+                    let after = after.into_iter().filter_map(|elem| {
+                        Some(RelocateRenderElement::from_element(
+                            CropRenderElement::from_element(
+                                elem,
+                                output_scale,
+                                // HACK: crop to infinite bounds for all sides except the side
+                                // where the workspaces join,
+                                // otherwise it will cut pixel shaders and mess up
+                                // the coordinate space.
+                                Rectangle::from_extemities(
+                                    (-i32::MAX / 2, 0),
+                                    (i32::MAX / 2, i32::MAX / 2),
+                                ),
+                            )?,
+                            (0, -offset + size.h),
+                            Relocate::Relative,
+                        ))
+                    });
+
+                    if before_idx < 0. {
+                        return after.collect();
+                    }
+
+                    Some(after)
+                } else {
+                    None
+                };
+
+                let before_idx = before_idx as usize;
                 let before = self.workspaces[before_idx].render_elements(renderer);
-                let after = self.workspaces[after_idx].render_elements(renderer);
-
-                // HACK: crop to infinite bounds for all sides except the side where the workspaces
-                // join, otherwise it will cut pixel shaders and mess up the coordinate space.
                 let before = before.into_iter().filter_map(|elem| {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
@@ -654,21 +700,7 @@ impl<W: LayoutElement> Monitor<W> {
                         Relocate::Relative,
                     ))
                 });
-                let after = after.into_iter().filter_map(|elem| {
-                    Some(RelocateRenderElement::from_element(
-                        CropRenderElement::from_element(
-                            elem,
-                            output_scale,
-                            Rectangle::from_extemities(
-                                (-i32::MAX / 2, 0),
-                                (i32::MAX / 2, i32::MAX / 2),
-                            ),
-                        )?,
-                        (0, -offset + size.h),
-                        Relocate::Relative,
-                    ))
-                });
-                before.chain(after).collect()
+                before.chain(after.into_iter().flatten()).collect()
             }
             None => {
                 let elements = self.workspaces[self.active_workspace_idx].render_elements(renderer);
