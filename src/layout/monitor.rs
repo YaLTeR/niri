@@ -15,11 +15,17 @@ use super::workspace::{
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::rubber_band::RubberBand;
 use crate::swipe_tracker::SwipeTracker;
 use crate::utils::output_size;
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
+
+const WORKSPACE_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
+    stiffness: 0.5,
+    limit: 0.05,
+};
 
 #[derive(Debug)]
 pub struct Monitor<W: LayoutElement> {
@@ -762,7 +768,8 @@ impl<W: LayoutElement> Monitor<W> {
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
-        let new_idx = (gesture.center_idx as f64 + pos).clamp(min, max);
+        let new_idx = gesture.center_idx as f64 + pos;
+        let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
 
         if gesture.current_idx == new_idx {
             return Some(false);
@@ -783,13 +790,22 @@ impl<W: LayoutElement> Monitor<W> {
             return true;
         }
 
-        let velocity = gesture.tracker.velocity() / WORKSPACE_GESTURE_MOVEMENT;
+        let mut velocity = gesture.tracker.velocity() / WORKSPACE_GESTURE_MOVEMENT;
+        let current_pos = gesture.tracker.pos() / WORKSPACE_GESTURE_MOVEMENT;
         let pos = gesture.tracker.projected_end_pos() / WORKSPACE_GESTURE_MOVEMENT;
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
-        let new_idx = (gesture.center_idx as f64 + pos).clamp(min, max);
+        let new_idx = gesture.center_idx as f64 + pos;
+
+        let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
         let new_idx = new_idx.round() as usize;
+
+        velocity *= WORKSPACE_GESTURE_RUBBER_BAND.clamp_derivative(
+            min,
+            max,
+            gesture.center_idx as f64 + current_pos,
+        );
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
