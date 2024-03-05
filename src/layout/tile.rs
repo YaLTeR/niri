@@ -198,7 +198,8 @@ impl<W: LayoutElement> Tile<W> {
             .open_animation
             .as_ref()
             .map(|anim| anim.value())
-            .unwrap_or(1.);
+            .unwrap_or(1.)
+            .max(0.);
         Size::from(((f64::from(size.w) * v).round() as i32, size.h))
     }
 
@@ -356,7 +357,7 @@ impl<W: LayoutElement> Tile<W> {
                 renderer,
                 scale.x as i32,
                 &elements,
-                anim.value() as f32,
+                anim.value().clamp(0., 1.) as f32,
             );
             self.window()
                 .set_offscreen_element_id(Some(elem.id().clone()));
@@ -369,7 +370,7 @@ impl<W: LayoutElement> Tile<W> {
                 RescaleRenderElement::from_element(
                     elem,
                     center.to_physical_precise_round(scale),
-                    (anim.value() / 2. + 0.5).min(1.),
+                    (anim.value() / 2. + 0.5).max(0.),
                 ),
             ))
             .into_iter()
