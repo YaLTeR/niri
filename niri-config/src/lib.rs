@@ -527,20 +527,86 @@ impl Default for Animations {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
-    #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument))]
-    pub duration_ms: Option<u32>,
-    #[knuffel(child, unwrap(argument))]
-    pub curve: Option<AnimationCurve>,
+    pub kind: AnimationKind,
 }
 
 impl Animation {
     pub const fn unfilled() -> Self {
         Self {
             off: false,
+            kind: AnimationKind::Easing(EasingParams::unfilled()),
+        }
+    }
+
+    pub const fn default() -> Self {
+        Self {
+            off: false,
+            kind: AnimationKind::Easing(EasingParams::default()),
+        }
+    }
+
+    pub const fn default_workspace_switch() -> Self {
+        Self {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 1000,
+                epsilon: 0.0001,
+            }),
+        }
+    }
+
+    pub const fn default_horizontal_view_movement() -> Self {
+        Self {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        }
+    }
+
+    pub const fn default_config_notification_open_close() -> Self {
+        Self {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 0.6,
+                stiffness: 1000,
+                epsilon: 0.001,
+            }),
+        }
+    }
+
+    pub const fn default_window_open() -> Self {
+        Self {
+            off: false,
+            kind: AnimationKind::Easing(EasingParams {
+                duration_ms: Some(150),
+                curve: Some(AnimationCurve::EaseOutExpo),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AnimationKind {
+    Easing(EasingParams),
+    Spring(SpringParams),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EasingParams {
+    pub duration_ms: Option<u32>,
+    pub curve: Option<AnimationCurve>,
+}
+
+impl EasingParams {
+    pub const fn unfilled() -> Self {
+        Self {
             duration_ms: None,
             curve: None,
         }
@@ -548,29 +614,8 @@ impl Animation {
 
     pub const fn default() -> Self {
         Self {
-            off: false,
             duration_ms: Some(250),
             curve: Some(AnimationCurve::EaseOutCubic),
-        }
-    }
-
-    pub const fn default_workspace_switch() -> Self {
-        Self::default()
-    }
-
-    pub const fn default_horizontal_view_movement() -> Self {
-        Self::default()
-    }
-
-    pub const fn default_config_notification_open_close() -> Self {
-        Self::default()
-    }
-
-    pub const fn default_window_open() -> Self {
-        Self {
-            duration_ms: Some(150),
-            curve: Some(AnimationCurve::EaseOutExpo),
-            ..Self::default()
         }
     }
 }
@@ -579,6 +624,13 @@ impl Animation {
 pub enum AnimationCurve {
     EaseOutCubic,
     EaseOutExpo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpringParams {
+    pub damping_ratio: f64,
+    pub stiffness: u32,
+    pub epsilon: f64,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
@@ -1012,6 +1064,229 @@ where
     }
 }
 
+fn parse_arg_node<S: knuffel::traits::ErrorSpan, T: knuffel::traits::DecodeScalar<S>>(
+    name: &str,
+    node: &knuffel::ast::SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) -> Result<T, DecodeError<S>> {
+    let mut iter_args = node.arguments.iter();
+    let val = iter_args.next().ok_or_else(|| {
+        DecodeError::missing(node, format!("additional argument `{name}` is required"))
+    })?;
+
+    let value = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+
+    if let Some(val) = iter_args.next() {
+        ctx.emit_error(DecodeError::unexpected(
+            &val.literal,
+            "argument",
+            "unexpected argument",
+        ));
+    }
+    for name in node.properties.keys() {
+        ctx.emit_error(DecodeError::unexpected(
+            name,
+            "property",
+            format!("unexpected property `{}`", name.escape_default()),
+        ));
+    }
+    for child in node.children() {
+        ctx.emit_error(DecodeError::unexpected(
+            child,
+            "node",
+            format!("unexpected node `{}`", child.node_name.escape_default()),
+        ));
+    }
+
+    Ok(value)
+}
+
+impl<S> knuffel::Decode<S> for Animation
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let mut off = false;
+        let mut easing_params = EasingParams::unfilled();
+        let mut spring_params = None;
+
+        for child in node.children() {
+            match &**child.node_name {
+                "off" => {
+                    knuffel::decode::check_flag_node(child, ctx);
+                    if off {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "node",
+                            "duplicate node `off`, single node expected",
+                        ));
+                    } else {
+                        off = true;
+                    }
+                }
+                "spring" => {
+                    if easing_params != EasingParams::unfilled() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            "cannot set both spring and easing parameters at once",
+                        ));
+                    }
+                    if spring_params.is_some() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "node",
+                            "duplicate node `spring`, single node expected",
+                        ));
+                    }
+
+                    spring_params = Some(SpringParams::decode_node(child, ctx)?);
+                }
+                "duration-ms" => {
+                    if spring_params.is_some() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            "cannot set both spring and easing parameters at once",
+                        ));
+                    }
+                    if easing_params.duration_ms.is_some() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "node",
+                            "duplicate node `duration-ms`, single node expected",
+                        ));
+                    }
+
+                    easing_params.duration_ms = Some(parse_arg_node("duration-ms", child, ctx)?);
+                }
+                "curve" => {
+                    if spring_params.is_some() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            "cannot set both spring and easing parameters at once",
+                        ));
+                    }
+                    if easing_params.curve.is_some() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "node",
+                            "duplicate node `curve`, single node expected",
+                        ));
+                    }
+
+                    easing_params.curve = Some(parse_arg_node("curve", child, ctx)?);
+                }
+                name_str => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        child,
+                        "node",
+                        format!("unexpected node `{}`", name_str.escape_default()),
+                    ));
+                }
+            }
+        }
+
+        let kind = if let Some(spring_params) = spring_params {
+            AnimationKind::Spring(spring_params)
+        } else {
+            AnimationKind::Easing(easing_params)
+        };
+
+        Ok(Self { off, kind })
+    }
+}
+
+impl<S> knuffel::Decode<S> for SpringParams
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+        if let Some(val) = node.arguments.first() {
+            ctx.emit_error(DecodeError::unexpected(
+                &val.literal,
+                "argument",
+                "unexpected argument",
+            ));
+        }
+        for child in node.children() {
+            ctx.emit_error(DecodeError::unexpected(
+                child,
+                "node",
+                format!("unexpected node `{}`", child.node_name.escape_default()),
+            ));
+        }
+
+        let mut damping_ratio = None;
+        let mut stiffness = None;
+        let mut epsilon = None;
+        for (name, val) in &node.properties {
+            match &***name {
+                "damping-ratio" => {
+                    damping_ratio = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                "stiffness" => {
+                    stiffness = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                "epsilon" => {
+                    epsilon = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                name_str => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        name,
+                        "property",
+                        format!("unexpected property `{}`", name_str.escape_default()),
+                    ));
+                }
+            }
+        }
+        let damping_ratio = damping_ratio
+            .ok_or_else(|| DecodeError::missing(node, "property `damping-ratio` is required"))?;
+        let stiffness = stiffness
+            .ok_or_else(|| DecodeError::missing(node, "property `stiffness` is required"))?;
+        let epsilon =
+            epsilon.ok_or_else(|| DecodeError::missing(node, "property `epsilon` is required"))?;
+
+        if !(0.1..=10.).contains(&damping_ratio) {
+            ctx.emit_error(DecodeError::conversion(
+                node,
+                "damping-ratio must be between 0.1 and 10.0",
+            ));
+        }
+        if stiffness < 1 {
+            ctx.emit_error(DecodeError::conversion(node, "stiffness must be >= 1"));
+        }
+        if !(0.00001..=0.1).contains(&epsilon) {
+            ctx.emit_error(DecodeError::conversion(
+                node,
+                "epsilon must be between 0.00001 and 0.1",
+            ));
+        }
+
+        Ok(SpringParams {
+            damping_ratio,
+            stiffness,
+            epsilon,
+        })
+    }
+}
+
 impl<S> knuffel::Decode<S> for Binds
 where
     S: knuffel::traits::ErrorSpan,
@@ -1345,12 +1620,16 @@ mod tests {
             animations {
                 slowdown 2.0
 
-                workspace-switch { off; }
+                workspace-switch {
+                    spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
+                }
 
                 horizontal-view-movement {
                     duration-ms 100
                     curve "ease-out-expo"
                 }
+
+                window-open { off; }
             }
 
             environment {
@@ -1507,12 +1786,22 @@ mod tests {
                 animations: Animations {
                     slowdown: 2.,
                     workspace_switch: Animation {
-                        off: true,
-                        ..Animation::unfilled()
+                        off: false,
+                        kind: AnimationKind::Spring(SpringParams {
+                            damping_ratio: 1.,
+                            stiffness: 1000,
+                            epsilon: 0.0001,
+                        }),
                     },
                     horizontal_view_movement: Animation {
-                        duration_ms: Some(100),
-                        curve: Some(AnimationCurve::EaseOutExpo),
+                        off: false,
+                        kind: AnimationKind::Easing(EasingParams {
+                            duration_ms: Some(100),
+                            curve: Some(AnimationCurve::EaseOutExpo),
+                        }),
+                    },
+                    window_open: Animation {
+                        off: true,
                         ..Animation::unfilled()
                     },
                     ..Default::default()

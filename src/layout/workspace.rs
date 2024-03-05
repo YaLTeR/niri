@@ -436,9 +436,11 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        // FIXME: also compute and use current velocity.
         self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
             self.view_offset as f64,
             new_view_offset as f64,
+            0.,
             self.options.animations.horizontal_view_movement,
             niri_config::Animation::default_horizontal_view_movement(),
         )));
@@ -1272,6 +1274,7 @@ impl<W: LayoutElement> Workspace<W> {
         // effort and bug potential.
 
         let norm_factor = self.working_area.size.w as f64 / VIEW_GESTURE_WORKING_AREA_MOVEMENT;
+        let velocity = gesture.tracker.velocity() * norm_factor;
         let pos = gesture.tracker.pos() * norm_factor;
         let current_view_offset = pos + gesture.delta_from_tracker;
 
@@ -1420,6 +1423,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
             current_view_offset + delta,
             target_view_offset as f64,
+            velocity,
             self.options.animations.horizontal_view_movement,
             niri_config::Animation::default_horizontal_view_movement(),
         )));

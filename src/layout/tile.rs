@@ -111,6 +111,7 @@ impl<W: LayoutElement> Tile<W> {
         self.open_animation = Some(Animation::new(
             0.,
             1.,
+            0.,
             self.options.animations.window_open,
             niri_config::Animation::default_window_open(),
         ));

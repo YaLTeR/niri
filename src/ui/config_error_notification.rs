@@ -62,6 +62,7 @@ impl ConfigErrorNotification {
         Animation::new(
             from,
             to,
+            0.,
             c.animations.config_notification_open_close,
             niri_config::Animation::default_config_notification_open_close(),
         )
@@ -118,7 +119,9 @@ impl ConfigErrorNotification {
             }
             State::Hiding(anim) => {
                 anim.set_current_time(target_presentation_time);
-                if anim.is_done() {
+                // HACK: prevent bounciness on hiding. This is better done with a clamp property on
+                // the spring animation.
+                if anim.is_done() || anim.value() <= 0. {
                     self.state = State::Hidden;
                 }
             }

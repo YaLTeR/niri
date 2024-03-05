@@ -94,6 +94,7 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
+        // FIXME: also compute and use current velocity.
         let current_idx = self
             .workspace_switch
             .as_ref()
@@ -105,6 +106,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             current_idx,
             idx as f64,
+            0.,
             self.options.animations.workspace_switch,
             niri_config::Animation::default_workspace_switch(),
         )));
@@ -781,6 +783,7 @@ impl<W: LayoutElement> Monitor<W> {
             return true;
         }
 
+        let velocity = gesture.tracker.velocity() / WORKSPACE_GESTURE_MOVEMENT;
         let pos = gesture.tracker.projected_end_pos() / WORKSPACE_GESTURE_MOVEMENT;
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
@@ -792,6 +795,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             gesture.current_idx,
             new_idx as f64,
+            velocity,
             self.options.animations.workspace_switch,
             niri_config::Animation::default_workspace_switch(),
         )));

@@ -6,6 +6,9 @@ use portable_atomic::{AtomicF64, Ordering};
 
 use crate::utils::get_monotonic_time;
 
+mod spring;
+pub use spring::{Spring, SpringParams};
+
 pub static ANIMATION_SLOWDOWN: AtomicF64 = AtomicF64::new(1.);
 
 #[derive(Debug)]
@@ -15,7 +18,19 @@ pub struct Animation {
     duration: Duration,
     start_time: Duration,
     current_time: Duration,
-    curve: Curve,
+    kind: Kind,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Kind {
+    Easing {
+        curve: Curve,
+    },
+    Spring(Spring),
+    Deceleration {
+        initial_velocity: f64,
+        deceleration_rate: f64,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -28,21 +43,63 @@ impl Animation {
     pub fn new(
         from: f64,
         to: f64,
+        initial_velocity: f64,
         config: niri_config::Animation,
         default: niri_config::Animation,
     ) -> Self {
+        if config.off {
+            return Self::ease(from, to, 0, Curve::EaseOutCubic);
+        }
+
+        // Resolve defaults.
+        let (kind, easing_defaults) = match (config.kind, default.kind) {
+            // Configured spring.
+            (configured @ niri_config::AnimationKind::Spring(_), _) => (configured, None),
+            // Configured nothing, defaults spring.
+            (
+                niri_config::AnimationKind::Easing(easing),
+                defaults @ niri_config::AnimationKind::Spring(_),
+            ) if easing == niri_config::EasingParams::unfilled() => (defaults, None),
+            // Configured easing or nothing, defaults easing.
+            (
+                configured @ niri_config::AnimationKind::Easing(_),
+                niri_config::AnimationKind::Easing(defaults),
+            ) => (configured, Some(defaults)),
+            // Configured easing, defaults spring.
+            (
+                configured @ niri_config::AnimationKind::Easing(_),
+                niri_config::AnimationKind::Spring(_),
+            ) => (configured, None),
+        };
+
+        match kind {
+            niri_config::AnimationKind::Spring(p) => {
+                let params = SpringParams::new(p.damping_ratio, f64::from(p.stiffness), p.epsilon);
+
+                let spring = Spring {
+                    from,
+                    to,
+                    initial_velocity,
+                    params,
+                };
+                Self::spring(spring)
+            }
+            niri_config::AnimationKind::Easing(p) => {
+                let defaults = easing_defaults.unwrap_or(niri_config::EasingParams::default());
+                let duration_ms = p.duration_ms.or(defaults.duration_ms).unwrap();
+                let curve = Curve::from(p.curve.or(defaults.curve).unwrap());
+                Self::ease(from, to, u64::from(duration_ms), curve)
+            }
+        }
+    }
+
+    pub fn ease(from: f64, to: f64, duration_ms: u64, curve: Curve) -> Self {
         // FIXME: ideally we shouldn't use current time here because animations started within the
         // same frame cycle should have the same start time to be synchronized.
         let now = get_monotonic_time();
 
-        let duration_ms = if config.off {
-            0
-        } else {
-            config.duration_ms.unwrap_or(default.duration_ms.unwrap())
-        };
-        let duration = Duration::from_millis(u64::from(duration_ms));
-
-        let curve = Curve::from(config.curve.unwrap_or(default.curve.unwrap()));
+        let duration = Duration::from_millis(duration_ms);
+        let kind = Kind::Easing { curve };
 
         Self {
             from,
@@ -50,7 +107,60 @@ impl Animation {
             duration,
             start_time: now,
             current_time: now,
-            curve,
+            kind,
+        }
+    }
+
+    pub fn spring(spring: Spring) -> Self {
+        // FIXME: ideally we shouldn't use current time here because animations started within the
+        // same frame cycle should have the same start time to be synchronized.
+        let now = get_monotonic_time();
+
+        let duration = spring.duration();
+        let kind = Kind::Spring(spring);
+
+        Self {
+            from: spring.from,
+            to: spring.to,
+            duration,
+            start_time: now,
+            current_time: now,
+            kind,
+        }
+    }
+
+    pub fn decelerate(
+        from: f64,
+        initial_velocity: f64,
+        deceleration_rate: f64,
+        threshold: f64,
+    ) -> Self {
+        // FIXME: ideally we shouldn't use current time here because animations started within the
+        // same frame cycle should have the same start time to be synchronized.
+        let now = get_monotonic_time();
+
+        let duration_s = if initial_velocity == 0. {
+            0.
+        } else {
+            let coeff = 1000. * deceleration_rate.ln();
+            (-coeff * threshold / initial_velocity.abs()).ln() / coeff
+        };
+        let duration = Duration::from_secs_f64(duration_s);
+
+        let to = from - initial_velocity / (1000. * deceleration_rate.ln());
+
+        let kind = Kind::Deceleration {
+            initial_velocity,
+            deceleration_rate,
+        };
+
+        Self {
+            from,
+            to,
+            duration,
+            start_time: now,
+            current_time: now,
+            kind,
         }
     }
 
@@ -118,10 +228,29 @@ impl Animation {
     }
 
     pub fn value(&self) -> f64 {
-        let passed = (self.current_time - self.start_time).as_secs_f64();
-        let total = self.duration.as_secs_f64();
-        let x = (passed / total).clamp(0., 1.);
-        self.curve.y(x) * (self.to - self.from) + self.from
+        if self.is_done() {
+            return self.to;
+        }
+
+        let passed = self.current_time - self.start_time;
+
+        match self.kind {
+            Kind::Easing { curve } => {
+                let passed = passed.as_secs_f64();
+                let total = self.duration.as_secs_f64();
+                let x = (passed / total).clamp(0., 1.);
+                curve.y(x) * (self.to - self.from) + self.from
+            }
+            Kind::Spring(spring) => spring.value_at(passed),
+            Kind::Deceleration {
+                initial_velocity,
+                deceleration_rate,
+            } => {
+                let passed = passed.as_secs_f64();
+                let coeff = 1000. * deceleration_rate.ln();
+                self.from + (deceleration_rate.powf(1000. * passed) - 1.) / coeff * initial_velocity
+            }
+        }
     }
 
     pub fn to(&self) -> f64 {
