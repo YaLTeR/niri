@@ -40,8 +40,7 @@ impl Animation {
         } else {
             config.duration_ms.unwrap_or(default.duration_ms.unwrap())
         };
-        let duration = Duration::from_millis(u64::from(duration_ms))
-            .mul_f64(ANIMATION_SLOWDOWN.load(Ordering::Relaxed));
+        let duration = Duration::from_millis(u64::from(duration_ms));
 
         let curve = Curve::from(config.curve.unwrap_or(default.curve.unwrap()));
 
@@ -56,6 +55,61 @@ impl Animation {
     }
 
     pub fn set_current_time(&mut self, time: Duration) {
+        if self.duration.is_zero() {
+            self.current_time = time;
+            return;
+        }
+
+        let end_time = self.start_time + self.duration;
+        if end_time <= self.current_time {
+            return;
+        }
+
+        let slowdown = ANIMATION_SLOWDOWN.load(Ordering::Relaxed);
+        if slowdown <= f64::EPSILON {
+            // Zero slowdown will cause the animation to end right away.
+            self.current_time = end_time;
+            return;
+        }
+
+        // We can't change current_time (since the incoming time values are always real-time), so
+        // apply the slowdown by shifting the start time to compensate.
+        if self.current_time <= time {
+            let delta = time - self.current_time;
+
+            let max_delta = end_time - self.current_time;
+            let min_slowdown = delta.as_secs_f64() / max_delta.as_secs_f64();
+            if slowdown <= min_slowdown {
+                // Our slowdown value will cause the animation to end right away.
+                self.current_time = end_time;
+                return;
+            }
+
+            let adjusted_delta = delta.div_f64(slowdown);
+            if adjusted_delta >= delta {
+                self.start_time -= adjusted_delta - delta;
+            } else {
+                self.start_time += delta - adjusted_delta;
+            }
+        } else {
+            let delta = self.current_time - time;
+
+            let min_slowdown = delta.as_secs_f64() / self.current_time.as_secs_f64();
+            if slowdown <= min_slowdown {
+                // Current time was about to jump to before the animation had started; let's just
+                // cancel the animation in this case.
+                self.current_time = end_time;
+                return;
+            }
+
+            let adjusted_delta = delta.div_f64(slowdown);
+            if adjusted_delta >= delta {
+                self.start_time += adjusted_delta - delta;
+            } else {
+                self.start_time -= delta - adjusted_delta;
+            }
+        }
+
         self.current_time = time;
     }
 
