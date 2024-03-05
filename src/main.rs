@@ -3,6 +3,7 @@ extern crate tracing;
 
 use std::fs::{self, File};
 use std::io::{self, Write};
+use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::process::Command;
 use std::{env, mem};
@@ -211,6 +212,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         warn!("error notifying systemd: {err:?}");
     };
 
+    // Send ready notification to specified file descriptor
+    if let Some(notify_fd) = cli.notify_fd {
+        let mut notif = unsafe { File::from_raw_fd(notify_fd) };
+        if let Err(err) = notif.write_all(b"READY=1\n") {
+            warn!("error notifying fd: {err:?}");
+        }
+    }
+
     // Set up config file watcher.
     let _watcher = if let Some(path) = path.clone() {
         let (tx, rx) = calloop::channel::sync_channel(1);
@@ -258,9 +267,11 @@ fn import_environment() {
     ]
     .join(" ");
 
-    #[cfg(feature = "systemd")]
+    #[cfg(feature = "dinit")]
+    let systemctl = format!("dinitctl setenv {variables} && ");
+    #[cfg(all(not(feature = "dinit"), feature = "systemd"))]
     let systemctl = format!("systemctl --user import-environment {variables} && ");
-    #[cfg(not(feature = "systemd"))]
+    #[cfg(all(not(feature = "dinit"), not(feature = "systemd")))]
     let systemctl = String::new();
 
     let rv = Command::new("/bin/sh")
