@@ -258,6 +258,7 @@ animations {
     // - off disables the animation.
     //
     // Niri supports two animation types: easing and spring.
+    // You can set properties for only ONE of them.
     //
     // Easing has the following settings:
     // - duration-ms sets the duration of the animation in milliseconds.
@@ -313,6 +314,9 @@ animations {
         // off
         // duration-ms 150
         // curve "ease-out-expo"
+
+        // Example for a slightly bouncy window opening:
+        // spring damping-ratio=0.8 stiffness=1000 epsilon=0.0001
     }
 
     // Config parse error and new default config creation notification
