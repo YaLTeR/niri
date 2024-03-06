@@ -213,7 +213,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         warn!("error notifying systemd: {err:?}");
     };
 
-    // Send ready notification to specified file descriptor
+    // Send ready notification to the NOTIFY_FD file descriptor.
     if let Err(err) = notify_fd() {
         warn!("error notifying fd: {err:?}");
     }
