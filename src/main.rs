@@ -214,11 +214,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Send ready notification to specified file descriptor
-    if let Some(notify_fd) = cli.notify_fd {
-        let mut notif = unsafe { File::from_raw_fd(notify_fd) };
-        if let Err(err) = notif.write_all(b"READY=1\n") {
-            warn!("error notifying fd: {err:?}");
-        }
+    if let Err(err) = notify_fd() {
+        warn!("error notifying fd: {err:?}");
     }
 
     // Set up config file watcher.
@@ -314,4 +311,15 @@ fn default_config_path() -> Option<PathBuf> {
     let mut path = dirs.config_dir().to_owned();
     path.push("config.kdl");
     Some(path)
+}
+
+fn notify_fd() -> anyhow::Result<()> {
+    let fd = match env::var("NOTIFY_FD") {
+        Ok(notify_fd) => notify_fd.parse()?,
+        Err(env::VarError::NotPresent) => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    let mut notif = unsafe { File::from_raw_fd(fd) };
+    notif.write_all(b"READY=1\n")?;
+    Ok(())
 }

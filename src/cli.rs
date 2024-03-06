@@ -22,9 +22,6 @@ pub struct Cli {
     /// on a TTY as your non-main compositor instance, to avoid messing up the global environment.
     #[arg(long)]
     pub session: bool,
-    /// File Descriptor to which Niri sends its ready notification
-    #[arg(long)]
-    pub notify_fd: Option<i32>,
     /// Command to run upon compositor startup.
     #[arg(last = true)]
     pub command: Vec<OsString>,
