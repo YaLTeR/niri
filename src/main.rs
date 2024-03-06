@@ -267,7 +267,11 @@ fn import_environment() {
 
     let mut init_system_import = String::new();
     if cfg!(feature = "systemd") {
-        write!(init_system_import, "systemctl --user import-environment {variables};").unwrap();
+        write!(
+            init_system_import,
+            "systemctl --user import-environment {variables};"
+        )
+        .unwrap();
     }
     if cfg!(feature = "dinit") {
         write!(init_system_import, "dinitctl setenv {variables};").unwrap();
