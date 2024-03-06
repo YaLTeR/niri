@@ -1,8 +1,10 @@
 #[macro_use]
 extern crate tracing;
 
+use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::{self, Write};
+use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::process::Command;
 use std::{env, mem};
@@ -211,6 +213,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         warn!("error notifying systemd: {err:?}");
     };
 
+    // Send ready notification to specified file descriptor
+    if let Err(err) = notify_fd() {
+        warn!("error notifying fd: {err:?}");
+    }
+
     // Set up config file watcher.
     let _watcher = if let Some(path) = path.clone() {
         let (tx, rx) = calloop::channel::sync_channel(1);
@@ -258,16 +265,23 @@ fn import_environment() {
     ]
     .join(" ");
 
-    #[cfg(feature = "systemd")]
-    let systemctl = format!("systemctl --user import-environment {variables} && ");
-    #[cfg(not(feature = "systemd"))]
-    let systemctl = String::new();
+    let mut init_system_import = String::new();
+    if cfg!(feature = "systemd") {
+        write!(
+            init_system_import,
+            "systemctl --user import-environment {variables};"
+        )
+        .unwrap();
+    }
+    if cfg!(feature = "dinit") {
+        write!(init_system_import, "dinitctl setenv {variables};").unwrap();
+    }
 
     let rv = Command::new("/bin/sh")
         .args([
             "-c",
             &format!(
-                "{systemctl}\
+                "{init_system_import}\
                  hash dbus-update-activation-environment 2>/dev/null && \
                  dbus-update-activation-environment {variables}"
             ),
@@ -301,4 +315,15 @@ fn default_config_path() -> Option<PathBuf> {
     let mut path = dirs.config_dir().to_owned();
     path.push("config.kdl");
     Some(path)
+}
+
+fn notify_fd() -> anyhow::Result<()> {
+    let fd = match env::var("NOTIFY_FD") {
+        Ok(notify_fd) => notify_fd.parse()?,
+        Err(env::VarError::NotPresent) => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    let mut notif = unsafe { File::from_raw_fd(fd) };
+    notif.write_all(b"READY=1\n")?;
+    Ok(())
 }
