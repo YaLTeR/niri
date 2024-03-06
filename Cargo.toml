@@ -107,7 +107,7 @@ systemd = ["dbus"]
 xdp-gnome-screencast = ["dbus", "pipewire"]
 # Enables the Tracy profiler instrumentation.
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
-# Enables dinit support
+# Enables dinit integration (global environment)
 dinit = []
 
 [profile.release]

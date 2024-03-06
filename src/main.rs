@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate tracing;
 
+use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
@@ -267,18 +268,19 @@ fn import_environment() {
     ]
     .join(" ");
 
-    #[cfg(feature = "dinit")]
-    let systemctl = format!("dinitctl setenv {variables} && ");
-    #[cfg(all(not(feature = "dinit"), feature = "systemd"))]
-    let systemctl = format!("systemctl --user import-environment {variables} && ");
-    #[cfg(all(not(feature = "dinit"), not(feature = "systemd")))]
-    let systemctl = String::new();
+    let mut init_system_import = String::new();
+    if cfg!(feature = "systemd") {
+        write!(init_system_import, "systemctl --user import-environment {variables};").unwrap();
+    }
+    if cfg!(feature = "dinit") {
+        write!(init_system_import, "dinitctl setenv {variables};").unwrap();
+    }
 
     let rv = Command::new("/bin/sh")
         .args([
             "-c",
             &format!(
-                "{systemctl}\
+                "{init_system_import}\
                  hash dbus-update-activation-environment 2>/dev/null && \
                  dbus-update-activation-environment {variables}"
             ),
