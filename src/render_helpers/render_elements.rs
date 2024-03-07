@@ -69,7 +69,7 @@ macro_rules! niri_render_elements {
                 &self,
                 scale: smithay::utils::Scale<f64>,
                 commit: Option<smithay::backend::renderer::utils::CommitCounter>,
-            ) -> Vec<smithay::utils::Rectangle<i32, smithay::utils::Physical>> {
+            ) -> smithay::backend::renderer::utils::DamageSet<i32, smithay::utils::Physical> {
                 match self {
                     $($name::$variant(elem) => elem.damage_since(scale, commit)),+
                 }
