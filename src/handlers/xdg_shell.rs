@@ -22,7 +22,10 @@ use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
     XdgShellState, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
 };
-use smithay::{delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_shell};
+use smithay::wayland::xdg_foreign::{XdgForeignHandler, XdgForeignState};
+use smithay::{
+    delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_foreign, delegate_xdg_shell,
+};
 
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
@@ -526,8 +529,14 @@ impl KdeDecorationHandler for State {
         &self.niri.kde_decoration_state
     }
 }
-
 delegate_kde_decoration!(State);
+
+impl XdgForeignHandler for State {
+    fn xdg_foreign_state(&mut self) -> &mut XdgForeignState {
+        &mut self.niri.xdg_foreign_state
+    }
+}
+delegate_xdg_foreign!(State);
 
 fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
     with_states(toplevel.wl_surface(), |states| {
