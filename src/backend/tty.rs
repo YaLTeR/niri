@@ -29,7 +29,7 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
-use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
+use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
@@ -718,7 +718,7 @@ impl Tty {
             output_name.clone(),
             PhysicalProperties {
                 size: (physical_width as i32, physical_height as i32).into(),
-                subpixel: Subpixel::Unknown,
+                subpixel: connector.subpixel().into(),
                 model,
                 make,
             },
