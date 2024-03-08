@@ -84,6 +84,7 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatTrait};
 use smithay::wayland::text_input::TextInputManagerState;
+use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 
 use crate::backend::tty::SurfaceDmabufFeedback;
@@ -158,6 +159,7 @@ pub struct Niri {
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
     pub screencopy_state: ScreencopyManagerState,
+    pub viewporter_state: ViewporterState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
@@ -917,6 +919,7 @@ impl Niri {
         let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
             !client.get_data::<ClientState>().unwrap().restricted
         });
+        let viewporter_state = ViewporterState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -1038,6 +1041,7 @@ impl Niri {
             session_lock_state,
             foreign_toplevel_state,
             screencopy_state,
+            viewporter_state,
             text_input_state,
             input_method_state,
             virtual_keyboard_state,

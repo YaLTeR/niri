@@ -51,7 +51,7 @@ use smithay::{
     delegate_output, delegate_pointer_constraints, delegate_pointer_gestures,
     delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
     delegate_security_context, delegate_session_lock, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_virtual_keyboard_manager,
+    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
 };
 
 use crate::niri::{ClientState, State};
@@ -438,3 +438,5 @@ impl DrmLeaseHandler for State {
     }
 }
 delegate_drm_lease!(State);
+
+delegate_viewporter!(State);
