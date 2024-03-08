@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{Config, TrackLayout};
 use smithay::backend::allocator::Fourcc;
@@ -18,7 +18,9 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::utils::{select_dmabuf_feedback, RelocateRenderElement};
+use smithay::backend::renderer::element::utils::{
+    select_dmabuf_feedback, Relocate, RelocateRenderElement,
+};
 use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, AsRenderElements, Id, Kind, PrimaryScanoutOutput,
     RenderElementStates,
@@ -97,9 +99,10 @@ use crate::input::{apply_libinput_settings, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
+use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{render_to_texture, render_to_vec};
+use crate::render_helpers::{render_to_shm, render_to_texture, render_to_vec};
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
@@ -154,6 +157,7 @@ pub struct Niri {
     pub layer_shell_state: WlrLayerShellState,
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
+    pub screencopy_state: ScreencopyManagerState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
@@ -910,6 +914,9 @@ impl Niri {
             ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
+        let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
+            !client.get_data::<ClientState>().unwrap().restricted
+        });
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -1030,6 +1037,7 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            screencopy_state,
             text_input_state,
             input_method_state,
             virtual_keyboard_state,
@@ -2166,13 +2174,11 @@ impl Niri {
         // to err on the safe side.
         self.send_frame_callbacks(output);
 
-        // Render and send to PipeWire screencast streams.
-        #[cfg(feature = "xdp-gnome-screencast")]
-        {
-            backend.with_primary_renderer(|renderer| {
-                self.render_for_screen_cast(renderer, output, target_presentation_time);
-            });
-        }
+        backend.with_primary_renderer(|renderer| {
+            // Render and send to PipeWire screencast streams.
+            #[cfg(feature = "xdp-gnome-screencast")]
+            self.render_for_screen_cast(renderer, output, target_presentation_time);
+        });
     }
 
     pub fn update_primary_scanout_output(
@@ -2586,7 +2592,9 @@ impl Niri {
                     .get_or_insert_with(|| self.render::<GlesRenderer>(renderer, output, true));
                 let elements = elements.iter().rev();
 
-                if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
+                if let Err(err) =
+                    render_to_dmabuf(renderer, dmabuf, size, scale, Transform::Normal, elements)
+                {
                     warn!("error rendering to dmabuf: {err:?}");
                     continue;
                 }
@@ -2604,6 +2612,42 @@ impl Niri {
         for id in casts_to_stop {
             self.stop_cast(id);
         }
+    }
+
+    pub fn render_for_screencopy(
+        &mut self,
+        backend: &mut Backend,
+        screencopy: Screencopy,
+    ) -> anyhow::Result<()> {
+        let output = screencopy.output().clone();
+        ensure!(self.output_state.contains_key(&output), "output is missing");
+
+        backend
+            .with_primary_renderer(move |renderer| {
+                let elements = self
+                    .render(renderer, &output, screencopy.overlay_cursor())
+                    .into_iter()
+                    .rev();
+
+                let region_loc = screencopy.region_loc();
+                let elements = elements.map(|element| {
+                    RelocateRenderElement::from_element(
+                        element,
+                        region_loc.upscale(-1),
+                        Relocate::Relative,
+                    )
+                });
+
+                let scale = output.current_scale().fractional_scale().into();
+                let transform = output.current_transform();
+                render_to_shm(renderer, screencopy.buffer(), scale, transform, elements)
+                    .context("error rendering to screencopy shm buffer: {err:?}")?;
+
+                screencopy.submit(false);
+
+                Ok(())
+            })
+            .context("primary renderer is missing")?
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -2665,7 +2709,14 @@ impl Niri {
                 let elements = self.render::<GlesRenderer>(renderer, &output, true);
                 let elements = elements.iter().rev();
 
-                let res = render_to_texture(renderer, size, scale, Fourcc::Abgr8888, elements);
+                let res = render_to_texture(
+                    renderer,
+                    size,
+                    scale,
+                    Transform::Normal,
+                    Fourcc::Abgr8888,
+                    elements,
+                );
                 let screenshot = match res {
                     Ok((texture, _)) => texture,
                     Err(err) => {
@@ -2695,7 +2746,14 @@ impl Niri {
         let scale = Scale::from(output.current_scale().fractional_scale());
         let elements = self.render::<GlesRenderer>(renderer, output, true);
         let elements = elements.iter().rev();
-        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
+        let pixels = render_to_vec(
+            renderer,
+            size,
+            scale,
+            Transform::Normal,
+            Fourcc::Abgr8888,
+            elements,
+        )?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -2721,7 +2779,14 @@ impl Niri {
             1.,
         );
         let elements = elements.iter().rev();
-        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
+        let pixels = render_to_vec(
+            renderer,
+            size,
+            scale,
+            Transform::Normal,
+            Fourcc::Abgr8888,
+            elements,
+        )?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -2824,6 +2889,7 @@ impl Niri {
             renderer,
             size,
             Scale::from(f64::from(output_scale)),
+            Transform::Normal,
             Fourcc::Abgr8888,
             elements,
         )?;

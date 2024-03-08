@@ -54,6 +54,7 @@ impl OffscreenRenderElement {
             renderer,
             geo.size,
             Scale::from(scale as f64),
+            Transform::Normal,
             Fourcc::Abgr8888,
             elements,
         ) {
