@@ -1,8 +1,7 @@
-use std::os::fd::OwnedFd;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
-use calloop::generic::Generic;
-use calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_frame_v1::{
     Flags, ZwlrScreencopyFrameV1,
@@ -16,10 +15,11 @@ use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
-use smithay::utils::{Physical, Rectangle};
+use smithay::utils::{Physical, Point, Rectangle, Size};
 use smithay::wayland::shm;
 
-const VERSION: u32 = 3;
+// We do not support copy_with_damage() semantics yet.
+const VERSION: u32 = 1;
 
 pub struct ScreencopyManagerState;
 
@@ -82,22 +82,23 @@ where
     fn request(
         _state: &mut D,
         _client: &Client,
-        manager: &ZwlrScreencopyManagerV1,
+        _manager: &ZwlrScreencopyManagerV1,
         request: zwlr_screencopy_manager_v1::Request,
         _data: &(),
         _display: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let (frame, overlay_cursor, rect, output) = match request {
+        let (frame, overlay_cursor, buffer_size, region_loc, output) = match request {
             zwlr_screencopy_manager_v1::Request::CaptureOutput {
                 frame,
                 overlay_cursor,
                 output,
             } => {
                 let output = Output::from_resource(&output).unwrap();
-                let rect =
-                    Rectangle::from_loc_and_size((0, 0), output.current_mode().unwrap().size);
-                (frame, overlay_cursor, rect, output)
+                let buffer_size = output.current_mode().unwrap().size;
+                let region_loc = Point::from((0, 0));
+
+                (frame, overlay_cursor, buffer_size, region_loc, output)
             }
             zwlr_screencopy_manager_v1::Request::CaptureOutputRegion {
                 frame,
@@ -108,43 +109,43 @@ where
                 height,
                 output,
             } => {
+                if width <= 0 || height <= 0 {
+                    trace!("screencopy client requested invalid sized region");
+                    let frame = data_init.init(frame, ScreencopyFrameState::Failed);
+                    frame.failed();
+                    return;
+                }
+
                 let output = Output::from_resource(&output).unwrap();
-                let (x, width) = if width < 0 {
-                    (x + width, -width)
-                } else {
-                    (x, width)
-                };
-                let (y, height) = if height < 0 {
-                    (y + height, -height)
-                } else {
-                    (y, height)
-                };
+                let output_transform = output.current_transform();
+                let output_physical_size =
+                    output_transform.transform_size(output.current_mode().unwrap().size);
+                let output_rect = Rectangle::from_loc_and_size((0, 0), output_physical_size);
+
                 let rect = Rectangle::from_loc_and_size((x, y), (width, height));
 
-                // Translate logical rect to physical framebuffer coordinates.
-                let output_transform = output.current_transform();
-                let rotated_rect = output_transform.transform_rect_in(
-                    rect,
-                    &output
-                        .current_mode()
-                        .unwrap()
-                        .size
-                        .to_f64()
-                        .to_logical(output.current_scale().fractional_scale())
-                        .to_i32_round(),
-                );
-                let physical_rect =
-                    rotated_rect.to_physical_precise_round(output.current_scale().integer_scale());
+                let output_scale = output.current_scale().integer_scale();
+                let physical_rect = rect.to_physical(output_scale);
 
                 // Clamp captured region to the output.
-                let clamped_rect = physical_rect
-                    .intersection(Rectangle::from_loc_and_size(
-                        (0, 0),
-                        output.current_mode().unwrap().size,
-                    ))
-                    .unwrap_or_default();
+                let Some(clamped_rect) = physical_rect.intersection(output_rect) else {
+                    trace!("screencopy client requested region outside of output");
+                    let frame = data_init.init(frame, ScreencopyFrameState::Failed);
+                    frame.failed();
+                    return;
+                };
 
-                (frame, overlay_cursor, clamped_rect, output)
+                let untransformed_rect = output_transform
+                    .invert()
+                    .transform_rect_in(clamped_rect, &output_physical_size);
+
+                (
+                    frame,
+                    overlay_cursor,
+                    untransformed_rect.size,
+                    clamped_rect.loc,
+                    output,
+                )
             }
             zwlr_screencopy_manager_v1::Request::Destroy => return,
             _ => unreachable!(),
@@ -152,34 +153,39 @@ where
 
         // Create the frame.
         let overlay_cursor = overlay_cursor != 0;
+        let info = ScreencopyFrameInfo {
+            output,
+            overlay_cursor,
+            buffer_size,
+            region_loc,
+        };
         let frame = data_init.init(
             frame,
-            ScreencopyFrameState {
-                output,
-                overlay_cursor,
-                rect,
+            ScreencopyFrameState::Pending {
+                info,
+                copied: Arc::new(AtomicBool::new(false)),
             },
         );
 
         // Send desired SHM buffer parameters.
         frame.buffer(
             wl_shm::Format::Argb8888,
-            rect.size.w as u32,
-            rect.size.h as u32,
-            rect.size.w as u32 * 4,
+            buffer_size.w as u32,
+            buffer_size.h as u32,
+            buffer_size.w as u32 * 4,
         );
 
-        if manager.version() >= 3 {
-            // // Send desired DMA buffer parameters.
-            // frame.linux_dmabuf(
-            //     Fourcc::Argb8888 as u32,
-            //     rect.size.w as u32,
-            //     rect.size.h as u32,
-            // );
-
-            // Notify client that all supported buffers were enumerated.
-            frame.buffer_done();
-        }
+        // if manager.version() >= 3 {
+        //     // Send desired DMA buffer parameters.
+        //     frame.linux_dmabuf(
+        //         Fourcc::Argb8888 as u32,
+        //         buffer_size.w as u32,
+        //         buffer_size.h as u32,
+        //     );
+        //
+        //     // Notify client that all supported buffers were enumerated.
+        //     frame.buffer_done();
+        // }
     }
 }
 
@@ -208,10 +214,19 @@ macro_rules! delegate_screencopy {
 }
 
 #[derive(Clone)]
-pub struct ScreencopyFrameState {
-    pub output: Output,
-    pub rect: Rectangle<i32, Physical>,
-    pub overlay_cursor: bool,
+pub struct ScreencopyFrameInfo {
+    output: Output,
+    buffer_size: Size<i32, Physical>,
+    region_loc: Point<i32, Physical>,
+    overlay_cursor: bool,
+}
+
+pub enum ScreencopyFrameState {
+    Failed,
+    Pending {
+        info: ScreencopyFrameInfo,
+        copied: Arc<AtomicBool>,
+    },
 }
 
 impl<D> Dispatch<ZwlrScreencopyFrameV1, ScreencopyFrameState, D> for ScreencopyManagerState
@@ -229,38 +244,62 @@ where
         _display: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let (buffer, send_damage) = match request {
+        if matches!(request, zwlr_screencopy_frame_v1::Request::Destroy) {
+            return;
+        }
+
+        let (info, copied) = match data {
+            ScreencopyFrameState::Failed => return,
+            ScreencopyFrameState::Pending { info, copied } => (info, copied),
+        };
+
+        if copied.load(Ordering::SeqCst) {
+            frame.post_error(
+                zwlr_screencopy_frame_v1::Error::AlreadyUsed,
+                "copy was already requested",
+            );
+            return;
+        }
+
+        let (buffer, with_damage) = match request {
             zwlr_screencopy_frame_v1::Request::Copy { buffer } => (buffer, false),
-            zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => (buffer, true),
-            zwlr_screencopy_frame_v1::Request::Destroy => return,
+            // zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => (buffer, true),
             _ => unreachable!(),
         };
 
-        if let Ok(true) = shm::with_buffer_contents(&buffer, |_buf, shm_len, buffer_data| {
+        if !shm::with_buffer_contents(&buffer, |_buf, shm_len, buffer_data| {
             buffer_data.format == wl_shm::Format::Argb8888
-                && buffer_data.stride == data.rect.size.w * 4
-                && buffer_data.height == data.rect.size.h
+                && buffer_data.stride == info.buffer_size.w * 4
+                && buffer_data.height == info.buffer_size.h
                 && shm_len as i32 == buffer_data.stride * buffer_data.height
-        }) {
-            state.frame(Screencopy {
-                send_damage,
-                buffer,
-                frame: frame.clone(),
-                frame_state: data.clone(),
-                submitted: false,
-            });
-        } else {
-            warn!("Client provided invalid buffer for screencopy. Rejecting.");
-            frame.failed();
+        })
+        .unwrap_or(false)
+        {
+            frame.post_error(
+                zwlr_screencopy_frame_v1::Error::InvalidBuffer,
+                "invalid buffer",
+            );
+            return;
         }
+
+        copied.store(true, Ordering::SeqCst);
+
+        state.frame(Screencopy {
+            with_damage,
+            buffer,
+            frame: frame.clone(),
+            info: info.clone(),
+            submitted: false,
+        });
     }
 }
 
 /// Screencopy frame.
 pub struct Screencopy {
-    frame_state: ScreencopyFrameState,
+    info: ScreencopyFrameInfo,
     frame: ZwlrScreencopyFrameV1,
-    send_damage: bool,
+    #[allow(unused)]
+    with_damage: bool,
     buffer: WlBuffer,
     submitted: bool,
 }
@@ -279,30 +318,30 @@ impl Screencopy {
         &self.buffer
     }
 
-    /// Get the region which should be copied.
-    pub fn region(&self) -> Rectangle<i32, Physical> {
-        self.frame_state.rect
+    pub fn region_loc(&self) -> Point<i32, Physical> {
+        self.info.region_loc
+    }
+
+    pub fn buffer_size(&self) -> Size<i32, Physical> {
+        self.info.buffer_size
     }
 
     pub fn output(&self) -> &Output {
-        &self.frame_state.output
+        &self.info.output
     }
 
     pub fn overlay_cursor(&self) -> bool {
-        self.frame_state.overlay_cursor
+        self.info.overlay_cursor
     }
 
-    /// Mark damaged regions of the screencopy buffer.
-    pub fn damage(&mut self, damage: &[Rectangle<i32, Physical>]) {
-        if !self.send_damage {
-            return;
-        }
-
-        for Rectangle { loc, size } in damage {
-            self.frame
-                .damage(loc.x as u32, loc.y as u32, size.w as u32, size.h as u32);
-        }
-    }
+    // pub fn damage(&mut self, damage: &[Rectangle<i32, Physical>]) {
+    //     assert!(self.with_damage);
+    //
+    //     for Rectangle { loc, size } in damage {
+    //         self.frame
+    //             .damage(loc.x as u32, loc.y as u32, size.w as u32, size.h as u32);
+    //     }
+    // }
 
     /// Submit the copied content.
     pub fn submit(mut self, y_invert: bool) {
@@ -314,33 +353,34 @@ impl Screencopy {
         });
 
         // Notify client about successful copy.
-        let now = UNIX_EPOCH.elapsed().unwrap();
-        let secs = now.as_secs();
-        self.frame
-            .ready((secs >> 32) as u32, secs as u32, now.subsec_nanos());
+        let time = UNIX_EPOCH.elapsed().unwrap();
+        let tv_sec_hi = (time.as_secs() >> 32) as u32;
+        let tv_sec_lo = (time.as_secs() & 0xFFFFFFFF) as u32;
+        let tv_nsec = time.subsec_nanos();
+        self.frame.ready(tv_sec_hi, tv_sec_lo, tv_nsec);
 
         // Mark frame as submitted to ensure destructor isn't run.
         self.submitted = true;
     }
 
-    pub fn submit_after_sync<T>(
-        self,
-        y_invert: bool,
-        sync_point: Option<OwnedFd>,
-        event_loop: &LoopHandle<'_, T>,
-    ) {
-        match sync_point {
-            None => self.submit(y_invert),
-            Some(sync_fd) => {
-                let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);
-                let mut screencopy = Some(self);
-                event_loop
-                    .insert_source(source, move |_, _, _| {
-                        screencopy.take().unwrap().submit(y_invert);
-                        Ok(PostAction::Remove)
-                    })
-                    .unwrap();
-            }
-        }
-    }
+    // pub fn submit_after_sync<T>(
+    //     self,
+    //     y_invert: bool,
+    //     sync_point: Option<OwnedFd>,
+    //     event_loop: &LoopHandle<'_, T>,
+    // ) {
+    //     match sync_point {
+    //         None => self.submit(y_invert),
+    //         Some(sync_fd) => {
+    //             let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);
+    //             let mut screencopy = Some(self);
+    //             event_loop
+    //                 .insert_source(source, move |_, _, _| {
+    //                     screencopy.take().unwrap().submit(y_invert);
+    //                     Ok(PostAction::Remove)
+    //                 })
+    //                 .unwrap();
+    //         }
+    //     }
+    // }
 }

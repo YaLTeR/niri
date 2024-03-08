@@ -383,13 +383,12 @@ delegate_foreign_toplevel!(State);
 
 impl ScreencopyHandler for State {
     fn frame(&mut self, screencopy: Screencopy) {
-        let output = screencopy.output().clone();
-        if let Some(state) = self.niri.output_state.get_mut(&output) {
-            state.pending_screencopy.push(screencopy);
+        if let Err(err) = self
+            .niri
+            .render_for_screencopy(&mut self.backend, screencopy)
+        {
+            warn!("error rendering for screencopy: {err:?}");
         }
-
-        // Force redraw, to prevent screencopy stalling.
-        self.niri.queue_redraw(output);
     }
 }
 delegate_screencopy!(State);

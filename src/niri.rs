@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{Config, TrackLayout};
 use smithay::backend::allocator::Fourcc;
@@ -251,7 +251,6 @@ pub struct OutputState {
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
-    pub pending_screencopy: Vec<Screencopy>,
 }
 
 #[derive(Default)]
@@ -1274,7 +1273,6 @@ impl Niri {
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
-            pending_screencopy: Vec::new(),
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
@@ -2176,18 +2174,10 @@ impl Niri {
         // to err on the safe side.
         self.send_frame_callbacks(output);
 
-        let y_invert = match backend {
-            Backend::Tty(_) => false,
-            Backend::Winit(_) => true,
-        };
-
         backend.with_primary_renderer(|renderer| {
             // Render and send to PipeWire screencast streams.
             #[cfg(feature = "xdp-gnome-screencast")]
-            {
-                self.render_for_screen_cast(renderer, output, target_presentation_time);
-            }
-            self.render_for_screencopy(renderer, output, y_invert);
+            self.render_for_screen_cast(renderer, output, target_presentation_time);
         });
     }
 
@@ -2525,47 +2515,6 @@ impl Niri {
         feedback
     }
 
-    fn render_for_screencopy(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        output: &Output,
-        y_invert: bool,
-    ) {
-        for mut screencopy in self
-            .output_state
-            .get_mut(output)
-            .map(|s| mem::take(&mut s.pending_screencopy))
-            .unwrap_or_default()
-        {
-            let region = screencopy.region();
-            let elements = self
-                .render(renderer, output, screencopy.overlay_cursor())
-                .into_iter()
-                .rev();
-
-            let scale = output.current_scale().fractional_scale().into();
-
-            let elements = elements.map(|element| {
-                RelocateRenderElement::from_element(
-                    element,
-                    region.loc.upscale(-1),
-                    Relocate::Relative,
-                )
-            });
-
-            let damage = [Rectangle::from_loc_and_size((0, 0), region.size)];
-            screencopy.damage(&damage);
-
-            if let Err(err) =
-                render_to_shm(renderer, screencopy.buffer(), region.size, scale, elements)
-            {
-                warn!("error rendering to screencopy shm buffer: {err:?}")
-            } else {
-                screencopy.submit(y_invert);
-            }
-        }
-    }
-
     #[cfg(feature = "xdp-gnome-screencast")]
     fn render_for_screen_cast(
         &mut self,
@@ -2643,7 +2592,9 @@ impl Niri {
                     .get_or_insert_with(|| self.render::<GlesRenderer>(renderer, output, true));
                 let elements = elements.iter().rev();
 
-                if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
+                if let Err(err) =
+                    render_to_dmabuf(renderer, dmabuf, size, scale, Transform::Normal, elements)
+                {
                     warn!("error rendering to dmabuf: {err:?}");
                     continue;
                 }
@@ -2661,6 +2612,42 @@ impl Niri {
         for id in casts_to_stop {
             self.stop_cast(id);
         }
+    }
+
+    pub fn render_for_screencopy(
+        &mut self,
+        backend: &mut Backend,
+        screencopy: Screencopy,
+    ) -> anyhow::Result<()> {
+        let output = screencopy.output().clone();
+        ensure!(self.output_state.contains_key(&output), "output is missing");
+
+        backend
+            .with_primary_renderer(move |renderer| {
+                let elements = self
+                    .render(renderer, &output, screencopy.overlay_cursor())
+                    .into_iter()
+                    .rev();
+
+                let region_loc = screencopy.region_loc();
+                let elements = elements.map(|element| {
+                    RelocateRenderElement::from_element(
+                        element,
+                        region_loc.upscale(-1),
+                        Relocate::Relative,
+                    )
+                });
+
+                let scale = output.current_scale().fractional_scale().into();
+                let transform = output.current_transform();
+                render_to_shm(renderer, screencopy.buffer(), scale, transform, elements)
+                    .context("error rendering to screencopy shm buffer: {err:?}")?;
+
+                screencopy.submit(false);
+
+                Ok(())
+            })
+            .context("primary renderer is missing")?
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -2722,7 +2709,14 @@ impl Niri {
                 let elements = self.render::<GlesRenderer>(renderer, &output, true);
                 let elements = elements.iter().rev();
 
-                let res = render_to_texture(renderer, size, scale, Fourcc::Abgr8888, elements);
+                let res = render_to_texture(
+                    renderer,
+                    size,
+                    scale,
+                    Transform::Normal,
+                    Fourcc::Abgr8888,
+                    elements,
+                );
                 let screenshot = match res {
                     Ok((texture, _)) => texture,
                     Err(err) => {
@@ -2752,7 +2746,14 @@ impl Niri {
         let scale = Scale::from(output.current_scale().fractional_scale());
         let elements = self.render::<GlesRenderer>(renderer, output, true);
         let elements = elements.iter().rev();
-        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
+        let pixels = render_to_vec(
+            renderer,
+            size,
+            scale,
+            Transform::Normal,
+            Fourcc::Abgr8888,
+            elements,
+        )?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -2778,7 +2779,14 @@ impl Niri {
             1.,
         );
         let elements = elements.iter().rev();
-        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
+        let pixels = render_to_vec(
+            renderer,
+            size,
+            scale,
+            Transform::Normal,
+            Fourcc::Abgr8888,
+            elements,
+        )?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -2881,6 +2889,7 @@ impl Niri {
             renderer,
             size,
             Scale::from(f64::from(output_scale)),
+            Transform::Normal,
             Fourcc::Abgr8888,
             elements,
         )?;
