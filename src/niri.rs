@@ -2182,9 +2182,9 @@ impl Niri {
         // to err on the safe side.
         self.send_frame_callbacks(output);
 
+        #[cfg(feature = "xdp-gnome-screencast")]
         backend.with_primary_renderer(|renderer| {
             // Render and send to PipeWire screencast streams.
-            #[cfg(feature = "xdp-gnome-screencast")]
             self.render_for_screen_cast(renderer, output, target_presentation_time);
         });
     }
