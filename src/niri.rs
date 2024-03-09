@@ -722,9 +722,9 @@ impl State {
                 self.niri.output_resized(output);
             }
 
-            self.niri.reposition_outputs(None);
-
             self.backend.on_output_config_changed(&mut self.niri);
+
+            self.niri.reposition_outputs(None);
 
             if let Some(touch) = self.niri.seat.get_touch() {
                 touch.cancel(self);
