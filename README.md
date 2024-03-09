@@ -51,14 +51,18 @@ Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top 
 One of the reasons that prompted me to try writing my own compositor is being able to properly separate the monitors.
 Being a GNOME Shell extension, PaperWM has to work against Shell's global window coordinate space to prevent windows from overflowing.
 
-## Building
+## Packages
 
-> [!TIP]
-> For Fedora users, there's a COPR with built and packaged niri: https://copr.fedorainfracloud.org/coprs/yalter/niri/
->
-> NixOS users, check out https://github.com/sodiboo/niri-flake
->
-> For Arch users, there's an AUR package: https://aur.archlinux.org/packages/niri
+There are several community-maintained distribution packages that you can use to install niri.
+Here are some of them:
+
+- Fedora COPR (I maintain this one myself): https://copr.fedorainfracloud.org/coprs/yalter/niri/
+- AUR: [niri](https://aur.archlinux.org/packages/niri), [niri-bin](https://aur.archlinux.org/packages/niri-bin), [niri-git](https://aur.archlinux.org/packages/niri-git)
+- NixOS Flake: https://github.com/sodiboo/niri-flake
+- FreeBSD Ports: https://www.freshports.org/x11-wm/niri
+- Gentoo GURU: https://gpo.zugaina.org/Overlays/guru/gui-wm/niri
+
+## Building
 
 First, install the dependencies for your distribution.
 
