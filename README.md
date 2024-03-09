@@ -28,7 +28,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 - Dynamic workspaces like in GNOME
 - Built-in screenshot UI
 - Monitor screencasting through xdg-desktop-portal-gnome
-- Touchpad gesture to switch workspaces
+- Touchpad gestures
 - Configurable layout: gaps, borders, struts, window sizes
 - Live-reloading config
 
