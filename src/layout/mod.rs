@@ -1165,6 +1165,20 @@ impl<W: LayoutElement> Layout<W> {
         monitor.switch_workspace(idx);
     }
 
+    pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.switch_workspace_auto_back_and_forth(idx);
+    }
+
+    pub fn switch_workspace_back_and_forth(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.switch_workspace_back_and_forth();
+    }
+
     pub fn consume_into_column(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;

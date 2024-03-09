@@ -73,6 +73,11 @@ input {
 
     // Focus windows and outputs automatically when moving the mouse into them.
     // focus-follows-mouse
+
+    // Uncomment this to enable workspace auto-back-and-forth.
+    // If enabled switching to the same workspace index twice will switch back to the
+    // previous workspace.
+    // workspace-auto-back-and-forth
 }
 
 // You can configure outputs by their name, which you can find
@@ -478,6 +483,9 @@ binds {
     Mod+Ctrl+Page_Up   { move-column-to-workspace-up; }
     Mod+Ctrl+U         { move-column-to-workspace-down; }
     Mod+Ctrl+I         { move-column-to-workspace-up; }
+
+    // Switches focus between the current and the previous workspace.
+    Mod+Tab            { focus-workspace-back-and-forth; }
 
     // Alternatively, there are commands to move just a single window:
     // Mod+Ctrl+Page_Down { move-window-to-workspace-down; }
