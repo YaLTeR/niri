@@ -6,7 +6,7 @@
     <a href="https://github.com/YaLTeR/niri/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/YaLTeR/niri?logo=github"></a>
 </p>
 
-![](https://github.com/YaLTeR/niri/assets/1794388/16f87a4a-afac-49aa-b3e6-5e6f16c943a9)
+![](https://github.com/YaLTeR/niri/assets/1794388/2b246c2c-7cf3-4a11-96eb-ad0c7f2f4ed6)
 
 ## About
 
