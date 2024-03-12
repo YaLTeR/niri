@@ -39,7 +39,7 @@ use smithay::desktop::{
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbContextHandler};
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
-use smithay::output::{self, Output};
+use smithay::output::{self, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
@@ -117,6 +117,11 @@ use crate::{animation, niri_render_elements};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
+
+// We'll try to send frame callbacks at least once a second. We'll make a timer that fires once a
+// second, so with the worst timing the maximum interval between two frame callbacks for a surface
+// should be ~1.995 seconds.
+const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -966,6 +971,16 @@ impl Niri {
                 None
             }
         };
+
+        event_loop
+            .insert_source(
+                Timer::from_duration(Duration::from_secs(1)),
+                |_, _, state| {
+                    state.niri.send_frame_callbacks_on_fallback_timer();
+                    TimeoutAction::ToDuration(Duration::from_secs(1))
+                },
+            )
+            .unwrap();
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
@@ -2430,11 +2445,21 @@ impl Niri {
         let frame_callback_time = get_monotonic_time();
 
         for win in self.layout.windows_for_output(output) {
-            win.send_frame(output, frame_callback_time, None, should_send);
+            win.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                should_send,
+            );
         }
 
         for surface in layer_map_for_output(output).layers() {
-            surface.send_frame(output, frame_callback_time, None, should_send);
+            surface.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                should_send,
+            );
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
@@ -2442,17 +2467,97 @@ impl Niri {
                 surface.wl_surface(),
                 output,
                 frame_callback_time,
-                None,
+                FRAME_CALLBACK_THROTTLE,
                 should_send,
             );
         }
 
         if let Some(surface) = &self.dnd_icon {
-            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                should_send,
+            );
         }
 
         if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
-            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                should_send,
+            );
+        }
+    }
+
+    pub fn send_frame_callbacks_on_fallback_timer(&self) {
+        let _span = tracy_client::span!("Niri::send_frame_callbacks_on_fallback_timer");
+
+        // Make up a bogus output; we don't care about it here anyway, just the throttling timer.
+        let output = Output::new(
+            String::new(),
+            PhysicalProperties {
+                size: Size::from((0, 0)),
+                subpixel: Subpixel::Unknown,
+                make: String::new(),
+                model: String::new(),
+            },
+        );
+        let output = &output;
+
+        let frame_callback_time = get_monotonic_time();
+
+        self.layout.with_windows(|win, _| {
+            win.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| None,
+            );
+        });
+
+        for (output, state) in self.output_state.iter() {
+            for surface in layer_map_for_output(output).layers() {
+                surface.send_frame(
+                    output,
+                    frame_callback_time,
+                    FRAME_CALLBACK_THROTTLE,
+                    |_, _| None,
+                );
+            }
+
+            if let Some(surface) = &state.lock_surface {
+                send_frames_surface_tree(
+                    surface.wl_surface(),
+                    output,
+                    frame_callback_time,
+                    FRAME_CALLBACK_THROTTLE,
+                    |_, _| None,
+                );
+            }
+        }
+
+        if let Some(surface) = &self.dnd_icon {
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| None,
+            );
+        }
+
+        if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| None,
+            );
         }
     }
 
