@@ -845,7 +845,7 @@ impl State {
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint(new_pos, &under);
 
-        self.niri.pointer_focus = under.clone();
+        self.niri.pointer_focus.clone_from(&under);
         let under = under.map(|u| u.surface);
 
         pointer.motion(
@@ -908,7 +908,7 @@ impl State {
 
         let under = self.niri.surface_under_and_global_space(pos);
         self.niri.maybe_activate_pointer_constraint(pos, &under);
-        self.niri.pointer_focus = under.clone();
+        self.niri.pointer_focus.clone_from(&under);
         let under = under.map(|u| u.surface);
 
         pointer.motion(

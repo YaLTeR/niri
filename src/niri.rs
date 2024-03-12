@@ -374,7 +374,7 @@ impl State {
         let under = self.niri.surface_under_and_global_space(location);
         self.niri
             .maybe_activate_pointer_constraint(location, &under);
-        self.niri.pointer_focus = under.clone();
+        self.niri.pointer_focus.clone_from(&under);
         let under = under.map(|u| u.surface);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
@@ -433,7 +433,7 @@ impl State {
         self.niri
             .maybe_activate_pointer_constraint(location, &under);
 
-        self.niri.pointer_focus = under.clone();
+        self.niri.pointer_focus.clone_from(&under);
         let under = under.map(|u| u.surface);
 
         pointer.motion(
@@ -588,7 +588,7 @@ impl State {
                 }
             }
 
-            self.niri.keyboard_focus = focus.clone();
+            self.niri.keyboard_focus.clone_from(&focus);
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
 
             // FIXME: can be more granular.
