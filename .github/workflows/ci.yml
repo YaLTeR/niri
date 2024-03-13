@@ -51,6 +51,9 @@ jobs:
       - name: Check (just systemd)
         run: cargo check ${{ matrix.release-flag }} --no-default-features --features systemd
 
+      - name: Check (just dinit)
+        run: cargo check ${{ matrix.release-flag }} --no-default-features --features dinit
+
       - name: Check (just xdp-gnome-screencast)
         run: cargo check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
 

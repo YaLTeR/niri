@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{Config, TrackLayout};
 use smithay::backend::allocator::Fourcc;
@@ -18,7 +18,9 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::utils::{select_dmabuf_feedback, RelocateRenderElement};
+use smithay::backend::renderer::element::utils::{
+    select_dmabuf_feedback, Relocate, RelocateRenderElement,
+};
 use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, AsRenderElements, Id, Kind, PrimaryScanoutOutput,
     RenderElementStates,
@@ -37,7 +39,7 @@ use smithay::desktop::{
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbContextHandler};
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
-use smithay::output::{self, Output};
+use smithay::output::{self, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
@@ -82,7 +84,9 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatTrait};
 use smithay::wayland::text_input::TextInputManagerState;
+use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+use smithay::wayland::xdg_foreign::XdgForeignState;
 
 use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, RenderResult, Tty, Winit};
@@ -97,9 +101,10 @@ use crate::input::{apply_libinput_settings, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
+use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{render_to_texture, render_to_vec};
+use crate::render_helpers::{render_to_shm, render_to_texture, render_to_vec};
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
@@ -113,6 +118,11 @@ use crate::{animation, niri_render_elements};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
+
+// We'll try to send frame callbacks at least once a second. We'll make a timer that fires once a
+// second, so with the worst timing the maximum interval between two frame callbacks for a surface
+// should be ~1.995 seconds.
+const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -154,6 +164,9 @@ pub struct Niri {
     pub layer_shell_state: WlrLayerShellState,
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
+    pub screencopy_state: ScreencopyManagerState,
+    pub viewporter_state: ViewporterState,
+    pub xdg_foreign_state: XdgForeignState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
@@ -369,7 +382,7 @@ impl State {
         let under = self.niri.surface_under_and_global_space(location);
         self.niri
             .maybe_activate_pointer_constraint(location, &under);
-        self.niri.pointer_focus = under.clone();
+        self.niri.pointer_focus.clone_from(&under);
         let under = under.map(|u| u.surface);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
@@ -428,7 +441,7 @@ impl State {
         self.niri
             .maybe_activate_pointer_constraint(location, &under);
 
-        self.niri.pointer_focus = under.clone();
+        self.niri.pointer_focus.clone_from(&under);
         let under = under.map(|u| u.surface);
 
         pointer.motion(
@@ -583,7 +596,7 @@ impl State {
                 }
             }
 
-            self.niri.keyboard_focus = focus.clone();
+            self.niri.keyboard_focus.clone_from(&focus);
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
 
             // FIXME: can be more granular.
@@ -715,9 +728,9 @@ impl State {
                 self.niri.output_resized(output);
             }
 
-            self.niri.reposition_outputs(None);
-
             self.backend.on_output_config_changed(&mut self.niri);
+
+            self.niri.reposition_outputs(None);
 
             if let Some(touch) = self.niri.seat.get_touch() {
                 touch.cancel(self);
@@ -911,6 +924,11 @@ impl Niri {
             ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
+        let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
+            !client.get_data::<ClientState>().unwrap().restricted
+        });
+        let viewporter_state = ViewporterState::new::<State>(&display_handle);
+        let xdg_foreign_state = XdgForeignState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -957,6 +975,16 @@ impl Niri {
                 None
             }
         };
+
+        event_loop
+            .insert_source(
+                Timer::from_duration(Duration::from_secs(1)),
+                |_, _, state| {
+                    state.niri.send_frame_callbacks_on_fallback_timer();
+                    TimeoutAction::ToDuration(Duration::from_secs(1))
+                },
+            )
+            .unwrap();
 
         let socket_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = socket_source.socket_name().to_os_string();
@@ -1031,6 +1059,9 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            screencopy_state,
+            viewporter_state,
+            xdg_foreign_state,
             text_input_state,
             input_method_state,
             virtual_keyboard_state,
@@ -2172,13 +2203,11 @@ impl Niri {
         // to err on the safe side.
         self.send_frame_callbacks(output);
 
-        // Render and send to PipeWire screencast streams.
         #[cfg(feature = "xdp-gnome-screencast")]
-        {
-            backend.with_primary_renderer(|renderer| {
-                self.render_for_screen_cast(renderer, output, target_presentation_time);
-            });
-        }
+        backend.with_primary_renderer(|renderer| {
+            // Render and send to PipeWire screencast streams.
+            self.render_for_screen_cast(renderer, output, target_presentation_time);
+        });
     }
 
     pub fn update_primary_scanout_output(
@@ -2426,11 +2455,21 @@ impl Niri {
         let frame_callback_time = get_monotonic_time();
 
         for win in self.layout.windows_for_output(output) {
-            win.send_frame(output, frame_callback_time, None, should_send);
+            win.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                should_send,
+            );
         }
 
         for surface in layer_map_for_output(output).layers() {
-            surface.send_frame(output, frame_callback_time, None, should_send);
+            surface.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                should_send,
+            );
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
@@ -2438,17 +2477,97 @@ impl Niri {
                 surface.wl_surface(),
                 output,
                 frame_callback_time,
-                None,
+                FRAME_CALLBACK_THROTTLE,
                 should_send,
             );
         }
 
         if let Some(surface) = &self.dnd_icon {
-            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                should_send,
+            );
         }
 
         if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
-            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                should_send,
+            );
+        }
+    }
+
+    pub fn send_frame_callbacks_on_fallback_timer(&self) {
+        let _span = tracy_client::span!("Niri::send_frame_callbacks_on_fallback_timer");
+
+        // Make up a bogus output; we don't care about it here anyway, just the throttling timer.
+        let output = Output::new(
+            String::new(),
+            PhysicalProperties {
+                size: Size::from((0, 0)),
+                subpixel: Subpixel::Unknown,
+                make: String::new(),
+                model: String::new(),
+            },
+        );
+        let output = &output;
+
+        let frame_callback_time = get_monotonic_time();
+
+        self.layout.with_windows(|win, _| {
+            win.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| None,
+            );
+        });
+
+        for (output, state) in self.output_state.iter() {
+            for surface in layer_map_for_output(output).layers() {
+                surface.send_frame(
+                    output,
+                    frame_callback_time,
+                    FRAME_CALLBACK_THROTTLE,
+                    |_, _| None,
+                );
+            }
+
+            if let Some(surface) = &state.lock_surface {
+                send_frames_surface_tree(
+                    surface.wl_surface(),
+                    output,
+                    frame_callback_time,
+                    FRAME_CALLBACK_THROTTLE,
+                    |_, _| None,
+                );
+            }
+        }
+
+        if let Some(surface) = &self.dnd_icon {
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| None,
+            );
+        }
+
+        if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| None,
+            );
         }
     }
 
@@ -2592,7 +2711,9 @@ impl Niri {
                     .get_or_insert_with(|| self.render::<GlesRenderer>(renderer, output, true));
                 let elements = elements.iter().rev();
 
-                if let Err(err) = render_to_dmabuf(renderer, dmabuf, size, scale, elements) {
+                if let Err(err) =
+                    render_to_dmabuf(renderer, dmabuf, size, scale, Transform::Normal, elements)
+                {
                     warn!("error rendering to dmabuf: {err:?}");
                     continue;
                 }
@@ -2610,6 +2731,42 @@ impl Niri {
         for id in casts_to_stop {
             self.stop_cast(id);
         }
+    }
+
+    pub fn render_for_screencopy(
+        &mut self,
+        backend: &mut Backend,
+        screencopy: Screencopy,
+    ) -> anyhow::Result<()> {
+        let output = screencopy.output().clone();
+        ensure!(self.output_state.contains_key(&output), "output is missing");
+
+        backend
+            .with_primary_renderer(move |renderer| {
+                let elements = self
+                    .render(renderer, &output, screencopy.overlay_cursor())
+                    .into_iter()
+                    .rev();
+
+                let region_loc = screencopy.region_loc();
+                let elements = elements.map(|element| {
+                    RelocateRenderElement::from_element(
+                        element,
+                        region_loc.upscale(-1),
+                        Relocate::Relative,
+                    )
+                });
+
+                let scale = output.current_scale().fractional_scale().into();
+                let transform = output.current_transform();
+                render_to_shm(renderer, screencopy.buffer(), scale, transform, elements)
+                    .context("error rendering to screencopy shm buffer: {err:?}")?;
+
+                screencopy.submit(false);
+
+                Ok(())
+            })
+            .context("primary renderer is missing")?
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -2671,7 +2828,14 @@ impl Niri {
                 let elements = self.render::<GlesRenderer>(renderer, &output, true);
                 let elements = elements.iter().rev();
 
-                let res = render_to_texture(renderer, size, scale, Fourcc::Abgr8888, elements);
+                let res = render_to_texture(
+                    renderer,
+                    size,
+                    scale,
+                    Transform::Normal,
+                    Fourcc::Abgr8888,
+                    elements,
+                );
                 let screenshot = match res {
                     Ok((texture, _)) => texture,
                     Err(err) => {
@@ -2701,7 +2865,14 @@ impl Niri {
         let scale = Scale::from(output.current_scale().fractional_scale());
         let elements = self.render::<GlesRenderer>(renderer, output, true);
         let elements = elements.iter().rev();
-        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
+        let pixels = render_to_vec(
+            renderer,
+            size,
+            scale,
+            Transform::Normal,
+            Fourcc::Abgr8888,
+            elements,
+        )?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -2727,7 +2898,14 @@ impl Niri {
             1.,
         );
         let elements = elements.iter().rev();
-        let pixels = render_to_vec(renderer, size, scale, Fourcc::Abgr8888, elements)?;
+        let pixels = render_to_vec(
+            renderer,
+            size,
+            scale,
+            Transform::Normal,
+            Fourcc::Abgr8888,
+            elements,
+        )?;
 
         self.save_screenshot(size, pixels)
             .context("error saving screenshot")
@@ -2830,6 +3008,7 @@ impl Niri {
             renderer,
             size,
             Scale::from(f64::from(output_scale)),
+            Transform::Normal,
             Fourcc::Abgr8888,
             elements,
         )?;

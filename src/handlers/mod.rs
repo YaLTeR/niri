@@ -51,15 +51,16 @@ use smithay::{
     delegate_output, delegate_pointer_constraints, delegate_pointer_gestures,
     delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
     delegate_security_context, delegate_session_lock, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_virtual_keyboard_manager,
+    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
 };
 
-use crate::delegate_foreign_toplevel;
 use crate::niri::{ClientState, State};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
+use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
 use crate::utils::output_size;
+use crate::{delegate_foreign_toplevel, delegate_screencopy};
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -380,6 +381,18 @@ impl ForeignToplevelHandler for State {
 }
 delegate_foreign_toplevel!(State);
 
+impl ScreencopyHandler for State {
+    fn frame(&mut self, screencopy: Screencopy) {
+        if let Err(err) = self
+            .niri
+            .render_for_screencopy(&mut self.backend, screencopy)
+        {
+            warn!("error rendering for screencopy: {err:?}");
+        }
+    }
+}
+delegate_screencopy!(State);
+
 impl DrmLeaseHandler for State {
     fn drm_lease_state(&mut self, node: DrmNode) -> &mut DrmLeaseState {
         &mut self
@@ -425,3 +438,5 @@ impl DrmLeaseHandler for State {
     }
 }
 delegate_drm_lease!(State);
+
+delegate_viewporter!(State);

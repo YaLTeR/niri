@@ -254,18 +254,49 @@ animations {
     // slowdown 3.0
 
     // You can configure all individual animations.
-    // Available settings are the same for all of them:
+    // Available settings are the same for all of them.
     // - off disables the animation.
+    //
+    // Niri supports two animation types: easing and spring.
+    // You can set properties for only ONE of them.
+    //
+    // Easing has the following settings:
     // - duration-ms sets the duration of the animation in milliseconds.
     // - curve sets the easing curve. Currently, available curves
     //   are "ease-out-cubic" and "ease-out-expo".
+    //
+    // Spring animations work better with touchpad gestures, because they
+    // take into account the velocity of your fingers as you release the swipe.
+    // The parameters are less obvious and generally should be tuned
+    // with trial and error. Notably, you cannot directly set the duration.
+    // You can use this app to help visualize how the spring parameters
+    // change the animation: https://flathub.org/apps/app.drey.Elastic
+    //
+    // A spring animation is configured like this:
+    // - spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
+    //
+    // The damping ratio goes from 0.1 to 10.0 and has the following properties:
+    // - below 1.0: underdamped spring, will oscillate in the end.
+    // - above 1.0: overdamped spring, won't oscillate.
+    // - 1.0: critically damped spring, comes to rest in minimum possible time
+    //        without oscillations.
+    //
+    // However, even with damping ratio = 1.0 the spring animation may oscillate
+    // if "launched" with enough velocity from a touchpad swipe.
+    //
+    // Lower stiffness will result in a slower animation more prone to oscillation.
+    //
+    // Set epsilon to a lower value if the animation "jumps" in the end.
+    //
+    // The spring mass is hardcoded to 1.0 and cannot be changed. Instead, change
+    // stiffness proportionally. E.g. increasing mass by 2x is the same as
+    // decreasing stiffness by 2x.
 
     // Animation when switching workspaces up and down,
     // including after the touchpad gesture.
     workspace-switch {
         // off
-        // duration-ms 250
-        // curve "ease-out-cubic"
+        // spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
     }
 
     // All horizontal camera view movement:
@@ -275,8 +306,7 @@ animations {
     // - And so on.
     horizontal-view-movement {
         // off
-        // duration-ms 250
-        // curve "ease-out-cubic"
+        // spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 
     // Window opening animation. Note that this one has different defaults.
@@ -284,14 +314,16 @@ animations {
         // off
         // duration-ms 150
         // curve "ease-out-expo"
+
+        // Example for a slightly bouncy window opening:
+        // spring damping-ratio=0.8 stiffness=1000 epsilon=0.0001
     }
 
     // Config parse error and new default config creation notification
     // open/close animation.
     config-notification-open-close {
         // off
-        // duration-ms 250
-        // curve "ease-out-cubic"
+        // spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
     }
 }
 

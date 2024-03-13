@@ -172,7 +172,7 @@ fn refresh_toplevel(
 
             let mut new_title = None;
             if data.title != role.title {
-                data.title = role.title.clone();
+                data.title.clone_from(&role.title);
                 new_title = role.title.as_deref();
 
                 if new_title.is_none() {
@@ -182,7 +182,7 @@ fn refresh_toplevel(
 
             let mut new_app_id = None;
             if data.app_id != role.app_id {
-                data.app_id = role.app_id.clone();
+                data.app_id.clone_from(&role.app_id);
                 new_app_id = role.app_id.as_deref();
 
                 if new_app_id.is_none() {

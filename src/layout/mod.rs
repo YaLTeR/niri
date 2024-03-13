@@ -226,8 +226,8 @@ impl LayoutElement for Window {
     }
 
     fn is_in_input_region(&self, point: Point<f64, Logical>) -> bool {
-        let surace_local = point + self.geometry().loc.to_f64();
-        SpaceElement::is_in_input_region(self, &surace_local)
+        let surface_local = point + self.geometry().loc.to_f64();
+        SpaceElement::is_in_input_region(self, &surface_local)
     }
 
     fn render<R: NiriRenderer>(

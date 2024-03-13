@@ -70,7 +70,9 @@ pub struct Workspace<W: LayoutElement> {
     /// Since we only create-and-activate columns immediately to the right of the active column (in
     /// contrast to tabs in Firefox, for example), we can track this as a bool, rather than an
     /// index of the previous column to activate.
-    activate_prev_column_on_removal: bool,
+    ///
+    /// The value is the view offset that the previous column had before, to restore it.
+    activate_prev_column_on_removal: Option<i32>,
 
     /// Configurable properties of the layout.
     pub options: Rc<Options>,
@@ -96,6 +98,8 @@ struct ViewGesture {
     current_view_offset: f64,
     tracker: SwipeTracker,
     delta_from_tracker: f64,
+    // The view offset we'll use if needed for activate_prev_column_on_removal.
+    static_view_offset: i32,
 }
 
 /// Width of a column.
@@ -210,7 +214,7 @@ impl<W: LayoutElement> Workspace<W> {
             active_column_idx: 0,
             view_offset: 0,
             view_offset_adj: None,
-            activate_prev_column_on_removal: false,
+            activate_prev_column_on_removal: None,
             options,
         }
     }
@@ -225,7 +229,7 @@ impl<W: LayoutElement> Workspace<W> {
             active_column_idx: 0,
             view_offset: 0,
             view_offset_adj: None,
-            activate_prev_column_on_removal: false,
+            activate_prev_column_on_removal: None,
             options,
         }
     }
@@ -436,9 +440,11 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        // FIXME: also compute and use current velocity.
         self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
             self.view_offset as f64,
             new_view_offset as f64,
+            0.,
             self.options.animations.horizontal_view_movement,
             niri_config::Animation::default_horizontal_view_movement(),
         )));
@@ -534,7 +540,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.active_column_idx = idx;
 
         // A different column was activated; reset the flag.
-        self.activate_prev_column_on_removal = false;
+        self.activate_prev_column_on_removal = None;
     }
 
     pub fn has_windows(&self) -> bool {
@@ -613,8 +619,10 @@ impl<W: LayoutElement> Workspace<W> {
                 self.view_offset_adj = None;
             }
 
+            let prev_offset = (!was_empty).then(|| self.static_view_offset());
+
             self.activate_column(idx);
-            self.activate_prev_column_on_removal = true;
+            self.activate_prev_column_on_removal = prev_offset;
         }
     }
 
@@ -646,8 +654,9 @@ impl<W: LayoutElement> Workspace<W> {
 
         // Activate the new window if right_of was active.
         if self.active_column_idx == right_of_idx {
+            let prev_offset = self.static_view_offset();
             self.activate_column(idx);
-            self.activate_prev_column_on_removal = true;
+            self.activate_prev_column_on_removal = Some(prev_offset);
         } else if idx <= self.active_column_idx {
             self.active_column_idx += 1;
         }
@@ -685,8 +694,10 @@ impl<W: LayoutElement> Workspace<W> {
                 self.view_offset_adj = None;
             }
 
+            let prev_offset = (!was_empty).then(|| self.static_view_offset());
+
             self.activate_column(idx);
-            self.activate_prev_column_on_removal = true;
+            self.activate_prev_column_on_removal = prev_offset;
         }
     }
 
@@ -703,7 +714,7 @@ impl<W: LayoutElement> Workspace<W> {
             if column_idx + 1 == self.active_column_idx {
                 // The previous column, that we were going to activate upon removal of the active
                 // column, has just been itself removed.
-                self.activate_prev_column_on_removal = false;
+                self.activate_prev_column_on_removal = None;
             }
 
             // FIXME: activate_column below computes current view position to compute the new view
@@ -714,13 +725,25 @@ impl<W: LayoutElement> Workspace<W> {
                 return window;
             }
 
-            if self.active_column_idx > column_idx
-                || (self.active_column_idx == column_idx && self.activate_prev_column_on_removal)
-            {
+            if column_idx < self.active_column_idx {
                 // A column to the left was removed; preserve the current position.
                 // FIXME: preserve activate_prev_column_on_removal.
-                // Or, the active column was removed, and we needed to activate the previous column.
-                self.activate_column(self.active_column_idx.saturating_sub(1));
+                self.activate_column(self.active_column_idx - 1);
+            } else if column_idx == self.active_column_idx
+                && self.activate_prev_column_on_removal.is_some()
+            {
+                // The active column was removed, and we needed to activate the previous column.
+                if 0 < column_idx {
+                    let prev_offset = self.activate_prev_column_on_removal.unwrap();
+
+                    self.activate_column(self.active_column_idx - 1);
+
+                    // Restore the view offset but make sure to scroll the view in case the
+                    // previous window had resized.
+                    let current_x = self.view_pos();
+                    self.animate_view_offset(current_x, self.active_column_idx, prev_offset);
+                    self.animate_view_offset_to_column(current_x, self.active_column_idx, None);
+                }
             } else {
                 self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
             }
@@ -746,7 +769,7 @@ impl<W: LayoutElement> Workspace<W> {
         if column_idx + 1 == self.active_column_idx {
             // The previous column, that we were going to activate upon removal of the active
             // column, has just been itself removed.
-            self.activate_prev_column_on_removal = false;
+            self.activate_prev_column_on_removal = None;
         }
 
         // FIXME: activate_column below computes current view position to compute the new view
@@ -756,13 +779,25 @@ impl<W: LayoutElement> Workspace<W> {
             return column;
         }
 
-        if self.active_column_idx > column_idx
-            || (self.active_column_idx == column_idx && self.activate_prev_column_on_removal)
-        {
+        if column_idx < self.active_column_idx {
             // A column to the left was removed; preserve the current position.
             // FIXME: preserve activate_prev_column_on_removal.
-            // Or, the active column was removed, and we needed to activate the previous column.
-            self.activate_column(self.active_column_idx.saturating_sub(1));
+            self.activate_column(self.active_column_idx - 1);
+        } else if column_idx == self.active_column_idx
+            && self.activate_prev_column_on_removal.is_some()
+        {
+            // The active column was removed, and we needed to activate the previous column.
+            if 0 < column_idx {
+                let prev_offset = self.activate_prev_column_on_removal.unwrap();
+
+                self.activate_column(self.active_column_idx - 1);
+
+                // Restore the view offset but make sure to scroll the view in case the
+                // previous window had resized.
+                let current_x = self.view_pos();
+                self.animate_view_offset(current_x, self.active_column_idx, prev_offset);
+                self.animate_view_offset_to_column(current_x, self.active_column_idx, None);
+            }
         } else {
             self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
         }
@@ -1038,6 +1073,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.column_x(self.active_column_idx) + self.view_offset
     }
 
+    /// Returns a view offset value suitable for saving and later restoration.
+    ///
+    /// This means that it shouldn't return an in-progress animation or gesture value.
+    fn static_view_offset(&self) -> i32 {
+        match &self.view_offset_adj {
+            // For animations we can return the final value.
+            Some(ViewOffsetAdjustment::Animation(anim)) => anim.to().round() as i32,
+            Some(ViewOffsetAdjustment::Gesture(gesture)) => gesture.static_view_offset,
+            _ => self.view_offset,
+        }
+    }
+
     fn tiles_in_render_order(&self) -> impl Iterator<Item = (&'_ Tile<W>, Point<i32, Logical>)> {
         let view_pos = self.visual_column_x(self.active_column_idx) + self.view_offset;
 
@@ -1238,6 +1285,7 @@ impl<W: LayoutElement> Workspace<W> {
             current_view_offset: self.view_offset as f64,
             tracker: SwipeTracker::new(),
             delta_from_tracker: self.view_offset as f64,
+            static_view_offset: self.static_view_offset(),
         };
         self.view_offset_adj = Some(ViewOffsetAdjustment::Gesture(gesture));
     }
@@ -1272,6 +1320,7 @@ impl<W: LayoutElement> Workspace<W> {
         // effort and bug potential.
 
         let norm_factor = self.working_area.size.w as f64 / VIEW_GESTURE_WORKING_AREA_MOVEMENT;
+        let velocity = gesture.tracker.velocity() * norm_factor;
         let pos = gesture.tracker.pos() * norm_factor;
         let current_view_offset = pos + gesture.delta_from_tracker;
 
@@ -1420,6 +1469,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
             current_view_offset + delta,
             target_view_offset as f64,
+            velocity,
             self.options.animations.horizontal_view_movement,
             niri_config::Animation::default_horizontal_view_movement(),
         )));

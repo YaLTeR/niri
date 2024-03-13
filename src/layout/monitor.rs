@@ -15,11 +15,17 @@ use super::workspace::{
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::rubber_band::RubberBand;
 use crate::swipe_tracker::SwipeTracker;
 use crate::utils::output_size;
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
+
+const WORKSPACE_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
+    stiffness: 0.5,
+    limit: 0.05,
+};
 
 #[derive(Debug)]
 pub struct Monitor<W: LayoutElement> {
@@ -94,6 +100,7 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
+        // FIXME: also compute and use current velocity.
         let current_idx = self
             .workspace_switch
             .as_ref()
@@ -105,6 +112,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             current_idx,
             idx as f64,
+            0.,
             self.options.animations.workspace_switch,
             niri_config::Animation::default_workspace_switch(),
         )));
@@ -584,14 +592,28 @@ impl<W: LayoutElement> Monitor<W> {
                 let size = output_size(&self.output);
 
                 let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor() as usize;
-                let after_idx = render_idx.ceil() as usize;
+                let before_idx = render_idx.floor();
+                let after_idx = render_idx.ceil();
 
-                let offset = ((render_idx - before_idx as f64) * size.h as f64).round() as i32;
+                let offset = ((render_idx - before_idx) * size.h as f64).round() as i32;
+
+                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
+                    return None;
+                }
+
+                let after_idx = after_idx as usize;
 
                 let (idx, ws_offset) = if pos_within_output.y < (size.h - offset) as f64 {
-                    (before_idx, Point::from((0, offset)))
+                    if before_idx < 0. {
+                        return None;
+                    }
+
+                    (before_idx as usize, Point::from((0, offset)))
                 } else {
+                    if after_idx >= self.workspaces.len() {
+                        return None;
+                    }
+
                     (after_idx, Point::from((0, -size.h + offset)))
                 };
 
@@ -630,16 +652,48 @@ impl<W: LayoutElement> Monitor<W> {
         match &self.workspace_switch {
             Some(switch) => {
                 let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor() as usize;
-                let after_idx = render_idx.ceil() as usize;
+                let before_idx = render_idx.floor();
+                let after_idx = render_idx.ceil();
 
-                let offset = ((render_idx - before_idx as f64) * size.h as f64).round() as i32;
+                let offset = ((render_idx - before_idx) * size.h as f64).round() as i32;
 
+                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
+                    return vec![];
+                }
+
+                let after_idx = after_idx as usize;
+                let after = if after_idx < self.workspaces.len() {
+                    let after = self.workspaces[after_idx].render_elements(renderer);
+                    let after = after.into_iter().filter_map(|elem| {
+                        Some(RelocateRenderElement::from_element(
+                            CropRenderElement::from_element(
+                                elem,
+                                output_scale,
+                                // HACK: crop to infinite bounds for all sides except the side
+                                // where the workspaces join,
+                                // otherwise it will cut pixel shaders and mess up
+                                // the coordinate space.
+                                Rectangle::from_extemities(
+                                    (-i32::MAX / 2, 0),
+                                    (i32::MAX / 2, i32::MAX / 2),
+                                ),
+                            )?,
+                            (0, -offset + size.h),
+                            Relocate::Relative,
+                        ))
+                    });
+
+                    if before_idx < 0. {
+                        return after.collect();
+                    }
+
+                    Some(after)
+                } else {
+                    None
+                };
+
+                let before_idx = before_idx as usize;
                 let before = self.workspaces[before_idx].render_elements(renderer);
-                let after = self.workspaces[after_idx].render_elements(renderer);
-
-                // HACK: crop to infinite bounds for all sides except the side where the workspaces
-                // join, otherwise it will cut pixel shaders and mess up the coordinate space.
                 let before = before.into_iter().filter_map(|elem| {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
@@ -654,21 +708,7 @@ impl<W: LayoutElement> Monitor<W> {
                         Relocate::Relative,
                     ))
                 });
-                let after = after.into_iter().filter_map(|elem| {
-                    Some(RelocateRenderElement::from_element(
-                        CropRenderElement::from_element(
-                            elem,
-                            output_scale,
-                            Rectangle::from_extemities(
-                                (-i32::MAX / 2, 0),
-                                (i32::MAX / 2, i32::MAX / 2),
-                            ),
-                        )?,
-                        (0, -offset + size.h),
-                        Relocate::Relative,
-                    ))
-                });
-                before.chain(after).collect()
+                before.chain(after.into_iter().flatten()).collect()
             }
             None => {
                 let elements = self.workspaces[self.active_workspace_idx].render_elements(renderer);
@@ -728,7 +768,8 @@ impl<W: LayoutElement> Monitor<W> {
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
-        let new_idx = (gesture.center_idx as f64 + pos).clamp(min, max);
+        let new_idx = gesture.center_idx as f64 + pos;
+        let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
 
         if gesture.current_idx == new_idx {
             return Some(false);
@@ -749,17 +790,28 @@ impl<W: LayoutElement> Monitor<W> {
             return true;
         }
 
+        let mut velocity = gesture.tracker.velocity() / WORKSPACE_GESTURE_MOVEMENT;
+        let current_pos = gesture.tracker.pos() / WORKSPACE_GESTURE_MOVEMENT;
         let pos = gesture.tracker.projected_end_pos() / WORKSPACE_GESTURE_MOVEMENT;
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
-        let new_idx = (gesture.center_idx as f64 + pos).clamp(min, max);
+        let new_idx = gesture.center_idx as f64 + pos;
+
+        let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
         let new_idx = new_idx.round() as usize;
+
+        velocity *= WORKSPACE_GESTURE_RUBBER_BAND.clamp_derivative(
+            min,
+            max,
+            gesture.center_idx as f64 + current_pos,
+        );
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             gesture.current_idx,
             new_idx as f64,
+            velocity,
             self.options.animations.workspace_switch,
             niri_config::Animation::default_workspace_switch(),
         )));

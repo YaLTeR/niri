@@ -1,13 +1,14 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{io, mem};
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use libc::dev_t;
 use niri_config::Config;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -28,7 +29,7 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
-use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties, Subpixel};
+use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
@@ -644,7 +645,7 @@ impl Tty {
 
         if non_desktop {
             debug!("output is non desktop");
-            let description = EdidInfo::for_connector(&device.drm, connector.handle())
+            let description = get_edid_info(&device.drm, connector.handle())
                 .map(|info| truncate_to_nul(info.model))
                 .unwrap_or_else(|| "Unknown".into());
             device.drm_lease_state.add_connector::<State>(
@@ -693,6 +694,12 @@ impl Tty {
         }
         debug!("picking mode: {mode:?}");
 
+        // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to run.
+        match set_max_bpc(&device.drm, connector.handle(), 8) {
+            Ok(bpc) => debug!("set max bpc to {bpc}"),
+            Err(err) => debug!("error setting max bpc: {err:?}"),
+        }
+
         let surface = device
             .drm
             .create_surface(crtc, mode, &[connector.handle()])?;
@@ -704,7 +711,7 @@ impl Tty {
         // Update the output mode.
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
 
-        let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
+        let (make, model) = get_edid_info(&device.drm, connector.handle())
             .map(|info| {
                 (
                     truncate_to_nul(info.manufacturer),
@@ -717,7 +724,7 @@ impl Tty {
             output_name.clone(),
             PhysicalProperties {
                 size: (physical_width as i32, physical_height as i32).into(),
-                subpixel: Subpixel::Unknown,
+                subpixel: connector.subpixel().into(),
                 model,
                 make,
             },
@@ -1250,7 +1257,7 @@ impl Tty {
 
                 let physical_size = connector.size();
 
-                let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
+                let (make, model) = get_edid_info(&device.drm, connector.handle())
                     .map(|info| {
                         (
                             truncate_to_nul(info.manufacturer),
@@ -1753,6 +1760,53 @@ fn truncate_to_nul(mut s: String) -> String {
         s.truncate(index);
     }
     s
+}
+
+fn get_edid_info(device: &DrmDevice, connector: connector::Handle) -> Option<EdidInfo> {
+    match catch_unwind(AssertUnwindSafe(move || {
+        EdidInfo::for_connector(device, connector)
+    })) {
+        Ok(info) => info,
+        Err(err) => {
+            warn!("edid-rs panicked: {err:?}");
+            None
+        }
+    }
+}
+
+fn set_max_bpc(device: &DrmDevice, connector: connector::Handle, bpc: u64) -> anyhow::Result<u64> {
+    let props = device
+        .get_properties(connector)
+        .context("error getting properties")?;
+    for (prop, value) in props {
+        let info = device
+            .get_property(prop)
+            .context("error getting property")?;
+        if info.name().to_str() != Ok("max bpc") {
+            continue;
+        }
+
+        let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
+            bail!("wrong property type")
+        };
+
+        let bpc = bpc.clamp(min, max);
+
+        let property::Value::UnsignedRange(value) = info.value_type().convert_value(value) else {
+            bail!("wrong property type")
+        };
+        if value == bpc {
+            return Ok(bpc);
+        }
+
+        device
+            .set_property(connector, prop, property::Value::UnsignedRange(bpc).into())
+            .context("error setting property")?;
+
+        return Ok(bpc);
+    }
+
+    Err(anyhow!("couldn't find max bpc property"))
 }
 
 #[cfg(test)]
