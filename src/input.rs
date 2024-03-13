@@ -1775,10 +1775,10 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             let _ = device.config_tap_set_button_map(default);
         }
 
-        if c.clickfinger {
-            let _ = device.config_click_set_method(input::ClickMethod::Clickfinger);
-        } else {
-            let _ = device.config_click_set_method(input::ClickMethod::ButtonAreas);
+        if let Some(method) = c.click_method {
+            let _ = device.config_click_set_method(method.into());
+        } else if let Some(default) = device.config_click_default_method() {
+            let _ = device.config_click_set_method(default);
         }
     }
 
