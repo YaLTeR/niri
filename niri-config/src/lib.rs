@@ -175,14 +175,14 @@ pub struct Trackpoint {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickMethod {
     Clickfinger,
-    BottomAreas,
+    ButtonAreas,
 }
 
 impl From<ClickMethod> for input::ClickMethod {
     fn from(value: ClickMethod) -> Self {
         match value {
             ClickMethod::Clickfinger => Self::Clickfinger,
-            ClickMethod::BottomAreas => Self::ButtonAreas,
+            ClickMethod::ButtonAreas => Self::ButtonAreas,
         }
     }
 }
@@ -1492,9 +1492,9 @@ impl FromStr for ClickMethod {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "clickfinger" => Ok(Self::Clickfinger),
-            "bottom_areas" => Ok(Self::BottomAreas),
+            "button_areas" => Ok(Self::ButtonAreas),
             _ => Err(miette!(
-                r#"invalid click method, can be "clickfinger" or "bottom_areas""#
+                r#"invalid click method, can be "clickfinger" or "button_areas""#
             )),
         }
     }
