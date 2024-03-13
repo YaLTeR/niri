@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{io, mem};
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use libc::dev_t;
 use niri_config::Config;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -693,6 +693,12 @@ impl Tty {
             );
         }
         debug!("picking mode: {mode:?}");
+
+        // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to run.
+        match set_max_bpc(&device.drm, connector.handle(), 8) {
+            Ok(bpc) => debug!("set max bpc to {bpc}"),
+            Err(err) => debug!("error setting max bpc: {err:?}"),
+        }
 
         let surface = device
             .drm
@@ -1766,6 +1772,41 @@ fn get_edid_info(device: &DrmDevice, connector: connector::Handle) -> Option<Edi
             None
         }
     }
+}
+
+fn set_max_bpc(device: &DrmDevice, connector: connector::Handle, bpc: u64) -> anyhow::Result<u64> {
+    let props = device
+        .get_properties(connector)
+        .context("error getting properties")?;
+    for (prop, value) in props {
+        let info = device
+            .get_property(prop)
+            .context("error getting property")?;
+        if info.name().to_str() != Ok("max bpc") {
+            continue;
+        }
+
+        let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
+            bail!("wrong property type")
+        };
+
+        let bpc = bpc.clamp(min, max);
+
+        let property::Value::UnsignedRange(value) = info.value_type().convert_value(value) else {
+            bail!("wrong property type")
+        };
+        if value == bpc {
+            return Ok(bpc);
+        }
+
+        device
+            .set_property(connector, prop, property::Value::UnsignedRange(bpc).into())
+            .context("error setting property")?;
+
+        return Ok(bpc);
+    }
+
+    Err(anyhow!("couldn't find max bpc property"))
 }
 
 #[cfg(test)]
