@@ -1492,14 +1492,13 @@ impl FromStr for ClickMethod {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "clickfinger" => Ok(Self::Clickfinger),
-            "button_areas" => Ok(Self::ButtonAreas),
+            "button-areas" => Ok(Self::ButtonAreas),
             _ => Err(miette!(
-                r#"invalid click method, can be "clickfinger" or "button_areas""#
+                r#"invalid click method, can be "clickfinger" or "button-areas""#
             )),
         }
     }
 }
-
 
 impl FromStr for AccelProfile {
     type Err = miette::Error;
