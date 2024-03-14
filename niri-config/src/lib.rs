@@ -142,6 +142,8 @@ pub struct Touchpad {
     pub dwtp: bool,
     #[knuffel(child)]
     pub natural_scroll: bool,
+    #[knuffel(child, unwrap(argument, str))]
+    pub click_method: Option<ClickMethod>,
     #[knuffel(child, unwrap(argument), default)]
     pub accel_speed: f64,
     #[knuffel(child, unwrap(argument, str))]
@@ -168,6 +170,21 @@ pub struct Trackpoint {
     pub accel_speed: f64,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClickMethod {
+    Clickfinger,
+    ButtonAreas,
+}
+
+impl From<ClickMethod> for input::ClickMethod {
+    fn from(value: ClickMethod) -> Self {
+        match value {
+            ClickMethod::Clickfinger => Self::Clickfinger,
+            ClickMethod::ButtonAreas => Self::ButtonAreas,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1469,6 +1486,20 @@ impl FromStr for Key {
     }
 }
 
+impl FromStr for ClickMethod {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "clickfinger" => Ok(Self::Clickfinger),
+            "button-areas" => Ok(Self::ButtonAreas),
+            _ => Err(miette!(
+                r#"invalid click method, can be "button-areas" or "clickfinger""#
+            )),
+        }
+    }
+}
+
 impl FromStr for AccelProfile {
     type Err = miette::Error;
 
@@ -1534,6 +1565,7 @@ mod tests {
                     tap
                     dwt
                     dwtp
+                    click-method "clickfinger"
                     accel-speed 0.2
                     accel-profile "flat"
                     tap-button-map "left-middle-right"
@@ -1676,6 +1708,7 @@ mod tests {
                         tap: true,
                         dwt: true,
                         dwtp: true,
+                        click_method: Some(ClickMethod::Clickfinger),
                         natural_scroll: false,
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),

@@ -1774,6 +1774,12 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else if let Some(default) = device.config_tap_default_button_map() {
             let _ = device.config_tap_set_button_map(default);
         }
+
+        if let Some(method) = c.click_method {
+            let _ = device.config_click_set_method(method.into());
+        } else if let Some(default) = device.config_click_default_method() {
+            let _ = device.config_click_set_method(default);
+        }
     }
 
     // This is how Mutter tells apart mice.
