@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 
+use smithay::output::Output;
 use smithay::reexports::wayland_protocols_wlr;
-use smithay::reexports::wayland_server::backend::{ClientId, ObjectId};
-use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
+use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
@@ -17,36 +17,26 @@ use zwlr_gamma_control_v1::ZwlrGammaControlV1;
 const VERSION: u32 = 1;
 
 pub struct GammaControlManagerState {
-    gamma_controls: HashMap<WlOutput, ZwlrGammaControlV1>,
+    // Active gamma controls only. Failed ones are removed.
+    gamma_controls: HashMap<Output, ZwlrGammaControlV1>,
 }
 
 pub struct GammaControlManagerGlobalData {
     filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
-    can_view: bool,
 }
 
 pub trait GammaControlHandler {
     fn gamma_control_manager_state(&mut self) -> &mut GammaControlManagerState;
-    fn set_gamma(
-        &mut self,
-        output: &WlOutput,
-        ramp: Vec<u16>,
-        gamma_size: u32,
-    ) -> anyhow::Result<()>;
-    fn get_gamma(&mut self, output: &WlOutput) -> Option<Vec<u16>>;
-    fn destroy(&mut self, output_id: ObjectId);
-    fn get_gamma_size(&mut self, output: &WlOutput) -> Option<u32>;
+    fn get_gamma_size(&mut self, output: &Output) -> Option<u32>;
+    fn set_gamma(&mut self, output: &Output, ramp: Option<&[u16]>) -> Option<()>;
 }
 
 pub struct GammaControlState {
-    gamma_size: Option<u32>,
-    previous_gamma_ramp: Option<Vec<u16>>,
-    output: WlOutput,
-    failed: bool,
+    gamma_size: u32,
 }
 
 impl GammaControlManagerState {
-    pub fn new<D, F>(display: &DisplayHandle, can_view: bool, filter: F) -> Self
+    pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<ZwlrGammaControlManagerV1, GammaControlManagerGlobalData>,
         D: Dispatch<ZwlrGammaControlManagerV1, ()>,
@@ -57,7 +47,6 @@ impl GammaControlManagerState {
     {
         let global_data = GammaControlManagerGlobalData {
             filter: Box::new(filter),
-            can_view,
         };
         display.create_global::<D, ZwlrGammaControlManagerV1, _>(VERSION, global_data);
 
@@ -65,8 +54,11 @@ impl GammaControlManagerState {
             gamma_controls: HashMap::new(),
         }
     }
-    pub fn destroy_gamma_control(&mut self, output_id: ObjectId) {
-        self.gamma_controls.remove(&output_id);
+
+    pub fn output_removed(&mut self, output: &Output) {
+        if let Some(gamma_control) = self.gamma_controls.remove(output) {
+            gamma_control.failed();
+        }
     }
 }
 
@@ -91,7 +83,7 @@ where
     }
 
     fn can_view(client: Client, global_data: &GammaControlManagerGlobalData) -> bool {
-        global_data.can_view && (global_data.filter)(&client)
+        (global_data.filter)(&client)
     }
 }
 
@@ -113,45 +105,30 @@ where
     ) {
         match request {
             zwlr_gamma_control_manager_v1::Request::GetGammaControl { id, output } => {
-                let gamma_size = state.get_gamma_size(&output);
-                let previous_gamma_ramp = state.get_gamma(&output);
-
-                if state
-                    .gamma_control_manager_state()
-                    .gamma_controls
-                    .contains_key(&output)
-                    || gamma_size.is_none()
-                    || previous_gamma_ramp.is_none()
-                {
-                    data_init
-                        .init(
-                            id,
-                            GammaControlState {
-                                gamma_size: gamma_size.clone(),
-                                previous_gamma_ramp: None,
-                                output: output.clone(),
-                                failed: true,
-                            },
-                        )
-                        .failed();
-                    return;
+                if let Some(output) = Output::from_resource(&output) {
+                    // We borrow state in the middle.
+                    #[allow(clippy::map_entry)]
+                    if !state
+                        .gamma_control_manager_state()
+                        .gamma_controls
+                        .contains_key(&output)
+                    {
+                        if let Some(gamma_size) = state.get_gamma_size(&output) {
+                            let zwlr_gamma_control =
+                                data_init.init(id, GammaControlState { gamma_size });
+                            zwlr_gamma_control.gamma_size(gamma_size);
+                            state
+                                .gamma_control_manager_state()
+                                .gamma_controls
+                                .insert(output, zwlr_gamma_control);
+                            return;
+                        }
+                    }
                 }
 
-                let zwlr_gamma_control = data_init.init(
-                    id,
-                    GammaControlState {
-                        gamma_size: gamma_size.clone(),
-                        previous_gamma_ramp,
-                        output: output.clone(),
-                        failed: false,
-                    },
-                );
-
-                zwlr_gamma_control.gamma_size(gamma_size.unwrap());
-                state
-                    .gamma_control_manager_state()
-                    .gamma_controls
-                    .insert(output, zwlr_gamma_control);
+                data_init
+                    .init(id, GammaControlState { gamma_size: 0 })
+                    .failed();
             }
             zwlr_gamma_control_manager_v1::Request::Destroy => (),
             _ => unreachable!(),
@@ -176,24 +153,55 @@ where
     ) {
         match request {
             zwlr_gamma_control_v1::Request::SetGamma { fd } => {
-                if data.failed {
+                let gamma_controls = &mut state.gamma_control_manager_state().gamma_controls;
+                let Some((output, _)) = gamma_controls.iter().find(|(_, x)| *x == resource) else {
                     return;
-                }
-                debug!("setting gamma for output {:?}", data.output);
-                let buf = &mut Vec::new();
-                if File::from(fd).read_to_end(buf).is_err() {
-                    warn!("failed to read gamma data for output {:?}", data.output);
-                    resource.failed();
-                    return;
-                }
+                };
+                let output = output.clone();
 
-                let gamma = bytemuck::cast_slice(buf).to_vec();
-                let gamma_size = data.gamma_size.unwrap();
+                trace!("setting gamma for output {}", output.name());
 
-                if let Err(err) = state.set_gamma(&data.output, gamma, gamma_size) {
-                    warn!("error setting gamma: {err:?}");
+                // Start with a u16 slice so it's aligned correctly.
+                let mut buf = vec![0u16; data.gamma_size as usize * 3];
+                let buf = bytemuck::cast_slice_mut(&mut buf);
+                let mut file = File::from(fd);
+                {
+                    let _span = tracy_client::span!("read gamma from fd");
+
+                    if let Err(err) = file.read_exact(buf) {
+                        warn!("failed to read gamma data: {err:?}");
+                        resource.failed();
+                        gamma_controls.remove(&output);
+                        let _ = state.set_gamma(&output, None);
+                        return;
+                    }
+
+                    // Verify that there's no more data.
+                    match file.read(&mut [0]) {
+                        Ok(0) => (),
+                        Ok(_) => {
+                            warn!("gamma data is too large");
+                            resource.failed();
+                            gamma_controls.remove(&output);
+                            let _ = state.set_gamma(&output, None);
+                            return;
+                        }
+                        Err(err) => {
+                            warn!("error reading gamma data: {err:?}");
+                            resource.failed();
+                            gamma_controls.remove(&output);
+                            let _ = state.set_gamma(&output, None);
+                            return;
+                        }
+                    }
+                }
+                let gamma = bytemuck::cast_slice(buf);
+
+                if state.set_gamma(&output, Some(gamma)).is_none() {
                     resource.failed();
-                    return;
+                    let gamma_controls = &mut state.gamma_control_manager_state().gamma_controls;
+                    gamma_controls.remove(&output);
+                    let _ = state.set_gamma(&output, None);
                 }
             }
             zwlr_gamma_control_v1::Request::Destroy => (),
@@ -204,19 +212,17 @@ where
     fn destroyed(
         state: &mut D,
         _client: ClientId,
-        _resource: &ZwlrGammaControlV1,
-        data: &GammaControlState,
+        resource: &ZwlrGammaControlV1,
+        _data: &GammaControlState,
     ) {
-        if data.failed {
+        let gamma_controls = &mut state.gamma_control_manager_state().gamma_controls;
+        let Some((output, _)) = gamma_controls.iter().find(|(_, x)| *x == resource) else {
             return;
-        }
-        let ramp = data.previous_gamma_ramp.as_ref().unwrap();
+        };
+        let output = output.clone();
+        gamma_controls.remove(&output);
 
-        if let Err(err) = state.set_gamma(&data.output, ramp.to_vec(), data.gamma_size.unwrap()) {
-            warn!("error resetting gamma: {err:?}");
-        }
-
-        state.destroy(data.output.id());
+        let _ = state.set_gamma(&output, None);
     }
 }
 

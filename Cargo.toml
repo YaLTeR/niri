@@ -45,6 +45,7 @@ arrayvec = "0.7.4"
 async-channel = { version = "2.2.0", optional = true }
 async-io = { version = "1.13.0", optional = true }
 bitflags = "2.4.2"
+bytemuck = "1.14.3"
 calloop = { version = "0.13.0", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
 directories = "5.0.1"
@@ -73,7 +74,6 @@ tracy-client.workspace = true
 url = { version = "2.5.0", optional = true }
 xcursor = "0.3.5"
 zbus = { version = "~3.15.2", optional = true }
-bytemuck = "1.14.3"
 
 [dependencies.smithay]
 workspace = true
