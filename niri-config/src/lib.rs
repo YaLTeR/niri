@@ -1494,7 +1494,7 @@ impl FromStr for ClickMethod {
             "clickfinger" => Ok(Self::Clickfinger),
             "button-areas" => Ok(Self::ButtonAreas),
             _ => Err(miette!(
-                r#"invalid click method, can be "clickfinger" or "button-areas""#
+                r#"invalid click method, can be "button-areas" or "clickfinger""#
             )),
         }
     }
