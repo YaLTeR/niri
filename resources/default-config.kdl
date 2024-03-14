@@ -30,10 +30,10 @@ input {
         // dwt
         // dwtp
         natural-scroll
-        // click-method "clickfinger"
         // accel-speed 0.2
         // accel-profile "flat"
         // tap-button-map "left-middle-right"
+        // click-method "clickfinger"
     }
 
     mouse {
