@@ -555,6 +555,8 @@ binds {
     // Mod+Shift+E { quit skip-confirmation=true; }
     Mod+Shift+E { quit; }
 
+    // Powers off the monitors. To turn them back on, do any input like
+    // moving the mouse or pressing any other key.
     Mod+Shift+P { power-off-monitors; }
 
     // This debug bind will tint all surfaces green, unless they are being
