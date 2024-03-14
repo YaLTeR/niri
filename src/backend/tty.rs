@@ -443,7 +443,9 @@ impl Tty {
                 .single_renderer(&render_node)
                 .context("error creating renderer")?;
 
-            renderer.bind_wl_display(&niri.display_handle)?;
+            if let Err(err) = renderer.bind_wl_display(&niri.display_handle) {
+                warn!("error binding wl-display in EGL: {err:?}");
+            }
 
             shaders::init(renderer.as_gles_renderer());
 
