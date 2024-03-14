@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::iter::zip;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::rc::Rc;
@@ -702,6 +703,11 @@ impl Tty {
             Err(err) => debug!("error setting max bpc: {err:?}"),
         }
 
+        // Reset gamma to linear in case it was set before.
+        if let Err(err) = set_gamma_for_crtc(&device.drm, crtc, None) {
+            debug!("error resetting gamma: {err:?}");
+        }
+
         let surface = device
             .drm
             .create_surface(crtc, mode, &[connector.handle()])?;
@@ -1244,63 +1250,28 @@ impl Tty {
         }
     }
 
-    pub fn get_gamma_length(&self, output: &Output) -> Option<u32> {
+    pub fn get_gamma_size(&self, output: &Output) -> anyhow::Result<u32> {
         let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
-        let device = self.devices.get(&tty_state.node)?;
-        let crtc_info = device.drm.get_crtc(tty_state.crtc.clone()).ok()?;
-        return Some(crtc_info.gamma_length());
+        let crtc = tty_state.crtc;
+
+        let device = self
+            .devices
+            .get(&tty_state.node)
+            .context("missing device")?;
+        let info = device
+            .drm
+            .get_crtc(crtc)
+            .context("error getting crtc info")?;
+        Ok(info.gamma_length())
     }
 
-    pub fn get_gamma(&self, output: &Output) -> Option<Vec<u16>> {
-        let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
-        let device = self.devices.get(&tty_state.node)?;
-        let crtc_info = device.drm.get_crtc(tty_state.crtc.clone()).ok()?;
-        let crtc = tty_state.crtc.clone();
-        let gamma_length = crtc_info.gamma_length() as usize;
-        let mut red = vec![0; gamma_length];
-        let mut green = vec![0; gamma_length];
-        let mut blue = vec![0; gamma_length];
-        if let Err(err) = device.drm.get_gamma(crtc, &mut red, &mut green, &mut blue) {
-            warn!("error getting gamma for crtc {crtc:?}: {err:?}");
-            return None;
-        }
-        red.extend(green);
-        red.extend(blue);
-        return Some(red);
-    }
-
-    pub fn set_gamma(
-        &self,
-        niri: &mut Niri,
-        output: &Output,
-        ramp: Vec<u16>,
-    ) -> anyhow::Result<()> {
+    pub fn set_gamma(&self, output: &Output, ramp: Option<&[u16]>) -> anyhow::Result<()> {
         let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
         let device = self
             .devices
             .get(&tty_state.node)
             .context("missing device")?;
-
-        let crtc_info = device.drm.get_crtc(tty_state.crtc.clone())?;
-        let crtc = tty_state.crtc.clone();
-        let gamma_length = crtc_info.gamma_length() as usize;
-
-        ensure!(ramp.len() == gamma_length * 3, "wrong gamma length");
-        let mut red = ramp.clone();
-        red.truncate(gamma_length);
-        let mut green = ramp.clone();
-        green.drain(0..gamma_length);
-        green.truncate(gamma_length);
-        let mut blue = ramp;
-        blue.drain(0..gamma_length * 2);
-        blue.truncate(gamma_length);
-
-        device
-            .drm
-            .set_gamma(crtc, &mut red, &mut green, &mut blue)
-            .context("error setting gamma")?;
-        niri.queue_redraw(output.clone());
-        Ok(())
+        set_gamma_for_crtc(&device.drm, tty_state.crtc, ramp)
     }
 
     fn refresh_ipc_outputs(&self) {
@@ -1868,6 +1839,49 @@ fn set_max_bpc(device: &DrmDevice, connector: connector::Handle, bpc: u64) -> an
     }
 
     Err(anyhow!("couldn't find max bpc property"))
+}
+
+pub fn set_gamma_for_crtc(
+    device: &DrmDevice,
+    crtc: crtc::Handle,
+    ramp: Option<&[u16]>,
+) -> anyhow::Result<()> {
+    let _span = tracy_client::span!("set_gamma_for_crtc");
+
+    let info = device.get_crtc(crtc).context("error getting crtc info")?;
+    let gamma_length = info.gamma_length() as usize;
+
+    let mut temp;
+    let ramp = if let Some(ramp) = ramp {
+        ensure!(ramp.len() == gamma_length * 3, "wrong gamma length");
+        ramp
+    } else {
+        let _span = tracy_client::span!("generate linear gamma");
+
+        // The legacy API provides no way to reset the gamma, so set a linear one manually.
+        temp = vec![0u16; gamma_length * 3];
+
+        let (red, rest) = temp.split_at_mut(gamma_length);
+        let (green, blue) = rest.split_at_mut(gamma_length);
+        let denom = gamma_length as u64 - 1;
+        for (i, ((r, g), b)) in zip(zip(red, green), blue).enumerate() {
+            let value = (0xFFFFu64 * i as u64 / denom) as u16;
+            *r = value;
+            *g = value;
+            *b = value;
+        }
+
+        &temp
+    };
+
+    let (red, ramp) = ramp.split_at(gamma_length);
+    let (green, blue) = ramp.split_at(gamma_length);
+
+    device
+        .set_gamma(crtc, red, green, blue)
+        .context("error setting gamma")?;
+
+    Ok(())
 }
 
 #[cfg(test)]

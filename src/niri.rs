@@ -931,14 +931,11 @@ impl Niri {
         let viewporter_state = ViewporterState::new::<State>(&display_handle);
         let xdg_foreign_state = XdgForeignState::new::<State>(&display_handle);
 
-        let gamma_control_manager_state = GammaControlManagerState::new::<State, _>(
-            &display_handle,
-            match backend {
-                Backend::Tty(_) => true,
-                _ => false,
-            },
-            |client| !client.get_data::<ClientState>().unwrap().restricted,
-        );
+        let is_tty = matches!(backend, Backend::Tty(_));
+        let gamma_control_manager_state =
+            GammaControlManagerState::new::<State, _>(&display_handle, move |client| {
+                is_tty && !client.get_data::<ClientState>().unwrap().restricted
+            });
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -1326,6 +1323,7 @@ impl Niri {
         self.layout.remove_output(output);
         self.global_space.unmap_output(output);
         self.reposition_outputs(None);
+        self.gamma_control_manager_state.output_removed(output);
 
         let state = self.output_state.remove(output).unwrap();
         self.output_by_name.remove(&output.name()).unwrap();
