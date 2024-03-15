@@ -2123,6 +2123,7 @@ dependencies = [
  "calloop 0.13.0",
  "clap",
  "directories",
+ "drm-ffi",
  "futures-util",
  "git-version",
  "glam",
