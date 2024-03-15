@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::iter::zip;
+use std::num::NonZeroU64;
+use std::os::fd::AsFd;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::rc::Rc;
@@ -10,6 +12,7 @@ use std::time::Duration;
 use std::{io, mem};
 
 use anyhow::{anyhow, bail, ensure, Context};
+use bytemuck::cast_slice_mut;
 use libc::dev_t;
 use niri_config::Config;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -165,6 +168,7 @@ struct Surface {
     name: String,
     compositor: GbmDrmCompositor,
     dmabuf_feedback: Option<SurfaceDmabufFeedback>,
+    gamma_props: Option<GammaProps>,
     /// Tracy frame that goes from vblank to vblank.
     vblank_frame: Option<tracy_client::Frame>,
     /// Frame name for the VBlank frame.
@@ -179,6 +183,13 @@ struct Surface {
 pub struct SurfaceDmabufFeedback {
     pub render: DmabufFeedback,
     pub scanout: DmabufFeedback,
+}
+
+struct GammaProps {
+    crtc: crtc::Handle,
+    gamma_lut: property::Handle,
+    gamma_lut_size: property::Handle,
+    previous_blob: Option<NonZeroU64>,
 }
 
 impl Tty {
@@ -703,8 +714,17 @@ impl Tty {
             Err(err) => debug!("error setting max bpc: {err:?}"),
         }
 
-        // Reset gamma to linear in case it was set before.
-        if let Err(err) = set_gamma_for_crtc(&device.drm, crtc, None) {
+        let mut gamma_props = GammaProps::new(&device.drm, crtc)
+            .map_err(|err| debug!("error getting gamma properties: {err:?}"))
+            .ok();
+
+        // Reset gamma in case it was set before.
+        let res = if let Some(gamma_props) = &mut gamma_props {
+            gamma_props.set_gamma(&device.drm, None)
+        } else {
+            set_gamma_for_crtc(&device.drm, crtc, None)
+        };
+        if let Err(err) = res {
             debug!("error resetting gamma: {err:?}");
         }
 
@@ -818,6 +838,7 @@ impl Tty {
             name: output_name.clone(),
             compositor,
             dmabuf_feedback,
+            gamma_props,
             vblank_frame: None,
             vblank_frame_name,
             time_since_presentation_plot_name,
@@ -1258,20 +1279,34 @@ impl Tty {
             .devices
             .get(&tty_state.node)
             .context("missing device")?;
-        let info = device
-            .drm
-            .get_crtc(crtc)
-            .context("error getting crtc info")?;
-        Ok(info.gamma_length())
+
+        let surface = device.surfaces.get(&crtc).context("missing surface")?;
+        if let Some(gamma_props) = &surface.gamma_props {
+            gamma_props.gamma_size(&device.drm)
+        } else {
+            let info = device
+                .drm
+                .get_crtc(crtc)
+                .context("error getting crtc info")?;
+            Ok(info.gamma_length())
+        }
     }
 
-    pub fn set_gamma(&self, output: &Output, ramp: Option<&[u16]>) -> anyhow::Result<()> {
+    pub fn set_gamma(&mut self, output: &Output, ramp: Option<&[u16]>) -> anyhow::Result<()> {
         let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
+        let crtc = tty_state.crtc;
+
         let device = self
             .devices
-            .get(&tty_state.node)
+            .get_mut(&tty_state.node)
             .context("missing device")?;
-        set_gamma_for_crtc(&device.drm, tty_state.crtc, ramp)
+
+        let surface = device.surfaces.get_mut(&crtc).context("missing surface")?;
+        if let Some(gamma_props) = &mut surface.gamma_props {
+            gamma_props.set_gamma(&device.drm, ramp)
+        } else {
+            set_gamma_for_crtc(&device.drm, crtc, ramp)
+        }
     }
 
     fn refresh_ipc_outputs(&self) {
@@ -1525,6 +1560,130 @@ impl Tty {
     }
 }
 
+impl GammaProps {
+    fn new(device: &DrmDevice, crtc: crtc::Handle) -> anyhow::Result<Self> {
+        let mut gamma_lut = None;
+        let mut gamma_lut_size = None;
+
+        let props = device
+            .get_properties(crtc)
+            .context("error getting properties")?;
+        for (prop, _) in props {
+            let Ok(info) = device.get_property(prop) else {
+                continue;
+            };
+
+            let Ok(name) = info.name().to_str() else {
+                continue;
+            };
+
+            match name {
+                "GAMMA_LUT" => {
+                    ensure!(
+                        matches!(info.value_type(), property::ValueType::Blob),
+                        "wrong GAMMA_LUT value type"
+                    );
+                    gamma_lut = Some(prop);
+                }
+                "GAMMA_LUT_SIZE" => {
+                    ensure!(
+                        matches!(info.value_type(), property::ValueType::UnsignedRange(_, _)),
+                        "wrong GAMMA_LUT_SIZE value type"
+                    );
+                    gamma_lut_size = Some(prop);
+                }
+                _ => (),
+            }
+        }
+
+        let gamma_lut = gamma_lut.context("missing GAMMA_LUT property")?;
+        let gamma_lut_size = gamma_lut_size.context("missing GAMMA_LUT_SIZE property")?;
+
+        Ok(Self {
+            crtc,
+            gamma_lut,
+            gamma_lut_size,
+            previous_blob: None,
+        })
+    }
+
+    fn gamma_size(&self, device: &DrmDevice) -> anyhow::Result<u32> {
+        let value = get_drm_property(device, self.crtc, self.gamma_lut_size)
+            .context("missing GAMMA_LUT_SIZE property")?;
+        Ok(value as u32)
+    }
+
+    fn set_gamma(&mut self, device: &DrmDevice, gamma: Option<&[u16]>) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("GammaProps::set_gamma");
+
+        let blob = if let Some(gamma) = gamma {
+            let gamma_size = self
+                .gamma_size(device)
+                .context("error getting gamma size")? as usize;
+
+            ensure!(gamma.len() == gamma_size * 3, "wrong gamma length");
+
+            #[allow(non_camel_case_types)]
+            #[repr(C)]
+            #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+            pub struct drm_color_lut {
+                pub red: u16,
+                pub green: u16,
+                pub blue: u16,
+                pub reserved: u16,
+            }
+
+            let (red, rest) = gamma.split_at(gamma_size);
+            let (blue, green) = rest.split_at(gamma_size);
+            let mut data = zip(zip(red, blue), green)
+                .map(|((&red, &green), &blue)| drm_color_lut {
+                    red,
+                    green,
+                    blue,
+                    reserved: 0,
+                })
+                .collect::<Vec<_>>();
+            let data = cast_slice_mut(&mut data);
+
+            let blob = drm_ffi::mode::create_property_blob(device.as_fd(), data)
+                .context("error creating property blob")?;
+            NonZeroU64::new(u64::from(blob.blob_id))
+        } else {
+            None
+        };
+
+        {
+            let _span = tracy_client::span!("set_property");
+
+            let blob = blob.map(NonZeroU64::get).unwrap_or(0);
+            device
+                .set_property(
+                    self.crtc,
+                    self.gamma_lut,
+                    property::Value::Blob(blob).into(),
+                )
+                .context("error setting GAMMA_LUT")
+                .map_err(|err| {
+                    if blob != 0 {
+                        // Destroy the blob we just allocated.
+                        if let Err(err) = device.destroy_property_blob(blob) {
+                            warn!("error destroying GAMMA_LUT property blob: {err:?}");
+                        }
+                    }
+                    err
+                })?;
+        }
+
+        if let Some(blob) = mem::replace(&mut self.previous_blob, blob) {
+            if let Err(err) = device.destroy_property_blob(blob.get()) {
+                warn!("error destroying previous GAMMA_LUT blob: {err:?}");
+            }
+        }
+
+        Ok(())
+    }
+}
+
 fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
     let path = config.debug.render_drm_device.as_ref()?;
     debug!("attempting to use render node from config: {path:?}");
@@ -1606,7 +1765,11 @@ fn surface_dmabuf_feedback(
     Ok(SurfaceDmabufFeedback { render, scanout })
 }
 
-fn find_drm_property(drm: &DrmDevice, crtc: crtc::Handle, name: &str) -> Option<property::Handle> {
+fn find_drm_property(
+    drm: &DrmDevice,
+    crtc: crtc::Handle,
+    name: &str,
+) -> Option<(property::Handle, property::RawValue)> {
     let props = match drm.get_properties(crtc) {
         Ok(props) => props,
         Err(err) => {
@@ -1615,17 +1778,34 @@ fn find_drm_property(drm: &DrmDevice, crtc: crtc::Handle, name: &str) -> Option<
         }
     };
 
-    let (handles, _) = props.as_props_and_values();
-    handles.iter().find_map(|handle| {
-        let info = drm.get_property(*handle).ok()?;
+    props.into_iter().find_map(|(handle, value)| {
+        let info = drm.get_property(handle).ok()?;
         let n = info.name().to_str().ok()?;
 
-        (n == name).then_some(*handle)
+        (n == name).then_some((handle, value))
     })
 }
 
+fn get_drm_property(
+    drm: &DrmDevice,
+    crtc: crtc::Handle,
+    prop: property::Handle,
+) -> Option<property::RawValue> {
+    let props = match drm.get_properties(crtc) {
+        Ok(props) => props,
+        Err(err) => {
+            warn!("error getting CRTC properties: {err:?}");
+            return None;
+        }
+    };
+
+    props
+        .into_iter()
+        .find_map(|(handle, value)| (handle == prop).then_some(value))
+}
+
 fn set_crtc_active(drm: &DrmDevice, crtc: crtc::Handle, active: bool) {
-    let Some(prop) = find_drm_property(drm, crtc, "ACTIVE") else {
+    let Some((prop, _)) = find_drm_property(drm, crtc, "ACTIVE") else {
         return;
     };
 
