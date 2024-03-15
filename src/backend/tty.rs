@@ -397,7 +397,7 @@ impl Tty {
                     // Refresh the connectors.
                     self.device_changed(node.dev_id(), niri);
 
-                    // Apply pending gamma changes.
+                    // Apply pending gamma changes and restore our existing gamma.
                     let device = self.devices.get_mut(&node).unwrap();
                     for (crtc, surface) in device.surfaces.iter_mut() {
                         if let Some(ramp) = surface.pending_gamma_change.take() {
@@ -409,6 +409,10 @@ impl Tty {
                             };
                             if let Err(err) = res {
                                 warn!("error applying pending gamma change: {err:?}");
+                            }
+                        } else if let Some(gamma_props) = &surface.gamma_props {
+                            if let Err(err) = gamma_props.restore_gamma(&device.drm) {
+                                warn!("error restoring gamma: {err:?}");
                             }
                         }
                     }
@@ -1705,6 +1709,21 @@ impl GammaProps {
                 warn!("error destroying previous GAMMA_LUT blob: {err:?}");
             }
         }
+
+        Ok(())
+    }
+
+    fn restore_gamma(&self, device: &DrmDevice) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("GammaProps::restore_gamma");
+
+        let blob = self.previous_blob.map(NonZeroU64::get).unwrap_or(0);
+        device
+            .set_property(
+                self.crtc,
+                self.gamma_lut,
+                property::Value::Blob(blob).into(),
+            )
+            .context("error setting GAMMA_LUT")?;
 
         Ok(())
     }
