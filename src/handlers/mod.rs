@@ -460,7 +460,7 @@ impl GammaControlHandler for State {
         }
     }
 
-    fn set_gamma(&mut self, output: &Output, ramp: Option<&[u16]>) -> Option<()> {
+    fn set_gamma(&mut self, output: &Output, ramp: Option<Vec<u16>>) -> Option<()> {
         match self.backend.tty().set_gamma(output, ramp) {
             Ok(()) => Some(()),
             Err(err) => {
