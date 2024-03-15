@@ -28,7 +28,7 @@ pub struct GammaControlManagerGlobalData {
 pub trait GammaControlHandler {
     fn gamma_control_manager_state(&mut self) -> &mut GammaControlManagerState;
     fn get_gamma_size(&mut self, output: &Output) -> Option<u32>;
-    fn set_gamma(&mut self, output: &Output, ramp: Option<&[u16]>) -> Option<()>;
+    fn set_gamma(&mut self, output: &Output, ramp: Option<Vec<u16>>) -> Option<()>;
 }
 
 pub struct GammaControlState {
@@ -162,8 +162,8 @@ where
                 trace!("setting gamma for output {}", output.name());
 
                 // Start with a u16 slice so it's aligned correctly.
-                let mut buf = vec![0u16; data.gamma_size as usize * 3];
-                let buf = bytemuck::cast_slice_mut(&mut buf);
+                let mut gamma = vec![0u16; data.gamma_size as usize * 3];
+                let buf = bytemuck::cast_slice_mut(&mut gamma);
                 let mut file = File::from(fd);
                 {
                     let _span = tracy_client::span!("read gamma from fd");
@@ -195,7 +195,6 @@ where
                         }
                     }
                 }
-                let gamma = bytemuck::cast_slice(buf);
 
                 if state.set_gamma(&output, Some(gamma)).is_none() {
                     resource.failed();

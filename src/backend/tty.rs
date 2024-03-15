@@ -169,6 +169,8 @@ struct Surface {
     compositor: GbmDrmCompositor,
     dmabuf_feedback: Option<SurfaceDmabufFeedback>,
     gamma_props: Option<GammaProps>,
+    /// Gamma change to apply upon session resume.
+    pending_gamma_change: Option<Option<Vec<u16>>>,
     /// Tracy frame that goes from vblank to vblank.
     vblank_frame: Option<tracy_client::Frame>,
     /// Frame name for the VBlank frame.
@@ -394,6 +396,22 @@ impl Tty {
 
                     // Refresh the connectors.
                     self.device_changed(node.dev_id(), niri);
+
+                    // Apply pending gamma changes.
+                    let device = self.devices.get_mut(&node).unwrap();
+                    for (crtc, surface) in device.surfaces.iter_mut() {
+                        if let Some(ramp) = surface.pending_gamma_change.take() {
+                            let ramp = ramp.as_deref();
+                            let res = if let Some(gamma_props) = &mut surface.gamma_props {
+                                gamma_props.set_gamma(&device.drm, ramp)
+                            } else {
+                                set_gamma_for_crtc(&device.drm, *crtc, ramp)
+                            };
+                            if let Err(err) = res {
+                                warn!("error applying pending gamma change: {err:?}");
+                            }
+                        }
+                    }
                 }
 
                 // Add new devices.
@@ -839,6 +857,7 @@ impl Tty {
             compositor,
             dmabuf_feedback,
             gamma_props,
+            pending_gamma_change: None,
             vblank_frame: None,
             vblank_frame_name,
             time_since_presentation_plot_name,
@@ -1292,7 +1311,7 @@ impl Tty {
         }
     }
 
-    pub fn set_gamma(&mut self, output: &Output, ramp: Option<&[u16]>) -> anyhow::Result<()> {
+    pub fn set_gamma(&mut self, output: &Output, ramp: Option<Vec<u16>>) -> anyhow::Result<()> {
         let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
         let crtc = tty_state.crtc;
 
@@ -1300,8 +1319,15 @@ impl Tty {
             .devices
             .get_mut(&tty_state.node)
             .context("missing device")?;
-
         let surface = device.surfaces.get_mut(&crtc).context("missing surface")?;
+
+        // Cannot change properties while the device is inactive.
+        if !self.session.is_active() {
+            surface.pending_gamma_change = Some(ramp);
+            return Ok(());
+        }
+
+        let ramp = ramp.as_deref();
         if let Some(gamma_props) = &mut surface.gamma_props {
             gamma_props.set_gamma(&device.drm, ramp)
         } else {
