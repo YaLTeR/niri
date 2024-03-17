@@ -143,6 +143,7 @@ impl CompositorHandler for State {
                         })
                         .map(|(window, _)| window.clone());
 
+                    let window = window.clone();
                     let win = window.clone();
 
                     let output = if let Some(p) = parent {
@@ -161,6 +162,12 @@ impl CompositorHandler for State {
 
                     if let Some(output) = output.cloned() {
                         self.niri.layout.start_open_animation_for_window(&window);
+
+                        let new_active_window = self.niri.layout.active_window().map(|(w, _)| w);
+                        if new_active_window == Some(&window) {
+                            self.maybe_warp_cursor_to_focus();
+                        }
+
                         self.niri.queue_redraw(output);
                     }
                     return;
