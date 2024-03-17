@@ -460,7 +460,15 @@ impl XdgShellHandler for State {
             return;
         };
 
+        let active_window = self.niri.layout.active_window().map(|(w, _)| w);
+        let was_active = active_window == Some(&window);
+
         self.niri.layout.remove_window(&window);
+
+        if was_active {
+            self.maybe_warp_cursor_to_focus();
+        }
+
         self.niri.queue_redraw(output);
     }
 
