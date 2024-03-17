@@ -67,6 +67,13 @@ impl WorkspaceSwitch {
         }
     }
 
+    pub fn target_idx(&self) -> f64 {
+        match self {
+            WorkspaceSwitch::Animation(anim) => anim.to(),
+            WorkspaceSwitch::Gesture(gesture) => gesture.current_idx,
+        }
+    }
+
     /// Returns `true` if the workspace switch is [`Animation`].
     ///
     /// [`Animation`]: WorkspaceSwitch::Animation
@@ -587,8 +594,19 @@ impl<W: LayoutElement> Monitor<W> {
     ///
     /// During animations, assumes the final view position.
     pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<i32, Logical>> {
-        // FIXME: switch gesture.
-        self.active_workspace_ref().active_tile_visual_rectangle()
+        let mut rect = self.active_workspace_ref().active_tile_visual_rectangle()?;
+
+        if let Some(switch) = &self.workspace_switch {
+            let size = output_size(&self.output);
+
+            let offset = switch.target_idx() - self.active_workspace_idx as f64;
+            let offset = (offset * size.h as f64).round() as i32;
+
+            let clip_rect = Rectangle::from_loc_and_size((0, -offset), size);
+            rect = rect.intersection(clip_rect)?;
+        }
+
+        Some(rect)
     }
 
     pub fn window_under(
