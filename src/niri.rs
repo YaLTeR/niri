@@ -475,6 +475,10 @@ impl State {
     }
 
     pub fn move_cursor_to_focused_tile(&mut self, mode: CenterCoords) -> bool {
+        if !self.niri.keyboard_focus.is_layout() {
+            return false;
+        }
+
         let Some(output) = self.niri.layout.active_output() else {
             return false;
         };
