@@ -479,6 +479,10 @@ impl State {
             return false;
         }
 
+        if self.niri.tablet_cursor_location.is_some() {
+            return false;
+        }
+
         let Some(output) = self.niri.layout.active_output() else {
             return false;
         };
