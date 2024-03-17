@@ -193,10 +193,7 @@ pub struct Niri {
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<u32>,
-    // This is always a toplevel surface focused as far as niri's logic is concerned, even when
-    // popup grabs are active (which means the real keyboard focus is on a popup descending from
-    // this toplevel surface).
-    pub keyboard_focus: Option<WlSurface>,
+    pub keyboard_focus: KeyboardFocus,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
 
@@ -283,6 +280,18 @@ pub struct PopupGrabState {
     pub grab: PopupGrab<State>,
 }
 
+// The surfaces here are always toplevel surfaces focused as far as niri's logic is concerned, even
+// when popup grabs are active (which means the real keyboard focus is on a popup descending from
+// that toplevel surface).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyboardFocus {
+    // Layout is focused by default if there's nothing else to focus.
+    Layout { surface: Option<WlSurface> },
+    LayerShell { surface: WlSurface },
+    LockScreen { surface: Option<WlSurface> },
+    ScreenshotUi,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct PointerFocus {
     pub output: Output,
@@ -326,6 +335,30 @@ impl Default for SurfaceFrameThrottlingState {
         Self {
             last_sent_at: RefCell::new(None),
         }
+    }
+}
+
+impl KeyboardFocus {
+    pub fn surface(&self) -> Option<&WlSurface> {
+        match self {
+            KeyboardFocus::Layout { surface } => surface.as_ref(),
+            KeyboardFocus::LayerShell { surface } => Some(surface),
+            KeyboardFocus::LockScreen { surface } => surface.as_ref(),
+            KeyboardFocus::ScreenshotUi => None,
+        }
+    }
+
+    pub fn into_surface(self) -> Option<WlSurface> {
+        match self {
+            KeyboardFocus::Layout { surface } => surface,
+            KeyboardFocus::LayerShell { surface } => Some(surface),
+            KeyboardFocus::LockScreen { surface } => surface,
+            KeyboardFocus::ScreenshotUi => None,
+        }
+    }
+
+    pub fn is_layout(&self) -> bool {
+        matches!(self, KeyboardFocus::Layout { .. })
     }
 }
 
@@ -562,9 +595,11 @@ impl State {
 
     pub fn update_keyboard_focus(&mut self) {
         let focus = if self.niri.is_locked() {
-            self.niri.lock_surface_focus()
+            KeyboardFocus::LockScreen {
+                surface: self.niri.lock_surface_focus(),
+            }
         } else if self.niri.screenshot_ui.is_open() {
-            None
+            KeyboardFocus::ScreenshotUi
         } else if let Some(output) = self.niri.layout.active_output() {
             let mon = self.niri.layout.monitor_for_output(output).unwrap();
             let layers = layer_map_for_output(output);
@@ -577,7 +612,9 @@ impl State {
                     .map(|l| (&g.root, l.layer()))
             });
             let grab_on_layer = |layer: Layer| {
-                layer_grab.and_then(move |(s, l)| if l == layer { Some(s.clone()) } else { None })
+                layer_grab
+                    .and_then(move |(s, l)| if l == layer { Some(s.clone()) } else { None })
+                    .map(|surface| KeyboardFocus::LayerShell { surface })
             };
 
             let layout_focus = || {
@@ -585,11 +622,15 @@ impl State {
                     .layout
                     .focus()
                     .map(|win| win.toplevel().expect("no x11 support").wl_surface().clone())
+                    .map(|surface| KeyboardFocus::Layout {
+                        surface: Some(surface),
+                    })
             };
             let layer_focus = |surface: &LayerSurface| {
                 surface
                     .can_receive_keyboard_focus()
                     .then(|| surface.wl_surface().clone())
+                    .map(|surface| KeyboardFocus::LayerShell { surface })
             };
 
             let mut surface = grab_on_layer(Layer::Overlay);
@@ -608,9 +649,9 @@ impl State {
                 surface = surface.or_else(layout_focus);
             }
 
-            surface
+            surface.unwrap_or(KeyboardFocus::Layout { surface: None })
         } else {
-            None
+            KeyboardFocus::Layout { surface: None }
         };
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
@@ -622,7 +663,7 @@ impl State {
             );
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
-                if Some(&grab.root) != focus.as_ref() {
+                if Some(&grab.root) != focus.surface() {
                     trace!(
                         "grab root {:?} is not the new focus {:?}, ungrabbing",
                         grab.root,
@@ -646,7 +687,7 @@ impl State {
 
                 let mut new_layout = current_layout;
                 // Store the currently active layout for the surface.
-                if let Some(current_focus) = self.niri.keyboard_focus.as_ref() {
+                if let Some(current_focus) = self.niri.keyboard_focus.surface() {
                     with_states(current_focus, |data| {
                         let cell = data
                             .data_map
@@ -655,7 +696,7 @@ impl State {
                     });
                 }
 
-                if let Some(focus) = focus.as_ref() {
+                if let Some(focus) = focus.surface() {
                     new_layout = with_states(focus, |data| {
                         let cell = data.data_map.get_or_insert::<Cell<KeyboardLayout>, _>(|| {
                             // The default layout is effectively the first layout in the
@@ -665,7 +706,7 @@ impl State {
                         cell.get()
                     });
                 }
-                if new_layout != current_layout && focus.is_some() {
+                if new_layout != current_layout && focus.surface().is_some() {
                     keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
                     keyboard.with_xkb_state(self, |mut context| {
                         context.set_layout(new_layout);
@@ -674,7 +715,7 @@ impl State {
             }
 
             self.niri.keyboard_focus.clone_from(&focus);
-            keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
+            keyboard.set_focus(self, focus.into_surface(), SERIAL_COUNTER.next_serial());
 
             // FIXME: can be more granular.
             self.niri.queue_redraw_all();
@@ -1169,7 +1210,7 @@ impl Niri {
             gamma_control_manager_state,
 
             seat,
-            keyboard_focus: None,
+            keyboard_focus: KeyboardFocus::Layout { surface: None },
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             cursor_manager,

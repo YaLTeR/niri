@@ -106,7 +106,7 @@ pub fn refresh(state: &mut State) {
                 .lock()
                 .unwrap();
 
-            if state.niri.keyboard_focus.as_ref() == Some(wl_surface) {
+            if state.niri.keyboard_focus.surface() == Some(wl_surface) {
                 focused = Some((window.clone(), output.cloned()));
             } else {
                 refresh_toplevel(protocol_state, wl_surface, &role, output, false);
