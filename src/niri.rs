@@ -3305,6 +3305,28 @@ impl Niri {
             warn!("error spawning a thread to send MonitorsChanged: {err:?}");
         }
     }
+
+    pub fn handle_focus_follows_mouse(&mut self, new_focus: &PointerFocus) {
+        if !self.config.borrow().input.focus_follows_mouse {
+            return;
+        }
+
+        if self.seat.get_pointer().unwrap().is_grabbed() {
+            return;
+        }
+
+        if let Some(output) = &new_focus.output {
+            if self.pointer_focus.output.as_ref() != Some(output) {
+                self.layout.focus_output(output);
+            }
+        }
+
+        if let Some(window) = &new_focus.window {
+            if self.pointer_focus.window.as_ref() != Some(window) {
+                self.layout.activate_window(window);
+            }
+        }
+    }
 }
 
 pub struct ClientState {

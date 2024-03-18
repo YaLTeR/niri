@@ -71,6 +71,8 @@ pub struct Input {
     pub disable_power_key_handling: bool,
     #[knuffel(child)]
     pub warp_mouse_to_focus: bool,
+    #[knuffel(child)]
+    pub focus_follows_mouse: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -1596,6 +1598,7 @@ mod tests {
                 disable-power-key-handling
 
                 warp-mouse-to-focus
+                focus-follows-mouse
             }
 
             output "eDP-1" {
@@ -1736,6 +1739,7 @@ mod tests {
                     },
                     disable_power_key_handling: true,
                     warp_mouse_to_focus: true,
+                    focus_follows_mouse: true,
                 },
                 outputs: vec![Output {
                     off: false,

@@ -903,6 +903,8 @@ impl State {
             }
         }
 
+        self.niri.handle_focus_follows_mouse(&under);
+
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint(new_pos, &under);
 
@@ -967,6 +969,9 @@ impl State {
         }
 
         let under = self.niri.surface_under_and_global_space(pos);
+
+        self.niri.handle_focus_follows_mouse(&under);
+
         self.niri.maybe_activate_pointer_constraint(pos, &under);
         self.niri.pointer_focus.clone_from(&under);
 

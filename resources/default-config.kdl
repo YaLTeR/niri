@@ -70,6 +70,9 @@ input {
 
     // Uncomment this to make the mouse warp to the center of newly focused windows.
     // warp-mouse-to-focus
+
+    // Focus windows and outputs automatically when moving the mouse into them.
+    // focus-follows-mouse
 }
 
 // You can configure outputs by their name, which you can find
