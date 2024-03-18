@@ -1627,6 +1627,7 @@ impl Niri {
         pos: Point<f64, Logical>,
     ) -> Option<PointerFocus> {
         let (output, pos_within_output) = self.output_under(pos)?;
+        let output_pos_in_global_space = self.global_space.output_geometry(output).unwrap().loc;
 
         if self.is_locked() {
             let state = self.output_state.get(output)?;
@@ -1641,7 +1642,7 @@ impl Niri {
             )?;
             return Some(PointerFocus {
                 output: output.clone(),
-                surface: (surface, point),
+                surface: (surface, point + output_pos_in_global_space),
             });
         }
 
@@ -1700,7 +1701,6 @@ impl Niri {
             .or_else(|| layer_surface_under(Layer::Bottom))
             .or_else(|| layer_surface_under(Layer::Background))?;
 
-        let output_pos_in_global_space = self.global_space.output_geometry(output).unwrap().loc;
         let surface_loc_in_global_space = surface_pos_within_output + output_pos_in_global_space;
 
         Some(PointerFocus {
