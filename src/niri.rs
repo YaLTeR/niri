@@ -201,7 +201,7 @@ pub struct Niri {
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
     pub dnd_icon: Option<WlSurface>,
-    pub pointer_focus: Option<PointerFocus>,
+    pub pointer_focus: PointerFocus,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
 
@@ -292,10 +292,14 @@ pub enum KeyboardFocus {
     ScreenshotUi,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub struct PointerFocus {
-    pub output: Output,
-    pub surface: (WlSurface, Point<i32, Logical>),
+    // Output under pointer.
+    pub output: Option<Output>,
+    // Surface under pointer and its location in global coordinate space.
+    pub surface: Option<(WlSurface, Point<i32, Logical>)>,
+    // If surface belongs to a window, this is that window.
+    pub window: Option<Window>,
 }
 
 #[derive(Default)]
@@ -421,12 +425,11 @@ impl State {
         self.niri
             .maybe_activate_pointer_constraint(location, &under);
         self.niri.pointer_focus.clone_from(&under);
-        let under = under.map(|u| u.surface);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         pointer.motion(
             self,
-            under,
+            under.surface,
             &MotionEvent {
                 location,
                 serial: SERIAL_COUNTER.next_serial(),
@@ -560,11 +563,10 @@ impl State {
             .maybe_activate_pointer_constraint(location, &under);
 
         self.niri.pointer_focus.clone_from(&under);
-        let under = under.map(|u| u.surface);
 
         pointer.motion(
             self,
-            under,
+            under.surface,
             &MotionEvent {
                 location,
                 serial: SERIAL_COUNTER.next_serial(),
@@ -1225,7 +1227,7 @@ impl Niri {
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
             dnd_icon: None,
-            pointer_focus: None,
+            pointer_focus: PointerFocus::default(),
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
 
@@ -1622,32 +1624,39 @@ impl Niri {
     /// Pointer needs location in global space, and focused window location compatible with that
     /// global space. We don't have a global space for all windows, but this function converts the
     /// window location temporarily to the current global space.
-    pub fn surface_under_and_global_space(
-        &mut self,
-        pos: Point<f64, Logical>,
-    ) -> Option<PointerFocus> {
-        let (output, pos_within_output) = self.output_under(pos)?;
+    pub fn surface_under_and_global_space(&mut self, pos: Point<f64, Logical>) -> PointerFocus {
+        let mut rv = PointerFocus::default();
+
+        let Some((output, pos_within_output)) = self.output_under(pos) else {
+            return rv;
+        };
+        rv.output = Some(output.clone());
         let output_pos_in_global_space = self.global_space.output_geometry(output).unwrap().loc;
 
         if self.is_locked() {
-            let state = self.output_state.get(output)?;
-            let surface = state.lock_surface.as_ref()?;
-            // We put lock surfaces at (0, 0).
-            let point = pos_within_output;
-            let (surface, point) = under_from_surface_tree(
+            let Some(state) = self.output_state.get(output) else {
+                return rv;
+            };
+            let Some(surface) = state.lock_surface.as_ref() else {
+                return rv;
+            };
+
+            rv.surface = under_from_surface_tree(
                 surface.wl_surface(),
-                point,
+                pos_within_output,
+                // We put lock surfaces at (0, 0).
                 (0, 0),
                 WindowSurfaceType::ALL,
-            )?;
-            return Some(PointerFocus {
-                output: output.clone(),
-                surface: (surface, point + output_pos_in_global_space),
+            )
+            .map(|(surface, pos_within_output)| {
+                (surface, pos_within_output + output_pos_in_global_space)
             });
+
+            return rv;
         }
 
         if self.screenshot_ui.is_open() {
-            return None;
+            return rv;
         }
 
         let layers = layer_map_for_output(output);
@@ -1665,6 +1674,7 @@ impl Niri {
                             (surface, pos_within_layer + layer_pos_within_output)
                         })
                 })
+                .map(|s| (s, None))
         };
 
         let window_under = || {
@@ -1680,6 +1690,7 @@ impl Niri {
                         .map(|(s, pos_within_window)| {
                             (s, pos_within_window + win_pos_within_output)
                         })
+                        .map(|s| (s, Some(window.clone())))
                 })
         };
 
@@ -1697,16 +1708,18 @@ impl Niri {
                 .or_else(window_under);
         }
 
-        let (surface, surface_pos_within_output) = under
+        let Some(((surface, surface_pos_within_output), window)) = under
             .or_else(|| layer_surface_under(Layer::Bottom))
-            .or_else(|| layer_surface_under(Layer::Background))?;
+            .or_else(|| layer_surface_under(Layer::Background))
+        else {
+            return rv;
+        };
 
         let surface_loc_in_global_space = surface_pos_within_output + output_pos_in_global_space;
 
-        Some(PointerFocus {
-            output: output.clone(),
-            surface: (surface, surface_loc_in_global_space),
-        })
+        rv.surface = Some((surface, surface_loc_in_global_space));
+        rv.window = window;
+        rv
     }
 
     pub fn output_under_cursor(&self) -> Option<Output> {
@@ -3231,11 +3244,13 @@ impl Niri {
     pub fn maybe_activate_pointer_constraint(
         &self,
         new_pos: Point<f64, Logical>,
-        new_under: &Option<PointerFocus>,
+        new_under: &PointerFocus,
     ) {
-        let Some(under) = new_under else { return };
+        let Some((surface, surface_loc)) = &new_under.surface else {
+            return;
+        };
         let pointer = &self.seat.get_pointer().unwrap();
-        with_pointer_constraint(&under.surface.0, pointer, |constraint| {
+        with_pointer_constraint(surface, pointer, |constraint| {
             let Some(constraint) = constraint else { return };
             if constraint.is_active() {
                 return;
@@ -3243,7 +3258,7 @@ impl Niri {
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
-                let new_pos_within_surface = new_pos.to_i32_round() - under.surface.1;
+                let new_pos_within_surface = new_pos.to_i32_round() - *surface_loc;
                 if !region.contains(new_pos_within_surface) {
                     return;
                 }

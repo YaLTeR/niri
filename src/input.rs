@@ -778,12 +778,11 @@ impl State {
 
         // Check if we have an active pointer constraint.
         let mut pointer_confined = None;
-        if let Some(focus) = self.niri.pointer_focus.as_ref() {
-            let focus_surface_loc = focus.surface.1;
-            let pos_within_surface = pos.to_i32_round() - focus_surface_loc;
+        if let Some(focus) = &self.niri.pointer_focus.surface {
+            let pos_within_surface = pos.to_i32_round() - focus.1;
 
             let mut pointer_locked = false;
-            with_pointer_constraint(&focus.surface.0, &pointer, |constraint| {
+            with_pointer_constraint(&focus.0, &pointer, |constraint| {
                 let Some(constraint) = constraint else { return };
                 if !constraint.is_active() {
                     return;
@@ -801,7 +800,7 @@ impl State {
                         pointer_locked = true;
                     }
                     PointerConstraint::Confined(confine) => {
-                        pointer_confined = Some((focus.surface.clone(), confine.region().cloned()));
+                        pointer_confined = Some((focus.clone(), confine.region().cloned()));
                     }
                 }
             });
@@ -810,7 +809,7 @@ impl State {
             if pointer_locked {
                 pointer.relative_motion(
                     self,
-                    Some(focus.surface.clone()),
+                    Some(focus.clone()),
                     &RelativeMotionEvent {
                         delta: event.delta(),
                         delta_unaccel: event.delta_unaccel(),
@@ -875,7 +874,7 @@ impl State {
             let mut prevent = false;
 
             // Prevent the pointer from leaving the focused surface.
-            if Some(&focus_surface.0) != under.as_ref().map(|x| &x.surface.0) {
+            if Some(&focus_surface.0) != under.surface.as_ref().map(|(s, _)| s) {
                 prevent = true;
             }
 
@@ -908,11 +907,10 @@ impl State {
         self.niri.maybe_activate_pointer_constraint(new_pos, &under);
 
         self.niri.pointer_focus.clone_from(&under);
-        let under = under.map(|u| u.surface);
 
         pointer.motion(
             self,
-            under.clone(),
+            under.surface.clone(),
             &MotionEvent {
                 location: new_pos,
                 serial,
@@ -922,7 +920,7 @@ impl State {
 
         pointer.relative_motion(
             self,
-            under,
+            under.surface,
             &RelativeMotionEvent {
                 delta: event.delta(),
                 delta_unaccel: event.delta_unaccel(),
@@ -971,11 +969,10 @@ impl State {
         let under = self.niri.surface_under_and_global_space(pos);
         self.niri.maybe_activate_pointer_constraint(pos, &under);
         self.niri.pointer_focus.clone_from(&under);
-        let under = under.map(|u| u.surface);
 
         pointer.motion(
             self,
-            under,
+            under.surface,
             &MotionEvent {
                 location: pos,
                 serial,
@@ -1113,7 +1110,6 @@ impl State {
         };
 
         let under = self.niri.surface_under_and_global_space(pos);
-        let under = under.map(|u| u.surface);
 
         let tablet_seat = self.niri.seat.tablet_seat();
         let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
@@ -1140,7 +1136,7 @@ impl State {
 
             tool.motion(
                 pos,
-                under,
+                under.surface,
                 &tablet,
                 SERIAL_COUNTER.next_serial(),
                 event.time_msec(),
@@ -1195,7 +1191,6 @@ impl State {
         };
 
         let under = self.niri.surface_under_and_global_space(pos);
-        let under = under.map(|u| u.surface);
 
         let tablet_seat = self.niri.seat.tablet_seat();
         let tool = tablet_seat.add_tool::<Self>(&self.niri.display_handle, &event.tool());
@@ -1203,7 +1198,7 @@ impl State {
         if let Some(tablet) = tablet {
             match event.state() {
                 ProximityState::In => {
-                    if let Some(under) = under {
+                    if let Some(under) = under.surface {
                         tool.proximity_in(
                             pos,
                             under,
@@ -1538,13 +1533,10 @@ impl State {
         };
 
         let serial = SERIAL_COUNTER.next_serial();
-        let under = self
-            .niri
-            .surface_under_and_global_space(touch_location)
-            .map(|under| under.surface);
+        let under = self.niri.surface_under_and_global_space(touch_location);
         handle.down(
             self,
-            under,
+            under.surface,
             &DownEvent {
                 slot: evt.slot(),
                 location: touch_location,
@@ -1574,13 +1566,10 @@ impl State {
         let Some(touch_location) = self.compute_touch_location(&evt) else {
             return;
         };
-        let under = self
-            .niri
-            .surface_under_and_global_space(touch_location)
-            .map(|under| under.surface);
+        let under = self.niri.surface_under_and_global_space(touch_location);
         handle.motion(
             self,
-            under,
+            under.surface,
             &TouchMotionEvent {
                 slot: evt.slot(),
                 location: touch_location,
