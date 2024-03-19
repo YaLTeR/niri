@@ -206,6 +206,7 @@ pub struct Niri {
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
 
     pub lock_state: LockState,
+    pub tablet_mode: bool,
 
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
@@ -1265,6 +1266,7 @@ impl Niri {
             gesture_swipe_3f_cumulative: None,
 
             lock_state: LockState::Unlocked,
+            tablet_mode: false,
 
             screenshot_ui,
             config_error_notification,
@@ -1918,6 +1920,10 @@ impl Niri {
         renderer: &mut R,
         output: &Output,
     ) -> Vec<OutputRenderElements<R>> {
+        if self.tablet_mode && self.tablet_cursor_location.is_none() {
+            return vec![];
+        }
+
         let _span = tracy_client::span!("Niri::pointer_element");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
