@@ -898,7 +898,11 @@ impl State {
                     }
                 };
 
-                let pw = self.niri.pipewire.as_ref().unwrap();
+                let Some(pw) = &self.niri.pipewire else {
+                    error!("screencasting must be disabled if PipeWire is missing");
+                    return;
+                };
+
                 match pw.start_cast(
                     to_niri.clone(),
                     gbm,

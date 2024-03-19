@@ -67,7 +67,7 @@ impl DBusServers {
             dbus.conn_screen_shot = try_start(screenshot);
 
             #[cfg(feature = "xdp-gnome-screencast")]
-            {
+            if niri.pipewire.is_some() {
                 let (to_niri, from_screen_cast) = calloop::channel::channel();
                 niri.event_loop
                     .insert_source(from_screen_cast, {
@@ -82,6 +82,8 @@ impl DBusServers {
                     .unwrap();
                 let screen_cast = ScreenCast::new(backend.enabled_outputs(), to_niri);
                 dbus.conn_screen_cast = try_start(screen_cast);
+            } else {
+                warn!("disabling screencast support because we couldn't start PipeWire");
             }
         }
 
