@@ -118,7 +118,7 @@ impl<W: LayoutElement> Monitor<W> {
             .map(|s| s.current_idx())
             .unwrap_or(self.active_workspace_idx as f64);
 
-        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id);
+        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
 
         self.active_workspace_idx = idx;
 
@@ -469,7 +469,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     fn previous_workspace_idx(&self) -> Option<usize> {
         let id = self.previous_workspace_id?;
-        self.workspaces.iter().position(|w| w.id == id)
+        self.workspaces.iter().position(|w| w.id() == id)
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {
@@ -866,7 +866,7 @@ impl<W: LayoutElement> Monitor<W> {
             gesture.center_idx as f64 + current_pos,
         );
 
-        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id);
+        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(

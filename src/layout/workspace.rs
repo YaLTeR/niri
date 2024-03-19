@@ -79,7 +79,7 @@ pub struct Workspace<W: LayoutElement> {
     pub options: Rc<Options>,
 
     /// Unique ID of this workspace.
-    pub id: WorkspaceId,
+    id: WorkspaceId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -258,6 +258,10 @@ impl<W: LayoutElement> Workspace<W> {
             options,
             id: WorkspaceId::next(),
         }
+    }
+
+    pub fn id(&self) -> WorkspaceId {
+        self.id
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
