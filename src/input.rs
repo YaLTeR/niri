@@ -569,8 +569,20 @@ impl State {
             }
             Action::FocusWorkspace(idx) => {
                 let idx = idx.saturating_sub(1) as usize;
-                self.niri.layout.switch_workspace(idx);
+
+                let config = &self.niri.config;
+                if config.borrow().input.workspace_auto_back_and_forth {
+                    self.niri.layout.switch_workspace_auto_back_and_forth(idx);
+                } else {
+                    self.niri.layout.switch_workspace(idx);
+                }
+
                 self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWorkspacePrevious => {
+                self.niri.layout.switch_workspace_previous();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }

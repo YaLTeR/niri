@@ -14,6 +14,7 @@ use smithay::output::Output;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
+pub mod id;
 pub mod spawning;
 pub mod watcher;
 

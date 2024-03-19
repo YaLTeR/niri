@@ -10,7 +10,8 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale};
 
 use super::workspace::{
-    compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
+    compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceId,
+    WorkspaceRenderElement,
 };
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
@@ -35,6 +36,8 @@ pub struct Monitor<W: LayoutElement> {
     pub workspaces: Vec<Workspace<W>>,
     /// Index of the currently active workspace.
     pub active_workspace_idx: usize,
+    /// ID of the previously active workspace.
+    pub previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
     pub workspace_switch: Option<WorkspaceSwitch>,
     /// Configurable properties of the layout.
@@ -89,6 +92,7 @@ impl<W: LayoutElement> Monitor<W> {
             output,
             workspaces,
             active_workspace_idx: 0,
+            previous_workspace_id: None,
             workspace_switch: None,
             options,
         }
@@ -113,6 +117,8 @@ impl<W: LayoutElement> Monitor<W> {
             .as_ref()
             .map(|s| s.current_idx())
             .unwrap_or(self.active_workspace_idx as f64);
+
+        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
 
         self.active_workspace_idx = idx;
 
@@ -461,12 +467,35 @@ impl<W: LayoutElement> Monitor<W> {
         ));
     }
 
+    fn previous_workspace_idx(&self) -> Option<usize> {
+        let id = self.previous_workspace_id?;
+        self.workspaces.iter().position(|w| w.id() == id)
+    }
+
     pub fn switch_workspace(&mut self, idx: usize) {
         self.activate_workspace(min(idx, self.workspaces.len() - 1));
         // Don't animate this action.
         self.workspace_switch = None;
 
         self.clean_up_workspaces();
+    }
+
+    pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
+        let idx = min(idx, self.workspaces.len() - 1);
+
+        if idx == self.active_workspace_idx {
+            if let Some(prev_idx) = self.previous_workspace_idx() {
+                self.switch_workspace(prev_idx);
+            }
+        } else {
+            self.switch_workspace(idx);
+        }
+    }
+
+    pub fn switch_workspace_previous(&mut self) {
+        if let Some(idx) = self.previous_workspace_idx() {
+            self.switch_workspace(idx);
+        }
     }
 
     pub fn consume_into_column(&mut self) {
@@ -564,8 +593,10 @@ impl<W: LayoutElement> Monitor<W> {
             self.workspaces.push(ws);
         }
 
+        let previous_workspace_id = self.previous_workspace_id;
         self.activate_workspace(new_idx);
         self.workspace_switch = None;
+        self.previous_workspace_id = previous_workspace_id;
 
         self.clean_up_workspaces();
     }
@@ -584,8 +615,10 @@ impl<W: LayoutElement> Monitor<W> {
             self.workspaces.push(ws);
         }
 
+        let previous_workspace_id = self.previous_workspace_id;
         self.activate_workspace(new_idx);
         self.workspace_switch = None;
+        self.previous_workspace_id = previous_workspace_id;
 
         self.clean_up_workspaces();
     }
@@ -832,6 +865,8 @@ impl<W: LayoutElement> Monitor<W> {
             max,
             gesture.center_idx as f64 + current_pos,
         );
+
+        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(

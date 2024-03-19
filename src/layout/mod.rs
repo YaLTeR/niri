@@ -1165,6 +1165,20 @@ impl<W: LayoutElement> Layout<W> {
         monitor.switch_workspace(idx);
     }
 
+    pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.switch_workspace_auto_back_and_forth(idx);
+    }
+
+    pub fn switch_workspace_previous(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.switch_workspace_previous();
+    }
+
     pub fn consume_into_column(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1221,7 +1235,11 @@ impl<W: LayoutElement> Layout<W> {
 
     #[cfg(test)]
     fn verify_invariants(&self) {
+        use std::collections::HashSet;
+
         use crate::layout::monitor::WorkspaceSwitch;
+
+        let mut seen_workspace_id = HashSet::new();
 
         let (monitors, &primary_idx, &active_monitor_idx) = match &self.monitor_set {
             MonitorSet::Normal {
@@ -1239,6 +1257,11 @@ impl<W: LayoutElement> Layout<W> {
                     assert_eq!(
                         workspace.options, self.options,
                         "workspace options must be synchronized with layout"
+                    );
+
+                    assert!(
+                        seen_workspace_id.insert(workspace.id()),
+                        "workspace id must be unique"
                     );
 
                     workspace.verify_invariants();
@@ -1323,6 +1346,11 @@ impl<W: LayoutElement> Layout<W> {
                 assert_eq!(
                     workspace.options, self.options,
                     "workspace options must be synchronized with layout"
+                );
+
+                assert!(
+                    seen_workspace_id.insert(workspace.id()),
+                    "workspace id must be unique"
                 );
 
                 workspace.verify_invariants();
@@ -1528,6 +1556,8 @@ impl<W: LayoutElement> Layout<W> {
             .position(|mon| &mon.output == output)
             .unwrap();
         let target = &mut monitors[target_idx];
+
+        target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
 
         // Insert the workspace after the currently active one. Unless the currently active one is
         // the last empty workspace, then insert before.
@@ -2017,6 +2047,8 @@ mod tests {
         FocusWorkspaceDown,
         FocusWorkspaceUp,
         FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
+        FocusWorkspaceAutoBackAndForth(#[proptest(strategy = "0..=4usize")] usize),
+        FocusWorkspacePrevious,
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
         MoveWindowToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
@@ -2219,6 +2251,10 @@ mod tests {
                 Op::FocusWorkspaceDown => layout.switch_workspace_down(),
                 Op::FocusWorkspaceUp => layout.switch_workspace_up(),
                 Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
+                Op::FocusWorkspaceAutoBackAndForth(idx) => {
+                    layout.switch_workspace_auto_back_and_forth(idx)
+                }
+                Op::FocusWorkspacePrevious => layout.switch_workspace_previous(),
                 Op::MoveWindowToWorkspaceDown => layout.move_to_workspace_down(),
                 Op::MoveWindowToWorkspaceUp => layout.move_to_workspace_up(),
                 Op::MoveWindowToWorkspace(idx) => layout.move_to_workspace(idx),

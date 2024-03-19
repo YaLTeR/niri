@@ -18,6 +18,7 @@ use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::swipe_tracker::SwipeTracker;
+use crate::utils::id::IdCounter;
 use crate::utils::output_size;
 
 /// Amount of touchpad movement to scroll the view for the width of one working area.
@@ -76,10 +77,24 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     pub options: Rc<Options>,
+
+    /// Unique ID of this workspace.
+    id: WorkspaceId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
+
+static WORKSPACE_ID_COUNTER: IdCounter = IdCounter::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WorkspaceId(u32);
+
+impl WorkspaceId {
+    fn next() -> WorkspaceId {
+        WorkspaceId(WORKSPACE_ID_COUNTER.next())
+    }
+}
 
 niri_render_elements! {
     WorkspaceRenderElement<R> => {
@@ -225,6 +240,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
             options,
+            id: WorkspaceId::next(),
         }
     }
 
@@ -240,7 +256,12 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
             options,
+            id: WorkspaceId::next(),
         }
+    }
+
+    pub fn id(&self) -> WorkspaceId {
+        self.id
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {

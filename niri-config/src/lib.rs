@@ -73,6 +73,8 @@ pub struct Input {
     pub warp_mouse_to_focus: bool,
     #[knuffel(child)]
     pub focus_follows_mouse: bool,
+    #[knuffel(child)]
+    pub workspace_auto_back_and_forth: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -766,6 +768,7 @@ pub enum Action {
     FocusWorkspaceDown,
     FocusWorkspaceUp,
     FocusWorkspace(#[knuffel(argument)] u8),
+    FocusWorkspacePrevious,
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
     MoveWindowToWorkspace(#[knuffel(argument)] u8),
@@ -835,6 +838,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWorkspaceDown => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp => Self::FocusWorkspaceUp,
             niri_ipc::Action::FocusWorkspace { index } => Self::FocusWorkspace(index),
+            niri_ipc::Action::FocusWorkspacePrevious => Self::FocusWorkspacePrevious,
             niri_ipc::Action::MoveWindowToWorkspaceDown => Self::MoveWindowToWorkspaceDown,
             niri_ipc::Action::MoveWindowToWorkspaceUp => Self::MoveWindowToWorkspaceUp,
             niri_ipc::Action::MoveWindowToWorkspace { index } => Self::MoveWindowToWorkspace(index),
@@ -1599,6 +1603,7 @@ mod tests {
 
                 warp-mouse-to-focus
                 focus-follows-mouse
+                workspace-auto-back-and-forth
             }
 
             output "eDP-1" {
@@ -1740,6 +1745,7 @@ mod tests {
                     disable_power_key_handling: true,
                     warp_mouse_to_focus: true,
                     focus_follows_mouse: true,
+                    workspace_auto_back_and_forth: true,
                 },
                 outputs: vec![Output {
                     off: false,

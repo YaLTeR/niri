@@ -123,6 +123,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         index: u8,
     },
+    /// Focus the previous workspace.
+    FocusWorkspacePrevious,
     /// Move the focused window to the workspace below.
     MoveWindowToWorkspaceDown,
     /// Move the focused window to the workspace above.
