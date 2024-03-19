@@ -38,6 +38,7 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{
     self, connector, crtc, property, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags,
+    ResourceHandle,
 };
 use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
@@ -1812,13 +1813,13 @@ fn surface_dmabuf_feedback(
 
 fn find_drm_property(
     drm: &DrmDevice,
-    crtc: crtc::Handle,
+    resource: impl ResourceHandle,
     name: &str,
 ) -> Option<(property::Handle, property::RawValue)> {
-    let props = match drm.get_properties(crtc) {
+    let props = match drm.get_properties(resource) {
         Ok(props) => props,
         Err(err) => {
-            warn!("error getting CRTC properties: {err:?}");
+            warn!("error getting properties: {err:?}");
             return None;
         }
     };
@@ -1833,13 +1834,13 @@ fn find_drm_property(
 
 fn get_drm_property(
     drm: &DrmDevice,
-    crtc: crtc::Handle,
+    resource: impl ResourceHandle,
     prop: property::Handle,
 ) -> Option<property::RawValue> {
-    let props = match drm.get_properties(crtc) {
+    let props = match drm.get_properties(resource) {
         Ok(props) => props,
         Err(err) => {
-            warn!("error getting CRTC properties: {err:?}");
+            warn!("error getting properties: {err:?}");
             return None;
         }
     };
