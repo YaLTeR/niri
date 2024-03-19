@@ -2031,6 +2031,7 @@ mod tests {
         FocusWorkspaceDown,
         FocusWorkspaceUp,
         FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
+        FocusWorkspaceAutoBackAndForth(#[proptest(strategy = "0..=4usize")] usize),
         FocusWorkspacePrevious,
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
@@ -2234,6 +2235,9 @@ mod tests {
                 Op::FocusWorkspaceDown => layout.switch_workspace_down(),
                 Op::FocusWorkspaceUp => layout.switch_workspace_up(),
                 Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
+                Op::FocusWorkspaceAutoBackAndForth(idx) => {
+                    layout.switch_workspace_auto_back_and_forth(idx)
+                }
                 Op::FocusWorkspacePrevious => layout.switch_workspace_previous(),
                 Op::MoveWindowToWorkspaceDown => layout.move_to_workspace_down(),
                 Op::MoveWindowToWorkspaceUp => layout.move_to_workspace_up(),
