@@ -10,7 +10,7 @@ use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::tile::{Tile, TileRenderElement};
 use super::{LayoutElement, Options};
@@ -18,7 +18,8 @@ use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::swipe_tracker::SwipeTracker;
-use crate::utils::{output_size, NIRI_SERIAL_COUNTER};
+use crate::utils::id::IdCounter;
+use crate::utils::output_size;
 
 /// Amount of touchpad movement to scroll the view for the width of one working area.
 const VIEW_GESTURE_WORKING_AREA_MOVEMENT: f64 = 1200.;
@@ -77,12 +78,23 @@ pub struct Workspace<W: LayoutElement> {
     /// Configurable properties of the layout.
     pub options: Rc<Options>,
 
-    /// unique id of this workspace
-    pub id: Serial,
+    /// Unique ID of this workspace.
+    pub id: WorkspaceId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
+
+static WORKSPACE_ID_COUNTER: IdCounter = IdCounter::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceId(u32);
+
+impl WorkspaceId {
+    fn next() -> WorkspaceId {
+        WorkspaceId(WORKSPACE_ID_COUNTER.next())
+    }
+}
 
 niri_render_elements! {
     WorkspaceRenderElement<R> => {
@@ -228,7 +240,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
             options,
-            id: NIRI_SERIAL_COUNTER.next_serial(),
+            id: WorkspaceId::next(),
         }
     }
 
@@ -244,7 +256,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
             options,
-            id: NIRI_SERIAL_COUNTER.next_serial(),
+            id: WorkspaceId::next(),
         }
     }
 

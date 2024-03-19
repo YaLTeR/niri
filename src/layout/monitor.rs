@@ -7,10 +7,11 @@ use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Serial};
+use smithay::utils::{Logical, Point, Rectangle, Scale};
 
 use super::workspace::{
-    compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceRenderElement,
+    compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceId,
+    WorkspaceRenderElement,
 };
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
@@ -36,7 +37,7 @@ pub struct Monitor<W: LayoutElement> {
     /// Index of the currently active workspace.
     pub active_workspace_idx: usize,
     /// ID of the previously active workspace.
-    pub previous_workspace_id: Option<Serial>,
+    pub previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
     pub workspace_switch: Option<WorkspaceSwitch>,
     /// Configurable properties of the layout.
@@ -117,10 +118,8 @@ impl<W: LayoutElement> Monitor<W> {
             .map(|s| s.current_idx())
             .unwrap_or(self.active_workspace_idx as f64);
 
-        if !self.workspaces.is_empty() {
-            // update previous workspace id
-            self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id);
-        }
+        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id);
+
         self.active_workspace_idx = idx;
 
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
@@ -469,9 +468,8 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     fn previous_workspace_idx(&self) -> Option<usize> {
-        self.workspaces
-            .iter()
-            .position(|w| Some(w.id) == self.previous_workspace_id)
+        let id = self.previous_workspace_id?;
+        self.workspaces.iter().position(|w| w.id == id)
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
@@ -872,10 +870,8 @@ impl<W: LayoutElement> Monitor<W> {
             gesture.center_idx as f64 + current_pos,
         );
 
-        if !self.workspaces.is_empty() {
-            // update previous workspace id
-            self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id);
-        }
+        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id);
+
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             gesture.current_idx,

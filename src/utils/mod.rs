@@ -12,13 +12,13 @@ use git_version::git_version;
 use niri_config::Config;
 use smithay::output::Output;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
-use smithay::utils::{Logical, Point, Rectangle, SerialCounter, Size};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 
+pub mod id;
 pub mod spawning;
 pub mod watcher;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
-pub static NIRI_SERIAL_COUNTER: SerialCounter = SerialCounter::new();
 
 pub fn clone2<T: Clone, U: Clone>(t: (&T, &U)) -> (T, U) {
     (t.0.clone(), t.1.clone())
