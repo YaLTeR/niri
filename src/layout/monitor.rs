@@ -593,8 +593,10 @@ impl<W: LayoutElement> Monitor<W> {
             self.workspaces.push(ws);
         }
 
+        let previous_workspace_id = self.previous_workspace_id;
         self.activate_workspace(new_idx);
         self.workspace_switch = None;
+        self.previous_workspace_id = previous_workspace_id;
 
         self.clean_up_workspaces();
     }
@@ -613,8 +615,10 @@ impl<W: LayoutElement> Monitor<W> {
             self.workspaces.push(ws);
         }
 
+        let previous_workspace_id = self.previous_workspace_id;
         self.activate_workspace(new_idx);
         self.workspace_switch = None;
+        self.previous_workspace_id = previous_workspace_id;
 
         self.clean_up_workspaces();
     }
