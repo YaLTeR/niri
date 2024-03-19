@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetWidth, Struts};
 use niri_ipc::SizeChange;
-use smithay::desktop::space::SpaceElement;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -1534,9 +1533,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         true
     }
-}
 
-impl Workspace<Window> {
     pub fn refresh(&self, is_active: bool) {
         let bounds = self.toplevel_bounds();
 
@@ -1548,15 +1545,8 @@ impl Workspace<Window> {
                     && col.active_tile_idx == tile_idx;
                 win.set_activated(active);
 
-                win.toplevel()
-                    .expect("no x11 support")
-                    .with_pending_state(|state| {
-                        state.bounds = Some(bounds);
-                    });
-
-                win.toplevel()
-                    .expect("no x11 support")
-                    .send_pending_configure();
+                win.set_bounds(bounds);
+                win.send_pending_configure();
                 win.refresh();
             }
         }

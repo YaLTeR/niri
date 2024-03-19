@@ -113,6 +113,10 @@ pub trait LayoutElement {
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
     fn set_offscreen_element_id(&self, id: Option<Id>);
+    fn set_activated(&self, active: bool);
+    fn set_bounds(&self, bounds: Size<i32, Logical>);
+
+    fn send_pending_configure(&self);
 
     /// Whether the element is currently fullscreen.
     ///
@@ -123,6 +127,9 @@ pub trait LayoutElement {
     ///
     /// This *will* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
     fn is_pending_fullscreen(&self) -> bool;
+
+    /// Runs periodic clean-up tasks.
+    fn refresh(&self);
 }
 
 #[derive(Debug)]
@@ -327,6 +334,24 @@ impl LayoutElement for Window {
         data.0.replace(id);
     }
 
+    fn set_activated(&self, active: bool) {
+        Window::set_activated(self, active);
+    }
+
+    fn set_bounds(&self, bounds: Size<i32, Logical>) {
+        self.toplevel()
+            .expect("no x11 support")
+            .with_pending_state(|state| {
+                state.bounds = Some(bounds);
+            });
+    }
+
+    fn send_pending_configure(&self) {
+        self.toplevel()
+            .expect("no x11 support")
+            .send_pending_configure();
+    }
+
     fn is_fullscreen(&self) -> bool {
         self.toplevel()
             .expect("no x11 support")
@@ -339,6 +364,10 @@ impl LayoutElement for Window {
         self.toplevel()
             .expect("no x11 support")
             .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
+    }
+
+    fn refresh(&self) {
+        SpaceElement::refresh(self)
     }
 }
 
@@ -1792,11 +1821,9 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
     }
-}
 
-impl Layout<Window> {
     pub fn refresh(&mut self) {
-        let _span = tracy_client::span!("MonitorSet::refresh");
+        let _span = tracy_client::span!("Layout::refresh");
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -1964,6 +1991,12 @@ mod tests {
 
         fn set_offscreen_element_id(&self, _id: Option<Id>) {}
 
+        fn set_activated(&self, _active: bool) {}
+
+        fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
+
+        fn send_pending_configure(&self) {}
+
         fn is_fullscreen(&self) -> bool {
             false
         }
@@ -1971,6 +2004,8 @@ mod tests {
         fn is_pending_fullscreen(&self) -> bool {
             self.0.pending_fullscreen.get()
         }
+
+        fn refresh(&self) {}
     }
 
     fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {

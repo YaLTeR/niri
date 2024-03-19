@@ -202,6 +202,12 @@ impl LayoutElement for TestWindow {
 
     fn set_offscreen_element_id(&self, _id: Option<Id>) {}
 
+    fn set_activated(&self, _active: bool) {}
+
+    fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
+
+    fn send_pending_configure(&self) {}
+
     fn is_fullscreen(&self) -> bool {
         false
     }
@@ -209,4 +215,6 @@ impl LayoutElement for TestWindow {
     fn is_pending_fullscreen(&self) -> bool {
         self.inner.borrow().pending_fullscreen
     }
+
+    fn refresh(&self) {}
 }
