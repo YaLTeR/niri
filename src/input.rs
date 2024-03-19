@@ -584,8 +584,8 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWorkspaceBackAndForth => {
-                self.niri.layout.switch_workspace_back_and_forth();
+            Action::FocusWorkspacePrevious => {
+                self.niri.layout.switch_workspace_previous();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }

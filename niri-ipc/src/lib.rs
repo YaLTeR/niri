@@ -124,7 +124,7 @@ pub enum Action {
         index: u8,
     },
     /// Focus the previous workspace.
-    FocusWorkspaceBackAndForth,
+    FocusWorkspacePrevious,
     /// Move the focused window to the workspace below.
     MoveWindowToWorkspaceDown,
     /// Move the focused window to the workspace above.

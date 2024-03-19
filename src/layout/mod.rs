@@ -1172,11 +1172,11 @@ impl<W: LayoutElement> Layout<W> {
         monitor.switch_workspace_auto_back_and_forth(idx);
     }
 
-    pub fn switch_workspace_back_and_forth(&mut self) {
+    pub fn switch_workspace_previous(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace_back_and_forth();
+        monitor.switch_workspace_previous();
     }
 
     pub fn consume_into_column(&mut self) {

@@ -75,7 +75,7 @@ input {
     // focus-follows-mouse
 
     // Uncomment this to enable workspace auto-back-and-forth.
-    // If enabled switching to the same workspace index twice will switch back to the
+    // If enabled, switching to the same workspace by index twice will switch back to the
     // previous workspace.
     // workspace-auto-back-and-forth
 }
@@ -484,9 +484,6 @@ binds {
     Mod+Ctrl+U         { move-column-to-workspace-down; }
     Mod+Ctrl+I         { move-column-to-workspace-up; }
 
-    // Switches focus between the current and the previous workspace.
-    Mod+Tab            { focus-workspace-back-and-forth; }
-
     // Alternatively, there are commands to move just a single window:
     // Mod+Ctrl+Page_Down { move-window-to-workspace-down; }
     // ...
@@ -525,6 +522,9 @@ binds {
 
     // Alternatively, there are commands to move just a single window:
     // Mod+Ctrl+1 { move-window-to-workspace 1; }
+
+    // Switches focus between the current and the previous workspace.
+    // Mod+Tab { focus-workspace-previous; }
 
     Mod+Comma  { consume-window-into-column; }
     Mod+Period { expel-window-from-column; }
