@@ -87,7 +87,7 @@ pub struct OutputId(String);
 
 static WORKSPACE_ID_COUNTER: IdCounter = IdCounter::new();
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WorkspaceId(u32);
 
 impl WorkspaceId {

@@ -1235,7 +1235,11 @@ impl<W: LayoutElement> Layout<W> {
 
     #[cfg(test)]
     fn verify_invariants(&self) {
+        use std::collections::HashSet;
+
         use crate::layout::monitor::WorkspaceSwitch;
+
+        let mut seen_workspace_id = HashSet::new();
 
         let (monitors, &primary_idx, &active_monitor_idx) = match &self.monitor_set {
             MonitorSet::Normal {
@@ -1253,6 +1257,11 @@ impl<W: LayoutElement> Layout<W> {
                     assert_eq!(
                         workspace.options, self.options,
                         "workspace options must be synchronized with layout"
+                    );
+
+                    assert!(
+                        seen_workspace_id.insert(workspace.id()),
+                        "workspace id must be unique"
                     );
 
                     workspace.verify_invariants();
@@ -1337,6 +1346,11 @@ impl<W: LayoutElement> Layout<W> {
                 assert_eq!(
                     workspace.options, self.options,
                     "workspace options must be synchronized with layout"
+                );
+
+                assert!(
+                    seen_workspace_id.insert(workspace.id()),
+                    "workspace id must be unique"
                 );
 
                 workspace.verify_invariants();
