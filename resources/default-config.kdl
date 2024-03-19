@@ -123,6 +123,9 @@ layout {
     // If you don't like that, you should uncomment `prefer-no-csd` below.
     // Niri will draw focus ring and border *around* windows that agree to omit their
     // client-side decorations.
+    //
+    // Alternatively, you can override it with a window rule called
+    // `draw-border-with-background`.
 
     // You can change how the focus ring looks.
     focus-ring {
@@ -393,6 +396,13 @@ animations {
     // if it is equal to min-height. Either set this equal to min-height,
     // or change the window height manually for this to apply.
     max-height 300
+
+    // Override whether the border and the focus ring draw with a background.
+    // Set this to `true` to draw them as solid colored rectangles even for
+    // windows which agreed to omit their client-side decorations.
+    // Set this to `false` to draw them as borders around the window even for
+    // windows which use client-side decorations.
+    draw-border-with-background false
 }
 
 // Here's a useful example. Work around WezTerm's initial configure bug

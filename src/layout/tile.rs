@@ -85,11 +85,22 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
+        let draw_border_with_background = self
+            .window
+            .rules()
+            .draw_border_with_background
+            .unwrap_or_else(|| !self.window.has_ssd());
         self.border
-            .update(self.window.size(), self.window.has_ssd());
+            .update(self.window.size(), !draw_border_with_background);
         self.border.set_active(is_active);
 
-        self.focus_ring.update(self.tile_size(), self.has_ssd());
+        let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
+            false
+        } else {
+            draw_border_with_background
+        };
+        self.focus_ring
+            .update(self.tile_size(), !draw_focus_ring_with_background);
         self.focus_ring.set_active(is_active);
 
         match &mut self.open_animation {
@@ -295,8 +306,15 @@ impl<W: LayoutElement> Tile<W> {
         size
     }
 
-    pub fn has_ssd(&self) -> bool {
-        self.effective_border_width().is_some() || self.window.has_ssd()
+    pub fn draw_border_with_background(&self) -> bool {
+        if self.effective_border_width().is_some() {
+            return false;
+        }
+
+        self.window
+            .rules()
+            .draw_border_with_background
+            .unwrap_or_else(|| !self.window.has_ssd())
     }
 
     fn render_inner<R: NiriRenderer>(

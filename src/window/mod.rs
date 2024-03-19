@@ -13,7 +13,7 @@ pub mod unmapped;
 pub use unmapped::{InitialConfigureState, Unmapped};
 
 /// Rules fully resolved for a window.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct ResolvedWindowRules {
     /// Default width for this window.
     ///
@@ -39,13 +39,32 @@ pub struct ResolvedWindowRules {
     pub max_width: Option<u16>,
     /// Extra bound on the maximum window height.
     pub max_height: Option<u16>,
+
+    /// Whether or not to draw the border with a solid background.
+    ///
+    /// `None` means using the SSD heuristic.
+    pub draw_border_with_background: Option<bool>,
 }
 
 impl ResolvedWindowRules {
+    pub const fn empty() -> Self {
+        Self {
+            default_width: None,
+            open_on_output: None,
+            open_maximized: None,
+            open_fullscreen: None,
+            min_width: None,
+            min_height: None,
+            max_width: None,
+            max_height: None,
+            draw_border_with_background: None,
+        }
+    }
+
     pub fn compute(rules: &[WindowRule], toplevel: &ToplevelSurface) -> Self {
         let _span = tracy_client::span!("ResolvedWindowRules::compute");
 
-        let mut resolved = ResolvedWindowRules::default();
+        let mut resolved = ResolvedWindowRules::empty();
 
         with_states(toplevel.wl_surface(), |states| {
             let role = states
@@ -99,6 +118,10 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.max_height {
                     resolved.max_height = Some(x);
+                }
+
+                if let Some(x) = rule.draw_border_with_background {
+                    resolved.draw_border_with_background = Some(x);
                 }
             }
 

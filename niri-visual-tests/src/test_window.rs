@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use niri::layout::{LayoutElement, LayoutElementRenderElement};
 use niri::render_helpers::renderer::NiriRenderer;
+use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::output::Output;
@@ -217,4 +218,9 @@ impl LayoutElement for TestWindow {
     }
 
     fn refresh(&self) {}
+
+    fn rules(&self) -> &ResolvedWindowRules {
+        static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
+        &EMPTY
+    }
 }

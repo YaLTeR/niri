@@ -49,6 +49,7 @@ use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Works
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::utils::output_size;
+use crate::window::ResolvedWindowRules;
 
 pub mod focus_ring;
 pub mod monitor;
@@ -120,6 +121,8 @@ pub trait LayoutElement {
     ///
     /// This *will* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
     fn is_pending_fullscreen(&self) -> bool;
+
+    fn rules(&self) -> &ResolvedWindowRules;
 
     /// Runs periodic clean-up tasks.
     fn refresh(&self);
@@ -1905,6 +1908,11 @@ mod tests {
         }
 
         fn refresh(&self) {}
+
+        fn rules(&self) -> &ResolvedWindowRules {
+            static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
+            &EMPTY
+        }
     }
 
     fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {

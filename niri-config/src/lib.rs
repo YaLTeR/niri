@@ -693,6 +693,9 @@ pub struct WindowRule {
     pub max_width: Option<u16>,
     #[knuffel(child, unwrap(argument))]
     pub max_height: Option<u16>,
+
+    #[knuffel(child, unwrap(argument))]
+    pub draw_border_with_background: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone)]

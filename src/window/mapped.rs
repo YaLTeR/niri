@@ -184,4 +184,8 @@ impl LayoutElement for Mapped {
     fn refresh(&self) {
         self.window.refresh();
     }
+
+    fn rules(&self) -> &ResolvedWindowRules {
+        &self.rules
+    }
 }

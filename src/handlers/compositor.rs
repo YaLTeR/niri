@@ -123,7 +123,7 @@ impl CompositorHandler for State {
                             (rules, width, is_full_width, output)
                         } else {
                             error!("window map must happen after initial configure");
-                            (ResolvedWindowRules::default(), None, false, None)
+                            (ResolvedWindowRules::empty(), None, false, None)
                         };
 
                     let parent = window
