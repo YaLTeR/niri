@@ -159,7 +159,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn add_window_right_of(
         &mut self,
-        right_of: &W,
+        right_of: &W::Id,
         window: W,
         width: ColumnWidth,
         is_full_width: bool,

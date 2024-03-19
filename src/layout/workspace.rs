@@ -577,8 +577,8 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows().next().is_some()
     }
 
-    pub fn has_window(&self, window: &W) -> bool {
-        self.windows().any(|win| win == window)
+    pub fn has_window(&self, window: &W::Id) -> bool {
+        self.windows().any(|win| win.id() == window)
     }
 
     pub fn find_wl_surface(&self, wl_surface: &WlSurface) -> Option<&W> {
@@ -658,7 +658,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn add_window_right_of(
         &mut self,
-        right_of: &W,
+        right_of: &W::Id,
         window: W,
         width: ColumnWidth,
         is_full_width: bool,
@@ -835,7 +835,7 @@ impl<W: LayoutElement> Workspace<W> {
         column
     }
 
-    pub fn remove_window(&mut self, window: &W) {
+    pub fn remove_window(&mut self, window: &W::Id) -> W {
         let column_idx = self
             .columns
             .iter()
@@ -844,10 +844,10 @@ impl<W: LayoutElement> Workspace<W> {
         let column = &self.columns[column_idx];
 
         let window_idx = column.position(window).unwrap();
-        self.remove_window_by_idx(column_idx, window_idx);
+        self.remove_window_by_idx(column_idx, window_idx)
     }
 
-    pub fn update_window(&mut self, window: &W) {
+    pub fn update_window(&mut self, window: &W::Id) {
         let (idx, column) = self
             .columns
             .iter_mut()
@@ -869,7 +869,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn activate_window(&mut self, window: &W) {
+    pub fn activate_window(&mut self, window: &W::Id) {
         let column_idx = self
             .columns
             .iter()
@@ -1233,7 +1233,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns[self.active_column_idx].set_window_height(change);
     }
 
-    pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
+    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
         let (mut col_idx, tile_idx) = self
             .columns
             .iter()
@@ -1275,7 +1275,7 @@ impl<W: LayoutElement> Workspace<W> {
         col.set_fullscreen(is_fullscreen);
     }
 
-    pub fn toggle_fullscreen(&mut self, window: &W) {
+    pub fn toggle_fullscreen(&mut self, window: &W::Id) {
         let col = self
             .columns
             .iter_mut()
@@ -1654,18 +1654,21 @@ impl<W: LayoutElement> Column<W> {
         self.tiles.iter().any(Tile::are_animations_ongoing)
     }
 
-    pub fn contains(&self, window: &W) -> bool {
-        self.tiles.iter().map(Tile::window).any(|win| win == window)
-    }
-
-    pub fn position(&self, window: &W) -> Option<usize> {
+    pub fn contains(&self, window: &W::Id) -> bool {
         self.tiles
             .iter()
             .map(Tile::window)
-            .position(|win| win == window)
+            .any(|win| win.id() == window)
     }
 
-    fn activate_window(&mut self, window: &W) {
+    pub fn position(&self, window: &W::Id) -> Option<usize> {
+        self.tiles
+            .iter()
+            .map(Tile::window)
+            .position(|win| win.id() == window)
+    }
+
+    fn activate_window(&mut self, window: &W::Id) {
         let idx = self.position(window).unwrap();
         self.active_tile_idx = idx;
     }
@@ -1678,11 +1681,11 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes();
     }
 
-    fn update_window(&mut self, window: &W) {
+    fn update_window(&mut self, window: &W::Id) {
         let tile = self
             .tiles
             .iter_mut()
-            .find(|tile| tile.window() == window)
+            .find(|tile| tile.window().id() == window)
             .unwrap();
         tile.update_window();
     }

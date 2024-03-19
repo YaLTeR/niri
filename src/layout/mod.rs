@@ -69,7 +69,13 @@ niri_render_elements! {
     }
 }
 
-pub trait LayoutElement: PartialEq {
+pub trait LayoutElement {
+    /// Type that can be used as a unique ID of this element.
+    type Id: PartialEq;
+
+    /// Unique ID of this element.
+    fn id(&self) -> &Self::Id;
+
     /// Visual size of the element.
     ///
     /// This is what the user would consider the size, i.e. excluding CSD shadows and whatnot.
@@ -217,6 +223,12 @@ impl Options {
 }
 
 impl LayoutElement for Window {
+    type Id = Self;
+
+    fn id(&self) -> &Self::Id {
+        self
+    }
+
     fn size(&self) -> Size<i32, Logical> {
         self.geometry().size
     }
@@ -599,7 +611,7 @@ impl<W: LayoutElement> Layout<W> {
     /// Returns an output that the window was added to, if there were any outputs.
     pub fn add_window_right_of(
         &mut self,
-        right_of: &W,
+        right_of: &W::Id,
         window: W,
         width: Option<ColumnWidth>,
         is_full_width: bool,
@@ -681,13 +693,15 @@ impl<W: LayoutElement> Layout<W> {
         );
     }
 
-    pub fn remove_window(&mut self, window: &W) {
+    pub fn remove_window(&mut self, window: &W::Id) -> Option<W> {
+        let mut rv = None;
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for (idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         if ws.has_window(window) {
-                            ws.remove_window(window);
+                            rv = Some(ws.remove_window(window));
 
                             // Clean up empty workspaces that are not active and not last.
                             if !ws.has_windows()
@@ -710,7 +724,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
                     if ws.has_window(window) {
-                        ws.remove_window(window);
+                        rv = Some(ws.remove_window(window));
 
                         // Clean up empty workspaces.
                         if !ws.has_windows() {
@@ -722,9 +736,11 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+
+        rv
     }
 
-    pub fn update_window(&mut self, window: &W) {
+    pub fn update_window(&mut self, window: &W::Id) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -761,7 +777,7 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn window_y(&self, window: &W) -> Option<i32> {
+    pub fn window_y(&self, window: &W::Id) -> Option<i32> {
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -810,7 +826,7 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn activate_window(&mut self, window: &W) {
+    pub fn activate_window(&mut self, window: &W::Id) {
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1493,7 +1509,7 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn move_window_to_output(&mut self, window: W, output: &Output) {
+    pub fn move_window_to_output(&mut self, window: &W::Id, output: &Output) {
         let mut width = None;
         let mut is_full_width = false;
 
@@ -1501,7 +1517,7 @@ impl<W: LayoutElement> Layout<W> {
             for mon in &*monitors {
                 for ws in &mon.workspaces {
                     for col in &ws.columns {
-                        if col.contains(&window) {
+                        if col.contains(window) {
                             width = Some(col.width);
                             is_full_width = col.is_full_width;
                             break;
@@ -1513,7 +1529,7 @@ impl<W: LayoutElement> Layout<W> {
 
         let Some(width) = width else { return };
 
-        self.remove_window(&window);
+        let window = self.remove_window(window).unwrap();
 
         if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
             let new_idx = monitors
@@ -1570,7 +1586,7 @@ impl<W: LayoutElement> Layout<W> {
         *active_monitor_idx = target_idx;
     }
 
-    pub fn set_fullscreen(&mut self, window: &W, is_fullscreen: bool) {
+    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1593,7 +1609,7 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn toggle_fullscreen(&mut self, window: &W) {
+    pub fn toggle_fullscreen(&mut self, window: &W::Id) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1746,14 +1762,14 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_workspace_up();
     }
 
-    pub fn start_open_animation_for_window(&mut self, window: &W) {
+    pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mut mon.workspaces {
                         for col in &mut ws.columns {
                             for tile in &mut col.tiles {
-                                if tile.window() == window {
+                                if tile.window().id() == window {
                                     tile.start_open_animation();
                                     return;
                                 }
@@ -1764,13 +1780,11 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
-                    if ws.has_window(window) {
-                        for col in &mut ws.columns {
-                            for tile in &mut col.tiles {
-                                if tile.window() == window {
-                                    tile.start_open_animation();
-                                    return;
-                                }
+                    for col in &mut ws.columns {
+                        for tile in &mut col.tiles {
+                            if tile.window().id() == window {
+                                tile.start_open_animation();
+                                return;
                             }
                         }
                     }
@@ -1889,13 +1903,13 @@ mod tests {
         }
     }
 
-    impl PartialEq for TestWindow {
-        fn eq(&self, other: &Self) -> bool {
-            self.0.id == other.0.id
-        }
-    }
-
     impl LayoutElement for TestWindow {
+        type Id = usize;
+
+        fn id(&self) -> &Self::Id {
+            &self.0.id
+        }
+
         fn size(&self) -> Size<i32, Logical> {
             self.0.bbox.get().size
         }
@@ -2208,24 +2222,14 @@ mod tests {
                         return;
                     }
 
-                    let right_of_win = TestWindow::new(
-                        right_of_id,
-                        Rectangle::default(),
-                        Size::default(),
-                        Size::default(),
-                    );
                     let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
-                    layout.add_window_right_of(&right_of_win, win, None, false);
+                    layout.add_window_right_of(&right_of_id, win, None, false);
                 }
                 Op::CloseWindow(id) => {
-                    let dummy =
-                        TestWindow::new(id, Rectangle::default(), Size::default(), Size::default());
-                    layout.remove_window(&dummy);
+                    layout.remove_window(&id);
                 }
                 Op::FullscreenWindow(id) => {
-                    let dummy =
-                        TestWindow::new(id, Rectangle::default(), Size::default(), Size::default());
-                    layout.toggle_fullscreen(&dummy);
+                    layout.toggle_fullscreen(&id);
                 }
                 Op::FocusColumnLeft => layout.focus_left(),
                 Op::FocusColumnRight => layout.focus_right(),
@@ -2284,7 +2288,7 @@ mod tests {
                 Op::SetColumnWidth(change) => layout.set_column_width(change),
                 Op::SetWindowHeight(change) => layout.set_window_height(change),
                 Op::Communicate(id) => {
-                    let mut window = None;
+                    let mut update = false;
                     match &mut layout.monitor_set {
                         MonitorSet::Normal { monitors, .. } => {
                             'outer: for mon in monitors {
@@ -2292,7 +2296,7 @@ mod tests {
                                     for win in ws.windows() {
                                         if win.0.id == id {
                                             if win.communicate() {
-                                                window = Some(win.clone());
+                                                update = true;
                                             }
                                             break 'outer;
                                         }
@@ -2305,7 +2309,7 @@ mod tests {
                                 for win in ws.windows() {
                                     if win.0.id == id {
                                         if win.communicate() {
-                                            window = Some(win.clone());
+                                            update = true;
                                         }
                                         break 'outer;
                                     }
@@ -2314,8 +2318,8 @@ mod tests {
                         }
                     }
 
-                    if let Some(win) = window {
-                        layout.update_window(&win);
+                    if update {
+                        layout.update_window(&id);
                     }
                 }
                 Op::MoveWorkspaceToOutput(id) => {

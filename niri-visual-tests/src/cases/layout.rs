@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use niri::layout::workspace::ColumnWidth;
-use niri::layout::Options;
+use niri::layout::{LayoutElement as _, Options};
 use niri::utils::get_monotonic_time;
 use niri_config::Color;
 use smithay::backend::renderer::element::RenderElement;
@@ -73,12 +73,12 @@ impl Layout {
 
         rv.add_window(TestWindow::freeform(0), Some(ColumnWidth::Proportion(0.3)));
         rv.add_window(TestWindow::freeform(1), Some(ColumnWidth::Proportion(0.3)));
-        rv.layout.activate_window(&rv.windows[0]);
+        rv.layout.activate_window(&0);
 
         rv.add_step(500, |l| {
             let win = TestWindow::freeform(2);
             l.add_window(win.clone(), Some(ColumnWidth::Proportion(0.3)));
-            l.layout.start_open_animation_for_window(&win);
+            l.layout.start_open_animation_for_window(win.id());
         });
 
         rv
@@ -91,7 +91,7 @@ impl Layout {
             rv.add_step(delay, move |l| {
                 let win = TestWindow::freeform(delay as usize);
                 l.add_window(win.clone(), Some(ColumnWidth::Proportion(0.3)));
-                l.layout.start_open_animation_for_window(&win);
+                l.layout.start_open_animation_for_window(win.id());
             });
         }
 
@@ -105,7 +105,7 @@ impl Layout {
             rv.add_step(delay, move |l| {
                 let win = TestWindow::freeform(delay as usize);
                 l.add_window(win.clone(), Some(ColumnWidth::Proportion(0.5)));
-                l.layout.start_open_animation_for_window(&win);
+                l.layout.start_open_animation_for_window(win.id());
             });
         }
 
@@ -122,7 +122,7 @@ impl Layout {
             let win = TestWindow::freeform(2);
             let right_of = l.windows[0].clone();
             l.add_window_right_of(&right_of, win.clone(), Some(ColumnWidth::Proportion(0.3)));
-            l.layout.start_open_animation_for_window(&win);
+            l.layout.start_open_animation_for_window(win.id());
         });
 
         rv
@@ -138,7 +138,7 @@ impl Layout {
             let win = TestWindow::freeform(2);
             let right_of = l.windows[0].clone();
             l.add_window_right_of(&right_of, win.clone(), Some(ColumnWidth::Proportion(0.5)));
-            l.layout.start_open_animation_for_window(&win);
+            l.layout.start_open_animation_for_window(win.id());
         });
 
         rv
@@ -147,7 +147,7 @@ impl Layout {
     fn add_window(&mut self, window: TestWindow, width: Option<ColumnWidth>) {
         self.layout.add_window(window.clone(), width, false);
         if window.communicate() {
-            self.layout.update_window(&window);
+            self.layout.update_window(window.id());
         }
         self.windows.push(window);
     }
@@ -159,9 +159,9 @@ impl Layout {
         width: Option<ColumnWidth>,
     ) {
         self.layout
-            .add_window_right_of(right_of, window.clone(), width, false);
+            .add_window_right_of(right_of.id(), window.clone(), width, false);
         if window.communicate() {
-            self.layout.update_window(&window);
+            self.layout.update_window(window.id());
         }
         self.windows.push(window);
     }
@@ -183,7 +183,7 @@ impl TestCase for Layout {
         self.layout.update_output_size(&self.output);
         for win in &self.windows {
             if win.communicate() {
-                self.layout.update_window(win);
+                self.layout.update_window(win.id());
             }
         }
     }

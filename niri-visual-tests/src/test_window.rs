@@ -12,7 +12,6 @@ use smithay::utils::{Logical, Point, Scale, Size, Transform};
 
 #[derive(Debug)]
 struct TestWindowInner {
-    id: usize,
     size: Size<i32, Logical>,
     requested_size: Option<Size<i32, Logical>>,
     min_size: Size<i32, Logical>,
@@ -24,7 +23,10 @@ struct TestWindowInner {
 }
 
 #[derive(Debug, Clone)]
-pub struct TestWindow(Rc<RefCell<TestWindowInner>>);
+pub struct TestWindow {
+    id: usize,
+    inner: Rc<RefCell<TestWindowInner>>,
+}
 
 impl TestWindow {
     pub fn freeform(id: usize) -> Self {
@@ -33,17 +35,19 @@ impl TestWindow {
         let max_size = Size::from((0, 0));
         let buffer = SolidColorBuffer::new(size, [0.15, 0.64, 0.41, 1.]);
 
-        Self(Rc::new(RefCell::new(TestWindowInner {
+        Self {
             id,
-            size,
-            requested_size: None,
-            min_size,
-            max_size,
-            buffer,
-            pending_fullscreen: false,
-            csd_shadow_width: 0,
-            csd_shadow_buffer: SolidColorBuffer::new((0, 0), [0., 0., 0., 0.3]),
-        })))
+            inner: Rc::new(RefCell::new(TestWindowInner {
+                size,
+                requested_size: None,
+                min_size,
+                max_size,
+                buffer,
+                pending_fullscreen: false,
+                csd_shadow_width: 0,
+                csd_shadow_buffer: SolidColorBuffer::new((0, 0), [0., 0., 0., 0.3]),
+            })),
+        }
     }
 
     pub fn fixed_size(id: usize) -> Self {
@@ -56,24 +60,24 @@ impl TestWindow {
     }
 
     pub fn set_min_size(&self, size: Size<i32, Logical>) {
-        self.0.borrow_mut().min_size = size;
+        self.inner.borrow_mut().min_size = size;
     }
 
     pub fn set_max_size(&self, size: Size<i32, Logical>) {
-        self.0.borrow_mut().max_size = size;
+        self.inner.borrow_mut().max_size = size;
     }
 
     pub fn set_color(&self, color: [f32; 4]) {
-        self.0.borrow_mut().buffer.set_color(color);
+        self.inner.borrow_mut().buffer.set_color(color);
     }
 
     pub fn set_csd_shadow_width(&self, width: i32) {
-        self.0.borrow_mut().csd_shadow_width = width;
+        self.inner.borrow_mut().csd_shadow_width = width;
     }
 
     pub fn communicate(&self) -> bool {
         let mut rv = false;
-        let mut inner = self.0.borrow_mut();
+        let mut inner = self.inner.borrow_mut();
 
         let mut new_size = inner.size;
 
@@ -117,15 +121,15 @@ impl TestWindow {
     }
 }
 
-impl PartialEq for TestWindow {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.borrow().id == other.0.borrow().id
-    }
-}
-
 impl LayoutElement for TestWindow {
+    type Id = usize;
+
+    fn id(&self) -> &Self::Id {
+        &self.id
+    }
+
     fn size(&self) -> Size<i32, Logical> {
-        self.0.borrow().size
+        self.inner.borrow().size
     }
 
     fn buf_loc(&self) -> Point<i32, Logical> {
@@ -142,7 +146,7 @@ impl LayoutElement for TestWindow {
         location: Point<i32, Logical>,
         scale: Scale<f64>,
     ) -> Vec<LayoutElementRenderElement<R>> {
-        let inner = self.0.borrow();
+        let inner = self.inner.borrow();
 
         vec![
             SolidColorRenderElement::from_buffer(
@@ -166,20 +170,20 @@ impl LayoutElement for TestWindow {
     }
 
     fn request_size(&self, size: Size<i32, Logical>) {
-        self.0.borrow_mut().requested_size = Some(size);
-        self.0.borrow_mut().pending_fullscreen = false;
+        self.inner.borrow_mut().requested_size = Some(size);
+        self.inner.borrow_mut().pending_fullscreen = false;
     }
 
     fn request_fullscreen(&self, _size: Size<i32, Logical>) {
-        self.0.borrow_mut().pending_fullscreen = true;
+        self.inner.borrow_mut().pending_fullscreen = true;
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
-        self.0.borrow().min_size
+        self.inner.borrow().min_size
     }
 
     fn max_size(&self) -> Size<i32, Logical> {
-        self.0.borrow().max_size
+        self.inner.borrow().max_size
     }
 
     fn is_wl_surface(&self, _wl_surface: &WlSurface) -> bool {
@@ -203,6 +207,6 @@ impl LayoutElement for TestWindow {
     }
 
     fn is_pending_fullscreen(&self) -> bool {
-        self.0.borrow().pending_fullscreen
+        self.inner.borrow().pending_fullscreen
     }
 }
