@@ -13,6 +13,7 @@ use smithay::backend::input::{
     TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
+use smithay::input::keyboard::xkb::keysym_get_name;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
@@ -244,15 +245,54 @@ impl State {
     fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
         let comp_mod = self.backend.mod_key();
 
-        let serial = SERIAL_COUNTER.next_serial();
         let time = Event::time_msec(&event);
         let pressed = event.state() == KeyState::Pressed;
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
 
-        let Some(Some(action)) = self.niri.seat.get_keyboard().unwrap().input(
+        // When running in the winit backend, we don't always get release events.
+        // Specifically, you can reproduce this issue reliably like so:
+        //
+        // 1. Open niri nested in niri
+        // 2. Focus nested niri
+        // 3. Press any modifier key, e.g. "Super" (and do not release)
+        //   -> nested niri gets a KeyState::Pressed event
+        // 4. Click with the mouse cursor on another window in the top-level compositor
+        // 5. Release the modifier key
+        //   -> nested niri gets *no* event
+        // 6. Focus nested niri again
+        //
+        // After you do this, xkbcommon will be in an annoying state,
+        // where it reports that modifier as being permanently pressed.
+        // (or at least, as far as smithay is concerned)
+        // Even release events do not "unpress" this modifier.
+        //
+        // As such, we detect this *before* it happens, like so.
+        if pressed && keyboard.pressed_keys().contains(&event.key_code().into()) {
+            // Then, we insert a fake KeyState::Released event.
+            keyboard
+                .input(
+                    self,
+                    event.key_code(),
+                    KeyState::Released,
+                    SERIAL_COUNTER.next_serial(),
+                    time,
+                    |_, _, keysym| {
+                        debug!(
+                            "Duplicate keypress of `{key}`. A fake release event was generated.",
+                            key = keysym_get_name(keysym.modified_sym())
+                        );
+                        // And lastly, we tell smithay to keep its mouth shut about this.
+                        FilterResult::Intercept(())
+                    },
+                )
+                .unwrap();
+        }
+
+        let Some(Some(action)) = keyboard.input(
             self,
             event.key_code(),
             event.state(),
-            serial,
+            SERIAL_COUNTER.next_serial(),
             time,
             |this, mods, keysym| {
                 let bindings = &this.niri.config.borrow().binds;
