@@ -494,7 +494,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn switch_workspace_previous(&mut self) {
         if let Some(idx) = self.previous_workspace_idx() {
-            self.activate_workspace(idx);
+            self.switch_workspace(idx);
         }
     }
 
