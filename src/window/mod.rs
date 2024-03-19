@@ -1,5 +1,8 @@
 use crate::layout::workspace::ColumnWidth;
 
+pub mod mapped;
+pub use mapped::Mapped;
+
 pub mod unmapped;
 pub use unmapped::{InitialConfigureState, Unmapped};
 

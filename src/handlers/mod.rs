@@ -144,7 +144,7 @@ impl InputMethodHandler for State {
         self.niri
             .layout
             .find_window_and_output(parent)
-            .map(|(window, _)| window.geometry())
+            .map(|(mapped, _)| mapped.window.geometry())
             .unwrap_or_default()
     }
 }
@@ -333,25 +333,24 @@ impl ForeignToplevelHandler for State {
     }
 
     fn activate(&mut self, wl_surface: WlSurface) {
-        if let Some((window, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
-            let window = window.clone();
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
+            let window = mapped.window.clone();
             self.niri.layout.activate_window(&window);
             self.niri.queue_redraw_all();
         }
     }
 
     fn close(&mut self, wl_surface: WlSurface) {
-        if let Some((window, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
-            window.toplevel().expect("no x11 support").send_close();
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
+            mapped.toplevel().send_close();
         }
     }
 
     fn set_fullscreen(&mut self, wl_surface: WlSurface, wl_output: Option<WlOutput>) {
-        if let Some((window, current_output)) = self.niri.layout.find_window_and_output(&wl_surface)
+        if let Some((mapped, current_output)) = self.niri.layout.find_window_and_output(&wl_surface)
         {
-            if !window
+            if !mapped
                 .toplevel()
-                .expect("no x11 support")
                 .current_state()
                 .capabilities
                 .contains(xdg_toplevel::WmCapabilities::Fullscreen)
@@ -359,7 +358,7 @@ impl ForeignToplevelHandler for State {
                 return;
             }
 
-            let window = window.clone();
+            let window = mapped.window.clone();
 
             if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
                 if &requested_output != current_output {
@@ -374,8 +373,8 @@ impl ForeignToplevelHandler for State {
     }
 
     fn unset_fullscreen(&mut self, wl_surface: WlSurface) {
-        if let Some((window, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
-            let window = window.clone();
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
+            let window = mapped.window.clone();
             self.niri.layout.set_fullscreen(&window, false);
         }
     }

@@ -121,6 +121,10 @@ impl<W: LayoutElement> Tile<W> {
         &self.window
     }
 
+    pub fn window_mut(&mut self) -> &mut W {
+        &mut self.window
+    }
+
     pub fn into_window(self) -> W {
         self.window
     }

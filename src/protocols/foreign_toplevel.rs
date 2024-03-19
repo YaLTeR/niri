@@ -95,8 +95,8 @@ pub fn refresh(state: &mut State) {
     // Save the focused window for last, this way when the focus changes, we will first deactivate
     // the previous window and only then activate the newly focused window.
     let mut focused = None;
-    state.niri.layout.with_windows(|window, output| {
-        let wl_surface = window.toplevel().expect("no x11 support").wl_surface();
+    state.niri.layout.with_windows(|mapped, output| {
+        let wl_surface = mapped.toplevel().wl_surface();
 
         with_states(wl_surface, |states| {
             let role = states
@@ -107,7 +107,7 @@ pub fn refresh(state: &mut State) {
                 .unwrap();
 
             if state.niri.keyboard_focus.surface() == Some(wl_surface) {
-                focused = Some((window.clone(), output.cloned()));
+                focused = Some((mapped.window.clone(), output.cloned()));
             } else {
                 refresh_toplevel(protocol_state, wl_surface, &role, output, false);
             }

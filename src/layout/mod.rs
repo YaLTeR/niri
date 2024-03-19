@@ -38,21 +38,14 @@ use niri_config::{CenterFocusedColumn, Config, Struts};
 use niri_ipc::SizeChange;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::{AsRenderElements, Id};
-use smithay::desktop::space::SpaceElement;
-use smithay::desktop::Window;
+use smithay::backend::renderer::element::Id;
 use smithay::output::Output;
-use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
-use smithay::wayland::compositor::{send_surface_state, with_states};
-use smithay::wayland::shell::xdg::SurfaceCachedState;
+use smithay::utils::{Logical, Point, Scale, Size, Transform};
 
 use self::monitor::Monitor;
 pub use self::monitor::MonitorRenderElement;
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
-use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::utils::output_size;
@@ -226,148 +219,6 @@ impl Options {
             default_width,
             animations: config.animations,
         }
-    }
-}
-
-impl LayoutElement for Window {
-    type Id = Self;
-
-    fn id(&self) -> &Self::Id {
-        self
-    }
-
-    fn size(&self) -> Size<i32, Logical> {
-        self.geometry().size
-    }
-
-    fn buf_loc(&self) -> Point<i32, Logical> {
-        Point::from((0, 0)) - self.geometry().loc
-    }
-
-    fn is_in_input_region(&self, point: Point<f64, Logical>) -> bool {
-        let surface_local = point + self.geometry().loc.to_f64();
-        SpaceElement::is_in_input_region(self, &surface_local)
-    }
-
-    fn render<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
-        location: Point<i32, Logical>,
-        scale: Scale<f64>,
-    ) -> Vec<LayoutElementRenderElement<R>> {
-        let buf_pos = location - self.geometry().loc;
-        self.render_elements(
-            renderer,
-            buf_pos.to_physical_precise_round(scale),
-            scale,
-            1.,
-        )
-    }
-
-    fn request_size(&self, size: Size<i32, Logical>) {
-        self.toplevel()
-            .expect("no x11 support")
-            .with_pending_state(|state| {
-                state.size = Some(size);
-                state.states.unset(xdg_toplevel::State::Fullscreen);
-            });
-    }
-
-    fn request_fullscreen(&self, size: Size<i32, Logical>) {
-        self.toplevel()
-            .expect("no x11 support")
-            .with_pending_state(|state| {
-                state.size = Some(size);
-                state.states.set(xdg_toplevel::State::Fullscreen);
-            });
-    }
-
-    fn min_size(&self) -> Size<i32, Logical> {
-        with_states(
-            self.toplevel().expect("no x11 support").wl_surface(),
-            |state| {
-                let curr = state.cached_state.current::<SurfaceCachedState>();
-                curr.min_size
-            },
-        )
-    }
-
-    fn max_size(&self) -> Size<i32, Logical> {
-        with_states(
-            self.toplevel().expect("no x11 support").wl_surface(),
-            |state| {
-                let curr = state.cached_state.current::<SurfaceCachedState>();
-                curr.max_size
-            },
-        )
-    }
-
-    fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool {
-        self.toplevel().expect("no x11 support").wl_surface() == wl_surface
-    }
-
-    fn set_preferred_scale_transform(&self, scale: i32, transform: Transform) {
-        self.with_surfaces(|surface, data| {
-            send_surface_state(surface, data, scale, transform);
-        });
-    }
-
-    fn has_ssd(&self) -> bool {
-        self.toplevel()
-            .expect("no x11 support")
-            .current_state()
-            .decoration_mode
-            == Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
-    }
-
-    fn output_enter(&self, output: &Output) {
-        let overlap = Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX));
-        SpaceElement::output_enter(self, output, overlap)
-    }
-
-    fn output_leave(&self, output: &Output) {
-        SpaceElement::output_leave(self, output)
-    }
-
-    fn set_offscreen_element_id(&self, id: Option<Id>) {
-        let data = self.user_data().get_or_insert(WindowOffscreenId::default);
-        data.0.replace(id);
-    }
-
-    fn set_activated(&self, active: bool) {
-        Window::set_activated(self, active);
-    }
-
-    fn set_bounds(&self, bounds: Size<i32, Logical>) {
-        self.toplevel()
-            .expect("no x11 support")
-            .with_pending_state(|state| {
-                state.bounds = Some(bounds);
-            });
-    }
-
-    fn send_pending_configure(&self) {
-        self.toplevel()
-            .expect("no x11 support")
-            .send_pending_configure();
-    }
-
-    fn is_fullscreen(&self) -> bool {
-        self.toplevel()
-            .expect("no x11 support")
-            .current_state()
-            .states
-            .contains(xdg_toplevel::State::Fullscreen)
-    }
-
-    fn is_pending_fullscreen(&self) -> bool {
-        self.toplevel()
-            .expect("no x11 support")
-            .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
-    }
-
-    fn refresh(&self) {
-        SpaceElement::refresh(self)
     }
 }
 
@@ -790,6 +641,29 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+    }
+
+    pub fn find_window_mut(&mut self, wl_surface: &WlSurface) -> Option<&mut W> {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if let Some(window) = ws.find_wl_surface_mut(wl_surface) {
+                            return Some(window);
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    if let Some(window) = ws.find_wl_surface_mut(wl_surface) {
+                        return Some(window);
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, &Output)> {
@@ -1866,6 +1740,7 @@ mod tests {
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use smithay::output::{Mode, PhysicalProperties, Subpixel};
+    use smithay::utils::Rectangle;
 
     use super::*;
 

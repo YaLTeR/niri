@@ -10,6 +10,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
+use smithay::wayland::compositor::send_surface_state;
 
 use super::tile::{Tile, TileRenderElement};
 use super::{LayoutElement, Options};
@@ -299,6 +300,13 @@ impl<W: LayoutElement> Workspace<W> {
             .map(Tile::window)
     }
 
+    pub fn windows_mut(&mut self) -> impl Iterator<Item = &mut W> + '_ {
+        self.columns
+            .iter_mut()
+            .flat_map(|col| col.tiles.iter_mut())
+            .map(Tile::window_mut)
+    }
+
     pub fn set_output(&mut self, output: Option<Output>) {
         if self.output == output {
             return;
@@ -407,7 +415,11 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn configure_new_window(&self, window: &Window, width: Option<ColumnWidth>) {
         if let Some(output) = self.output.as_ref() {
-            set_preferred_scale_transform(window, output);
+            let scale = output.current_scale().integer_scale();
+            let transform = output.current_transform();
+            window.with_surfaces(|surface, data| {
+                send_surface_state(surface, data, scale, transform);
+            });
         }
 
         window
@@ -582,6 +594,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn find_wl_surface(&self, wl_surface: &WlSurface) -> Option<&W> {
         self.windows().find(|win| win.is_wl_surface(wl_surface))
+    }
+
+    pub fn find_wl_surface_mut(&mut self, wl_surface: &WlSurface) -> Option<&mut W> {
+        self.windows_mut().find(|win| win.is_wl_surface(wl_surface))
     }
 
     /// Computes the X position of the windows in the given column, in logical coordinates.

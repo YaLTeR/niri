@@ -379,21 +379,24 @@ impl State {
             }
             Action::ScreenshotWindow => {
                 let active = self.niri.layout.active_window();
-                if let Some((window, output)) = active {
+                if let Some((mapped, output)) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) = self.niri.screenshot_window(renderer, output, window) {
+                        if let Err(err) =
+                            self.niri
+                                .screenshot_window(renderer, output, &mapped.window)
+                        {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
             Action::CloseWindow => {
-                if let Some(window) = self.niri.layout.focus() {
-                    window.toplevel().expect("no x11 support").send_close();
+                if let Some(mapped) = self.niri.layout.focus() {
+                    mapped.toplevel().send_close();
                 }
             }
             Action::FullscreenWindow => {
-                let focus = self.niri.layout.focus().cloned();
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
                 if let Some(window) = focus {
                     self.niri.layout.toggle_fullscreen(&window);
                     // FIXME: granular
@@ -1017,8 +1020,8 @@ impl State {
         let button_state = event.state();
 
         if ButtonState::Pressed == button_state {
-            if let Some(window) = self.niri.window_under_cursor() {
-                let window = window.clone();
+            if let Some(mapped) = self.niri.window_under_cursor() {
+                let window = mapped.window.clone();
                 self.niri.layout.activate_window(&window);
 
                 // FIXME: granular.
@@ -1177,8 +1180,8 @@ impl State {
                     tool.tip_down(serial, event.time_msec());
 
                     if let Some(pos) = self.niri.tablet_cursor_location {
-                        if let Some(window) = self.niri.window_under(pos) {
-                            let window = window.clone();
+                        if let Some(mapped) = self.niri.window_under(pos) {
+                            let window = mapped.window.clone();
                             self.niri.layout.activate_window(&window);
 
                             // FIXME: granular.
@@ -1535,8 +1538,8 @@ impl State {
                 .output_under(touch_location)
                 .next()
                 .cloned();
-            if let Some(window) = self.niri.window_under(touch_location) {
-                let window = window.clone();
+            if let Some(mapped) = self.niri.window_under(touch_location) {
+                let window = mapped.window.clone();
                 self.niri.layout.activate_window(&window);
 
                 // FIXME: granular.

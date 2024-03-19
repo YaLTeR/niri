@@ -114,7 +114,7 @@ use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, center_f64, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };
-use crate::window::Unmapped;
+use crate::window::{Mapped, Unmapped};
 use crate::{animation, niri_render_elements};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
@@ -138,7 +138,7 @@ pub struct Niri {
 
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
     // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
-    pub layout: Layout<Window>,
+    pub layout: Layout<Mapped>,
 
     // This space does not actually contain any windows, but all outputs are mapped into it
     // according to their global position.
@@ -631,7 +631,7 @@ impl State {
                 self.niri
                     .layout
                     .focus()
-                    .map(|win| win.toplevel().expect("no x11 support").wl_surface().clone())
+                    .map(|win| win.toplevel().wl_surface().clone())
                     .map(|surface| KeyboardFocus::Layout {
                         surface: Some(surface),
                     })
@@ -1591,7 +1591,7 @@ impl Niri {
     ///
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
-    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Window> {
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
         if self.is_locked() || self.screenshot_ui.is_open() {
             return None;
         }
@@ -1618,7 +1618,7 @@ impl Niri {
     ///
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
-    pub fn window_under_cursor(&self) -> Option<&Window> {
+    pub fn window_under_cursor(&self) -> Option<&Mapped> {
         let pos = self.seat.get_pointer().unwrap().current_location();
         self.window_under(pos)
     }
@@ -1684,8 +1684,9 @@ impl Niri {
         let window_under = || {
             self.layout
                 .window_under(output, pos_within_output)
-                .and_then(|(window, win_pos_within_output)| {
+                .and_then(|(mapped, win_pos_within_output)| {
                     let win_pos_within_output = win_pos_within_output?;
+                    let window = &mapped.window;
                     window
                         .surface_under(
                             pos_within_output - win_pos_within_output.to_f64(),
@@ -2409,7 +2410,8 @@ impl Niri {
         // The reason to do this at all is that it keeps track of whether the surface is visible or
         // not in a unified way with the pointer surfaces, which makes the logic elsewhere simpler.
 
-        for win in self.layout.windows_for_output(output) {
+        for mapped in self.layout.windows_for_output(output) {
+            let win = &mapped.window;
             let offscreen_id = win
                 .user_data()
                 .get_or_insert(WindowOffscreenId::default)
@@ -2480,8 +2482,8 @@ impl Niri {
         // We can unconditionally send the current output's feedback to regular and layer-shell
         // surfaces, as they can only be displayed on a single output at a time. Even if a surface
         // is currently invisible, this is the DMABUF feedback that it should know about.
-        for win in self.layout.windows_for_output(output) {
-            win.send_dmabuf_feedback(
+        for mapped in self.layout.windows_for_output(output) {
+            mapped.window.send_dmabuf_feedback(
                 output,
                 |_, _| Some(output.clone()),
                 |surface, _| {
@@ -2600,8 +2602,8 @@ impl Niri {
 
         let frame_callback_time = get_monotonic_time();
 
-        for win in self.layout.windows_for_output(output) {
-            win.send_frame(
+        for mapped in self.layout.windows_for_output(output) {
+            mapped.window.send_frame(
                 output,
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,
@@ -2666,8 +2668,8 @@ impl Niri {
 
         let frame_callback_time = get_monotonic_time();
 
-        self.layout.with_windows(|win, _| {
-            win.send_frame(
+        self.layout.with_windows(|mapped, _| {
+            mapped.window.send_frame(
                 output,
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,
@@ -2746,8 +2748,8 @@ impl Niri {
             );
         }
 
-        for win in self.layout.windows_for_output(output) {
-            win.take_presentation_feedback(
+        for mapped in self.layout.windows_for_output(output) {
+            mapped.window.take_presentation_feedback(
                 &mut feedback,
                 surface_primary_scanout_output,
                 |surface, _| {

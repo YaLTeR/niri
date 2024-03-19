@@ -17,8 +17,7 @@ use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
 use crate::niri::{ClientState, State};
-use crate::utils::clone2;
-use crate::window::{InitialConfigureState, Unmapped};
+use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
 impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
@@ -109,22 +108,22 @@ impl CompositorHandler for State {
 
                     window.on_commit();
 
-                    let (width, is_full_width, output) =
+                    let (rules, width, is_full_width, output) =
                         if let InitialConfigureState::Configured {
+                            rules,
                             width,
                             is_full_width,
                             output,
-                            ..
                         } = state
                         {
                             // Check that the output is still connected.
                             let output =
                                 output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
 
-                            (width, is_full_width, output)
+                            (rules, width, is_full_width, output)
                         } else {
                             error!("window map must happen after initial configure");
-                            (None, false, None)
+                            (ResolvedWindowRules::default(), None, false, None)
                         };
 
                     let parent = window
@@ -141,29 +140,30 @@ impl CompositorHandler for State {
                         .filter(|(_, parent_output)| {
                             output.is_none() || output.as_ref() == Some(*parent_output)
                         })
-                        .map(|(window, _)| window.clone());
+                        .map(|(mapped, _)| mapped.window.clone());
 
-                    let window = window.clone();
-                    let win = window.clone();
+                    let mapped = Mapped::new(window, rules);
+                    let window = mapped.window.clone();
 
                     let output = if let Some(p) = parent {
                         // Open dialogs immediately to the right of their parent window.
                         self.niri
                             .layout
-                            .add_window_right_of(&p, win, width, is_full_width)
+                            .add_window_right_of(&p, mapped, width, is_full_width)
                     } else if let Some(output) = &output {
                         self.niri
                             .layout
-                            .add_window_on_output(output, win, width, is_full_width);
+                            .add_window_on_output(output, mapped, width, is_full_width);
                         Some(output)
                     } else {
-                        self.niri.layout.add_window(win, width, is_full_width)
+                        self.niri.layout.add_window(mapped, width, is_full_width)
                     };
 
                     if let Some(output) = output.cloned() {
                         self.niri.layout.start_open_animation_for_window(&window);
 
-                        let new_active_window = self.niri.layout.active_window().map(|(w, _)| w);
+                        let new_active_window =
+                            self.niri.layout.active_window().map(|(m, _)| &m.window);
                         if new_active_window == Some(&window) {
                             self.maybe_warp_cursor_to_focus();
                         }
@@ -183,8 +183,9 @@ impl CompositorHandler for State {
             }
 
             // This is a commit of a previously-mapped root or a non-toplevel root.
-            if let Some(win_out) = self.niri.layout.find_window_and_output(surface) {
-                let (window, output) = clone2(win_out);
+            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(surface) {
+                let window = mapped.window.clone();
+                let output = output.clone();
 
                 window.on_commit();
 
@@ -224,7 +225,9 @@ impl CompositorHandler for State {
 
         // This is a commit of a non-root or a non-toplevel root.
         let root_window_output = self.niri.layout.find_window_and_output(&root_surface);
-        if let Some((window, output)) = root_window_output.map(clone2) {
+        if let Some((mapped, output)) = root_window_output {
+            let window = mapped.window.clone();
+            let output = output.clone();
             window.on_commit();
             self.niri.layout.update_window(&window);
             self.niri.queue_redraw(output);

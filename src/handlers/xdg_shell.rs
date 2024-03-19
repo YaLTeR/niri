@@ -29,7 +29,6 @@ use smithay::{
 
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
-use crate::utils::clone2;
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped};
 
 fn window_matches(role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
@@ -213,9 +212,7 @@ impl XdgShellHandler for State {
                 }
 
                 let layout_focus = self.niri.layout.focus();
-                if Some(&root)
-                    != layout_focus.map(|win| win.toplevel().expect("no x11 support").wl_surface())
-                {
+                if Some(&root) != layout_focus.map(|win| win.toplevel().wl_surface()) {
                     let _ = PopupManager::dismiss_popup(&root, &popup);
                     return;
                 }
@@ -278,12 +275,12 @@ impl XdgShellHandler for State {
     ) {
         let requested_output = wl_output.as_ref().and_then(Output::from_resource);
 
-        if let Some((window, current_output)) = self
+        if let Some((mapped, current_output)) = self
             .niri
             .layout
             .find_window_and_output(toplevel.wl_surface())
         {
-            let window = window.clone();
+            let window = mapped.window.clone();
 
             if let Some(requested_output) = requested_output {
                 if &requested_output != current_output {
@@ -358,12 +355,12 @@ impl XdgShellHandler for State {
     }
 
     fn unfullscreen_request(&mut self, toplevel: ToplevelSurface) {
-        if let Some((window, _)) = self
+        if let Some((mapped, _)) = self
             .niri
             .layout
             .find_window_and_output(toplevel.wl_surface())
         {
-            let window = window.clone();
+            let window = mapped.window.clone();
             self.niri.layout.set_fullscreen(&window, false);
 
             // A configure is required in response to this event regardless if there are pending
@@ -453,14 +450,16 @@ impl XdgShellHandler for State {
             .layout
             .find_window_and_output(surface.wl_surface());
 
-        let Some((window, output)) = win_out.map(clone2) else {
+        let Some((mapped, output)) = win_out else {
             // I have no idea how this can happen, but I saw it happen once, in a weird interaction
             // involving laptop going to sleep and resuming.
             error!("toplevel missing from both unmapped_windows and layout");
             return;
         };
+        let window = mapped.window.clone();
+        let output = output.clone();
 
-        let active_window = self.niri.layout.active_window().map(|(w, _)| w);
+        let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
         let was_active = active_window == Some(&window);
 
         self.niri.layout.remove_window(&window);
@@ -733,8 +732,8 @@ impl State {
         };
 
         // Figure out if the root is a window or a layer surface.
-        if let Some((window, output)) = self.niri.layout.find_window_and_output(&root) {
-            self.unconstrain_window_popup(popup, window, output);
+        if let Some((mapped, output)) = self.niri.layout.find_window_and_output(&root) {
+            self.unconstrain_window_popup(popup, &mapped.window, output);
         } else if let Some((layer_surface, output)) = self.niri.layout.outputs().find_map(|o| {
             let map = layer_map_for_output(o);
             let layer_surface = map.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)?;
@@ -814,6 +813,8 @@ impl State {
             if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
                 *rules = resolve();
             }
+        } else if let Some(mapped) = self.niri.layout.find_window_mut(toplevel.wl_surface()) {
+            mapped.rules = resolve();
         }
     }
 }
