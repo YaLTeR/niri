@@ -1,3 +1,5 @@
+use std::cmp::{max, min};
+
 use smithay::backend::renderer::element::{AsRenderElements as _, Id};
 use smithay::desktop::space::SpaceElement as _;
 use smithay::desktop::Window;
@@ -82,17 +84,43 @@ impl LayoutElement for Mapped {
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
-        with_states(self.toplevel().wl_surface(), |state| {
+        let mut size = with_states(self.toplevel().wl_surface(), |state| {
             let curr = state.cached_state.current::<SurfaceCachedState>();
             curr.min_size
-        })
+        });
+
+        if let Some(x) = self.rules.min_width {
+            size.w = max(size.w, i32::from(x));
+        }
+        if let Some(x) = self.rules.min_height {
+            size.h = max(size.h, i32::from(x));
+        }
+
+        size
     }
 
     fn max_size(&self) -> Size<i32, Logical> {
-        with_states(self.toplevel().wl_surface(), |state| {
+        let mut size = with_states(self.toplevel().wl_surface(), |state| {
             let curr = state.cached_state.current::<SurfaceCachedState>();
             curr.max_size
-        })
+        });
+
+        if let Some(x) = self.rules.max_width {
+            if size.w == 0 {
+                size.w = i32::from(x);
+            } else if x > 0 {
+                size.w = min(size.w, i32::from(x));
+            }
+        }
+        if let Some(x) = self.rules.max_height {
+            if size.h == 0 {
+                size.h = i32::from(x);
+            } else if x > 0 {
+                size.h = min(size.h, i32::from(x));
+            }
+        }
+
+        size
     }
 
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool {

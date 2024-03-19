@@ -1,4 +1,3 @@
-use niri_config::{Match, WindowRule};
 use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, LayerSurface,
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -20,7 +19,7 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
-    XdgShellState, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
+    XdgShellState, XdgToplevelSurfaceData,
 };
 use smithay::wayland::xdg_foreign::{XdgForeignHandler, XdgForeignState};
 use smithay::{
@@ -30,82 +29,6 @@ use smithay::{
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped};
-
-fn window_matches(role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
-    if let Some(app_id_re) = &m.app_id {
-        let Some(app_id) = &role.app_id else {
-            return false;
-        };
-        if !app_id_re.is_match(app_id) {
-            return false;
-        }
-    }
-
-    if let Some(title_re) = &m.title {
-        let Some(title) = &role.title else {
-            return false;
-        };
-        if !title_re.is_match(title) {
-            return false;
-        }
-    }
-
-    true
-}
-
-pub fn resolve_window_rules(
-    rules: &[WindowRule],
-    toplevel: &ToplevelSurface,
-) -> ResolvedWindowRules {
-    let _span = tracy_client::span!("resolve_window_rules");
-
-    let mut resolved = ResolvedWindowRules::default();
-
-    with_states(toplevel.wl_surface(), |states| {
-        let role = states
-            .data_map
-            .get::<XdgToplevelSurfaceData>()
-            .unwrap()
-            .lock()
-            .unwrap();
-
-        let mut open_on_output = None;
-
-        for rule in rules {
-            if !(rule.matches.is_empty() || rule.matches.iter().any(|m| window_matches(&role, m))) {
-                continue;
-            }
-
-            if rule.excludes.iter().any(|m| window_matches(&role, m)) {
-                continue;
-            }
-
-            if let Some(x) = rule
-                .default_column_width
-                .as_ref()
-                .map(|d| d.0.map(ColumnWidth::from))
-            {
-                resolved.default_width = Some(x);
-            }
-
-            if let Some(x) = rule.open_on_output.as_deref() {
-                open_on_output = Some(x);
-            }
-
-            if let Some(x) = rule.open_maximized {
-                resolved.open_maximized = Some(x);
-            }
-
-            if let Some(x) = rule.open_fullscreen {
-                resolved.open_fullscreen = Some(x);
-            }
-        }
-
-        resolved.open_on_output = open_on_output.map(|x| x.to_owned());
-    });
-
-    resolved
-}
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -574,7 +497,7 @@ impl State {
         };
 
         let config = self.niri.config.borrow();
-        let rules = resolve_window_rules(&config.window_rules, toplevel);
+        let rules = ResolvedWindowRules::compute(&config.window_rules, toplevel);
 
         // Pick the target monitor. First, check if we had an output set in the window rules.
         let mon = rules
@@ -807,14 +730,30 @@ impl State {
     }
 
     pub fn update_window_rules(&mut self, toplevel: &ToplevelSurface) {
-        let resolve = || resolve_window_rules(&self.niri.config.borrow().window_rules, toplevel);
+        let resolve =
+            || ResolvedWindowRules::compute(&self.niri.config.borrow().window_rules, toplevel);
 
         if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
                 *rules = resolve();
             }
-        } else if let Some(mapped) = self.niri.layout.find_window_mut(toplevel.wl_surface()) {
-            mapped.rules = resolve();
+        } else if let Some((mapped, output)) = self
+            .niri
+            .layout
+            .find_window_and_output_mut(toplevel.wl_surface())
+        {
+            let new_rules = resolve();
+            if mapped.rules != new_rules {
+                mapped.rules = new_rules;
+
+                let output = output.cloned();
+                let window = mapped.window.clone();
+                self.niri.layout.update_window(&window);
+
+                if let Some(output) = output {
+                    self.niri.queue_redraw(output);
+                }
+            }
         }
     }
 }

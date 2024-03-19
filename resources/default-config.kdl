@@ -362,6 +362,8 @@ animations {
     exclude app-id=r#"\.unwanted\."#
 
     // Here are the properties that you can set on a window rule.
+    // These properties apply once, when a window first opens.
+
     // You can override the default column width.
     default-column-width { proportion 0.75; }
 
@@ -377,6 +379,20 @@ animations {
     open-fullscreen true
     // You can also set this to false to prevent a window from opening fullscreen.
     // open-fullscreen false
+
+    // The following properties apply dynamically while a window is open.
+
+    // You can amend the window's minimum and maximum size in logical pixels.
+    // Keep in mind that the window itself always has a final say in its size.
+    // These values instruct niri to never ask the window to be smaller than
+    // the minimum you set, or to be bigger than the maximum you set.
+    min-width 100
+    max-width 200
+    min-height 300
+    // Caveat: max-height will only apply to automatically-sized windows
+    // if it is equal to min-height. Either set this equal to min-height,
+    // or change the window height manually for this to apply.
+    max-height 300
 }
 
 // Here's a useful example. Work around WezTerm's initial configure bug

@@ -643,21 +643,12 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn find_window_mut(&mut self, wl_surface: &WlSurface) -> Option<&mut W> {
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        if let Some(window) = ws.find_wl_surface_mut(wl_surface) {
-                            return Some(window);
-                        }
-                    }
-                }
-            }
-            MonitorSet::NoOutputs { workspaces } => {
-                for ws in workspaces {
-                    if let Some(window) = ws.find_wl_surface_mut(wl_surface) {
-                        return Some(window);
+    pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, &Output)> {
+        if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
+            for mon in monitors {
+                for ws in &mon.workspaces {
+                    if let Some(window) = ws.find_wl_surface(wl_surface) {
+                        return Some((window, &mon.output));
                     }
                 }
             }
@@ -666,12 +657,24 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, &Output)> {
-        if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
-            for mon in monitors {
-                for ws in &mon.workspaces {
-                    if let Some(window) = ws.find_wl_surface(wl_surface) {
-                        return Some((window, &mon.output));
+    pub fn find_window_and_output_mut(
+        &mut self,
+        wl_surface: &WlSurface,
+    ) -> Option<(&mut W, Option<&Output>)> {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if let Some(window) = ws.find_wl_surface_mut(wl_surface) {
+                            return Some((window, Some(&mon.output)));
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    if let Some(window) = ws.find_wl_surface_mut(wl_surface) {
+                        return Some((window, None));
                     }
                 }
             }
@@ -844,6 +847,27 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
                     for win in ws.windows() {
+                        f(win, None);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn with_windows_mut(&mut self, mut f: impl FnMut(&mut W, Option<&Output>)) {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        for win in ws.windows_mut() {
+                            f(win, Some(&mon.output));
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    for win in ws.windows_mut() {
                         f(win, None);
                     }
                 }

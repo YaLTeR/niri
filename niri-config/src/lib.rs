@@ -674,6 +674,7 @@ pub struct WindowRule {
     #[knuffel(children(name = "exclude"))]
     pub excludes: Vec<Match>,
 
+    // Rules applied at initial configure.
     #[knuffel(child)]
     pub default_column_width: Option<DefaultColumnWidth>,
     #[knuffel(child, unwrap(argument))]
@@ -682,6 +683,16 @@ pub struct WindowRule {
     pub open_maximized: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_fullscreen: Option<bool>,
+
+    // Rules applied dynamically.
+    #[knuffel(child, unwrap(argument))]
+    pub min_width: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub min_height: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub max_width: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub max_height: Option<u16>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone)]
