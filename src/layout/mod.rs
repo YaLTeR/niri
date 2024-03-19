@@ -1557,6 +1557,8 @@ impl<W: LayoutElement> Layout<W> {
             .unwrap();
         let target = &mut monitors[target_idx];
 
+        target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
+
         // Insert the workspace after the currently active one. Unless the currently active one is
         // the last empty workspace, then insert before.
         let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
