@@ -1078,14 +1078,17 @@ impl State {
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
         let source = event.source();
 
-        let horizontal_amount = event
-            .amount(Axis::Horizontal)
-            .unwrap_or_else(|| event.amount_v120(Axis::Horizontal).unwrap_or(0.0) * 3.0 / 120.);
-        let vertical_amount = event
-            .amount(Axis::Vertical)
-            .unwrap_or_else(|| event.amount_v120(Axis::Vertical).unwrap_or(0.0) * 3.0 / 120.);
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
+
+        let horizontal_amount = event.amount(Axis::Horizontal).unwrap_or_else(|| {
+            // Winit backend, discrete scrolling.
+            horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
+        });
+        let vertical_amount = event.amount(Axis::Vertical).unwrap_or_else(|| {
+            // Winit backend, discrete scrolling.
+            vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
+        });
 
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {
