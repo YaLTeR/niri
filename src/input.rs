@@ -1081,6 +1081,64 @@ impl State {
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
+        // Handle wheel bindings.
+        if source == AxisSource::Wheel {
+            let comp_mod = self.backend.mod_key();
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+
+            if let Some(v120) = horizontal_amount_v120 {
+                let config = self.niri.config.borrow();
+                let bindings = &config.binds;
+                let action_left = bound_action(bindings, comp_mod, Trigger::WheelLeft, mods);
+                let action_right = bound_action(bindings, comp_mod, Trigger::WheelRight, mods);
+                drop(config);
+
+                // If we have a bind with current modifiers along the scroll direction, then
+                // accumulate and don't pass to Wayland. If there's no bind, reset the accumulator.
+                if action_left.is_some() || action_right.is_some() {
+                    let ticks = self.niri.horizontal_wheel_tracker.accumulate(v120);
+                    if let Some(right) = action_right {
+                        for _ in 0..ticks {
+                            self.do_action(right.clone());
+                        }
+                    }
+                    if let Some(left) = action_left {
+                        for _ in ticks..0 {
+                            self.do_action(left.clone());
+                        }
+                    }
+                    return;
+                } else {
+                    self.niri.horizontal_wheel_tracker.reset();
+                }
+            }
+
+            if let Some(v120) = vertical_amount_v120 {
+                let config = self.niri.config.borrow();
+                let bindings = &config.binds;
+                let action_up = bound_action(bindings, comp_mod, Trigger::WheelUp, mods);
+                let action_down = bound_action(bindings, comp_mod, Trigger::WheelDown, mods);
+                drop(config);
+
+                if action_up.is_some() || action_down.is_some() {
+                    let ticks = self.niri.vertical_wheel_tracker.accumulate(v120);
+                    if let Some(down) = action_down {
+                        for _ in 0..ticks {
+                            self.do_action(down.clone());
+                        }
+                    }
+                    if let Some(up) = action_up {
+                        for _ in ticks..0 {
+                            self.do_action(up.clone());
+                        }
+                    }
+                    return;
+                } else {
+                    self.niri.vertical_wheel_tracker.reset();
+                }
+            }
+        }
+
         let horizontal_amount = event.amount(Axis::Horizontal).unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
             horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.

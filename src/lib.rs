@@ -19,6 +19,7 @@ pub mod rubber_band;
 pub mod swipe_tracker;
 pub mod ui;
 pub mod utils;
+pub mod wheel_tracker;
 pub mod window;
 
 #[cfg(not(feature = "xdp-gnome-screencast"))]

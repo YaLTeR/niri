@@ -114,6 +114,7 @@ use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, center_f64, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };
+use crate::wheel_tracker::WheelTracker;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 use crate::{animation, niri_render_elements};
 
@@ -204,6 +205,8 @@ pub struct Niri {
     pub pointer_focus: PointerFocus,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
+    pub vertical_wheel_tracker: WheelTracker,
+    pub horizontal_wheel_tracker: WheelTracker,
 
     pub lock_state: LockState,
 
@@ -1263,6 +1266,8 @@ impl Niri {
             pointer_focus: PointerFocus::default(),
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
+            vertical_wheel_tracker: WheelTracker::new(),
+            horizontal_wheel_tracker: WheelTracker::new(),
 
             lock_state: LockState::Unlocked,
 
