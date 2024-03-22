@@ -746,7 +746,8 @@ bitflags! {
         const SHIFT = 2;
         const ALT = 4;
         const SUPER = 8;
-        const COMPOSITOR = 16;
+        const ISO_LEVEL3_SHIFT = 16;
+        const COMPOSITOR = 32;
     }
 }
 
@@ -1542,6 +1543,10 @@ impl FromStr for Key {
                 modifiers |= Modifiers::ALT;
             } else if part.eq_ignore_ascii_case("super") || part.eq_ignore_ascii_case("win") {
                 modifiers |= Modifiers::SUPER;
+            } else if part.eq_ignore_ascii_case("iso_level3_shift")
+                || part.eq_ignore_ascii_case("mod5")
+            {
+                modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
             } else {
                 return Err(miette!("invalid modifier: {part}"));
             }
@@ -2086,5 +2091,23 @@ mod tests {
 
         assert!("-".parse::<SizeChange>().is_err());
         assert!("10% ".parse::<SizeChange>().is_err());
+    }
+
+    #[test]
+    fn parse_iso_level3_shift() {
+        assert_eq!(
+            "ISO_Level3_Shift+A".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::a),
+                modifiers: Modifiers::ISO_LEVEL3_SHIFT
+            },
+        );
+        assert_eq!(
+            "Mod5+A".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::a),
+                modifiers: Modifiers::ISO_LEVEL3_SHIFT
+            },
+        );
     }
 }
