@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::time::Duration;
 
 use bitflags::bitflags;
 use knuffel::errors::DecodeError;
@@ -720,6 +721,7 @@ pub struct Binds(pub Vec<Bind>);
 pub struct Bind {
     pub key: Key,
     pub action: Action,
+    pub cooldown: Option<Duration>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -1405,12 +1407,44 @@ where
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
-        expect_only_children(node, ctx);
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+
+        for val in node.arguments.iter() {
+            ctx.emit_error(DecodeError::unexpected(
+                &val.literal,
+                "argument",
+                "no arguments expected for this node",
+            ))
+        }
 
         let key = node
             .node_name
             .parse::<Key>()
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
+
+        let mut cooldown = None;
+        for (name, val) in &node.properties {
+            match &***name {
+                "cooldown-ms" => {
+                    cooldown = Some(Duration::from_millis(
+                        knuffel::traits::DecodeScalar::decode(val, ctx)?,
+                    ));
+                }
+                name_str => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        name,
+                        "property",
+                        format!("unexpected property `{}`", name_str.escape_default()),
+                    ));
+                }
+            }
+        }
 
         let mut children = node.children();
 
@@ -1420,6 +1454,7 @@ where
         let dummy = Self {
             key,
             action: Action::Spawn(vec![]),
+            cooldown: None,
         };
 
         if let Some(child) = children.next() {
@@ -1431,7 +1466,11 @@ where
                 ));
             }
             match Action::decode_node(child, ctx) {
-                Ok(action) => Ok(Self { key, action }),
+                Ok(action) => Ok(Self {
+                    key,
+                    action,
+                    cooldown,
+                }),
                 Err(e) => {
                     ctx.emit_error(e);
                     Ok(dummy)
@@ -1732,7 +1771,7 @@ mod tests {
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
                 Mod+Shift+E { quit skip-confirmation=true; }
-                Mod+WheelDown { focus-workspace-down; }
+                Mod+WheelDown cooldown-ms=150 { focus-workspace-down; }
             }
 
             debug {
@@ -1920,6 +1959,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::Spawn(vec!["alacritty".to_owned()]),
+                        cooldown: None,
                     },
                     Bind {
                         key: Key {
@@ -1927,6 +1967,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::CloseWindow,
+                        cooldown: None,
                     },
                     Bind {
                         key: Key {
@@ -1934,6 +1975,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         action: Action::FocusMonitorLeft,
+                        cooldown: None,
                     },
                     Bind {
                         key: Key {
@@ -1941,6 +1983,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
                         },
                         action: Action::MoveWindowToMonitorRight,
+                        cooldown: None,
                     },
                     Bind {
                         key: Key {
@@ -1948,6 +1991,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::ConsumeWindowIntoColumn,
+                        cooldown: None,
                     },
                     Bind {
                         key: Key {
@@ -1955,6 +1999,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::FocusWorkspace(1),
+                        cooldown: None,
                     },
                     Bind {
                         key: Key {
@@ -1962,6 +2007,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         action: Action::Quit(true),
+                        cooldown: None,
                     },
                     Bind {
                         key: Key {
@@ -1969,6 +2015,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::FocusWorkspaceDown,
+                        cooldown: Some(Duration::from_millis(150)),
                     },
                 ]),
                 debug: DebugConfig {

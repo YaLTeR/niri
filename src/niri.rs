@@ -11,7 +11,7 @@ use std::{env, mem, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
-use niri_config::{Config, TrackLayout};
+use niri_config::{Config, Key, TrackLayout};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
@@ -194,6 +194,7 @@ pub struct Niri {
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<u32>,
+    pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
@@ -1251,6 +1252,7 @@ impl Niri {
             popups: PopupManager::default(),
             popup_grab: None,
             suppressed_keys: HashSet::new(),
+            bind_cooldown_timers: HashMap::new(),
             presentation_state,
             security_context_state,
             gamma_control_manager_state,

@@ -1,7 +1,9 @@
 use std::any::Any;
+use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 use std::time::Duration;
 
+use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{Action, Bind, Binds, Key, Modifiers, Trigger};
 use niri_ipc::LayoutSwitchTarget;
@@ -289,7 +291,40 @@ impl State {
             return;
         }
 
-        self.do_action(bind.action);
+        self.handle_bind(bind);
+    }
+
+    pub fn handle_bind(&mut self, bind: Bind) {
+        let Some(cooldown) = bind.cooldown else {
+            self.do_action(bind.action);
+            return;
+        };
+
+        // Check this first so that it doesn't trigger the cooldown.
+        if self.niri.is_locked() && !allowed_when_locked(&bind.action) {
+            return;
+        }
+
+        match self.niri.bind_cooldown_timers.entry(bind.key) {
+            // The bind is on cooldown.
+            Entry::Occupied(_) => (),
+            Entry::Vacant(entry) => {
+                let timer = Timer::from_duration(cooldown);
+                let token = self
+                    .niri
+                    .event_loop
+                    .insert_source(timer, move |_, _, state| {
+                        if state.niri.bind_cooldown_timers.remove(&bind.key).is_none() {
+                            error!("bind cooldown timer entry disappeared");
+                        }
+                        TimeoutAction::Drop
+                    })
+                    .unwrap();
+                entry.insert(token);
+
+                self.do_action(bind.action);
+            }
+        }
     }
 
     pub fn do_action(&mut self, action: Action) {
@@ -1100,12 +1135,12 @@ impl State {
                     let ticks = self.niri.horizontal_wheel_tracker.accumulate(v120);
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
-                            self.do_action(right.action.clone());
+                            self.handle_bind(right.clone());
                         }
                     }
                     if let Some(left) = bind_left {
                         for _ in ticks..0 {
-                            self.do_action(left.action.clone());
+                            self.handle_bind(left.clone());
                         }
                     }
                     return;
@@ -1125,12 +1160,12 @@ impl State {
                     let ticks = self.niri.vertical_wheel_tracker.accumulate(v120);
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
-                            self.do_action(down.action.clone());
+                            self.handle_bind(down.clone());
                         }
                     }
                     if let Some(up) = bind_up {
                         for _ in ticks..0 {
-                            self.do_action(up.action.clone());
+                            self.handle_bind(up.clone());
                         }
                     }
                     return;
@@ -1725,6 +1760,7 @@ fn should_intercept_key(
                         modifiers: Modifiers::empty(),
                     },
                     action,
+                    cooldown: None,
                 });
             }
         }
@@ -1772,6 +1808,7 @@ fn find_bind(
                 modifiers: Modifiers::empty(),
             },
             action,
+            cooldown: None,
         });
     }
 
@@ -1991,6 +2028,7 @@ mod tests {
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
             },
             action: Action::CloseWindow,
+            cooldown: None,
         }]);
 
         let comp_mod = CompositorMod::Super;
@@ -2122,6 +2160,7 @@ mod tests {
                     modifiers: Modifiers::COMPOSITOR,
                 },
                 action: Action::CloseWindow,
+                cooldown: None,
             },
             Bind {
                 key: Key {
@@ -2129,6 +2168,7 @@ mod tests {
                     modifiers: Modifiers::SUPER,
                 },
                 action: Action::FocusColumnLeft,
+                cooldown: None,
             },
             Bind {
                 key: Key {
@@ -2136,6 +2176,7 @@ mod tests {
                     modifiers: Modifiers::empty(),
                 },
                 action: Action::FocusWindowDown,
+                cooldown: None,
             },
             Bind {
                 key: Key {
@@ -2143,6 +2184,7 @@ mod tests {
                     modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
                 },
                 action: Action::FocusWindowUp,
+                cooldown: None,
             },
             Bind {
                 key: Key {
@@ -2150,6 +2192,7 @@ mod tests {
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
                 },
                 action: Action::FocusColumnRight,
+                cooldown: None,
             },
         ]);
 
