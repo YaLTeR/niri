@@ -1696,13 +1696,14 @@ fn action(
         _ => (),
     }
 
-    bound_action(bindings, comp_mod, raw, mods)
+    let trigger = Trigger::Keysym(raw?);
+    bound_action(bindings, comp_mod, trigger, mods)
 }
 
 fn bound_action(
     bindings: &Binds,
     comp_mod: CompositorMod,
-    raw: Option<Keysym>,
+    trigger: Trigger,
     mods: ModifiersState,
 ) -> Option<Action> {
     // Handle configured binds.
@@ -1728,10 +1729,8 @@ fn bound_action(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    let raw = raw?;
-
     for bind in &bindings.0 {
-        if bind.key.trigger != Trigger::Keysym(raw) {
+        if bind.key.trigger != trigger {
             continue;
         }
 
@@ -2072,7 +2071,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::q),
+                Trigger::Keysym(Keysym::q),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
@@ -2084,7 +2083,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::q),
+                Trigger::Keysym(Keysym::q),
                 ModifiersState::default(),
             ),
             None,
@@ -2094,7 +2093,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::h),
+                Trigger::Keysym(Keysym::h),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
@@ -2106,7 +2105,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::h),
+                Trigger::Keysym(Keysym::h),
                 ModifiersState::default(),
             ),
             None,
@@ -2116,7 +2115,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::j),
+                Trigger::Keysym(Keysym::j),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
@@ -2128,7 +2127,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::j),
+                Trigger::Keysym(Keysym::j),
                 ModifiersState::default(),
             ),
             Some(Action::FocusWindowDown)
@@ -2138,7 +2137,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::k),
+                Trigger::Keysym(Keysym::k),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
@@ -2150,7 +2149,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::k),
+                Trigger::Keysym(Keysym::k),
                 ModifiersState::default(),
             ),
             None,
@@ -2160,7 +2159,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::l),
+                Trigger::Keysym(Keysym::l),
                 ModifiersState {
                     logo: true,
                     alt: true,
@@ -2173,7 +2172,7 @@ mod tests {
             bound_action(
                 &bindings,
                 CompositorMod::Super,
-                Some(Keysym::l),
+                Trigger::Keysym(Keysym::l),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
