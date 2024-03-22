@@ -1084,24 +1084,24 @@ impl State {
         let vertical_amount = event
             .amount(Axis::Vertical)
             .unwrap_or_else(|| event.amount_v120(Axis::Vertical).unwrap_or(0.0) * 3.0 / 120.);
-        let horizontal_amount_discrete = event.amount_v120(Axis::Horizontal);
-        let vertical_amount_discrete = event.amount_v120(Axis::Vertical);
+        let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
+        let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {
             frame = frame
                 .relative_direction(Axis::Horizontal, event.relative_direction(Axis::Horizontal));
             frame = frame.value(Axis::Horizontal, horizontal_amount);
-            if let Some(discrete) = horizontal_amount_discrete {
-                frame = frame.v120(Axis::Horizontal, discrete as i32);
+            if let Some(v120) = horizontal_amount_v120 {
+                frame = frame.v120(Axis::Horizontal, v120 as i32);
             }
         }
         if vertical_amount != 0.0 {
             frame =
                 frame.relative_direction(Axis::Vertical, event.relative_direction(Axis::Vertical));
             frame = frame.value(Axis::Vertical, vertical_amount);
-            if let Some(discrete) = vertical_amount_discrete {
-                frame = frame.v120(Axis::Vertical, discrete as i32);
+            if let Some(v120) = vertical_amount_v120 {
+                frame = frame.v120(Axis::Vertical, v120 as i32);
             }
         }
 
