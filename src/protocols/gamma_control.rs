@@ -177,6 +177,7 @@ where
                     }
 
                     // Verify that there's no more data.
+                    #[allow(clippy::unused_io_amount)] // False positive on 1.77.0
                     match file.read(&mut [0]) {
                         Ok(0) => (),
                         Ok(_) => {
