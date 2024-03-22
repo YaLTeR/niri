@@ -178,21 +178,23 @@ where
 
                     // Verify that there's no more data.
                     #[allow(clippy::unused_io_amount)] // False positive on 1.77.0
-                    match file.read(&mut [0]) {
-                        Ok(0) => (),
-                        Ok(_) => {
-                            warn!("gamma data is too large");
-                            resource.failed();
-                            gamma_controls.remove(&output);
-                            let _ = state.set_gamma(&output, None);
-                            return;
-                        }
-                        Err(err) => {
-                            warn!("error reading gamma data: {err:?}");
-                            resource.failed();
-                            gamma_controls.remove(&output);
-                            let _ = state.set_gamma(&output, None);
-                            return;
+                    {
+                        match file.read(&mut [0]) {
+                            Ok(0) => (),
+                            Ok(_) => {
+                                warn!("gamma data is too large");
+                                resource.failed();
+                                gamma_controls.remove(&output);
+                                let _ = state.set_gamma(&output, None);
+                                return;
+                            }
+                            Err(err) => {
+                                warn!("error reading gamma data: {err:?}");
+                                resource.failed();
+                                gamma_controls.remove(&output);
+                                let _ = state.set_gamma(&output, None);
+                                return;
+                            }
                         }
                     }
                 }
