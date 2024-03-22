@@ -724,8 +724,17 @@ pub struct Bind {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Key {
-    pub keysym: Keysym,
+    pub trigger: Trigger,
     pub modifiers: Modifiers,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum Trigger {
+    Keysym(Keysym),
+    WheelDown,
+    WheelUp,
+    WheelLeft,
+    WheelRight,
 }
 
 bitflags! {
@@ -1499,12 +1508,23 @@ impl FromStr for Key {
             }
         }
 
-        let keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
-        if keysym.raw() == KEY_NoSymbol {
-            return Err(miette!("invalid key: {key}"));
-        }
+        let trigger = if key.eq_ignore_ascii_case("WheelDown") {
+            Trigger::WheelDown
+        } else if key.eq_ignore_ascii_case("WheelUp") {
+            Trigger::WheelUp
+        } else if key.eq_ignore_ascii_case("WheelLeft") {
+            Trigger::WheelLeft
+        } else if key.eq_ignore_ascii_case("WheelRight") {
+            Trigger::WheelRight
+        } else {
+            let keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
+            if keysym.raw() == KEY_NoSymbol {
+                return Err(miette!("invalid key: {key}"));
+            }
+            Trigger::Keysym(keysym)
+        };
 
-        Ok(Key { keysym, modifiers })
+        Ok(Key { trigger, modifiers })
     }
 }
 
@@ -1712,6 +1732,7 @@ mod tests {
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
                 Mod+Shift+E { quit skip-confirmation=true; }
+                Mod+WheelDown { focus-workspace-down; }
             }
 
             debug {
@@ -1895,52 +1916,59 @@ mod tests {
                 binds: Binds(vec![
                     Bind {
                         key: Key {
-                            keysym: Keysym::t,
+                            trigger: Trigger::Keysym(Keysym::t),
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::Spawn(vec!["alacritty".to_owned()]),
                     },
                     Bind {
                         key: Key {
-                            keysym: Keysym::q,
+                            trigger: Trigger::Keysym(Keysym::q),
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::CloseWindow,
                     },
                     Bind {
                         key: Key {
-                            keysym: Keysym::h,
+                            trigger: Trigger::Keysym(Keysym::h),
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         action: Action::FocusMonitorLeft,
                     },
                     Bind {
                         key: Key {
-                            keysym: Keysym::l,
+                            trigger: Trigger::Keysym(Keysym::l),
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
                         },
                         action: Action::MoveWindowToMonitorRight,
                     },
                     Bind {
                         key: Key {
-                            keysym: Keysym::comma,
+                            trigger: Trigger::Keysym(Keysym::comma),
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::ConsumeWindowIntoColumn,
                     },
                     Bind {
                         key: Key {
-                            keysym: Keysym::_1,
+                            trigger: Trigger::Keysym(Keysym::_1),
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::FocusWorkspace(1),
                     },
                     Bind {
                         key: Key {
-                            keysym: Keysym::e,
+                            trigger: Trigger::Keysym(Keysym::e),
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         action: Action::Quit(true),
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Trigger::WheelDown,
+                            modifiers: Modifiers::COMPOSITOR,
+                        },
+                        action: Action::FocusWorkspaceDown,
                     },
                 ]),
                 debug: DebugConfig {

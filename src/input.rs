@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Binds, Modifiers};
+use niri_config::{Action, Binds, Modifiers, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -1731,7 +1731,7 @@ fn bound_action(
     let raw = raw?;
 
     for bind in &bindings.0 {
-        if bind.key.keysym != raw {
+        if bind.key.trigger != Trigger::Keysym(raw) {
             continue;
         }
 
@@ -1911,7 +1911,7 @@ mod tests {
         let close_keysym = Keysym::q;
         let bindings = Binds(vec![Bind {
             key: Key {
-                keysym: close_keysym,
+                trigger: Trigger::Keysym(close_keysym),
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
             },
             action: Action::CloseWindow,
@@ -2033,35 +2033,35 @@ mod tests {
         let bindings = Binds(vec![
             Bind {
                 key: Key {
-                    keysym: Keysym::q,
+                    trigger: Trigger::Keysym(Keysym::q),
                     modifiers: Modifiers::COMPOSITOR,
                 },
                 action: Action::CloseWindow,
             },
             Bind {
                 key: Key {
-                    keysym: Keysym::h,
+                    trigger: Trigger::Keysym(Keysym::h),
                     modifiers: Modifiers::SUPER,
                 },
                 action: Action::FocusColumnLeft,
             },
             Bind {
                 key: Key {
-                    keysym: Keysym::j,
+                    trigger: Trigger::Keysym(Keysym::j),
                     modifiers: Modifiers::empty(),
                 },
                 action: Action::FocusWindowDown,
             },
             Bind {
                 key: Key {
-                    keysym: Keysym::k,
+                    trigger: Trigger::Keysym(Keysym::k),
                     modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
                 },
                 action: Action::FocusWindowUp,
             },
             Bind {
                 key: Key {
-                    keysym: Keysym::l,
+                    trigger: Trigger::Keysym(Keysym::l),
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
                 },
                 action: Action::FocusColumnRight,

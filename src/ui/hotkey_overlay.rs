@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::{Action, Config, Key, Modifiers};
+use niri_config::{Action, Config, Key, Modifiers, Trigger};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::memory::{
@@ -414,7 +414,15 @@ fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
     if key.modifiers.contains(Modifiers::CTRL) {
         name.push_str("Ctrl + ");
     }
-    name.push_str(&prettify_keysym_name(&keysym_get_name(key.keysym)));
+
+    let pretty = match key.trigger {
+        Trigger::Keysym(keysym) => prettify_keysym_name(&keysym_get_name(keysym)),
+        Trigger::WheelDown => String::from("Wheel Down"),
+        Trigger::WheelUp => String::from("Wheel Up"),
+        Trigger::WheelLeft => String::from("Wheel Left"),
+        Trigger::WheelRight => String::from("Wheel Right"),
+    };
+    name.push_str(&pretty);
 
     name
 }
