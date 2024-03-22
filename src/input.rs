@@ -1849,6 +1849,9 @@ fn find_configured_bind(
     if mods.logo {
         modifiers |= Modifiers::SUPER;
     }
+    if mods.iso_level3_shift {
+        modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
+    }
 
     let (mod_down, comp_mod) = match comp_mod {
         CompositorMod::Super => (mods.logo, Modifiers::SUPER),
