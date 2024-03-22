@@ -316,12 +316,12 @@ impl ScreenshotUi {
         Ok((rect.size, copy.to_vec()))
     }
 
-    pub fn action(&self, raw: Option<Keysym>, mods: ModifiersState) -> Option<Action> {
+    pub fn action(&self, raw: Keysym, mods: ModifiersState) -> Option<Action> {
         if !matches!(self, Self::Open { .. }) {
             return None;
         }
 
-        action(raw?, mods)
+        action(raw, mods)
     }
 
     pub fn selection_output(&self) -> Option<&Output> {

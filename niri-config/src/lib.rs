@@ -716,7 +716,7 @@ impl PartialEq for Match {
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
     pub action: Action,

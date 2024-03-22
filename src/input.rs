@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Binds, Modifiers, Trigger};
+use niri_config::{Action, Bind, Binds, Key, Modifiers, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -248,7 +248,7 @@ impl State {
         let time = Event::time_msec(&event);
         let pressed = event.state() == KeyState::Pressed;
 
-        let Some(Some(action)) = self.niri.seat.get_keyboard().unwrap().input(
+        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
             event.key_code(),
             event.state(),
@@ -289,7 +289,7 @@ impl State {
             return;
         }
 
-        self.do_action(action);
+        self.do_action(bind.action);
     }
 
     pub fn do_action(&mut self, action: Action) {
@@ -1089,22 +1089,23 @@ impl State {
             if let Some(v120) = horizontal_amount_v120 {
                 let config = self.niri.config.borrow();
                 let bindings = &config.binds;
-                let action_left = bound_action(bindings, comp_mod, Trigger::WheelLeft, mods);
-                let action_right = bound_action(bindings, comp_mod, Trigger::WheelRight, mods);
+                let bind_left = find_configured_bind(bindings, comp_mod, Trigger::WheelLeft, mods);
+                let bind_right =
+                    find_configured_bind(bindings, comp_mod, Trigger::WheelRight, mods);
                 drop(config);
 
                 // If we have a bind with current modifiers along the scroll direction, then
                 // accumulate and don't pass to Wayland. If there's no bind, reset the accumulator.
-                if action_left.is_some() || action_right.is_some() {
+                if bind_left.is_some() || bind_right.is_some() {
                     let ticks = self.niri.horizontal_wheel_tracker.accumulate(v120);
-                    if let Some(right) = action_right {
+                    if let Some(right) = bind_right {
                         for _ in 0..ticks {
-                            self.do_action(right.clone());
+                            self.do_action(right.action.clone());
                         }
                     }
-                    if let Some(left) = action_left {
+                    if let Some(left) = bind_left {
                         for _ in ticks..0 {
-                            self.do_action(left.clone());
+                            self.do_action(left.action.clone());
                         }
                     }
                     return;
@@ -1116,20 +1117,20 @@ impl State {
             if let Some(v120) = vertical_amount_v120 {
                 let config = self.niri.config.borrow();
                 let bindings = &config.binds;
-                let action_up = bound_action(bindings, comp_mod, Trigger::WheelUp, mods);
-                let action_down = bound_action(bindings, comp_mod, Trigger::WheelDown, mods);
+                let bind_up = find_configured_bind(bindings, comp_mod, Trigger::WheelUp, mods);
+                let bind_down = find_configured_bind(bindings, comp_mod, Trigger::WheelDown, mods);
                 drop(config);
 
-                if action_up.is_some() || action_down.is_some() {
+                if bind_up.is_some() || bind_down.is_some() {
                     let ticks = self.niri.vertical_wheel_tracker.accumulate(v120);
-                    if let Some(down) = action_down {
+                    if let Some(down) = bind_down {
                         for _ in 0..ticks {
-                            self.do_action(down.clone());
+                            self.do_action(down.action.clone());
                         }
                     }
-                    if let Some(up) = action_up {
+                    if let Some(up) = bind_up {
                         for _ in ticks..0 {
-                            self.do_action(up.clone());
+                            self.do_action(up.action.clone());
                         }
                     }
                     return;
@@ -1687,7 +1688,7 @@ fn should_intercept_key(
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
-) -> FilterResult<Option<Action>> {
+) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
     // the key to suppress.
@@ -1695,7 +1696,7 @@ fn should_intercept_key(
         return FilterResult::Forward;
     }
 
-    let mut final_action = action(
+    let mut final_bind = find_bind(
         bindings,
         comp_mod,
         modified,
@@ -1709,21 +1710,30 @@ fn should_intercept_key(
     if screenshot_ui.is_open() {
         let mut use_screenshot_ui_action = true;
 
-        if let Some(action) = &final_action {
-            if allowed_during_screenshot(action) {
+        if let Some(bind) = &final_bind {
+            if allowed_during_screenshot(&bind.action) {
                 use_screenshot_ui_action = false;
             }
         }
 
         if use_screenshot_ui_action {
-            final_action = screenshot_ui.action(raw, mods);
+            if let Some(raw) = raw {
+                final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(raw),
+                        // Not entirely correct but it doesn't matter in how we currently use it.
+                        modifiers: Modifiers::empty(),
+                    },
+                    action,
+                });
+            }
         }
     }
 
-    match (final_action, pressed) {
-        (Some(action), true) => {
+    match (final_bind, pressed) {
+        (Some(bind), true) => {
             suppressed_keys.insert(key_code);
-            FilterResult::Intercept(Some(action))
+            FilterResult::Intercept(Some(bind))
         }
         (_, false) => {
             suppressed_keys.remove(&key_code);
@@ -1733,37 +1743,48 @@ fn should_intercept_key(
     }
 }
 
-fn action(
+fn find_bind(
     bindings: &Binds,
     comp_mod: CompositorMod,
     modified: Keysym,
     raw: Option<Keysym>,
     mods: ModifiersState,
     disable_power_key_handling: bool,
-) -> Option<Action> {
+) -> Option<Bind> {
     use keysyms::*;
 
     // Handle hardcoded binds.
     #[allow(non_upper_case_globals)] // wat
-    match modified.raw() {
+    let hardcoded_action = match modified.raw() {
         modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
             let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
-            return Some(Action::ChangeVt(vt));
+            Some(Action::ChangeVt(vt))
         }
-        KEY_XF86PowerOff if !disable_power_key_handling => return Some(Action::Suspend),
-        _ => (),
+        KEY_XF86PowerOff if !disable_power_key_handling => Some(Action::Suspend),
+        _ => None,
+    };
+
+    if let Some(action) = hardcoded_action {
+        return Some(Bind {
+            key: Key {
+                // Not entirely correct but it doesn't matter in how we currently use it.
+                trigger: Trigger::Keysym(modified),
+                modifiers: Modifiers::empty(),
+            },
+            action,
+        });
     }
 
     let trigger = Trigger::Keysym(raw?);
-    bound_action(bindings, comp_mod, trigger, mods)
+    find_configured_bind(bindings, comp_mod, trigger, mods)
 }
 
-fn bound_action(
+fn find_configured_bind(
     bindings: &Binds,
     comp_mod: CompositorMod,
     trigger: Trigger,
     mods: ModifiersState,
-) -> Option<Action> {
+) -> Option<Bind> {
     // Handle configured binds.
     let mut modifiers = Modifiers::empty();
     if mods.ctrl {
@@ -1800,7 +1821,7 @@ fn bound_action(
         }
 
         if bind_modifiers == modifiers {
-            return Some(bind.action.clone());
+            return Some(bind.clone());
         }
     }
 
@@ -1959,8 +1980,6 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
 #[cfg(test)]
 mod tests {
-    use niri_config::{Bind, Key};
-
     use super::*;
 
     #[test]
@@ -2026,7 +2045,10 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(
             filter,
-            FilterResult::Intercept(Some(Action::CloseWindow))
+            FilterResult::Intercept(Some(Bind {
+                action: Action::CloseWindow,
+                ..
+            }))
         ));
         assert!(suppressed_keys.contains(&close_key_code));
 
@@ -2057,7 +2079,10 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(
             filter,
-            FilterResult::Intercept(Some(Action::CloseWindow))
+            FilterResult::Intercept(Some(Bind {
+                action: Action::CloseWindow,
+                ..
+            }))
         ));
 
         let filter = none_key_event(&mut suppressed_keys, mods, true);
@@ -2074,7 +2099,10 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(
             filter,
-            FilterResult::Intercept(Some(Action::CloseWindow))
+            FilterResult::Intercept(Some(Bind {
+                action: Action::CloseWindow,
+                ..
+            }))
         ));
 
         mods = Default::default();
@@ -2126,7 +2154,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::q),
@@ -2134,11 +2162,12 @@ mod tests {
                     logo: true,
                     ..Default::default()
                 }
-            ),
-            Some(Action::CloseWindow)
+            )
+            .as_ref(),
+            Some(&bindings.0[0])
         );
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::q),
@@ -2148,7 +2177,7 @@ mod tests {
         );
 
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::h),
@@ -2156,11 +2185,12 @@ mod tests {
                     logo: true,
                     ..Default::default()
                 }
-            ),
-            Some(Action::FocusColumnLeft)
+            )
+            .as_ref(),
+            Some(&bindings.0[1])
         );
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::h),
@@ -2170,7 +2200,7 @@ mod tests {
         );
 
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::j),
@@ -2182,17 +2212,18 @@ mod tests {
             None,
         );
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState::default(),
-            ),
-            Some(Action::FocusWindowDown)
+            )
+            .as_ref(),
+            Some(&bindings.0[2])
         );
 
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::k),
@@ -2200,11 +2231,12 @@ mod tests {
                     logo: true,
                     ..Default::default()
                 }
-            ),
-            Some(Action::FocusWindowUp)
+            )
+            .as_ref(),
+            Some(&bindings.0[3])
         );
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::k),
@@ -2214,7 +2246,7 @@ mod tests {
         );
 
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::l),
@@ -2223,11 +2255,12 @@ mod tests {
                     alt: true,
                     ..Default::default()
                 }
-            ),
-            Some(Action::FocusColumnRight)
+            )
+            .as_ref(),
+            Some(&bindings.0[4])
         );
         assert_eq!(
-            bound_action(
+            find_configured_bind(
                 &bindings,
                 CompositorMod::Super,
                 Trigger::Keysym(Keysym::l),
