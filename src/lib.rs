@@ -16,10 +16,10 @@ pub mod niri;
 pub mod protocols;
 pub mod render_helpers;
 pub mod rubber_band;
+pub mod scroll_tracker;
 pub mod swipe_tracker;
 pub mod ui;
 pub mod utils;
-pub mod wheel_tracker;
 pub mod window;
 
 #[cfg(not(feature = "xdp-gnome-screencast"))]

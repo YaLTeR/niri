@@ -106,6 +106,7 @@ use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::{render_to_shm, render_to_texture, render_to_vec};
+use crate::scroll_tracker::ScrollTracker;
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
@@ -114,7 +115,6 @@ use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, center_f64, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };
-use crate::wheel_tracker::WheelTracker;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
 
@@ -206,8 +206,8 @@ pub struct Niri {
     pub pointer_focus: PointerFocus,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
-    pub vertical_wheel_tracker: WheelTracker,
-    pub horizontal_wheel_tracker: WheelTracker,
+    pub vertical_wheel_tracker: ScrollTracker,
+    pub horizontal_wheel_tracker: ScrollTracker,
     pub mods_with_wheel_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
@@ -1321,8 +1321,8 @@ impl Niri {
             pointer_focus: PointerFocus::default(),
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
-            vertical_wheel_tracker: WheelTracker::new(),
-            horizontal_wheel_tracker: WheelTracker::new(),
+            vertical_wheel_tracker: ScrollTracker::new(120),
+            horizontal_wheel_tracker: ScrollTracker::new(120),
             mods_with_wheel_binds,
 
             lock_state: LockState::Unlocked,
