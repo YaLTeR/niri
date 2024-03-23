@@ -22,7 +22,7 @@ pub struct Mapped {
     pub window: Window,
 
     /// Up-to-date rules.
-    pub rules: ResolvedWindowRules,
+    rules: ResolvedWindowRules,
 
     /// Whether the window rules need to be recomputed.
     ///
