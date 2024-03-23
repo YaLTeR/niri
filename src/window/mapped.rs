@@ -28,7 +28,7 @@ pub struct Mapped {
     ///
     /// This is not used in all cases; for example, app ID and title changes recompute the rules
     /// immediately, rather than setting this flag.
-    pub need_to_recompute_rules: bool,
+    need_to_recompute_rules: bool,
 }
 
 impl Mapped {
