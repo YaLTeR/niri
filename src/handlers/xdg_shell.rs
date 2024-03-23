@@ -28,7 +28,7 @@ use smithay::{
 
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
-use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped};
+use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -489,15 +489,16 @@ impl State {
             return;
         };
 
+        let config = self.niri.config.borrow();
+        let rules =
+            ResolvedWindowRules::compute(&config.window_rules, WindowRef::Unmapped(unmapped));
+
         let Unmapped { window, state } = unmapped;
 
         let InitialConfigureState::NotConfigured { wants_fullscreen } = state else {
             error!("window must not be already configured in send_initial_configure()");
             return;
         };
-
-        let config = self.niri.config.borrow();
-        let rules = ResolvedWindowRules::compute(&config.window_rules, toplevel);
 
         // Pick the target monitor. First, check if we had an output set in the window rules.
         let mon = rules
@@ -730,19 +731,23 @@ impl State {
     }
 
     pub fn update_window_rules(&mut self, toplevel: &ToplevelSurface) {
-        let resolve =
-            || ResolvedWindowRules::compute(&self.niri.config.borrow().window_rules, toplevel);
+        let config = self.niri.config.borrow();
+        let window_rules = &config.window_rules;
 
         if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
+            let new_rules =
+                ResolvedWindowRules::compute(window_rules, WindowRef::Unmapped(unmapped));
             if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
-                *rules = resolve();
+                *rules = new_rules;
             }
         } else if let Some((mapped, output)) = self
             .niri
             .layout
             .find_window_and_output_mut(toplevel.wl_surface())
         {
-            let new_rules = resolve();
+            let new_rules = ResolvedWindowRules::compute(window_rules, WindowRef::Mapped(mapped));
+            drop(config);
+
             if mapped.rules != new_rules {
                 mapped.rules = new_rules;
 

@@ -115,7 +115,7 @@ use crate::utils::{
     center, center_f64, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
 };
 use crate::wheel_tracker::WheelTracker;
-use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
+use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
 
 const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
@@ -880,17 +880,17 @@ impl State {
             let window_rules = &self.niri.config.borrow().window_rules;
 
             for unmapped in self.niri.unmapped_windows.values_mut() {
+                let new_rules =
+                    ResolvedWindowRules::compute(window_rules, WindowRef::Unmapped(unmapped));
                 if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
-                    *rules = ResolvedWindowRules::compute(
-                        window_rules,
-                        unmapped.window.toplevel().expect("no X11 support"),
-                    );
+                    *rules = new_rules;
                 }
             }
 
             let mut windows = vec![];
             self.niri.layout.with_windows_mut(|mapped, _| {
-                mapped.rules = ResolvedWindowRules::compute(window_rules, mapped.toplevel());
+                mapped.rules =
+                    ResolvedWindowRules::compute(window_rules, WindowRef::Mapped(mapped));
                 windows.push(mapped.window.clone());
             });
             for win in windows {

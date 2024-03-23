@@ -1,5 +1,6 @@
 use smithay::desktop::Window;
 use smithay::output::Output;
+use smithay::wayland::shell::xdg::ToplevelSurface;
 
 use super::ResolvedWindowRules;
 use crate::layout::workspace::ColumnWidth;
@@ -57,5 +58,9 @@ impl Unmapped {
 
     pub fn needs_initial_configure(&self) -> bool {
         matches!(self.state, InitialConfigureState::NotConfigured { .. })
+    }
+
+    pub fn toplevel(&self) -> &ToplevelSurface {
+        self.window.toplevel().expect("no X11 support")
     }
 }

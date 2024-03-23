@@ -12,6 +12,13 @@ pub use mapped::Mapped;
 pub mod unmapped;
 pub use unmapped::{InitialConfigureState, Unmapped};
 
+/// Reference to a mapped or unmapped window.
+#[derive(Debug, Clone, Copy)]
+pub enum WindowRef<'a> {
+    Unmapped(&'a Unmapped),
+    Mapped(&'a Mapped),
+}
+
 /// Rules fully resolved for a window.
 #[derive(Debug, PartialEq)]
 pub struct ResolvedWindowRules {
@@ -46,6 +53,15 @@ pub struct ResolvedWindowRules {
     pub draw_border_with_background: Option<bool>,
 }
 
+impl<'a> WindowRef<'a> {
+    pub fn toplevel(self) -> &'a ToplevelSurface {
+        match self {
+            WindowRef::Unmapped(unmapped) => unmapped.toplevel(),
+            WindowRef::Mapped(mapped) => mapped.toplevel(),
+        }
+    }
+}
+
 impl ResolvedWindowRules {
     pub const fn empty() -> Self {
         Self {
@@ -61,11 +77,12 @@ impl ResolvedWindowRules {
         }
     }
 
-    pub fn compute(rules: &[WindowRule], toplevel: &ToplevelSurface) -> Self {
+    pub fn compute(rules: &[WindowRule], window: WindowRef) -> Self {
         let _span = tracy_client::span!("ResolvedWindowRules::compute");
 
         let mut resolved = ResolvedWindowRules::empty();
 
+        let toplevel = window.toplevel();
         with_states(toplevel.wl_surface(), |states| {
             let role = states
                 .data_map
