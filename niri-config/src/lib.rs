@@ -733,10 +733,10 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
-    WheelDown,
-    WheelUp,
-    WheelLeft,
-    WheelRight,
+    WheelScrollDown,
+    WheelScrollUp,
+    WheelScrollLeft,
+    WheelScrollRight,
 }
 
 bitflags! {
@@ -1547,14 +1547,14 @@ impl FromStr for Key {
             }
         }
 
-        let trigger = if key.eq_ignore_ascii_case("WheelDown") {
-            Trigger::WheelDown
-        } else if key.eq_ignore_ascii_case("WheelUp") {
-            Trigger::WheelUp
-        } else if key.eq_ignore_ascii_case("WheelLeft") {
-            Trigger::WheelLeft
-        } else if key.eq_ignore_ascii_case("WheelRight") {
-            Trigger::WheelRight
+        let trigger = if key.eq_ignore_ascii_case("WheelScrollDown") {
+            Trigger::WheelScrollDown
+        } else if key.eq_ignore_ascii_case("WheelScrollUp") {
+            Trigger::WheelScrollUp
+        } else if key.eq_ignore_ascii_case("WheelScrollLeft") {
+            Trigger::WheelScrollLeft
+        } else if key.eq_ignore_ascii_case("WheelScrollRight") {
+            Trigger::WheelScrollRight
         } else {
             let keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             if keysym.raw() == KEY_NoSymbol {
@@ -1771,7 +1771,7 @@ mod tests {
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
                 Mod+Shift+E { quit skip-confirmation=true; }
-                Mod+WheelDown cooldown-ms=150 { focus-workspace-down; }
+                Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
             }
 
             debug {
@@ -2011,7 +2011,7 @@ mod tests {
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::WheelDown,
+                            trigger: Trigger::WheelScrollDown,
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::FocusWorkspaceDown,

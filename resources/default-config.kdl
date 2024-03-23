@@ -523,22 +523,22 @@ binds {
     // To avoid scrolling through workspaces really fast, you can use
     // the cooldown-ms property. The bind will be rate-limited to this value.
     // You can set a cooldown on any bind, but it's most useful for the wheel.
-    Mod+WheelDown      cooldown-ms=150 { focus-workspace-down; }
-    Mod+WheelUp        cooldown-ms=150 { focus-workspace-up; }
-    Mod+Ctrl+WheelDown cooldown-ms=150 { move-column-to-workspace-down; }
-    Mod+Ctrl+WheelUp   cooldown-ms=150 { move-column-to-workspace-up; }
+    Mod+WheelScrollDown      cooldown-ms=150 { focus-workspace-down; }
+    Mod+WheelScrollUp        cooldown-ms=150 { focus-workspace-up; }
+    Mod+Ctrl+WheelScrollDown cooldown-ms=150 { move-column-to-workspace-down; }
+    Mod+Ctrl+WheelScrollUp   cooldown-ms=150 { move-column-to-workspace-up; }
 
-    Mod+WheelRight      { focus-column-right; }
-    Mod+WheelLeft       { focus-column-left; }
-    Mod+Ctrl+WheelRight { move-column-right; }
-    Mod+Ctrl+WheelLeft  { move-column-left; }
+    Mod+WheelScrollRight      { focus-column-right; }
+    Mod+WheelScrollLeft       { focus-column-left; }
+    Mod+Ctrl+WheelScrollRight { move-column-right; }
+    Mod+Ctrl+WheelScrollLeft  { move-column-left; }
 
     // Usually scrolling up and down with Shift in applications results in
     // horizontal scrolling; these binds replicate that.
-    Mod+Shift+WheelDown      { focus-column-right; }
-    Mod+Shift+WheelUp        { focus-column-left; }
-    Mod+Ctrl+Shift+WheelDown { move-column-right; }
-    Mod+Ctrl+Shift+WheelUp   { move-column-left; }
+    Mod+Shift+WheelScrollDown      { focus-column-right; }
+    Mod+Shift+WheelScrollUp        { focus-column-left; }
+    Mod+Ctrl+Shift+WheelScrollDown { move-column-right; }
+    Mod+Ctrl+Shift+WheelScrollUp   { move-column-left; }
 
     // You can refer to workspaces by index. However, keep in mind that
     // niri is a dynamic workspace system, so these commands are kind of

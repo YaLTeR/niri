@@ -1116,7 +1116,7 @@ impl State {
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
-        // Handle wheel bindings.
+        // Handle wheel scroll bindings.
         if source == AxisSource::Wheel {
             let comp_mod = self.backend.mod_key();
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
@@ -1124,9 +1124,10 @@ impl State {
             if let Some(v120) = horizontal_amount_v120 {
                 let config = self.niri.config.borrow();
                 let bindings = &config.binds;
-                let bind_left = find_configured_bind(bindings, comp_mod, Trigger::WheelLeft, mods);
+                let bind_left =
+                    find_configured_bind(bindings, comp_mod, Trigger::WheelScrollLeft, mods);
                 let bind_right =
-                    find_configured_bind(bindings, comp_mod, Trigger::WheelRight, mods);
+                    find_configured_bind(bindings, comp_mod, Trigger::WheelScrollRight, mods);
                 drop(config);
 
                 // If we have a bind with current modifiers along the scroll direction, then
@@ -1152,8 +1153,10 @@ impl State {
             if let Some(v120) = vertical_amount_v120 {
                 let config = self.niri.config.borrow();
                 let bindings = &config.binds;
-                let bind_up = find_configured_bind(bindings, comp_mod, Trigger::WheelUp, mods);
-                let bind_down = find_configured_bind(bindings, comp_mod, Trigger::WheelDown, mods);
+                let bind_up =
+                    find_configured_bind(bindings, comp_mod, Trigger::WheelScrollUp, mods);
+                let bind_down =
+                    find_configured_bind(bindings, comp_mod, Trigger::WheelScrollDown, mods);
                 drop(config);
 
                 if bind_up.is_some() || bind_down.is_some() {
