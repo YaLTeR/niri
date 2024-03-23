@@ -43,7 +43,7 @@ use smithay::output::{self, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
-    Idle, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
+    Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
 use smithay::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
@@ -270,13 +270,13 @@ pub enum RedrawState {
     #[default]
     Idle,
     /// A redraw is queued.
-    Queued(Idle<'static>),
+    Queued,
     /// We submitted a frame to the KMS and waiting for it to be presented.
     WaitingForVBlank { redraw_needed: bool },
     /// We did not submit anything to KMS and made a timer to fire at the estimated VBlank.
     WaitingForEstimatedVBlank(RegistrationToken),
     /// A redraw is queued on top of the above.
-    WaitingForEstimatedVBlankAndQueued((RegistrationToken, Idle<'static>)),
+    WaitingForEstimatedVBlankAndQueued(RegistrationToken),
 }
 
 pub struct PopupGrabState {
@@ -417,6 +417,7 @@ impl State {
         self.update_keyboard_focus();
         self.refresh_pointer_focus();
         foreign_toplevel::refresh(self);
+        self.niri.redraw_queued_outputs(&mut self.backend);
 
         {
             let _span = tracy_client::span!("flush_clients");
@@ -1497,13 +1498,10 @@ impl Niri {
 
         match state.redraw_state {
             RedrawState::Idle => (),
-            RedrawState::Queued(idle) => idle.cancel(),
+            RedrawState::Queued => (),
             RedrawState::WaitingForVBlank { .. } => (),
             RedrawState::WaitingForEstimatedVBlank(token) => self.event_loop.remove(token),
-            RedrawState::WaitingForEstimatedVBlankAndQueued((token, idle)) => {
-                self.event_loop.remove(token);
-                idle.cancel();
-            }
+            RedrawState::WaitingForEstimatedVBlankAndQueued(token) => self.event_loop.remove(token),
         }
 
         // Disable the output global and remove some time later to give the clients some time to
@@ -1890,34 +1888,36 @@ impl Niri {
     /// Schedules an immediate redraw if one is not already scheduled.
     pub fn queue_redraw(&mut self, output: Output) {
         let state = self.output_state.get_mut(&output).unwrap();
-        let token = match mem::take(&mut state.redraw_state) {
-            RedrawState::Idle => None,
-            RedrawState::WaitingForEstimatedVBlank(token) => Some(token),
+        state.redraw_state = match mem::take(&mut state.redraw_state) {
+            RedrawState::Idle => RedrawState::Queued,
+            RedrawState::WaitingForEstimatedVBlank(token) => {
+                RedrawState::WaitingForEstimatedVBlankAndQueued(token)
+            }
 
-            // A redraw is already queued, put it back and do nothing.
-            value @ (RedrawState::Queued(_)
-            | RedrawState::WaitingForEstimatedVBlankAndQueued(_)) => {
-                state.redraw_state = value;
-                return;
+            // A redraw is already queued.
+            value @ (RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)) => {
+                value
             }
 
             // We're waiting for VBlank, request a redraw afterwards.
-            RedrawState::WaitingForVBlank { .. } => {
-                state.redraw_state = RedrawState::WaitingForVBlank {
-                    redraw_needed: true,
-                };
-                return;
-            }
+            RedrawState::WaitingForVBlank { .. } => RedrawState::WaitingForVBlank {
+                redraw_needed: true,
+            },
         };
+    }
 
-        let idle = self.event_loop.insert_idle(move |state| {
-            state.niri.redraw(&mut state.backend, &output);
-        });
+    pub fn redraw_queued_outputs(&mut self, backend: &mut Backend) {
+        let _span = tracy_client::span!("Niri::redraw_queued_outputs");
 
-        state.redraw_state = match token {
-            Some(token) => RedrawState::WaitingForEstimatedVBlankAndQueued((token, idle)),
-            None => RedrawState::Queued(idle),
-        };
+        while let Some((output, _)) = self.output_state.iter().find(|(_, state)| {
+            matches!(
+                state.redraw_state,
+                RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
+            )
+        }) {
+            let output = output.clone();
+            self.redraw(backend, &output);
+        }
     }
 
     pub fn pointer_element<R: NiriRenderer>(
@@ -2290,7 +2290,7 @@ impl Niri {
         let state = self.output_state.get_mut(output).unwrap();
         assert!(matches!(
             state.redraw_state,
-            RedrawState::Queued(_) | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
+            RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
         ));
 
         let target_presentation_time = state.frame_clock.next_presentation_time();
@@ -2324,15 +2324,14 @@ impl Niri {
 
         if res == RenderResult::Skipped {
             // Update the redraw state on failed render.
-            state.redraw_state =
-                if let RedrawState::WaitingForEstimatedVBlank(token)
-                | RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) =
-                    state.redraw_state
-                {
-                    RedrawState::WaitingForEstimatedVBlank(token)
-                } else {
-                    RedrawState::Idle
-                };
+            state.redraw_state = if let RedrawState::WaitingForEstimatedVBlank(token)
+            | RedrawState::WaitingForEstimatedVBlankAndQueued(token) =
+                state.redraw_state
+            {
+                RedrawState::WaitingForEstimatedVBlank(token)
+            } else {
+                RedrawState::Idle
+            };
         }
 
         // Update the lock render state on successful render, or if monitors are inactive. When

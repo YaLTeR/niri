@@ -1055,7 +1055,7 @@ impl Tty {
 
         let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::Idle => unreachable!(),
-            RedrawState::Queued(_) => unreachable!(),
+            RedrawState::Queued => unreachable!(),
             RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
             RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
             RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
@@ -1089,12 +1089,12 @@ impl Tty {
 
         match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::Idle => unreachable!(),
-            RedrawState::Queued(_) => unreachable!(),
+            RedrawState::Queued => unreachable!(),
             RedrawState::WaitingForVBlank { .. } => unreachable!(),
             RedrawState::WaitingForEstimatedVBlank(_) => (),
             // The timer fired just in front of a redraw.
-            RedrawState::WaitingForEstimatedVBlankAndQueued((_, idle)) => {
-                output_state.redraw_state = RedrawState::Queued(idle);
+            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => {
+                output_state.redraw_state = RedrawState::Queued;
                 return;
             }
         }
@@ -1198,10 +1198,10 @@ impl Tty {
                             };
                             match mem::replace(&mut output_state.redraw_state, new_state) {
                                 RedrawState::Idle => unreachable!(),
-                                RedrawState::Queued(_) => (),
+                                RedrawState::Queued => (),
                                 RedrawState::WaitingForVBlank { .. } => unreachable!(),
                                 RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
-                                RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) => {
+                                RedrawState::WaitingForEstimatedVBlankAndQueued(token) => {
                                     niri.event_loop.remove(token);
                                 }
                             };
@@ -1909,10 +1909,10 @@ fn queue_estimated_vblank_timer(
     let output_state = niri.output_state.get_mut(&output).unwrap();
     match mem::take(&mut output_state.redraw_state) {
         RedrawState::Idle => unreachable!(),
-        RedrawState::Queued(_) => (),
+        RedrawState::Queued => (),
         RedrawState::WaitingForVBlank { .. } => unreachable!(),
         RedrawState::WaitingForEstimatedVBlank(token)
-        | RedrawState::WaitingForEstimatedVBlankAndQueued((token, _)) => {
+        | RedrawState::WaitingForEstimatedVBlankAndQueued(token) => {
             output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
             return;
         }

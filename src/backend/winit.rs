@@ -193,7 +193,7 @@ impl Winit {
         let output_state = niri.output_state.get_mut(output).unwrap();
         match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::Idle => unreachable!(),
-            RedrawState::Queued(_) => (),
+            RedrawState::Queued => (),
             RedrawState::WaitingForVBlank { .. } => unreachable!(),
             RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
             RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
