@@ -226,6 +226,8 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
             // Only show binds with Mod or Super to filter out stuff like volume up/down.
             && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
                 || bind.key.modifiers.contains(Modifiers::SUPER))
+            // Also filter out wheel and touchpad scroll binds.
+            && matches!(bind.key.trigger, Trigger::Keysym(_))
     }) {
         let action = &bind.action;
 
@@ -421,6 +423,10 @@ fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
         Trigger::WheelScrollUp => String::from("Wheel Scroll Up"),
         Trigger::WheelScrollLeft => String::from("Wheel Scroll Left"),
         Trigger::WheelScrollRight => String::from("Wheel Scroll Right"),
+        Trigger::TouchpadScrollDown => String::from("Touchpad Scroll Down"),
+        Trigger::TouchpadScrollUp => String::from("Touchpad Scroll Up"),
+        Trigger::TouchpadScrollLeft => String::from("Touchpad Scroll Left"),
+        Trigger::TouchpadScrollRight => String::from("Touchpad Scroll Right"),
     };
     name.push_str(&pretty);
 

@@ -97,7 +97,9 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
-use crate::input::{apply_libinput_settings, mods_with_wheel_binds, TabletData};
+use crate::input::{
+    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
+};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -209,6 +211,9 @@ pub struct Niri {
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
     pub mods_with_wheel_binds: HashSet<Modifiers>,
+    pub vertical_finger_scroll_tracker: ScrollTracker,
+    pub horizontal_finger_scroll_tracker: ScrollTracker,
+    pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
 
@@ -856,6 +861,8 @@ impl State {
             self.niri.hotkey_overlay.on_hotkey_config_updated();
             self.niri.mods_with_wheel_binds =
                 mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
+            self.niri.mods_with_finger_scroll_binds =
+                mods_with_finger_scroll_binds(self.backend.mod_key(), &config.binds);
         }
 
         if config.window_rules != old_config.window_rules {
@@ -1166,6 +1173,8 @@ impl Niri {
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
         let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
+        let mods_with_finger_scroll_binds =
+            mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
 
         let (tx, rx) = calloop::channel::channel();
         event_loop
@@ -1324,6 +1333,11 @@ impl Niri {
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
             mods_with_wheel_binds,
+
+            // 10 is copied from Clutter: DISCRETE_SCROLL_STEP.
+            vertical_finger_scroll_tracker: ScrollTracker::new(10),
+            horizontal_finger_scroll_tracker: ScrollTracker::new(10),
+            mods_with_finger_scroll_binds,
 
             lock_state: LockState::Unlocked,
 

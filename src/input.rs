@@ -1178,11 +1178,84 @@ impl State {
             }
         }
 
-        let horizontal_amount = event.amount(Axis::Horizontal).unwrap_or_else(|| {
+        let horizontal_amount = event.amount(Axis::Horizontal);
+        let vertical_amount = event.amount(Axis::Vertical);
+
+        // Handle touchpad scroll bindings.
+        if source == AxisSource::Finger {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let modifiers = modifiers_from_state(mods);
+            if self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
+                let comp_mod = self.backend.mod_key();
+
+                let horizontal = horizontal_amount.unwrap_or(0.);
+                let ticks = self
+                    .niri
+                    .horizontal_finger_scroll_tracker
+                    .accumulate(horizontal);
+                if ticks != 0 {
+                    let config = self.niri.config.borrow();
+                    let bindings = &config.binds;
+                    let bind_left =
+                        find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollLeft, mods);
+                    let bind_right = find_configured_bind(
+                        bindings,
+                        comp_mod,
+                        Trigger::TouchpadScrollRight,
+                        mods,
+                    );
+                    drop(config);
+
+                    if let Some(right) = bind_right {
+                        for _ in 0..ticks {
+                            self.handle_bind(right.clone());
+                        }
+                    }
+                    if let Some(left) = bind_left {
+                        for _ in ticks..0 {
+                            self.handle_bind(left.clone());
+                        }
+                    }
+                }
+
+                let vertical = vertical_amount.unwrap_or(0.);
+                let ticks = self
+                    .niri
+                    .vertical_finger_scroll_tracker
+                    .accumulate(vertical);
+                if ticks != 0 {
+                    let config = self.niri.config.borrow();
+                    let bindings = &config.binds;
+                    let bind_up =
+                        find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollUp, mods);
+                    let bind_down =
+                        find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollDown, mods);
+                    drop(config);
+
+                    if let Some(down) = bind_down {
+                        for _ in 0..ticks {
+                            self.handle_bind(down.clone());
+                        }
+                    }
+                    if let Some(up) = bind_up {
+                        for _ in ticks..0 {
+                            self.handle_bind(up.clone());
+                        }
+                    }
+                }
+
+                return;
+            } else {
+                self.niri.horizontal_finger_scroll_tracker.reset();
+                self.niri.vertical_finger_scroll_tracker.reset();
+            }
+        }
+
+        let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
             horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
         });
-        let vertical_amount = event.amount(Axis::Vertical).unwrap_or_else(|| {
+        let vertical_amount = vertical_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
             vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
         });
@@ -2063,6 +2136,19 @@ pub fn mods_with_wheel_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<
             Trigger::WheelScrollDown,
             Trigger::WheelScrollLeft,
             Trigger::WheelScrollRight,
+        ],
+    )
+}
+
+pub fn mods_with_finger_scroll_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<Modifiers> {
+    mods_with_binds(
+        comp_mod,
+        binds,
+        &[
+            Trigger::TouchpadScrollUp,
+            Trigger::TouchpadScrollDown,
+            Trigger::TouchpadScrollLeft,
+            Trigger::TouchpadScrollRight,
         ],
     )
 }

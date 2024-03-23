@@ -744,6 +744,10 @@ pub enum Trigger {
     WheelScrollUp,
     WheelScrollLeft,
     WheelScrollRight,
+    TouchpadScrollDown,
+    TouchpadScrollUp,
+    TouchpadScrollLeft,
+    TouchpadScrollRight,
 }
 
 bitflags! {
@@ -1567,6 +1571,14 @@ impl FromStr for Key {
             Trigger::WheelScrollLeft
         } else if key.eq_ignore_ascii_case("WheelScrollRight") {
             Trigger::WheelScrollRight
+        } else if key.eq_ignore_ascii_case("TouchpadScrollDown") {
+            Trigger::TouchpadScrollDown
+        } else if key.eq_ignore_ascii_case("TouchpadScrollUp") {
+            Trigger::TouchpadScrollUp
+        } else if key.eq_ignore_ascii_case("TouchpadScrollLeft") {
+            Trigger::TouchpadScrollLeft
+        } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
+            Trigger::TouchpadScrollRight
         } else {
             let keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             if keysym.raw() == KEY_NoSymbol {
