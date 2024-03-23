@@ -11,7 +11,7 @@ use std::{env, mem, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
-use niri_config::{Config, Key, TrackLayout};
+use niri_config::{Config, Key, Modifiers, TrackLayout};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
@@ -97,7 +97,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::configure_lock_surface;
-use crate::input::{apply_libinput_settings, TabletData};
+use crate::input::{apply_libinput_settings, mods_with_wheel_binds, TabletData};
 use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -208,6 +208,7 @@ pub struct Niri {
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: WheelTracker,
     pub horizontal_wheel_tracker: WheelTracker,
+    pub mods_with_wheel_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
 
@@ -853,6 +854,8 @@ impl State {
 
         if config.binds != old_config.binds {
             self.niri.hotkey_overlay.on_hotkey_config_updated();
+            self.niri.mods_with_wheel_binds =
+                mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
         }
 
         if config.window_rules != old_config.window_rules {
@@ -1162,6 +1165,8 @@ impl Niri {
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
+        let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
+
         let (tx, rx) = calloop::channel::channel();
         event_loop
             .insert_source(rx, move |event, _, state| {
@@ -1318,6 +1323,7 @@ impl Niri {
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: WheelTracker::new(),
             horizontal_wheel_tracker: WheelTracker::new(),
+            mods_with_wheel_binds,
 
             lock_state: LockState::Unlocked,
 
