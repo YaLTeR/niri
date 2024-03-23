@@ -102,13 +102,11 @@ impl Winit {
                     mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
                     mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
 
-                    state.niri.output_resized(winit.output.clone());
+                    state.niri.output_resized(&winit.output);
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Focus(_) => (),
-                WinitEvent::Redraw => state
-                    .niri
-                    .queue_redraw(state.backend.winit().output.clone()),
+                WinitEvent::Redraw => state.niri.queue_redraw(&state.backend.winit().output),
                 WinitEvent::CloseRequested => state.niri.stop_signal.stop(),
             })
             .unwrap();

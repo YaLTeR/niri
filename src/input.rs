@@ -1449,7 +1449,7 @@ impl State {
             .workspace_switch_gesture_update(delta_y, timestamp);
         if let Some(output) = res {
             if let Some(output) = output {
-                self.niri.queue_redraw(output);
+                self.niri.queue_redraw(&output);
             }
             handled = true;
         }
@@ -1460,7 +1460,7 @@ impl State {
             .view_offset_gesture_update(delta_x, timestamp);
         if let Some(output) = res {
             if let Some(output) = output {
-                self.niri.queue_redraw(output);
+                self.niri.queue_redraw(&output);
             }
             handled = true;
         }
@@ -1494,13 +1494,13 @@ impl State {
             .layout
             .workspace_switch_gesture_end(event.cancelled());
         if let Some(output) = res {
-            self.niri.queue_redraw(output);
+            self.niri.queue_redraw(&output);
             handled = true;
         }
 
         let res = self.niri.layout.view_offset_gesture_end(event.cancelled());
         if let Some(output) = res {
-            self.niri.queue_redraw(output);
+            self.niri.queue_redraw(&output);
             handled = true;
         }
 

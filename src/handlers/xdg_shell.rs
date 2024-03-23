@@ -391,12 +391,12 @@ impl XdgShellHandler for State {
             self.maybe_warp_cursor_to_focus();
         }
 
-        self.niri.queue_redraw(output);
+        self.niri.queue_redraw(&output);
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
         if let Some(output) = self.output_for_popup(&PopupKind::Xdg(surface)) {
-            self.niri.queue_redraw(output.clone());
+            self.niri.queue_redraw(&output.clone());
         }
     }
 
@@ -756,7 +756,7 @@ impl State {
                 self.niri.layout.update_window(&window);
 
                 if let Some(output) = output {
-                    self.niri.queue_redraw(output);
+                    self.niri.queue_redraw(&output);
                 }
             }
         }

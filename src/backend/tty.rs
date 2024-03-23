@@ -884,7 +884,7 @@ impl Tty {
         // Power on all monitors if necessary and queue a redraw on the new one.
         niri.event_loop.insert_idle(move |state| {
             state.niri.activate_monitors(&mut state.backend);
-            state.niri.queue_redraw(output);
+            state.niri.queue_redraw(&output);
         });
 
         Ok(())
@@ -1067,7 +1067,7 @@ impl Tty {
                 .non_continuous_frame(surface.vblank_frame_name);
             surface.vblank_frame = Some(vblank_frame);
 
-            niri.queue_redraw(output);
+            niri.queue_redraw(&output);
         } else {
             niri.send_frame_callbacks(&output);
         }
@@ -1100,7 +1100,7 @@ impl Tty {
         }
 
         if output_state.unfinished_animations_remain {
-            niri.queue_redraw(output);
+            niri.queue_redraw(&output);
         } else {
             niri.send_frame_callbacks(&output);
         }
@@ -1538,7 +1538,7 @@ impl Tty {
                 output.change_current_state(Some(wl_mode), None, None, None);
                 output.set_preferred(wl_mode);
                 output_state.frame_clock = FrameClock::new(Some(refresh_interval(mode)));
-                niri.output_resized(output);
+                niri.output_resized(&output);
             }
 
             for (connector, crtc) in device.drm_scanner.crtcs() {

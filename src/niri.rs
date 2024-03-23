@@ -338,6 +338,27 @@ pub enum CenterCoords {
 #[derive(Default)]
 pub struct WindowOffscreenId(pub RefCell<Option<Id>>);
 
+impl RedrawState {
+    fn queue_redraw(self) -> Self {
+        match self {
+            RedrawState::Idle => RedrawState::Queued,
+            RedrawState::WaitingForEstimatedVBlank(token) => {
+                RedrawState::WaitingForEstimatedVBlankAndQueued(token)
+            }
+
+            // A redraw is already queued.
+            value @ (RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)) => {
+                value
+            }
+
+            // We're waiting for VBlank, request a redraw afterwards.
+            RedrawState::WaitingForVBlank { .. } => RedrawState::WaitingForVBlank {
+                redraw_needed: true,
+            },
+        }
+    }
+}
+
 impl Default for SurfaceFrameThrottlingState {
     fn default() -> Self {
         Self {
@@ -863,7 +884,7 @@ impl State {
                 }
             }
             for output in resized_outputs {
-                self.niri.output_resized(output);
+                self.niri.output_resized(&output);
             }
 
             self.backend.on_output_config_changed(&mut self.niri);
@@ -955,7 +976,7 @@ impl State {
                 }
             }
             ScreenCastToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
-            ScreenCastToNiri::Redraw(output) => self.niri.queue_redraw(output),
+            ScreenCastToNiri::Redraw(output) => self.niri.queue_redraw(&output),
         }
     }
 
@@ -1423,7 +1444,7 @@ impl Niri {
                     new_position.x, new_position.y
                 );
                 output.change_current_state(None, None, None, Some(new_position));
-                self.queue_redraw(output);
+                self.queue_redraw(&output);
             }
         }
     }
@@ -1548,27 +1569,26 @@ impl Niri {
         }
     }
 
-    pub fn output_resized(&mut self, output: Output) {
-        let output_size = output_size(&output);
+    pub fn output_resized(&mut self, output: &Output) {
+        let output_size = output_size(output);
         let is_locked = self.is_locked();
 
-        layer_map_for_output(&output).arrange();
-        self.layout.update_output_size(&output);
+        layer_map_for_output(output).arrange();
+        self.layout.update_output_size(output);
 
-        if let Some(state) = self.output_state.get_mut(&output) {
+        if let Some(state) = self.output_state.get_mut(output) {
             state.background_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
             if is_locked {
                 if let Some(lock_surface) = &state.lock_surface {
-                    configure_lock_surface(lock_surface, &output);
+                    configure_lock_surface(lock_surface, output);
                 }
             }
         }
 
         // If the output size changed with an open screenshot UI, close the screenshot UI.
-        if let Some((old_size, old_scale, old_transform)) = self.screenshot_ui.output_size(&output)
-        {
+        if let Some((old_size, old_scale, old_transform)) = self.screenshot_ui.output_size(output) {
             let transform = output.current_transform();
             let output_mode = output.current_mode().unwrap();
             let size = transform.transform_size(output_mode.size);
@@ -1879,31 +1899,15 @@ impl Niri {
 
     /// Schedules an immediate redraw on all outputs if one is not already scheduled.
     pub fn queue_redraw_all(&mut self) {
-        let outputs: Vec<_> = self.output_state.keys().cloned().collect();
-        for output in outputs {
-            self.queue_redraw(output);
+        for state in self.output_state.values_mut() {
+            state.redraw_state = mem::take(&mut state.redraw_state).queue_redraw();
         }
     }
 
     /// Schedules an immediate redraw if one is not already scheduled.
-    pub fn queue_redraw(&mut self, output: Output) {
-        let state = self.output_state.get_mut(&output).unwrap();
-        state.redraw_state = match mem::take(&mut state.redraw_state) {
-            RedrawState::Idle => RedrawState::Queued,
-            RedrawState::WaitingForEstimatedVBlank(token) => {
-                RedrawState::WaitingForEstimatedVBlankAndQueued(token)
-            }
-
-            // A redraw is already queued.
-            value @ (RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)) => {
-                value
-            }
-
-            // We're waiting for VBlank, request a redraw afterwards.
-            RedrawState::WaitingForVBlank { .. } => RedrawState::WaitingForVBlank {
-                redraw_needed: true,
-            },
-        };
+    pub fn queue_redraw(&mut self, output: &Output) {
+        let state = self.output_state.get_mut(output).unwrap();
+        state.redraw_state = mem::take(&mut state.redraw_state).queue_redraw();
     }
 
     pub fn redraw_queued_outputs(&mut self, backend: &mut Backend) {
