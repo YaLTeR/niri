@@ -97,8 +97,8 @@ pub struct Xkb {
     pub rules: String,
     #[knuffel(child, unwrap(argument), default)]
     pub model: String,
-    #[knuffel(child, unwrap(argument))]
-    pub layout: Option<String>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub layout: String,
     #[knuffel(child, unwrap(argument), default)]
     pub variant: String,
     #[knuffel(child, unwrap(argument))]
@@ -110,7 +110,7 @@ impl Xkb {
         XkbConfig {
             rules: &self.rules,
             model: &self.model,
-            layout: self.layout.as_deref().unwrap_or("us"),
+            layout: &self.layout,
             variant: &self.variant,
             options: self.options.clone(),
         }
@@ -1782,7 +1782,7 @@ mod tests {
                 input: Input {
                     keyboard: Keyboard {
                         xkb: Xkb {
-                            layout: Some("us,ru".to_owned()),
+                            layout: "us,ru".to_owned(),
                             options: Some("grp:win_space_toggle".to_owned()),
                             ..Default::default()
                         },
