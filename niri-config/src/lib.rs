@@ -699,17 +699,21 @@ pub struct WindowRule {
     pub draw_border_with_background: Option<bool>,
 }
 
+// Remember to update the PartialEq impl when adding fields!
 #[derive(knuffel::Decode, Debug, Default, Clone)]
 pub struct Match {
     #[knuffel(property, str)]
     pub app_id: Option<Regex>,
     #[knuffel(property, str)]
     pub title: Option<Regex>,
+    #[knuffel(property)]
+    pub is_active: Option<bool>,
 }
 
 impl PartialEq for Match {
     fn eq(&self, other: &Self) -> bool {
-        self.app_id.as_ref().map(Regex::as_str) == other.app_id.as_ref().map(Regex::as_str)
+        self.is_active == other.is_active
+            && self.app_id.as_ref().map(Regex::as_str) == other.app_id.as_ref().map(Regex::as_str)
             && self.title.as_ref().map(Regex::as_str) == other.title.as_ref().map(Regex::as_str)
     }
 }
@@ -1762,6 +1766,7 @@ mod tests {
             window-rule {
                 match app-id=".*alacritty"
                 exclude title="~"
+                exclude is-active=true
 
                 open-on-output "eDP-1"
                 open-maximized true
@@ -1947,11 +1952,20 @@ mod tests {
                     matches: vec![Match {
                         app_id: Some(Regex::new(".*alacritty").unwrap()),
                         title: None,
+                        is_active: None,
                     }],
-                    excludes: vec![Match {
-                        app_id: None,
-                        title: Some(Regex::new("~").unwrap()),
-                    }],
+                    excludes: vec![
+                        Match {
+                            app_id: None,
+                            title: Some(Regex::new("~").unwrap()),
+                            is_active: None,
+                        },
+                        Match {
+                            app_id: None,
+                            title: None,
+                            is_active: Some(true),
+                        },
+                    ],
                     open_on_output: Some("eDP-1".to_owned()),
                     open_maximized: Some(true),
                     open_fullscreen: Some(false),

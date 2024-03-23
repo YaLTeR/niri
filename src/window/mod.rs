@@ -1,4 +1,5 @@
 use niri_config::{Match, WindowRule};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
     ToplevelSurface, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
@@ -84,12 +85,17 @@ impl ResolvedWindowRules {
 
         let toplevel = window.toplevel();
         with_states(toplevel.wl_surface(), |states| {
-            let role = states
+            let mut role = states
                 .data_map
                 .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
+
+            // Ensure server_pending like in Smithay's with_pending_state().
+            if role.server_pending.is_none() {
+                role.server_pending = Some(role.current_server_state().clone());
+            }
 
             let mut open_on_output = None;
 
@@ -150,6 +156,19 @@ impl ResolvedWindowRules {
 }
 
 fn window_matches(role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
+    // Must be ensured by the caller.
+    let server_pending = role.server_pending.as_ref().unwrap();
+
+    if let Some(is_active) = m.is_active {
+        // Our "is-active" definition corresponds to the window having a pending Activated state.
+        let pending_activated = server_pending
+            .states
+            .contains(xdg_toplevel::State::Activated);
+        if is_active != pending_activated {
+            return false;
+        }
+    }
+
     if let Some(app_id_re) = &m.app_id {
         let Some(app_id) = &role.app_id else {
             return false;

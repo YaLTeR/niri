@@ -107,7 +107,7 @@ pub trait LayoutElement {
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
     fn set_offscreen_element_id(&self, id: Option<Id>);
-    fn set_activated(&self, active: bool);
+    fn set_activated(&mut self, active: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
 
     fn send_pending_configure(&self);
@@ -1893,7 +1893,7 @@ mod tests {
 
         fn set_offscreen_element_id(&self, _id: Option<Id>) {}
 
-        fn set_activated(&self, _active: bool) {}
+        fn set_activated(&mut self, _active: bool) {}
 
         fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 

@@ -1550,12 +1550,12 @@ impl<W: LayoutElement> Workspace<W> {
         true
     }
 
-    pub fn refresh(&self, is_active: bool) {
+    pub fn refresh(&mut self, is_active: bool) {
         let bounds = self.toplevel_bounds();
 
-        for (col_idx, col) in self.columns.iter().enumerate() {
-            for (tile_idx, tile) in col.tiles.iter().enumerate() {
-                let win = tile.window();
+        for (col_idx, col) in self.columns.iter_mut().enumerate() {
+            for (tile_idx, tile) in col.tiles.iter_mut().enumerate() {
+                let win = tile.window_mut();
                 let active = is_active
                     && self.active_column_idx == col_idx
                     && col.active_tile_idx == tile_idx;

@@ -203,7 +203,7 @@ impl LayoutElement for TestWindow {
 
     fn set_offscreen_element_id(&self, _id: Option<Id>) {}
 
-    fn set_activated(&self, _active: bool) {}
+    fn set_activated(&mut self, _active: bool) {}
 
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 

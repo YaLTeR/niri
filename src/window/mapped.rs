@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 
+use niri_config::WindowRule;
 use smithay::backend::renderer::element::{AsRenderElements as _, Id};
 use smithay::desktop::space::SpaceElement as _;
 use smithay::desktop::Window;
@@ -11,7 +12,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
-use super::ResolvedWindowRules;
+use super::{ResolvedWindowRules, WindowRef};
 use crate::layout::{LayoutElement, LayoutElementRenderElement};
 use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -22,15 +23,46 @@ pub struct Mapped {
 
     /// Up-to-date rules.
     pub rules: ResolvedWindowRules,
+
+    /// Whether the window rules need to be recomputed.
+    ///
+    /// This is not used in all cases; for example, app ID and title changes recompute the rules
+    /// immediately, rather than setting this flag.
+    pub need_to_recompute_rules: bool,
 }
 
 impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules) -> Self {
-        Self { window, rules }
+        Self {
+            window,
+            rules,
+            need_to_recompute_rules: false,
+        }
     }
 
     pub fn toplevel(&self) -> &ToplevelSurface {
         self.window.toplevel().expect("no X11 support")
+    }
+
+    /// Recomputes the resolved window rules and returns whether they changed.
+    pub fn recompute_window_rules(&mut self, rules: &[WindowRule]) -> bool {
+        self.need_to_recompute_rules = false;
+
+        let new_rules = ResolvedWindowRules::compute(rules, WindowRef::Mapped(self));
+        if new_rules == self.rules {
+            return false;
+        }
+
+        self.rules = new_rules;
+        true
+    }
+
+    pub fn recompute_window_rules_if_needed(&mut self, rules: &[WindowRule]) -> bool {
+        if !self.need_to_recompute_rules {
+            return false;
+        }
+
+        self.recompute_window_rules(rules)
     }
 }
 
@@ -155,8 +187,15 @@ impl LayoutElement for Mapped {
         data.0.replace(id);
     }
 
-    fn set_activated(&self, active: bool) {
-        self.window.set_activated(active);
+    fn set_activated(&mut self, active: bool) {
+        let changed = self.toplevel().with_pending_state(|state| {
+            if active {
+                state.states.set(xdg_toplevel::State::Activated)
+            } else {
+                state.states.unset(xdg_toplevel::State::Activated)
+            }
+        });
+        self.need_to_recompute_rules |= changed;
     }
 
     fn set_bounds(&self, bounds: Size<i32, Logical>) {

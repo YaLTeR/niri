@@ -364,6 +364,10 @@ animations {
     // Raw KDL strings are helpful here.
     exclude app-id=r#"\.unwanted\."#
 
+    // One more way to match is by whether the window is active
+    // (same as when it uses the active border color).
+    match is-active=true
+
     // Here are the properties that you can set on a window rule.
     // These properties apply once, when a window first opens.
 

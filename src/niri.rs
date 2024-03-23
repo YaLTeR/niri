@@ -438,6 +438,7 @@ impl State {
         self.update_keyboard_focus();
         self.refresh_pointer_focus();
         foreign_toplevel::refresh(self);
+        self.niri.refresh_window_rules();
         self.niri.redraw_queued_outputs(&mut self.backend);
 
         {
@@ -911,9 +912,9 @@ impl State {
 
             let mut windows = vec![];
             self.niri.layout.with_windows_mut(|mapped, _| {
-                mapped.rules =
-                    ResolvedWindowRules::compute(window_rules, WindowRef::Mapped(mapped));
-                windows.push(mapped.window.clone());
+                if mapped.recompute_window_rules(window_rules) {
+                    windows.push(mapped.window.clone());
+                }
             });
             for win in windows {
                 self.niri.layout.update_window(&win);
@@ -2147,6 +2148,33 @@ impl Niri {
                 })
             });
         self.idle_notifier_state.set_is_inhibited(is_inhibited);
+    }
+
+    pub fn refresh_window_rules(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_window_rules");
+
+        let config = self.config.borrow();
+        let window_rules = &config.window_rules;
+
+        let mut windows = vec![];
+        let mut outputs = HashSet::new();
+        self.layout.with_windows_mut(|mapped, output| {
+            if mapped.recompute_window_rules_if_needed(window_rules) {
+                windows.push(mapped.window.clone());
+
+                if let Some(output) = output {
+                    outputs.insert(output.clone());
+                }
+            }
+        });
+        drop(config);
+
+        for win in windows {
+            self.layout.update_window(&win);
+        }
+        for output in outputs {
+            self.queue_redraw(&output);
+        }
     }
 
     pub fn render<R: NiriRenderer>(

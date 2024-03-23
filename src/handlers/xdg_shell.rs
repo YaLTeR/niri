@@ -745,12 +745,8 @@ impl State {
             .layout
             .find_window_and_output_mut(toplevel.wl_surface())
         {
-            let new_rules = ResolvedWindowRules::compute(window_rules, WindowRef::Mapped(mapped));
-            drop(config);
-
-            if mapped.rules != new_rules {
-                mapped.rules = new_rules;
-
+            if mapped.recompute_window_rules(window_rules) {
+                drop(config);
                 let output = output.cloned();
                 let window = mapped.window.clone();
                 self.niri.layout.update_window(&window);
