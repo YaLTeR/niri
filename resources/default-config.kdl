@@ -368,6 +368,13 @@ animations {
     // (same as when it uses the active border color).
     match is-active=true
 
+    // Another way to match is by whether the window has keyboard focus.
+    // This is different from is-active: every workspace on a monitor
+    // has one active window, but only one window can have a keyboard
+    // focus. Also, the keyboard focus can go to a layer-shell surface,
+    // then no window will have the keyboard focus.
+    match is-focused=true
+
     // Here are the properties that you can set on a window rule.
     // These properties apply once, when a window first opens.
 

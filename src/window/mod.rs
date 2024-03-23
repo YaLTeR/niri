@@ -61,6 +61,13 @@ impl<'a> WindowRef<'a> {
             WindowRef::Mapped(mapped) => mapped.toplevel(),
         }
     }
+
+    pub fn is_focused(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_focused(),
+        }
+    }
 }
 
 impl ResolvedWindowRules {
@@ -100,13 +107,13 @@ impl ResolvedWindowRules {
             let mut open_on_output = None;
 
             for rule in rules {
-                if !(rule.matches.is_empty()
-                    || rule.matches.iter().any(|m| window_matches(&role, m)))
-                {
+                let matches = |m| window_matches(window, &role, m);
+
+                if !(rule.matches.is_empty() || rule.matches.iter().any(matches)) {
                     continue;
                 }
 
-                if rule.excludes.iter().any(|m| window_matches(&role, m)) {
+                if rule.excludes.iter().any(matches) {
                     continue;
                 }
 
@@ -155,9 +162,15 @@ impl ResolvedWindowRules {
     }
 }
 
-fn window_matches(role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
+fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
     // Must be ensured by the caller.
     let server_pending = role.server_pending.as_ref().unwrap();
+
+    if let Some(is_focused) = m.is_focused {
+        if window.is_focused() != is_focused {
+            return false;
+        }
+    }
 
     if let Some(is_active) = m.is_active {
         // Our "is-active" definition corresponds to the window having a pending Activated state.

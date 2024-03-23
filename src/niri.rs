@@ -706,6 +706,24 @@ impl State {
                 focus
             );
 
+            // Tell the windows their new focus state for window rule purposes.
+            if let KeyboardFocus::Layout {
+                surface: Some(surface),
+            } = &self.niri.keyboard_focus
+            {
+                if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
+                    mapped.set_is_focused(false);
+                }
+            }
+            if let KeyboardFocus::Layout {
+                surface: Some(surface),
+            } = &focus
+            {
+                if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
+                    mapped.set_is_focused(true);
+                }
+            }
+
             if let Some(grab) = self.niri.popup_grab.as_mut() {
                 if Some(&grab.root) != focus.surface() {
                     trace!(

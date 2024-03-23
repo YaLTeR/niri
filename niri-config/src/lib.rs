@@ -708,11 +708,14 @@ pub struct Match {
     pub title: Option<Regex>,
     #[knuffel(property)]
     pub is_active: Option<bool>,
+    #[knuffel(property)]
+    pub is_focused: Option<bool>,
 }
 
 impl PartialEq for Match {
     fn eq(&self, other: &Self) -> bool {
         self.is_active == other.is_active
+            && self.is_focused == other.is_focused
             && self.app_id.as_ref().map(Regex::as_str) == other.app_id.as_ref().map(Regex::as_str)
             && self.title.as_ref().map(Regex::as_str) == other.title.as_ref().map(Regex::as_str)
     }
@@ -1766,7 +1769,7 @@ mod tests {
             window-rule {
                 match app-id=".*alacritty"
                 exclude title="~"
-                exclude is-active=true
+                exclude is-active=true is-focused=false
 
                 open-on-output "eDP-1"
                 open-maximized true
@@ -1953,17 +1956,20 @@ mod tests {
                         app_id: Some(Regex::new(".*alacritty").unwrap()),
                         title: None,
                         is_active: None,
+                        is_focused: None,
                     }],
                     excludes: vec![
                         Match {
                             app_id: None,
                             title: Some(Regex::new("~").unwrap()),
                             is_active: None,
+                            is_focused: None,
                         },
                         Match {
                             app_id: None,
                             title: None,
                             is_active: Some(true),
+                            is_focused: Some(false),
                         },
                     ],
                     open_on_output: Some("eDP-1".to_owned()),

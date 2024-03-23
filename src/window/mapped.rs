@@ -29,6 +29,9 @@ pub struct Mapped {
     /// This is not used in all cases; for example, app ID and title changes recompute the rules
     /// immediately, rather than setting this flag.
     need_to_recompute_rules: bool,
+
+    /// Whether this window has the keyboard focus.
+    is_focused: bool,
 }
 
 impl Mapped {
@@ -37,6 +40,7 @@ impl Mapped {
             window,
             rules,
             need_to_recompute_rules: false,
+            is_focused: false,
         }
     }
 
@@ -63,6 +67,19 @@ impl Mapped {
         }
 
         self.recompute_window_rules(rules)
+    }
+
+    pub fn is_focused(&self) -> bool {
+        self.is_focused
+    }
+
+    pub fn set_is_focused(&mut self, is_focused: bool) {
+        if self.is_focused == is_focused {
+            return;
+        }
+
+        self.is_focused = is_focused;
+        self.need_to_recompute_rules = true;
     }
 }
 
