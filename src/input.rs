@@ -1121,6 +1121,10 @@ impl State {
             let comp_mod = self.backend.mod_key();
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
 
+            // Winit sends scroll events where both directions are set at once, so we can't early
+            // return after handling just one.
+            let mut handled = false;
+
             if let Some(v120) = horizontal_amount_v120 {
                 let config = self.niri.config.borrow();
                 let bindings = &config.binds;
@@ -1144,7 +1148,8 @@ impl State {
                             self.handle_bind(left.clone());
                         }
                     }
-                    return;
+
+                    handled = true;
                 } else {
                     self.niri.horizontal_wheel_tracker.reset();
                 }
@@ -1171,10 +1176,15 @@ impl State {
                             self.handle_bind(up.clone());
                         }
                     }
-                    return;
+
+                    handled = true;
                 } else {
                     self.niri.vertical_wheel_tracker.reset();
                 }
+            }
+
+            if handled {
+                return;
             }
         }
 
