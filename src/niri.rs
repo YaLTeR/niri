@@ -426,7 +426,20 @@ impl State {
     }
 
     pub fn refresh_and_flush_clients(&mut self) {
-        let _span = tracy_client::span!("refresh_and_flush_clients");
+        let _span = tracy_client::span!("State::refresh_and_flush_clients");
+
+        self.refresh();
+
+        self.niri.redraw_queued_outputs(&mut self.backend);
+
+        {
+            let _span = tracy_client::span!("flush_clients");
+            self.niri.display_handle.flush_clients().unwrap();
+        }
+    }
+
+    fn refresh(&mut self) {
+        let _span = tracy_client::span!("State::refresh");
 
         // These should be called periodically, before flushing the clients.
         self.niri.layout.refresh();
@@ -439,12 +452,6 @@ impl State {
         self.refresh_pointer_focus();
         foreign_toplevel::refresh(self);
         self.niri.refresh_window_rules();
-        self.niri.redraw_queued_outputs(&mut self.backend);
-
-        {
-            let _span = tracy_client::span!("flush_clients");
-            self.niri.display_handle.flush_clients().unwrap();
-        }
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
