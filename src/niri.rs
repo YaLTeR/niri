@@ -2196,6 +2196,9 @@ impl Niri {
 
         for win in windows {
             self.layout.update_window(&win);
+            win.toplevel()
+                .expect("no X11 support")
+                .send_pending_configure();
         }
         for output in outputs {
             self.queue_redraw(&output);
