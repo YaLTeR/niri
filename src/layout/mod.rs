@@ -48,6 +48,7 @@ pub use self::monitor::MonitorRenderElement;
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::RenderTarget;
 use crate::utils::output_size;
 use crate::window::ResolvedWindowRules;
 
@@ -96,6 +97,7 @@ pub trait LayoutElement {
         location: Point<i32, Logical>,
         scale: Scale<f64>,
         alpha: f32,
+        target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>>;
 
     fn request_size(&self, size: Size<i32, Logical>);
@@ -1858,6 +1860,7 @@ mod tests {
             _location: Point<i32, Logical>,
             _scale: Scale<f64>,
             _alpha: f32,
+            _target: RenderTarget,
         ) -> Vec<LayoutElementRenderElement<R>> {
             vec![]
         }

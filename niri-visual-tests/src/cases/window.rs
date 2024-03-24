@@ -1,4 +1,5 @@
 use niri::layout::LayoutElement;
+use niri::render_helpers::RenderTarget;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Point, Scale, Size};
@@ -49,7 +50,13 @@ impl TestCase for Window {
         let location = Point::from(((size.w - win_size.w) / 2, (size.h - win_size.h) / 2));
 
         self.window
-            .render(renderer, location, Scale::from(1.), 1.)
+            .render(
+                renderer,
+                location,
+                Scale::from(1.),
+                1.,
+                RenderTarget::Output,
+            )
             .into_iter()
             .map(|elem| Box::new(elem) as _)
             .collect()

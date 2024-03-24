@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use niri::layout::workspace::ColumnWidth;
 use niri::layout::{LayoutElement as _, Options};
+use niri::render_helpers::RenderTarget;
 use niri::utils::get_monotonic_time;
 use niri_config::Color;
 use smithay::backend::renderer::element::RenderElement;
@@ -222,7 +223,7 @@ impl TestCase for Layout {
         self.layout
             .monitor_for_output(&self.output)
             .unwrap()
-            .render_elements(renderer)
+            .render_elements(renderer, RenderTarget::Output)
             .into_iter()
             .map(|elem| Box::new(elem) as _)
             .collect()

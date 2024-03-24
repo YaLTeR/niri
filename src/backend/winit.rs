@@ -19,7 +19,7 @@ use smithay::reexports::winit::window::WindowBuilder;
 
 use super::RenderResult;
 use crate::niri::{Niri, RedrawState, State};
-use crate::render_helpers::shaders;
+use crate::render_helpers::{shaders, RenderTarget};
 use crate::utils::get_monotonic_time;
 
 pub struct Winit {
@@ -147,7 +147,12 @@ impl Winit {
         let _span = tracy_client::span!("Winit::render");
 
         // Render the elements.
-        let elements = niri.render::<GlesRenderer>(self.backend.renderer(), output, true);
+        let elements = niri.render::<GlesRenderer>(
+            self.backend.renderer(),
+            output,
+            true,
+            RenderTarget::Output,
+        );
 
         // Hand them over to winit.
         self.backend.bind().unwrap();

@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use niri::layout::{LayoutElement, LayoutElementRenderElement};
 use niri::render_helpers::renderer::NiriRenderer;
+use niri::render_helpers::RenderTarget;
 use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::{Id, Kind};
@@ -147,6 +148,7 @@ impl LayoutElement for TestWindow {
         location: Point<i32, Logical>,
         scale: Scale<f64>,
         alpha: f32,
+        _target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>> {
         let inner = self.inner.borrow();
 

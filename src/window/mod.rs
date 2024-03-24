@@ -1,4 +1,4 @@
-use niri_config::{Match, WindowRule};
+use niri_config::{BlockOutFrom, Match, WindowRule};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
@@ -55,6 +55,9 @@ pub struct ResolvedWindowRules {
 
     /// Extra opacity to draw this window with.
     pub opacity: Option<f32>,
+
+    /// Whether to block out this window from certain render targets.
+    pub block_out_from: Option<BlockOutFrom>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -86,6 +89,7 @@ impl ResolvedWindowRules {
             max_height: None,
             draw_border_with_background: None,
             opacity: None,
+            block_out_from: None,
         }
     }
 
@@ -159,6 +163,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.opacity {
                     resolved.opacity = Some(x);
+                }
+                if let Some(x) = rule.block_out_from {
+                    resolved.block_out_from = Some(x);
                 }
             }
 

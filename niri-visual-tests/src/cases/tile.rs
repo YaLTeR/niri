@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri::layout::Options;
+use niri::render_helpers::RenderTarget;
 use niri_config::Color;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -110,6 +111,7 @@ impl TestCase for Tile {
                 Scale::from(1.),
                 size.to_logical(1),
                 true,
+                RenderTarget::Output,
             )
             .map(|elem| Box::new(elem) as _)
             .collect()

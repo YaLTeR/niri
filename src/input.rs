@@ -416,10 +416,7 @@ impl State {
                 let active = self.niri.layout.active_window();
                 if let Some((mapped, output)) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, &mapped.window)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(renderer, output, &mapped) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });

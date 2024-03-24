@@ -59,7 +59,7 @@ use super::RenderResult;
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::renderer::AsGlesRenderer;
-use crate::render_helpers::shaders;
+use crate::render_helpers::{shaders, RenderTarget};
 use crate::utils::get_monotonic_time;
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
@@ -1162,7 +1162,8 @@ impl Tty {
         };
 
         // Render the elements.
-        let elements = niri.render::<TtyRenderer>(&mut renderer, output, true);
+        let elements =
+            niri.render::<TtyRenderer>(&mut renderer, output, true, RenderTarget::Output);
 
         // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;

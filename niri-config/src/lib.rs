@@ -699,6 +699,8 @@ pub struct WindowRule {
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
+    #[knuffel(child, unwrap(argument))]
+    pub block_out_from: Option<BlockOutFrom>,
 }
 
 // Remember to update the PartialEq impl when adding fields!
@@ -721,6 +723,12 @@ impl PartialEq for Match {
             && self.app_id.as_ref().map(Regex::as_str) == other.app_id.as_ref().map(Regex::as_str)
             && self.title.as_ref().map(Regex::as_str) == other.title.as_ref().map(Regex::as_str)
     }
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockOutFrom {
+    Screencast,
+    ScreenCapture,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -915,6 +923,8 @@ impl From<niri_ipc::Action> for Action {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct DebugConfig {
+    #[knuffel(child, unwrap(argument))]
+    pub preview_render: Option<PreviewRender>,
     #[knuffel(child)]
     pub dbus_interfaces_in_non_session_instances: bool,
     #[knuffel(child)]
@@ -929,6 +939,12 @@ pub struct DebugConfig {
     pub render_drm_device: Option<PathBuf>,
     #[knuffel(child)]
     pub emulate_zero_presentation_time: bool,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewRender {
+    Screencast,
+    ScreenCapture,
 }
 
 impl Config {

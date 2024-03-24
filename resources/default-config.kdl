@@ -396,6 +396,22 @@ animations {
 
     // The following properties apply dynamically while a window is open.
 
+    // You can block out windows from xdg-desktop-portal screencasts.
+    // They will be replaced with solid black rectangles.
+    // This can be useful for password managers or messenger windows, etc.
+    // To preview and set up this rule, check the preview-render option
+    // in the debug section of the config.
+    //
+    // WARNING: the window is NOT blocked out from the screenshot UI.
+    // If you open the screenshot UI while screencasting, blocked out windows
+    // WILL BE VISIBLE on the screencast.
+    block-out-from "screencast"
+
+    // You can also block out the window out of all screen captures, including
+    // the screenshot UI. This way you avoid accidentally showing the window
+    // on a screencast when opening the screenshot UI.
+    block-out-from "screen-capture"
+
     // You can amend the window's minimum and maximum size in logical pixels.
     // Keep in mind that the window itself always has a final say in its size.
     // These values instruct niri to never ask the window to be smaller than
@@ -435,6 +451,19 @@ window-rule {
     // The regular expression can match anywhere in the string.
     match app-id=r#"^org\.wezfurlong\.wezterm$"#
     default-column-width {}
+}
+
+// Another example: block out two password managers from screencasts.
+// (This example rule is commented out with a "/-" in front.)
+/-window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+    match app-id=r#"^org\.gnome\.World\.Secrets$"#
+
+    // Warning: will be visible when opening the screenshot UI.
+    block-out-from "screencast"
+
+    // Use this instead to block out from all screen captures.
+    // block-out-from "screen-capture"
 }
 
 binds {
@@ -662,6 +691,11 @@ binds {
 // Settings for debugging. Not meant for normal use.
 // These can change or stop working at any point with little notice.
 debug {
+    // Render the monitors as if for a screencast or a screen capture.
+    // Useful for previewing the block-out-from window rule.
+    // preview-render "screencast"
+    // preview-render "screen-capture"
+
     // Make niri take over its DBus services even if it's not running as a session.
     // Useful for testing screen recording changes without having to relogin.
     // The main niri instance will *not* currently take back the services; so you will

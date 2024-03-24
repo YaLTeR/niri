@@ -16,6 +16,7 @@ use super::workspace::{
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::swipe_tracker::SwipeTracker;
 use crate::utils::output_size;
@@ -700,6 +701,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn render_elements<R: NiriRenderer>(
         &self,
         renderer: &mut R,
+        target: RenderTarget,
     ) -> Vec<MonitorRenderElement<R>> {
         let _span = tracy_client::span!("Monitor::render_elements");
 
@@ -722,7 +724,7 @@ impl<W: LayoutElement> Monitor<W> {
 
                 let after_idx = after_idx as usize;
                 let after = if after_idx < self.workspaces.len() {
-                    let after = self.workspaces[after_idx].render_elements(renderer);
+                    let after = self.workspaces[after_idx].render_elements(renderer, target);
                     let after = after.into_iter().filter_map(|elem| {
                         Some(RelocateRenderElement::from_element(
                             CropRenderElement::from_element(
@@ -752,7 +754,7 @@ impl<W: LayoutElement> Monitor<W> {
                 };
 
                 let before_idx = before_idx as usize;
-                let before = self.workspaces[before_idx].render_elements(renderer);
+                let before = self.workspaces[before_idx].render_elements(renderer, target);
                 let before = before.into_iter().filter_map(|elem| {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
@@ -770,7 +772,8 @@ impl<W: LayoutElement> Monitor<W> {
                 before.chain(after.into_iter().flatten()).collect()
             }
             None => {
-                let elements = self.workspaces[self.active_workspace_idx].render_elements(renderer);
+                let elements =
+                    self.workspaces[self.active_workspace_idx].render_elements(renderer, target);
                 elements
                     .into_iter()
                     .filter_map(|elem| {

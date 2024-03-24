@@ -17,6 +17,7 @@ use super::{LayoutElement, Options};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::RenderTarget;
 use crate::swipe_tracker::SwipeTracker;
 use crate::utils::id::IdCounter;
 use crate::utils::output_size;
@@ -1316,6 +1317,7 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn render_elements<R: NiriRenderer>(
         &self,
         renderer: &mut R,
+        target: RenderTarget,
     ) -> Vec<WorkspaceRenderElement<R>> {
         if self.columns.is_empty() {
             return vec![];
@@ -1338,8 +1340,15 @@ impl<W: LayoutElement> Workspace<W> {
             first = false;
 
             rv.extend(
-                tile.render(renderer, tile_pos, output_scale, self.view_size, focus_ring)
-                    .map(Into::into),
+                tile.render(
+                    renderer,
+                    tile_pos,
+                    output_scale,
+                    self.view_size,
+                    focus_ring,
+                    target,
+                )
+                .map(Into::into),
             );
         }
 

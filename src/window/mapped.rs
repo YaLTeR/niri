@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::cmp::{max, min};
 
-use niri_config::WindowRule;
-use smithay::backend::renderer::element::{AsRenderElements as _, Id};
+use niri_config::{BlockOutFrom, WindowRule};
+use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
+use smithay::backend::renderer::element::{AsRenderElements as _, Id, Kind};
 use smithay::desktop::space::SpaceElement as _;
 use smithay::desktop::Window;
 use smithay::output::Output;
@@ -16,6 +18,7 @@ use super::{ResolvedWindowRules, WindowRef};
 use crate::layout::{LayoutElement, LayoutElementRenderElement};
 use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::RenderTarget;
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -32,6 +35,9 @@ pub struct Mapped {
 
     /// Whether this window has the keyboard focus.
     is_focused: bool,
+
+    /// Buffer to draw instead of the window when it should be blocked out.
+    block_out_buffer: RefCell<SolidColorBuffer>,
 }
 
 impl Mapped {
@@ -41,6 +47,7 @@ impl Mapped {
             rules,
             need_to_recompute_rules: false,
             is_focused: false,
+            block_out_buffer: RefCell::new(SolidColorBuffer::new((0, 0), [0., 0., 0., 1.])),
         }
     }
 
@@ -109,14 +116,34 @@ impl LayoutElement for Mapped {
         location: Point<i32, Logical>,
         scale: Scale<f64>,
         alpha: f32,
+        target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>> {
-        let buf_pos = location - self.window.geometry().loc;
-        self.window.render_elements(
-            renderer,
-            buf_pos.to_physical_precise_round(scale),
-            scale,
-            alpha,
-        )
+        let block_out = match self.rules.block_out_from {
+            None => false,
+            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
+            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
+        };
+
+        if block_out {
+            let mut buffer = self.block_out_buffer.borrow_mut();
+            buffer.resize(self.window.geometry().size);
+            let elem = SolidColorRenderElement::from_buffer(
+                &buffer,
+                location.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::Unspecified,
+            );
+            vec![elem.into()]
+        } else {
+            let buf_pos = location - self.window.geometry().loc;
+            self.window.render_elements(
+                renderer,
+                buf_pos.to_physical_precise_round(scale),
+                scale,
+                alpha,
+            )
+        }
     }
 
     fn request_size(&self, size: Size<i32, Logical>) {

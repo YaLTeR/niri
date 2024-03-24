@@ -11,7 +11,7 @@ use std::{env, mem, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
-use niri_config::{Config, Key, Modifiers, TrackLayout};
+use niri_config::{Config, Key, Modifiers, PreviewRender, TrackLayout};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
@@ -22,8 +22,8 @@ use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, AsRenderElements, Id, Kind, PrimaryScanoutOutput,
-    RenderElementStates,
+    default_primary_scanout_output_compare, AsRenderElements, Element as _, Id, Kind,
+    PrimaryScanoutOutput, RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::utils::{
@@ -101,13 +101,13 @@ use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
-use crate::layout::{Layout, MonitorRenderElement};
+use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{render_to_shm, render_to_texture, render_to_vec};
+use crate::render_helpers::{render_to_shm, render_to_texture, render_to_vec, RenderTarget};
 use crate::scroll_tracker::ScrollTracker;
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
@@ -2230,8 +2230,18 @@ impl Niri {
         renderer: &mut R,
         output: &Output,
         include_pointer: bool,
+        mut target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
         let _span = tracy_client::span!("Niri::render");
+
+        if target == RenderTarget::Output {
+            if let Some(preview) = self.config.borrow().debug.preview_render {
+                target = match preview {
+                    PreviewRender::Screencast => RenderTarget::Screencast,
+                    PreviewRender::ScreenCapture => RenderTarget::ScreenCapture,
+                };
+            }
+        }
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
@@ -2315,7 +2325,7 @@ impl Niri {
 
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
-        let monitor_elements = mon.render_elements(renderer);
+        let monitor_elements = mon.render_elements(renderer, target);
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
@@ -2970,8 +2980,9 @@ impl Niri {
                 let dmabuf = cast.dmabufs.borrow()[&fd].clone();
 
                 // FIXME: Hidden / embedded / metadata cursor
-                let elements = elements
-                    .get_or_insert_with(|| self.render::<GlesRenderer>(renderer, output, true));
+                let elements = elements.get_or_insert_with(|| {
+                    self.render::<GlesRenderer>(renderer, output, true, RenderTarget::Screencast)
+                });
                 let elements = elements.iter().rev();
 
                 if let Err(err) =
@@ -3007,7 +3018,12 @@ impl Niri {
         backend
             .with_primary_renderer(move |renderer| {
                 let elements = self
-                    .render(renderer, &output, screencopy.overlay_cursor())
+                    .render(
+                        renderer,
+                        &output,
+                        screencopy.overlay_cursor(),
+                        RenderTarget::ScreenCapture,
+                    )
                     .into_iter()
                     .rev();
 
@@ -3088,7 +3104,12 @@ impl Niri {
                 let size = transform.transform_size(size);
 
                 let scale = Scale::from(output.current_scale().fractional_scale());
-                let elements = self.render::<GlesRenderer>(renderer, &output, true);
+                let elements = self.render::<GlesRenderer>(
+                    renderer,
+                    &output,
+                    true,
+                    RenderTarget::ScreenCapture,
+                );
                 let elements = elements.iter().rev();
 
                 let res = render_to_texture(
@@ -3126,7 +3147,8 @@ impl Niri {
         let size = transform.transform_size(size);
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let elements = self.render::<GlesRenderer>(renderer, output, true);
+        let elements =
+            self.render::<GlesRenderer>(renderer, output, true, RenderTarget::ScreenCapture);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -3145,32 +3167,43 @@ impl Niri {
         &self,
         renderer: &mut GlesRenderer,
         output: &Output,
-        window: &Window,
+        mapped: &Mapped,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let bbox = window.bbox_with_popups();
-        let size = bbox.size.to_physical_precise_ceil(scale);
-        let buf_pos = Point::from((0, 0)) - bbox.loc;
+        let alpha = if mapped.is_fullscreen() {
+            1.
+        } else {
+            mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
+        };
         // FIXME: pointer.
-        let elements = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+        let elements = mapped.render(
             renderer,
-            buf_pos.to_physical_precise_ceil(scale),
+            mapped.window.geometry().loc,
             scale,
-            1.,
+            alpha,
+            RenderTarget::ScreenCapture,
         );
-        let elements = elements.iter().rev();
+        let geo = elements
+            .iter()
+            .map(|ele| ele.geometry(scale))
+            .reduce(|a, b| a.merge(b))
+            .unwrap_or_default();
+
+        let elements = elements.iter().rev().map(|elem| {
+            RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
+        });
         let pixels = render_to_vec(
             renderer,
-            size,
+            geo.size,
             scale,
             Transform::Normal,
             Fourcc::Abgr8888,
             elements,
         )?;
 
-        self.save_screenshot(size, pixels)
+        self.save_screenshot(geo.size, pixels)
             .context("error saving screenshot")
     }
 
@@ -3265,7 +3298,12 @@ impl Niri {
         let transform = output.current_transform();
         let size = transform.transform_size(size);
 
-        let elements = self.render::<GlesRenderer>(renderer, &output, include_pointer);
+        let elements = self.render::<GlesRenderer>(
+            renderer,
+            &output,
+            include_pointer,
+            RenderTarget::ScreenCapture,
+        );
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,

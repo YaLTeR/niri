@@ -13,6 +13,7 @@ use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::RenderTarget;
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -324,6 +325,7 @@ impl<W: LayoutElement> Tile<W> {
         scale: Scale<f64>,
         view_size: Size<i32, Logical>,
         focus_ring: bool,
+        target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
         let alpha = if self.is_fullscreen {
             1.
@@ -333,7 +335,7 @@ impl<W: LayoutElement> Tile<W> {
 
         let rv = self
             .window
-            .render(renderer, location + self.window_loc(), scale, alpha)
+            .render(renderer, location + self.window_loc(), scale, alpha, target)
             .into_iter()
             .map(Into::into);
 
@@ -376,10 +378,12 @@ impl<W: LayoutElement> Tile<W> {
         scale: Scale<f64>,
         view_size: Size<i32, Logical>,
         focus_ring: bool,
+        target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
         if let Some(anim) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
-            let elements = self.render_inner(renderer, location, scale, view_size, focus_ring);
+            let elements =
+                self.render_inner(renderer, location, scale, view_size, focus_ring, target);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
 
             let elem = OffscreenRenderElement::new(
@@ -407,7 +411,8 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             self.window().set_offscreen_element_id(None);
 
-            let elements = self.render_inner(renderer, location, scale, view_size, focus_ring);
+            let elements =
+                self.render_inner(renderer, location, scale, view_size, focus_ring, target);
             None.into_iter().chain(Some(elements).into_iter().flatten())
         }
     }

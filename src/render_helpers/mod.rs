@@ -19,6 +19,17 @@ pub mod render_elements;
 pub mod renderer;
 pub mod shaders;
 
+/// What we're rendering for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderTarget {
+    /// Rendering to display on screen.
+    Output,
+    /// Rendering for a screencast.
+    Screencast,
+    /// Rendering for any other screen capture.
+    ScreenCapture,
+}
+
 pub fn render_to_texture(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
