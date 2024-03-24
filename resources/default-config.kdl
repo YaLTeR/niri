@@ -414,6 +414,16 @@ animations {
     // Set this to `false` to draw them as borders around the window even for
     // windows which use client-side decorations.
     draw-border-with-background false
+
+    // Set the opacity of the window.
+    // This is applied on top of the window's own opacity, so semitransparent
+    // windows will become even more transparent.
+    // Opacity is applied to every surface of the window individually, so
+    // subsurfaces and pop-up menus will show window content behind them.
+    // Also, focus ring and border with background will show through
+    // semitransparent windows (see prefer-no-csd and
+    // the draw-border-with-background property above).
+    opacity 0.5
 }
 
 // Here's a useful example. Work around WezTerm's initial configure bug

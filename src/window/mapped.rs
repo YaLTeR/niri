@@ -108,13 +108,14 @@ impl LayoutElement for Mapped {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> Vec<LayoutElementRenderElement<R>> {
         let buf_pos = location - self.window.geometry().loc;
         self.window.render_elements(
             renderer,
             buf_pos.to_physical_precise_round(scale),
             scale,
-            1.,
+            alpha,
         )
     }
 

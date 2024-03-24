@@ -697,6 +697,8 @@ pub struct WindowRule {
 
     #[knuffel(child, unwrap(argument))]
     pub draw_border_with_background: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub opacity: Option<f32>,
 }
 
 // Remember to update the PartialEq impl when adding fields!

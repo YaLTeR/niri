@@ -49,7 +49,7 @@ impl TestCase for Window {
         let location = Point::from(((size.w - win_size.w) / 2, (size.h - win_size.h) / 2));
 
         self.window
-            .render(renderer, location, Scale::from(1.))
+            .render(renderer, location, Scale::from(1.), 1.)
             .into_iter()
             .map(|elem| Box::new(elem) as _)
             .collect()

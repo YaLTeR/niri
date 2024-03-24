@@ -325,9 +325,15 @@ impl<W: LayoutElement> Tile<W> {
         view_size: Size<i32, Logical>,
         focus_ring: bool,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
+        let alpha = if self.is_fullscreen {
+            1.
+        } else {
+            self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)
+        };
+
         let rv = self
             .window
-            .render(renderer, location + self.window_loc(), scale)
+            .render(renderer, location + self.window_loc(), scale, alpha)
             .into_iter()
             .map(Into::into);
 

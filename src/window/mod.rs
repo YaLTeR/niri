@@ -52,6 +52,9 @@ pub struct ResolvedWindowRules {
     ///
     /// `None` means using the SSD heuristic.
     pub draw_border_with_background: Option<bool>,
+
+    /// Extra opacity to draw this window with.
+    pub opacity: Option<f32>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -82,6 +85,7 @@ impl ResolvedWindowRules {
             max_width: None,
             max_height: None,
             draw_border_with_background: None,
+            opacity: None,
         }
     }
 
@@ -152,6 +156,9 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.draw_border_with_background {
                     resolved.draw_border_with_background = Some(x);
+                }
+                if let Some(x) = rule.opacity {
+                    resolved.opacity = Some(x);
                 }
             }
 

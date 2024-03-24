@@ -95,6 +95,7 @@ pub trait LayoutElement {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> Vec<LayoutElementRenderElement<R>>;
 
     fn request_size(&self, size: Size<i32, Logical>);
@@ -1856,6 +1857,7 @@ mod tests {
             _renderer: &mut R,
             _location: Point<i32, Logical>,
             _scale: Scale<f64>,
+            _alpha: f32,
         ) -> Vec<LayoutElementRenderElement<R>> {
             vec![]
         }

@@ -146,6 +146,7 @@ impl LayoutElement for TestWindow {
         _renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> Vec<LayoutElementRenderElement<R>> {
         let inner = self.inner.borrow();
 
@@ -154,7 +155,7 @@ impl LayoutElement for TestWindow {
                 &inner.buffer,
                 location.to_physical_precise_round(scale),
                 scale,
-                1.,
+                alpha,
                 Kind::Unspecified,
             )
             .into(),
@@ -163,7 +164,7 @@ impl LayoutElement for TestWindow {
                 (location - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)))
                     .to_physical_precise_round(scale),
                 scale,
-                1.,
+                alpha,
                 Kind::Unspecified,
             )
             .into(),
