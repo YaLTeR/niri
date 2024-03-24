@@ -413,6 +413,10 @@ animations {
     // You can also block out the window out of all screen captures, including
     // third-party screenshot tools. This way you avoid accidentally showing
     // the window on a screencast when opening a third-party screenshot preview.
+    //
+    // This setting will let you use the interactive build-in screenshot UI as normal,
+    // but it will block out the window from the fully automatic screenshot actions,
+    // such as screenshot-screen and screenshot-window.
     block-out-from "screen-capture"
 
     // You can amend the window's minimum and maximum size in logical pixels.
