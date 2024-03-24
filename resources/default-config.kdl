@@ -402,14 +402,17 @@ animations {
     // To preview and set up this rule, check the preview-render option
     // in the debug section of the config.
     //
-    // WARNING: the window is NOT blocked out from the screenshot UI.
-    // If you open the screenshot UI while screencasting, blocked out windows
-    // WILL BE VISIBLE on the screencast.
+    // WARNING: the window is NOT blocked out from third-party screenshot tools.
+    // If you open some screenshot tool with preview while screencasting,
+    // blocked out windows WILL BE VISIBLE on the screencast.
+    //
+    // The built-in screenshot UI is not affected though, you can use it safely,
+    // and windows will remain blocked out even when screencasting it.
     block-out-from "screencast"
 
     // You can also block out the window out of all screen captures, including
-    // the screenshot UI. This way you avoid accidentally showing the window
-    // on a screencast when opening the screenshot UI.
+    // third-party screenshot tools. This way you avoid accidentally showing
+    // the window on a screencast when opening a third-party screenshot preview.
     block-out-from "screen-capture"
 
     // You can amend the window's minimum and maximum size in logical pixels.
@@ -459,7 +462,7 @@ window-rule {
     match app-id=r#"^org\.keepassxc\.KeePassXC$"#
     match app-id=r#"^org\.gnome\.World\.Secrets$"#
 
-    // Warning: will be visible when opening the screenshot UI.
+    // Warning: will be visible on third-party screenshot tools.
     block-out-from "screencast"
 
     // Use this instead to block out from all screen captures.

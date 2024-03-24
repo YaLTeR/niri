@@ -19,6 +19,7 @@ use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
 
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::RenderTarget;
 
 const BORDER: i32 = 2;
 
@@ -42,8 +43,9 @@ pub struct OutputData {
     size: Size<i32, Physical>,
     scale: i32,
     transform: Transform,
-    texture: GlesTexture,
-    texture_buffer: TextureBuffer<GlesTexture>,
+    // Output, screencast, screen capture.
+    texture: [GlesTexture; 3],
+    texture_buffer: [TextureBuffer<GlesTexture>; 3],
     buffers: [SolidColorBuffer; 8],
     locations: [Point<i32, Physical>; 8],
 }
@@ -65,7 +67,8 @@ impl ScreenshotUi {
     pub fn open(
         &mut self,
         renderer: &GlesRenderer,
-        screenshots: HashMap<Output, GlesTexture>,
+        // Output, screencast, screen capture.
+        screenshots: HashMap<Output, [GlesTexture; 3]>,
         default_output: Output,
     ) -> bool {
         if screenshots.is_empty() {
@@ -110,13 +113,9 @@ impl ScreenshotUi {
                 let output_mode = output.current_mode().unwrap();
                 let size = transform.transform_size(output_mode.size);
                 let scale = output.current_scale().integer_scale();
-                let texture_buffer = TextureBuffer::from_texture(
-                    renderer,
-                    texture.clone(),
-                    scale,
-                    Transform::Normal,
-                    None,
-                );
+                let texture_buffer = texture.clone().map(|texture| {
+                    TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, None)
+                });
                 let buffers = [
                     SolidColorBuffer::new((0, 0), [1., 1., 1., 1.]),
                     SolidColorBuffer::new((0, 0), [1., 1., 1., 1.]),
@@ -243,7 +242,11 @@ impl ScreenshotUi {
         }
     }
 
-    pub fn render_output(&self, output: &Output) -> ArrayVec<ScreenshotUiRenderElement, 9> {
+    pub fn render_output(
+        &self,
+        output: &Output,
+        target: RenderTarget,
+    ) -> ArrayVec<ScreenshotUiRenderElement, 9> {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
         let Self::Open { output_data, .. } = self else {
@@ -269,10 +272,15 @@ impl ScreenshotUi {
         }));
 
         // The screenshot itself goes last.
+        let index = match target {
+            RenderTarget::Output => 0,
+            RenderTarget::Screencast => 1,
+            RenderTarget::ScreenCapture => 2,
+        };
         elements.push(
             PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                 (0., 0.),
-                &output_data.texture_buffer,
+                &output_data.texture_buffer[index],
                 None,
                 None,
                 None,
@@ -307,7 +315,7 @@ impl ScreenshotUi {
             .to_buffer(1, Transform::Normal, &data.size.to_logical(1));
 
         let mapping = renderer
-            .copy_texture(&data.texture, buf_rect, Fourcc::Abgr8888)
+            .copy_texture(&data.texture[0], buf_rect, Fourcc::Abgr8888)
             .context("error copying texture")?;
         let copy = renderer
             .map_texture(&mapping)

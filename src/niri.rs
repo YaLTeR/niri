@@ -2307,7 +2307,7 @@ impl Niri {
         if self.screenshot_ui.is_open() {
             elements.extend(
                 self.screenshot_ui
-                    .render_output(output)
+                    .render_output(output, target)
                     .into_iter()
                     .map(OutputRenderElements::from),
             );
@@ -3104,31 +3104,37 @@ impl Niri {
                 let size = transform.transform_size(size);
 
                 let scale = Scale::from(output.current_scale().fractional_scale());
-                let elements = self.render::<GlesRenderer>(
-                    renderer,
-                    &output,
-                    true,
+                let targets = [
+                    RenderTarget::Output,
+                    RenderTarget::Screencast,
                     RenderTarget::ScreenCapture,
-                );
-                let elements = elements.iter().rev();
+                ];
+                let textures = targets.map(|target| {
+                    let elements = self.render::<GlesRenderer>(renderer, &output, true, target);
+                    let elements = elements.iter().rev();
 
-                let res = render_to_texture(
-                    renderer,
-                    size,
-                    scale,
-                    Transform::Normal,
-                    Fourcc::Abgr8888,
-                    elements,
-                );
-                let screenshot = match res {
-                    Ok((texture, _)) => texture,
-                    Err(err) => {
+                    let res = render_to_texture(
+                        renderer,
+                        size,
+                        scale,
+                        Transform::Normal,
+                        Fourcc::Abgr8888,
+                        elements,
+                    );
+
+                    if let Err(err) = &res {
                         warn!("error rendering output {}: {err:?}", output.name());
-                        return None;
                     }
-                };
 
-                Some((output, screenshot))
+                    res
+                });
+
+                if textures.iter().any(|res| res.is_err()) {
+                    return None;
+                }
+
+                let textures = textures.map(|res| res.unwrap().0);
+                Some((output, textures))
             })
             .collect();
 
