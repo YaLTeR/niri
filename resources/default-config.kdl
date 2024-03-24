@@ -414,7 +414,7 @@ animations {
     // third-party screenshot tools. This way you avoid accidentally showing
     // the window on a screencast when opening a third-party screenshot preview.
     //
-    // This setting will let you use the interactive build-in screenshot UI as normal,
+    // This setting will still let you use the interactive built-in screenshot UI,
     // but it will block out the window from the fully automatic screenshot actions,
     // such as screenshot-screen and screenshot-window.
     block-out-from "screen-capture"
@@ -460,17 +460,16 @@ window-rule {
     default-column-width {}
 }
 
-// Another example: block out two password managers from screencasts.
+// Another example: block out two password managers from screen capture.
 // (This example rule is commented out with a "/-" in front.)
 /-window-rule {
     match app-id=r#"^org\.keepassxc\.KeePassXC$"#
     match app-id=r#"^org\.gnome\.World\.Secrets$"#
 
-    // Warning: will be visible on third-party screenshot tools.
-    block-out-from "screencast"
+    block-out-from "screen-capture"
 
-    // Use this instead to block out from all screen captures.
-    // block-out-from "screen-capture"
+    // Use this instead if you want them visible on third-party screenshot tools.
+    // block-out-from "screencast"
 }
 
 binds {
