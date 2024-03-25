@@ -183,6 +183,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          show-progress: false
 
       - name: Check flake inputs
         uses: DeterminateSystems/flake-checker-action@v4
