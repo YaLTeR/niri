@@ -196,3 +196,15 @@ jobs:
 
       - run: nix build
         continue-on-error: true
+
+  publish-wiki:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - uses: Andrew-Chen-Wang/github-wiki-action@v4
