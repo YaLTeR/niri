@@ -6,8 +6,8 @@
 * [Xwayland](https://github.com/YaLTeR/niri/wiki/Xwayland)
 
 ## Configuration
-* [Overview](https://github.com/YaLTeR/niri/wiki/Configuration:-Overview.md)
-* [Input](https://github.com/YaLTeR/niri/wiki/Configuration:-Input.md)
+* [Overview](https://github.com/YaLTeR/niri/wiki/Configuration:-Overview)
+* [Input](https://github.com/YaLTeR/niri/wiki/Configuration:-Input)
 
 ## Development
 * [Design Principles](https://github.com/YaLTeR/niri/wiki/Design-Principles)
