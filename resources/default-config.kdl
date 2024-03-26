@@ -1,6 +1,11 @@
 // This config is in the KDL format: https://kdl.dev
 // "/-" comments out the following node.
+// Check the wiki for an overview of the configuration:
+// https://github.com/YaLTeR/niri/wiki/Configuration:-Overview
 
+// Input device configuration.
+// Find the full list of options on the wiki:
+// https://github.com/YaLTeR/niri/wiki/Configuration:-Input
 input {
     keyboard {
         xkb {
@@ -11,16 +16,6 @@ input {
             // layout "us,ru"
             // options "grp:win_space_toggle,compose:ralt,ctrl:nocaps"
         }
-
-        // You can set the keyboard repeat parameters. The defaults match wlroots and sway.
-        // Delay is in milliseconds before the repeat starts. Rate is in characters per second.
-        // repeat-delay 600
-        // repeat-rate 25
-
-        // Niri can remember the keyboard layout globally (the default) or per-window.
-        // - "global" - layout change is global for all windows.
-        // - "window" - layout is tracked for each window individually.
-        // track-layout "global"
     }
 
     // Next sections include libinput settings.
@@ -32,8 +27,6 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
-        // tap-button-map "left-middle-right"
-        // click-method "clickfinger"
     }
 
     mouse {
@@ -42,42 +35,11 @@ input {
         // accel-profile "flat"
     }
 
-    trackpoint {
-        // natural-scroll
-        // accel-speed 0.2
-        // accel-profile "flat"
-    }
-
-    tablet {
-        // Set the name of the output (see below) which the tablet will map to.
-        // If this is unset or the output doesn't exist, the tablet maps to one of the
-        // existing outputs.
-        map-to-output "eDP-1"
-    }
-
-    touch {
-        // Set the name of the output (see below) which touch input will map to.
-        // If this is unset or the output doesn't exist, touch input maps to one of the
-        // existing outputs.
-        map-to-output "eDP-1"
-    }
-
-    // By default, niri will take over the power button to make it sleep
-    // instead of power off.
-    // Uncomment this if you would like to configure the power button elsewhere
-    // (i.e. logind.conf).
-    // disable-power-key-handling
-
     // Uncomment this to make the mouse warp to the center of newly focused windows.
     // warp-mouse-to-focus
 
     // Focus windows and outputs automatically when moving the mouse into them.
     // focus-follows-mouse
-
-    // Uncomment this to enable workspace auto-back-and-forth.
-    // If enabled, switching to the same workspace by index twice will switch back to the
-    // previous workspace.
-    // workspace-auto-back-and-forth
 }
 
 // You can configure outputs by their name, which you can find
@@ -343,124 +305,20 @@ animations {
 }
 
 // Window rules let you adjust behavior for individual windows.
-// They are processed in order of appearance in this file.
-// (This example rule is commented out with a "/-" in front.)
-/-window-rule {
-    // Match directives control which windows this rule will apply to.
-    // You can match by app-id and by title.
-    // The window must match all properties of the match directive.
-    match app-id="org.myapp.MyApp" title="My Cool App"
+// Find more information on the wiki:
+// https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules
 
-    // There can be multiple match directives. A window must match any one
-    // of the rule's match directives.
-    //
-    // If there are no match directives, any window will match the rule.
-    match title="Second App"
-
-    // You can also add exclude directives which have the same properties.
-    // If a window matches any exclude directive, it won't match this rule.
-    //
-    // Both app-id and title are regular expressions.
-    // Raw KDL strings are helpful here.
-    exclude app-id=r#"\.unwanted\."#
-
-    // One more way to match is by whether the window is active
-    // (same as when it uses the active border color).
-    match is-active=true
-
-    // Another way to match is by whether the window has keyboard focus.
-    // This is different from is-active: every workspace on a monitor
-    // has one active window, but only one window can have a keyboard
-    // focus. Also, the keyboard focus can go to a layer-shell surface,
-    // then no window will have the keyboard focus.
-    match is-focused=true
-
-    // Here are the properties that you can set on a window rule.
-    // These properties apply once, when a window first opens.
-
-    // You can override the default column width.
-    default-column-width { proportion 0.75; }
-
-    // You can set the output that this window will initially open on.
-    // If such an output does not exist, it will open on the currently
-    // focused output as usual.
-    open-on-output "eDP-1"
-
-    // Make this window open as a maximized column.
-    open-maximized true
-
-    // Make this window open fullscreen.
-    open-fullscreen true
-    // You can also set this to false to prevent a window from opening fullscreen.
-    // open-fullscreen false
-
-    // The following properties apply dynamically while a window is open.
-
-    // You can block out windows from xdg-desktop-portal screencasts.
-    // They will be replaced with solid black rectangles.
-    // This can be useful for password managers or messenger windows, etc.
-    // To preview and set up this rule, check the preview-render option
-    // in the debug section of the config.
-    //
-    // WARNING: the window is NOT blocked out from third-party screenshot tools.
-    // If you open some screenshot tool with preview while screencasting,
-    // blocked out windows WILL BE VISIBLE on the screencast.
-    //
-    // The built-in screenshot UI is not affected though, you can use it safely,
-    // and windows will remain blocked out even when screencasting it.
-    block-out-from "screencast"
-
-    // You can also block out the window out of all screen captures, including
-    // third-party screenshot tools. This way you avoid accidentally showing
-    // the window on a screencast when opening a third-party screenshot preview.
-    //
-    // This setting will still let you use the interactive built-in screenshot UI,
-    // but it will block out the window from the fully automatic screenshot actions,
-    // such as screenshot-screen and screenshot-window.
-    block-out-from "screen-capture"
-
-    // You can amend the window's minimum and maximum size in logical pixels.
-    // Keep in mind that the window itself always has a final say in its size.
-    // These values instruct niri to never ask the window to be smaller than
-    // the minimum you set, or to be bigger than the maximum you set.
-    min-width 100
-    max-width 200
-    min-height 300
-    // Caveat: max-height will only apply to automatically-sized windows
-    // if it is equal to min-height. Either set this equal to min-height,
-    // or change the window height manually for this to apply.
-    max-height 300
-
-    // Override whether the border and the focus ring draw with a background.
-    // Set this to `true` to draw them as solid colored rectangles even for
-    // windows which agreed to omit their client-side decorations.
-    // Set this to `false` to draw them as borders around the window even for
-    // windows which use client-side decorations.
-    draw-border-with-background false
-
-    // Set the opacity of the window.
-    // This is applied on top of the window's own opacity, so semitransparent
-    // windows will become even more transparent.
-    // Opacity is applied to every surface of the window individually, so
-    // subsurfaces and pop-up menus will show window content behind them.
-    // Also, focus ring and border with background will show through
-    // semitransparent windows (see prefer-no-csd and
-    // the draw-border-with-background property above).
-    opacity 0.5
-}
-
-// Here's a useful example. Work around WezTerm's initial configure bug
+// Work around WezTerm's initial configure bug
 // by setting an empty default-column-width.
 window-rule {
     // This regular expression is intentionally made as specific as possible,
     // since this is the default config, and we want no false positives.
     // You can get away with just app-id="wezterm" if you want.
-    // The regular expression can match anywhere in the string.
     match app-id=r#"^org\.wezfurlong\.wezterm$"#
     default-column-width {}
 }
 
-// Another example: block out two password managers from screen capture.
+// Example: block out two password managers from screen capture.
 // (This example rule is commented out with a "/-" in front.)
 /-window-rule {
     match app-id=r#"^org\.keepassxc\.KeePassXC$"#
