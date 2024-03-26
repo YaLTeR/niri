@@ -42,7 +42,7 @@ Each animation can be either an easing or a spring.
 
 #### Easing
 
-This is a common animation type that changes the value over a set duration using a Bézier curve.
+This is a relatively common animation type that changes the value over a set duration using an interpolation curve.
 
 To use this animation, set the following parameters:
 
