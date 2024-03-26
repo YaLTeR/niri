@@ -210,7 +210,7 @@ window-rule {
 
 #### `opacity`
 
-Sets the opacity of the window.
+Set the opacity of the window.
 `0.0` is fully transparent, `1.0` is fully opaque.
 This is applied on top of the window's own opacity, so semitransparent windows will become even more transparent.
 
