@@ -69,7 +69,7 @@ window-rule {
 Match and exclude directives have the same syntax.
 Here is what you can match on.
 
-#### `title` and `app-id
+#### `title` and `app-id`
 
 These are regular expressions that should match anywhere in the window title and app ID respectively.
 
