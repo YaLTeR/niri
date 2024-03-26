@@ -148,6 +148,12 @@ Contrary to `is-active`, there can only be a single focused window.
 Also, when opening a layer-shell application launcher or pop-up menu, the keyboard focus goes to layer-shell.
 While layer-shell has the keyboard focus, windows will not match this rule.
 
+```
+window-rule {
+    match is-focused=true
+}
+```
+
 ### Window Opening Properties
 
 These properties apply once, when a window first opens.
