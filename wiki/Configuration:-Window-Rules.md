@@ -117,13 +117,14 @@ window-rule {
 }
 ```
 
-One way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
-
-```json
-"wlr/taskbar": {
-    "tooltip-format": "{title} | {app_id}",
-}
-```
+> [!TIP]
+> One way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
+> 
+> ```json
+> "wlr/taskbar": {
+>     "tooltip-format": "{title} | {app_id}",
+> }
+> ```
 
 #### `is-active`
 
@@ -202,7 +203,10 @@ window-rule {
 Make the window open as a maximized column.
 
 ```
+// Maximize Firefox by default.
 window-rule {
+    match app-id=r#"^org\.mozilla\.firefox$"#
+
     open-maximized true
 }
 ```
