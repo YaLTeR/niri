@@ -44,6 +44,7 @@ If the refresh rate is omitted, niri will pick the highest refresh rate for the 
 If the mode is omitted altogether or doesn't work, niri will try to pick one automatically.
 
 Run `niri msg outputs` while inside a niri instance to list all outputs and their modes.
+The refresh rate that you set here must match *exactly*, down to the three decimal digits, to what you see in `niri msg outputs`.
 
 ```
 // Set a high refresh rate for this monitor.
