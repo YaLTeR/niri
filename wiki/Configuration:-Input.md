@@ -2,6 +2,10 @@
 
 In this section you can configure input devices like keyboard and mouse, and some input-related options.
 
+There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `tablet`, `touch`.
+Settings in those sections will apply to every device of that type.
+Currently, there's no way to configure specific devices individually (but that is planned).
+
 All settings at a glance:
 
 ```
@@ -106,4 +110,85 @@ input {
 }
 ```
 
-### TBD
+### Pointing Devices
+
+Most settings for the pointing devices are passed directly to libinput.
+Other Wayland compositors also use libinput, so it's likely you will find the same settings there.
+For flags like `tap`, omit them or comment them out to disable the setting.
+
+A few settings are common between `touchpad`, `mouse` and `trackpoint`:
+
+- `natural-scroll`: if set, inverts the scrolling direction.
+- `accel-speed`: pointer acceleration speed, valid values are from `-1.0` to `1.0` where the default is `0.0`.
+- `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
+
+Settings specific to `touchpad`s:
+
+- `tap`: tap-to-click.
+- `dwt`: disable-when-typing.
+- `dwtp`: disable-when-trackpointing.
+- `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
+- `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
+
+Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
+
+```
+input {
+    tablet {
+        map-to-output "eDP-1"
+    }
+
+    touch {
+        map-to-output "eDP-1"
+    }
+}
+```
+
+Valid output names are the same as the ones used for output configuration.
+
+### General Settings
+
+These settings are not specific to a particular input device.
+
+#### `disable-power-key-handling`
+
+By default, niri will take over the power button to make it sleep instead of power off.
+Set this if you would like to configure the power button elsewhere (i.e. `logind.conf`).
+
+```
+input {
+    disable-power-key-handling
+}
+```
+
+#### `warp-mouse-to-focus`
+
+Makes the mouse warp to newly focused windows.
+
+X and Y coordinates are computed separately, i.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then it will move only horizontally.
+
+```
+input {
+    warp-mouse-to-focus
+}
+```
+
+#### `focus-follows-mouse`
+
+Focuses windows and outputs automatically when moving the mouse over them.
+
+```
+input {
+    focus-follows-mouse
+}
+```
+
+#### `workspace-auto-back-and-forth`
+
+If enabled, switching to the same workspace by index twice will switch back to the previous workspace.
+
+```
+input {
+    workspace-auto-back-and-forth
+}
+```

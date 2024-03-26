@@ -15,6 +15,9 @@ To use a different config file path, pass it in the `--config` or `-c` argument 
 ### Syntax
 
 The config is written in [KDL].
+
+#### Comments
+
 Lines starting with `//` are comments; they are ignored.
 
 Also, you can put `/-` in front of a node to comment out the entire node:
@@ -23,6 +26,79 @@ Also, you can put `/-` in front of a node to comment out the entire node:
 /-output "eDP-1" {
     everything inside here
     is ignored
+}
+```
+
+#### Flags
+
+Toggle options in niri are commonly represented as flags.
+Writing out the flag enables it, and omitting it or commenting it out disables it.
+For example:
+
+```
+// "Focus follows mouse" is enabled.
+input {
+    focus-follows-mouse
+
+    // Other settings...
+}
+```
+
+```
+// "Focus follows mouse" is disabled.
+input {
+    // Other settings...
+}
+```
+
+#### Sections
+
+Most sections cannot be repeated. For example:
+
+```
+// This is valid: every section appears once.
+input {
+    keyboard {
+        // ...
+    }
+
+    touchpad {
+        // ...
+    }
+}
+```
+
+```
+// This is NOT valid: input section appears twice.
+input {
+    keyboard {
+        // ...
+    }
+}
+
+input {
+    touchpad {
+        // ...
+    }
+}
+```
+
+Exceptions are for example sections that configure different devices by name:
+
+```
+output "eDP-1" {
+    // ...
+}
+
+// This is valid: this section configures a different output.
+output "HDMI-A-1" {
+    // ...
+}
+
+// This is NOT valid: "eDP-1" already appeared above.
+// It will either throw a config parsing error, or otherwise not work.
+output "eDP-1" {
+    // ...
 }
 ```
 
