@@ -112,9 +112,9 @@ A notable exception is `binds {}`: they do not get filled with defaults, so make
 ### Breaking Change Policy
 
 Configuration backwards compatibility follows the Rust / Cargo semantic versioning standards.
-A patch release (i.e. niri 0.1.3 to 0.1.4) will never cause a parse error on a config that worked on the previous version.
-A minor release (i.e. niri 0.1.3 to 0.2.0) *can* cause previously valid config files to stop parsing.
+A patch release (i.e. niri 0.1.3 to 0.1.4) must not cause a parse error on a config that worked on the previous version.
 
+A minor release (i.e. niri 0.1.3 to 0.2.0) *can* cause previously valid config files to stop parsing.
 When niri reaches 1.0, a major release (i.e. niri 1.0 to 2.0) will be required to break config backwards compatibility.
 
 Exceptions can be made for parsing bugs.
