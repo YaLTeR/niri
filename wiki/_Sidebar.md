@@ -1,15 +1,15 @@
 ## Usage
-* [Example systemd Setup](https://github.com/YaLTeR/niri/wiki/Example-systemd-Setup)
-* [Important Software](https://github.com/YaLTeR/niri/wiki/Important-Software)
-* [Layer‐Shell Components](https://github.com/YaLTeR/niri/wiki/Layer%E2%80%90Shell-Components)
-* [VSCode, Chromium, WezTerm](https://github.com/YaLTeR/niri/wiki/Application-Issues)
-* [Xwayland](https://github.com/YaLTeR/niri/wiki/Xwayland)
+* [Example systemd Setup](./Example-systemd-Setup.md)
+* [Important Software](./Important-Software.md)
+* [Layer‐Shell Components](./Layer%E2%80%90Shell-Components.md)
+* [VSCode, Chromium, WezTerm](./Application-Issues.md)
+* [Xwayland](./Xwayland.md)
 
 ## Configuration
-* [Overview](https://github.com/YaLTeR/niri/wiki/Configuration:-Overview)
-* [Input](https://github.com/YaLTeR/niri/wiki/Configuration:-Input)
-* [Window Rules](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules)
+* [Overview](./Configuration:-Overview.md)
+* [Input](./Configuration:-Input.md)
+* [Window Rules](./Configuration:-Window-Rules.md)
 
 ## Development
-* [Design Principles](https://github.com/YaLTeR/niri/wiki/Design-Principles)
-* [Developing niri](https://github.com/YaLTeR/niri/wiki/Developing-niri)
+* [Design Principles](./Design-Principles.md)
+* [Developing niri](./Developing-niri.md)
