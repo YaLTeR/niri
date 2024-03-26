@@ -83,7 +83,7 @@ input {
 }
 ```
 
-Exceptions are for example sections that configure different devices by name:
+Exceptions are, for example, sections that configure different devices by name:
 
 ```
 output "eDP-1" {
