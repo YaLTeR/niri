@@ -220,7 +220,10 @@ window-rule {
 You can also set this to `false` to *prevent* a window from opening fullscreen.
 
 ```
+// Make the Telegram media viewer open in windowed mode.
 window-rule {
+    match app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
+
     open-fullscreen false
 }
 ```
