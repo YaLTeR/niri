@@ -74,6 +74,8 @@ Here is what you can match on.
 These are regular expressions that should match anywhere in the window title and app ID respectively.
 
 ```
+// Match windows with title containing "Mozilla Firefox",
+// or windows with app ID containing "Alacritty".
 window-rule {
     match title="Mozilla Firefox"
     match app-id="Alacritty"
