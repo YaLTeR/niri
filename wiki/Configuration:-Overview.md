@@ -109,4 +109,17 @@ output "eDP-1" {
 Omitting most of the sections of the config file will leave you with the default values for that section.
 A notable exception is `binds {}`: they do not get filled with defaults, so make sure you do not erase this section.
 
+### Breaking Change Policy
+
+Configuration backwards compatibility follows the Rust / Cargo semantic versioning standards.
+A patch release (i.e. niri 0.1.3 to 0.1.4) will never cause a parse error on a config that worked on the previous version.
+A minor release (i.e. niri 0.1.3 to 0.2.0) *can* cause previously valid config files to stop parsing.
+
+When niri reaches 1.0, a major release (i.e. niri 1.0 to 2.0) will be required to break config backwards compatibility.
+
+Exceptions can be made for parsing bugs.
+For example, niri used to accept multiple binds to the same key, but this was not intended and did not do anything (the first bind was always used).
+A patch release changed niri from silently accepting this to causing a parsing failure.
+This is not a blanket rule, I will consider the potential impact of every breaking change like this before deciding to carry on with it.
+
 [KDL]: https://kdl.dev/
