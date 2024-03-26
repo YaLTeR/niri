@@ -122,4 +122,8 @@ For example, niri used to accept multiple binds to the same key, but this was no
 A patch release changed niri from silently accepting this to causing a parsing failure.
 This is not a blanket rule, I will consider the potential impact of every breaking change like this before deciding to carry on with it.
 
+Keep in mind that the breaking change policy applies only to niri releases.
+Commits between releases can and do occasionally break the config as new features are ironed out.
+However, I do try to limit these, since several people are running git builds.
+
 [KDL]: https://kdl.dev/
