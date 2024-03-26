@@ -9,6 +9,7 @@
 * [Overview](./Configuration:-Overview.md)
 * [Input](./Configuration:-Input.md)
 * [Window Rules](./Configuration:-Window-Rules.md)
+* [Animations](./Configuration:-Animations.md)
 
 ## Development
 * [Design Principles](./Design-Principles.md)
