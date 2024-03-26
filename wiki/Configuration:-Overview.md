@@ -20,7 +20,7 @@ The config is written in [KDL].
 
 Lines starting with `//` are comments; they are ignored.
 
-Also, you can put `/-` in front of a node to comment out the entire node:
+Also, you can put `/-` in front of a section to comment out the entire section:
 
 ```
 /-output "eDP-1" {
@@ -47,6 +47,8 @@ input {
 ```
 // "Focus follows mouse" is disabled.
 input {
+    // focus-follows-mouse
+
     // Other settings...
 }
 ```
