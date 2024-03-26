@@ -8,10 +8,10 @@ Here's what it looks like with all properties written out:
 ```
 output "eDP-1" {
     // off
-    scale 2.0
     mode "1920x1080@120.030"
-    position x=1280 y=0
+    scale 2.0
     transform "90"
+    position x=1280 y=0
 }
 
 output "HDMI-A-1" {
