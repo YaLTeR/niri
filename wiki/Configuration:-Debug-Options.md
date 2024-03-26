@@ -4,7 +4,7 @@ Niri has several options that are only useful for debugging, or are experimental
 They are not meant for normal use.
 
 > [!CAUTION]
-> These options are **not** covered by the [config breaking change policy](./Configuration:-Overview.md#breaking-change-policy).
+> These options are **not** covered by the [config breaking change policy](./Configuration:-Overview.md).
 > They can change or stop working at any point with little notice.
 
 Here are all the options at a glance:
@@ -27,7 +27,7 @@ debug {
 
 Make niri render the monitors the same way as for a screencast or a screen capture.
 
-Useful for previewing the [`block-out-from`](./Configuration:-Window-Rules.md#block-out-from) window rule.
+Useful for previewing the `block-out-from` window rule.
 
 ```
 debug {
