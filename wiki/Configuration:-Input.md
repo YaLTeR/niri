@@ -185,7 +185,10 @@ input {
 
 #### `workspace-auto-back-and-forth`
 
-If enabled, switching to the same workspace by index twice will switch back to the previous workspace.
+Normally, switching to the same workspace by index twice will do nothing (since you're already on that workspace).
+If this flag is enabled, switching to the same workspace by index twice will switch back to the previous workspace.
+
+Niri will correctly switch to the workspace you came from, even if workspaces were reordered in the meantime.
 
 ```
 input {
