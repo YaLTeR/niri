@@ -10,6 +10,7 @@
 * [Input](./Configuration:-Input.md)
 * [Window Rules](./Configuration:-Window-Rules.md)
 * [Animations](./Configuration:-Animations.md)
+* [Debug Options](./Configuration:-Debug-Options.md)
 
 ## Development
 * [Design Principles](./Design-Principles.md)
