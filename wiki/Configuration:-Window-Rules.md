@@ -71,7 +71,30 @@ window-rule {
 ```
 
 Match and exclude directives have the same syntax.
-Here is what you can match on.
+There can be multiple *matchers* in one directive, then the window should match all of them for the directive to apply.
+
+```
+window-rule {
+    // Match Firefox windows with Gmail in title.
+    match app-id="org.mozilla.firefox" title="Gmail"
+}
+
+window-rule {
+    // Match Firefox, but only when it is active...
+    match app-id=r#"^org\.mozilla\.firefox$"# is-active=true
+
+    // ...or match Telegram...
+    match app-id=r#"^org\.telegram\.desktop$"#
+
+    // ...but don't match the Telegram media viewer.
+    // If you open a tab in Firefox titled "Media viewer",
+    // it will not be excluded because it doesn't match the app-id
+    // of this exclude directive.
+    exclude app-id=r#"^org\.telegram\.desktop$"# title="Media viewer"
+}
+```
+
+Let's look at the matchers in more detail.
 
 #### `title` and `app-id`
 
@@ -91,6 +114,14 @@ Raw KDL strings can be helpful for writing out regular expressions:
 ```
 window-rule {
     exclude app-id=r#"^org\.keepassxc\.KeePassXC$"#
+}
+```
+
+One way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
+
+```json
+"wlr/taskbar": {
+    "tooltip-format": "{title} | {app_id}",
 }
 ```
 
@@ -128,8 +159,15 @@ To be precise, they apply at the point when niri sends the initial configure req
 Set the default width for the new window.
 
 ```
+// Give Blender and GIMP some guaranteed width on opening.
 window-rule {
-    default-column-width { proportion 0.75; }
+    match app-id="^blender$"
+
+    // GIMP app ID contains the version like "gimp-2.99",
+    // so we only match the beginning (with ^) and not the end.
+    match app-id="^gimp"
+
+    default-column-width { fixed 1200; }
 }
 ```
 
@@ -142,8 +180,14 @@ If such an output does not exist, the window will open on the currently focused 
 If the window opens on an output that is not currently focused, the window will not be automatically focused.
 
 ```
+// Open Firefox and Telegram (but not its Media Viewer)
+// on a specific monitor.
 window-rule {
-    open-on-output "eDP-1"
+    match app-id=r#"^org\.mozilla\.firefox$"#
+    match app-id=r#"^org\.telegram\.desktop$"#
+    exclude app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
+
+    open-on-output "HDMI-A-1"
 }
 ```
 
@@ -198,7 +242,11 @@ The built-in screenshot UI is not affected by this problem though.
 If you open the screenshot UI while screencasting, you will be able to select the area to screenshot while seeing all windows normally, but on a screencast the selection UI will display with windows blocked out.
 
 ```
+// Block out password managers from screencasts.
 window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+    match app-id=r#"^org\.gnome\.World\.Secrets$"#
+
     block-out-from "screencast"
 }
 ```
@@ -215,6 +263,25 @@ window-rule {
 }
 ```
 
+> [!WARNING]
+> Be careful when blocking out windows based on a dynamically changing window title.
+>
+> For example, you might try to block out specific Firefox tabs like this:
+>
+> ```
+> window-rule {
+>     // Doesn't quite work! Try to block out the Gmail tab.
+>     match app-id=r#"^org\.mozilla\.firefox$"# title="- Gmail "
+> 
+>     block-out-from "screencast"
+> }
+> ```
+>
+> It will work, but when switching from a sensitive tab to a regular tab, the contents of the sensitive tab **will show up on a screencast** for an instant.
+>
+> This is because window title (and app ID) are not double-buffered in the Wayland protocol, so they are not tied to specific window contents.
+> There's no robust way for Firefox to synchronize visibly showing a different tab and changing the window title.
+
 #### `opacity`
 
 Set the opacity of the window.
@@ -228,8 +295,11 @@ Opacity is applied to every surface of the window individually, so subsurfaces a
 Also, focus ring and border with background will show through semitransparent windows (see `prefer-no-csd` and the `draw-border-with-background` window rule below).
 
 ```
+// Make inactive windows semitransparent.
 window-rule {
-    opacity 0.9
+    match is-active=false
+
+    opacity 0.95
 }
 ```
 
@@ -272,3 +342,13 @@ window-rule {
     min-height 300
     max-height 300
 }
+```
+
+```
+// Fix OBS with server-side decorations missing a minimum width.
+window-rule {
+    match app-id=r#"^com\.obsproject\.Studio$"#
+
+    min-width 876
+}
+```
