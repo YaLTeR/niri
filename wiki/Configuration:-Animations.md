@@ -49,6 +49,15 @@ To use this animation, set the following parameters:
 - `duration-ms`: duration of the animation in milliseconds.
 - `curve`: the easing curve to use.
 
+```
+animations {
+    window-open {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+}
+```
+
 Currently, niri only supports two curves: `ease-out-cubic` and `ease-out-expo`.
 You can get a feel for them on pages like [easings.net](https://easings.net/).
 
