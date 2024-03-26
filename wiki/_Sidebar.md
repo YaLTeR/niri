@@ -8,6 +8,7 @@
 ## Configuration
 * [Overview](https://github.com/YaLTeR/niri/wiki/Configuration:-Overview)
 * [Input](https://github.com/YaLTeR/niri/wiki/Configuration:-Input)
+* [Window Rules](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules)
 
 ## Development
 * [Design Principles](https://github.com/YaLTeR/niri/wiki/Design-Principles)
