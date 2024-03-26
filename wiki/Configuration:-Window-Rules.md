@@ -20,6 +20,10 @@ window-rule {
 }
 ```
 
+> [!TIP]
+> In general, you cannot "unset" a property in a later rule, only set it to a different value.
+> Use the `exclude` directives to avoid applying a rule for specific windows.
+
 Here are all matchers and properties that a window rule could have:
 
 ```
