@@ -194,7 +194,8 @@ To preview and set up this rule, check the `preview-render` option in the debug 
 > The window is **not** blocked out from third-party screenshot tools.
 > If you open some screenshot tool with preview while screencasting, blocked out windows **will be visible** on the screencast.
 
-The built-in screenshot UI is not affected though, you can use it safely, and windows will remain blocked out even when screencasting it.
+The built-in screenshot UI is not affected by this problem though.
+If you open the screenshot UI while screencasting, you will be able to select the area to screenshot while seeing all windows normally, but on a screencast the selection UI will display with windows blocked out.
 
 ```
 window-rule {
