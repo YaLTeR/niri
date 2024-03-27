@@ -60,7 +60,7 @@ use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{shaders, RenderTarget};
-use crate::utils::get_monotonic_time;
+use crate::utils::{get_monotonic_time, logical_output};
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
@@ -1370,6 +1370,7 @@ impl Tty {
                             width: m.size().0,
                             height: m.size().1,
                             refresh_rate: Mode::from(*m).refresh as u32,
+                            is_preferred: m.mode_type().contains(ModeTypeFlags::PREFERRED),
                         }
                     })
                     .collect();
@@ -1384,14 +1385,14 @@ impl Tty {
                     }
                 }
 
-                let output = niri
+                let logical = niri
                     .global_space
                     .outputs()
                     .find(|output| {
                         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
                         tty_state.node == *node && tty_state.crtc == crtc
                     })
-                    .cloned();
+                    .map(logical_output);
 
                 let ipc_output = niri_ipc::Output {
                     name: connector_name.clone(),
@@ -1400,9 +1401,10 @@ impl Tty {
                     physical_size,
                     modes,
                     current_mode,
+                    logical,
                 };
 
-                ipc_outputs.insert(connector_name, (ipc_output, output));
+                ipc_outputs.insert(connector_name, ipc_output);
             }
         }
 

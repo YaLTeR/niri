@@ -248,6 +248,10 @@ pub struct Output {
     ///
     /// `None` if the output is disabled.
     pub current_mode: Option<usize>,
+    /// Logical output information.
+    ///
+    /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
+    pub logical: Option<LogicalOutput>,
 }
 
 /// Output mode.
@@ -259,6 +263,49 @@ pub struct Mode {
     pub height: u16,
     /// Refresh rate in millihertz.
     pub refresh_rate: u32,
+    /// Whether this mode is preferred by the monitor.
+    pub is_preferred: bool,
+}
+
+/// Logical output in the compositor's coordinate space.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct LogicalOutput {
+    /// Logical X position.
+    pub x: i32,
+    /// Logical Y position.
+    pub y: i32,
+    /// Width in logical pixels.
+    pub width: u32,
+    /// Height in logical pixels.
+    pub height: u32,
+    /// Scale factor.
+    pub scale: f64,
+    /// Transform.
+    pub transform: Transform,
+}
+
+/// Output transform, which goes counter-clockwise.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transform {
+    /// Untransformed.
+    Normal,
+    /// Rotated by 90°.
+    #[serde(rename = "90")]
+    _90,
+    /// Rotated by 180°.
+    #[serde(rename = "180")]
+    _180,
+    /// Rotated by 270°.
+    #[serde(rename = "270")]
+    _270,
+    /// Flipped horizontally.
+    Flipped,
+    /// Rotated by 90° and flipped horizontally.
+    Flipped90,
+    /// Flipped vertically.
+    Flipped180,
+    /// Rotated by 270° and flipped horizontally.
+    Flipped270,
 }
 
 impl FromStr for SizeChange {

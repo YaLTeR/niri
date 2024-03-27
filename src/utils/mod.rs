@@ -12,7 +12,7 @@ use git_version::git_version;
 use niri_config::Config;
 use smithay::output::Output;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
 pub mod id;
 pub mod spawning;
@@ -49,6 +49,29 @@ pub fn output_size(output: &Output) -> Size<i32, Logical> {
     output_transform
         .transform_size(output_mode.size)
         .to_logical(output_scale)
+}
+
+pub fn logical_output(output: &Output) -> niri_ipc::LogicalOutput {
+    let loc = output.current_location();
+    let size = output_size(output);
+    let transform = match output.current_transform() {
+        Transform::Normal => niri_ipc::Transform::Normal,
+        Transform::_90 => niri_ipc::Transform::_90,
+        Transform::_180 => niri_ipc::Transform::_180,
+        Transform::_270 => niri_ipc::Transform::_270,
+        Transform::Flipped => niri_ipc::Transform::Flipped,
+        Transform::Flipped90 => niri_ipc::Transform::Flipped90,
+        Transform::Flipped180 => niri_ipc::Transform::Flipped180,
+        Transform::Flipped270 => niri_ipc::Transform::Flipped270,
+    };
+    niri_ipc::LogicalOutput {
+        x: loc.x,
+        y: loc.y,
+        width: size.w as u32,
+        height: size.h as u32,
+        scale: output.current_scale().fractional_scale(),
+        transform,
+    }
 }
 
 pub fn expand_home(path: &Path) -> anyhow::Result<Option<PathBuf>> {

@@ -20,7 +20,7 @@ use smithay::reexports::winit::window::WindowBuilder;
 use super::{IpcOutputMap, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::{shaders, RenderTarget};
-use crate::utils::get_monotonic_time;
+use crate::utils::{get_monotonic_time, logical_output};
 
 pub struct Winit {
     config: Rc<RefCell<Config>>,
@@ -61,21 +61,20 @@ impl Winit {
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
             "winit".to_owned(),
-            (
-                niri_ipc::Output {
-                    name: output.name(),
-                    make: physical_properties.make,
-                    model: physical_properties.model,
-                    physical_size: None,
-                    modes: vec![niri_ipc::Mode {
-                        width: backend.window_size().w.clamp(0, u16::MAX as i32) as u16,
-                        height: backend.window_size().h.clamp(0, u16::MAX as i32) as u16,
-                        refresh_rate: 60_000,
-                    }],
-                    current_mode: Some(0),
-                },
-                Some(output.clone()),
-            ),
+            niri_ipc::Output {
+                name: output.name(),
+                make: physical_properties.make,
+                model: physical_properties.model,
+                physical_size: None,
+                modes: vec![niri_ipc::Mode {
+                    width: backend.window_size().w.clamp(0, u16::MAX as i32) as u16,
+                    height: backend.window_size().h.clamp(0, u16::MAX as i32) as u16,
+                    refresh_rate: 60_000,
+                    is_preferred: true,
+                }],
+                current_mode: Some(0),
+                logical: Some(logical_output(&output)),
+            },
         )])));
 
         let damage_tracker = OutputDamageTracker::from_output(&output);
@@ -96,9 +95,14 @@ impl Winit {
 
                     {
                         let mut ipc_outputs = winit.ipc_outputs.lock().unwrap();
-                        let mode = &mut ipc_outputs.get_mut("winit").unwrap().0.modes[0];
+                        let output = ipc_outputs.get_mut("winit").unwrap();
+                        let mode = &mut output.modes[0];
                         mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
                         mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
+                        if let Some(logical) = output.logical.as_mut() {
+                            logical.width = size.w as u32;
+                            logical.height = size.h as u32;
+                        }
                         state.niri.ipc_outputs_changed = true;
                     }
 

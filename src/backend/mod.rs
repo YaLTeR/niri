@@ -31,7 +31,7 @@ pub enum RenderResult {
     Skipped,
 }
 
-pub type IpcOutputMap = HashMap<String, (niri_ipc::Output, Option<Output>)>;
+pub type IpcOutputMap = HashMap<String, niri_ipc::Output>;
 
 impl Backend {
     pub fn init(&mut self, niri: &mut Niri) {

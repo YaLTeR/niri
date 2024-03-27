@@ -125,11 +125,7 @@ fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
 
     let response = match request {
         Request::Outputs => {
-            let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
-            let ipc_outputs = ipc_outputs
-                .iter()
-                .map(|(name, (ipc, _))| (name.clone(), ipc.clone()))
-                .collect();
+            let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
             Response::Outputs(ipc_outputs)
         }
         Request::Action(action) => {

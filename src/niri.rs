@@ -115,7 +115,8 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, center_f64, get_monotonic_time, make_screenshot_path, output_size, write_png_rgba8,
+    center, center_f64, get_monotonic_time, logical_output, make_screenshot_path, output_size,
+    write_png_rgba8,
 };
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
@@ -459,7 +460,7 @@ impl State {
         self.refresh_pointer_focus();
         foreign_toplevel::refresh(self);
         self.niri.refresh_window_rules();
-        self.niri.check_ipc_output_changed();
+        self.refresh_ipc_outputs();
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
@@ -967,6 +968,28 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    pub fn refresh_ipc_outputs(&mut self) {
+        if !self.niri.ipc_outputs_changed {
+            return;
+        }
+        self.niri.ipc_outputs_changed = false;
+
+        let _span = tracy_client::span!("State::refresh_ipc_outputs");
+
+        for (name, ipc_output) in self.backend.ipc_outputs().lock().unwrap().iter_mut() {
+            let logical = self
+                .niri
+                .global_space
+                .outputs()
+                .find(|output| output.name() == *name)
+                .map(logical_output);
+            ipc_output.logical = logical;
+        }
+
+        #[cfg(feature = "dbus")]
+        self.niri.on_ipc_outputs_changed();
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_screen_cast_msg(
         &mut self,
@@ -994,6 +1017,17 @@ impl State {
 
                 let Some(pw) = &self.niri.pipewire else {
                     error!("screencasting must be disabled if PipeWire is missing");
+                    return;
+                };
+
+                let Some(output) = self
+                    .niri
+                    .global_space
+                    .outputs()
+                    .find(|out| out.name() == output)
+                    .cloned()
+                else {
+                    warn!("tried to start a screencast on missing output: {output}");
                     return;
                 };
 
@@ -3436,15 +3470,6 @@ impl Niri {
 
             constraint.activate();
         });
-    }
-
-    pub fn check_ipc_output_changed(&mut self) {
-        if self.ipc_outputs_changed {
-            self.ipc_outputs_changed = false;
-
-            #[cfg(feature = "dbus")]
-            self.on_ipc_outputs_changed();
-        }
     }
 
     #[cfg(feature = "dbus")]

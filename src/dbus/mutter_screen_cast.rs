@@ -11,7 +11,6 @@ use zbus::{dbus_interface, fdo, InterfaceRef, ObjectServer, SignalContext};
 
 use super::Start;
 use crate::backend::IpcOutputMap;
-use crate::utils::output_size;
 
 #[derive(Clone)]
 pub struct ScreenCast {
@@ -49,7 +48,8 @@ struct RecordMonitorProperties {
 
 #[derive(Clone)]
 pub struct Stream {
-    output: Output,
+    // FIXME: update on scale changes and whatnot.
+    output: niri_ipc::Output,
     cursor_mode: CursorMode,
     was_started: Arc<AtomicBool>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
@@ -58,6 +58,8 @@ pub struct Stream {
 #[derive(Debug, SerializeDict, Type, Value)]
 #[zvariant(signature = "dict")]
 struct StreamParameters {
+    /// Position of the stream in logical coordinates.
+    position: (i32, i32),
     /// Size of the stream in logical coordinates.
     size: (i32, i32),
 }
@@ -65,7 +67,7 @@ struct StreamParameters {
 pub enum ScreenCastToNiri {
     StartCast {
         session_id: usize,
-        output: Output,
+        output: String,
         cursor_mode: CursorMode,
         signal_ctx: SignalContext<'static>,
     },
@@ -160,10 +162,13 @@ impl Session {
     ) -> fdo::Result<OwnedObjectPath> {
         debug!(connector, ?properties, "record_monitor");
 
-        let Some((_, Some(output))) = self.ipc_outputs.lock().unwrap().get(connector).cloned()
-        else {
+        let Some(output) = self.ipc_outputs.lock().unwrap().get(connector).cloned() else {
             return Err(fdo::Error::Failed("no such monitor".to_owned()));
         };
+
+        if output.logical.is_none() {
+            return Err(fdo::Error::Failed("monitor is disabled".to_owned()));
+        }
 
         static NUMBER: AtomicUsize = AtomicUsize::new(0);
         let path = format!(
@@ -174,7 +179,7 @@ impl Session {
 
         let cursor_mode = properties.cursor_mode.unwrap_or_default();
 
-        let stream = Stream::new(output, cursor_mode, self.to_niri.clone());
+        let stream = Stream::new(output.clone(), cursor_mode, self.to_niri.clone());
         match server.at(&path, stream.clone()).await {
             Ok(true) => {
                 let iface = server.interface(&path).await.unwrap();
@@ -203,8 +208,11 @@ impl Stream {
 
     #[dbus_interface(property)]
     async fn parameters(&self) -> StreamParameters {
-        let size = output_size(&self.output).into();
-        StreamParameters { size }
+        let logical = self.output.logical.as_ref().unwrap();
+        StreamParameters {
+            position: (logical.x, logical.y),
+            size: (logical.width as i32, logical.height as i32),
+        }
     }
 }
 
@@ -261,7 +269,7 @@ impl Drop for Session {
 
 impl Stream {
     pub fn new(
-        output: Output,
+        output: niri_ipc::Output,
         cursor_mode: CursorMode,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
@@ -280,7 +288,7 @@ impl Stream {
 
         let msg = ScreenCastToNiri::StartCast {
             session_id,
-            output: self.output.clone(),
+            output: self.output.name.clone(),
             cursor_mode: self.cursor_mode,
             signal_ctx: ctxt,
         };

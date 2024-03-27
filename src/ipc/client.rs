@@ -4,7 +4,7 @@ use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 
 use anyhow::{anyhow, bail, Context};
-use niri_ipc::{Mode, Output, Reply, Request, Response};
+use niri_ipc::{LogicalOutput, Mode, Output, Reply, Request, Response};
 
 use crate::cli::Msg;
 
@@ -66,6 +66,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     physical_size,
                     modes,
                     current_mode,
+                    logical,
                 } = output;
 
                 println!(r#"Output "{connector}" ({make} - {model} - {name})"#);
@@ -78,9 +79,11 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                         width,
                         height,
                         refresh_rate,
+                        is_preferred,
                     } = mode;
                     let refresh = refresh_rate as f64 / 1000.;
-                    println!("  Current mode: {width}x{height} @ {refresh:.3} Hz");
+                    let preferred = if is_preferred { " (preferred)" } else { "" };
+                    println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
                 } else {
                     println!("  Disabled");
                 }
@@ -91,15 +94,55 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     println!("  Physical size: unknown");
                 }
 
+                if let Some(logical) = logical {
+                    let LogicalOutput {
+                        x,
+                        y,
+                        width,
+                        height,
+                        scale,
+                        transform,
+                    } = logical;
+                    println!("  Logical position: {x}, {y}");
+                    println!("  Logical size: {width}x{height}");
+                    println!("  Scale: {scale}");
+
+                    let transform = match transform {
+                        niri_ipc::Transform::Normal => "normal",
+                        niri_ipc::Transform::_90 => "90° counter-clockwise",
+                        niri_ipc::Transform::_180 => "180°",
+                        niri_ipc::Transform::_270 => "270° counter-clockwise",
+                        niri_ipc::Transform::Flipped => "flipped horizontally",
+                        niri_ipc::Transform::Flipped90 => {
+                            "90° counter-clockwise, flipped horizontally"
+                        }
+                        niri_ipc::Transform::Flipped180 => "flipped vertically",
+                        niri_ipc::Transform::Flipped270 => {
+                            "270° counter-clockwise, flipped horizontally"
+                        }
+                    };
+                    println!("  Transform: {transform}");
+                }
+
                 println!("  Available modes:");
-                for mode in modes {
+                for (idx, mode) in modes.into_iter().enumerate() {
                     let Mode {
                         width,
                         height,
                         refresh_rate,
+                        is_preferred,
                     } = mode;
                     let refresh = refresh_rate as f64 / 1000.;
-                    println!("    {width}x{height}@{refresh:.3}");
+
+                    let is_current = Some(idx) == current_mode;
+                    let qualifier = match (is_current, is_preferred) {
+                        (true, true) => " (current, preferred)",
+                        (true, false) => " (current)",
+                        (false, true) => " (preferred)",
+                        (false, false) => "",
+                    };
+
+                    println!("    {width}x{height}@{refresh:.3}{qualifier}");
                 }
                 println!();
             }

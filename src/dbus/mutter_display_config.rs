@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
-use smithay::utils::Transform;
 use zbus::fdo::RequestNameFlags;
 use zbus::zvariant::{self, OwnedValue, Type};
 use zbus::{dbus_interface, fdo, SignalContext};
@@ -60,11 +59,8 @@ impl DisplayConfig {
             .unwrap()
             .iter()
             // Take only enabled outputs.
-            .filter_map(|(c, (ipc, output))| {
-                ipc.current_mode?;
-                output.as_ref().map(move |output| (c, (ipc, output)))
-            })
-            .map(|(c, (ipc, output))| {
+            .filter(|(_, output)| output.current_mode.is_some() && output.logical.is_some())
+            .map(|(c, output)| {
                 // Loosely matches the check in Mutter.
                 let is_laptop_panel = matches!(c.get(..4), Some("eDP-" | "LVDS" | "DSI-"));
 
@@ -84,7 +80,7 @@ impl DisplayConfig {
                     OwnedValue::from(is_laptop_panel),
                 );
 
-                let mut modes: Vec<Mode> = ipc
+                let mut modes: Vec<Mode> = output
                     .modes
                     .iter()
                     .map(|m| {
@@ -92,6 +88,7 @@ impl DisplayConfig {
                             width,
                             height,
                             refresh_rate,
+                            is_preferred,
                         } = *m;
                         let refresh = refresh_rate as f64 / 1000.;
 
@@ -102,11 +99,14 @@ impl DisplayConfig {
                             refresh_rate: refresh,
                             preferred_scale: 1.,
                             supported_scales: vec![1., 2., 3.],
-                            properties: HashMap::new(),
+                            properties: HashMap::from([(
+                                String::from("is-preferred"),
+                                OwnedValue::from(is_preferred),
+                            )]),
                         }
                     })
                     .collect();
-                modes[ipc.current_mode.unwrap()]
+                modes[output.current_mode.unwrap()]
                     .properties
                     .insert(String::from("is-current"), OwnedValue::from(true));
 
@@ -116,23 +116,23 @@ impl DisplayConfig {
                     properties,
                 };
 
-                let loc = output.current_location();
+                let logical = output.logical.as_ref().unwrap();
 
-                let transform = match output.current_transform() {
-                    Transform::Normal => 0,
-                    Transform::_90 => 1,
-                    Transform::_180 => 2,
-                    Transform::_270 => 3,
-                    Transform::Flipped => 4,
-                    Transform::Flipped90 => 5,
-                    Transform::Flipped180 => 6,
-                    Transform::Flipped270 => 7,
+                let transform = match logical.transform {
+                    niri_ipc::Transform::Normal => 0,
+                    niri_ipc::Transform::_90 => 1,
+                    niri_ipc::Transform::_180 => 2,
+                    niri_ipc::Transform::_270 => 3,
+                    niri_ipc::Transform::Flipped => 4,
+                    niri_ipc::Transform::Flipped90 => 5,
+                    niri_ipc::Transform::Flipped180 => 6,
+                    niri_ipc::Transform::Flipped270 => 7,
                 };
 
                 let logical_monitor = LogicalMonitor {
-                    x: loc.x,
-                    y: loc.y,
-                    scale: output.current_scale().fractional_scale(),
+                    x: logical.x,
+                    y: logical.y,
+                    scale: logical.scale,
                     transform,
                     is_primary: false,
                     monitors: vec![monitor.names.clone()],
