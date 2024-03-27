@@ -22,7 +22,7 @@ Valid modifiers are:
 - `Shift`;
 - `Alt`;
 - `Super` or `Win`;
-- `ISO_Level3_Shift` or `Mod5`---this is the AltGr key on certain layouts;
+- `ISO_Level3_Shift` or `Mod5`—this is the AltGr key on certain layouts;
 - `Mod`.
 
 `Mod` is a special modifier that is equal to `Super` when running niri on a TTY, and to `Alt` when running niri as a nested winit window.
