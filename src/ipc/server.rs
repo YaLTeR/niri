@@ -1,8 +1,7 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::{env, io, process};
 
 use anyhow::Context;
@@ -23,7 +22,7 @@ pub struct IpcServer {
 
 struct ClientCtx {
     event_loop: LoopHandle<'static, State>,
-    ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
+    ipc_outputs: Arc<Mutex<HashMap<String, niri_ipc::Output>>>,
 }
 
 impl IpcServer {
@@ -126,7 +125,7 @@ fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
 
     let response = match request {
         Request::Outputs => {
-            let ipc_outputs = ctx.ipc_outputs.borrow().clone();
+            let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
             Response::Outputs(ipc_outputs)
         }
         Request::Action(action) => {

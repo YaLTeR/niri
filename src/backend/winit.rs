@@ -27,7 +27,7 @@ pub struct Winit {
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
-    ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
+    ipc_outputs: Arc<Mutex<HashMap<String, niri_ipc::Output>>>,
     enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
 
@@ -60,7 +60,7 @@ impl Winit {
         output.set_preferred(mode);
 
         let physical_properties = output.physical_properties();
-        let ipc_outputs = Rc::new(RefCell::new(HashMap::from([(
+        let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
             "winit".to_owned(),
             niri_ipc::Output {
                 name: output.name(),
@@ -97,10 +97,12 @@ impl Winit {
                         None,
                     );
 
-                    let mut ipc_outputs = winit.ipc_outputs.borrow_mut();
-                    let mode = &mut ipc_outputs.get_mut("winit").unwrap().modes[0];
-                    mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
-                    mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
+                    {
+                        let mut ipc_outputs = winit.ipc_outputs.lock().unwrap();
+                        let mode = &mut ipc_outputs.get_mut("winit").unwrap().modes[0];
+                        mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
+                        mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
+                    }
 
                     state.niri.output_resized(&winit.output);
                 }
@@ -228,7 +230,7 @@ impl Winit {
         }
     }
 
-    pub fn ipc_outputs(&self) -> Rc<RefCell<HashMap<String, niri_ipc::Output>>> {
+    pub fn ipc_outputs(&self) -> Arc<Mutex<HashMap<String, niri_ipc::Output>>> {
         self.ipc_outputs.clone()
     }
 

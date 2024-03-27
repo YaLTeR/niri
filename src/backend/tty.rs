@@ -84,7 +84,7 @@ pub struct Tty {
     update_output_config_on_resume: bool,
     // Whether the debug tinting is enabled.
     debug_tint: bool,
-    ipc_outputs: Rc<RefCell<HashMap<String, niri_ipc::Output>>>,
+    ipc_outputs: Arc<Mutex<HashMap<String, niri_ipc::Output>>>,
     enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
 }
 
@@ -292,7 +292,7 @@ impl Tty {
             dmabuf_global: None,
             update_output_config_on_resume: false,
             debug_tint: false,
-            ipc_outputs: Rc::new(RefCell::new(HashMap::new())),
+            ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
             enabled_outputs: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -1410,10 +1410,11 @@ impl Tty {
             }
         }
 
-        self.ipc_outputs.replace(ipc_outputs);
+        let mut guard = self.ipc_outputs.lock().unwrap();
+        *guard = ipc_outputs;
     }
 
-    pub fn ipc_outputs(&self) -> Rc<RefCell<HashMap<String, niri_ipc::Output>>> {
+    pub fn ipc_outputs(&self) -> Arc<Mutex<HashMap<String, niri_ipc::Output>>> {
         self.ipc_outputs.clone()
     }
 
