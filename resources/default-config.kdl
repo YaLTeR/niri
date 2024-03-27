@@ -469,16 +469,9 @@ binds {
     Alt+Print { screenshot-window; }
 
     // The quit action will show a confirmation dialog to avoid accidental exits.
-    // If you want to skip the confirmation dialog, set the flag like so:
-    // Mod+Shift+E { quit skip-confirmation=true; }
     Mod+Shift+E { quit; }
 
     // Powers off the monitors. To turn them back on, do any input like
     // moving the mouse or pressing any other key.
     Mod+Shift+P { power-off-monitors; }
-
-    // This debug bind will tint all surfaces green, unless they are being
-    // directly scanned out. It's therefore useful to check if direct scanout
-    // is working.
-    // Mod+Shift+Ctrl+T { toggle-debug-tint; }
 }

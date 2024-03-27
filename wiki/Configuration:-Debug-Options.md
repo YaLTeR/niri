@@ -125,3 +125,16 @@ debug {
     enable-color-transformations-capability
 }
 ```
+
+### `toggle-debug-tint` Key Binding
+
+This one is not a debug option, but rather a key binding.
+
+It will tint all surfaces green, unless they are being directly scanned out.
+It's therefore useful to check if direct scanout is working.
+
+```
+binds {
+    Mod+Shift+Ctrl+T { toggle-debug-tint; }
+}
+```
