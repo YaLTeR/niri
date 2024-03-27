@@ -359,3 +359,24 @@ impl FromStr for LayoutSwitchTarget {
         }
     }
 }
+
+impl FromStr for Transform {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "normal" => Ok(Self::Normal),
+            "90" => Ok(Self::_90),
+            "180" => Ok(Self::_180),
+            "270" => Ok(Self::_270),
+            "flipped" => Ok(Self::Flipped),
+            "flipped-90" => Ok(Self::Flipped90),
+            "flipped-180" => Ok(Self::Flipped180),
+            "flipped-270" => Ok(Self::Flipped270),
+            _ => Err(concat!(
+                r#"invalid transform, can be "90", "180", "270", "#,
+                r#""flipped", "flipped-90", "flipped-180" or "flipped-270""#
+            )),
+        }
+    }
+}

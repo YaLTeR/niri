@@ -115,8 +115,8 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, center_f64, get_monotonic_time, logical_output, make_screenshot_path, output_size,
-    write_png_rgba8,
+    center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
+    make_screenshot_path, output_size, write_png_rgba8,
 };
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
@@ -903,7 +903,7 @@ impl State {
                 let scale = scale.clamp(1., 10.).ceil() as i32;
 
                 let mut transform = config
-                    .map(|c| c.transform.into())
+                    .map(|c| ipc_transform_to_smithay(c.transform))
                     .unwrap_or(Transform::Normal);
                 // FIXME: fix winit damage on other transforms.
                 if name == "winit" {
@@ -1543,7 +1543,9 @@ impl Niri {
         let c = config.outputs.iter().find(|o| o.name == name);
         let scale = c.map(|c| c.scale).unwrap_or(1.);
         let scale = scale.clamp(1., 10.).ceil() as i32;
-        let mut transform = c.map(|c| c.transform.into()).unwrap_or(Transform::Normal);
+        let mut transform = c
+            .map(|c| ipc_transform_to_smithay(c.transform))
+            .unwrap_or(Transform::Normal);
         // FIXME: fix winit damage on other transforms.
         if name == "winit" {
             transform = Transform::Flipped180;

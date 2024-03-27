@@ -74,6 +74,19 @@ pub fn logical_output(output: &Output) -> niri_ipc::LogicalOutput {
     }
 }
 
+pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
+    match transform {
+        niri_ipc::Transform::Normal => Transform::Normal,
+        niri_ipc::Transform::_90 => Transform::_90,
+        niri_ipc::Transform::_180 => Transform::_180,
+        niri_ipc::Transform::_270 => Transform::_270,
+        niri_ipc::Transform::Flipped => Transform::Flipped,
+        niri_ipc::Transform::Flipped90 => Transform::Flipped90,
+        niri_ipc::Transform::Flipped180 => Transform::Flipped180,
+        niri_ipc::Transform::Flipped270 => Transform::Flipped270,
+    }
+}
+
 pub fn expand_home(path: &Path) -> anyhow::Result<Option<PathBuf>> {
     if let Ok(rest) = path.strip_prefix("~") {
         let dirs = UserDirs::new().context("error retrieving home directory")?;
