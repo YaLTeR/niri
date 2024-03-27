@@ -17,7 +17,7 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::WindowBuilder;
 
-use super::RenderResult;
+use super::{IpcOutputMap, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::{shaders, RenderTarget};
 use crate::utils::get_monotonic_time;
@@ -27,8 +27,7 @@ pub struct Winit {
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
-    ipc_outputs: Arc<Mutex<HashMap<String, niri_ipc::Output>>>,
-    enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
+    ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
 impl Winit {
@@ -62,23 +61,21 @@ impl Winit {
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
             "winit".to_owned(),
-            niri_ipc::Output {
-                name: output.name(),
-                make: physical_properties.make,
-                model: physical_properties.model,
-                physical_size: None,
-                modes: vec![niri_ipc::Mode {
-                    width: backend.window_size().w.clamp(0, u16::MAX as i32) as u16,
-                    height: backend.window_size().h.clamp(0, u16::MAX as i32) as u16,
-                    refresh_rate: 60_000,
-                }],
-                current_mode: Some(0),
-            },
-        )])));
-
-        let enabled_outputs = Arc::new(Mutex::new(HashMap::from([(
-            "winit".to_owned(),
-            output.clone(),
+            (
+                niri_ipc::Output {
+                    name: output.name(),
+                    make: physical_properties.make,
+                    model: physical_properties.model,
+                    physical_size: None,
+                    modes: vec![niri_ipc::Mode {
+                        width: backend.window_size().w.clamp(0, u16::MAX as i32) as u16,
+                        height: backend.window_size().h.clamp(0, u16::MAX as i32) as u16,
+                        refresh_rate: 60_000,
+                    }],
+                    current_mode: Some(0),
+                },
+                Some(output.clone()),
+            ),
         )])));
 
         let damage_tracker = OutputDamageTracker::from_output(&output);
@@ -99,9 +96,10 @@ impl Winit {
 
                     {
                         let mut ipc_outputs = winit.ipc_outputs.lock().unwrap();
-                        let mode = &mut ipc_outputs.get_mut("winit").unwrap().modes[0];
+                        let mode = &mut ipc_outputs.get_mut("winit").unwrap().0.modes[0];
                         mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
                         mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
+                        state.niri.ipc_outputs_changed = true;
                     }
 
                     state.niri.output_resized(&winit.output);
@@ -119,7 +117,6 @@ impl Winit {
             backend,
             damage_tracker,
             ipc_outputs,
-            enabled_outputs,
         })
     }
 
@@ -230,11 +227,7 @@ impl Winit {
         }
     }
 
-    pub fn ipc_outputs(&self) -> Arc<Mutex<HashMap<String, niri_ipc::Output>>> {
+    pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
-    }
-
-    pub fn enabled_outputs(&self) -> Arc<Mutex<HashMap<String, Output>>> {
-        self.enabled_outputs.clone()
     }
 }

@@ -2,15 +2,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
-use smithay::output::Output;
+use smithay::utils::Transform;
 use zbus::fdo::RequestNameFlags;
 use zbus::zvariant::{self, OwnedValue, Type};
 use zbus::{dbus_interface, fdo, SignalContext};
 
 use super::Start;
+use crate::backend::IpcOutputMap;
 
 pub struct DisplayConfig {
-    enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
+    ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
 #[derive(Serialize, Type)]
@@ -53,12 +54,17 @@ impl DisplayConfig {
         HashMap<String, OwnedValue>,
     )> {
         // Construct the DBus response.
-        let mut monitors: Vec<Monitor> = self
-            .enabled_outputs
+        let mut monitors: Vec<(Monitor, LogicalMonitor)> = self
+            .ipc_outputs
             .lock()
             .unwrap()
-            .keys()
-            .map(|c| {
+            .iter()
+            // Take only enabled outputs.
+            .filter_map(|(c, (ipc, output))| {
+                ipc.current_mode?;
+                output.as_ref().map(move |output| (c, (ipc, output)))
+            })
+            .map(|(c, (ipc, output))| {
                 // Loosely matches the check in Mutter.
                 let is_laptop_panel = matches!(c.get(..4), Some("eDP-" | "LVDS" | "DSI-"));
 
@@ -78,38 +84,78 @@ impl DisplayConfig {
                     OwnedValue::from(is_laptop_panel),
                 );
 
-                Monitor {
+                let mut modes: Vec<Mode> = ipc
+                    .modes
+                    .iter()
+                    .map(|m| {
+                        let niri_ipc::Mode {
+                            width,
+                            height,
+                            refresh_rate,
+                        } = *m;
+                        let refresh = refresh_rate as f64 / 1000.;
+
+                        Mode {
+                            id: format!("{width}x{height}@{refresh:.3}"),
+                            width: i32::from(width),
+                            height: i32::from(height),
+                            refresh_rate: refresh,
+                            preferred_scale: 1.,
+                            supported_scales: vec![1., 2., 3.],
+                            properties: HashMap::new(),
+                        }
+                    })
+                    .collect();
+                modes[ipc.current_mode.unwrap()]
+                    .properties
+                    .insert(String::from("is-current"), OwnedValue::from(true));
+
+                let monitor = Monitor {
                     names: (c.clone(), String::new(), String::new(), serial),
-                    modes: vec![],
+                    modes,
                     properties,
-                }
+                };
+
+                let loc = output.current_location();
+
+                let transform = match output.current_transform() {
+                    Transform::Normal => 0,
+                    Transform::_90 => 1,
+                    Transform::_180 => 2,
+                    Transform::_270 => 3,
+                    Transform::Flipped => 4,
+                    Transform::Flipped90 => 5,
+                    Transform::Flipped180 => 6,
+                    Transform::Flipped270 => 7,
+                };
+
+                let logical_monitor = LogicalMonitor {
+                    x: loc.x,
+                    y: loc.y,
+                    scale: output.current_scale().fractional_scale(),
+                    transform,
+                    is_primary: false,
+                    monitors: vec![monitor.names.clone()],
+                    properties: HashMap::new(),
+                };
+
+                (monitor, logical_monitor)
             })
             .collect();
 
         // Sort the built-in monitor first, then by connector name.
         monitors.sort_unstable_by(|a, b| {
-            let a_is_builtin = a.properties.contains_key("display-name");
-            let b_is_builtin = b.properties.contains_key("display-name");
+            let a_is_builtin = a.0.properties.contains_key("display-name");
+            let b_is_builtin = b.0.properties.contains_key("display-name");
             a_is_builtin
                 .cmp(&b_is_builtin)
                 .reverse()
-                .then_with(|| a.names.0.cmp(&b.names.0))
+                .then_with(|| a.0.names.0.cmp(&b.0.names.0))
         });
 
-        let logical_monitors = monitors
-            .iter()
-            .map(|m| LogicalMonitor {
-                x: 0,
-                y: 0,
-                scale: 1.,
-                transform: 0,
-                is_primary: false,
-                monitors: vec![m.names.clone()],
-                properties: HashMap::new(),
-            })
-            .collect();
-
-        Ok((0, monitors, logical_monitors, HashMap::new()))
+        let (monitors, logical_monitors) = monitors.into_iter().unzip();
+        let properties = HashMap::from([(String::from("layout-mode"), OwnedValue::from(1u32))]);
+        Ok((0, monitors, logical_monitors, properties))
     }
 
     #[dbus_interface(signal)]
@@ -117,8 +163,8 @@ impl DisplayConfig {
 }
 
 impl DisplayConfig {
-    pub fn new(enabled_outputs: Arc<Mutex<HashMap<String, Output>>>) -> Self {
-        Self { enabled_outputs }
+    pub fn new(ipc_outputs: Arc<Mutex<IpcOutputMap>>) -> Self {
+        Self { ipc_outputs }
     }
 }
 

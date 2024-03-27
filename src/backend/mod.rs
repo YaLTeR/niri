@@ -31,6 +31,8 @@ pub enum RenderResult {
     Skipped,
 }
 
+pub type IpcOutputMap = HashMap<String, (niri_ipc::Output, Option<Output>)>;
+
 impl Backend {
     pub fn init(&mut self, niri: &mut Niri) {
         match self {
@@ -110,18 +112,10 @@ impl Backend {
         }
     }
 
-    pub fn ipc_outputs(&self) -> Arc<Mutex<HashMap<String, niri_ipc::Output>>> {
+    pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         match self {
             Backend::Tty(tty) => tty.ipc_outputs(),
             Backend::Winit(winit) => winit.ipc_outputs(),
-        }
-    }
-
-    #[cfg_attr(not(feature = "dbus"), allow(unused))]
-    pub fn enabled_outputs(&self) -> Arc<Mutex<HashMap<String, Output>>> {
-        match self {
-            Backend::Tty(tty) => tty.enabled_outputs(),
-            Backend::Winit(winit) => winit.enabled_outputs(),
         }
     }
 

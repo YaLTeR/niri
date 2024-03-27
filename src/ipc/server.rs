@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -14,6 +13,7 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
 
+use crate::backend::IpcOutputMap;
 use crate::niri::State;
 
 pub struct IpcServer {
@@ -22,7 +22,7 @@ pub struct IpcServer {
 
 struct ClientCtx {
     event_loop: LoopHandle<'static, State>,
-    ipc_outputs: Arc<Mutex<HashMap<String, niri_ipc::Output>>>,
+    ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
 impl IpcServer {
@@ -125,7 +125,11 @@ fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
 
     let response = match request {
         Request::Outputs => {
-            let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
+            let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
+            let ipc_outputs = ipc_outputs
+                .iter()
+                .map(|(name, (ipc, _))| (name.clone(), ipc.clone()))
+                .collect();
             Response::Outputs(ipc_outputs)
         }
         Request::Action(action) => {

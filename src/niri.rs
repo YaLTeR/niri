@@ -228,6 +228,7 @@ pub struct Niri {
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
 
     pub ipc_server: Option<IpcServer>,
+    pub ipc_outputs_changed: bool,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
@@ -458,6 +459,7 @@ impl State {
         self.refresh_pointer_focus();
         foreign_toplevel::refresh(self);
         self.niri.refresh_window_rules();
+        self.niri.check_ipc_output_changed();
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
@@ -916,6 +918,7 @@ impl State {
                         Some(output::Scale::Integer(scale)),
                         None,
                     );
+                    self.niri.ipc_outputs_changed = true;
                     resized_outputs.push(output.clone());
                 }
             }
@@ -1352,6 +1355,7 @@ impl Niri {
             inhibit_power_key_fd: None,
 
             ipc_server,
+            ipc_outputs_changed: false,
 
             pipewire,
             casts: vec![],
@@ -1490,6 +1494,7 @@ impl Niri {
                     new_position.x, new_position.y
                 );
                 output.change_current_state(None, None, None, Some(new_position));
+                self.ipc_outputs_changed = true;
                 self.queue_redraw(&output);
             }
         }
@@ -3433,9 +3438,18 @@ impl Niri {
         });
     }
 
+    pub fn check_ipc_output_changed(&mut self) {
+        if self.ipc_outputs_changed {
+            self.ipc_outputs_changed = false;
+
+            #[cfg(feature = "dbus")]
+            self.on_ipc_outputs_changed();
+        }
+    }
+
     #[cfg(feature = "dbus")]
-    pub fn on_enabled_outputs_changed(&self) {
-        let _span = tracy_client::span!("Niri::on_enabled_outputs_changed");
+    pub fn on_ipc_outputs_changed(&self) {
+        let _span = tracy_client::span!("Niri::on_ipc_outputs_changed");
 
         let Some(dbus) = &self.dbus else { return };
         let Some(conn_display_config) = dbus.conn_display_config.clone() else {

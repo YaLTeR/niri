@@ -55,7 +55,7 @@ use smithay_drm_extras::edid::EdidInfo;
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
-use super::RenderResult;
+use super::{IpcOutputMap, RenderResult};
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::renderer::AsGlesRenderer;
@@ -84,8 +84,7 @@ pub struct Tty {
     update_output_config_on_resume: bool,
     // Whether the debug tinting is enabled.
     debug_tint: bool,
-    ipc_outputs: Arc<Mutex<HashMap<String, niri_ipc::Output>>>,
-    enabled_outputs: Arc<Mutex<HashMap<String, Output>>>,
+    ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
 pub type TtyRenderer<'render> = MultiRenderer<
@@ -293,7 +292,6 @@ impl Tty {
             update_output_config_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
-            enabled_outputs: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -430,7 +428,7 @@ impl Tty {
                     self.on_output_config_changed(niri);
                 }
 
-                self.refresh_ipc_outputs();
+                self.refresh_ipc_outputs(niri);
 
                 niri.idle_notifier_state.notify_activity(&niri.seat);
                 niri.monitors_active = true;
@@ -580,7 +578,7 @@ impl Tty {
             }
         }
 
-        self.refresh_ipc_outputs();
+        self.refresh_ipc_outputs(niri);
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
@@ -644,7 +642,7 @@ impl Tty {
         self.gpu_manager.as_mut().remove_node(&device.render_node);
         niri.event_loop.remove(device.token);
 
-        self.refresh_ipc_outputs();
+        self.refresh_ipc_outputs(niri);
     }
 
     fn connector_connected(
@@ -874,13 +872,6 @@ impl Tty {
 
         niri.add_output(output.clone(), Some(refresh_interval(mode)));
 
-        self.enabled_outputs
-            .lock()
-            .unwrap()
-            .insert(output_name, output.clone());
-        #[cfg(feature = "dbus")]
-        niri.on_enabled_outputs_changed();
-
         // Power on all monitors if necessary and queue a redraw on the new one.
         niri.event_loop.insert_idle(move |state| {
             state.niri.activate_monitors(&mut state.backend);
@@ -918,10 +909,6 @@ impl Tty {
         } else {
             error!("missing output for crtc {crtc:?}");
         };
-
-        self.enabled_outputs.lock().unwrap().remove(&surface.name);
-        #[cfg(feature = "dbus")]
-        niri.on_enabled_outputs_changed();
     }
 
     fn on_vblank(
@@ -1341,12 +1328,12 @@ impl Tty {
         }
     }
 
-    fn refresh_ipc_outputs(&self) {
+    fn refresh_ipc_outputs(&self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::refresh_ipc_outputs");
 
         let mut ipc_outputs = HashMap::new();
 
-        for device in self.devices.values() {
+        for (node, device) in &self.devices {
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 let connector_name = format!(
                     "{}-{}",
@@ -1397,7 +1384,16 @@ impl Tty {
                     }
                 }
 
-                let output = niri_ipc::Output {
+                let output = niri
+                    .global_space
+                    .outputs()
+                    .find(|output| {
+                        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                        tty_state.node == *node && tty_state.crtc == crtc
+                    })
+                    .cloned();
+
+                let ipc_output = niri_ipc::Output {
                     name: connector_name.clone(),
                     make,
                     model,
@@ -1406,20 +1402,17 @@ impl Tty {
                     current_mode,
                 };
 
-                ipc_outputs.insert(connector_name, output);
+                ipc_outputs.insert(connector_name, (ipc_output, output));
             }
         }
 
         let mut guard = self.ipc_outputs.lock().unwrap();
         *guard = ipc_outputs;
+        niri.ipc_outputs_changed = true;
     }
 
-    pub fn ipc_outputs(&self) -> Arc<Mutex<HashMap<String, niri_ipc::Output>>> {
+    pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
-    }
-
-    pub fn enabled_outputs(&self) -> Arc<Mutex<HashMap<String, Output>>> {
-        self.enabled_outputs.clone()
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -1585,7 +1578,7 @@ impl Tty {
             }
         }
 
-        self.refresh_ipc_outputs();
+        self.refresh_ipc_outputs(niri);
     }
 
     pub fn get_device_from_node(&mut self, node: DrmNode) -> Option<&mut OutputDevice> {

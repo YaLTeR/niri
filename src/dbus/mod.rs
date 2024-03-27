@@ -47,7 +47,7 @@ impl DBusServers {
         }
 
         if is_session_instance || config.debug.dbus_interfaces_in_non_session_instances {
-            let display_config = DisplayConfig::new(backend.enabled_outputs());
+            let display_config = DisplayConfig::new(backend.ipc_outputs());
             dbus.conn_display_config = try_start(display_config);
 
             let screen_saver = ScreenSaver::new(niri.is_fdo_idle_inhibited.clone());
@@ -80,7 +80,7 @@ impl DBusServers {
                         }
                     })
                     .unwrap();
-                let screen_cast = ScreenCast::new(backend.enabled_outputs(), to_niri);
+                let screen_cast = ScreenCast::new(backend.ipc_outputs(), to_niri);
                 dbus.conn_screen_cast = try_start(screen_cast);
             } else {
                 warn!("disabling screencast support because we couldn't start PipeWire");
