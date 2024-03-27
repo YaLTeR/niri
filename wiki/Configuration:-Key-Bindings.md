@@ -11,6 +11,7 @@ For example:
 ```
 binds {
     Mod+Left { focus-column-left; }
+    Super+Alt+L { spawn "swaylock"; }
 }
 ```
 
