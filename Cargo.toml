@@ -10,8 +10,8 @@ edition = "2021"
 repository = "https://github.com/YaLTeR/niri"
 
 [workspace.dependencies]
-anyhow = "1.0.80"
-bitflags = "2.4.2"
+anyhow = "1.0.81"
+bitflags = "2.5.0"
 clap = { version = "~4.4.18", features = ["derive"] }
 serde = { version = "1.0.197", features = ["derive"] }
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
@@ -44,15 +44,15 @@ anyhow.workspace = true
 arrayvec = "0.7.4"
 async-channel = { version = "2.2.0", optional = true }
 async-io = { version = "1.13.0", optional = true }
-bitflags = "2.4.2"
-bytemuck = { version = "1.14.3", features = ["derive"] }
+bitflags.workspace = true
+bytemuck = { version = "1.15.0", features = ["derive"] }
 calloop = { version = "0.13.0", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
 directories = "5.0.1"
 drm-ffi = "0.7.1"
 futures-util = { version = "0.3.30", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.25.0"
+glam = "0.27.0"
 input = { version = "0.9.0", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.153"
@@ -67,7 +67,7 @@ portable-atomic = { version = "1.6.0", default-features = false, features = ["fl
 profiling = "1.0.15"
 sd-notify = "0.4.1"
 serde.workspace = true
-serde_json = "1.0.114"
+serde_json = "1.0.115"
 smithay-drm-extras.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
