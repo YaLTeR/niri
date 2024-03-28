@@ -1,3 +1,16 @@
+### Per-Section Documentation
+
+You can find documentation for various sections of the config on these wiki pages:
+
+* [`input {}`](./Configuration:-Input.md)
+* [`output "eDP-1" {}`](./Configuration:-Outputs.md)
+* [`binds {}`](./Configuration:-Key-Bindings.md)
+* [`layout {}`](./Configuration:-Layout.md)
+* [top-level options](./Configuration:-Miscellaneous.md)
+* [`window-rule {}`](./Configuration:-Window-Rules.md)
+* [`animations {}`](./Configuration:-Animations.md)
+* [`debug {}`](./Configuration:-Debug-Options.md)
+
 ### Loading
 
 Niri will load configuration from `$XDG_CONFIG_HOME/.config/niri/config.kdl` or `~/.config/niri/config.kdl`.
