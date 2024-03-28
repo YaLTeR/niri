@@ -67,6 +67,8 @@ A `~` at the front will be expanded to the home directory.
 
 The path is formatted with `strftime(3)` to give you the screenshot date and time.
 
+Niri will create the last folder of the path if it doesn't exist.
+
 ```
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 ```
