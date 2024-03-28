@@ -10,6 +10,7 @@
 * [Input](./Configuration:-Input.md)
 * [Outputs](./Configuration:-Outputs.md)
 * [Key Bindings](./Configuration:-Key-Bindings.md)
+* [Layout](./Configuration:-Layout.md)
 * [Window Rules](./Configuration:-Window-Rules.md)
 * [Animations](./Configuration:-Animations.md)
 * [Debug Options](./Configuration:-Debug-Options.md)
