@@ -1,6 +1,6 @@
 ### Overview
 
-In the `layout {}` section you can change various settings that influence how the windows are positioned and sized.
+In the `layout {}` section you can change various settings that influence how windows are positioned and sized.
 
 Here are the contents of this section at a glance:
 
@@ -91,6 +91,13 @@ layout {
 }
 ```
 
+> [!NOTE]
+> Currently, due to an oversight, a preset `fixed` width does not take borders into account.
+> I.e., preset `fixed 1000` with 4-wide borders will make the window 992 logical pixels wide.
+> This may eventually be corrected.
+>
+> All other ways of using `fixed` (i.e. `default-column-width` or `set-column-width`) do take borders into account and give you the exact window width that you request.
+
 ### `default-column-width`
 
 Set the default width of the new windows.
@@ -116,7 +123,7 @@ layout {
 > [!NOTE]
 > `default-column-width {}` causes niri to send a (0, H) size in the initial configure request.
 >
-> This is a bit unclearly defined in the Wayland protocol, so some clients may misinterpret it.
+> This is a bit [unclearly defined](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/issues/155) in the Wayland protocol, so some clients may misinterpret it.
 > In practice, the only problematic client I saw is [foot](https://codeberg.org/dnkl/foot/), which takes this as a request to have a literal zero width.
 >
 > Either way, `default-column-width {}` is most useful for specific windows, in form of a [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules) with the same syntax.
@@ -138,9 +145,9 @@ The difference is that the focus ring is drawn only around the active window, wh
 > This is because windows using client-side decorations can have an arbitrary shape.
 > 
 > If you don't like that, you should uncomment the `prefer-no-csd` setting at the top level of the config.
-> Then, niri will draw focus rings and borders *around* windows that agree to omit their client-side decorations.
+> Niri will draw focus rings and borders *around* windows that agree to omit their client-side decorations.
 > 
-> Alternatively, you can override this with the `draw-border-with-background` [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules).
+> Alternatively, you can override this behavior with the `draw-border-with-background` [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules).
 
 Focus ring and border have the following options.
 
