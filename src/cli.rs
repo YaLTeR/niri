@@ -54,6 +54,8 @@ pub enum Sub {
 pub enum Msg {
     /// List connected outputs.
     Outputs,
+    /// Print information about the focused window.
+    FocusedWindow,
     /// Perform an action.
     Action {
         #[command(subcommand)]

@@ -21,6 +21,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
 
     let request = match &msg {
         Msg::Outputs => Request::Outputs,
+        Msg::FocusedWindow => Request::FocusedWindow,
         Msg::Action { action } => Request::Action(action.clone()),
     };
     let mut buf = serde_json::to_vec(&request).unwrap();
@@ -145,6 +146,35 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     println!("    {width}x{height}@{refresh:.3}{qualifier}");
                 }
                 println!();
+            }
+        }
+        Msg::FocusedWindow => {
+            let Response::FocusedWindow(window) = response else {
+                bail!("unexpected response: expected FocusedWindow, got {response:?}");
+            };
+
+            if json {
+                let window = serde_json::to_string(&window).context("error formatting response")?;
+                println!("{window}");
+                return Ok(());
+            }
+
+            if let Some(window) = window {
+                println!("Focused window:");
+
+                if let Some(title) = window.title {
+                    println!("  Title: \"{title}\"");
+                } else {
+                    println!("  Title: (unset)");
+                }
+
+                if let Some(app_id) = window.app_id {
+                    println!("  App ID: \"{app_id}\"");
+                } else {
+                    println!("  App ID: (unset)");
+                }
+            } else {
+                println!("No window is focused.");
             }
         }
         Msg::Action { .. } => {

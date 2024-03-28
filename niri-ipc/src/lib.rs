@@ -14,6 +14,8 @@ pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
 pub enum Request {
     /// Request information about connected outputs.
     Outputs,
+    /// Request information about the focused window.
+    FocusedWindow,
     /// Perform an action.
     Action(Action),
 }
@@ -37,6 +39,8 @@ pub enum Response {
     ///
     /// Map from connector name to output info.
     Outputs(HashMap<String, Output>),
+    /// Information about the focused window.
+    FocusedWindow(Option<Window>),
 }
 
 /// Actions that niri can perform.
@@ -306,6 +310,15 @@ pub enum Transform {
     Flipped180,
     /// Rotated by 270° and flipped horizontally.
     Flipped270,
+}
+
+/// Toplevel window.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Window {
+    /// Title, if set.
+    pub title: Option<String>,
+    /// Application ID, if set.
+    pub app_id: Option<String>,
 }
 
 impl FromStr for SizeChange {

@@ -9,9 +9,12 @@ use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{AsyncBufReadExt, AsyncWriteExt};
 use niri_ipc::{Request, Response};
+use smithay::desktop::Window;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
+use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 
 use crate::backend::IpcOutputMap;
 use crate::niri::State;
@@ -23,6 +26,7 @@ pub struct IpcServer {
 struct ClientCtx {
     event_loop: LoopHandle<'static, State>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    ipc_focused_window: Arc<Mutex<Option<Window>>>,
 }
 
 impl IpcServer {
@@ -87,6 +91,7 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
     let ctx = ClientCtx {
         event_loop: state.niri.event_loop.clone(),
         ipc_outputs: state.backend.ipc_outputs(),
+        ipc_focused_window: state.niri.ipc_focused_window.clone(),
     };
 
     let future = async move {
@@ -127,6 +132,26 @@ fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
             Response::Outputs(ipc_outputs)
+        }
+        Request::FocusedWindow => {
+            let window = ctx.ipc_focused_window.lock().unwrap().clone();
+            let window = window.map(|window| {
+                let wl_surface = window.toplevel().expect("no X11 support").wl_surface();
+                with_states(wl_surface, |states| {
+                    let role = states
+                        .data_map
+                        .get::<XdgToplevelSurfaceData>()
+                        .unwrap()
+                        .lock()
+                        .unwrap();
+
+                    niri_ipc::Window {
+                        title: role.title.clone(),
+                        app_id: role.app_id.clone(),
+                    }
+                })
+            });
+            Response::FocusedWindow(window)
         }
         Request::Action(action) => {
             let action = niri_config::Action::from(action);

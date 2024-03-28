@@ -230,6 +230,7 @@ pub struct Niri {
 
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
+    pub ipc_focused_window: Arc<Mutex<Option<Window>>>,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
@@ -715,6 +716,8 @@ impl State {
                 focus
             );
 
+            let mut newly_focused_window = None;
+
             // Tell the windows their new focus state for window rule purposes.
             if let KeyboardFocus::Layout {
                 surface: Some(surface),
@@ -730,8 +733,11 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
+                    newly_focused_window = Some(mapped.window.clone());
                 }
             }
+
+            *self.niri.ipc_focused_window.lock().unwrap() = newly_focused_window;
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
                 if Some(&grab.root) != focus.surface() {
@@ -1390,6 +1396,7 @@ impl Niri {
 
             ipc_server,
             ipc_outputs_changed: false,
+            ipc_focused_window: Arc::new(Mutex::new(None)),
 
             pipewire,
             casts: vec![],
