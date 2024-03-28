@@ -448,6 +448,7 @@ impl GammaControlHandler for State {
 
     fn get_gamma_size(&mut self, output: &Output) -> Option<u32> {
         match self.backend.tty().get_gamma_size(output) {
+            Ok(0) => None, // Setting gamma is not supported.
             Ok(size) => Some(size),
             Err(err) => {
                 warn!(

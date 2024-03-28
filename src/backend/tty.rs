@@ -2074,6 +2074,8 @@ pub fn set_gamma_for_crtc(
     let info = device.get_crtc(crtc).context("error getting crtc info")?;
     let gamma_length = info.gamma_length() as usize;
 
+    ensure!(gamma_length != 0, "setting gamma is not supported");
+
     let mut temp;
     let ramp = if let Some(ramp) = ramp {
         ensure!(ramp.len() == gamma_length * 3, "wrong gamma length");
