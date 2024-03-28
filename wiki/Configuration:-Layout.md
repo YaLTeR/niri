@@ -144,7 +144,7 @@ The difference is that the focus ring is drawn only around the active window, wh
 > That is, they will show up through semitransparent windows.
 > This is because windows using client-side decorations can have an arbitrary shape.
 > 
-> If you don't like that, you should uncomment the `prefer-no-csd` setting at the top level of the config.
+> If you don't like that, you should uncomment the `prefer-no-csd` setting at the [top level](./Configuration:-Miscellaneous.md) of the config.
 > Niri will draw focus rings and borders *around* windows that agree to omit their client-side decorations.
 > 
 > Alternatively, you can override this behavior with the `draw-border-with-background` [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules).

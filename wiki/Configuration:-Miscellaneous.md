@@ -29,19 +29,19 @@ hotkey-overlay {
 
 ### `spawn-at-startup`
 
-Add lines like this to spawn processes at startup.
+Add lines like this to spawn processes at niri startup.
 
 `spawn-at-startup` accepts a path to the program binary as the first argument, followed by arguments to the program.
 
-This option works the same way as the `spawn` key binding action, so please read about all the subtleties on the [key bindings](./Configuration:-Key-Bindings.md) page.
-
-Note that running niri as a systemd session supports xdg-desktop-autostart out of the box, which may be more convenient to use.
-Thanks to this, apps that you configured to autostart in GNOME will also "just work" in niri, without any manual `spawn-at-startup` configuration.
+This option works the same way as the `spawn` key binding action, so please read about all its subtleties on the [key bindings](./Configuration:-Key-Bindings.md) page.
 
 ```
 spawn-at-startup "waybar"
 spawn-at-startup "alacritty"
 ```
+
+Note that running niri as a systemd session supports xdg-desktop-autostart out of the box, which may be more convenient to use.
+Thanks to this, apps that you configured to autostart in GNOME will also "just work" in niri, without any manual `spawn-at-startup` configuration.
 
 ### `prefer-no-csd`
 
@@ -50,11 +50,13 @@ This flag will make niri ask the applications to omit their client-side decorati
 If an application will specifically ask for CSD, the request will be honored.
 Additionally, clients will be informed that they are tiled, removing some rounded corners.
 
-With `prefer-no-csd` set, applications that negotiate server-side decorations through the xdg-decoration protocol will have focus ring and border drawn around them without a solid colored background.
+With `prefer-no-csd` set, applications that negotiate server-side decorations through the xdg-decoration protocol will have focus ring and border drawn around them *without* a solid colored background.
 
 > [!NOTE]
-> Unlike most other options, `prefer-no-csd` currently only affects applications started *after* the config was saved.
+> Unlike most other options, changing `prefer-no-csd` will not affect already running applications.
 > This mainly has to do with niri working around a [bug in SDL2](https://github.com/libsdl-org/SDL/issues/8173) that prevents SDL2 applications from starting.
+>
+> Restart applications after changing `prefer-no-csd` in the config to apply it.
 
 ```
 prefer-no-csd
@@ -73,7 +75,7 @@ Niri will create the last folder of the path if it doesn't exist.
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 ```
 
-You can also set it to `null` to disable saving screenshots to disk.
+You can also set this option to `null` to disable saving screenshots to disk.
 
 ```
 screenshot-path null
