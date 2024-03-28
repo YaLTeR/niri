@@ -3309,6 +3309,14 @@ impl Niri {
             if let Some(path) = path {
                 debug!("saving screenshot to {path:?}");
 
+                if let Some(parent) = path.parent() {
+                    if let Err(err) = std::fs::create_dir(parent) {
+                        if err.kind() != std::io::ErrorKind::AlreadyExists {
+                            warn!("error creating screenshot directory: {err:?}");
+                        }
+                    }
+                }
+
                 match std::fs::write(&path, buf) {
                     Ok(()) => image_path = Some(path),
                     Err(err) => {
