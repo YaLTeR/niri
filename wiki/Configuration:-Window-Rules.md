@@ -117,8 +117,10 @@ window-rule {
 }
 ```
 
+You can find the title and the app ID of the currently focused window by running `niri msg focused-window`.
+
 > [!TIP]
-> One way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
+> Another way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
 > 
 > ```json
 > "wlr/taskbar": {
