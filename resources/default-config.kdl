@@ -189,22 +189,6 @@ layout {
 // which may be more convenient to use.
 // spawn-at-startup "alacritty" "-e" "fish"
 
-// You can override environment variables for processes spawned by niri.
-environment {
-    // Set a variable like this:
-    // QT_QPA_PLATFORM "wayland"
-
-    // Remove a variable by using null as the value:
-    // DISPLAY null
-}
-
-cursor {
-    // Change the theme and size of the cursor as well as set the
-    // `XCURSOR_THEME` and `XCURSOR_SIZE` env variables.
-    // xcursor-theme "default"
-    // xcursor-size 24
-}
-
 // Uncomment this line to ask the clients to omit their client-side decorations if possible.
 // If the client will specifically ask for CSD, the request will be honored.
 // Additionally, clients will be informed that they are tiled, removing some rounded corners.
@@ -217,12 +201,6 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
 // You can also set this to null to disable saving screenshots to disk.
 // screenshot-path null
-
-// Settings for the "Important Hotkeys" overlay.
-hotkey-overlay {
-    // Uncomment this line if you don't want to see the hotkey help at niri startup.
-    // skip-at-startup
-}
 
 // Animation settings.
 // The wiki explains how to configure individual animations:
