@@ -265,8 +265,13 @@ impl Tty {
                     .context("error opening the primary GPU DRM node")?;
                 let primary_render_node = primary_node
                     .node_with_type(NodeType::Render)
-                    .context("error getting the render node for the primary GPU")?
-                    .context("error getting the render node for the primary GPU")?;
+                    .and_then(Result::ok)
+                    .unwrap_or_else(|| {
+                        warn!(
+                            "error getting the render node for the primary GPU; proceeding anyway"
+                        );
+                        primary_node
+                    });
 
                 Ok::<_, anyhow::Error>((primary_node, primary_render_node))
             })?;
@@ -1747,6 +1752,14 @@ fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
                 }
             } else {
                 warn!("DRM node {path:?} is not a render node");
+
+                // Gracefully handle misconfiguration on regular desktop systems.
+                if let Some(Ok(render_node)) = node.node_with_type(NodeType::Render) {
+                    return Some((node, render_node));
+                }
+
+                warn!("could not get render node for DRM node {path:?}; proceeding anyway");
+                return Some((node, node));
             }
         }
         Err(err) => {
