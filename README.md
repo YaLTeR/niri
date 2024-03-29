@@ -85,7 +85,7 @@ Then, build niri with `cargo build --release`.
 ### NixOS/Nix
 
 We have a community-maintained flake which provides a devshell with required dependencies. Use `nix build` to build niri, and then run `./results/bin/niri`.
-    
+
 If you're not on NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary:
 
 ```
@@ -130,21 +130,6 @@ Niri also works with some parts of xdg-desktop-portal-gnome.
 In particular, it supports file choosers and monitor screencasting (e.g. to [OBS]).
 
 [This wiki page](https://github.com/YaLTeR/niri/wiki/Important-Software) explains how to run important software required for normal desktop use, including portals.
-
-### Xwayland
-
-See [the wiki page](https://github.com/YaLTeR/niri/wiki/Xwayland) to learn how to use Xwayland with niri.
-
-### IPC
-
-You can communicate with the running niri instance over an IPC socket.
-Check `niri msg --help` for available commands.
-
-The `--json` flag prints the response in JSON, rather than formatted.
-For example, `niri msg --json outputs`.
-
-For programmatic access, check the [niri-ipc sub-crate](./niri-ipc/) which defines the types.
-The communication over the IPC socket happens in JSON.
 
 ## Configuration
 

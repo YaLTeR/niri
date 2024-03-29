@@ -2,6 +2,7 @@
 * [Example systemd Setup](./Example-systemd-Setup.md)
 * [Important Software](./Important-Software.md)
 * [Layer‐Shell Components](./Layer%E2%80%90Shell-Components.md)
+* [`niri msg`](./IPC.md)
 * [VSCode, Chromium, WezTerm](./Application-Issues.md)
 * [Xwayland](./Xwayland.md)
 
