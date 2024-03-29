@@ -28,6 +28,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 - Dynamic workspaces like in GNOME
 - Built-in screenshot UI
 - Monitor screencasting through xdg-desktop-portal-gnome
+    - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts
 - [Touchpad gestures](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515)
 - Configurable layout: gaps, borders, struts, window sizes
 - Live-reloading config
@@ -133,11 +134,8 @@ In particular, it supports file choosers and monitor screencasting (e.g. to [OBS
 
 ## Configuration
 
-Niri will load configuration from `$XDG_CONFIG_HOME/.config/niri/config.kdl` or `~/.config/niri/config.kdl`.
-If this fails, it will load [the default configuration file](resources/default-config.kdl).
-Please use the default configuration file as the starting point for your custom configuration.
-
-Niri will live-reload most of the configuration settings, like key binds or gaps or output modes, as you change the config file.
+Please check [this wiki page](https://github.com/YaLTeR/niri/wiki/Configuration:-Overview) for an overview of niri configuration.
+It also links to wiki pages containing thorough documentation for all options with examples.
 
 ## Default Hotkeys
 
