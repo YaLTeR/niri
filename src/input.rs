@@ -58,6 +58,7 @@ impl State {
         if self.niri.monitors_active {
             // Notify the idle-notifier of activity.
             if should_notify_activity(&event) {
+                let _span = tracy_client::span!("IdleNotifierState::notify_activity");
                 self.niri
                     .idle_notifier_state
                     .notify_activity(&self.niri.seat);
