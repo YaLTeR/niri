@@ -27,6 +27,7 @@ pub struct Session {
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     #[allow(clippy::type_complexity)]
     streams: Arc<Mutex<Vec<(Stream, InterfaceRef<Stream>)>>>,
+    stopped: Arc<AtomicBool>,
 }
 
 #[derive(Debug, Default, Deserialize, Type, Clone, Copy)]
@@ -134,6 +135,11 @@ impl Session {
         #[zbus(signal_context)] ctxt: SignalContext<'_>,
     ) {
         debug!("stop");
+
+        if self.stopped.swap(true, Ordering::SeqCst) {
+            // Already stopped.
+            return;
+        }
 
         Session::closed(&ctxt).await.unwrap();
 
@@ -255,6 +261,7 @@ impl Session {
             ipc_outputs,
             streams: Arc::new(Mutex::new(vec![])),
             to_niri,
+            stopped: Arc::new(AtomicBool::new(false)),
         }
     }
 }
