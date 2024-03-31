@@ -43,6 +43,11 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         .map_err(|msg| anyhow!(msg))
         .context("niri could not handle the request")?;
 
+    // Default SIGPIPE so that our prints don't panic on stdout closing.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     match msg {
         Msg::Outputs => {
             let Response::Outputs(outputs) = response else {
