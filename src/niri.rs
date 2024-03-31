@@ -1290,7 +1290,7 @@ impl Niri {
         let pipewire = match PipeWire::new(&event_loop) {
             Ok(pipewire) => Some(pipewire),
             Err(err) => {
-                warn!("error starting PipeWire: {err:?}");
+                warn!("error connecting to PipeWire, screencasting will not work: {err:?}");
                 None
             }
         };
