@@ -395,12 +395,13 @@ delegate_screencopy!(State);
 
 impl DrmLeaseHandler for State {
     fn drm_lease_state(&mut self, node: DrmNode) -> &mut DrmLeaseState {
-        &mut self
-            .backend
+        self.backend
             .tty()
             .get_device_from_node(node)
             .unwrap()
             .drm_lease_state
+            .as_mut()
+            .unwrap()
     }
 
     fn lease_request(

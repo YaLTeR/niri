@@ -121,7 +121,7 @@ pub struct OutputDevice {
     drm: DrmDevice,
     gbm: GbmDevice<DrmDeviceFd>,
 
-    pub drm_lease_state: DrmLeaseState,
+    pub drm_lease_state: Option<DrmLeaseState>,
     non_desktop_connectors: HashSet<(connector::Handle, crtc::Handle)>,
     active_leases: Vec<DrmLease>,
 }
@@ -352,6 +352,10 @@ impl Tty {
 
                 for device in self.devices.values_mut() {
                     device.drm.pause();
+
+                    if let Some(lease_state) = &mut device.drm_lease_state {
+                        lease_state.suspend();
+                    }
                 }
             }
             SessionEvent::ActivateSession => {
@@ -396,6 +400,9 @@ impl Tty {
                     let device = self.devices.get_mut(&node).unwrap();
                     if let Err(err) = device.drm.activate(true) {
                         warn!("error activating DRM device: {err:?}");
+                    }
+                    if let Some(lease_state) = &mut device.drm_lease_state {
+                        lease_state.resume::<State>();
                     }
 
                     // Refresh the connectors.
@@ -452,8 +459,6 @@ impl Tty {
         debug!("device added: {device_id} {path:?}");
 
         let node = DrmNode::from_dev_id(device_id)?;
-        let drm_lease_state = DrmLeaseState::new::<State>(&niri.display_handle, &node)
-            .context("Couldn't create DrmLeaseState")?;
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = self.session.open(path, open_flags)?;
@@ -535,6 +540,10 @@ impl Tty {
             })
             .unwrap();
 
+        let drm_lease_state = DrmLeaseState::new::<State>(&niri.display_handle, &node)
+            .map_err(|err| warn!("error initializing DRM leasing for {node}: {err:?}"))
+            .ok();
+
         let device = OutputDevice {
             token,
             render_node,
@@ -609,7 +618,11 @@ impl Tty {
             self.connector_disconnected(niri, node, crtc);
         }
 
-        let device = self.devices.remove(&node).unwrap();
+        let mut device = self.devices.remove(&node).unwrap();
+
+        if let Some(lease_state) = &mut device.drm_lease_state {
+            lease_state.disable_global::<State>();
+        }
 
         if node == self.primary_node {
             match self.gpu_manager.single_renderer(&device.render_node) {
@@ -688,11 +701,9 @@ impl Tty {
             let description = get_edid_info(&device.drm, connector.handle())
                 .map(|info| truncate_to_nul(info.model))
                 .unwrap_or_else(|| "Unknown".into());
-            device.drm_lease_state.add_connector::<State>(
-                connector.handle(),
-                output_name,
-                description,
-            );
+            if let Some(lease_state) = &mut device.drm_lease_state {
+                lease_state.add_connector::<State>(connector.handle(), output_name, description);
+            }
             device
                 .non_desktop_connectors
                 .insert((connector.handle(), crtc));
@@ -895,7 +906,24 @@ impl Tty {
 
         let Some(surface) = device.surfaces.remove(&crtc) else {
             debug!("disconnecting connector for crtc: {crtc:?}");
-            debug!("crtc wasn't enabled");
+
+            if let Some((conn, _)) = device
+                .non_desktop_connectors
+                .iter()
+                .find(|(_, crtc_)| *crtc_ == crtc)
+            {
+                debug!("withdrawing non-desktop connector from DRM leasing");
+
+                let conn = *conn;
+                device.non_desktop_connectors.remove(&(conn, crtc));
+
+                if let Some(lease_state) = &mut device.drm_lease_state {
+                    lease_state.withdraw_connector(conn);
+                }
+            } else {
+                debug!("crtc wasn't enabled");
+            }
+
             return;
         };
 
