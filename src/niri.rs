@@ -207,6 +207,11 @@ pub struct Niri {
     pub cursor_shape_manager_state: CursorShapeManagerState,
     pub dnd_icon: Option<WlSurface>,
     pub pointer_focus: PointerFocus,
+    /// Whether the pointer is hidden, for example due to a previous touch input.
+    ///
+    /// When this happens, the pointer also loses any focus. This is so that touch can prevent
+    /// various tooltips from sticking around.
+    pub pointer_hidden: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -481,6 +486,10 @@ impl State {
             },
         );
         pointer.frame(self);
+
+        // We moved the pointer, show it.
+        self.niri.pointer_hidden = false;
+
         // FIXME: granular
         self.niri.queue_redraw_all();
     }
@@ -595,7 +604,11 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = self.niri.surface_under_and_global_space(location);
+        let under = if self.niri.pointer_hidden {
+            PointerFocus::default()
+        } else {
+            self.niri.surface_under_and_global_space(location)
+        };
 
         // We're not changing the global cursor location here, so if the focus did not change, then
         // nothing changed.
@@ -1371,6 +1384,7 @@ impl Niri {
             cursor_shape_manager_state,
             dnd_icon: None,
             pointer_focus: PointerFocus::default(),
+            pointer_hidden: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -2023,6 +2037,10 @@ impl Niri {
         renderer: &mut R,
         output: &Output,
     ) -> Vec<OutputRenderElements<R>> {
+        if self.pointer_hidden {
+            return vec![];
+        }
+
         let _span = tracy_client::span!("Niri::pointer_element");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
@@ -2106,6 +2124,10 @@ impl Niri {
     }
 
     pub fn refresh_pointer_outputs(&mut self) {
+        if self.pointer_hidden {
+            return;
+        }
+
         let _span = tracy_client::span!("Niri::refresh_pointer_outputs");
 
         // Check whether we need to draw the tablet cursor or the regular cursor.
