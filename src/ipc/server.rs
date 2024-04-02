@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -7,7 +8,7 @@ use anyhow::Context;
 use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
-use futures_util::{AsyncBufReadExt, AsyncWriteExt};
+use futures_util::{AsyncBufReadExt, AsyncWriteExt, StreamExt};
 use niri_ipc::{Request, Response};
 use smithay::desktop::Window;
 use smithay::reexports::calloop::generic::Generic;
@@ -18,6 +19,7 @@ use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 
 use crate::backend::IpcOutputMap;
 use crate::niri::State;
+use crate::utils::version;
 
 pub struct IpcServer {
     pub socket_path: PathBuf,
@@ -106,21 +108,24 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
 
 async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow::Result<()> {
     let (read, mut write) = stream.split();
-    let mut buf = String::new();
 
-    // Read a single line to allow extensibility in the future to keep reading.
-    BufReader::new(read)
-        .read_line(&mut buf)
-        .await
-        .context("error reading request")?;
+    // note that we can't use the stream json deserializer here
+    // because the stream is asynchronous and the deserializer doesn't support that
+    // https://github.com/serde-rs/json/issues/575
 
-    let reply = process(&ctx, &buf).map_err(|err| {
-        warn!("error processing IPC request: {err:?}");
-        err.to_string()
-    });
+    let mut lines = BufReader::new(read).lines();
 
-    let buf = serde_json::to_vec(&reply).context("error formatting reply")?;
-    write.write_all(&buf).await.context("error writing reply")?;
+    while let Some(line) = lines.next().await {
+        let reply = process(&ctx, &line?).map_err(|err| {
+            warn!("error processing IPC request: {err:?}");
+            err.to_string()
+        });
+
+        let mut buf = serde_json::to_vec(&reply).context("error formatting reply")?;
+        writeln!(buf).unwrap();
+        write.write_all(&buf).await.context("error writing reply")?;
+        write.flush().await.context("error flushing reply")?;
+    }
 
     Ok(())
 }
@@ -129,6 +134,7 @@ fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
     let request: Request = serde_json::from_str(buf).context("error parsing request")?;
 
     let response = match request {
+        Request::Version => Response::Version(version()),
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
             Response::Outputs(ipc_outputs)

@@ -2202,6 +2202,7 @@ version = "0.1.4"
 dependencies = [
  "clap",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -6,12 +6,15 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-/// Name of the environment variable containing the niri IPC socket path.
-pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
+mod socket;
+
+pub use socket::{NiriSocket, SOCKET_PATH_ENV};
 
 /// Request from client to niri.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Request {
+    /// Request the version string for the running niri instance.
+    Version,
     /// Request information about connected outputs.
     Outputs,
     /// Request information about the focused window.
@@ -35,6 +38,8 @@ pub type Reply = Result<Response, String>;
 pub enum Response {
     /// A request that does not need a response was handled successfully.
     Handled,
+    /// The version string for the running niri instance.
+    Version(String),
     /// Information about connected outputs.
     ///
     /// Map from connector name to output info.

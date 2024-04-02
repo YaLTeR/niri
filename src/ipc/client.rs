@@ -1,54 +1,106 @@
-use std::env;
-use std::io::{Read, Write};
-use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
-
 use anyhow::{anyhow, bail, Context};
-use niri_ipc::{LogicalOutput, Mode, Output, Reply, Request, Response};
+use niri_ipc::{LogicalOutput, Mode, NiriSocket, Output, Request, Response};
 
 use crate::cli::Msg;
+use crate::utils::version;
 
 pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
-    let socket_path = env::var_os(niri_ipc::SOCKET_PATH_ENV).with_context(|| {
-        format!(
-            "{} is not set, are you running this within niri?",
-            niri_ipc::SOCKET_PATH_ENV
-        )
-    })?;
-
-    let mut stream =
-        UnixStream::connect(socket_path).context("error connecting to {socket_path}")?;
-
-    let request = match &msg {
-        Msg::Outputs => Request::Outputs,
-        Msg::FocusedWindow => Request::FocusedWindow,
-        Msg::Action { action } => Request::Action(action.clone()),
-    };
-    let mut buf = serde_json::to_vec(&request).unwrap();
-    stream
-        .write_all(&buf)
-        .context("error writing IPC request")?;
-    stream
-        .shutdown(Shutdown::Write)
-        .context("error closing IPC stream for writing")?;
-
-    buf.clear();
-    stream
-        .read_to_end(&mut buf)
-        .context("error reading IPC response")?;
-
-    let reply: Reply = serde_json::from_slice(&buf).context("error parsing IPC reply")?;
-
-    let response = reply
-        .map_err(|msg| anyhow!(msg))
-        .context("niri could not handle the request")?;
+    let mut client = NiriSocket::new().context("error initializing the niri ipc client")?;
 
     // Default SIGPIPE so that our prints don't panic on stdout closing.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
+    let request = match &msg {
+        Msg::Version => Request::Version,
+        Msg::Outputs => Request::Outputs,
+        Msg::FocusedWindow => Request::FocusedWindow,
+        Msg::Action { action } => Request::Action(action.clone()),
+    };
+
+    let version_reply = client
+        .send(Request::Version)
+        .context("error sending version request to niri")?;
+
+    match version_reply.clone() {
+        Ok(response) => 'a: {
+            if matches!(msg, Msg::Version) && !json {
+                // Print a nicer warning for human consumers.
+                break 'a;
+            }
+            let Response::Version(server_version) = response else {
+                bail!("unexpected response: expected Version, got {response:?}");
+            };
+
+            let my_version = version();
+
+            if my_version != server_version {
+                eprintln!("Warning: niri msg was invoked with a different version of niri than the running compositor.");
+                eprintln!("niri msg: {my_version}");
+                eprintln!("compositor: {server_version}");
+                eprintln!("Did you forget to restart niri after an update?");
+                eprintln!();
+            }
+        }
+        Err(_) => {
+            eprintln!("Warning: unable to get server version.");
+            eprintln!("Did you forget to restart niri after an update?");
+            eprintln!();
+        }
+    }
+
+    let reply = match msg {
+        Msg::Version => version_reply,
+        _ => {
+            if version_reply.is_err() {
+                eprintln!("Assuming niri does not support streaming IPC. Reconnecting...");
+                eprintln!();
+                client = NiriSocket::new().context("error initializing the niri ipc client")?;
+            }
+
+            client
+                .send(request)
+                .context("error sending request to niri")?
+        }
+    };
+
+    let response = reply
+        .map_err(|msg| anyhow!(msg))
+        .context("niri could not handle the request")?;
+
     match msg {
+        Msg::Version => {
+            let Response::Version(server_version) = response else {
+                bail!("unexpected response: expected Version, got {response:?}");
+            };
+
+            if json {
+                #[derive(serde::Serialize)]
+                struct Versions {
+                    cli: String,
+                    compositor: String,
+                }
+                let version = serde_json::to_string(&Versions {
+                    cli: version(),
+                    compositor: server_version,
+                })
+                .context("error formatting response")?;
+                println!("{version}");
+                return Ok(());
+            }
+
+            let client_version = version();
+
+            println!("niri msg is {client_version}");
+            println!("the compositor is {server_version}");
+            if client_version != server_version {
+                eprintln!();
+                eprintln!("These are different");
+                eprintln!("Did you forget to restart niri after an update?");
+            }
+            println!();
+        }
         Msg::Outputs => {
             let Response::Outputs(outputs) = response else {
                 bail!("unexpected response: expected Outputs, got {response:?}");
