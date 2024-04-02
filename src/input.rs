@@ -1406,7 +1406,7 @@ impl State {
                     // Move the mouse pointer here to avoid discontinuity.
                     //
                     // Plus, Wayland SDL2 currently warps the pointer into some weird
-                    // location on proximity out, so this shuold help it a little.
+                    // location on proximity out, so this should help it a little.
                     if let Some(pos) = self.niri.tablet_cursor_location {
                         self.move_cursor(pos);
                     }
