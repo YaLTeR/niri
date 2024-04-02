@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 clap = { workspace = true, optional = true }
 serde.workspace = true
+serde_json.workspace = true
 
 [features]
 clap = ["dep:clap"]
