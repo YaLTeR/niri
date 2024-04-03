@@ -60,3 +60,24 @@ Icon=com.spotify.Client
 Exec=cage -- flatpak run com.spotify.Client
 Terminal=false
 ```
+
+## Using gamescope
+
+You can use [gamescope](https://github.com/ValveSoftware/gamescope) to run X11 games and even Steam itself.
+
+Similar to Cage, gamescope will only show a single, topmost window, so it's not very suitable to running regular apps.
+But you can run Steam in gamescope and then start some game from Steam just fine.
+
+```
+gamescope -- flatpak run com.valvesoftware.Steam
+```
+
+To run gamescope fullscreen, you can pass flags that set the necessary resolution, and a flag that starts it in fullscreen mode:
+
+```
+gamescope -W 2560 -H 1440 -w 2560 -h 1440 -f  -- flatpak run com.valvesoftware.Steam
+```
+
+> [!NOTE]
+> If Steam terminates abnormally while running in gamescope, it seems that subsequent gamescope invocations will sometimes fail to start it properly.
+> If this happens, run Steam inside a rootful Xwayland as described above, then exit it normally, and then you will be able to use gamescope again.
