@@ -2,6 +2,7 @@ X11 is very cursed, so built-in Xwayland support is not planned at the moment.
 However, there are multiple solutions to running X11 apps in niri.
 
 ## Directly running Xwayland in rootful mode
+
 This method involves invoking XWayland directly and running it as its own window, it also requires an extra X11 window manager running inside it.
 
 ![Xwayland running in rootful mode.](https://github.com/YaLTeR/niri/assets/1794388/b64e96c4-a0bb-4316-94a0-ff445d4c7da7)
@@ -17,11 +18,24 @@ This way you can manage X11 windows inside the Xwayland instance.
 
 With fullscreen game inside a fullscreen Xwayland you get pretty much a normal gaming experience.
 
+> [!TIP]
+> If you don't run an X11 window manager, Xwayland will close and re-open its window every time all X11 windows close and a new one opens.
+> To prevent this, start an X11 WM inside as mentioned above, or open some other long-running X11 window.
+
 One caveat is that currently rootful Xwayland doesn't seem to share clipboard with the compositor.
 For textual data you can do it manually using [wl-clipboard](https://github.com/bugaevc/wl-clipboard), for example:
 
 - `env DISPLAY=:0 xsel -ob | wl-copy` to copy from Xwayland to niri clipboard
-- `wl-paste | env DISPLAY=:0 xsel -ib` to copy from niri to Xwayland clipboard
+- `wl-paste -n | env DISPLAY=:0 xsel -ib` to copy from niri to Xwayland clipboard
+
+You can also bind these to hotkeys if you want:
+
+```
+binds {
+    Mod+Shift+C { spawn "sh" "-c" "env DISPLAY=:0 xsel -ob | wl-copy"; }
+    Mod+Shift+V { spawn "sh" "-c" "wl-paste -n | env DISPLAY=:0 xsel -ib"; }
+}
+```
 
 ## Using the Cage Wayland compositor
 
