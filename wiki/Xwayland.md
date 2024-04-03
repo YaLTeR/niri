@@ -17,6 +17,8 @@ This way you can manage X11 windows inside the Xwayland instance.
 
 With fullscreen game inside a fullscreen Xwayland you get pretty much a normal gaming experience.
 
+A Xwayland window respawning every few seconds indicates that no X11 windowmanager is running.
+
 One caveat is that currently rootful Xwayland doesn't seem to share clipboard with the compositor.
 For textual data you can do it manually using [wl-clipboard](https://github.com/bugaevc/wl-clipboard), for example:
 
