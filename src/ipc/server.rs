@@ -118,15 +118,16 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
     while let Some(line) = lines.next().await {
         let reply: Reply = serde_json::from_str(&match line {
             Ok(line) => line,
-            // ConnectionReset is expected when the client disconnects.
+            // ConnectionReset is expected when the client disconnects
             Err(err) if err.kind() == io::ErrorKind::ConnectionReset => break,
             Err(err) => return Err(err).context("error reading line"),
         })
         .map_err(|err| format!("error parsing request: {err}"))
-        .and_then(|req| process(&ctx, req))
-        .inspect_err(|err| {
+        .and_then(|req| process(&ctx, req));
+
+        if let Err(err) = &reply {
             warn!("error processing IPC request: {err:?}");
-        });
+        }
 
         let mut buf = serde_json::to_vec(&reply).context("error formatting reply")?;
         writeln!(buf).unwrap();
