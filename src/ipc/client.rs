@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context};
+use anyhow::{bail, Context};
 use niri_ipc::{LogicalOutput, Mode, NiriSocket, Output, Request, Response};
 use serde_json::json;
 
@@ -6,7 +6,8 @@ use crate::cli::Msg;
 use crate::utils::version;
 
 pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
-    let mut client = NiriSocket::new().context("error initializing the niri ipc client")?;
+    let mut client = NiriSocket::new()
+        .context("a communication error occured while trying to initialize the socket")?;
 
     // Default SIGPIPE so that our prints don't panic on stdout closing.
     unsafe {
@@ -21,55 +22,53 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Action { action } => Request::Action(action.clone()),
     };
 
-    let version_reply = client
-        .send(Request::Version)
-        .context("error sending version request to niri")?;
+    let reply = client
+        .send(request)
+        .context("a communication error occurred while sending request to niri")?;
 
-    match version_reply.clone() {
-        Ok(response) => 'a: {
-            if matches!(msg, Msg::Version) && !json {
-                // Print a nicer warning for human consumers.
-                break 'a;
-            }
-            let Response::Version(server_version) = response else {
-                bail!("unexpected response: expected Version, got {response:?}");
-            };
-
-            let my_version = version();
-
-            if my_version != server_version {
-                eprintln!("Warning: niri msg was invoked with a different version of niri than the running compositor.");
-                eprintln!("niri msg: {my_version}");
-                eprintln!("compositor: {server_version}");
-                eprintln!("Did you forget to restart niri after an update?");
-                eprintln!();
-            }
-        }
-        Err(_) => {
-            eprintln!("Warning: unable to get server version.");
-            eprintln!("Did you forget to restart niri after an update?");
+    let response = match reply {
+        Ok(r) => r,
+        Err(err_msg) => {
+            eprintln!("The compositor returned an error:");
             eprintln!();
-        }
-    }
+            eprintln!("{err_msg}");
 
-    let reply = match msg {
-        Msg::Version => version_reply,
-        _ => {
-            if version_reply.is_err() {
-                eprintln!("Assuming niri does not support streaming IPC. Reconnecting...");
+            if matches!(msg, Msg::Version) {
                 eprintln!();
-                client = NiriSocket::new().context("error initializing the niri ipc client")?;
+                eprintln!("Note: unable to get the compositor's version.");
+                eprintln!("Did you forget to restart niri after an update?");
+            } else {
+                // We're making a new client here just for some vague notion of
+                // backwards compatibility.
+                // It is in general not necessary to do so.
+                match NiriSocket::new().and_then(|mut client| client.send(Request::Version)) {
+                    Ok(Ok(Response::Version(server_version))) => {
+                        let my_version = version();
+                        if my_version != server_version {
+                            eprintln!();
+                            eprintln!("Note: niri msg was invoked with a different version of niri than the running compositor.");
+                            eprintln!("niri msg: {my_version}");
+                            eprintln!("compositor: {server_version}");
+                            eprintln!("Did you forget to restart niri after an update?");
+                        }
+                    }
+                    Ok(Ok(_)) => {
+                        // nonsensical response, do not add confusing context
+                    }
+                    Ok(Err(_)) => {
+                        eprintln!();
+                        eprintln!("Note: unable to get the compositor's version.");
+                        eprintln!("Did you forget to restart niri after an update?");
+                    }
+                    Err(_) => {
+                        // communication error, do not add irrelevant context
+                    }
+                }
             }
 
-            client
-                .send(request)
-                .context("error sending request to niri")?
+            return Ok(());
         }
     };
-
-    let response = reply
-        .map_err(|msg| anyhow!(msg))
-        .context("niri could not handle the request")?;
 
     match msg {
         Msg::Nonsense => {
