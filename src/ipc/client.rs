@@ -13,6 +13,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
     }
 
     let request = match &msg {
+        Msg::Nonsense => Request::Nonsense,
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
@@ -70,6 +71,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         .context("niri could not handle the request")?;
 
     match msg {
+        Msg::Nonsense => {
+            bail!("unexpected response: expected an error, got {response:?}");
+        }
         Msg::Version => {
             let Response::Version(server_version) = response else {
                 bail!("unexpected response: expected Version, got {response:?}");

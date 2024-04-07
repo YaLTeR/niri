@@ -9,7 +9,7 @@ use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{AsyncBufReadExt, AsyncWriteExt, StreamExt};
-use niri_ipc::{Request, Response};
+use niri_ipc::{Reply, Request, Response};
 use smithay::desktop::Window;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -116,9 +116,16 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
     let mut lines = BufReader::new(read).lines();
 
     while let Some(line) = lines.next().await {
-        let reply = process(&ctx, &line?).map_err(|err| {
+        let reply: Reply = serde_json::from_str(&match line {
+            Ok(line) => line,
+            // ConnectionReset is expected when the client disconnects.
+            Err(err) if err.kind() == io::ErrorKind::ConnectionReset => break,
+            Err(err) => return Err(err).context("error reading line"),
+        })
+        .map_err(|err| format!("error parsing request: {err}"))
+        .and_then(|req| process(&ctx, req))
+        .inspect_err(|err| {
             warn!("error processing IPC request: {err:?}");
-            err.to_string()
         });
 
         let mut buf = serde_json::to_vec(&reply).context("error formatting reply")?;
@@ -130,10 +137,9 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
     Ok(())
 }
 
-fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
-    let request: Request = serde_json::from_str(buf).context("error parsing request")?;
-
+fn process(ctx: &ClientCtx, request: Request) -> Reply {
     let response = match request {
+        Request::Nonsense => return Err("nonsense request".into()),
         Request::Version => Response::Version(version()),
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
