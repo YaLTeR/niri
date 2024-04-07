@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context};
 use niri_ipc::{LogicalOutput, Mode, NiriSocket, Output, Request, Response};
+use serde_json::json;
 
 use crate::cli::Msg;
 use crate::utils::version;
@@ -80,17 +81,13 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             };
 
             if json {
-                #[derive(serde::Serialize)]
-                struct Versions {
-                    cli: String,
-                    compositor: String,
-                }
-                let version = serde_json::to_string(&Versions {
-                    cli: version(),
-                    compositor: server_version,
-                })
-                .context("error formatting response")?;
-                println!("{version}");
+                println!(
+                    "{}",
+                    json!({
+                        "cli": version(),
+                        "compositor": server_version,
+                    })
+                );
                 return Ok(());
             }
 
