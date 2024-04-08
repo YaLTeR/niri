@@ -1159,11 +1159,24 @@ impl<W: LayoutElement> Workspace<W> {
         // Start with the active window since it's drawn on top.
         let col = &self.columns[self.active_column_idx];
         let tile = &col.tiles[col.active_tile_idx];
-        let tile_pos = Point::from((
-            self.column_x(self.active_column_idx) - view_pos,
-            col.tile_y(col.active_tile_idx),
-        )) + col.render_offset();
+        let tile_pos =
+            Point::from((-self.view_offset, col.tile_y(col.active_tile_idx))) + col.render_offset();
         let first = iter::once((tile, tile_pos));
+
+        // Next, the rest of the tiles in the active column, since it should be drawn on top as a
+        // whole during animations.
+        let next =
+            zip(&col.tiles, col.tile_ys())
+                .enumerate()
+                .filter_map(move |(tile_idx, (tile, y))| {
+                    if tile_idx == col.active_tile_idx {
+                        // Active tile comes first.
+                        return None;
+                    }
+
+                    let tile_pos = Point::from((-self.view_offset, y)) + col.render_offset();
+                    Some((tile, tile_pos))
+                });
 
         let mut x = -view_pos;
         let rest = self
@@ -1176,20 +1189,22 @@ impl<W: LayoutElement> Workspace<W> {
                 x += col.width() + self.options.gaps;
                 rv
             })
-            .flat_map(move |(col_idx, col, x)| {
-                zip(&col.tiles, col.tile_ys()).enumerate().filter_map(
-                    move |(tile_idx, (tile, y))| {
-                        if col_idx == self.active_column_idx && tile_idx == col.active_tile_idx {
-                            // Active tile comes first.
-                            return None;
-                        }
+            .filter_map(|(col_idx, col, x)| {
+                if col_idx == self.active_column_idx {
+                    // Active column comes before.
+                    return None;
+                }
 
-                        let tile_pos = Point::from((x, y)) + col.render_offset();
-                        Some((tile, tile_pos))
-                    },
-                )
+                Some((col, x))
+            })
+            .flat_map(move |(col, x)| {
+                zip(&col.tiles, col.tile_ys()).map(move |(tile, y)| {
+                    let tile_pos = Point::from((x, y)) + col.render_offset();
+                    (tile, tile_pos)
+                })
             });
-        first.chain(rest)
+
+        first.chain(next).chain(rest)
     }
 
     fn active_column_ref(&self) -> Option<&Column<W>> {
