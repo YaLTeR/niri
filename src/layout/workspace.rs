@@ -963,13 +963,15 @@ impl<W: LayoutElement> Workspace<W> {
         let current_col_x = self.column_x(self.active_column_idx);
         let next_col_x = self.column_x(self.active_column_idx + 1);
 
-        let current_x = current_col_x + self.view_offset;
-
         let column = self.columns.remove(self.active_column_idx);
         self.columns.insert(new_idx, column);
 
         // Preserve the camera position when moving to the left.
-        self.view_offset = current_x - self.column_x(self.active_column_idx);
+        let view_offset_delta = -self.column_x(self.active_column_idx) + current_col_x;
+        self.view_offset += view_offset_delta;
+        if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
+            anim.offset(view_offset_delta as f64);
+        }
 
         // The column we just moved is offset by the difference between its new and old position.
         let new_col_x = self.column_x(new_idx);

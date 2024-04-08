@@ -261,6 +261,16 @@ impl Animation {
     pub fn from(&self) -> f64 {
         self.from
     }
+
+    pub fn offset(&mut self, offset: f64) {
+        self.from += offset;
+        self.to += offset;
+
+        if let Kind::Spring(spring) = &mut self.kind {
+            spring.from += offset;
+            spring.to += offset;
+        }
+    }
 }
 
 impl Curve {
