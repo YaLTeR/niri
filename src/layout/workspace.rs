@@ -961,9 +961,8 @@ impl<W: LayoutElement> Workspace<W> {
         let column = self.columns.remove(self.active_column_idx);
         self.columns.insert(new_idx, column);
 
-        // FIXME: should this be different when always centering?
-        self.view_offset =
-            self.compute_new_view_offset_for_column(current_x, self.active_column_idx);
+        // Preserve the camera position when moving to the left.
+        self.view_offset = current_x - self.column_x(self.active_column_idx);
 
         self.activate_column(new_idx);
     }
