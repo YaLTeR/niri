@@ -181,6 +181,9 @@ pub struct Column<W: LayoutElement> {
     /// Whether this column contains a single full-screened window.
     pub is_fullscreen: bool,
 
+    /// Animation of the render offset during window swapping.
+    move_animation: Option<Animation>,
+
     /// Latest known view size for this column's workspace.
     view_size: Size<i32, Logical>,
 
@@ -967,13 +970,32 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let current_x = self.view_pos();
+        let current_col_x = self.column_x(self.active_column_idx);
+        let next_col_x = self.column_x(self.active_column_idx + 1);
+
+        let current_x = current_col_x + self.view_offset;
 
         let column = self.columns.remove(self.active_column_idx);
         self.columns.insert(new_idx, column);
 
         // Preserve the camera position when moving to the left.
         self.view_offset = current_x - self.column_x(self.active_column_idx);
+
+        // The column we just moved is offset by the difference between its new and old position.
+        let new_col_x = self.column_x(new_idx);
+        self.columns[new_idx].animate_move_from(current_col_x - new_col_x);
+
+        // All columns in between moved by the width of the column that we just moved.
+        let others_x_offset = next_col_x - current_col_x;
+        if self.active_column_idx < new_idx {
+            for col in &mut self.columns[self.active_column_idx..new_idx] {
+                col.animate_move_from(others_x_offset);
+            }
+        } else {
+            for col in &mut self.columns[new_idx + 1..=self.active_column_idx] {
+                col.animate_move_from(-others_x_offset);
+            }
+        }
 
         self.activate_column(new_idx);
     }
@@ -1150,7 +1172,7 @@ impl<W: LayoutElement> Workspace<W> {
         let tile_pos = Point::from((
             self.visual_column_x(self.active_column_idx) - view_pos,
             col.tile_y(col.active_tile_idx),
-        ));
+        )) + col.render_offset();
         let first = iter::once((tile, tile_pos));
 
         let mut x = -view_pos;
@@ -1172,7 +1194,7 @@ impl<W: LayoutElement> Workspace<W> {
                             return None;
                         }
 
-                        let tile_pos = Point::from((x, y));
+                        let tile_pos = Point::from((x, y)) + col.render_offset();
                         Some((tile, tile_pos))
                     },
                 )
@@ -1604,6 +1626,7 @@ impl<W: LayoutElement> Column<W> {
             width,
             is_full_width,
             is_fullscreen: false,
+            move_animation: None,
             view_size,
             working_area,
             options,
@@ -1669,6 +1692,16 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
+        match &mut self.move_animation {
+            Some(anim) => {
+                anim.set_current_time(current_time);
+                if anim.is_done() {
+                    self.move_animation = None;
+                }
+            }
+            None => (),
+        }
+
         for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
             let is_active = is_active && tile_idx == self.active_tile_idx;
             tile.advance_animations(current_time, is_active);
@@ -1676,7 +1709,29 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.tiles.iter().any(Tile::are_animations_ongoing)
+        self.move_animation.is_some() || self.tiles.iter().any(Tile::are_animations_ongoing)
+    }
+
+    pub fn render_offset(&self) -> Point<i32, Logical> {
+        let mut offset = Point::from((0., 0.));
+
+        if let Some(anim) = &self.move_animation {
+            offset.x += anim.value();
+        }
+
+        offset.to_i32_round()
+    }
+
+    pub fn animate_move_from(&mut self, from_x_offset: i32) {
+        let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
+
+        self.move_animation = Some(Animation::new(
+            f64::from(from_x_offset) + current_offset,
+            0.,
+            0.,
+            self.options.animations.window_movement,
+            niri_config::Animation::default_window_movement(),
+        ));
     }
 
     pub fn contains(&self, window: &W::Id) -> bool {

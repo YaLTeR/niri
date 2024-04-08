@@ -24,6 +24,10 @@ animations {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 
+    window-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
     window-open {
         duration-ms 150
         curve "ease-out-expo"
@@ -126,6 +130,21 @@ All horizontal camera view movement animations, such as:
 ```
 animations {
     horizontal-view-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+}
+```
+
+#### `window-movement`
+
+Window movement animations, currently cover only horizontal column movement.
+
+This animation runs on actions like `move-column-left` and `move-column-right` to move the windows themselves.
+It can sometimes run together with the `horizontal-view-movement` animation, if the camera also moves.
+
+```
+animations {
+    window-movement {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 }

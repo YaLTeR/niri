@@ -483,6 +483,8 @@ pub struct Animations {
     pub workspace_switch: Animation,
     #[knuffel(child, default = Animation::default_horizontal_view_movement())]
     pub horizontal_view_movement: Animation,
+    #[knuffel(child, default = Animation::default_window_movement())]
+    pub window_movement: Animation,
     #[knuffel(child, default = Animation::default_window_open())]
     pub window_open: Animation,
     #[knuffel(child, default = Animation::default_config_notification_open_close())]
@@ -496,6 +498,7 @@ impl Default for Animations {
             slowdown: 1.,
             workspace_switch: Animation::default_workspace_switch(),
             horizontal_view_movement: Animation::default_horizontal_view_movement(),
+            window_movement: Animation::default_window_movement(),
             window_open: Animation::default_window_open(),
             config_notification_open_close: Animation::default_config_notification_open_close(),
         }
@@ -535,6 +538,17 @@ impl Animation {
     }
 
     pub const fn default_horizontal_view_movement() -> Self {
+        Self {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        }
+    }
+
+    pub const fn default_window_movement() -> Self {
         Self {
             off: false,
             kind: AnimationKind::Spring(SpringParams {
