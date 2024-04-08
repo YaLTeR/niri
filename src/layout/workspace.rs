@@ -605,21 +605,11 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     /// Computes the X position of the windows in the given column, in logical coordinates.
-    fn column_x(&self, column_idx: usize) -> i32 {
+    pub fn column_x(&self, column_idx: usize) -> i32 {
         let mut x = 0;
 
         for column in self.columns.iter().take(column_idx) {
             x += column.width() + self.options.gaps;
-        }
-
-        x
-    }
-
-    fn visual_column_x(&self, column_idx: usize) -> i32 {
-        let mut x = 0;
-
-        for column in self.columns.iter().take(column_idx) {
-            x += column.visual_width() + self.options.gaps;
         }
 
         x
@@ -1164,13 +1154,13 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     fn tiles_in_render_order(&self) -> impl Iterator<Item = (&'_ Tile<W>, Point<i32, Logical>)> {
-        let view_pos = self.visual_column_x(self.active_column_idx) + self.view_offset;
+        let view_pos = self.view_pos();
 
         // Start with the active window since it's drawn on top.
         let col = &self.columns[self.active_column_idx];
         let tile = &col.tiles[col.active_tile_idx];
         let tile_pos = Point::from((
-            self.visual_column_x(self.active_column_idx) - view_pos,
+            self.column_x(self.active_column_idx) - view_pos,
             col.tile_y(col.active_tile_idx),
         )) + col.render_offset();
         let first = iter::once((tile, tile_pos));
@@ -1183,7 +1173,7 @@ impl<W: LayoutElement> Workspace<W> {
             // Keep track of column X position.
             .map(move |(col_idx, col)| {
                 let rv = (col_idx, col, x);
-                x += col.visual_width() + self.options.gaps;
+                x += col.width() + self.options.gaps;
                 rv
             })
             .flat_map(move |(col_idx, col, x)| {
@@ -1931,14 +1921,6 @@ impl<W: LayoutElement> Column<W> {
         self.tiles
             .iter()
             .map(|tile| tile.tile_size().w)
-            .max()
-            .unwrap()
-    }
-
-    fn visual_width(&self) -> i32 {
-        self.tiles
-            .iter()
-            .map(|tile| tile.visual_tile_size().w)
             .max()
             .unwrap()
     }

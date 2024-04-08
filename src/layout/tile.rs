@@ -203,23 +203,6 @@ impl<W: LayoutElement> Tile<W> {
         self.window.size()
     }
 
-    /// Returns an animated size of the tile for rendering and input.
-    ///
-    /// During the window opening animation, windows to the right should gradually slide further to
-    /// the right. This is what this visual size is used for. Other things like window resizes or
-    /// transactions or new view position calculation always use the real size, instead of this
-    /// visual size.
-    pub fn visual_tile_size(&self) -> Size<i32, Logical> {
-        let size = self.tile_size();
-        let v = self
-            .open_animation
-            .as_ref()
-            .map(|anim| anim.value())
-            .unwrap_or(1.)
-            .max(0.);
-        Size::from(((f64::from(size.w) * v).round() as i32, size.h))
-    }
-
     pub fn buf_loc(&self) -> Point<i32, Logical> {
         let mut loc = Point::from((0, 0));
         loc += self.window_loc();
