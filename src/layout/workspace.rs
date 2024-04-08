@@ -622,8 +622,9 @@ impl<W: LayoutElement> Workspace<W> {
         x
     }
 
-    pub fn add_window(
+    pub fn add_window_at(
         &mut self,
+        col_idx: usize,
         window: W,
         activate: bool,
         width: ColumnWidth,
@@ -632,12 +633,6 @@ impl<W: LayoutElement> Workspace<W> {
         self.enter_output_for_window(&window);
 
         let was_empty = self.columns.is_empty();
-
-        let idx = if self.columns.is_empty() {
-            0
-        } else {
-            self.active_column_idx + 1
-        };
 
         let column = Column::new(
             window,
@@ -648,7 +643,7 @@ impl<W: LayoutElement> Workspace<W> {
             is_full_width,
         );
         let width = column.width();
-        self.columns.insert(idx, column);
+        self.columns.insert(col_idx, column);
 
         if activate {
             // If this is the first window on an empty workspace, skip the animation from whatever
@@ -667,9 +662,25 @@ impl<W: LayoutElement> Workspace<W> {
 
             let prev_offset = (!was_empty).then(|| self.static_view_offset());
 
-            self.activate_column(idx);
+            self.activate_column(col_idx);
             self.activate_prev_column_on_removal = prev_offset;
         }
+    }
+
+    pub fn add_window(
+        &mut self,
+        window: W,
+        activate: bool,
+        width: ColumnWidth,
+        is_full_width: bool,
+    ) {
+        let col_idx = if self.columns.is_empty() {
+            0
+        } else {
+            self.active_column_idx + 1
+        };
+
+        self.add_window_at(col_idx, window, activate, width, is_full_width);
     }
 
     pub fn add_window_right_of(
@@ -1037,9 +1048,9 @@ impl<W: LayoutElement> Workspace<W> {
             let window =
                 self.remove_window_by_idx(self.active_column_idx, source_column.active_tile_idx);
 
-            self.add_window(window, true, width, is_full_width);
-            // Window was added to the right of current column, so move the new column left.
-            self.move_left();
+            self.add_window_at(self.active_column_idx, window, true, width, is_full_width);
+            // We added to the left, don't activate even further left on removal.
+            self.activate_prev_column_on_removal = None;
         }
     }
 
