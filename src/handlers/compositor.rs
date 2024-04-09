@@ -199,7 +199,16 @@ impl CompositorHandler for State {
 
                 if !is_mapped {
                     // The toplevel got unmapped.
+                    //
+                    // Test client: wleird-unmap.
+                    let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
+                    let was_active = active_window == Some(&window);
+
                     self.niri.layout.remove_window(&window);
+
+                    if was_active {
+                        self.maybe_warp_cursor_to_focus();
+                    }
 
                     // Newly-unmapped toplevels must perform the initial commit-configure sequence
                     // afresh.
