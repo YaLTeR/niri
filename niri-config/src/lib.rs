@@ -611,6 +611,7 @@ impl EasingParams {
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
 pub enum AnimationCurve {
+    EaseOutQuad,
     EaseOutCubic,
     EaseOutExpo,
 }

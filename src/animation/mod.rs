@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use keyframe::functions::EaseOutCubic;
+use keyframe::functions::{EaseOutCubic, EaseOutQuad};
 use keyframe::EasingFunction;
 use portable_atomic::{AtomicF64, Ordering};
 
@@ -35,6 +35,7 @@ enum Kind {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Curve {
+    EaseOutQuad,
     EaseOutCubic,
     EaseOutExpo,
 }
@@ -276,6 +277,7 @@ impl Animation {
 impl Curve {
     pub fn y(self, x: f64) -> f64 {
         match self {
+            Curve::EaseOutQuad => EaseOutQuad.y(x),
             Curve::EaseOutCubic => EaseOutCubic.y(x),
             Curve::EaseOutExpo => 1. - 2f64.powf(-10. * x),
         }
@@ -285,6 +287,7 @@ impl Curve {
 impl From<niri_config::AnimationCurve> for Curve {
     fn from(value: niri_config::AnimationCurve) -> Self {
         match value {
+            niri_config::AnimationCurve::EaseOutQuad => Curve::EaseOutQuad,
             niri_config::AnimationCurve::EaseOutCubic => Curve::EaseOutCubic,
             niri_config::AnimationCurve::EaseOutExpo => Curve::EaseOutExpo,
         }
