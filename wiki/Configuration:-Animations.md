@@ -33,6 +33,11 @@ animations {
         curve "ease-out-expo"
     }
 
+    window-close {
+        duration-ms 150
+        curve "ease-out-quad"
+    }
+
     config-notification-open-close {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
     }
@@ -149,7 +154,7 @@ Window movement animations, currently cover only horizontal column movement.
 This animation runs on actions like `move-column-left` and `move-column-right` to move the windows themselves.
 It can sometimes run together with the `horizontal-view-movement` animation, if the camera also moves.
 
-Since 0.1.5, this is also the animation that moves windows out of the way upon window opening.
+Since 0.1.5, this is also the animation that moves windows out of the way upon window opening and closing.
 
 ```
 animations {
@@ -161,6 +166,8 @@ animations {
 
 #### `window-open`
 
+<sup>Since: 0.1.5</sup>
+
 Window opening animation.
 
 This one uses an easing type by default.
@@ -170,6 +177,21 @@ animations {
     window-open {
         duration-ms 150
         curve "ease-out-expo"
+    }
+}
+```
+
+#### `window-close`
+
+Window closing animation.
+
+This one uses an easing type by default.
+
+```
+animations {
+    window-open {
+        duration-ms 150
+        curve "ease-out-quad"
     }
 }
 ```

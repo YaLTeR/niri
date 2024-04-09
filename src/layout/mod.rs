@@ -39,6 +39,7 @@ use niri_ipc::SizeChange;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Id;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Size, Transform};
@@ -47,11 +48,13 @@ use self::monitor::Monitor;
 pub use self::monitor::MonitorRenderElement;
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::niri_render_elements;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::{RenderSnapshot, RenderTarget};
 use crate::utils::output_size;
 use crate::window::ResolvedWindowRules;
 
+pub mod closing_window;
 pub mod focus_ring;
 pub mod monitor;
 pub mod tile;
@@ -60,6 +63,13 @@ pub mod workspace;
 niri_render_elements! {
     LayoutElementRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
+        SolidColor = SolidColorRenderElement,
+    }
+}
+
+niri_render_elements! {
+    LayoutElementSnapshotRenderElements => {
+        Texture = PrimaryGpuTextureRenderElement,
         SolidColor = SolidColorRenderElement,
     }
 }
@@ -99,6 +109,8 @@ pub trait LayoutElement {
         alpha: f32,
         target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>>;
+
+    fn take_last_render(&self) -> RenderSnapshot<LayoutElementSnapshotRenderElements>;
 
     fn request_size(&self, size: Size<i32, Logical>);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
@@ -1750,6 +1762,35 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn start_close_animation_for_window(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        window: &W::Id,
+    ) {
+        let _span = tracy_client::span!("Layout::start_close_animation_for_window");
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.start_close_animation_for_window(renderer, window);
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.start_close_animation_for_window(renderer, window);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn refresh(&mut self) {
         let _span = tracy_client::span!("Layout::refresh");
 
@@ -1887,6 +1928,10 @@ mod tests {
             _target: RenderTarget,
         ) -> Vec<LayoutElementRenderElement<R>> {
             vec![]
+        }
+
+        fn take_last_render(&self) -> RenderSnapshot<LayoutElementSnapshotRenderElements> {
+            RenderSnapshot::default()
         }
 
         fn request_size(&self, size: Size<i32, Logical>) {

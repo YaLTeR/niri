@@ -382,6 +382,12 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.clone();
 
+        self.backend.with_primary_renderer(|renderer| {
+            self.niri
+                .layout
+                .start_close_animation_for_window(renderer, &window);
+        });
+
         let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
         let was_active = active_window == Some(&window);
 

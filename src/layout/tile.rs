@@ -3,17 +3,22 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::utils::RescaleRenderElement;
+use smithay::backend::renderer::element::utils::{
+    Relocate, RelocateRenderElement, RescaleRenderElement,
+};
 use smithay::backend::renderer::element::{Element, Kind};
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
-use super::{LayoutElement, LayoutElementRenderElement, Options};
+use super::{
+    LayoutElement, LayoutElementRenderElement, LayoutElementSnapshotRenderElements, Options,
+};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::{RenderSnapshot, RenderTarget};
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -55,6 +60,14 @@ niri_render_elements! {
         FocusRing = FocusRingRenderElement,
         SolidColor = SolidColorRenderElement,
         Offscreen = RescaleRenderElement<OffscreenRenderElement>,
+    }
+}
+
+niri_render_elements! {
+    TileSnapshotRenderElement => {
+        LayoutElement = RelocateRenderElement<LayoutElementSnapshotRenderElements>,
+        FocusRing = FocusRingRenderElement,
+        SolidColor = SolidColorRenderElement,
     }
 }
 
@@ -127,6 +140,10 @@ impl<W: LayoutElement> Tile<W> {
             self.options.animations.window_open,
             niri_config::Animation::default_window_open(),
         ));
+    }
+
+    pub fn open_animation(&self) -> &Option<Animation> {
+        &self.open_animation
     }
 
     pub fn window(&self) -> &W {
@@ -397,6 +414,56 @@ impl<W: LayoutElement> Tile<W> {
             let elements =
                 self.render_inner(renderer, location, scale, view_size, focus_ring, target);
             None.into_iter().chain(Some(elements).into_iter().flatten())
+        }
+    }
+
+    pub fn take_snapshot_for_close_anim(
+        &self,
+        renderer: &mut GlesRenderer,
+        scale: Scale<f64>,
+        view_size: Size<i32, Logical>,
+    ) -> RenderSnapshot<TileSnapshotRenderElement> {
+        let snapshot = self.window.take_last_render();
+        if snapshot.contents.is_empty() {
+            return RenderSnapshot::default();
+        }
+
+        let mut process = |contents| {
+            let mut rv = vec![];
+
+            let buf_pos =
+                (self.window_loc() + self.window.buf_loc()).to_physical_precise_round(scale);
+            for elem in contents {
+                let elem = RelocateRenderElement::from_element(elem, buf_pos, Relocate::Relative);
+                rv.push(elem.into());
+            }
+
+            if let Some(width) = self.effective_border_width() {
+                rv.extend(
+                    self.border
+                        .render(renderer, Point::from((width, width)), scale, view_size)
+                        .map(Into::into),
+                );
+            }
+
+            if self.is_fullscreen {
+                let elem = SolidColorRenderElement::from_buffer(
+                    &self.fullscreen_backdrop,
+                    Point::from((0, 0)),
+                    scale,
+                    1.,
+                    Kind::Unspecified,
+                );
+                rv.push(elem.into());
+            }
+
+            rv
+        };
+
+        RenderSnapshot {
+            contents: process(snapshot.contents),
+            blocked_out_contents: process(snapshot.blocked_out_contents),
+            block_out_from: snapshot.block_out_from,
         }
     }
 }

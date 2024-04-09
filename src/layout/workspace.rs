@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetWidth, Struts};
 use niri_ipc::SizeChange;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -12,6 +13,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::send_surface_state;
 
+use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::tile::{Tile, TileRenderElement};
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
@@ -76,6 +78,9 @@ pub struct Workspace<W: LayoutElement> {
     /// The value is the view offset that the previous column had before, to restore it.
     activate_prev_column_on_removal: Option<i32>,
 
+    /// Windows in the closing animation.
+    closing_windows: Vec<ClosingWindow>,
+
     /// Configurable properties of the layout.
     pub options: Rc<Options>,
 
@@ -100,6 +105,7 @@ impl WorkspaceId {
 niri_render_elements! {
     WorkspaceRenderElement<R> => {
         Tile = TileRenderElement<R>,
+        ClosingWindow = ClosingWindowRenderElement,
     }
 }
 
@@ -243,6 +249,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset: 0,
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
+            closing_windows: vec![],
             options,
             id: WorkspaceId::next(),
         }
@@ -259,6 +266,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset: 0,
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
+            closing_windows: vec![],
             options,
             id: WorkspaceId::next(),
         }
@@ -283,10 +291,17 @@ impl<W: LayoutElement> Workspace<W> {
             let is_active = is_active && col_idx == self.active_column_idx;
             col.advance_animations(current_time, is_active);
         }
+
+        self.closing_windows.retain_mut(|closing| {
+            closing.advance_animations(current_time);
+            closing.are_animations_ongoing()
+        });
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.view_offset_adj.is_some() || self.columns.iter().any(Column::are_animations_ongoing)
+        self.view_offset_adj.is_some()
+            || self.columns.iter().any(Column::are_animations_ongoing)
+            || !self.closing_windows.is_empty()
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
@@ -897,6 +912,97 @@ impl<W: LayoutElement> Workspace<W> {
         self.activate_column(column_idx);
     }
 
+    pub fn start_close_animation_for_window(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        window: &W::Id,
+    ) {
+        let (tile, mut tile_pos) = self
+            .tiles_in_render_order()
+            .find(|(tile, _)| tile.window().id() == window)
+            .unwrap();
+
+        // FIXME: workspaces should probably cache their last used scale so they can be correctly
+        // rendered even with no outputs connected.
+        let output_scale = self
+            .output
+            .as_ref()
+            .map(|o| Scale::from(o.current_scale().fractional_scale()))
+            .unwrap_or(Scale::from(1.));
+
+        let snapshot = tile.take_snapshot_for_close_anim(renderer, output_scale, self.view_size);
+        if snapshot.contents.is_empty() {
+            return;
+        };
+
+        let col_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(window))
+            .unwrap();
+
+        let removing_last = self.columns[col_idx].tiles.len() == 1;
+        let offset = self.column_x(col_idx + 1) - self.column_x(col_idx);
+
+        let mut center = Point::from((0, 0));
+        center.x += tile.tile_size().w / 2;
+        center.y += tile.tile_size().h / 2;
+
+        tile_pos.x += self.view_pos();
+
+        if col_idx < self.active_column_idx && removing_last {
+            tile_pos.x -= offset;
+        }
+
+        // FIXME: this is a bit cursed since it's relying on Tile's internal details.
+        let (starting_alpha, starting_scale) = if let Some(anim) = tile.open_animation() {
+            let val = anim.value();
+            (val.clamp(0., 1.) as f32, (val / 2. + 0.5).max(0.))
+        } else {
+            (1., 1.)
+        };
+
+        let anim = Animation::new(
+            1.,
+            0.,
+            0.,
+            self.options.animations.window_close,
+            niri_config::Animation::default_window_close(),
+        );
+
+        let res = ClosingWindow::new(
+            renderer,
+            snapshot,
+            output_scale.x as i32,
+            center,
+            tile_pos,
+            anim,
+            starting_alpha,
+            starting_scale,
+        );
+        match res {
+            Ok(closing) => {
+                self.closing_windows.push(closing);
+            }
+            Err(err) => {
+                warn!("error creating a closing window animation: {err:?}");
+            }
+        }
+
+        // Also move the other columns.
+        if removing_last {
+            if self.active_column_idx <= col_idx {
+                for col in &mut self.columns[col_idx + 1..] {
+                    col.animate_move_from(offset);
+                }
+            } else {
+                for col in &mut self.columns[..col_idx] {
+                    col.animate_move_from(-offset);
+                }
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn verify_invariants(&self) {
         assert!(self.view_size.w > 0);
@@ -1354,10 +1460,6 @@ impl<W: LayoutElement> Workspace<W> {
         renderer: &mut R,
         target: RenderTarget,
     ) -> Vec<WorkspaceRenderElement<R>> {
-        if self.columns.is_empty() {
-            return vec![];
-        }
-
         // FIXME: workspaces should probably cache their last used scale so they can be correctly
         // rendered even with no outputs connected.
         let output_scale = self
@@ -1367,8 +1469,18 @@ impl<W: LayoutElement> Workspace<W> {
             .unwrap_or(Scale::from(1.));
 
         let mut rv = vec![];
-        let mut first = true;
 
+        // Draw the closing windows on top.
+        let view_pos = self.view_pos();
+        for closing in &self.closing_windows {
+            rv.push(closing.render(view_pos, output_scale, target).into());
+        }
+
+        if self.columns.is_empty() {
+            return rv;
+        }
+
+        let mut first = true;
         for (tile, tile_pos) in self.tiles_in_render_order() {
             // For the active tile (which comes first), draw the focus ring.
             let focus_ring = first;

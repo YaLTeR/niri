@@ -187,8 +187,6 @@ impl CompositorHandler for State {
                 let window = mapped.window.clone();
                 let output = output.clone();
 
-                window.on_commit();
-
                 // This is a commit of a previously-mapped toplevel.
                 let is_mapped =
                     with_renderer_surface_state(surface, |state| state.buffer().is_some())
@@ -196,6 +194,17 @@ impl CompositorHandler for State {
                             error!("no renderer surface state even though we use commit handler");
                             false
                         });
+
+                // Must start the close animation before window.on_commit().
+                if !is_mapped {
+                    self.backend.with_primary_renderer(|renderer| {
+                        self.niri
+                            .layout
+                            .start_close_animation_for_window(renderer, &window);
+                    });
+                }
+
+                window.on_commit();
 
                 if !is_mapped {
                     // The toplevel got unmapped.

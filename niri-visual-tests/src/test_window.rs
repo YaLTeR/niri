@@ -2,9 +2,11 @@ use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::rc::Rc;
 
-use niri::layout::{LayoutElement, LayoutElementRenderElement};
+use niri::layout::{
+    LayoutElement, LayoutElementRenderElement, LayoutElementSnapshotRenderElements,
+};
 use niri::render_helpers::renderer::NiriRenderer;
-use niri::render_helpers::RenderTarget;
+use niri::render_helpers::{RenderSnapshot, RenderTarget};
 use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::{Id, Kind};
@@ -171,6 +173,10 @@ impl LayoutElement for TestWindow {
             )
             .into(),
         ]
+    }
+
+    fn take_last_render(&self) -> RenderSnapshot<LayoutElementSnapshotRenderElements> {
+        RenderSnapshot::default()
     }
 
     fn request_size(&self, size: Size<i32, Logical>) {

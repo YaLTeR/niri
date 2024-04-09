@@ -3,9 +3,9 @@ use std::cmp::{max, min};
 
 use niri_config::{BlockOutFrom, WindowRule};
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::{AsRenderElements as _, Id, Kind};
+use smithay::backend::renderer::element::{Id, Kind};
 use smithay::desktop::space::SpaceElement as _;
-use smithay::desktop::Window;
+use smithay::desktop::{PopupManager, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -15,10 +15,13 @@ use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
-use crate::layout::{LayoutElement, LayoutElementRenderElement};
+use crate::layout::{
+    LayoutElement, LayoutElementRenderElement, LayoutElementSnapshotRenderElements,
+};
 use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::surface::render_and_save_from_surface_tree;
+use crate::render_helpers::{RenderSnapshot, RenderTarget};
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -38,6 +41,9 @@ pub struct Mapped {
 
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
+
+    /// Snapshot of the last render for use in the close animation.
+    last_render: RefCell<RenderSnapshot<LayoutElementSnapshotRenderElements>>,
 }
 
 impl Mapped {
@@ -48,6 +54,7 @@ impl Mapped {
             need_to_recompute_rules: false,
             is_focused: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0, 0), [0., 0., 0., 1.])),
+            last_render: RefCell::new(RenderSnapshot::default()),
         }
     }
 
@@ -124,9 +131,10 @@ impl LayoutElement for Mapped {
             Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
         };
 
+        let mut buffer = self.block_out_buffer.borrow_mut();
+        buffer.resize(self.window.geometry().size);
+
         if block_out {
-            let mut buffer = self.block_out_buffer.borrow_mut();
-            buffer.resize(self.window.geometry().size);
             let elem = SolidColorRenderElement::from_buffer(
                 &buffer,
                 location.to_physical_precise_round(scale),
@@ -137,13 +145,66 @@ impl LayoutElement for Mapped {
             vec![elem.into()]
         } else {
             let buf_pos = location - self.window.geometry().loc;
-            self.window.render_elements(
+            let buf_pos = buf_pos.to_physical_precise_round(scale);
+
+            let mut elements = vec![];
+
+            // If we're rendering for output, save into last_render.
+            let mut last_render = self.last_render.borrow_mut();
+            // FIXME: when preview-render is active, last render contents will never update.
+            let mut storage = if target == RenderTarget::Output {
+                last_render.contents.clear();
+                last_render.block_out_from = self.rules.block_out_from;
+                last_render.blocked_out_contents = vec![SolidColorRenderElement::from_buffer(
+                    &buffer,
+                    (0, 0),
+                    scale,
+                    alpha,
+                    Kind::Unspecified,
+                )
+                .into()];
+
+                Some(&mut last_render.contents)
+            } else {
+                None
+            };
+
+            let surface = self.toplevel().wl_surface();
+            for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+                let offset = (self.window.geometry().loc + popup_offset - popup.geometry().loc)
+                    .to_physical_precise_round(scale);
+
+                render_and_save_from_surface_tree(
+                    renderer,
+                    popup.wl_surface(),
+                    buf_pos,
+                    offset,
+                    scale,
+                    alpha,
+                    Kind::Unspecified,
+                    &mut elements,
+                    &mut storage,
+                );
+            }
+
+            render_and_save_from_surface_tree(
                 renderer,
-                buf_pos.to_physical_precise_round(scale),
+                surface,
+                buf_pos,
+                Point::from((0., 0.)),
                 scale,
                 alpha,
-            )
+                Kind::Unspecified,
+                &mut elements,
+                &mut storage,
+            );
+
+            elements
         }
+    }
+
+    fn take_last_render(&self) -> RenderSnapshot<LayoutElementSnapshotRenderElements> {
+        self.last_render.take()
     }
 
     fn request_size(&self, size: Size<i32, Logical>) {

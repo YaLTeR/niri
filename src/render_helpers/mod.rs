@@ -1,6 +1,7 @@
 use std::ptr;
 
 use anyhow::{ensure, Context};
+use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
@@ -18,6 +19,7 @@ pub mod primary_gpu_texture;
 pub mod render_elements;
 pub mod renderer;
 pub mod shaders;
+pub mod surface;
 
 /// What we're rendering for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +30,29 @@ pub enum RenderTarget {
     Screencast,
     /// Rendering for any other screen capture.
     ScreenCapture,
+}
+
+/// Snapshot of a render.
+#[derive(Debug)]
+pub struct RenderSnapshot<E> {
+    /// Contents for a normal render.
+    pub contents: Vec<E>,
+
+    /// Blocked-out contents.
+    pub blocked_out_contents: Vec<E>,
+
+    /// Where the contents were blocked out from at the time of the snapshot.
+    pub block_out_from: Option<BlockOutFrom>,
+}
+
+impl<E> Default for RenderSnapshot<E> {
+    fn default() -> Self {
+        Self {
+            contents: Default::default(),
+            blocked_out_contents: Default::default(),
+            block_out_from: Default::default(),
+        }
+    }
 }
 
 pub fn render_to_texture(
