@@ -767,9 +767,6 @@ impl<W: LayoutElement> Workspace<W> {
                 self.activate_prev_column_on_removal = None;
             }
 
-            // FIXME: activate_column below computes current view position to compute the new view
-            // position, which can include the column we're removing here. This leads to unwanted
-            // view jumps.
             self.columns.remove(column_idx);
             if self.columns.is_empty() {
                 return window;
@@ -778,7 +775,8 @@ impl<W: LayoutElement> Workspace<W> {
             if column_idx < self.active_column_idx {
                 // A column to the left was removed; preserve the current position.
                 // FIXME: preserve activate_prev_column_on_removal.
-                self.activate_column(self.active_column_idx - 1);
+                self.active_column_idx -= 1;
+                self.activate_prev_column_on_removal = None;
             } else if column_idx == self.active_column_idx
                 && self.activate_prev_column_on_removal.is_some()
             {
@@ -822,9 +820,6 @@ impl<W: LayoutElement> Workspace<W> {
             self.activate_prev_column_on_removal = None;
         }
 
-        // FIXME: activate_column below computes current view position to compute the new view
-        // position, which can include the column we're removing here. This leads to unwanted
-        // view jumps.
         if self.columns.is_empty() {
             return column;
         }
@@ -832,7 +827,8 @@ impl<W: LayoutElement> Workspace<W> {
         if column_idx < self.active_column_idx {
             // A column to the left was removed; preserve the current position.
             // FIXME: preserve activate_prev_column_on_removal.
-            self.activate_column(self.active_column_idx - 1);
+            self.active_column_idx -= 1;
+            self.activate_prev_column_on_removal = None;
         } else if column_idx == self.active_column_idx
             && self.activate_prev_column_on_removal.is_some()
         {
