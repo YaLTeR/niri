@@ -166,8 +166,6 @@ animations {
 
 #### `window-open`
 
-<sup>Since: 0.1.5</sup>
-
 Window opening animation.
 
 This one uses an easing type by default.
@@ -182,6 +180,8 @@ animations {
 ```
 
 #### `window-close`
+
+<sup>Since: 0.1.5</sup>
 
 Window closing animation.
 
