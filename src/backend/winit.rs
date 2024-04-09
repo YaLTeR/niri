@@ -176,10 +176,12 @@ impl Winit {
                 .wait_for_frame_completion_before_queueing
             {
                 let _span = tracy_client::span!("wait for completion");
-                res.sync.wait();
+                if let Err(err) = res.sync.wait() {
+                    warn!("error waiting for frame completion: {err:?}");
+                }
             }
 
-            self.backend.submit(Some(&damage)).unwrap();
+            self.backend.submit(Some(damage)).unwrap();
 
             let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &res.states);
             let mode = output.current_mode().unwrap();

@@ -10,6 +10,7 @@ use std::thread;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
+use smithay::backend::input::TabletToolDescriptor;
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
@@ -45,6 +46,7 @@ use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
 use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
 };
+use smithay::wayland::tablet_manager::TabletSeatHandler;
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
     delegate_drm_lease, delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager,
@@ -105,10 +107,19 @@ impl SeatHandler for State {
 }
 delegate_seat!(State);
 delegate_cursor_shape!(State);
-delegate_tablet_manager!(State);
 delegate_pointer_gestures!(State);
 delegate_relative_pointer!(State);
 delegate_text_input_manager!(State);
+
+impl TabletSeatHandler for State {
+    fn tablet_tool_image(&mut self, _tool: &TabletToolDescriptor, image: CursorImageStatus) {
+        // FIXME: tablet tools should have their own cursors.
+        self.niri.cursor_manager.set_cursor_image(image);
+        // FIXME: granular.
+        self.niri.queue_redraw_all();
+    }
+}
+delegate_tablet_manager!(State);
 
 impl PointerConstraintsHandler for State {
     fn new_constraint(&mut self, _surface: &WlSurface, pointer: &PointerHandle<Self>) {

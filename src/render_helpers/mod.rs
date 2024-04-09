@@ -64,8 +64,7 @@ pub fn render_and_download(
 ) -> anyhow::Result<GlesMapping> {
     let _span = tracy_client::span!();
 
-    let (_, sync_point) = render_to_texture(renderer, size, scale, transform, fourcc, elements)?;
-    sync_point.wait();
+    let (_, _) = render_to_texture(renderer, size, scale, transform, fourcc, elements)?;
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
     let mapping = renderer

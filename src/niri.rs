@@ -82,7 +82,7 @@ use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
-use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatTrait};
+use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
@@ -1231,23 +1231,6 @@ impl Niri {
         let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
         let mods_with_finger_scroll_binds =
             mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
-
-        let (tx, rx) = calloop::channel::channel();
-        event_loop
-            .insert_source(rx, move |event, _, state| {
-                if let calloop::channel::Event::Msg(image) = event {
-                    state.niri.cursor_manager.set_cursor_image(image);
-                    // FIXME: granular.
-                    state.niri.queue_redraw_all();
-                }
-            })
-            .unwrap();
-        seat.tablet_seat()
-            .on_cursor_surface(move |_tool, new_image| {
-                if let Err(err) = tx.send(new_image) {
-                    warn!("error sending new tablet cursor image: {err:?}");
-                };
-            });
 
         let screenshot_ui = ScreenshotUi::new();
         let config_error_notification = ConfigErrorNotification::new(config.clone());

@@ -1197,7 +1197,9 @@ impl Tty {
                 {
                     if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
                         let _span = tracy_client::span!("wait for completion");
-                        element.sync.wait();
+                        if let Err(err) = element.sync.wait() {
+                            warn!("error waiting for frame completion: {err:?}");
+                        }
                     }
                 }
 
