@@ -16,6 +16,8 @@ pub struct Animation {
     from: f64,
     to: f64,
     duration: Duration,
+    /// Time until the animation first reaches `to`.
+    clamped_duration: Duration,
     start_time: Duration,
     current_time: Duration,
     kind: Kind,
@@ -106,6 +108,8 @@ impl Animation {
             from,
             to,
             duration,
+            // Our current curves never overshoot.
+            clamped_duration: duration,
             start_time: now,
             current_time: now,
             kind,
@@ -118,12 +122,14 @@ impl Animation {
         let now = get_monotonic_time();
 
         let duration = spring.duration();
+        let clamped_duration = spring.clamped_duration();
         let kind = Kind::Spring(spring);
 
         Self {
             from: spring.from,
             to: spring.to,
             duration,
+            clamped_duration,
             start_time: now,
             current_time: now,
             kind,
@@ -159,6 +165,7 @@ impl Animation {
             from,
             to,
             duration,
+            clamped_duration: duration,
             start_time: now,
             current_time: now,
             kind,
@@ -228,6 +235,10 @@ impl Animation {
         self.current_time >= self.start_time + self.duration
     }
 
+    pub fn is_clamped_done(&self) -> bool {
+        self.current_time >= self.start_time + self.clamped_duration
+    }
+
     pub fn value(&self) -> f64 {
         if self.is_done() {
             return self.to;
@@ -252,6 +263,15 @@ impl Animation {
                 self.from + (deceleration_rate.powf(1000. * passed) - 1.) / coeff * initial_velocity
             }
         }
+    }
+
+    /// Returns a value that stops at the target value after first reaching it.
+    pub fn clamped_value(&self) -> f64 {
+        if self.is_clamped_done() {
+            return self.to;
+        }
+
+        self.value()
     }
 
     pub fn to(&self) -> f64 {
