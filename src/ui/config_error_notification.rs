@@ -119,9 +119,7 @@ impl ConfigErrorNotification {
             }
             State::Hiding(anim) => {
                 anim.set_current_time(target_presentation_time);
-                // HACK: prevent bounciness on hiding. This is better done with a clamp property on
-                // the spring animation.
-                if anim.is_done() || anim.value() <= 0. {
+                if anim.is_clamped_done() {
                     self.state = State::Hidden;
                 }
             }

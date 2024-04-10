@@ -125,7 +125,7 @@ impl ClosingWindow {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        !self.anim.is_done()
+        !self.anim.is_clamped_done()
     }
 
     pub fn render(
@@ -134,7 +134,7 @@ impl ClosingWindow {
         scale: Scale<f64>,
         target: RenderTarget,
     ) -> ClosingWindowRenderElement {
-        let val = self.anim.value();
+        let val = self.anim.clamped_value();
 
         let block_out = match self.block_out_from {
             None => false,

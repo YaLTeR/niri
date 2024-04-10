@@ -387,7 +387,7 @@ impl<W: LayoutElement> Tile<W> {
                 renderer,
                 scale.x as i32,
                 &elements,
-                anim.value().clamp(0., 1.) as f32,
+                anim.clamped_value().clamp(0., 1.) as f32,
             );
             self.window()
                 .set_offscreen_element_id(Some(elem.id().clone()));

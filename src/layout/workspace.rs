@@ -956,8 +956,10 @@ impl<W: LayoutElement> Workspace<W> {
 
         // FIXME: this is a bit cursed since it's relying on Tile's internal details.
         let (starting_alpha, starting_scale) = if let Some(anim) = tile.open_animation() {
-            let val = anim.value();
-            (val.clamp(0., 1.) as f32, (val / 2. + 0.5).max(0.))
+            (
+                anim.clamped_value().clamp(0., 1.) as f32,
+                (anim.value() / 2. + 0.5).max(0.),
+            )
         } else {
             (1., 1.)
         };
