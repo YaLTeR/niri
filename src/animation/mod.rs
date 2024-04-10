@@ -17,6 +17,8 @@ pub struct Animation {
     to: f64,
     duration: Duration,
     /// Time until the animation first reaches `to`.
+    ///
+    /// Best effort; not always exactly precise.
     clamped_duration: Duration,
     start_time: Duration,
     current_time: Duration,
@@ -117,12 +119,14 @@ impl Animation {
     }
 
     pub fn spring(spring: Spring) -> Self {
+        let _span = tracy_client::span!("Animation::spring");
+
         // FIXME: ideally we shouldn't use current time here because animations started within the
         // same frame cycle should have the same start time to be synchronized.
         let now = get_monotonic_time();
 
         let duration = spring.duration();
-        let clamped_duration = spring.clamped_duration();
+        let clamped_duration = spring.clamped_duration().unwrap_or(duration);
         let kind = Kind::Spring(spring);
 
         Self {
@@ -266,6 +270,8 @@ impl Animation {
     }
 
     /// Returns a value that stops at the target value after first reaching it.
+    ///
+    /// Best effort; not always exactly precise.
     pub fn clamped_value(&self) -> f64 {
         if self.is_clamped_done() {
             return self.to;
