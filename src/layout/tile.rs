@@ -414,7 +414,7 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    fn render_snapshot<C>(
+    fn render_snapshot<E, C>(
         &self,
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
@@ -422,7 +422,8 @@ impl<W: LayoutElement> Tile<W> {
         contents: Vec<C>,
     ) -> Vec<TileSnapshotRenderElement>
     where
-        C: ToRenderElement<RenderElement: Into<TileSnapshotRenderElement>>,
+        E: Into<TileSnapshotRenderElement>,
+        C: ToRenderElement<RenderElement = E>,
     {
         let alpha = if self.is_fullscreen {
             1.
