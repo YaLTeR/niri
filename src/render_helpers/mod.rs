@@ -3,14 +3,18 @@ use std::ptr;
 use anyhow::{ensure, Context};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::RenderElement;
+use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
+use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
+use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{buffer_dimensions, Bind, ExportMem, Frame, Offscreen, Renderer};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::utils::{Physical, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::shm;
+
+use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 
 pub mod gradient;
 pub mod offscreen;
@@ -32,20 +36,85 @@ pub enum RenderTarget {
     ScreenCapture,
 }
 
+/// Buffer with location, src and dst.
+#[derive(Debug)]
+pub struct BakedBuffer<B> {
+    pub buffer: B,
+    pub location: Point<i32, Logical>,
+    pub src: Option<Rectangle<f64, Logical>>,
+    pub dst: Option<Size<i32, Logical>>,
+}
+
 /// Snapshot of a render.
 #[derive(Debug)]
-pub struct RenderSnapshot<E> {
+pub struct RenderSnapshot<C, B> {
     /// Contents for a normal render.
-    pub contents: Vec<E>,
+    pub contents: Vec<C>,
 
     /// Blocked-out contents.
-    pub blocked_out_contents: Vec<E>,
+    pub blocked_out_contents: Vec<B>,
 
     /// Where the contents were blocked out from at the time of the snapshot.
     pub block_out_from: Option<BlockOutFrom>,
 }
 
-impl<E> Default for RenderSnapshot<E> {
+pub trait ToRenderElement {
+    type RenderElement;
+
+    fn to_render_element(
+        &self,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        kind: Kind,
+    ) -> Self::RenderElement;
+}
+
+impl ToRenderElement for BakedBuffer<TextureBuffer<GlesTexture>> {
+    type RenderElement = PrimaryGpuTextureRenderElement;
+
+    fn to_render_element(
+        &self,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        kind: Kind,
+    ) -> Self::RenderElement {
+        let elem = TextureRenderElement::from_texture_buffer(
+            (location + self.location).to_physical_precise_round(scale),
+            &self.buffer,
+            Some(alpha),
+            self.src,
+            self.dst,
+            kind,
+        );
+        PrimaryGpuTextureRenderElement(elem)
+    }
+}
+
+impl ToRenderElement for BakedBuffer<SolidColorBuffer> {
+    type RenderElement = SolidColorRenderElement;
+
+    fn to_render_element(
+        &self,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        kind: Kind,
+    ) -> Self::RenderElement {
+        SolidColorRenderElement::from_buffer(
+            &self.buffer,
+            (location + self.location)
+                .to_physical_precise_round(scale)
+                .to_i32_round(),
+            scale,
+            alpha,
+            kind,
+        )
+    }
+}
+
+impl<C, B> Default for RenderSnapshot<C, B> {
     fn default() -> Self {
         Self {
             contents: Default::default(),

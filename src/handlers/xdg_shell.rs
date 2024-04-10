@@ -383,6 +383,9 @@ impl XdgShellHandler for State {
         let output = output.clone();
 
         self.backend.with_primary_renderer(|renderer| {
+            mapped.render_and_store_snapshot(renderer);
+        });
+        self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .layout
                 .start_close_animation_for_window(renderer, &window);

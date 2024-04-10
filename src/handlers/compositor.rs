@@ -16,6 +16,7 @@ use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
+use crate::layout::LayoutElement;
 use crate::niri::{ClientState, State};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
@@ -80,16 +81,38 @@ impl CompositorHandler for State {
     fn commit(&mut self, surface: &WlSurface) {
         let _span = tracy_client::span!("CompositorHandler::commit");
 
+        let mut root_surface = surface.clone();
+        while let Some(parent) = get_parent(&root_surface) {
+            root_surface = parent;
+        }
+
+        // Update the cached root surface.
+        self.niri
+            .root_surface
+            .insert(surface.clone(), root_surface.clone());
+
+        // Check if this root surface got unmapped to snapshot it before on_commit_buffer_handler()
+        // overwrites the buffer.
+        if surface == &root_surface {
+            let got_unmapped = with_states(surface, |states| {
+                let attrs = states.cached_state.current::<SurfaceAttributes>();
+                matches!(attrs.buffer, Some(BufferAssignment::Removed))
+            });
+
+            if got_unmapped {
+                if let Some((mapped, _)) = self.niri.layout.find_window_and_output(surface) {
+                    self.backend.with_primary_renderer(|renderer| {
+                        mapped.render_and_store_snapshot(renderer);
+                    });
+                }
+            }
+        }
+
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);
 
         if is_sync_subsurface(surface) {
             return;
-        }
-
-        let mut root_surface = surface.clone();
-        while let Some(parent) = get_parent(&root_surface) {
-            root_surface = parent;
         }
 
         if surface == &root_surface {
@@ -195,8 +218,11 @@ impl CompositorHandler for State {
                             false
                         });
 
-                // Must start the close animation before window.on_commit().
-                if !is_mapped {
+                if is_mapped {
+                    // The surface remains mapped; clear any cached render snapshot.
+                    let _ = mapped.take_last_render();
+                } else {
+                    // Must start the close animation before window.on_commit().
                     self.backend.with_primary_renderer(|renderer| {
                         self.niri
                             .layout
@@ -287,6 +313,24 @@ impl CompositorHandler for State {
                 }
             }
         }
+    }
+
+    fn destroyed(&mut self, surface: &WlSurface) {
+        // Clients may destroy their subsurfaces before the main surface. Ensure we have a snapshot
+        // when that happens, so that the closing animation includes all these subsurfaces.
+        //
+        // Test client: alacritty with CSD.
+        if let Some(root) = self.niri.root_surface.get(surface) {
+            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+                self.backend.with_primary_renderer(|renderer| {
+                    mapped.render_and_store_snapshot(renderer);
+                });
+            }
+        }
+
+        self.niri
+            .root_surface
+            .retain(|k, v| k != surface && v != surface);
     }
 }
 

@@ -151,6 +151,10 @@ pub struct Niri {
     // Windows which don't have a buffer attached yet.
     pub unmapped_windows: HashMap<WlSurface, Unmapped>,
 
+    // Cached root surface for every surface, so that we can access it in destroyed() where the
+    // normal get_parent() is cleared out.
+    pub root_surface: HashMap<WlSurface, WlSurface>,
+
     pub output_state: HashMap<Output, OutputState>,
     pub output_by_name: HashMap<String, Output>,
 
@@ -1318,6 +1322,7 @@ impl Niri {
             output_state: HashMap::new(),
             output_by_name: HashMap::new(),
             unmapped_windows: HashMap::new(),
+            root_surface: HashMap::new(),
             monitors_active: true,
 
             devices: HashSet::new(),

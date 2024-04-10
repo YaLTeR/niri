@@ -3,22 +3,19 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::utils::{
-    Relocate, RelocateRenderElement, RescaleRenderElement,
-};
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
-use super::{
-    LayoutElement, LayoutElementRenderElement, LayoutElementSnapshotRenderElements, Options,
-};
+use super::{LayoutElement, LayoutElementRenderElement, Options};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::OffscreenRenderElement;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{RenderSnapshot, RenderTarget};
+use crate::render_helpers::{RenderSnapshot, RenderTarget, ToRenderElement};
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -65,7 +62,7 @@ niri_render_elements! {
 
 niri_render_elements! {
     TileSnapshotRenderElement => {
-        LayoutElement = RelocateRenderElement<LayoutElementSnapshotRenderElements>,
+        Texture = PrimaryGpuTextureRenderElement,
         FocusRing = FocusRingRenderElement,
         SolidColor = SolidColorRenderElement,
     }
@@ -417,52 +414,70 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    fn render_snapshot<C>(
+        &self,
+        renderer: &mut GlesRenderer,
+        scale: Scale<f64>,
+        view_size: Size<i32, Logical>,
+        contents: Vec<C>,
+    ) -> Vec<TileSnapshotRenderElement>
+    where
+        C: ToRenderElement<RenderElement: Into<TileSnapshotRenderElement>>,
+    {
+        let alpha = if self.is_fullscreen {
+            1.
+        } else {
+            self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)
+        };
+
+        let mut rv = vec![];
+
+        for baked in contents {
+            let elem = baked.to_render_element(self.window_loc(), scale, alpha, Kind::Unspecified);
+            rv.push(elem.into());
+        }
+
+        if let Some(width) = self.effective_border_width() {
+            rv.extend(
+                self.border
+                    .render(renderer, Point::from((width, width)), scale, view_size)
+                    .map(Into::into),
+            );
+        }
+
+        if self.is_fullscreen {
+            let elem = SolidColorRenderElement::from_buffer(
+                &self.fullscreen_backdrop,
+                Point::from((0, 0)),
+                scale,
+                1.,
+                Kind::Unspecified,
+            );
+            rv.push(elem.into());
+        }
+
+        rv
+    }
+
     pub fn take_snapshot_for_close_anim(
         &self,
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
         view_size: Size<i32, Logical>,
-    ) -> RenderSnapshot<TileSnapshotRenderElement> {
+    ) -> RenderSnapshot<TileSnapshotRenderElement, TileSnapshotRenderElement> {
         let snapshot = self.window.take_last_render();
         if snapshot.contents.is_empty() {
             return RenderSnapshot::default();
         }
 
-        let mut process = |contents| {
-            let mut rv = vec![];
-
-            let buf_pos =
-                (self.window_loc() + self.window.buf_loc()).to_physical_precise_round(scale);
-            for elem in contents {
-                let elem = RelocateRenderElement::from_element(elem, buf_pos, Relocate::Relative);
-                rv.push(elem.into());
-            }
-
-            if let Some(width) = self.effective_border_width() {
-                rv.extend(
-                    self.border
-                        .render(renderer, Point::from((width, width)), scale, view_size)
-                        .map(Into::into),
-                );
-            }
-
-            if self.is_fullscreen {
-                let elem = SolidColorRenderElement::from_buffer(
-                    &self.fullscreen_backdrop,
-                    Point::from((0, 0)),
-                    scale,
-                    1.,
-                    Kind::Unspecified,
-                );
-                rv.push(elem.into());
-            }
-
-            rv
-        };
-
         RenderSnapshot {
-            contents: process(snapshot.contents),
-            blocked_out_contents: process(snapshot.blocked_out_contents),
+            contents: self.render_snapshot(renderer, scale, view_size, snapshot.contents),
+            blocked_out_contents: self.render_snapshot(
+                renderer,
+                scale,
+                view_size,
+                snapshot.blocked_out_contents,
+            ),
             block_out_from: snapshot.block_out_from,
         }
     }

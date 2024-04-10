@@ -2,9 +2,7 @@ use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::rc::Rc;
 
-use niri::layout::{
-    LayoutElement, LayoutElementRenderElement, LayoutElementSnapshotRenderElements,
-};
+use niri::layout::{LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot};
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::{RenderSnapshot, RenderTarget};
 use niri::window::ResolvedWindowRules;
@@ -175,7 +173,7 @@ impl LayoutElement for TestWindow {
         ]
     }
 
-    fn take_last_render(&self) -> RenderSnapshot<LayoutElementSnapshotRenderElements> {
+    fn take_last_render(&self) -> LayoutElementRenderSnapshot {
         RenderSnapshot::default()
     }
 

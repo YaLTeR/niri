@@ -36,10 +36,11 @@ use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, Config, Struts};
 use niri_ipc::SizeChange;
-use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::element::Id;
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Size, Transform};
@@ -48,9 +49,8 @@ use self::monitor::Monitor;
 pub use self::monitor::MonitorRenderElement;
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::niri_render_elements;
-use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{RenderSnapshot, RenderTarget};
+use crate::render_helpers::{BakedBuffer, RenderSnapshot, RenderTarget};
 use crate::utils::output_size;
 use crate::window::ResolvedWindowRules;
 
@@ -67,12 +67,8 @@ niri_render_elements! {
     }
 }
 
-niri_render_elements! {
-    LayoutElementSnapshotRenderElements => {
-        Texture = PrimaryGpuTextureRenderElement,
-        SolidColor = SolidColorRenderElement,
-    }
-}
+pub type LayoutElementRenderSnapshot =
+    RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
 
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
@@ -110,7 +106,7 @@ pub trait LayoutElement {
         target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>>;
 
-    fn take_last_render(&self) -> RenderSnapshot<LayoutElementSnapshotRenderElements>;
+    fn take_last_render(&self) -> LayoutElementRenderSnapshot;
 
     fn request_size(&self, size: Size<i32, Logical>);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
@@ -1930,7 +1926,7 @@ mod tests {
             vec![]
         }
 
-        fn take_last_render(&self) -> RenderSnapshot<LayoutElementSnapshotRenderElements> {
+        fn take_last_render(&self) -> LayoutElementRenderSnapshot {
             RenderSnapshot::default()
         }
 

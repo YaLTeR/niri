@@ -59,7 +59,7 @@ impl ClosingWindow {
     #[allow(clippy::too_many_arguments)]
     pub fn new<E: RenderElement<GlesRenderer>>(
         renderer: &mut GlesRenderer,
-        snapshot: RenderSnapshot<E>,
+        snapshot: RenderSnapshot<E, E>,
         scale: i32,
         center: Point<i32, Logical>,
         pos: Point<i32, Logical>,
