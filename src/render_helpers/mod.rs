@@ -5,6 +5,7 @@ use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
@@ -122,6 +123,28 @@ impl<C, B> Default for RenderSnapshot<C, B> {
             block_out_from: Default::default(),
         }
     }
+}
+
+pub fn render_to_encompassing_texture(
+    renderer: &mut GlesRenderer,
+    scale: Scale<f64>,
+    transform: Transform,
+    fourcc: Fourcc,
+    elements: &[impl RenderElement<GlesRenderer>],
+) -> anyhow::Result<(GlesTexture, SyncPoint, Rectangle<i32, Physical>)> {
+    let geo = elements
+        .iter()
+        .map(|ele| ele.geometry(scale))
+        .reduce(|a, b| a.merge(b))
+        .unwrap_or_default();
+    let elements = elements.iter().rev().map(|ele| {
+        RelocateRenderElement::from_element(ele, (-geo.loc.x, -geo.loc.y), Relocate::Relative)
+    });
+
+    let (texture, sync_point) =
+        render_to_texture(renderer, geo.size, scale, transform, fourcc, elements)?;
+
+    Ok((texture, sync_point, geo))
 }
 
 pub fn render_to_texture(

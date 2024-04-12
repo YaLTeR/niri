@@ -14,7 +14,7 @@ use smithay::utils::{Logical, Point, Scale, Transform};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use crate::render_helpers::{render_to_texture, RenderSnapshot, RenderTarget};
+use crate::render_helpers::{render_to_encompassing_texture, RenderSnapshot, RenderTarget};
 
 #[derive(Debug)]
 pub struct ClosingWindow {
@@ -70,33 +70,19 @@ impl ClosingWindow {
         let _span = tracy_client::span!("ClosingWindow::new");
 
         let mut render_to_buffer = |elements: Vec<E>| -> anyhow::Result<_> {
-            let geo = elements
-                .iter()
-                .map(|ele| ele.geometry(Scale::from(f64::from(scale))))
-                .reduce(|a, b| a.merge(b))
-                .unwrap_or_default();
-
-            let elements = elements.iter().rev().map(|ele| {
-                RelocateRenderElement::from_element(
-                    ele,
-                    (-geo.loc.x, -geo.loc.y),
-                    Relocate::Relative,
-                )
-            });
-            let offset = geo.loc.to_logical(scale);
-
-            let (texture, _sync_point) = render_to_texture(
+            let (texture, _sync_point, geo) = render_to_encompassing_texture(
                 renderer,
-                geo.size,
                 Scale::from(scale as f64),
                 Transform::Normal,
                 Fourcc::Abgr8888,
-                elements,
+                &elements,
             )
             .context("error rendering to texture")?;
 
             let buffer =
                 TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, None);
+            let offset = geo.loc.to_logical(scale);
+
             Ok((buffer, offset))
         };
 
