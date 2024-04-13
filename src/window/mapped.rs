@@ -12,7 +12,9 @@ use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_to
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
-use smithay::wayland::compositor::{send_surface_state, with_states};
+use smithay::wayland::compositor::{
+    remove_pre_commit_hook, send_surface_state, with_states, HookId,
+};
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
@@ -25,6 +27,9 @@ use crate::render_helpers::{BakedBuffer, RenderSnapshot, RenderTarget};
 #[derive(Debug)]
 pub struct Mapped {
     pub window: Window,
+
+    /// Pre-commit hook that we have on all mapped toplevel surfaces.
+    pre_commit_hook: HookId,
 
     /// Up-to-date rules.
     rules: ResolvedWindowRules,
@@ -46,9 +51,10 @@ pub struct Mapped {
 }
 
 impl Mapped {
-    pub fn new(window: Window, rules: ResolvedWindowRules) -> Self {
+    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
         Self {
             window,
+            pre_commit_hook: hook,
             rules,
             need_to_recompute_rules: false,
             is_focused: false,
@@ -129,6 +135,12 @@ impl Mapped {
         }
 
         render_snapshot_from_surface_tree(renderer, surface, buf_pos, &mut snapshot.contents);
+    }
+}
+
+impl Drop for Mapped {
+    fn drop(&mut self) {
+        remove_pre_commit_hook(self.toplevel().wl_surface(), self.pre_commit_hook);
     }
 }
 

@@ -12,7 +12,10 @@ use smithay::reexports::wayland_server::protocol::wl_output;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Serial};
-use smithay::wayland::compositor::{send_surface_state, with_states};
+use smithay::wayland::compositor::{
+    add_pre_commit_hook, send_surface_state, with_states, BufferAssignment, HookId,
+    SurfaceAttributes,
+};
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::Layer;
@@ -27,6 +30,7 @@ use smithay::{
 };
 
 use crate::layout::workspace::ColumnWidth;
+use crate::layout::LayoutElement as _;
 use crate::niri::{PopupGrabState, State};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
@@ -807,4 +811,27 @@ fn unconstrain_with_padding(
 
     // Could not unconstrain into the padded target, so resort to the regular one.
     positioner.get_unconstrained_geometry(target)
+}
+
+pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId {
+    add_pre_commit_hook::<State, _>(toplevel.wl_surface(), move |state, _dh, surface| {
+        let Some((mapped, _)) = state.niri.layout.find_window_and_output_mut(surface) else {
+            error!("pre-commit hook for mapped surfaces must be removed upon unmapping");
+            return;
+        };
+
+        let got_unmapped = with_states(surface, |states| {
+            let attrs = states.cached_state.current::<SurfaceAttributes>();
+            matches!(attrs.buffer, Some(BufferAssignment::Removed))
+        });
+
+        if got_unmapped {
+            state.backend.with_primary_renderer(|renderer| {
+                mapped.render_and_store_snapshot(renderer);
+            });
+        } else {
+            // The toplevel remains mapped; clear any cached render snapshot.
+            let _ = mapped.take_last_render();
+        }
+    })
 }
