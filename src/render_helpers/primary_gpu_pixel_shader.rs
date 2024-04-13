@@ -7,7 +7,7 @@ use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 use super::renderer::AsGlesFrame;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
-/// Wrapper for a poxel shader from the primary GPU for rendering with the primary GPU.
+/// Wrapper for a pixel shader from the primary GPU for rendering with the primary GPU.
 #[derive(Debug)]
 pub struct PrimaryGpuPixelShaderRenderElement(pub PixelShaderElement);
 
