@@ -15,6 +15,7 @@ pub static ANIMATION_SLOWDOWN: AtomicF64 = AtomicF64::new(1.);
 pub struct Animation {
     from: f64,
     to: f64,
+    initial_velocity: f64,
     duration: Duration,
     /// Time until the animation first reaches `to`.
     ///
@@ -52,9 +53,22 @@ impl Animation {
         config: niri_config::Animation,
         default: niri_config::Animation,
     ) -> Self {
+        let mut rv = Self::ease(from, to, initial_velocity, 0, Curve::EaseOutCubic);
         if config.off {
-            return Self::ease(from, to, 0, Curve::EaseOutCubic);
+            return rv;
         }
+
+        rv.replace_config(config, default);
+        rv
+    }
+
+    pub fn replace_config(
+        &mut self,
+        config: niri_config::Animation,
+        default: niri_config::Animation,
+    ) {
+        let start_time = self.start_time;
+        let current_time = self.current_time;
 
         // Resolve defaults.
         let (kind, easing_defaults) = match (config.kind, default.kind) {
@@ -82,23 +96,32 @@ impl Animation {
                 let params = SpringParams::new(p.damping_ratio, f64::from(p.stiffness), p.epsilon);
 
                 let spring = Spring {
-                    from,
-                    to,
-                    initial_velocity,
+                    from: self.from,
+                    to: self.to,
+                    initial_velocity: self.initial_velocity,
                     params,
                 };
-                Self::spring(spring)
+                *self = Self::spring(spring);
             }
             niri_config::AnimationKind::Easing(p) => {
                 let defaults = easing_defaults.unwrap_or(niri_config::EasingParams::default());
                 let duration_ms = p.duration_ms.or(defaults.duration_ms).unwrap();
                 let curve = Curve::from(p.curve.or(defaults.curve).unwrap());
-                Self::ease(from, to, u64::from(duration_ms), curve)
+                *self = Self::ease(
+                    self.from,
+                    self.to,
+                    self.initial_velocity,
+                    u64::from(duration_ms),
+                    curve,
+                );
             }
         }
+
+        self.start_time = start_time;
+        self.current_time = current_time;
     }
 
-    pub fn ease(from: f64, to: f64, duration_ms: u64, curve: Curve) -> Self {
+    pub fn ease(from: f64, to: f64, initial_velocity: f64, duration_ms: u64, curve: Curve) -> Self {
         // FIXME: ideally we shouldn't use current time here because animations started within the
         // same frame cycle should have the same start time to be synchronized.
         let now = get_monotonic_time();
@@ -109,6 +132,7 @@ impl Animation {
         Self {
             from,
             to,
+            initial_velocity,
             duration,
             // Our current curves never overshoot.
             clamped_duration: duration,
@@ -132,6 +156,7 @@ impl Animation {
         Self {
             from: spring.from,
             to: spring.to,
+            initial_velocity: spring.initial_velocity,
             duration,
             clamped_duration,
             start_time: now,
@@ -168,6 +193,7 @@ impl Animation {
         Self {
             from,
             to,
+            initial_velocity,
             duration,
             clamped_duration: duration,
             start_time: now,

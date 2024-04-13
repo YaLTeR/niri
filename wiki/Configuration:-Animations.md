@@ -139,6 +139,7 @@ All horizontal camera view movement animations, such as:
 - When a window off-screen is focused and the camera scrolls to it.
 - When a new window appears off-screen and the camera scrolls to it.
 - When a window resizes bigger and the camera scrolls to show it in full.
+    - Since 0.1.5, animated window resizes will use the `window-resize` animation parameters for the view animation to make them synchronized.
 - After a horizontal touchpad gesture (a spring is recommended).
 
 ```

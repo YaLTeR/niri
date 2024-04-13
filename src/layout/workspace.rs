@@ -903,7 +903,8 @@ impl<W: LayoutElement> Workspace<W> {
         column.update_tile_sizes(false);
 
         // Move other columns in tandem with resizing.
-        if column.tiles[tile_idx].resize_animation().is_some() && offset != 0 {
+        let started_animation = column.tiles[tile_idx].resize_animation().is_some() && offset != 0;
+        if started_animation {
             if self.active_column_idx <= col_idx {
                 for col in &mut self.columns[col_idx + 1..] {
                     col.animate_move_from_with_config(
@@ -932,6 +933,20 @@ impl<W: LayoutElement> Workspace<W> {
             // FIXME: we will want to skip the animation in some cases here to make continuously
             // resizing windows not look janky.
             self.animate_view_offset_to_column(current_x, col_idx, None);
+
+            // If this animated resize caused a view animation, make sure that it uses the same
+            // config. This is important for always-centered view.
+            if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
+                // FIXME: animate_view_offset_to_column() will keep the previous running view
+                // offset animation if the target was the same; maybe we shouldn't replace in this
+                // case?
+                if started_animation {
+                    anim.replace_config(
+                        self.options.animations.window_resize,
+                        niri_config::Animation::default_window_resize(),
+                    );
+                }
+            }
         }
     }
 
