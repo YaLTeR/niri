@@ -815,15 +815,33 @@ fn unconstrain_with_padding(
 
 pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId {
     add_pre_commit_hook::<State, _>(toplevel.wl_surface(), move |state, _dh, surface| {
+        let _span = tracy_client::span!("mapped toplevel pre-commit");
+
         let Some((mapped, _)) = state.niri.layout.find_window_and_output_mut(surface) else {
             error!("pre-commit hook for mapped surfaces must be removed upon unmapping");
             return;
         };
 
-        let got_unmapped = with_states(surface, |states| {
-            let attrs = states.cached_state.current::<SurfaceAttributes>();
-            matches!(attrs.buffer, Some(BufferAssignment::Removed))
+        let (got_unmapped, commit_serial) = with_states(surface, |states| {
+            let attrs = states.cached_state.pending::<SurfaceAttributes>();
+            let got_unmapped = matches!(attrs.buffer, Some(BufferAssignment::Removed));
+
+            let role = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            (got_unmapped, role.configure_serial)
         });
+
+        let animate = if let Some(serial) = commit_serial {
+            mapped.should_animate_commit(serial)
+        } else {
+            error!("commit on a mapped surface without a configured serial");
+            false
+        };
 
         if got_unmapped {
             state.backend.with_primary_renderer(|renderer| {
@@ -832,6 +850,15 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
         } else {
             // The toplevel remains mapped; clear any cached render snapshot.
             let _ = mapped.take_last_render();
+
+            if animate {
+                state.backend.with_primary_renderer(|renderer| {
+                    mapped.store_animation_snapshot(renderer);
+                });
+
+                let window = mapped.window.clone();
+                state.niri.layout.prepare_for_resize_animation(&window);
+            }
         }
     })
 }

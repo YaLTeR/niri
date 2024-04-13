@@ -1,9 +1,11 @@
 use smithay::backend::renderer::gles::{GlesPixelProgram, GlesRenderer, UniformName, UniformType};
 
+use super::primary_gpu_pixel_shader_with_textures::PixelWithTexturesProgram;
 use super::renderer::NiriRenderer;
 
 pub struct Shaders {
     pub gradient_border: Option<GlesPixelProgram>,
+    pub crossfade: Option<PixelWithTexturesProgram>,
 }
 
 impl Shaders {
@@ -26,7 +28,27 @@ impl Shaders {
             })
             .ok();
 
-        Self { gradient_border }
+        let crossfade = PixelWithTexturesProgram::compile(
+            renderer,
+            include_str!("crossfade.frag"),
+            &[
+                UniformName::new("tex_from_loc", UniformType::_2f),
+                UniformName::new("tex_from_size", UniformType::_2f),
+                UniformName::new("tex_to_loc", UniformType::_2f),
+                UniformName::new("tex_to_size", UniformType::_2f),
+                UniformName::new("amount", UniformType::_1f),
+            ],
+            &["tex_from", "tex_to"],
+        )
+        .map_err(|err| {
+            warn!("error compiling crossfade shader: {err:?}");
+        })
+        .ok();
+
+        Self {
+            gradient_border,
+            crossfade,
+        }
     }
 
     pub fn get(renderer: &mut impl NiriRenderer) -> &Self {

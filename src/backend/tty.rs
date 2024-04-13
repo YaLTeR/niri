@@ -59,7 +59,7 @@ use super::{IpcOutputMap, RenderResult};
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::renderer::AsGlesRenderer;
-use crate::render_helpers::{shaders, RenderTarget};
+use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output};
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
@@ -490,6 +490,7 @@ impl Tty {
                 warn!("error binding wl-display in EGL: {err:?}");
             }
 
+            resources::init(renderer.as_gles_renderer());
             shaders::init(renderer.as_gles_renderer());
 
             // Create the dmabuf global.

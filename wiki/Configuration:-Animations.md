@@ -38,6 +38,10 @@ animations {
         curve "ease-out-quad"
     }
 
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
     config-notification-open-close {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
     }
@@ -192,6 +196,23 @@ animations {
     window-open {
         duration-ms 150
         curve "ease-out-quad"
+    }
+}
+```
+
+#### `window-resize`
+
+<sup>Since: 0.1.5</sup>
+
+Window resize animation.
+
+Only manual window resizes are animated, i.e. when you resize the window with `switch-preset-column-width` or `maximize-column`.
+Also, very small resizes (up to 10 pixels) are not animated.
+
+```
+animations {
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 }
 ```

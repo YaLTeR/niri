@@ -11,14 +11,16 @@ use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{
     remove_pre_commit_hook, send_surface_state, with_states, HookId,
 };
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
-use crate::layout::{LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot};
+use crate::layout::{
+    AnimationSnapshot, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
+};
 use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
@@ -48,6 +50,15 @@ pub struct Mapped {
 
     /// Snapshot of the last render for use in the close animation.
     last_render: RefCell<LayoutElementRenderSnapshot>,
+
+    /// Whether the next configure should be animated, if the configured state changed.
+    animate_next_configure: bool,
+
+    /// Serials of commits that should be animated.
+    animate_serials: Vec<Serial>,
+
+    /// Snapshot right before an animated commit.
+    animation_snapshot: Option<AnimationSnapshot>,
 }
 
 impl Mapped {
@@ -60,6 +71,9 @@ impl Mapped {
             is_focused: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0, 0), [0., 0., 0., 1.])),
             last_render: RefCell::new(RenderSnapshot::default()),
+            animate_next_configure: false,
+            animate_serials: Vec::new(),
+            animation_snapshot: None,
         }
     }
 
@@ -101,15 +115,13 @@ impl Mapped {
         self.need_to_recompute_rules = true;
     }
 
-    pub fn render_and_store_snapshot(&self, renderer: &mut GlesRenderer) {
-        let mut snapshot = self.last_render.borrow_mut();
-        if !snapshot.contents.is_empty() {
-            return;
-        }
+    fn render_snapshot(&self, renderer: &mut GlesRenderer) -> LayoutElementRenderSnapshot {
+        let _span = tracy_client::span!("Mapped::render_snapshot");
 
-        snapshot.contents.clear();
-        snapshot.blocked_out_contents.clear();
-        snapshot.block_out_from = self.rules.block_out_from;
+        let mut snapshot = RenderSnapshot {
+            block_out_from: self.rules.block_out_from,
+            ..Default::default()
+        };
 
         let mut buffer = self.block_out_buffer.borrow_mut();
         buffer.resize(self.window.geometry().size);
@@ -135,6 +147,37 @@ impl Mapped {
         }
 
         render_snapshot_from_surface_tree(renderer, surface, buf_pos, &mut snapshot.contents);
+
+        snapshot
+    }
+
+    pub fn render_and_store_snapshot(&self, renderer: &mut GlesRenderer) {
+        let mut snapshot = self.last_render.borrow_mut();
+        if !snapshot.contents.is_empty() {
+            return;
+        }
+
+        *snapshot = self.render_snapshot(renderer);
+    }
+
+    pub fn should_animate_commit(&mut self, commit_serial: Serial) -> bool {
+        let mut should_animate = false;
+        self.animate_serials.retain_mut(|serial| {
+            if commit_serial.is_no_older_than(serial) {
+                should_animate = true;
+                false
+            } else {
+                true
+            }
+        });
+        should_animate
+    }
+
+    pub fn store_animation_snapshot(&mut self, renderer: &mut GlesRenderer) {
+        self.animation_snapshot = Some(AnimationSnapshot {
+            render: self.render_snapshot(renderer),
+            size: self.size(),
+        });
     }
 }
 
@@ -200,11 +243,17 @@ impl LayoutElement for Mapped {
         self.last_render.take()
     }
 
-    fn request_size(&self, size: Size<i32, Logical>) {
-        self.toplevel().with_pending_state(|state| {
+    fn request_size(&mut self, size: Size<i32, Logical>, animate: bool) {
+        let changed = self.toplevel().with_pending_state(|state| {
+            let changed = state.size != Some(size);
             state.size = Some(size);
             state.states.unset(xdg_toplevel::State::Fullscreen);
+            changed
         });
+
+        if changed && animate {
+            self.animate_next_configure = true;
+        }
     }
 
     fn request_fullscreen(&self, size: Size<i32, Logical>) {
@@ -303,8 +352,14 @@ impl LayoutElement for Mapped {
         });
     }
 
-    fn send_pending_configure(&self) {
-        self.toplevel().send_pending_configure();
+    fn send_pending_configure(&mut self) {
+        if let Some(serial) = self.toplevel().send_pending_configure() {
+            if self.animate_next_configure {
+                self.animate_serials.push(serial);
+            }
+        }
+
+        self.animate_next_configure = false;
     }
 
     fn is_fullscreen(&self) -> bool {
@@ -325,5 +380,13 @@ impl LayoutElement for Mapped {
 
     fn rules(&self) -> &ResolvedWindowRules {
         &self.rules
+    }
+
+    fn animation_snapshot(&self) -> Option<&AnimationSnapshot> {
+        self.animation_snapshot.as_ref()
+    }
+
+    fn take_animation_snapshot(&mut self) -> Option<AnimationSnapshot> {
+        self.animation_snapshot.take()
     }
 }

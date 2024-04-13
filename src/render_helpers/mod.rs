@@ -17,12 +17,15 @@ use smithay::wayland::shm;
 
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 
+pub mod crossfade;
 pub mod gradient;
 pub mod offscreen;
 pub mod primary_gpu_pixel_shader;
+pub mod primary_gpu_pixel_shader_with_textures;
 pub mod primary_gpu_texture;
 pub mod render_elements;
 pub mod renderer;
+pub mod resources;
 pub mod shaders;
 pub mod surface;
 

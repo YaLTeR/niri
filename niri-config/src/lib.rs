@@ -489,6 +489,8 @@ pub struct Animations {
     pub window_open: Animation,
     #[knuffel(child, default = Animation::default_window_close())]
     pub window_close: Animation,
+    #[knuffel(child, default = Animation::default_window_resize())]
+    pub window_resize: Animation,
     #[knuffel(child, default = Animation::default_config_notification_open_close())]
     pub config_notification_open_close: Animation,
 }
@@ -503,6 +505,7 @@ impl Default for Animations {
             window_movement: Animation::default_window_movement(),
             window_open: Animation::default_window_open(),
             window_close: Animation::default_window_close(),
+            window_resize: Animation::default_window_resize(),
             config_notification_open_close: Animation::default_config_notification_open_close(),
         }
     }
@@ -589,6 +592,17 @@ impl Animation {
             kind: AnimationKind::Easing(EasingParams {
                 duration_ms: Some(150),
                 curve: Some(AnimationCurve::EaseOutQuad),
+            }),
+        }
+    }
+
+    pub const fn default_window_resize() -> Self {
+        Self {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
             }),
         }
     }

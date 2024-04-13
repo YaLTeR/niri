@@ -19,7 +19,7 @@ use smithay::reexports::winit::window::WindowBuilder;
 
 use super::{IpcOutputMap, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
-use crate::render_helpers::{shaders, RenderTarget};
+use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output};
 
 pub struct Winit {
@@ -130,6 +130,7 @@ impl Winit {
             warn!("error binding renderer wl_display: {err}");
         }
 
+        resources::init(renderer);
         shaders::init(renderer);
 
         niri.add_output(self.output.clone(), None);

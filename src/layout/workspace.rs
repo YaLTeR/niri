@@ -190,6 +190,9 @@ pub struct Column<W: LayoutElement> {
     /// Animation of the render offset during window swapping.
     move_animation: Option<Animation>,
 
+    /// Width right before a resize animation on one of the windows of the column.
+    pub width_before_resize: Option<i32>,
+
     /// Latest known view size for this column's workspace.
     view_size: Size<i32, Logical>,
 
@@ -815,7 +818,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
-        column.update_tile_sizes();
+        column.update_tile_sizes(false);
 
         window
     }
@@ -879,16 +882,48 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn update_window(&mut self, window: &W::Id) {
-        let (idx, column) = self
+        let (col_idx, column) = self
             .columns
             .iter_mut()
             .enumerate()
             .find(|(_, col)| col.contains(window))
             .unwrap();
-        column.update_window(window);
-        column.update_tile_sizes();
+        let tile_idx = column
+            .tiles
+            .iter()
+            .position(|tile| tile.window().id() == window)
+            .unwrap();
 
-        if idx == self.active_column_idx
+        let offset = column
+            .width_before_resize
+            .take()
+            .map_or(0, |prev| prev - column.width());
+
+        column.update_window(window);
+        column.update_tile_sizes(false);
+
+        // Move other columns in tandem with resizing.
+        if column.tiles[tile_idx].resize_animation().is_some() && offset != 0 {
+            if self.active_column_idx <= col_idx {
+                for col in &mut self.columns[col_idx + 1..] {
+                    col.animate_move_from_with_config(
+                        offset,
+                        self.options.animations.window_resize,
+                        niri_config::Animation::default_window_resize(),
+                    );
+                }
+            } else {
+                for col in &mut self.columns[..col_idx] {
+                    col.animate_move_from_with_config(
+                        -offset,
+                        self.options.animations.window_resize,
+                        niri_config::Animation::default_window_resize(),
+                    );
+                }
+            }
+        }
+
+        if col_idx == self.active_column_idx
             && !matches!(self.view_offset_adj, Some(ViewOffsetAdjustment::Gesture(_)))
         {
             // We might need to move the view to ensure the resized window is still visible.
@@ -896,7 +931,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             // FIXME: we will want to skip the animation in some cases here to make continuously
             // resizing windows not look janky.
-            self.animate_view_offset_to_column(current_x, idx, None);
+            self.animate_view_offset_to_column(current_x, col_idx, None);
         }
     }
 
@@ -1003,6 +1038,16 @@ impl<W: LayoutElement> Workspace<W> {
                 }
             }
         }
+    }
+
+    pub fn prepare_for_resize_animation(&mut self, window: &W::Id) {
+        let column = self
+            .columns
+            .iter_mut()
+            .find(|col| col.contains(window))
+            .unwrap();
+
+        column.width_before_resize = Some(column.width());
     }
 
     #[cfg(test)]
@@ -1265,8 +1310,9 @@ impl<W: LayoutElement> Workspace<W> {
         // Start with the active window since it's drawn on top.
         let col = &self.columns[self.active_column_idx];
         let tile = &col.tiles[col.active_tile_idx];
-        let tile_pos =
-            Point::from((-self.view_offset, col.tile_y(col.active_tile_idx))) + col.render_offset();
+        let tile_pos = Point::from((-self.view_offset, col.tile_y(col.active_tile_idx)))
+            + col.render_offset()
+            + tile.render_offset();
         let first = iter::once((tile, tile_pos));
 
         // Next, the rest of the tiles in the active column, since it should be drawn on top as a
@@ -1280,7 +1326,9 @@ impl<W: LayoutElement> Workspace<W> {
                         return None;
                     }
 
-                    let tile_pos = Point::from((-self.view_offset, y)) + col.render_offset();
+                    let tile_pos = Point::from((-self.view_offset, y))
+                        + col.render_offset()
+                        + tile.render_offset();
                     Some((tile, tile_pos))
                 });
 
@@ -1305,7 +1353,7 @@ impl<W: LayoutElement> Workspace<W> {
             })
             .flat_map(move |(col, x)| {
                 zip(&col.tiles, col.tile_ys()).map(move |(tile, y)| {
-                    let tile_pos = Point::from((x, y)) + col.render_offset();
+                    let tile_pos = Point::from((x, y)) + col.render_offset() + tile.render_offset();
                     (tile, tile_pos)
                 })
             });
@@ -1409,7 +1457,7 @@ impl<W: LayoutElement> Workspace<W> {
             let window = col.tiles.remove(tile_idx).into_window();
             col.heights.remove(tile_idx);
             col.active_tile_idx = min(col.active_tile_idx, col.tiles.len() - 1);
-            col.update_tile_sizes();
+            col.update_tile_sizes(false);
             let width = col.width;
             let is_full_width = col.is_full_width;
 
@@ -1744,6 +1792,7 @@ impl<W: LayoutElement> Column<W> {
             is_full_width,
             is_fullscreen: false,
             move_animation: None,
+            width_before_resize: None,
             view_size,
             working_area,
             options,
@@ -1768,7 +1817,7 @@ impl<W: LayoutElement> Column<W> {
         self.view_size = size;
         self.working_area = working_area;
 
-        self.update_tile_sizes();
+        self.update_tile_sizes(false);
     }
 
     fn update_config(&mut self, options: Rc<Options>) {
@@ -1798,14 +1847,14 @@ impl<W: LayoutElement> Column<W> {
         self.options = options;
 
         if update_sizes {
-            self.update_tile_sizes();
+            self.update_tile_sizes(false);
         }
     }
 
     fn set_width(&mut self, width: ColumnWidth) {
         self.width = width;
         self.is_full_width = false;
-        self.update_tile_sizes();
+        self.update_tile_sizes(true);
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
@@ -1840,14 +1889,27 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn animate_move_from(&mut self, from_x_offset: i32) {
+        self.animate_move_from_with_config(
+            from_x_offset,
+            self.options.animations.window_movement,
+            niri_config::Animation::default_window_movement(),
+        );
+    }
+
+    pub fn animate_move_from_with_config(
+        &mut self,
+        from_x_offset: i32,
+        config: niri_config::Animation,
+        default: niri_config::Animation,
+    ) {
         let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
 
         self.move_animation = Some(Animation::new(
             f64::from(from_x_offset) + current_offset,
             0.,
             0.,
-            self.options.animations.window_movement,
-            niri_config::Animation::default_window_movement(),
+            config,
+            default,
         ));
     }
 
@@ -1875,19 +1937,38 @@ impl<W: LayoutElement> Column<W> {
         self.is_fullscreen = false;
         self.tiles.push(tile);
         self.heights.push(WindowHeight::Auto);
-        self.update_tile_sizes();
+        self.update_tile_sizes(false);
     }
 
     fn update_window(&mut self, window: &W::Id) {
-        let tile = self
+        let (tile_idx, tile) = self
             .tiles
             .iter_mut()
-            .find(|tile| tile.window().id() == window)
+            .enumerate()
+            .find(|(_, tile)| tile.window().id() == window)
             .unwrap();
+
+        let height = tile.window().size().h;
+        let offset = tile
+            .window()
+            .animation_snapshot()
+            .map_or(0, |from| from.size.h - height);
+
         tile.update_window();
+
+        // Move windows below in tandem with resizing.
+        if tile.resize_animation().is_some() && offset != 0 {
+            for tile in &mut self.tiles[tile_idx + 1..] {
+                tile.animate_move_from_with_config(
+                    Point::from((0, offset)),
+                    self.options.animations.window_resize,
+                    niri_config::Animation::default_window_resize(),
+                );
+            }
+        }
     }
 
-    fn update_tile_sizes(&mut self) {
+    fn update_tile_sizes(&mut self, animate: bool) {
         if self.is_fullscreen {
             self.tiles[0].request_fullscreen(self.view_size);
             return;
@@ -2040,7 +2121,7 @@ impl<W: LayoutElement> Column<W> {
             };
 
             let size = Size::from((width, height));
-            tile.request_tile_size(size);
+            tile.request_tile_size(size, animate);
         }
     }
 
@@ -2127,7 +2208,7 @@ impl<W: LayoutElement> Column<W> {
 
     fn toggle_full_width(&mut self) {
         self.is_full_width = !self.is_full_width;
-        self.update_tile_sizes();
+        self.update_tile_sizes(true);
     }
 
     fn set_column_width(&mut self, change: SizeChange) {
@@ -2226,13 +2307,13 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.heights[self.active_tile_idx] = WindowHeight::Fixed(window_height.clamp(1, MAX_PX));
-        self.update_tile_sizes();
+        self.update_tile_sizes(true);
     }
 
     fn set_fullscreen(&mut self, is_fullscreen: bool) {
         assert_eq!(self.tiles.len(), 1);
         self.is_fullscreen = is_fullscreen;
-        self.update_tile_sizes();
+        self.update_tile_sizes(false);
     }
 
     pub fn window_y(&self, tile_idx: usize) -> i32 {

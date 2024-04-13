@@ -60,6 +60,9 @@ pub mod monitor;
 pub mod tile;
 pub mod workspace;
 
+/// Size changes up to this many pixels don't animate.
+pub const RESIZE_ANIMATION_THRESHOLD: i32 = 10;
+
 niri_render_elements! {
     LayoutElementRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
@@ -69,6 +72,15 @@ niri_render_elements! {
 
 pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
+
+/// Snapshot of an element for animation.
+#[derive(Debug)]
+pub struct AnimationSnapshot {
+    /// Snapshot of the render.
+    pub render: LayoutElementRenderSnapshot,
+    /// Visual size of the element at the point of the snapshot.
+    pub size: Size<i32, Logical>,
+}
 
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
@@ -108,7 +120,7 @@ pub trait LayoutElement {
 
     fn take_last_render(&self) -> LayoutElementRenderSnapshot;
 
-    fn request_size(&self, size: Size<i32, Logical>);
+    fn request_size(&mut self, size: Size<i32, Logical>, animate: bool);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
@@ -121,7 +133,7 @@ pub trait LayoutElement {
     fn set_activated(&mut self, active: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
 
-    fn send_pending_configure(&self);
+    fn send_pending_configure(&mut self);
 
     /// Whether the element is currently fullscreen.
     ///
@@ -137,6 +149,9 @@ pub trait LayoutElement {
 
     /// Runs periodic clean-up tasks.
     fn refresh(&self);
+
+    fn animation_snapshot(&self) -> Option<&AnimationSnapshot>;
+    fn take_animation_snapshot(&mut self) -> Option<AnimationSnapshot>;
 }
 
 #[derive(Debug)]
@@ -1787,6 +1802,31 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn prepare_for_resize_animation(&mut self, window: &W::Id) {
+        let _span = tracy_client::span!("Layout::prepare_for_resize_animation");
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.prepare_for_resize_animation(window);
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.prepare_for_resize_animation(window);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn refresh(&mut self) {
         let _span = tracy_client::span!("Layout::refresh");
 
@@ -1930,7 +1970,7 @@ mod tests {
             RenderSnapshot::default()
         }
 
-        fn request_size(&self, size: Size<i32, Logical>) {
+        fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {
             self.0.requested_size.set(Some(size));
             self.0.pending_fullscreen.set(false);
         }
@@ -1967,7 +2007,7 @@ mod tests {
 
         fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
-        fn send_pending_configure(&self) {}
+        fn send_pending_configure(&mut self) {}
 
         fn is_fullscreen(&self) -> bool {
             false
@@ -1982,6 +2022,14 @@ mod tests {
         fn rules(&self) -> &ResolvedWindowRules {
             static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
             &EMPTY
+        }
+
+        fn animation_snapshot(&self) -> Option<&AnimationSnapshot> {
+            None
+        }
+
+        fn take_animation_snapshot(&mut self) -> Option<AnimationSnapshot> {
+            None
         }
     }
 
