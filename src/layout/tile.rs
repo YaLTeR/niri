@@ -706,7 +706,7 @@ impl<W: LayoutElement> Tile<W> {
                 snapshot.blocked_out_contents,
             ),
             block_out_from: snapshot.block_out_from,
-            size: snapshot.size,
+            size: self.animated_tile_size(),
             texture: Default::default(),
             blocked_out_texture: Default::default(),
         })
