@@ -1,19 +1,17 @@
-use std::cell::OnceCell;
 use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{Element, Kind};
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::{
-    AnimationSnapshot, LayoutElement, LayoutElementRenderElement, Options,
+    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
     RESIZE_ANIMATION_THRESHOLD,
 };
 use crate::animation::Animation;
@@ -23,9 +21,8 @@ use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shaders::Shaders;
-use crate::render_helpers::{
-    render_to_encompassing_texture, RenderSnapshot, RenderTarget, ToRenderElement,
-};
+use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::{render_to_encompassing_texture, RenderTarget, ToRenderElement};
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -96,10 +93,7 @@ niri_render_elements! {
 struct ResizeAnimation {
     anim: Animation,
     size_from: Size<i32, Logical>,
-    snapshot: AnimationSnapshot,
-    /// Snapshot rendered into a texture (happens lazily).
-    snapshot_texture: OnceCell<Option<(GlesTexture, Rectangle<i32, Physical>)>>,
-    snapshot_blocked_out_texture: OnceCell<Option<(GlesTexture, Rectangle<i32, Physical>)>>,
+    snapshot: LayoutElementRenderSnapshot,
 }
 
 #[derive(Debug)]
@@ -167,8 +161,6 @@ impl<W: LayoutElement> Tile<W> {
                     anim,
                     size_from,
                     snapshot: animate_from,
-                    snapshot_texture: OnceCell::new(),
-                    snapshot_blocked_out_texture: OnceCell::new(),
                 });
             } else {
                 self.resize_animation = None;
@@ -499,7 +491,7 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(resize) = &self.resize_animation {
             if Shaders::get(gles_renderer).crossfade.is_some() {
-                if let Some(texture_from) = resize.rendered_texture(gles_renderer, scale, target) {
+                if let Some(texture_from) = resize.snapshot.texture(gles_renderer, scale, target) {
                     let window_elements =
                         self.window
                             .render(gles_renderer, Point::from((0, 0)), scale, 1., target);
@@ -702,13 +694,10 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
         view_size: Size<i32, Logical>,
-    ) -> RenderSnapshot<TileSnapshotRenderElement, TileSnapshotRenderElement> {
-        let snapshot = self.window.take_last_render();
-        if snapshot.contents.is_empty() {
-            return RenderSnapshot::default();
-        }
+    ) -> Option<RenderSnapshot<TileSnapshotRenderElement, TileSnapshotRenderElement>> {
+        let snapshot = self.window.take_unmap_snapshot()?;
 
-        RenderSnapshot {
+        Some(RenderSnapshot {
             contents: self.render_snapshot(renderer, scale, view_size, snapshot.contents),
             blocked_out_contents: self.render_snapshot(
                 renderer,
@@ -717,79 +706,9 @@ impl<W: LayoutElement> Tile<W> {
                 snapshot.blocked_out_contents,
             ),
             block_out_from: snapshot.block_out_from,
-        }
-    }
-}
-
-impl ResizeAnimation {
-    fn rendered_texture(
-        &self,
-        renderer: &mut GlesRenderer,
-        scale: Scale<f64>,
-        target: RenderTarget,
-    ) -> &Option<(GlesTexture, Rectangle<i32, Physical>)> {
-        let block_out = match self.snapshot.render.block_out_from {
-            None => false,
-            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
-        };
-
-        if block_out {
-            self.snapshot_blocked_out_texture.get_or_init(|| {
-                let _span = tracy_client::span!("ResizeAnimation::rendered_texture");
-
-                let elements: Vec<_> = self
-                    .snapshot
-                    .render
-                    .blocked_out_contents
-                    .iter()
-                    .map(|baked| {
-                        baked.to_render_element(Point::from((0, 0)), scale, 1., Kind::Unspecified)
-                    })
-                    .collect();
-
-                match render_to_encompassing_texture(
-                    renderer,
-                    scale,
-                    Transform::Normal,
-                    Fourcc::Abgr8888,
-                    &elements,
-                ) {
-                    Ok((texture, _sync_point, geo)) => Some((texture, geo)),
-                    Err(err) => {
-                        warn!("error rendering snapshot to texture: {err:?}");
-                        None
-                    }
-                }
-            })
-        } else {
-            self.snapshot_texture.get_or_init(|| {
-                let _span = tracy_client::span!("ResizeAnimation::rendered_texture");
-
-                let elements: Vec<_> = self
-                    .snapshot
-                    .render
-                    .contents
-                    .iter()
-                    .map(|baked| {
-                        baked.to_render_element(Point::from((0, 0)), scale, 1., Kind::Unspecified)
-                    })
-                    .collect();
-
-                match render_to_encompassing_texture(
-                    renderer,
-                    scale,
-                    Transform::Normal,
-                    Fourcc::Abgr8888,
-                    &elements,
-                ) {
-                    Ok((texture, _sync_point, geo)) => Some((texture, geo)),
-                    Err(err) => {
-                        warn!("error rendering snapshot to texture: {err:?}");
-                        None
-                    }
-                }
-            })
-        }
+            size: snapshot.size,
+            texture: Default::default(),
+            blocked_out_texture: Default::default(),
+        })
     }
 }

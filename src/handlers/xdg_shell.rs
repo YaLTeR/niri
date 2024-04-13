@@ -387,7 +387,7 @@ impl XdgShellHandler for State {
         let output = output.clone();
 
         self.backend.with_primary_renderer(|renderer| {
-            mapped.render_and_store_snapshot(renderer);
+            mapped.store_unmap_snapshot_if_empty(renderer);
         });
         self.backend.with_primary_renderer(|renderer| {
             self.niri
@@ -845,11 +845,11 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
 
         if got_unmapped {
             state.backend.with_primary_renderer(|renderer| {
-                mapped.render_and_store_snapshot(renderer);
+                mapped.store_unmap_snapshot_if_empty(renderer);
             });
         } else {
-            // The toplevel remains mapped; clear any cached render snapshot.
-            let _ = mapped.take_last_render();
+            // The toplevel remains mapped; clear any stored unmap snapshot.
+            let _ = mapped.take_unmap_snapshot();
 
             if animate {
                 state.backend.with_primary_renderer(|renderer| {

@@ -14,7 +14,8 @@ use smithay::utils::{Logical, Point, Scale, Transform};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use crate::render_helpers::{render_to_encompassing_texture, RenderSnapshot, RenderTarget};
+use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
 
 #[derive(Debug)]
 pub struct ClosingWindow {

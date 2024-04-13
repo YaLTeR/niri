@@ -965,8 +965,9 @@ impl<W: LayoutElement> Workspace<W> {
             .map(|o| Scale::from(o.current_scale().fractional_scale()))
             .unwrap_or(Scale::from(1.));
 
-        let snapshot = tile.take_snapshot_for_close_anim(renderer, output_scale, self.view_size);
-        if snapshot.contents.is_empty() {
+        let Some(snapshot) =
+            tile.take_snapshot_for_close_anim(renderer, output_scale, self.view_size)
+        else {
             return;
         };
 

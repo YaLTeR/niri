@@ -18,13 +18,12 @@ use smithay::wayland::compositor::{
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
-use crate::layout::{
-    AnimationSnapshot, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
-};
+use crate::layout::{LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot};
 use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
-use crate::render_helpers::{BakedBuffer, RenderSnapshot, RenderTarget};
+use crate::render_helpers::{BakedBuffer, RenderTarget};
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -49,7 +48,7 @@ pub struct Mapped {
     block_out_buffer: RefCell<SolidColorBuffer>,
 
     /// Snapshot of the last render for use in the close animation.
-    last_render: RefCell<LayoutElementRenderSnapshot>,
+    unmap_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
 
     /// Whether the next configure should be animated, if the configured state changed.
     animate_next_configure: bool,
@@ -58,7 +57,7 @@ pub struct Mapped {
     animate_serials: Vec<Serial>,
 
     /// Snapshot right before an animated commit.
-    animation_snapshot: Option<AnimationSnapshot>,
+    animation_snapshot: Option<LayoutElementRenderSnapshot>,
 }
 
 impl Mapped {
@@ -70,7 +69,7 @@ impl Mapped {
             need_to_recompute_rules: false,
             is_focused: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0, 0), [0., 0., 0., 1.])),
-            last_render: RefCell::new(RenderSnapshot::default()),
+            unmap_snapshot: RefCell::new(None),
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
@@ -118,14 +117,11 @@ impl Mapped {
     fn render_snapshot(&self, renderer: &mut GlesRenderer) -> LayoutElementRenderSnapshot {
         let _span = tracy_client::span!("Mapped::render_snapshot");
 
-        let mut snapshot = RenderSnapshot {
-            block_out_from: self.rules.block_out_from,
-            ..Default::default()
-        };
+        let size = self.size();
 
         let mut buffer = self.block_out_buffer.borrow_mut();
-        buffer.resize(self.window.geometry().size);
-        snapshot.blocked_out_contents = vec![BakedBuffer {
+        buffer.resize(size);
+        let blocked_out_contents = vec![BakedBuffer {
             buffer: buffer.clone(),
             location: Point::from((0, 0)),
             src: None,
@@ -133,6 +129,8 @@ impl Mapped {
         }];
 
         let buf_pos = self.window.geometry().loc.upscale(-1);
+
+        let mut contents = vec![];
 
         let surface = self.toplevel().wl_surface();
         for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
@@ -142,22 +140,29 @@ impl Mapped {
                 renderer,
                 popup.wl_surface(),
                 buf_pos + offset,
-                &mut snapshot.contents,
+                &mut contents,
             );
         }
 
-        render_snapshot_from_surface_tree(renderer, surface, buf_pos, &mut snapshot.contents);
+        render_snapshot_from_surface_tree(renderer, surface, buf_pos, &mut contents);
 
-        snapshot
+        RenderSnapshot {
+            contents,
+            blocked_out_contents,
+            block_out_from: self.rules().block_out_from,
+            size,
+            texture: Default::default(),
+            blocked_out_texture: Default::default(),
+        }
     }
 
-    pub fn render_and_store_snapshot(&self, renderer: &mut GlesRenderer) {
-        let mut snapshot = self.last_render.borrow_mut();
-        if !snapshot.contents.is_empty() {
+    pub fn store_unmap_snapshot_if_empty(&self, renderer: &mut GlesRenderer) {
+        let mut snapshot = self.unmap_snapshot.borrow_mut();
+        if snapshot.is_some() {
             return;
         }
 
-        *snapshot = self.render_snapshot(renderer);
+        *snapshot = Some(self.render_snapshot(renderer));
     }
 
     pub fn should_animate_commit(&mut self, commit_serial: Serial) -> bool {
@@ -174,10 +179,7 @@ impl Mapped {
     }
 
     pub fn store_animation_snapshot(&mut self, renderer: &mut GlesRenderer) {
-        self.animation_snapshot = Some(AnimationSnapshot {
-            render: self.render_snapshot(renderer),
-            size: self.size(),
-        });
+        self.animation_snapshot = Some(self.render_snapshot(renderer));
     }
 }
 
@@ -237,10 +239,6 @@ impl LayoutElement for Mapped {
             let buf_pos = buf_pos.to_physical_precise_round(scale);
             self.window.render_elements(renderer, buf_pos, scale, alpha)
         }
-    }
-
-    fn take_last_render(&self) -> LayoutElementRenderSnapshot {
-        self.last_render.take()
     }
 
     fn request_size(&mut self, size: Size<i32, Logical>, animate: bool) {
@@ -382,11 +380,15 @@ impl LayoutElement for Mapped {
         &self.rules
     }
 
-    fn animation_snapshot(&self) -> Option<&AnimationSnapshot> {
+    fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot> {
+        self.unmap_snapshot.take()
+    }
+
+    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
         self.animation_snapshot.as_ref()
     }
 
-    fn take_animation_snapshot(&mut self) -> Option<AnimationSnapshot> {
+    fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
         self.animation_snapshot.take()
     }
 }

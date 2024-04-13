@@ -304,7 +304,7 @@ impl CompositorHandler for State {
         if let Some(root) = self.niri.root_surface.get(surface) {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
                 self.backend.with_primary_renderer(|renderer| {
-                    mapped.render_and_store_snapshot(renderer);
+                    mapped.store_unmap_snapshot_if_empty(renderer);
                 });
             }
         }

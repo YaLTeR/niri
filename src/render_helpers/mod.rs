@@ -1,7 +1,6 @@
 use std::ptr;
 
 use anyhow::{ensure, Context};
-use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
@@ -27,6 +26,7 @@ pub mod render_elements;
 pub mod renderer;
 pub mod resources;
 pub mod shaders;
+pub mod snapshot;
 pub mod surface;
 
 /// What we're rendering for.
@@ -47,19 +47,6 @@ pub struct BakedBuffer<B> {
     pub location: Point<i32, Logical>,
     pub src: Option<Rectangle<f64, Logical>>,
     pub dst: Option<Size<i32, Logical>>,
-}
-
-/// Snapshot of a render.
-#[derive(Debug)]
-pub struct RenderSnapshot<C, B> {
-    /// Contents for a normal render.
-    pub contents: Vec<C>,
-
-    /// Blocked-out contents.
-    pub blocked_out_contents: Vec<B>,
-
-    /// Where the contents were blocked out from at the time of the snapshot.
-    pub block_out_from: Option<BlockOutFrom>,
 }
 
 pub trait ToRenderElement {
@@ -115,16 +102,6 @@ impl ToRenderElement for BakedBuffer<SolidColorBuffer> {
             alpha,
             kind,
         )
-    }
-}
-
-impl<C, B> Default for RenderSnapshot<C, B> {
-    fn default() -> Self {
-        Self {
-            contents: Default::default(),
-            blocked_out_contents: Default::default(),
-            block_out_from: Default::default(),
-        }
     }
 }
 

@@ -50,7 +50,8 @@ pub use self::monitor::MonitorRenderElement;
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{BakedBuffer, RenderSnapshot, RenderTarget};
+use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::{BakedBuffer, RenderTarget};
 use crate::utils::output_size;
 use crate::window::ResolvedWindowRules;
 
@@ -72,15 +73,6 @@ niri_render_elements! {
 
 pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
-
-/// Snapshot of an element for animation.
-#[derive(Debug)]
-pub struct AnimationSnapshot {
-    /// Snapshot of the render.
-    pub render: LayoutElementRenderSnapshot,
-    /// Visual size of the element at the point of the snapshot.
-    pub size: Size<i32, Logical>,
-}
 
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
@@ -118,8 +110,6 @@ pub trait LayoutElement {
         target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>>;
 
-    fn take_last_render(&self) -> LayoutElementRenderSnapshot;
-
     fn request_size(&mut self, size: Size<i32, Logical>, animate: bool);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
@@ -150,8 +140,10 @@ pub trait LayoutElement {
     /// Runs periodic clean-up tasks.
     fn refresh(&self);
 
-    fn animation_snapshot(&self) -> Option<&AnimationSnapshot>;
-    fn take_animation_snapshot(&mut self) -> Option<AnimationSnapshot>;
+    fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot>;
+
+    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot>;
+    fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot>;
 }
 
 #[derive(Debug)]
@@ -1966,10 +1958,6 @@ mod tests {
             vec![]
         }
 
-        fn take_last_render(&self) -> LayoutElementRenderSnapshot {
-            RenderSnapshot::default()
-        }
-
         fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {
             self.0.requested_size.set(Some(size));
             self.0.pending_fullscreen.set(false);
@@ -2024,11 +2012,15 @@ mod tests {
             &EMPTY
         }
 
-        fn animation_snapshot(&self) -> Option<&AnimationSnapshot> {
+        fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot> {
             None
         }
 
-        fn take_animation_snapshot(&mut self) -> Option<AnimationSnapshot> {
+        fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
+            None
+        }
+
+        fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
             None
         }
     }
