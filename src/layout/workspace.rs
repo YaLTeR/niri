@@ -78,6 +78,9 @@ pub struct Workspace<W: LayoutElement> {
     /// The value is the view offset that the previous column had before, to restore it.
     activate_prev_column_on_removal: Option<i32>,
 
+    /// View offset to restore after unfullscreening.
+    view_offset_before_fullscreen: Option<i32>,
+
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
 
@@ -252,6 +255,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset: 0,
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
+            view_offset_before_fullscreen: None,
             closing_windows: vec![],
             options,
             id: WorkspaceId::next(),
@@ -269,6 +273,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset: 0,
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
+            view_offset_before_fullscreen: None,
             closing_windows: vec![],
             options,
             id: WorkspaceId::next(),
@@ -604,6 +609,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         // A different column was activated; reset the flag.
         self.activate_prev_column_on_removal = None;
+        self.view_offset_before_fullscreen = None;
     }
 
     pub fn has_windows(&self) -> bool {
@@ -785,6 +791,10 @@ impl<W: LayoutElement> Workspace<W> {
                 self.activate_prev_column_on_removal = None;
             }
 
+            if column_idx == self.active_column_idx {
+                self.view_offset_before_fullscreen = None;
+            }
+
             self.columns.remove(column_idx);
             if self.columns.is_empty() {
                 return window;
@@ -836,6 +846,10 @@ impl<W: LayoutElement> Workspace<W> {
             // The previous column, that we were going to activate upon removal of the active
             // column, has just been itself removed.
             self.activate_prev_column_on_removal = None;
+        }
+
+        if column_idx == self.active_column_idx {
+            self.view_offset_before_fullscreen = None;
         }
 
         if self.columns.is_empty() {
@@ -899,6 +913,8 @@ impl<W: LayoutElement> Workspace<W> {
             .take()
             .map_or(0, |prev| prev - column.width());
 
+        let was_fullscreen = column.tiles[tile_idx].is_fullscreen();
+
         column.update_window(window);
         column.update_tile_sizes(false);
 
@@ -929,6 +945,14 @@ impl<W: LayoutElement> Workspace<W> {
         {
             // We might need to move the view to ensure the resized window is still visible.
             let current_x = self.view_pos();
+
+            // Upon unfullscreening, restore the view offset.
+            let is_fullscreen = self.columns[col_idx].tiles[tile_idx].is_fullscreen();
+            if was_fullscreen && !is_fullscreen {
+                if let Some(prev_offset) = self.view_offset_before_fullscreen.take() {
+                    self.animate_view_offset(current_x, col_idx, prev_offset);
+                }
+            }
 
             // FIXME: we will want to skip the animation in some cases here to make continuously
             // resizing windows not look janky.
@@ -1076,6 +1100,18 @@ impl<W: LayoutElement> Workspace<W> {
 
             for column in &self.columns {
                 column.verify_invariants();
+            }
+
+            // When we have an unfullscreen view offset stored, the active column should have a
+            // fullscreen tile.
+            if self.view_offset_before_fullscreen.is_some() {
+                let col = &self.columns[self.active_column_idx];
+                assert!(
+                    col.is_fullscreen
+                        || col.tiles.iter().any(|tile| {
+                            tile.is_fullscreen() || tile.window().is_pending_fullscreen()
+                        })
+                );
             }
         }
     }
@@ -1278,7 +1314,13 @@ impl<W: LayoutElement> Workspace<W> {
         self.enter_output_for_window(&window);
 
         let target_column = &mut self.columns[self.active_column_idx];
+        let was_fullscreen = target_column.tiles[target_column.active_tile_idx].is_fullscreen();
+
         target_column.add_window(window);
+
+        if !was_fullscreen {
+            self.view_offset_before_fullscreen = None;
+        }
     }
 
     pub fn expel_from_column(&mut self) {
@@ -1464,6 +1506,13 @@ impl<W: LayoutElement> Workspace<W> {
             .find_map(|(col_idx, col)| col.position(window).map(|tile_idx| (col_idx, tile_idx)))
             .unwrap();
 
+        if is_fullscreen
+            && col_idx == self.active_column_idx
+            && self.columns[col_idx].tiles.len() == 1
+        {
+            self.view_offset_before_fullscreen = Some(self.static_view_offset());
+        }
+
         let mut col = &mut self.columns[col_idx];
 
         if is_fullscreen && col.tiles.len() > 1 {
@@ -1489,13 +1538,30 @@ impl<W: LayoutElement> Workspace<W> {
                     is_full_width,
                 ),
             );
-            if self.active_column_idx >= col_idx || target_window_was_focused {
+
+            if target_window_was_focused {
+                self.activate_column(col_idx);
+                self.view_offset_before_fullscreen = Some(self.static_view_offset());
+            } else if self.active_column_idx >= col_idx {
                 self.active_column_idx += 1;
             }
+
             col = &mut self.columns[col_idx];
         }
 
         col.set_fullscreen(is_fullscreen);
+
+        // If we quickly fullscreen and unfullscreen before any window has a chance to receive the
+        // request, we need to reset the offset.
+        if col_idx == self.active_column_idx
+            && !is_fullscreen
+            && !col
+                .tiles
+                .iter()
+                .any(|tile| tile.is_fullscreen() || tile.window().is_pending_fullscreen())
+        {
+            self.view_offset_before_fullscreen = None;
+        }
     }
 
     pub fn toggle_fullscreen(&mut self, window: &W::Id) {
@@ -1754,6 +1820,11 @@ impl<W: LayoutElement> Workspace<W> {
         let new_col_x = self.column_x(new_col_idx);
         let delta = (active_col_x - new_col_x) as f64;
         self.view_offset = (current_view_offset + delta).round() as i32;
+
+        if self.active_column_idx != new_col_idx {
+            self.view_offset_before_fullscreen = None;
+        }
+
         self.active_column_idx = new_col_idx;
 
         let target_view_offset = target_snap.view_pos - new_col_x;

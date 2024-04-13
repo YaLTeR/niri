@@ -3037,6 +3037,107 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unfullscreen_view_offset_not_reset_on_removal() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FullscreenWindow(0),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowRight,
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_not_reset_on_consume() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FullscreenWindow(0),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeWindowIntoColumn,
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_not_reset_on_quick_double_toggle() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FullscreenWindow(0),
+            Op::FullscreenWindow(0),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_set_on_fullscreening_inactive_tile_in_column() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::FullscreenWindow(0),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_not_reset_on_gesture() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (200, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FullscreenWindow(1),
+            Op::ViewOffsetGestureBegin { output_idx: 1 },
+            Op::ViewOffsetGestureEnd,
+        ];
+
+        check_ops(&ops);
+    }
+
     fn arbitrary_spacing() -> impl Strategy<Value = u16> {
         // Give equal weight to:
         // - 0: the element is disabled
