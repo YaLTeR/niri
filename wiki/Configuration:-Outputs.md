@@ -12,6 +12,7 @@ output "eDP-1" {
     scale 2.0
     transform "90"
     position x=1280 y=0
+    variable-refresh-rate
 }
 
 output "HDMI-A-1" {
@@ -113,3 +114,22 @@ The following algorithm is used for positioning outputs.
 1. Sort them by their name. This makes it so the automatic positioning does not depend on the order the monitors are connected. This is important because the connection order is non-deterministic at compositor startup.
 1. Try to place every output with explicitly configured `position`, in order. If the output overlaps previously placed outputs, place it to the right of all previously placed outputs. In this case, niri will also print a warning.
 1. Place every output without explicitly configured `position` by putting it to the right of all previously placed outputs.
+
+### `variable-refresh-rate`
+
+This flag enables variable refresh rate (VRR, also known as adaptive sync, FreeSync, or G-Sync), if the output supports it.
+
+> [!NOTE]
+> Some drivers have various issues with VRR.
+>
+> If the cursor moves at a low framerate with VRR, try setting the `disable-cursor-plane` [debug flag](./Configuration:-Debug-Options.md) and reconnecting the monitor.
+>
+> If a monitor is not detected as VRR-capable when it should, sometimes unplugging a different monitor fixes it.
+>
+> Some monitors will continuously modeset (flash black) with VRR enabled; I'm not sure if there's a way to fix it.
+
+```
+output "HDMI-A-1" {
+    variable-refresh-rate
+}
+```

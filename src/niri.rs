@@ -1543,7 +1543,7 @@ impl Niri {
         }
     }
 
-    pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {
+    pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>, vrr: bool) {
         let global = output.create_global::<State>(&self.display_handle);
 
         let name = output.name();
@@ -1583,7 +1583,7 @@ impl Niri {
             global,
             redraw_state: RedrawState::Idle,
             unfinished_animations_remain: false,
-            frame_clock: FrameClock::new(refresh_interval),
+            frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
             frame_callback_sequence: 0,
             background_buffer: SolidColorBuffer::new(size, CLEAR_COLOR),

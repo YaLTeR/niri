@@ -171,6 +171,7 @@ struct Surface {
     gamma_props: Option<GammaProps>,
     /// Gamma change to apply upon session resume.
     pending_gamma_change: Option<Option<Vec<u16>>>,
+    vrr_enabled: bool,
     /// Tracy frame that goes from vblank to vblank.
     vblank_frame: Option<tracy_client::Frame>,
     /// Frame name for the VBlank frame.
@@ -739,6 +740,47 @@ impl Tty {
             Err(err) => debug!("error setting max bpc: {err:?}"),
         }
 
+        // Try to enable VRR if requested.
+        let mut vrr_enabled = false;
+        if let Some(capable) = is_vrr_capable(&device.drm, connector.handle()) {
+            if capable {
+                let word = if config.variable_refresh_rate {
+                    "enabling"
+                } else {
+                    "disabling"
+                };
+
+                match set_vrr_enabled(&device.drm, crtc, config.variable_refresh_rate) {
+                    Ok(enabled) => {
+                        if enabled != config.variable_refresh_rate {
+                            warn!("failed {} VRR", word);
+                        }
+
+                        vrr_enabled = enabled;
+                    }
+                    Err(err) => {
+                        warn!("error {} VRR: {err:?}", word);
+                    }
+                }
+            } else {
+                if config.variable_refresh_rate {
+                    warn!("cannot enable VRR because connector is not vrr_capable");
+                }
+
+                // Try to disable it anyway to work around a bug where resetting DRM state causes
+                // vrr_capable to be reset to 0, potentially leaving VRR_ENABLED at 1.
+                let res = set_vrr_enabled(&device.drm, crtc, config.variable_refresh_rate);
+                if matches!(res, Ok(true)) {
+                    warn!("error disabling VRR");
+
+                    // So that we can try it again later.
+                    vrr_enabled = true;
+                }
+            }
+        } else if config.variable_refresh_rate {
+            warn!("cannot enable VRR because connector is not vrr_capable");
+        }
+
         let mut gamma_props = GammaProps::new(&device.drm, crtc)
             .map_err(|err| debug!("error getting gamma properties: {err:?}"))
             .ok();
@@ -864,6 +906,7 @@ impl Tty {
             compositor,
             dmabuf_feedback,
             gamma_props,
+            vrr_enabled,
             pending_gamma_change: None,
             vblank_frame: None,
             vblank_frame_name,
@@ -874,7 +917,7 @@ impl Tty {
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
 
-        niri.add_output(output.clone(), Some(refresh_interval(mode)));
+        niri.add_output(output.clone(), Some(refresh_interval(mode)), vrr_enabled);
 
         // Power on all monitors if necessary and queue a redraw on the new one.
         niri.event_loop.insert_idle(move |state| {
@@ -1511,7 +1554,9 @@ impl Tty {
                     continue;
                 };
 
-                if surface.compositor.pending_mode() == mode {
+                let change_mode = surface.compositor.pending_mode() != mode;
+                let change_vrr = surface.vrr_enabled != config.variable_refresh_rate;
+                if !change_mode && !change_vrr {
                     continue;
                 }
 
@@ -1532,33 +1577,65 @@ impl Tty {
                     continue;
                 };
 
-                if fallback {
-                    let target = config.mode.unwrap();
-                    warn!(
-                        "output {:?}: configured mode {}x{}{} could not be found, \
-                         falling back to preferred",
-                        surface.name,
-                        target.width,
-                        target.height,
-                        if let Some(refresh) = target.refresh {
-                            format!("@{refresh}")
+                if change_vrr {
+                    if is_vrr_capable(&device.drm, connector.handle()) == Some(true) {
+                        let word = if config.variable_refresh_rate {
+                            "enabling"
                         } else {
-                            String::new()
-                        },
-                    );
+                            "disabling"
+                        };
+
+                        match set_vrr_enabled(&device.drm, crtc, config.variable_refresh_rate) {
+                            Ok(enabled) => {
+                                if enabled != config.variable_refresh_rate {
+                                    warn!("output {:?}: failed {} VRR", surface.name, word);
+                                }
+
+                                surface.vrr_enabled = enabled;
+                                output_state.frame_clock.set_vrr(enabled);
+                            }
+                            Err(err) => {
+                                warn!("output {:?}: error {} VRR: {err:?}", surface.name, word);
+                            }
+                        }
+                    } else if config.variable_refresh_rate {
+                        warn!(
+                            "output {:?}: cannot enable VRR because connector is not vrr_capable",
+                            surface.name
+                        );
+                    }
                 }
 
-                debug!("output {:?}: picking mode: {mode:?}", surface.name);
-                if let Err(err) = surface.compositor.use_mode(mode) {
-                    warn!("error changing mode: {err:?}");
-                    continue;
-                }
+                if change_mode {
+                    if fallback {
+                        let target = config.mode.unwrap();
+                        warn!(
+                            "output {:?}: configured mode {}x{}{} could not be found, \
+                             falling back to preferred",
+                            surface.name,
+                            target.width,
+                            target.height,
+                            if let Some(refresh) = target.refresh {
+                                format!("@{refresh}")
+                            } else {
+                                String::new()
+                            },
+                        );
+                    }
 
-                let wl_mode = Mode::from(mode);
-                output.change_current_state(Some(wl_mode), None, None, None);
-                output.set_preferred(wl_mode);
-                output_state.frame_clock = FrameClock::new(Some(refresh_interval(mode)));
-                niri.output_resized(&output);
+                    debug!("output {:?}: picking mode: {mode:?}", surface.name);
+                    if let Err(err) = surface.compositor.use_mode(mode) {
+                        warn!("error changing mode: {err:?}");
+                        continue;
+                    }
+
+                    let wl_mode = Mode::from(mode);
+                    output.change_current_state(Some(wl_mode), None, None, None);
+                    output.set_preferred(wl_mode);
+                    output_state.frame_clock =
+                        FrameClock::new(Some(refresh_interval(mode)), surface.vrr_enabled);
+                    niri.output_resized(&output);
+                }
             }
 
             for (connector, crtc) in device.drm_scanner.crtcs() {
@@ -2093,6 +2170,29 @@ fn set_max_bpc(device: &DrmDevice, connector: connector::Handle, bpc: u64) -> an
     }
 
     Err(anyhow!("couldn't find max bpc property"))
+}
+
+fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {
+    let (_, info, value) = find_drm_property(device, connector, "vrr_capable")?;
+    info.value_type().convert_value(value).as_boolean()
+}
+
+fn set_vrr_enabled(device: &DrmDevice, crtc: crtc::Handle, enabled: bool) -> anyhow::Result<bool> {
+    let (prop, info, _) =
+        find_drm_property(device, crtc, "VRR_ENABLED").context("VRR_ENABLED property missing")?;
+
+    let value = property::Value::UnsignedRange(if enabled { 1 } else { 0 });
+    device
+        .set_property(crtc, prop, value.into())
+        .context("error setting VRR_ENABLED property")?;
+
+    let value = get_drm_property(device, crtc, prop)
+        .context("VRR_ENABLED property missing after setting")?;
+    match info.value_type().convert_value(value) {
+        property::Value::UnsignedRange(value) => Ok(value == 1),
+        property::Value::Boolean(value) => Ok(value),
+        _ => bail!("wrong VRR_ENABLED property type"),
+    }
 }
 
 pub fn set_gamma_for_crtc(

@@ -133,7 +133,7 @@ impl Winit {
         resources::init(renderer);
         shaders::init(renderer);
 
-        niri.add_output(self.output.clone(), None);
+        niri.add_output(self.output.clone(), None, false);
     }
 
     pub fn seat_name(&self) -> String {

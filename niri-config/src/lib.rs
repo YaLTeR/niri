@@ -250,6 +250,8 @@ pub struct Output {
     pub position: Option<Position>,
     #[knuffel(child, unwrap(argument, str))]
     pub mode: Option<Mode>,
+    #[knuffel(child)]
+    pub variable_refresh_rate: bool,
 }
 
 impl Default for Output {
@@ -261,6 +263,7 @@ impl Default for Output {
             transform: Transform::Normal,
             position: None,
             mode: None,
+            variable_refresh_rate: false,
         }
     }
 }
@@ -1719,6 +1722,7 @@ mod tests {
                 transform "flipped-90"
                 position x=10 y=20
                 mode "1920x1080@144"
+                variable-refresh-rate
             }
 
             layout {
@@ -1868,6 +1872,7 @@ mod tests {
                         height: 1080,
                         refresh: Some(144.),
                     }),
+                    variable_refresh_rate: true,
                 }],
                 layout: Layout {
                     focus_ring: FocusRing {
