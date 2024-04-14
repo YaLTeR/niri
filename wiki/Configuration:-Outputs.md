@@ -117,6 +117,8 @@ The following algorithm is used for positioning outputs.
 
 ### `variable-refresh-rate`
 
+<sup>Since: 0.1.5</sup>
+
 This flag enables variable refresh rate (VRR, also known as adaptive sync, FreeSync, or G-Sync), if the output supports it.
 
 > [!NOTE]
