@@ -544,7 +544,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn are_transitions_ongoing(&self) -> bool {
         self.workspace_switch.is_some()
-            || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
+            || self
+                .workspaces
+                .iter()
+                .any(|ws| ws.are_transitions_ongoing())
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {

@@ -213,6 +213,10 @@ impl OutputId {
 }
 
 impl ViewOffsetAdjustment {
+    pub fn is_animation(&self) -> bool {
+        matches!(self, Self::Animation(_))
+    }
+
     pub fn target_view_offset(&self) -> f64 {
         match self {
             ViewOffsetAdjustment::Animation(anim) => anim.to(),
@@ -307,6 +311,14 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
+        self.view_offset_adj
+            .as_ref()
+            .is_some_and(|s| s.is_animation())
+            || self.columns.iter().any(Column::are_animations_ongoing)
+            || !self.closing_windows.is_empty()
+    }
+
+    pub fn are_transitions_ongoing(&self) -> bool {
         self.view_offset_adj.is_some()
             || self.columns.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
