@@ -680,21 +680,8 @@ impl Tty {
 
         let device = self.devices.get_mut(&node).context("missing device")?;
 
-        let non_desktop = device
-            .drm
-            .get_properties(connector.handle())
-            .ok()
-            .and_then(|props| {
-                let (info, value) = props
-                    .into_iter()
-                    .filter_map(|(handle, value)| {
-                        let info = device.drm.get_property(handle).ok()?;
-                        Some((info, value))
-                    })
-                    .find(|(info, _)| info.name().to_str() == Ok("non-desktop"))?;
-
-                info.value_type().convert_value(value).as_boolean()
-            })
+        let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
+            .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
             .unwrap_or(false);
 
         if non_desktop {
@@ -1856,7 +1843,7 @@ fn find_drm_property(
     drm: &DrmDevice,
     resource: impl ResourceHandle,
     name: &str,
-) -> Option<(property::Handle, property::RawValue)> {
+) -> Option<(property::Handle, property::Info, property::RawValue)> {
     let props = match drm.get_properties(resource) {
         Ok(props) => props,
         Err(err) => {
@@ -1869,7 +1856,7 @@ fn find_drm_property(
         let info = drm.get_property(handle).ok()?;
         let n = info.name().to_str().ok()?;
 
-        (n == name).then_some((handle, value))
+        (n == name).then_some((handle, info, value))
     })
 }
 
@@ -1892,7 +1879,7 @@ fn get_drm_property(
 }
 
 fn set_crtc_active(drm: &DrmDevice, crtc: crtc::Handle, active: bool) {
-    let Some((prop, _)) = find_drm_property(drm, crtc, "ACTIVE") else {
+    let Some((prop, _, _)) = find_drm_property(drm, crtc, "ACTIVE") else {
         return;
     };
 
