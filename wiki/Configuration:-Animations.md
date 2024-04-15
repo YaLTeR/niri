@@ -154,12 +154,15 @@ animations {
 
 <sup>Since: 0.1.5</sup>
 
-Window movement animations, currently cover only horizontal column movement.
+Movement of individual windows within a workspace.
 
-This animation runs on actions like `move-column-left` and `move-column-right` to move the windows themselves.
-It can sometimes run together with the `horizontal-view-movement` animation, if the camera also moves.
+Includes:
 
-Since 0.1.5, this is also the animation that moves windows out of the way upon window opening and closing.
+- Moving window columns with `move-column-left` and `move-column-right`.
+- Moving windows inside a column with `move-window-up` and `move-window-down`.
+- Since 0.1.5, moving windows out of the way upon window opening and closing.
+
+This animation *does not* include the camera view movement, such as scrolling the workspace left and right.
 
 ```
 animations {
