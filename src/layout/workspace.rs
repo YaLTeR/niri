@@ -2250,9 +2250,19 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
+        let mut ys = self.tile_ys().skip(self.active_tile_idx);
+        let active_y = ys.next().unwrap();
+        let next_y = ys.next().unwrap();
+        drop(ys);
+
         self.tiles.swap(self.active_tile_idx, new_idx);
         self.heights.swap(self.active_tile_idx, new_idx);
         self.active_tile_idx = new_idx;
+
+        // Animate the movement.
+        let new_active_y = self.tile_y(new_idx);
+        self.tiles[new_idx].animate_move_from(Point::from((0, active_y - new_active_y)));
+        self.tiles[new_idx + 1].animate_move_from(Point::from((0, active_y - next_y)));
     }
 
     fn move_down(&mut self) {
@@ -2261,9 +2271,19 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
+        let mut ys = self.tile_ys().skip(self.active_tile_idx);
+        let active_y = ys.next().unwrap();
+        let next_y = ys.next().unwrap();
+        drop(ys);
+
         self.tiles.swap(self.active_tile_idx, new_idx);
         self.heights.swap(self.active_tile_idx, new_idx);
         self.active_tile_idx = new_idx;
+
+        // Animate the movement.
+        let new_active_y = self.tile_y(new_idx);
+        self.tiles[new_idx].animate_move_from(Point::from((0, active_y - new_active_y)));
+        self.tiles[new_idx - 1].animate_move_from(Point::from((0, next_y - active_y)));
     }
 
     #[cfg(test)]
@@ -2431,9 +2451,13 @@ impl<W: LayoutElement> Column<W> {
             y = self.working_area.loc.y + self.options.gaps;
         }
 
-        self.tiles.iter().map(move |tile| {
+        let heights = self.tiles.iter().map(|tile| tile.tile_size().h);
+
+        // Chain an arbitrary height to be able to get the Y that the next tile past the end would
+        // have.
+        heights.chain(iter::once(0)).map(move |h| {
             let pos = y;
-            y += tile.tile_size().h + self.options.gaps;
+            y += h + self.options.gaps;
             pos
         })
     }

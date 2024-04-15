@@ -243,6 +243,14 @@ impl<W: LayoutElement> Tile<W> {
         self.resize_animation.as_ref().map(|resize| &resize.anim)
     }
 
+    pub fn animate_move_from(&mut self, from: Point<i32, Logical>) {
+        self.animate_move_from_with_config(
+            from,
+            self.options.animations.window_movement,
+            niri_config::Animation::default_window_movement(),
+        );
+    }
+
     pub fn animate_move_from_with_config(
         &mut self,
         from: Point<i32, Logical>,
