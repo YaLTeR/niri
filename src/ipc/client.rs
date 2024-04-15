@@ -6,7 +6,7 @@ use crate::cli::Msg;
 use crate::utils::version;
 
 pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
-    let mut client = NiriSocket::new()
+    let client = NiriSocket::new()
         .context("a communication error occured while trying to initialize the socket")?;
 
     // Default SIGPIPE so that our prints don't panic on stdout closing.
@@ -38,10 +38,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 eprintln!("Note: unable to get the compositor's version.");
                 eprintln!("Did you forget to restart niri after an update?");
             } else {
-                // We're making a new client here just for some vague notion of
-                // backwards compatibility.
-                // It is in general not necessary to do so.
-                match NiriSocket::new().and_then(|mut client| client.send(Request::Version)) {
+                match NiriSocket::new().and_then(|client| client.send(Request::Version)) {
                     Ok(Ok(Response::Version(server_version))) => {
                         let my_version = version();
                         if my_version != server_version {

@@ -55,7 +55,7 @@ impl NiriSocket {
     /// Ok(Ok([Response](crate::Response))) corresponds to a successful response from the running
     /// niri instance. Ok(Err([String])) corresponds to an error received from the running niri
     /// instance. Err([std::io::Error]) corresponds to an error in the IPC communication.
-    pub fn send(&mut self, request: Request) -> io::Result<Reply> {
+    pub fn send(mut self, request: Request) -> io::Result<Reply> {
         let mut buf = serde_json::to_vec(&request).unwrap();
         writeln!(buf).unwrap();
         self.stream.write_all(&buf)?; // .context("error writing IPC request")?;

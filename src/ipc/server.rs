@@ -115,25 +115,28 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
 
     let mut lines = BufReader::new(read).lines();
 
-    while let Some(line) = lines.next().await {
-        let reply: Reply = serde_json::from_str(&match line {
-            Ok(line) => line,
-            // ConnectionReset is expected when the client disconnects
-            Err(err) if err.kind() == io::ErrorKind::ConnectionReset => break,
-            Err(err) => return Err(err).context("error reading line"),
-        })
+    let line = match lines.next().await.unwrap_or(Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Unreachable; BufReader returned None but when the stream ends, the connection should be reset"))) {
+        Ok(line) => line,
+        Err(err) if err.kind() == io::ErrorKind::ConnectionReset => return Ok(()),
+        Err(err) => return Err(err).context("error reading line"),
+    };
+
+    let reply: Reply = serde_json::from_str(&line)
         .map_err(|err| format!("error parsing request: {err}"))
         .and_then(|req| process(&ctx, req));
 
-        if let Err(err) = &reply {
-            warn!("error processing IPC request: {err:?}");
-        }
-
-        let mut buf = serde_json::to_vec(&reply).context("error formatting reply")?;
-        writeln!(buf).unwrap();
-        write.write_all(&buf).await.context("error writing reply")?;
-        write.flush().await.context("error flushing reply")?;
+    if let Err(err) = &reply {
+        warn!("error processing IPC request: {err:?}");
     }
+
+    let mut buf = serde_json::to_vec(&reply).context("error formatting reply")?;
+    writeln!(buf).unwrap();
+    write.write_all(&buf).await.context("error writing reply")?;
+    write.flush().await.context("error flushing reply")?;
+
+    // We do not check for more lines at this moment.
+    // Dropping the stream will reset the connection before we read them.
+    // For now, a client should not be sending more than one request per connection.
 
     Ok(())
 }
