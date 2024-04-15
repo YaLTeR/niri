@@ -72,6 +72,8 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     physical_size,
                     modes,
                     current_mode,
+                    vrr_supported,
+                    vrr_enabled,
                     logical,
                 } = output;
 
@@ -92,6 +94,13 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
                 } else {
                     println!("  Disabled");
+                }
+
+                if vrr_supported {
+                    let enabled = if vrr_enabled { "enabled" } else { "disabled" };
+                    println!("  Variable refresh rate: supported, {enabled}");
+                } else {
+                    println!("  Variable refresh rate: not supported");
                 }
 
                 if let Some((width, height)) = physical_size {

@@ -252,6 +252,10 @@ pub struct Output {
     ///
     /// `None` if the output is disabled.
     pub current_mode: Option<usize>,
+    /// Whether the output supports variable refresh rate.
+    pub vrr_supported: bool,
+    /// Whether variable refresh rate is enabled on the output.
+    pub vrr_enabled: bool,
     /// Logical output information.
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).

@@ -1451,6 +1451,9 @@ impl Tty {
                     }
                 }
 
+                let vrr_supported = is_vrr_capable(&device.drm, connector.handle()) == Some(true);
+                let vrr_enabled = surface.map_or(false, |surface| surface.vrr_enabled);
+
                 let logical = niri
                     .global_space
                     .outputs()
@@ -1467,6 +1470,8 @@ impl Tty {
                     physical_size,
                     modes,
                     current_mode,
+                    vrr_supported,
+                    vrr_enabled,
                     logical,
                 };
 
