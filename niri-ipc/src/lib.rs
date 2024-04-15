@@ -13,8 +13,8 @@ pub use socket::{NiriSocket, SOCKET_PATH_ENV};
 /// Request from client to niri.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Request {
-    /// Always responds with an error.
-    Nonsense,
+    /// Always responds with an error. (For testing error handling)
+    ReturnError,
     /// Request the version string for the running niri instance.
     Version,
     /// Request information about connected outputs.

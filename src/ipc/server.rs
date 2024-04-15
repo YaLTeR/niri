@@ -140,7 +140,7 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
 
 fn process(ctx: &ClientCtx, request: Request) -> Reply {
     let response = match request {
-        Request::Nonsense => return Err("nonsense request".into()),
+        Request::ReturnError => return Err("client wanted an error".into()),
         Request::Version => Response::Version(version()),
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
