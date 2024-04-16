@@ -351,7 +351,9 @@ impl<W: LayoutElement> Tile<W> {
             let size_from = resize.size_from;
 
             size.w = (size_from.w as f64 + (size.w - size_from.w) as f64 * val).round() as i32;
+            size.w = max(1, size.w);
             size.h = (size_from.h as f64 + (size.h - size_from.h) as f64 * val).round() as i32;
+            size.h = max(1, size.h);
         }
 
         size
