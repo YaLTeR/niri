@@ -161,6 +161,7 @@ Includes:
 - Moving window columns with `move-column-left` and `move-column-right`.
 - Moving windows inside a column with `move-window-up` and `move-window-down`.
 - Since 0.1.5, moving windows out of the way upon window opening and closing.
+- Since 0.1.5, window movement between columns when consuming/expelling.
 
 This animation *does not* include the camera view movement, such as scrolling the workspace left and right.
 
