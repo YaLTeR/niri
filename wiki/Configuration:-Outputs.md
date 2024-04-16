@@ -121,6 +121,8 @@ The following algorithm is used for positioning outputs.
 
 This flag enables variable refresh rate (VRR, also known as adaptive sync, FreeSync, or G-Sync), if the output supports it.
 
+You can check whether an output supports VRR in `niri msg outputs`.
+
 > [!NOTE]
 > Some drivers have various issues with VRR.
 >
