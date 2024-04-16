@@ -61,7 +61,7 @@ pub struct Tile<W: LayoutElement> {
     move_animation: Option<MoveAnimation>,
 
     /// Configurable properties of the layout.
-    options: Rc<Options>,
+    pub options: Rc<Options>,
 }
 
 niri_render_elements! {

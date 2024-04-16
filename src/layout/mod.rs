@@ -1426,7 +1426,9 @@ impl<W: LayoutElement> Layout<W> {
             let column = &ws.columns[ws.active_column_idx];
             let width = column.width;
             let is_full_width = column.is_full_width;
-            let window = ws.remove_window_by_idx(ws.active_column_idx, column.active_tile_idx);
+            let window = ws
+                .remove_tile_by_idx(ws.active_column_idx, column.active_tile_idx)
+                .into_window();
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
