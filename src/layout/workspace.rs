@@ -670,6 +670,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.options.clone(),
             width,
             is_full_width,
+            true,
         );
         let width = column.width();
         self.columns.insert(col_idx, column);
@@ -747,6 +748,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.options.clone(),
             width,
             is_full_width,
+            true,
         );
         self.columns.insert(idx, column);
 
@@ -1313,31 +1315,57 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let source_column = &self.columns[self.active_column_idx];
+        let source_col_idx = self.active_column_idx;
+        let source_column = &self.columns[source_col_idx];
+        let prev_y = source_column.tile_y(source_column.active_tile_idx);
+
         if source_column.tiles.len() == 1 {
             if self.active_column_idx == 0 {
                 return;
             }
 
+            let offset_x = self.column_x(source_col_idx) - self.column_x(source_col_idx - 1);
+
             // Move into adjacent column.
-            let target_column_idx = self.active_column_idx - 1;
-            let window = self.remove_window_by_idx(self.active_column_idx, 0);
+            let target_column_idx = source_col_idx - 1;
+
+            // Make sure the previous (target) column is activated so the animation looks right.
+            self.activate_prev_column_on_removal = Some(self.static_view_offset());
+            let window = self.remove_window_by_idx(source_col_idx, 0);
             self.enter_output_for_window(&window);
 
+            let next_col_idx = source_col_idx;
+            let prev_next_x = self.column_x(next_col_idx);
+
             let target_column = &mut self.columns[target_column_idx];
+            let offset_y = prev_y - target_column.tile_y(target_column.tiles.len());
+
             target_column.add_window(window, true);
             target_column.focus_last();
-            self.activate_column(target_column_idx);
+
+            let new_tile = target_column.tiles.last_mut().unwrap();
+            new_tile.animate_move_from(Point::from((offset_x, offset_y)));
+
+            // Consuming a window into a column could've increased its width if the new window had a
+            // larger min width. Move the next columns to account for this.
+            let offset_next = prev_next_x - self.column_x(next_col_idx);
+            for col in &mut self.columns[next_col_idx..] {
+                col.animate_move_from(offset_next);
+            }
         } else {
             // Move out of column.
             let width = source_column.width;
             let is_full_width = source_column.is_full_width;
-            let window =
-                self.remove_window_by_idx(self.active_column_idx, source_column.active_tile_idx);
+
+            let window = self.remove_window_by_idx(source_col_idx, source_column.active_tile_idx);
 
             self.add_window_at(self.active_column_idx, window, true, width, is_full_width);
             // We added to the left, don't activate even further left on removal.
             self.activate_prev_column_on_removal = None;
+
+            let new_col = &mut self.columns[self.active_column_idx];
+            let offset_y = prev_y - new_col.tile_y(0);
+            new_col.tiles[0].animate_move_from(Point::from((0, offset_y)));
         }
     }
 
@@ -1346,29 +1374,53 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let source_column = &self.columns[self.active_column_idx];
+        let source_col_idx = self.active_column_idx;
+        let offset_x = self.column_x(source_col_idx) - self.column_x(source_col_idx + 1);
+
+        let source_column = &self.columns[source_col_idx];
+        let prev_y = source_column.tile_y(source_column.active_tile_idx);
+
         if source_column.tiles.len() == 1 {
             if self.active_column_idx + 1 == self.columns.len() {
                 return;
             }
 
             // Move into adjacent column.
-            let target_column_idx = self.active_column_idx;
-            let window = self.remove_window_by_idx(self.active_column_idx, 0);
+            let target_column_idx = source_col_idx;
+
+            // Make sure the target column gets activated.
+            self.activate_prev_column_on_removal = None;
+            let window = self.remove_window_by_idx(source_col_idx, 0);
             self.enter_output_for_window(&window);
 
+            let prev_next_x = self.column_x(target_column_idx + 1);
+
             let target_column = &mut self.columns[target_column_idx];
+            let offset_y = prev_y - target_column.tile_y(target_column.tiles.len());
+
             target_column.add_window(window, true);
             target_column.focus_last();
-            self.activate_column(target_column_idx);
+
+            let new_tile = target_column.tiles.last_mut().unwrap();
+            new_tile.animate_move_from(Point::from((offset_x, offset_y)));
+
+            // Consuming a window into a column could've increased its width if the new window had a
+            // larger min width. Move the next columns to account for this.
+            let offset_next = prev_next_x - self.column_x(target_column_idx + 1);
+            for col in &mut self.columns[target_column_idx + 1..] {
+                col.animate_move_from(offset_next);
+            }
         } else {
             // Move out of column.
             let width = source_column.width;
             let is_full_width = source_column.is_full_width;
-            let window =
-                self.remove_window_by_idx(self.active_column_idx, source_column.active_tile_idx);
+            let window = self.remove_window_by_idx(source_col_idx, source_column.active_tile_idx);
 
             self.add_window(window, true, width, is_full_width);
+
+            let new_col = &mut self.columns[self.active_column_idx];
+            let offset_y = prev_y - new_col.tile_y(0);
+            new_col.tiles[0].animate_move_from(Point::from((offset_x, offset_y)));
         }
     }
 
@@ -1382,16 +1434,33 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let source_column_idx = self.active_column_idx + 1;
+
+        let offset_x = self.column_x(source_column_idx) - self.column_x(self.active_column_idx);
+        let prev_y = self.columns[source_column_idx].tile_y(0);
+
         let window = self.remove_window_by_idx(source_column_idx, 0);
         self.enter_output_for_window(&window);
 
+        let prev_next_x = self.column_x(self.active_column_idx + 1);
+
         let target_column = &mut self.columns[self.active_column_idx];
         let was_fullscreen = target_column.tiles[target_column.active_tile_idx].is_fullscreen();
+        let offset_y = prev_y - target_column.tile_y(target_column.tiles.len());
 
         target_column.add_window(window, true);
 
         if !was_fullscreen {
             self.view_offset_before_fullscreen = None;
+        }
+
+        let new_tile = target_column.tiles.last_mut().unwrap();
+        new_tile.animate_move_from(Point::from((offset_x, offset_y)));
+
+        // Consuming a window into a column could've increased its width if the new window had a
+        // larger min width. Move the next columns to account for this.
+        let offset_next = prev_next_x - self.column_x(self.active_column_idx + 1);
+        for col in &mut self.columns[self.active_column_idx + 1..] {
+            col.animate_move_from(offset_next);
         }
     }
 
@@ -1400,10 +1469,15 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        let offset_x =
+            self.column_x(self.active_column_idx) - self.column_x(self.active_column_idx + 1);
+
         let source_column = &self.columns[self.active_column_idx];
         if source_column.tiles.len() == 1 {
             return;
         }
+
+        let prev_y = source_column.tile_y(source_column.active_tile_idx);
 
         let width = source_column.width;
         let is_full_width = source_column.is_full_width;
@@ -1411,6 +1485,10 @@ impl<W: LayoutElement> Workspace<W> {
             self.remove_window_by_idx(self.active_column_idx, source_column.active_tile_idx);
 
         self.add_window(window, true, width, is_full_width);
+
+        let new_col = &mut self.columns[self.active_column_idx];
+        let offset_y = prev_y - new_col.tile_y(0);
+        new_col.tiles[0].animate_move_from(Point::from((offset_x, offset_y)));
     }
 
     pub fn center_column(&mut self) {
@@ -1608,6 +1686,7 @@ impl<W: LayoutElement> Workspace<W> {
                     self.options.clone(),
                     width,
                     is_full_width,
+                    false,
                 ),
             );
 
@@ -1942,6 +2021,7 @@ impl<W: LayoutElement> Column<W> {
         options: Rc<Options>,
         width: ColumnWidth,
         is_full_width: bool,
+        animate_resize: bool,
     ) -> Self {
         let mut rv = Self {
             tiles: vec![],
@@ -1959,7 +2039,7 @@ impl<W: LayoutElement> Column<W> {
 
         let is_pending_fullscreen = window.is_pending_fullscreen();
 
-        rv.add_window(window, false);
+        rv.add_window(window, animate_resize);
 
         if is_pending_fullscreen {
             rv.set_fullscreen(true);
