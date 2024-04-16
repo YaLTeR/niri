@@ -840,7 +840,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
-        column.update_tile_sizes(false);
+        column.update_tile_sizes(true);
 
         window
     }
@@ -1022,14 +1022,22 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         };
 
-        let col_idx = self
+        let (col_idx, tile_idx) = self
             .columns
             .iter()
-            .position(|col| col.contains(window))
+            .enumerate()
+            .find_map(|(col_idx, col)| {
+                col.tiles
+                    .iter()
+                    .position(|tile| tile.window().id() == window)
+                    .map(|tile_idx| (col_idx, tile_idx))
+            })
             .unwrap();
 
-        let removing_last = self.columns[col_idx].tiles.len() == 1;
+        let col = &self.columns[col_idx];
+        let removing_last = col.tiles.len() == 1;
         let offset = self.column_x(col_idx + 1) - self.column_x(col_idx);
+        let offset_y = col.tile_y(tile_idx + 1) - col.tile_y(tile_idx);
 
         let mut center = Point::from((0, 0));
         center.x += tile.tile_size().w / 2;
@@ -1089,6 +1097,16 @@ impl<W: LayoutElement> Workspace<W> {
                     col.animate_move_from(-offset);
                 }
             }
+        }
+
+        // Also move other windows in a column.
+        let col = &mut self.columns[col_idx];
+        for tile in &mut col.tiles[tile_idx + 1..] {
+            tile.animate_move_from_with_config(
+                Point::from((0, offset_y)),
+                self.options.animations.window_resize,
+                niri_config::Animation::default_window_resize(),
+            );
         }
     }
 
