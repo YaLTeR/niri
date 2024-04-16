@@ -145,25 +145,27 @@ impl Layout {
         rv
     }
 
-    fn add_window(&mut self, window: TestWindow, width: Option<ColumnWidth>) {
+    fn add_window(&mut self, mut window: TestWindow, width: Option<ColumnWidth>) {
+        let ws = self.layout.active_workspace().unwrap();
+        window.request_size(ws.new_window_size(width), false);
+        window.communicate();
+
         self.layout.add_window(window.clone(), width, false);
-        if window.communicate() {
-            self.layout.update_window(window.id());
-        }
         self.windows.push(window);
     }
 
     fn add_window_right_of(
         &mut self,
         right_of: &TestWindow,
-        window: TestWindow,
+        mut window: TestWindow,
         width: Option<ColumnWidth>,
     ) {
+        let ws = self.layout.active_workspace().unwrap();
+        window.request_size(ws.new_window_size(width), false);
+        window.communicate();
+
         self.layout
             .add_window_right_of(right_of.id(), window.clone(), width, false);
-        if window.communicate() {
-            self.layout.update_window(window.id());
-        }
         self.windows.push(window);
     }
 

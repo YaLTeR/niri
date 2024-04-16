@@ -1715,22 +1715,10 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mut mon.workspaces {
-                        for (col_idx, col) in ws.columns.iter_mut().enumerate() {
+                        for col in &mut ws.columns {
                             for tile in &mut col.tiles {
                                 if tile.window().id() == window {
                                     tile.start_open_animation();
-
-                                    let offset = ws.column_x(col_idx + 1) - ws.column_x(col_idx);
-                                    if ws.active_column_idx <= col_idx {
-                                        for col in &mut ws.columns[col_idx + 1..] {
-                                            col.animate_move_from(-offset);
-                                        }
-                                    } else {
-                                        for col in &mut ws.columns[..col_idx] {
-                                            col.animate_move_from(offset);
-                                        }
-                                    }
-
                                     return;
                                 }
                             }
@@ -1740,22 +1728,10 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
-                    for (col_idx, col) in ws.columns.iter_mut().enumerate() {
+                    for col in &mut ws.columns {
                         for tile in &mut col.tiles {
                             if tile.window().id() == window {
                                 tile.start_open_animation();
-
-                                let offset = ws.column_x(col_idx + 1) - ws.column_x(col_idx);
-                                if ws.active_column_idx <= col_idx {
-                                    for col in &mut ws.columns[col_idx + 1..] {
-                                        col.animate_move_from(-offset);
-                                    }
-                                } else {
-                                    for col in &mut ws.columns[..col_idx] {
-                                        col.animate_move_from(offset);
-                                    }
-                                }
-
                                 return;
                             }
                         }
