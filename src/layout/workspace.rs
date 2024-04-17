@@ -1039,7 +1039,7 @@ impl<W: LayoutElement> Workspace<W> {
                     );
                 }
             } else {
-                for col in &mut self.columns[..col_idx] {
+                for col in &mut self.columns[..=col_idx] {
                     col.animate_move_from_with_config(
                         -offset,
                         self.options.animations.window_resize,
