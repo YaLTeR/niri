@@ -59,13 +59,7 @@ impl ConfigErrorNotification {
 
     fn animation(&self, from: f64, to: f64) -> Animation {
         let c = self.config.borrow();
-        Animation::new(
-            from,
-            to,
-            0.,
-            c.animations.config_notification_open_close,
-            niri_config::Animation::default_config_notification_open_close(),
-        )
+        Animation::new(from, to, 0., c.animations.config_notification_open_close.0)
     }
 
     pub fn show_created(&mut self, created_path: Option<PathBuf>) {

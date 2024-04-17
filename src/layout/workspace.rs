@@ -525,8 +525,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.view_offset as f64,
             new_view_offset as f64,
             0.,
-            self.options.animations.horizontal_view_movement,
-            niri_config::Animation::default_horizontal_view_movement(),
+            self.options.animations.horizontal_view_movement.0,
         )));
     }
 
@@ -857,8 +856,7 @@ impl<W: LayoutElement> Workspace<W> {
         for tile in &mut column.tiles[window_idx + 1..] {
             tile.animate_move_from_with_config(
                 Point::from((0, offset_y)),
-                self.options.animations.window_resize,
-                niri_config::Animation::default_window_resize(),
+                self.options.animations.window_resize.0,
             );
         }
 
@@ -1034,16 +1032,14 @@ impl<W: LayoutElement> Workspace<W> {
                 for col in &mut self.columns[col_idx + 1..] {
                     col.animate_move_from_with_config(
                         offset,
-                        self.options.animations.window_resize,
-                        niri_config::Animation::default_window_resize(),
+                        self.options.animations.window_resize.0,
                     );
                 }
             } else {
                 for col in &mut self.columns[..=col_idx] {
                     col.animate_move_from_with_config(
                         -offset,
-                        self.options.animations.window_resize,
-                        niri_config::Animation::default_window_resize(),
+                        self.options.animations.window_resize.0,
                     );
                 }
             }
@@ -1074,10 +1070,7 @@ impl<W: LayoutElement> Workspace<W> {
                 // offset animation if the target was the same; maybe we shouldn't replace in this
                 // case?
                 if started_animation {
-                    anim.replace_config(
-                        self.options.animations.window_resize,
-                        niri_config::Animation::default_window_resize(),
-                    );
+                    anim.replace_config(self.options.animations.window_resize.0);
                 }
             }
         }
@@ -1149,13 +1142,7 @@ impl<W: LayoutElement> Workspace<W> {
             (1., 1.)
         };
 
-        let anim = Animation::new(
-            1.,
-            0.,
-            0.,
-            self.options.animations.window_close,
-            niri_config::Animation::default_window_close(),
-        );
+        let anim = Animation::new(1., 0., 0., self.options.animations.window_close.0);
 
         let res = ClosingWindow::new(
             renderer,
@@ -2021,8 +2008,7 @@ impl<W: LayoutElement> Workspace<W> {
             current_view_offset + delta,
             target_view_offset as f64,
             velocity,
-            self.options.animations.horizontal_view_movement,
-            niri_config::Animation::default_horizontal_view_movement(),
+            self.options.animations.horizontal_view_movement.0,
         )));
 
         // HACK: deal with things like snapping to the right edge of a larger-than-view window.
@@ -2188,8 +2174,7 @@ impl<W: LayoutElement> Column<W> {
     pub fn animate_move_from(&mut self, from_x_offset: i32) {
         self.animate_move_from_with_config(
             from_x_offset,
-            self.options.animations.window_movement,
-            niri_config::Animation::default_window_movement(),
+            self.options.animations.window_movement.0,
         );
     }
 
@@ -2197,7 +2182,6 @@ impl<W: LayoutElement> Column<W> {
         &mut self,
         from_x_offset: i32,
         config: niri_config::Animation,
-        default: niri_config::Animation,
     ) {
         let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
 
@@ -2206,7 +2190,6 @@ impl<W: LayoutElement> Column<W> {
             0.,
             0.,
             config,
-            default,
         ));
     }
 
@@ -2257,8 +2240,7 @@ impl<W: LayoutElement> Column<W> {
             for tile in &mut self.tiles[tile_idx + 1..] {
                 tile.animate_move_from_with_config(
                     Point::from((0, offset)),
-                    self.options.animations.window_resize,
-                    niri_config::Animation::default_window_resize(),
+                    self.options.animations.window_resize.0,
                 );
             }
         }

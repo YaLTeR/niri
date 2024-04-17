@@ -46,52 +46,27 @@ pub enum Curve {
 }
 
 impl Animation {
-    pub fn new(
-        from: f64,
-        to: f64,
-        initial_velocity: f64,
-        config: niri_config::Animation,
-        default: niri_config::Animation,
-    ) -> Self {
+    pub fn new(from: f64, to: f64, initial_velocity: f64, config: niri_config::Animation) -> Self {
         let mut rv = Self::ease(from, to, initial_velocity, 0, Curve::EaseOutCubic);
         if config.off {
             return rv;
         }
 
-        rv.replace_config(config, default);
+        rv.replace_config(config);
         rv
     }
 
-    pub fn replace_config(
-        &mut self,
-        config: niri_config::Animation,
-        default: niri_config::Animation,
-    ) {
+    pub fn replace_config(&mut self, config: niri_config::Animation) {
+        if config.off {
+            self.duration = Duration::ZERO;
+            self.clamped_duration = Duration::ZERO;
+            return;
+        }
+
         let start_time = self.start_time;
         let current_time = self.current_time;
 
-        // Resolve defaults.
-        let (kind, easing_defaults) = match (config.kind, default.kind) {
-            // Configured spring.
-            (configured @ niri_config::AnimationKind::Spring(_), _) => (configured, None),
-            // Configured nothing, defaults spring.
-            (
-                niri_config::AnimationKind::Easing(easing),
-                defaults @ niri_config::AnimationKind::Spring(_),
-            ) if easing == niri_config::EasingParams::unfilled() => (defaults, None),
-            // Configured easing or nothing, defaults easing.
-            (
-                configured @ niri_config::AnimationKind::Easing(_),
-                niri_config::AnimationKind::Easing(defaults),
-            ) => (configured, Some(defaults)),
-            // Configured easing, defaults spring.
-            (
-                configured @ niri_config::AnimationKind::Easing(_),
-                niri_config::AnimationKind::Spring(_),
-            ) => (configured, None),
-        };
-
-        match kind {
+        match config.kind {
             niri_config::AnimationKind::Spring(p) => {
                 let params = SpringParams::new(p.damping_ratio, f64::from(p.stiffness), p.epsilon);
 
@@ -104,15 +79,12 @@ impl Animation {
                 *self = Self::spring(spring);
             }
             niri_config::AnimationKind::Easing(p) => {
-                let defaults = easing_defaults.unwrap_or(niri_config::EasingParams::default());
-                let duration_ms = p.duration_ms.or(defaults.duration_ms).unwrap();
-                let curve = Curve::from(p.curve.or(defaults.curve).unwrap());
                 *self = Self::ease(
                     self.from,
                     self.to,
                     self.initial_velocity,
-                    u64::from(duration_ms),
-                    curve,
+                    u64::from(p.duration_ms),
+                    Curve::from(p.curve),
                 );
             }
         }

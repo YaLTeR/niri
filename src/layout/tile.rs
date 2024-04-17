@@ -150,13 +150,7 @@ impl<W: LayoutElement> Tile<W> {
             let change = self.window.size().to_point() - size_from.to_point();
             let change = max(change.x.abs(), change.y.abs());
             if change > RESIZE_ANIMATION_THRESHOLD {
-                let anim = Animation::new(
-                    0.,
-                    1.,
-                    0.,
-                    self.options.animations.window_resize,
-                    niri_config::Animation::default_window_resize(),
-                );
+                let anim = Animation::new(0., 1., 0., self.options.animations.window_resize.0);
                 self.resize_animation = Some(ResizeAnimation {
                     anim,
                     size_from,
@@ -230,8 +224,7 @@ impl<W: LayoutElement> Tile<W> {
             0.,
             1.,
             0.,
-            self.options.animations.window_open,
-            niri_config::Animation::default_window_open(),
+            self.options.animations.window_open.0,
         ));
     }
 
@@ -244,23 +237,18 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn animate_move_from(&mut self, from: Point<i32, Logical>) {
-        self.animate_move_from_with_config(
-            from,
-            self.options.animations.window_movement,
-            niri_config::Animation::default_window_movement(),
-        );
+        self.animate_move_from_with_config(from, self.options.animations.window_movement.0);
     }
 
     pub fn animate_move_from_with_config(
         &mut self,
         from: Point<i32, Logical>,
         config: niri_config::Animation,
-        default: niri_config::Animation,
     ) {
         let current_offset = self.render_offset();
 
         self.move_animation = Some(MoveAnimation {
-            anim: Animation::new(1., 0., 0., config, default),
+            anim: Animation::new(1., 0., 0., config),
             from: from + current_offset,
         });
     }

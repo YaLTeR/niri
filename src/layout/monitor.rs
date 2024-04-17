@@ -127,8 +127,7 @@ impl<W: LayoutElement> Monitor<W> {
             current_idx,
             idx as f64,
             0.,
-            self.options.animations.workspace_switch,
-            niri_config::Animation::default_workspace_switch(),
+            self.options.animations.workspace_switch.0,
         )));
     }
 
@@ -882,8 +881,7 @@ impl<W: LayoutElement> Monitor<W> {
             gesture.current_idx,
             new_idx as f64,
             velocity,
-            self.options.animations.workspace_switch,
-            niri_config::Animation::default_workspace_switch(),
+            self.options.animations.workspace_switch.0,
         )));
 
         true

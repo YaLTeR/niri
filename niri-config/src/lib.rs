@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use bitflags::bitflags;
 use knuffel::errors::DecodeError;
+use knuffel::Decode as _;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{LayoutSwitchTarget, SizeChange, Transform};
 use regex::Regex;
@@ -482,20 +483,20 @@ pub struct Animations {
     pub off: bool,
     #[knuffel(child, unwrap(argument), default = 1.)]
     pub slowdown: f64,
-    #[knuffel(child, default = Animation::default_workspace_switch())]
-    pub workspace_switch: Animation,
-    #[knuffel(child, default = Animation::default_horizontal_view_movement())]
-    pub horizontal_view_movement: Animation,
-    #[knuffel(child, default = Animation::default_window_movement())]
-    pub window_movement: Animation,
-    #[knuffel(child, default = Animation::default_window_open())]
-    pub window_open: Animation,
-    #[knuffel(child, default = Animation::default_window_close())]
-    pub window_close: Animation,
-    #[knuffel(child, default = Animation::default_window_resize())]
-    pub window_resize: Animation,
-    #[knuffel(child, default = Animation::default_config_notification_open_close())]
-    pub config_notification_open_close: Animation,
+    #[knuffel(child, default)]
+    pub workspace_switch: WorkspaceSwitchAnim,
+    #[knuffel(child, default)]
+    pub horizontal_view_movement: HorizontalViewMovementAnim,
+    #[knuffel(child, default)]
+    pub window_movement: WindowMovementAnim,
+    #[knuffel(child, default)]
+    pub window_open: WindowOpenAnim,
+    #[knuffel(child, default)]
+    pub window_close: WindowCloseAnim,
+    #[knuffel(child, default)]
+    pub window_resize: WindowResizeAnim,
+    #[knuffel(child, default)]
+    pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
 }
 
 impl Default for Animations {
@@ -503,14 +504,124 @@ impl Default for Animations {
         Self {
             off: false,
             slowdown: 1.,
-            workspace_switch: Animation::default_workspace_switch(),
-            horizontal_view_movement: Animation::default_horizontal_view_movement(),
-            window_movement: Animation::default_window_movement(),
-            window_open: Animation::default_window_open(),
-            window_close: Animation::default_window_close(),
-            window_resize: Animation::default_window_resize(),
-            config_notification_open_close: Animation::default_config_notification_open_close(),
+            workspace_switch: Default::default(),
+            horizontal_view_movement: Default::default(),
+            window_movement: Default::default(),
+            window_open: Default::default(),
+            window_close: Default::default(),
+            window_resize: Default::default(),
+            config_notification_open_close: Default::default(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorkspaceSwitchAnim(pub Animation);
+
+impl Default for WorkspaceSwitchAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 1000,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HorizontalViewMovementAnim(pub Animation);
+
+impl Default for HorizontalViewMovementAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowMovementAnim(pub Animation);
+
+impl Default for WindowMovementAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ConfigNotificationOpenCloseAnim(pub Animation);
+
+impl Default for ConfigNotificationOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 0.6,
+                stiffness: 1000,
+                epsilon: 0.001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowOpenAnim(pub Animation);
+
+impl Default for WindowOpenAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Easing(EasingParams {
+                duration_ms: 150,
+                curve: AnimationCurve::EaseOutExpo,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowCloseAnim(pub Animation);
+
+impl Default for WindowCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Easing(EasingParams {
+                duration_ms: 150,
+                curve: AnimationCurve::EaseOutQuad,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowResizeAnim(pub Animation);
+
+impl Default for WindowResizeAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
     }
 }
 
@@ -518,97 +629,6 @@ impl Default for Animations {
 pub struct Animation {
     pub off: bool,
     pub kind: AnimationKind,
-}
-
-impl Animation {
-    pub const fn unfilled() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Easing(EasingParams::unfilled()),
-        }
-    }
-
-    pub const fn default() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Easing(EasingParams::default()),
-        }
-    }
-
-    pub const fn default_workspace_switch() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Spring(SpringParams {
-                damping_ratio: 1.,
-                stiffness: 1000,
-                epsilon: 0.0001,
-            }),
-        }
-    }
-
-    pub const fn default_horizontal_view_movement() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Spring(SpringParams {
-                damping_ratio: 1.,
-                stiffness: 800,
-                epsilon: 0.0001,
-            }),
-        }
-    }
-
-    pub const fn default_window_movement() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Spring(SpringParams {
-                damping_ratio: 1.,
-                stiffness: 800,
-                epsilon: 0.0001,
-            }),
-        }
-    }
-
-    pub const fn default_config_notification_open_close() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Spring(SpringParams {
-                damping_ratio: 0.6,
-                stiffness: 1000,
-                epsilon: 0.001,
-            }),
-        }
-    }
-
-    pub const fn default_window_open() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Easing(EasingParams {
-                duration_ms: Some(150),
-                curve: Some(AnimationCurve::EaseOutExpo),
-            }),
-        }
-    }
-
-    pub const fn default_window_close() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Easing(EasingParams {
-                duration_ms: Some(150),
-                curve: Some(AnimationCurve::EaseOutQuad),
-            }),
-        }
-    }
-
-    pub const fn default_window_resize() -> Self {
-        Self {
-            off: false,
-            kind: AnimationKind::Spring(SpringParams {
-                damping_ratio: 1.,
-                stiffness: 800,
-                epsilon: 0.0001,
-            }),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -619,24 +639,8 @@ pub enum AnimationKind {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EasingParams {
-    pub duration_ms: Option<u32>,
-    pub curve: Option<AnimationCurve>,
-}
-
-impl EasingParams {
-    pub const fn unfilled() -> Self {
-        Self {
-            duration_ms: None,
-            curve: None,
-        }
-    }
-
-    pub const fn default() -> Self {
-        Self {
-            duration_ms: Some(250),
-            curve: Some(AnimationCurve::EaseOutCubic),
-        }
-    }
+    pub duration_ms: u32,
+    pub curve: AnimationCurve,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
@@ -1177,7 +1181,7 @@ fn parse_arg_node<S: knuffel::traits::ErrorSpan, T: knuffel::traits::DecodeScala
     Ok(value)
 }
 
-impl<S> knuffel::Decode<S> for Animation
+impl<S> knuffel::Decode<S> for WorkspaceSwitchAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -1185,10 +1189,105 @@ where
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default)?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for HorizontalViewMovementAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default)?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for WindowMovementAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default)?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for WindowOpenAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default)?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for WindowCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default)?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for WindowResizeAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default)?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ConfigNotificationOpenCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default)?))
+    }
+}
+
+impl Animation {
+    fn decode_node<S: knuffel::traits::ErrorSpan>(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+        default: Self,
+    ) -> Result<Self, DecodeError<S>> {
+        #[derive(Default, PartialEq)]
+        struct OptionalEasingParams {
+            duration_ms: Option<u32>,
+            curve: Option<AnimationCurve>,
+        }
+
         expect_only_children(node, ctx);
 
         let mut off = false;
-        let mut easing_params = EasingParams::unfilled();
+        let mut easing_params = OptionalEasingParams::default();
         let mut spring_params = None;
 
         for child in node.children() {
@@ -1206,7 +1305,7 @@ where
                     }
                 }
                 "spring" => {
-                    if easing_params != EasingParams::unfilled() {
+                    if easing_params != OptionalEasingParams::default() {
                         ctx.emit_error(DecodeError::unexpected(
                             child,
                             "node",
@@ -1270,9 +1369,28 @@ where
         }
 
         let kind = if let Some(spring_params) = spring_params {
+            // Configured spring.
             AnimationKind::Spring(spring_params)
+        } else if easing_params == OptionalEasingParams::default() {
+            // Did not configure anything.
+            default.kind
         } else {
-            AnimationKind::Easing(easing_params)
+            // Configured easing.
+            let default = if let AnimationKind::Easing(easing) = default.kind {
+                easing
+            } else {
+                // Generic fallback values for when the default animation is spring, but the user
+                // configured an easing animation.
+                EasingParams {
+                    duration_ms: 250,
+                    curve: AnimationCurve::EaseOutCubic,
+                }
+            };
+
+            AnimationKind::Easing(EasingParams {
+                duration_ms: easing_params.duration_ms.unwrap_or(default.duration_ms),
+                curve: easing_params.curve.unwrap_or(default.curve),
+            })
         };
 
         Ok(Self { off, kind })
@@ -1948,25 +2066,25 @@ mod tests {
                 },
                 animations: Animations {
                     slowdown: 2.,
-                    workspace_switch: Animation {
+                    workspace_switch: WorkspaceSwitchAnim(Animation {
                         off: false,
                         kind: AnimationKind::Spring(SpringParams {
                             damping_ratio: 1.,
                             stiffness: 1000,
                             epsilon: 0.0001,
                         }),
-                    },
-                    horizontal_view_movement: Animation {
+                    }),
+                    horizontal_view_movement: HorizontalViewMovementAnim(Animation {
                         off: false,
                         kind: AnimationKind::Easing(EasingParams {
-                            duration_ms: Some(100),
-                            curve: Some(AnimationCurve::EaseOutExpo),
+                            duration_ms: 100,
+                            curve: AnimationCurve::EaseOutExpo,
                         }),
-                    },
-                    window_open: Animation {
+                    }),
+                    window_open: WindowOpenAnim(Animation {
                         off: true,
-                        ..Animation::unfilled()
-                    },
+                        ..WindowOpenAnim::default().0
+                    }),
                     ..Default::default()
                 },
                 environment: Environment(vec![
