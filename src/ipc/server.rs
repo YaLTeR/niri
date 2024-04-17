@@ -9,7 +9,10 @@ use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{AsyncBufReadExt, AsyncWriteExt, StreamExt};
-use niri_ipc::{Reply, Request, Response};
+use niri_ipc::{
+    ActionRequest, ErrorRequest, FocusedWindowRequest, OutputRequest, Reply, Request,
+    RequestMessage, RequestType, VersionRequest,
+};
 use smithay::desktop::Window;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -121,9 +124,7 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
         Err(err) => return Err(err).context("error reading line"),
     };
 
-    let reply: Reply = serde_json::from_str(&line)
-        .map_err(|err| format!("error parsing request: {err}"))
-        .and_then(|req| process(&ctx, req));
+    let reply = process(&ctx, line);
 
     if let Err(err) = &reply {
         warn!("error processing IPC request: {err:?}");
@@ -141,17 +142,79 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
     Ok(())
 }
 
-fn process(ctx: &ClientCtx, request: Request) -> Reply {
-    let response = match request {
-        Request::ReturnError => return Err("client wanted an error".into()),
-        Request::Version => Response::Version(version()),
-        Request::Outputs => {
-            let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
-            Response::Outputs(ipc_outputs)
-        }
-        Request::FocusedWindow => {
-            let window = ctx.ipc_focused_window.lock().unwrap().clone();
-            let window = window.map(|window| {
+trait HandleRequest: Request {
+    fn handle(self, ctx: &ClientCtx) -> Reply<Self::Response>;
+}
+
+fn process(ctx: &ClientCtx, line: String) -> Reply<serde_json::Value> {
+    let request: RequestMessage = serde_json::from_str(&line).map_err(|err| {
+        warn!("error parsing IPC request: {err:?}");
+        "error parsing request"
+    })?;
+
+    macro_rules! handle {
+        ($($variant:ident => $type:ty,)*) => {
+            match request.request_type {
+                $(
+                    RequestType::$variant => {
+                        let request = serde_json::from_value::<$type>(request.request_body).map_err(|err|
+                            {
+                                warn!("error parsing IPC request: {err:?}");
+                                "error parsing request"
+                            })?;
+                        HandleRequest::handle(request, ctx).and_then(|v| {
+                                serde_json::to_value(v).map_err(|err| {
+                                    warn!("error serializing response to IPC request: {err:?}");
+                                    "error serializing response".into()
+                                })
+                            })
+                    }
+                )*
+            }
+        };
+    }
+
+    handle!(
+        ReturnError => ErrorRequest,
+        Version => VersionRequest,
+        Outputs => OutputRequest,
+        FocusedWindow => FocusedWindowRequest,
+        Action => ActionRequest,
+    )
+}
+
+impl HandleRequest for ErrorRequest {
+    fn handle(self, _ctx: &ClientCtx) -> Reply<Self::Response> {
+        Err("client wanted an error".into())
+    }
+}
+
+impl HandleRequest for VersionRequest {
+    fn handle(self, _ctx: &ClientCtx) -> Reply<Self::Response> {
+        Ok(version())
+    }
+}
+
+impl HandleRequest for OutputRequest {
+    fn handle(self, ctx: &ClientCtx) -> Reply<Self::Response> {
+        Ok(ctx
+            .ipc_outputs
+            .lock()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .collect())
+    }
+}
+
+impl HandleRequest for FocusedWindowRequest {
+    fn handle(self, ctx: &ClientCtx) -> Reply<Self::Response> {
+        Ok(ctx
+            .ipc_focused_window
+            .lock()
+            .unwrap()
+            .clone()
+            .map(|window| {
                 let wl_surface = window.toplevel().expect("no X11 support").wl_surface();
                 with_states(wl_surface, |states| {
                     let role = states
@@ -166,17 +229,15 @@ fn process(ctx: &ClientCtx, request: Request) -> Reply {
                         app_id: role.app_id.clone(),
                     }
                 })
-            });
-            Response::FocusedWindow(window)
-        }
-        Request::Action(action) => {
-            let action = niri_config::Action::from(action);
-            ctx.event_loop.insert_idle(move |state| {
-                state.do_action(action);
-            });
-            Response::Handled
-        }
-    };
+            }))
+    }
+}
 
-    Ok(response)
+impl HandleRequest for ActionRequest {
+    fn handle(self, ctx: &ClientCtx) -> Reply<Self::Response> {
+        ctx.event_loop.insert_idle(move |state| {
+            state.do_action(self.0.into());
+        });
+        Ok(())
+    }
 }

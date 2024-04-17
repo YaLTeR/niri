@@ -5,7 +5,7 @@ use std::path::Path;
 use serde_json::de::IoRead;
 use serde_json::StreamDeserializer;
 
-use crate::{Reply, Request};
+use crate::{Reply, Request, ResponseDecoder};
 
 /// Name of the environment variable containing the niri IPC socket path.
 pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
@@ -16,7 +16,7 @@ pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
 /// and serialization/deserialization of messages.
 pub struct NiriSocket {
     stream: UnixStream,
-    responses: StreamDeserializer<'static, IoRead<UnixStream>, Reply>,
+    responses: StreamDeserializer<'static, IoRead<UnixStream>, serde_json::Value>,
 }
 
 impl TryFrom<UnixStream> for NiriSocket {
@@ -55,14 +55,16 @@ impl NiriSocket {
     /// Ok(Ok([Response](crate::Response))) corresponds to a successful response from the running
     /// niri instance. Ok(Err([String])) corresponds to an error received from the running niri
     /// instance. Err([std::io::Error]) corresponds to an error in the IPC communication.
-    pub fn send(mut self, request: Request) -> io::Result<Reply> {
-        let mut buf = serde_json::to_vec(&request).unwrap();
+    pub fn send_request<R: Request>(mut self, request: R) -> io::Result<Reply<R::Response>> {
+        let decoder = request.decoder();
+        let mut buf = serde_json::to_vec(&request.into_message()).unwrap();
         writeln!(buf).unwrap();
         self.stream.write_all(&buf)?; // .context("error writing IPC request")?;
         self.stream.flush()?;
 
         if let Some(next) = self.responses.next() {
-            next.map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+            next.and_then(|v| decoder.decode(v))
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
         } else {
             Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
