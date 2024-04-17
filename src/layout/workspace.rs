@@ -651,12 +651,24 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     fn activate_column(&mut self, idx: usize) {
+        self.activate_column_with_anim_config(
+            idx,
+            self.options.animations.horizontal_view_movement.0,
+        );
+    }
+
+    fn activate_column_with_anim_config(&mut self, idx: usize, config: niri_config::Animation) {
         if self.active_column_idx == idx {
             return;
         }
 
         let current_x = self.view_pos();
-        self.animate_view_offset_to_column(current_x, idx, Some(self.active_column_idx));
+        self.animate_view_offset_to_column_with_config(
+            current_x,
+            idx,
+            Some(self.active_column_idx),
+            config,
+        );
 
         self.active_column_idx = idx;
 
@@ -1315,7 +1327,7 @@ impl<W: LayoutElement> Workspace<W> {
             }
         }
 
-        self.activate_column(new_idx);
+        self.activate_column_with_anim_config(new_idx, self.options.animations.window_movement.0);
     }
 
     pub fn move_left(&mut self) {
