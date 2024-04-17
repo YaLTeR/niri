@@ -908,10 +908,7 @@ impl<W: LayoutElement> Workspace<W> {
         // Animate movement of other tiles.
         let offset_y = column.tile_y(window_idx + 1) - column.tile_y(window_idx);
         for tile in &mut column.tiles[window_idx + 1..] {
-            tile.animate_move_from_with_config(
-                Point::from((0, offset_y)),
-                self.options.animations.window_resize.0,
-            );
+            tile.animate_move_from(Point::from((0, offset_y)));
         }
 
         let tile = column.tiles.remove(window_idx);
