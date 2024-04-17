@@ -713,7 +713,7 @@ impl<W: LayoutElement> Workspace<W> {
         is_full_width: bool,
     ) {
         let tile = Tile::new(window, self.options.clone());
-        self.add_tile_at(col_idx, tile, activate, width, is_full_width);
+        self.add_tile_at(col_idx, tile, activate, width, is_full_width, None);
     }
 
     fn add_tile_at(
@@ -723,6 +723,7 @@ impl<W: LayoutElement> Workspace<W> {
         activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
+        anim_config: Option<niri_config::Animation>,
     ) {
         self.enter_output_for_window(tile.window());
 
@@ -757,19 +758,23 @@ impl<W: LayoutElement> Workspace<W> {
 
             let prev_offset = (!was_empty).then(|| self.static_view_offset());
 
-            self.activate_column(col_idx);
+            self.activate_column_with_anim_config(
+                col_idx,
+                anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0),
+            );
             self.activate_prev_column_on_removal = prev_offset;
         }
 
         // Animate movement of other columns.
         let offset = self.column_x(col_idx + 1) - self.column_x(col_idx);
+        let config = anim_config.unwrap_or(self.options.animations.window_movement.0);
         if self.active_column_idx <= col_idx {
             for col in &mut self.columns[col_idx + 1..] {
-                col.animate_move_from(-offset);
+                col.animate_move_from_with_config(-offset, config);
             }
         } else {
             for col in &mut self.columns[..col_idx] {
-                col.animate_move_from(offset);
+                col.animate_move_from_with_config(offset, config);
             }
         }
     }
@@ -790,14 +795,21 @@ impl<W: LayoutElement> Workspace<W> {
         self.add_window_at(col_idx, window, activate, width, is_full_width);
     }
 
-    fn add_tile(&mut self, tile: Tile<W>, activate: bool, width: ColumnWidth, is_full_width: bool) {
+    fn add_tile(
+        &mut self,
+        tile: Tile<W>,
+        activate: bool,
+        width: ColumnWidth,
+        is_full_width: bool,
+        anim_config: Option<niri_config::Animation>,
+    ) {
         let col_idx = if self.columns.is_empty() {
             0
         } else {
             self.active_column_idx + 1
         };
 
-        self.add_tile_at(col_idx, tile, activate, width, is_full_width);
+        self.add_tile_at(col_idx, tile, activate, width, is_full_width, anim_config);
     }
 
     pub fn add_window_right_of(
@@ -1423,7 +1435,15 @@ impl<W: LayoutElement> Workspace<W> {
 
             let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx);
 
-            self.add_tile_at(self.active_column_idx, tile, true, width, is_full_width);
+            self.add_tile_at(
+                self.active_column_idx,
+                tile,
+                true,
+                width,
+                is_full_width,
+                Some(self.options.animations.window_movement.0),
+            );
+
             // We added to the left, don't activate even further left on removal.
             self.activate_prev_column_on_removal = None;
 
@@ -1484,7 +1504,13 @@ impl<W: LayoutElement> Workspace<W> {
 
             let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx);
 
-            self.add_tile(tile, true, width, is_full_width);
+            self.add_tile(
+                tile,
+                true,
+                width,
+                is_full_width,
+                Some(self.options.animations.window_movement.0),
+            );
 
             let new_col = &mut self.columns[self.active_column_idx];
             let offset_y = prev_y - new_col.tile_y(0);
@@ -1557,7 +1583,13 @@ impl<W: LayoutElement> Workspace<W> {
         let is_full_width = source_column.is_full_width;
         let tile = self.remove_tile_by_idx(self.active_column_idx, source_column.active_tile_idx);
 
-        self.add_tile(tile, true, width, is_full_width);
+        self.add_tile(
+            tile,
+            true,
+            width,
+            is_full_width,
+            Some(self.options.animations.window_movement.0),
+        );
 
         let new_col = &mut self.columns[self.active_column_idx];
         let offset_y = prev_y - new_col.tile_y(0);
