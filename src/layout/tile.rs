@@ -247,8 +247,14 @@ impl<W: LayoutElement> Tile<W> {
     ) {
         let current_offset = self.render_offset();
 
+        // Preserve the previous config if ongoing.
+        let anim = self.move_animation.take().map(|move_| move_.anim);
+        let anim = anim
+            .map(|anim| anim.restarted(1., 0., 0.))
+            .unwrap_or_else(|| Animation::new(1., 0., 0., config));
+
         self.move_animation = Some(MoveAnimation {
-            anim: Animation::new(1., 0., 0., config),
+            anim,
             from: from + current_offset,
         });
     }

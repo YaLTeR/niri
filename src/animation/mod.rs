@@ -16,6 +16,7 @@ pub struct Animation {
     from: f64,
     to: f64,
     initial_velocity: f64,
+    is_off: bool,
     duration: Duration,
     /// Time until the animation first reaches `to`.
     ///
@@ -49,6 +50,7 @@ impl Animation {
     pub fn new(from: f64, to: f64, initial_velocity: f64, config: niri_config::Animation) -> Self {
         let mut rv = Self::ease(from, to, initial_velocity, 0, Curve::EaseOutCubic);
         if config.off {
+            rv.is_off = true;
             return rv;
         }
 
@@ -57,6 +59,7 @@ impl Animation {
     }
 
     pub fn replace_config(&mut self, config: niri_config::Animation) {
+        self.is_off = config.off;
         if config.off {
             self.duration = Duration::ZERO;
             self.clamped_duration = Duration::ZERO;
@@ -93,6 +96,39 @@ impl Animation {
         self.current_time = current_time;
     }
 
+    /// Restarts the animation using the previous config.
+    pub fn restarted(self, from: f64, to: f64, initial_velocity: f64) -> Self {
+        if self.is_off {
+            return self;
+        }
+
+        match self.kind {
+            Kind::Easing { curve } => Self::ease(
+                from,
+                to,
+                initial_velocity,
+                self.duration.as_millis() as u64,
+                curve,
+            ),
+            Kind::Spring(spring) => {
+                let spring = Spring {
+                    from: self.from,
+                    to: self.to,
+                    initial_velocity: self.initial_velocity,
+                    params: spring.params,
+                };
+                Self::spring(spring)
+            }
+            Kind::Deceleration {
+                initial_velocity,
+                deceleration_rate,
+            } => {
+                let threshold = 0.001; // FIXME
+                Self::decelerate(from, initial_velocity, deceleration_rate, threshold)
+            }
+        }
+    }
+
     pub fn ease(from: f64, to: f64, initial_velocity: f64, duration_ms: u64, curve: Curve) -> Self {
         // FIXME: ideally we shouldn't use current time here because animations started within the
         // same frame cycle should have the same start time to be synchronized.
@@ -105,6 +141,7 @@ impl Animation {
             from,
             to,
             initial_velocity,
+            is_off: false,
             duration,
             // Our current curves never overshoot.
             clamped_duration: duration,
@@ -129,6 +166,7 @@ impl Animation {
             from: spring.from,
             to: spring.to,
             initial_velocity: spring.initial_velocity,
+            is_off: false,
             duration,
             clamped_duration,
             start_time: now,
@@ -166,6 +204,7 @@ impl Animation {
             from,
             to,
             initial_velocity,
+            is_off: false,
             duration,
             clamped_duration: duration,
             start_time: now,
