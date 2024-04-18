@@ -486,13 +486,13 @@ pub struct Animations {
     #[knuffel(child, default)]
     pub workspace_switch: WorkspaceSwitchAnim,
     #[knuffel(child, default)]
-    pub horizontal_view_movement: HorizontalViewMovementAnim,
-    #[knuffel(child, default)]
-    pub window_movement: WindowMovementAnim,
-    #[knuffel(child, default)]
     pub window_open: WindowOpenAnim,
     #[knuffel(child, default)]
     pub window_close: WindowCloseAnim,
+    #[knuffel(child, default)]
+    pub horizontal_view_movement: HorizontalViewMovementAnim,
+    #[knuffel(child, default)]
+    pub window_movement: WindowMovementAnim,
     #[knuffel(child, default)]
     pub window_resize: WindowResizeAnim,
     #[knuffel(child, default)]
@@ -532,6 +532,36 @@ impl Default for WorkspaceSwitchAnim {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowOpenAnim(pub Animation);
+
+impl Default for WindowOpenAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Easing(EasingParams {
+                duration_ms: 150,
+                curve: AnimationCurve::EaseOutExpo,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowCloseAnim(pub Animation);
+
+impl Default for WindowCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Easing(EasingParams {
+                duration_ms: 150,
+                curve: AnimationCurve::EaseOutQuad,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HorizontalViewMovementAnim(pub Animation);
 
 impl Default for HorizontalViewMovementAnim {
@@ -564,52 +594,6 @@ impl Default for WindowMovementAnim {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ConfigNotificationOpenCloseAnim(pub Animation);
-
-impl Default for ConfigNotificationOpenCloseAnim {
-    fn default() -> Self {
-        Self(Animation {
-            off: false,
-            kind: AnimationKind::Spring(SpringParams {
-                damping_ratio: 0.6,
-                stiffness: 1000,
-                epsilon: 0.001,
-            }),
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WindowOpenAnim(pub Animation);
-
-impl Default for WindowOpenAnim {
-    fn default() -> Self {
-        Self(Animation {
-            off: false,
-            kind: AnimationKind::Easing(EasingParams {
-                duration_ms: 150,
-                curve: AnimationCurve::EaseOutExpo,
-            }),
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WindowCloseAnim(pub Animation);
-
-impl Default for WindowCloseAnim {
-    fn default() -> Self {
-        Self(Animation {
-            off: false,
-            kind: AnimationKind::Easing(EasingParams {
-                duration_ms: 150,
-                curve: AnimationCurve::EaseOutQuad,
-            }),
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WindowResizeAnim(pub Animation);
 
 impl Default for WindowResizeAnim {
@@ -620,6 +604,22 @@ impl Default for WindowResizeAnim {
                 damping_ratio: 1.,
                 stiffness: 800,
                 epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ConfigNotificationOpenCloseAnim(pub Animation);
+
+impl Default for ConfigNotificationOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 0.6,
+                stiffness: 1000,
+                epsilon: 0.001,
             }),
         })
     }
