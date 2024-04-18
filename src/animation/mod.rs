@@ -48,6 +48,9 @@ pub enum Curve {
 
 impl Animation {
     pub fn new(from: f64, to: f64, initial_velocity: f64, config: niri_config::Animation) -> Self {
+        // Scale the velocity by slowdown to keep the touchpad gestures feeling right.
+        let initial_velocity = initial_velocity * ANIMATION_SLOWDOWN.load(Ordering::Relaxed);
+
         let mut rv = Self::ease(from, to, initial_velocity, 0, Curve::EaseOutCubic);
         if config.off {
             rv.is_off = true;
@@ -101,6 +104,9 @@ impl Animation {
         if self.is_off {
             return self;
         }
+
+        // Scale the velocity by slowdown to keep the touchpad gestures feeling right.
+        let initial_velocity = initial_velocity * ANIMATION_SLOWDOWN.load(Ordering::Relaxed);
 
         match self.kind {
             Kind::Easing { curve } => Self::ease(
