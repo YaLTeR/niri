@@ -294,7 +294,19 @@ impl Animation {
                 let x = (passed / total).clamp(0., 1.);
                 curve.y(x) * (self.to - self.from) + self.from
             }
-            Kind::Spring(spring) => spring.value_at(passed),
+            Kind::Spring(spring) => {
+                let value = spring.value_at(passed);
+
+                // Protect against numerical instability.
+                let range = (self.to - self.from) * 10.;
+                let a = self.from - range;
+                let b = self.to + range;
+                if self.from <= self.to {
+                    value.clamp(a, b)
+                } else {
+                    value.clamp(b, a)
+                }
+            }
             Kind::Deceleration {
                 initial_velocity,
                 deceleration_rate,
