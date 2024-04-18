@@ -36,6 +36,11 @@ impl CrossfadeRenderElement {
         let tex_to_geo = texture_to_geo.to_f64().upscale(scale_to);
         let combined_geo = tex_from_geo.merge(tex_to_geo);
 
+        let size = combined_geo
+            .size
+            .to_logical(1.)
+            .to_buffer(1., Transform::Normal);
+
         let area = Rectangle::from_loc_and_size(
             area.loc + combined_geo.loc.to_logical(scale).to_i32_round(),
             combined_geo.size.to_logical(scale).to_i32_round(),
@@ -57,6 +62,7 @@ impl CrossfadeRenderElement {
                     (String::from("tex_to"), texture_to),
                 ]),
                 area,
+                size,
                 None,
                 result_alpha,
                 vec![

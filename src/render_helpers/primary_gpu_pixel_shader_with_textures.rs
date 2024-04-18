@@ -9,7 +9,7 @@ use smithay::backend::renderer::gles::{
     UniformDesc, UniformName,
 };
 use smithay::backend::renderer::utils::CommitCounter;
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform};
+use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size};
 
 use super::renderer::AsGlesFrame;
 use super::resources::Resources;
@@ -25,6 +25,7 @@ pub struct PrimaryGpuPixelShaderWithTexturesRenderElement {
     id: Id,
     commit_counter: CommitCounter,
     area: Rectangle<i32, Logical>,
+    size: Size<f64, Buffer>,
     opaque_regions: Vec<Rectangle<i32, Logical>>,
     alpha: f32,
     additional_uniforms: Vec<Uniform<'static>>,
@@ -122,10 +123,12 @@ impl PixelWithTexturesProgram {
 }
 
 impl PrimaryGpuPixelShaderWithTexturesRenderElement {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         shader: PixelWithTexturesProgram,
         textures: HashMap<String, GlesTexture>,
         area: Rectangle<i32, Logical>,
+        size: Size<f64, Buffer>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         alpha: f32,
         additional_uniforms: Vec<Uniform<'_>>,
@@ -137,6 +140,7 @@ impl PrimaryGpuPixelShaderWithTexturesRenderElement {
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area,
+            size,
             opaque_regions: opaque_regions.unwrap_or_default(),
             alpha,
             additional_uniforms: additional_uniforms
@@ -158,9 +162,7 @@ impl Element for PrimaryGpuPixelShaderWithTexturesRenderElement {
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        self.area
-            .to_f64()
-            .to_buffer(1.0, Transform::Normal, &self.area.size.to_f64())
+        Rectangle::from_loc_and_size((0., 0.), self.size.to_f64())
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
@@ -187,7 +189,7 @@ impl RenderElement<GlesRenderer> for PrimaryGpuPixelShaderWithTexturesRenderElem
     fn draw(
         &self,
         frame: &mut GlesFrame<'_>,
-        _src: Rectangle<f64, Buffer>,
+        src: Rectangle<f64, Buffer>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
@@ -253,10 +255,15 @@ impl RenderElement<GlesRenderer> for PrimaryGpuPixelShaderWithTexturesRenderElem
 
         // dest position and scale
         let mut matrix = Mat3::from_translation(Vec2::new(dest.loc.x as f32, dest.loc.y as f32));
+
+        let scale = src.size.to_f64() / dest.size.to_f64();
+        let tex_matrix = Mat3::from_scale(Vec2::new(scale.x as f32, scale.y as f32));
+        let tex_matrix =
+            Mat3::from_translation(Vec2::new(src.loc.x as f32, src.loc.y as f32)) * tex_matrix;
         let tex_matrix = Mat3::from_scale(Vec2::new(
-            (1.0f64 / dest.size.w as f64) as f32,
-            (1.0f64 / dest.size.h as f64) as f32,
-        ));
+            (1.0f64 / self.size.w) as f32,
+            (1.0f64 / self.size.h) as f32,
+        )) * tex_matrix;
 
         //apply output transformation
         matrix = Mat3::from_cols_array(frame.projection()) * matrix;
