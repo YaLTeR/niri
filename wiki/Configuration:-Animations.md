@@ -116,6 +116,10 @@ Set `epsilon` to a lower value if the animation "jumps" at the end.
 > Instead, change `stiffness` proportionally.
 > E.g. increasing mass by 2× is the same as decreasing stiffness by 2×.
 
+> [!WARNING]
+> Overdamped springs currently have some numerical stability issues and may cause graphical glitches.
+> Therefore, setting `damping-ratio` above `1.0` is not recommended.
+
 ### Animations
 
 Now let's go into more detail on the animations that you can configure.
