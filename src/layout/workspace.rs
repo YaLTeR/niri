@@ -912,7 +912,12 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn remove_tile_by_idx(&mut self, column_idx: usize, window_idx: usize) -> Tile<W> {
+    pub fn remove_tile_by_idx(
+        &mut self,
+        column_idx: usize,
+        window_idx: usize,
+        anim_config: Option<niri_config::Animation>,
+    ) -> Tile<W> {
         let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
 
         let column = &mut self.columns[column_idx];
@@ -942,13 +947,14 @@ impl<W: LayoutElement> Workspace<W> {
             }
 
             // Animate movement of the other columns.
+            let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
             if self.active_column_idx <= column_idx {
                 for col in &mut self.columns[column_idx + 1..] {
-                    col.animate_move_from(offset);
+                    col.animate_move_from_with_config(offset, movement_config);
                 }
             } else {
                 for col in &mut self.columns[..column_idx] {
-                    col.animate_move_from(-offset);
+                    col.animate_move_from_with_config(-offset, movement_config);
                 }
             }
 
@@ -956,6 +962,9 @@ impl<W: LayoutElement> Workspace<W> {
             if self.columns.is_empty() {
                 return tile;
             }
+
+            let view_config =
+                anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
 
             if column_idx < self.active_column_idx {
                 // A column to the left was removed; preserve the current position.
@@ -969,16 +978,29 @@ impl<W: LayoutElement> Workspace<W> {
                 if 0 < column_idx {
                     let prev_offset = self.activate_prev_column_on_removal.unwrap();
 
-                    self.activate_column(self.active_column_idx - 1);
+                    self.activate_column_with_anim_config(self.active_column_idx - 1, view_config);
 
                     // Restore the view offset but make sure to scroll the view in case the
                     // previous window had resized.
                     let current_x = self.view_pos();
-                    self.animate_view_offset(current_x, self.active_column_idx, prev_offset);
-                    self.animate_view_offset_to_column(current_x, self.active_column_idx, None);
+                    self.animate_view_offset_with_config(
+                        current_x,
+                        self.active_column_idx,
+                        prev_offset,
+                        view_config,
+                    );
+                    self.animate_view_offset_to_column_with_config(
+                        current_x,
+                        self.active_column_idx,
+                        None,
+                        view_config,
+                    );
                 }
             } else {
-                self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
+                self.activate_column_with_anim_config(
+                    min(self.active_column_idx, self.columns.len() - 1),
+                    view_config,
+                );
             }
 
             return tile;
@@ -1061,7 +1083,7 @@ impl<W: LayoutElement> Workspace<W> {
         let column = &self.columns[column_idx];
 
         let window_idx = column.position(window).unwrap();
-        self.remove_tile_by_idx(column_idx, window_idx)
+        self.remove_tile_by_idx(column_idx, window_idx, None)
             .into_window()
     }
 
@@ -1404,7 +1426,11 @@ impl<W: LayoutElement> Workspace<W> {
             // Make sure the previous (target) column is activated so the animation looks right.
             self.activate_prev_column_on_removal = Some(self.static_view_offset() + offset_x);
             let offset_x = offset_x + self.columns[source_col_idx].render_offset().x;
-            let tile = self.remove_tile_by_idx(source_col_idx, 0);
+            let tile = self.remove_tile_by_idx(
+                source_col_idx,
+                0,
+                Some(self.options.animations.window_movement.0),
+            );
             self.enter_output_for_window(tile.window());
 
             let next_col_idx = source_col_idx;
@@ -1433,7 +1459,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             let offset_x = source_column.render_offset().x;
 
-            let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx);
+            let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx, None);
 
             self.add_tile_at(
                 self.active_column_idx,
@@ -1477,7 +1503,11 @@ impl<W: LayoutElement> Workspace<W> {
 
             // Make sure the target column gets activated.
             self.activate_prev_column_on_removal = None;
-            let tile = self.remove_tile_by_idx(source_col_idx, 0);
+            let tile = self.remove_tile_by_idx(
+                source_col_idx,
+                0,
+                Some(self.options.animations.window_movement.0),
+            );
             self.enter_output_for_window(tile.window());
 
             let prev_next_x = self.column_x(target_column_idx + 1);
@@ -1502,7 +1532,7 @@ impl<W: LayoutElement> Workspace<W> {
             let width = source_column.width;
             let is_full_width = source_column.is_full_width;
 
-            let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx);
+            let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx, None);
 
             self.add_tile(
                 tile,
@@ -1534,7 +1564,7 @@ impl<W: LayoutElement> Workspace<W> {
             - self.column_x(self.active_column_idx);
         let prev_y = self.columns[source_column_idx].tile_y(0);
 
-        let tile = self.remove_tile_by_idx(source_column_idx, 0);
+        let tile = self.remove_tile_by_idx(source_column_idx, 0, None);
         self.enter_output_for_window(tile.window());
 
         let prev_next_x = self.column_x(self.active_column_idx + 1);
@@ -1581,7 +1611,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         let width = source_column.width;
         let is_full_width = source_column.is_full_width;
-        let tile = self.remove_tile_by_idx(self.active_column_idx, source_column.active_tile_idx);
+        let tile =
+            self.remove_tile_by_idx(self.active_column_idx, source_column.active_tile_idx, None);
 
         self.add_tile(
             tile,

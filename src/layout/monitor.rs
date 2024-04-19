@@ -346,7 +346,7 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window = workspace
-            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx)
+            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
             .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);
@@ -369,7 +369,7 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window = workspace
-            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx)
+            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
             .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);
@@ -392,7 +392,7 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window = workspace
-            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx)
+            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
             .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);
