@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Context};
-use niri_ipc::{LogicalOutput, Mode, Output, Request, Response, Socket};
+use niri_ipc::{LogicalOutput, Mode, Output, Request, Response, Socket, Transform};
 use serde_json::json;
 
 use crate::cli::Msg;
@@ -168,18 +168,14 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     println!("  Scale: {scale}");
 
                     let transform = match transform {
-                        niri_ipc::Transform::Normal => "normal",
-                        niri_ipc::Transform::_90 => "90° counter-clockwise",
-                        niri_ipc::Transform::_180 => "180°",
-                        niri_ipc::Transform::_270 => "270° counter-clockwise",
-                        niri_ipc::Transform::Flipped => "flipped horizontally",
-                        niri_ipc::Transform::Flipped90 => {
-                            "90° counter-clockwise, flipped horizontally"
-                        }
-                        niri_ipc::Transform::Flipped180 => "flipped vertically",
-                        niri_ipc::Transform::Flipped270 => {
-                            "270° counter-clockwise, flipped horizontally"
-                        }
+                        Transform::Normal => "normal",
+                        Transform::_90 => "90° counter-clockwise",
+                        Transform::_180 => "180°",
+                        Transform::_270 => "270° counter-clockwise",
+                        Transform::Flipped => "flipped horizontally",
+                        Transform::Flipped90 => "90° counter-clockwise, flipped horizontally",
+                        Transform::Flipped180 => "flipped vertically",
+                        Transform::Flipped270 => "270° counter-clockwise, flipped horizontally",
                     };
                     println!("  Transform: {transform}");
                 }
