@@ -115,6 +115,7 @@ binds {
 
 > [!TIP]
 > <sup>Since: 0.1.5</sup>
+>
 > Spawn bindings have a special `allow-when-locked=true` property that makes them work even while the session is locked:
 >
 > ```
