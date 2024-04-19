@@ -1,54 +1,99 @@
-use std::env;
-use std::io::{Read, Write};
-use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
-
 use anyhow::{anyhow, bail, Context};
-use niri_ipc::{LogicalOutput, Mode, Output, Reply, Request, Response};
+use niri_ipc::{LogicalOutput, Mode, Output, Request, Response, Socket, Transform};
+use serde_json::json;
 
 use crate::cli::Msg;
+use crate::utils::version;
 
 pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
-    let socket_path = env::var_os(niri_ipc::SOCKET_PATH_ENV).with_context(|| {
-        format!(
-            "{} is not set, are you running this within niri?",
-            niri_ipc::SOCKET_PATH_ENV
-        )
-    })?;
-
-    let mut stream =
-        UnixStream::connect(socket_path).context("error connecting to {socket_path}")?;
-
     let request = match &msg {
+        Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
         Msg::Action { action } => Request::Action(action.clone()),
+        Msg::RequestError => Request::ReturnError,
     };
-    let mut buf = serde_json::to_vec(&request).unwrap();
-    stream
-        .write_all(&buf)
-        .context("error writing IPC request")?;
-    stream
-        .shutdown(Shutdown::Write)
-        .context("error closing IPC stream for writing")?;
 
-    buf.clear();
-    stream
-        .read_to_end(&mut buf)
-        .context("error reading IPC response")?;
+    let socket = Socket::connect().context("error connecting to the niri socket")?;
 
-    let reply: Reply = serde_json::from_slice(&buf).context("error parsing IPC reply")?;
+    let reply = socket
+        .send(request)
+        .context("error communicating with niri")?;
 
-    let response = reply
-        .map_err(|msg| anyhow!(msg))
-        .context("niri could not handle the request")?;
+    let compositor_version = match reply {
+        Err(_) if !matches!(msg, Msg::Version) => {
+            // If we got an error, it might be that the CLI is a different version from the running
+            // niri instance. Request the running instance version to compare and print a message.
+            Socket::connect()
+                .and_then(|socket| socket.send(Request::Version))
+                .ok()
+        }
+        _ => None,
+    };
 
     // Default SIGPIPE so that our prints don't panic on stdout closing.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
+    let response = reply.map_err(|err_msg| {
+        // Check for CLI-server version mismatch to add helpful context.
+        match compositor_version {
+            Some(Ok(Response::Version(compositor_version))) => {
+                let cli_version = version();
+                if cli_version != compositor_version {
+                    eprintln!("Running niri compositor has a different version from the niri CLI:");
+                    eprintln!("Compositor version: {compositor_version}");
+                    eprintln!("CLI version:        {cli_version}");
+                    eprintln!("Did you forget to restart niri after an update?");
+                    eprintln!();
+                }
+            }
+            Some(_) => {
+                eprintln!("Unable to get the running niri compositor version.");
+                eprintln!("Did you forget to restart niri after an update?");
+                eprintln!();
+            }
+            None => {
+                // Communication error, or the original request was already a version request.
+                // Don't add irrelevant context.
+            }
+        }
+
+        anyhow!(err_msg).context("niri returned an error")
+    })?;
+
     match msg {
+        Msg::RequestError => {
+            bail!("unexpected response: expected an error, got {response:?}");
+        }
+        Msg::Version => {
+            let Response::Version(compositor_version) = response else {
+                bail!("unexpected response: expected Version, got {response:?}");
+            };
+
+            let cli_version = version();
+
+            if json {
+                println!(
+                    "{}",
+                    json!({
+                        "compositor": compositor_version,
+                        "cli": cli_version,
+                    })
+                );
+                return Ok(());
+            }
+
+            if cli_version != compositor_version {
+                eprintln!("Running niri compositor has a different version from the niri CLI.");
+                eprintln!("Did you forget to restart niri after an update?");
+                eprintln!();
+            }
+
+            println!("Compositor version: {compositor_version}");
+            println!("CLI version:        {cli_version}");
+        }
         Msg::Outputs => {
             let Response::Outputs(outputs) = response else {
                 bail!("unexpected response: expected Outputs, got {response:?}");
@@ -123,18 +168,14 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     println!("  Scale: {scale}");
 
                     let transform = match transform {
-                        niri_ipc::Transform::Normal => "normal",
-                        niri_ipc::Transform::_90 => "90° counter-clockwise",
-                        niri_ipc::Transform::_180 => "180°",
-                        niri_ipc::Transform::_270 => "270° counter-clockwise",
-                        niri_ipc::Transform::Flipped => "flipped horizontally",
-                        niri_ipc::Transform::Flipped90 => {
-                            "90° counter-clockwise, flipped horizontally"
-                        }
-                        niri_ipc::Transform::Flipped180 => "flipped vertically",
-                        niri_ipc::Transform::Flipped270 => {
-                            "270° counter-clockwise, flipped horizontally"
-                        }
+                        Transform::Normal => "normal",
+                        Transform::_90 => "90° counter-clockwise",
+                        Transform::_180 => "180°",
+                        Transform::_270 => "270° counter-clockwise",
+                        Transform::Flipped => "flipped horizontally",
+                        Transform::Flipped90 => "90° counter-clockwise, flipped horizontally",
+                        Transform::Flipped180 => "flipped vertically",
+                        Transform::Flipped270 => "270° counter-clockwise, flipped horizontally",
                     };
                     println!("  Transform: {transform}");
                 }

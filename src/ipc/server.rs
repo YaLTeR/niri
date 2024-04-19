@@ -8,7 +8,7 @@ use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{AsyncBufReadExt, AsyncWriteExt};
-use niri_ipc::{Request, Response};
+use niri_ipc::{Reply, Request, Response};
 use smithay::desktop::Window;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -18,6 +18,7 @@ use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 
 use crate::backend::IpcOutputMap;
 use crate::niri::State;
+use crate::utils::version;
 
 pub struct IpcServer {
     pub socket_path: PathBuf,
@@ -114,10 +115,18 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
         .await
         .context("error reading request")?;
 
-    let reply = process(&ctx, &buf).map_err(|err| {
-        warn!("error processing IPC request: {err:?}");
-        err.to_string()
-    });
+    let request = serde_json::from_str(&buf)
+        .context("error parsing request")
+        .map_err(|err| err.to_string());
+    let requested_error = matches!(request, Ok(Request::ReturnError));
+
+    let reply = request.and_then(|request| process(&ctx, request));
+
+    if let Err(err) = &reply {
+        if !requested_error {
+            warn!("error processing IPC request: {err:?}");
+        }
+    }
 
     let buf = serde_json::to_vec(&reply).context("error formatting reply")?;
     write.write_all(&buf).await.context("error writing reply")?;
@@ -125,10 +134,10 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
     Ok(())
 }
 
-fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
-    let request: Request = serde_json::from_str(buf).context("error parsing request")?;
-
+fn process(ctx: &ClientCtx, request: Request) -> Reply {
     let response = match request {
+        Request::ReturnError => return Err(String::from("example compositor error")),
+        Request::Version => Response::Version(version()),
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
             Response::Outputs(ipc_outputs)

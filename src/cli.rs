@@ -52,6 +52,8 @@ pub enum Sub {
 
 #[derive(Subcommand)]
 pub enum Msg {
+    /// Print the version of the running niri instance.
+    Version,
     /// List connected outputs.
     Outputs,
     /// Print information about the focused window.
@@ -61,4 +63,6 @@ pub enum Msg {
         #[command(subcommand)]
         action: Action,
     },
+    /// Request an error from the running niri instance.
+    RequestError,
 }
