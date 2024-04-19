@@ -133,25 +133,34 @@ delegate_pointer_constraints!(State);
 
 impl InputMethodHandler for State {
     fn new_popup(&mut self, surface: PopupSurface) {
-        let popup = PopupKind::from(surface.clone());
+        let popup = PopupKind::InputMethod(surface);
         if let Some(output) = self.output_for_popup(&popup) {
             let scale = output.current_scale().integer_scale();
             let transform = output.current_transform();
-            let wl_surface = surface.wl_surface();
+            let wl_surface = popup.wl_surface();
             with_states(wl_surface, |data| {
                 send_surface_state(wl_surface, data, scale, transform);
             });
         }
 
+        self.unconstrain_popup(&popup);
+
         if let Err(err) = self.niri.popups.track_popup(popup) {
             warn!("error tracking ime popup {err:?}");
         }
     }
+
+    fn popup_repositioned(&mut self, surface: PopupSurface) {
+        let popup = PopupKind::InputMethod(surface);
+        self.unconstrain_popup(&popup);
+    }
+
     fn dismiss_popup(&mut self, surface: PopupSurface) {
         if let Some(parent) = surface.get_parent().map(|parent| parent.surface.clone()) {
             let _ = PopupManager::dismiss_popup(&parent, &PopupKind::from(surface));
         }
     }
+
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
         self.niri
             .layout
