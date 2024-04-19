@@ -156,7 +156,7 @@ fn process(ctx: &ClientCtx, buf: &str) -> anyhow::Result<Response> {
         Request::Action(action) => {
             let action = niri_config::Action::from(action);
             ctx.event_loop.insert_idle(move |state| {
-                state.do_action(action);
+                state.do_action(action, false);
             });
             Response::Handled
         }

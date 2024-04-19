@@ -297,12 +297,12 @@ impl State {
 
     pub fn handle_bind(&mut self, bind: Bind) {
         let Some(cooldown) = bind.cooldown else {
-            self.do_action(bind.action);
+            self.do_action(bind.action, bind.allow_when_locked);
             return;
         };
 
         // Check this first so that it doesn't trigger the cooldown.
-        if self.niri.is_locked() && !allowed_when_locked(&bind.action) {
+        if self.niri.is_locked() && !(bind.allow_when_locked || allowed_when_locked(&bind.action)) {
             return;
         }
 
@@ -323,13 +323,13 @@ impl State {
                     .unwrap();
                 entry.insert(token);
 
-                self.do_action(bind.action);
+                self.do_action(bind.action, bind.allow_when_locked);
             }
         }
     }
 
-    pub fn do_action(&mut self, action: Action) {
-        if self.niri.is_locked() && !allowed_when_locked(&action) {
+    pub fn do_action(&mut self, action: Action, allow_when_locked: bool) {
+        if self.niri.is_locked() && !(allow_when_locked || allowed_when_locked(&action)) {
             return;
         }
 
@@ -1844,6 +1844,7 @@ fn should_intercept_key(
                     },
                     action,
                     cooldown: None,
+                    allow_when_locked: false,
                 });
             }
         }
@@ -1892,6 +1893,7 @@ fn find_bind(
             },
             action,
             cooldown: None,
+            allow_when_locked: false,
         });
     }
 
@@ -2174,6 +2176,7 @@ mod tests {
             },
             action: Action::CloseWindow,
             cooldown: None,
+            allow_when_locked: false,
         }]);
 
         let comp_mod = CompositorMod::Super;
@@ -2306,6 +2309,7 @@ mod tests {
                 },
                 action: Action::CloseWindow,
                 cooldown: None,
+                allow_when_locked: false,
             },
             Bind {
                 key: Key {
@@ -2314,6 +2318,7 @@ mod tests {
                 },
                 action: Action::FocusColumnLeft,
                 cooldown: None,
+                allow_when_locked: false,
             },
             Bind {
                 key: Key {
@@ -2322,6 +2327,7 @@ mod tests {
                 },
                 action: Action::FocusWindowDown,
                 cooldown: None,
+                allow_when_locked: false,
             },
             Bind {
                 key: Key {
@@ -2330,6 +2336,7 @@ mod tests {
                 },
                 action: Action::FocusWindowUp,
                 cooldown: None,
+                allow_when_locked: false,
             },
             Bind {
                 key: Key {
@@ -2338,6 +2345,7 @@ mod tests {
                 },
                 action: Action::FocusColumnRight,
                 cooldown: None,
+                allow_when_locked: false,
             },
         ]);
 

@@ -739,6 +739,7 @@ pub struct Bind {
     pub key: Key,
     pub action: Action,
     pub cooldown: Option<Duration>,
+    pub allow_when_locked: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -1564,7 +1565,7 @@ where
                 &val.literal,
                 "argument",
                 "no arguments expected for this node",
-            ))
+            ));
         }
 
         let key = node
@@ -1573,12 +1574,18 @@ where
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
         let mut cooldown = None;
+        let mut allow_when_locked = false;
+        let mut allow_when_locked_node = None;
         for (name, val) in &node.properties {
             match &***name {
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
                         knuffel::traits::DecodeScalar::decode(val, ctx)?,
                     ));
+                }
+                "allow-when-locked" => {
+                    allow_when_locked = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    allow_when_locked_node = Some(name);
                 }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
@@ -1599,6 +1606,7 @@ where
             key,
             action: Action::Spawn(vec![]),
             cooldown: None,
+            allow_when_locked: false,
         };
 
         if let Some(child) = children.next() {
@@ -1610,11 +1618,24 @@ where
                 ));
             }
             match Action::decode_node(child, ctx) {
-                Ok(action) => Ok(Self {
-                    key,
-                    action,
-                    cooldown,
-                }),
+                Ok(action) => {
+                    if !matches!(action, Action::Spawn(_)) {
+                        if let Some(node) = allow_when_locked_node {
+                            ctx.emit_error(DecodeError::unexpected(
+                                node,
+                                "property",
+                                "allow-when-locked can only be set on spawn binds",
+                            ));
+                        }
+                    }
+
+                    Ok(Self {
+                        key,
+                        action,
+                        cooldown,
+                        allow_when_locked,
+                    })
+                }
                 Err(e) => {
                     ctx.emit_error(e);
                     Ok(dummy)
@@ -1922,7 +1943,7 @@ mod tests {
             }
 
             binds {
-                Mod+T { spawn "alacritty"; }
+                Mod+T allow-when-locked=true { spawn "alacritty"; }
                 Mod+Q { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
@@ -2131,6 +2152,7 @@ mod tests {
                         },
                         action: Action::Spawn(vec!["alacritty".to_owned()]),
                         cooldown: None,
+                        allow_when_locked: true,
                     },
                     Bind {
                         key: Key {
@@ -2139,6 +2161,7 @@ mod tests {
                         },
                         action: Action::CloseWindow,
                         cooldown: None,
+                        allow_when_locked: false,
                     },
                     Bind {
                         key: Key {
@@ -2147,6 +2170,7 @@ mod tests {
                         },
                         action: Action::FocusMonitorLeft,
                         cooldown: None,
+                        allow_when_locked: false,
                     },
                     Bind {
                         key: Key {
@@ -2155,6 +2179,7 @@ mod tests {
                         },
                         action: Action::MoveWindowToMonitorRight,
                         cooldown: None,
+                        allow_when_locked: false,
                     },
                     Bind {
                         key: Key {
@@ -2163,6 +2188,7 @@ mod tests {
                         },
                         action: Action::ConsumeWindowIntoColumn,
                         cooldown: None,
+                        allow_when_locked: false,
                     },
                     Bind {
                         key: Key {
@@ -2171,6 +2197,7 @@ mod tests {
                         },
                         action: Action::FocusWorkspace(1),
                         cooldown: None,
+                        allow_when_locked: false,
                     },
                     Bind {
                         key: Key {
@@ -2179,6 +2206,7 @@ mod tests {
                         },
                         action: Action::Quit(true),
                         cooldown: None,
+                        allow_when_locked: false,
                     },
                     Bind {
                         key: Key {
@@ -2187,6 +2215,7 @@ mod tests {
                         },
                         action: Action::FocusWorkspaceDown,
                         cooldown: Some(Duration::from_millis(150)),
+                        allow_when_locked: false,
                     },
                 ]),
                 debug: DebugConfig {
