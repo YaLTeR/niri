@@ -920,7 +920,7 @@ impl<W: LayoutElement> Workspace<W> {
         // Animate movement of other tiles.
         let offset_y = column.tile_y(window_idx + 1) - column.tile_y(window_idx);
         for tile in &mut column.tiles[window_idx + 1..] {
-            tile.animate_move_from(Point::from((0, offset_y)));
+            tile.animate_move_y_from(offset_y);
         }
 
         let tile = column.tiles.remove(window_idx);
@@ -2323,8 +2323,8 @@ impl<W: LayoutElement> Column<W> {
         // Move windows below in tandem with resizing.
         if tile.resize_animation().is_some() && offset != 0 {
             for tile in &mut self.tiles[tile_idx + 1..] {
-                tile.animate_move_from_with_config(
-                    Point::from((0, offset)),
+                tile.animate_move_y_from_with_config(
+                    offset,
                     self.options.animations.window_resize.0,
                 );
             }
@@ -2525,8 +2525,8 @@ impl<W: LayoutElement> Column<W> {
 
         // Animate the movement.
         let new_active_y = self.tile_y(new_idx);
-        self.tiles[new_idx].animate_move_from(Point::from((0, active_y - new_active_y)));
-        self.tiles[new_idx + 1].animate_move_from(Point::from((0, active_y - next_y)));
+        self.tiles[new_idx].animate_move_y_from(active_y - new_active_y);
+        self.tiles[new_idx + 1].animate_move_y_from(active_y - next_y);
     }
 
     fn move_down(&mut self) {
@@ -2546,8 +2546,8 @@ impl<W: LayoutElement> Column<W> {
 
         // Animate the movement.
         let new_active_y = self.tile_y(new_idx);
-        self.tiles[new_idx].animate_move_from(Point::from((0, active_y - new_active_y)));
-        self.tiles[new_idx - 1].animate_move_from(Point::from((0, next_y - active_y)));
+        self.tiles[new_idx].animate_move_y_from(active_y - new_active_y);
+        self.tiles[new_idx - 1].animate_move_y_from(next_y - active_y);
     }
 
     #[cfg(test)]

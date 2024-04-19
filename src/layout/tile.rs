@@ -57,8 +57,11 @@ pub struct Tile<W: LayoutElement> {
     /// The animation of the window resizing.
     resize_animation: Option<ResizeAnimation>,
 
-    /// The animation of a tile visually moving.
-    move_animation: Option<MoveAnimation>,
+    /// The animation of a tile visually moving horizontally.
+    move_x_animation: Option<MoveAnimation>,
+
+    /// The animation of a tile visually moving vertically.
+    move_y_animation: Option<MoveAnimation>,
 
     /// Configurable properties of the layout.
     pub options: Rc<Options>,
@@ -99,7 +102,7 @@ struct ResizeAnimation {
 #[derive(Debug)]
 struct MoveAnimation {
     anim: Animation,
-    from: Point<i32, Logical>,
+    from: i32,
 }
 
 impl<W: LayoutElement> Tile<W> {
@@ -113,7 +116,8 @@ impl<W: LayoutElement> Tile<W> {
             fullscreen_size: Default::default(),
             open_animation: None,
             resize_animation: None,
-            move_animation: None,
+            move_x_animation: None,
+            move_y_animation: None,
             options,
         }
     }
@@ -177,10 +181,16 @@ impl<W: LayoutElement> Tile<W> {
             }
         }
 
-        if let Some(move_) = &mut self.move_animation {
+        if let Some(move_) = &mut self.move_x_animation {
             move_.anim.set_current_time(current_time);
             if move_.anim.is_done() {
-                self.move_animation = None;
+                self.move_x_animation = None;
+            }
+        }
+        if let Some(move_) = &mut self.move_y_animation {
+            move_.anim.set_current_time(current_time);
+            if move_.anim.is_done() {
+                self.move_y_animation = None;
             }
         }
 
@@ -206,14 +216,18 @@ impl<W: LayoutElement> Tile<W> {
     pub fn are_animations_ongoing(&self) -> bool {
         self.open_animation.is_some()
             || self.resize_animation.is_some()
-            || self.move_animation.is_some()
+            || self.move_x_animation.is_some()
+            || self.move_y_animation.is_some()
     }
 
     pub fn render_offset(&self) -> Point<i32, Logical> {
         let mut offset = Point::from((0., 0.));
 
-        if let Some(move_) = &self.move_animation {
-            offset += move_.from.to_f64().upscale(move_.anim.value());
+        if let Some(move_) = &self.move_x_animation {
+            offset.x += f64::from(move_.from) * move_.anim.value();
+        }
+        if let Some(move_) = &self.move_y_animation {
+            offset.y += f64::from(move_.from) * move_.anim.value();
         }
 
         offset.to_i32_round()
@@ -237,23 +251,43 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn animate_move_from(&mut self, from: Point<i32, Logical>) {
-        self.animate_move_from_with_config(from, self.options.animations.window_movement.0);
+        self.animate_move_x_from(from.x);
+        self.animate_move_y_from(from.y);
     }
 
-    pub fn animate_move_from_with_config(
-        &mut self,
-        from: Point<i32, Logical>,
-        config: niri_config::Animation,
-    ) {
-        let current_offset = self.render_offset();
+    pub fn animate_move_x_from(&mut self, from: i32) {
+        self.animate_move_x_from_with_config(from, self.options.animations.window_movement.0);
+    }
+
+    pub fn animate_move_x_from_with_config(&mut self, from: i32, config: niri_config::Animation) {
+        let current_offset = self.render_offset().x;
 
         // Preserve the previous config if ongoing.
-        let anim = self.move_animation.take().map(|move_| move_.anim);
+        let anim = self.move_x_animation.take().map(|move_| move_.anim);
         let anim = anim
             .map(|anim| anim.restarted(1., 0., 0.))
             .unwrap_or_else(|| Animation::new(1., 0., 0., config));
 
-        self.move_animation = Some(MoveAnimation {
+        self.move_x_animation = Some(MoveAnimation {
+            anim,
+            from: from + current_offset,
+        });
+    }
+
+    pub fn animate_move_y_from(&mut self, from: i32) {
+        self.animate_move_y_from_with_config(from, self.options.animations.window_movement.0);
+    }
+
+    pub fn animate_move_y_from_with_config(&mut self, from: i32, config: niri_config::Animation) {
+        let current_offset = self.render_offset().y;
+
+        // Preserve the previous config if ongoing.
+        let anim = self.move_y_animation.take().map(|move_| move_.anim);
+        let anim = anim
+            .map(|anim| anim.restarted(1., 0., 0.))
+            .unwrap_or_else(|| Animation::new(1., 0., 0., config));
+
+        self.move_y_animation = Some(MoveAnimation {
             anim,
             from: from + current_offset,
         });
