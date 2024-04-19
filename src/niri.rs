@@ -768,7 +768,7 @@ impl State {
                     );
 
                     grab.grab.ungrab(PopupUngrabStrategy::All);
-                    keyboard.unset_grab();
+                    keyboard.unset_grab(self);
                     self.niri.seat.get_pointer().unwrap().unset_grab(
                         self,
                         SERIAL_COUNTER.next_serial(),

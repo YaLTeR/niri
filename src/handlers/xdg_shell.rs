@@ -1,5 +1,5 @@
 use smithay::desktop::{
-    find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, LayerSurface,
+    find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, utils, LayerSurface,
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
     WindowSurfaceType,
 };
@@ -177,7 +177,7 @@ impl XdgShellHandler for State {
 
         trace!("new grab for root {:?}", root);
         keyboard.set_focus(self, grab.current_grab(), serial);
-        keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
+        keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
         pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
         self.niri.popup_grab = Some(PopupGrabState { root, grab });
     }
@@ -649,8 +649,11 @@ impl State {
                         popup.send_configure().expect("initial configure failed");
                     }
                 }
-                // Input method popups don't require a configure.
-                PopupKind::InputMethod(_) => (),
+                // Input method popup can arbitrary change its geometry, so we need to unconstraint
+                // it on commit.
+                PopupKind::InputMethod(_) => {
+                    self.unconstrain_popup(&popup);
+                }
             }
         }
     }
@@ -696,14 +699,7 @@ impl State {
         target.loc.y -= self.niri.layout.window_y(window).unwrap();
         target.loc -= get_popup_toplevel_coords(popup);
 
-        match popup {
-            PopupKind::Xdg(popup) => {
-                popup.with_pending_state(|state| {
-                    state.geometry = unconstrain_with_padding(state.positioner, target);
-                });
-            }
-            PopupKind::InputMethod(_) => todo!(),
-        }
+        self.position_popup_within_rect(popup, target);
     }
 
     pub fn unconstrain_layer_shell_popup(
@@ -724,11 +720,43 @@ impl State {
         target.loc -= layer_geo.loc;
         target.loc -= get_popup_toplevel_coords(popup);
 
+        self.position_popup_within_rect(popup, target);
+    }
+
+    fn position_popup_within_rect(&self, popup: &PopupKind, target: Rectangle<i32, Logical>) {
         match popup {
-            PopupKind::Xdg(popup) => popup.with_pending_state(|state| {
-                state.geometry = unconstrain_with_padding(state.positioner, target);
-            }),
-            PopupKind::InputMethod(_) => todo!(),
+            PopupKind::Xdg(popup) => {
+                popup.with_pending_state(|state| {
+                    state.geometry = unconstrain_with_padding(state.positioner, target);
+                });
+            }
+            PopupKind::InputMethod(popup) => {
+                let text_input_rectangle = popup.text_input_rectangle();
+                let mut bbox =
+                    utils::bbox_from_surface_tree(popup.wl_surface(), text_input_rectangle.loc);
+
+                // Position bbox horizontally first.
+                let overflow_x = (bbox.loc.x + bbox.size.w) - (target.loc.x + target.size.w);
+                if overflow_x > 0 {
+                    bbox.loc.x -= overflow_x;
+                }
+
+                // Ensure that the popup starts within the window.
+                bbox.loc.x = bbox.loc.x.max(target.loc.x);
+
+                // Try to position IME popup below the text input rectangle.
+                let mut below = bbox;
+                below.loc.y += text_input_rectangle.size.h;
+
+                let mut above = bbox;
+                above.loc.y -= bbox.size.h;
+
+                if target.loc.y + target.size.h >= below.loc.y + below.size.h {
+                    popup.set_location(below.loc);
+                } else {
+                    popup.set_location(above.loc);
+                }
+            }
         }
     }
 
