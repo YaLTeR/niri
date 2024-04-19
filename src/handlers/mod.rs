@@ -142,6 +142,7 @@ impl InputMethodHandler for State {
                 send_surface_state(wl_surface, data, scale, transform);
             });
         }
+
         if let Err(err) = self.niri.popups.track_popup(popup) {
             warn!("error tracking ime popup {err:?}");
         }

@@ -47,9 +47,10 @@ impl XdgShellHandler for State {
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
-        self.unconstrain_popup(&surface);
+        let popup = PopupKind::Xdg(surface);
+        self.unconstrain_popup(&popup);
 
-        if let Err(err) = self.niri.popups.track_popup(PopupKind::Xdg(surface)) {
+        if let Err(err) = self.niri.popups.track_popup(popup) {
             warn!("error tracking popup: {err:?}");
         }
     }
@@ -79,7 +80,7 @@ impl XdgShellHandler for State {
             state.geometry = geometry;
             state.positioner = positioner;
         });
-        self.unconstrain_popup(&surface);
+        self.unconstrain_popup(&PopupKind::Xdg(surface.clone()));
         surface.send_repositioned(token);
     }
 
@@ -659,12 +660,12 @@ impl State {
         self.niri.output_for_root(&root)
     }
 
-    pub fn unconstrain_popup(&self, popup: &PopupSurface) {
+    pub fn unconstrain_popup(&self, popup: &PopupKind) {
         let _span = tracy_client::span!("Niri::unconstrain_popup");
 
         // Popups with a NULL parent will get repositioned in their respective protocol handlers
         // (i.e. layer-shell).
-        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
+        let Ok(root) = find_popup_root_surface(popup) else {
             return;
         };
 
@@ -680,7 +681,7 @@ impl State {
         }
     }
 
-    fn unconstrain_window_popup(&self, popup: &PopupSurface, window: &Window, output: &Output) {
+    fn unconstrain_window_popup(&self, popup: &PopupKind, window: &Window, output: &Output) {
         let window_geo = window.geometry();
         let output_geo = self.niri.global_space.output_geometry(output).unwrap();
 
@@ -693,16 +694,21 @@ impl State {
         let mut target =
             Rectangle::from_loc_and_size((0, 0), (window_geo.size.w, output_geo.size.h));
         target.loc.y -= self.niri.layout.window_y(window).unwrap();
-        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+        target.loc -= get_popup_toplevel_coords(popup);
 
-        popup.with_pending_state(|state| {
-            state.geometry = unconstrain_with_padding(state.positioner, target);
-        });
+        match popup {
+            PopupKind::Xdg(popup) => {
+                popup.with_pending_state(|state| {
+                    state.geometry = unconstrain_with_padding(state.positioner, target);
+                });
+            }
+            PopupKind::InputMethod(_) => todo!(),
+        }
     }
 
     pub fn unconstrain_layer_shell_popup(
         &self,
-        popup: &PopupSurface,
+        popup: &PopupKind,
         layer_surface: &LayerSurface,
         output: &Output,
     ) {
@@ -716,11 +722,14 @@ impl State {
         // we will compute that here.
         let mut target = Rectangle::from_loc_and_size((0, 0), output_geo.size);
         target.loc -= layer_geo.loc;
-        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+        target.loc -= get_popup_toplevel_coords(popup);
 
-        popup.with_pending_state(|state| {
-            state.geometry = unconstrain_with_padding(state.positioner, target);
-        });
+        match popup {
+            PopupKind::Xdg(popup) => popup.with_pending_state(|state| {
+                state.geometry = unconstrain_with_padding(state.positioner, target);
+            }),
+            PopupKind::InputMethod(_) => todo!(),
+        }
     }
 
     pub fn update_reactive_popups(&self, window: &Window, output: &Output) {
@@ -729,10 +738,10 @@ impl State {
         for (popup, _) in PopupManager::popups_for_surface(
             window.toplevel().expect("no x11 support").wl_surface(),
         ) {
-            match popup {
-                PopupKind::Xdg(ref popup) => {
+            match &popup {
+                xdg_popup @ PopupKind::Xdg(popup) => {
                     if popup.with_pending_state(|state| state.positioner.reactive) {
-                        self.unconstrain_window_popup(popup, window, output);
+                        self.unconstrain_window_popup(xdg_popup, window, output);
                         if let Err(err) = popup.send_pending_configure() {
                             warn!("error re-configuring reactive popup: {err:?}");
                         }
