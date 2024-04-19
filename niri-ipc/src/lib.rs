@@ -7,14 +7,11 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 mod socket;
-
-pub use socket::{NiriSocket, SOCKET_PATH_ENV};
+pub use socket::{Socket, SOCKET_PATH_ENV};
 
 /// Request from client to niri.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Request {
-    /// Always responds with an error. (For testing error handling)
-    ReturnError,
     /// Request the version string for the running niri instance.
     Version,
     /// Request information about connected outputs.
@@ -23,6 +20,8 @@ pub enum Request {
     FocusedWindow,
     /// Perform an action.
     Action(Action),
+    /// Respond with an error (for testing error handling).
+    ReturnError,
 }
 
 /// Reply from niri to client.

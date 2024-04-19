@@ -1,102 +1,98 @@
-use anyhow::{bail, Context};
-use niri_ipc::{LogicalOutput, Mode, NiriSocket, Output, Request, Response};
+use anyhow::{anyhow, bail, Context};
+use niri_ipc::{LogicalOutput, Mode, Output, Request, Response, Socket};
 use serde_json::json;
 
 use crate::cli::Msg;
 use crate::utils::version;
 
 pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
-    let client = NiriSocket::new()
-        .context("a communication error occured while trying to initialize the socket")?;
+    let request = match &msg {
+        Msg::Version => Request::Version,
+        Msg::Outputs => Request::Outputs,
+        Msg::FocusedWindow => Request::FocusedWindow,
+        Msg::Action { action } => Request::Action(action.clone()),
+        Msg::RequestError => Request::ReturnError,
+    };
+
+    let socket = Socket::connect().context("error connecting to the niri socket")?;
+
+    let reply = socket
+        .send(request)
+        .context("error communicating with niri")?;
+
+    let compositor_version = match reply {
+        Err(_) if !matches!(msg, Msg::Version) => {
+            // If we got an error, it might be that the CLI is a different version from the running
+            // niri instance. Request the running instance version to compare and print a message.
+            Socket::connect()
+                .and_then(|socket| socket.send(Request::Version))
+                .ok()
+        }
+        _ => None,
+    };
 
     // Default SIGPIPE so that our prints don't panic on stdout closing.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
-    let request = match &msg {
-        Msg::Error => Request::ReturnError,
-        Msg::Version => Request::Version,
-        Msg::Outputs => Request::Outputs,
-        Msg::FocusedWindow => Request::FocusedWindow,
-        Msg::Action { action } => Request::Action(action.clone()),
-    };
-
-    let reply = client
-        .send(request)
-        .context("a communication error occurred while sending request to niri")?;
-
-    let response = match reply {
-        Ok(r) => r,
-        Err(err_msg) => {
-            eprintln!("The compositor returned an error:");
-            eprintln!();
-            eprintln!("{err_msg}");
-
-            if matches!(msg, Msg::Version) {
-                eprintln!();
-                eprintln!("Note: unable to get the compositor's version.");
-                eprintln!("Did you forget to restart niri after an update?");
-            } else {
-                match NiriSocket::new().and_then(|client| client.send(Request::Version)) {
-                    Ok(Ok(Response::Version(server_version))) => {
-                        let my_version = version();
-                        if my_version != server_version {
-                            eprintln!();
-                            eprintln!("Note: niri msg was invoked with a different version of niri than the running compositor.");
-                            eprintln!("niri msg: {my_version}");
-                            eprintln!("compositor: {server_version}");
-                            eprintln!("Did you forget to restart niri after an update?");
-                        }
-                    }
-                    Ok(Ok(_)) => {
-                        // nonsensical response, do not add confusing context
-                    }
-                    Ok(Err(_)) => {
-                        eprintln!();
-                        eprintln!("Note: unable to get the compositor's version.");
-                        eprintln!("Did you forget to restart niri after an update?");
-                    }
-                    Err(_) => {
-                        // communication error, do not add irrelevant context
-                    }
+    let response = reply.map_err(|err_msg| {
+        // Check for CLI-server version mismatch to add helpful context.
+        match compositor_version {
+            Some(Ok(Response::Version(compositor_version))) => {
+                let cli_version = version();
+                if cli_version != compositor_version {
+                    eprintln!("Running niri compositor has a different version from the niri CLI:");
+                    eprintln!("Compositor version: {compositor_version}");
+                    eprintln!("CLI version:        {cli_version}");
+                    eprintln!("Did you forget to restart niri after an update?");
+                    eprintln!();
                 }
             }
-
-            return Ok(());
+            Some(_) => {
+                eprintln!("Unable to get the running niri compositor version.");
+                eprintln!("Did you forget to restart niri after an update?");
+                eprintln!();
+            }
+            None => {
+                // Communication error, or the original request was already a version request.
+                // Don't add irrelevant context.
+            }
         }
-    };
+
+        anyhow!(err_msg).context("niri returned an error")
+    })?;
 
     match msg {
-        Msg::Error => {
+        Msg::RequestError => {
             bail!("unexpected response: expected an error, got {response:?}");
         }
         Msg::Version => {
-            let Response::Version(server_version) = response else {
+            let Response::Version(compositor_version) = response else {
                 bail!("unexpected response: expected Version, got {response:?}");
             };
+
+            let cli_version = version();
 
             if json {
                 println!(
                     "{}",
                     json!({
-                        "cli": version(),
-                        "compositor": server_version,
+                        "compositor": compositor_version,
+                        "cli": cli_version,
                     })
                 );
                 return Ok(());
             }
 
-            let client_version = version();
-
-            println!("niri msg is {client_version}");
-            println!("the compositor is {server_version}");
-            if client_version != server_version {
-                eprintln!();
-                eprintln!("These are different");
+            if cli_version != compositor_version {
+                eprintln!("Running niri compositor has a different version from the niri CLI.");
                 eprintln!("Did you forget to restart niri after an update?");
+                eprintln!();
             }
-            println!();
+
+            println!("Compositor version: {compositor_version}");
+            println!("CLI version:        {cli_version}");
         }
         Msg::Outputs => {
             let Response::Outputs(outputs) = response else {
