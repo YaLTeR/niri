@@ -107,6 +107,10 @@ The `damping-ratio` goes from 0.1 to 10.0 and has the following properties:
 
 However, even with damping ratio = 1.0, the spring animation may oscillate if "launched" with enough velocity from a touchpad swipe.
 
+> [!WARNING]
+> Overdamped springs currently have some numerical stability issues and may cause graphical glitches.
+> Therefore, setting `damping-ratio` above `1.0` is not recommended.
+
 Lower `stiffness` will result in a slower animation more prone to oscillation.
 
 Set `epsilon` to a lower value if the animation "jumps" at the end.
@@ -115,10 +119,6 @@ Set `epsilon` to a lower value if the animation "jumps" at the end.
 > The spring *mass* (which you can see in Elastic) is hardcoded to 1.0 and cannot be changed.
 > Instead, change `stiffness` proportionally.
 > E.g. increasing mass by 2× is the same as decreasing stiffness by 2×.
-
-> [!WARNING]
-> Overdamped springs currently have some numerical stability issues and may cause graphical glitches.
-> Therefore, setting `damping-ratio` above `1.0` is not recommended.
 
 ### Animations
 
