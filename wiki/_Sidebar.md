@@ -5,6 +5,7 @@
 * [`niri msg`](./IPC.md)
 * [VSCode, Chromium, WezTerm](./Application-Issues.md)
 * [Xwayland](./Xwayland.md)
+* [FAQ](./FAQ.md)
 
 ## Configuration
 * [Overview](./Configuration:-Overview.md)
