@@ -35,11 +35,12 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
     - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts
 - [Touchpad gestures](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515)
 - Configurable layout: gaps, borders, struts, window sizes
+- [Animations](https://github.com/YaLTeR/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e)
 - Live-reloading config
 
 ## Video Demo
 
-https://github.com/YaLTeR/niri/assets/1794388/5d355694-7b06-4f00-8920-8dce54a8721c
+https://github.com/YaLTeR/niri/assets/1794388/bce834b0-f205-434e-a027-b373495f9729
 
 ## Status
 
