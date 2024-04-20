@@ -7,6 +7,8 @@ By default, focus ring and border are rendered as a solid background rectangle b
 That is, they will show up through semitransparent windows.
 This is because windows using client-side decorations can have an arbitrary shape.
 
+You can also override this behavior with the `draw-border-with-background` [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules).
+
 ### Why is the Waybar pop-up menu showing behind windows?
 
 Set `"layer": "top"` in your Waybar config.
