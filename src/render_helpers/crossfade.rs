@@ -53,7 +53,6 @@ impl CrossfadeRenderElement {
         let tex_from_size = tex_from_geo.size / combined_geo.size;
         let tex_to_size = tex_to_geo.size / combined_geo.size;
 
-        // FIXME: cropping this element will mess up the coordinates.
         Shaders::get(renderer).crossfade.clone().map(|shader| {
             Self(PrimaryGpuPixelShaderWithTexturesRenderElement::new(
                 shader,
