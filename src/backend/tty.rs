@@ -491,8 +491,15 @@ impl Tty {
                 warn!("error binding wl-display in EGL: {err:?}");
             }
 
-            resources::init(renderer.as_gles_renderer());
-            shaders::init(renderer.as_gles_renderer());
+            let gles_renderer = renderer.as_gles_renderer();
+            resources::init(gles_renderer);
+            shaders::init(gles_renderer);
+
+            let config = self.config.borrow();
+            if let Some(src) = config.animations.window_resize.custom_shader.as_deref() {
+                shaders::set_custom_resize_program(gles_renderer, Some(src));
+            }
+            drop(config);
 
             // Create the dmabuf global.
             let primary_formats = renderer.dmabuf_formats().collect::<HashSet<_>>();

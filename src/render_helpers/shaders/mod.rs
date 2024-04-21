@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use smithay::backend::renderer::gles::{GlesPixelProgram, GlesRenderer, UniformName, UniformType};
 
 use super::primary_gpu_pixel_shader_with_textures::PixelWithTexturesProgram;
@@ -5,7 +7,8 @@ use super::renderer::NiriRenderer;
 
 pub struct Shaders {
     pub gradient_border: Option<GlesPixelProgram>,
-    pub crossfade: Option<PixelWithTexturesProgram>,
+    pub resize: Option<PixelWithTexturesProgram>,
+    pub custom_resize: RefCell<Option<PixelWithTexturesProgram>>,
 }
 
 impl Shaders {
@@ -28,26 +31,29 @@ impl Shaders {
             })
             .ok();
 
-        let crossfade = PixelWithTexturesProgram::compile(
+        let resize = PixelWithTexturesProgram::compile(
             renderer,
-            include_str!("crossfade.frag"),
+            include_str!("resize.frag"),
             &[
-                UniformName::new("tex_from_loc", UniformType::_2f),
-                UniformName::new("tex_from_size", UniformType::_2f),
-                UniformName::new("tex_to_loc", UniformType::_2f),
-                UniformName::new("tex_to_size", UniformType::_2f),
-                UniformName::new("amount", UniformType::_1f),
+                UniformName::new("input_to_curr_geo", UniformType::Matrix3x3),
+                UniformName::new("input_to_prev_geo", UniformType::Matrix3x3),
+                UniformName::new("input_to_next_geo", UniformType::Matrix3x3),
+                UniformName::new("geo_to_tex_prev", UniformType::Matrix3x3),
+                UniformName::new("geo_to_tex_next", UniformType::Matrix3x3),
+                UniformName::new("progress", UniformType::_1f),
+                UniformName::new("clamped_progress", UniformType::_1f),
             ],
-            &["tex_from", "tex_to"],
+            &["tex_prev", "tex_next"],
         )
         .map_err(|err| {
-            warn!("error compiling crossfade shader: {err:?}");
+            warn!("error compiling resize shader: {err:?}");
         })
         .ok();
 
         Self {
             gradient_border,
-            crossfade,
+            resize,
+            custom_resize: RefCell::new(None),
         }
     }
 
@@ -57,6 +63,20 @@ impl Shaders {
         data.get()
             .expect("shaders::init() must be called when creating the renderer")
     }
+
+    pub fn replace_custom_resize_program(
+        &self,
+        program: Option<PixelWithTexturesProgram>,
+    ) -> Option<PixelWithTexturesProgram> {
+        self.custom_resize.replace(program)
+    }
+
+    pub fn resize(&self) -> Option<PixelWithTexturesProgram> {
+        self.custom_resize
+            .borrow()
+            .clone()
+            .or_else(|| self.resize.clone())
+    }
 }
 
 pub fn init(renderer: &mut GlesRenderer) {
@@ -64,5 +84,38 @@ pub fn init(renderer: &mut GlesRenderer) {
     let data = renderer.egl_context().user_data();
     if !data.insert_if_missing(|| shaders) {
         error!("shaders were already compiled");
+    }
+}
+
+pub fn set_custom_resize_program(renderer: &mut GlesRenderer, src: Option<&str>) {
+    let program = if let Some(src) = src {
+        match PixelWithTexturesProgram::compile(
+            renderer,
+            src,
+            &[
+                UniformName::new("input_to_curr_geo", UniformType::Matrix3x3),
+                UniformName::new("input_to_prev_geo", UniformType::Matrix3x3),
+                UniformName::new("input_to_next_geo", UniformType::Matrix3x3),
+                UniformName::new("geo_to_tex_prev", UniformType::Matrix3x3),
+                UniformName::new("geo_to_tex_next", UniformType::Matrix3x3),
+                UniformName::new("progress", UniformType::_1f),
+                UniformName::new("clamped_progress", UniformType::_1f),
+            ],
+            &["tex_prev", "tex_next"],
+        ) {
+            Ok(program) => Some(program),
+            Err(err) => {
+                warn!("error compiling custom resize shader: {err:?}");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(prev) = Shaders::get(renderer).replace_custom_resize_program(program) {
+        if let Err(err) = prev.destroy(renderer) {
+            warn!("error destroying previous custom resize shader: {err:?}");
+        }
     }
 }

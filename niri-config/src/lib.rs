@@ -477,7 +477,7 @@ pub struct HotkeyOverlay {
     pub skip_at_startup: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Animations {
     #[knuffel(child)]
     pub off: bool,
@@ -593,19 +593,25 @@ impl Default for WindowMovementAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WindowResizeAnim(pub Animation);
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowResizeAnim {
+    pub anim: Animation,
+    pub custom_shader: Option<String>,
+}
 
 impl Default for WindowResizeAnim {
     fn default() -> Self {
-        Self(Animation {
-            off: false,
-            kind: AnimationKind::Spring(SpringParams {
-                damping_ratio: 1.,
-                stiffness: 800,
-                epsilon: 0.0001,
-            }),
-        })
+        Self {
+            anim: Animation {
+                off: false,
+                kind: AnimationKind::Spring(SpringParams {
+                    damping_ratio: 1.,
+                    stiffness: 800,
+                    epsilon: 0.0001,
+                }),
+            },
+            custom_shader: None,
+        }
     }
 }
 
@@ -1191,7 +1197,9 @@ where
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default)?))
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
     }
 }
 
@@ -1204,7 +1212,9 @@ where
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default)?))
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
     }
 }
 
@@ -1217,7 +1227,9 @@ where
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default)?))
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
     }
 }
 
@@ -1230,7 +1242,9 @@ where
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default)?))
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
     }
 }
 
@@ -1243,7 +1257,9 @@ where
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default)?))
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
     }
 }
 
@@ -1255,8 +1271,21 @@ where
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
-        let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default)?))
+        let default = Self::default().anim;
+        let mut custom_shader = None;
+        let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
+            if &**child.node_name == "custom-shader" {
+                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+
+        Ok(Self {
+            anim,
+            custom_shader,
+        })
     }
 }
 
@@ -1269,7 +1298,9 @@ where
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default)?))
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
     }
 }
 
@@ -1278,6 +1309,10 @@ impl Animation {
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
         default: Self,
+        mut process_children: impl FnMut(
+            &knuffel::ast::SpannedNode<S>,
+            &mut knuffel::decode::Context<S>,
+        ) -> Result<bool, DecodeError<S>>,
     ) -> Result<Self, DecodeError<S>> {
         #[derive(Default, PartialEq)]
         struct OptionalEasingParams {
@@ -1360,11 +1395,13 @@ impl Animation {
                     easing_params.curve = Some(parse_arg_node("curve", child, ctx)?);
                 }
                 name_str => {
-                    ctx.emit_error(DecodeError::unexpected(
-                        child,
-                        "node",
-                        format!("unexpected node `{}`", name_str.escape_default()),
-                    ));
+                    if !process_children(child, ctx)? {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            format!("unexpected node `{}`", name_str.escape_default()),
+                        ));
+                    }
                 }
             }
         }

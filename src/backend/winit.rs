@@ -135,6 +135,12 @@ impl Winit {
         resources::init(renderer);
         shaders::init(renderer);
 
+        let config = self.config.borrow();
+        if let Some(src) = config.animations.window_resize.custom_shader.as_deref() {
+            shaders::set_custom_resize_program(renderer, Some(src));
+        }
+        drop(config);
+
         niri.add_output(self.output.clone(), None, false);
     }
 

@@ -107,7 +107,9 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{render_to_shm, render_to_texture, render_to_vec, RenderTarget};
+use crate::render_helpers::{
+    render_to_shm, render_to_texture, render_to_vec, shaders, RenderTarget,
+};
 use crate::scroll_tracker::ScrollTracker;
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
@@ -893,6 +895,15 @@ impl State {
 
         if config.window_rules != old_config.window_rules {
             window_rules_changed = true;
+        }
+
+        if config.animations.window_resize.custom_shader
+            != old_config.animations.window_resize.custom_shader
+        {
+            let src = config.animations.window_resize.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_resize_program(renderer, src);
+            });
         }
 
         *old_config = config;

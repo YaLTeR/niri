@@ -16,10 +16,10 @@ use super::{
 };
 use crate::animation::Animation;
 use crate::niri_render_elements;
-use crate::render_helpers::crossfade::CrossfadeRenderElement;
 use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::shaders::Shaders;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget, ToRenderElement};
@@ -73,7 +73,7 @@ niri_render_elements! {
         FocusRing = FocusRingRenderElement,
         SolidColor = SolidColorRenderElement,
         Offscreen = RescaleRenderElement<OffscreenRenderElement>,
-        Crossfade = CrossfadeRenderElement,
+        Resize = ResizeRenderElement,
     }
 }
 
@@ -154,7 +154,7 @@ impl<W: LayoutElement> Tile<W> {
             let change = self.window.size().to_point() - size_from.to_point();
             let change = max(change.x.abs(), change.y.abs());
             if change > RESIZE_ANIMATION_THRESHOLD {
-                let anim = Animation::new(0., 1., 0., self.options.animations.window_resize.0);
+                let anim = Animation::new(0., 1., 0., self.options.animations.window_resize.anim);
                 self.resize_animation = Some(ResizeAnimation {
                     anim,
                     size_from,
@@ -527,12 +527,12 @@ impl<W: LayoutElement> Tile<W> {
 
         let gles_renderer = renderer.as_gles_renderer();
 
-        // If we're resizing, try to render a crossfade, or a fallback.
-        let mut crossfade = None;
-        let mut crossfade_fallback = None;
+        // If we're resizing, try to render a shader, or a fallback.
+        let mut resize_shader = None;
+        let mut resize_fallback = None;
 
         if let Some(resize) = &self.resize_animation {
-            if Shaders::get(gles_renderer).crossfade.is_some() {
+            if Shaders::get(gles_renderer).resize().is_some() {
                 if let Some(texture_from) = resize.snapshot.texture(gles_renderer, scale, target) {
                     let window_elements =
                         self.window
@@ -548,7 +548,7 @@ impl<W: LayoutElement> Tile<W> {
                     .ok();
 
                     if let Some((texture_current, _sync_point, texture_current_geo)) = current {
-                        let elem = CrossfadeRenderElement::new(
+                        let elem = ResizeRenderElement::new(
                             gles_renderer,
                             area,
                             scale,
@@ -556,20 +556,21 @@ impl<W: LayoutElement> Tile<W> {
                             resize.snapshot.size,
                             (texture_current, texture_current_geo),
                             window_size,
+                            resize.anim.value() as f32,
                             resize.anim.clamped_value().clamp(0., 1.) as f32,
                             alpha,
                         )
-                        .expect("we checked the crossfade shader above");
+                        .expect("we checked the resize shader above");
                         self.window
                             .set_offscreen_element_id(Some(elem.id().clone()));
-                        crossfade = Some(elem.into());
+                        resize_shader = Some(elem.into());
                     }
                 }
             }
 
-            if crossfade.is_none() {
+            if resize_shader.is_none() {
                 let fallback_buffer = SolidColorBuffer::new(area.size, [1., 0., 0., 1.]);
-                crossfade_fallback = Some(
+                resize_fallback = Some(
                     SolidColorRenderElement::from_buffer(
                         &fallback_buffer,
                         area.loc.to_physical_precise_round(scale),
@@ -585,7 +586,7 @@ impl<W: LayoutElement> Tile<W> {
 
         // If we're not resizing, render the window itself.
         let mut window = None;
-        if crossfade.is_none() && crossfade_fallback.is_none() {
+        if resize_shader.is_none() && resize_fallback.is_none() {
             window = Some(
                 self.window
                     .render(renderer, window_render_loc, scale, alpha, target)
@@ -594,9 +595,9 @@ impl<W: LayoutElement> Tile<W> {
             );
         }
 
-        let rv = crossfade
+        let rv = resize_shader
             .into_iter()
-            .chain(crossfade_fallback)
+            .chain(resize_fallback)
             .chain(window.into_iter().flatten());
 
         let elem = self.effective_border_width().map(|width| {

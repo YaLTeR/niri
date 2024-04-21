@@ -238,7 +238,7 @@ impl Options {
             center_focused_column: layout.center_focused_column,
             preset_widths,
             default_width,
-            animations: config.animations,
+            animations: config.animations.clone(),
         }
     }
 }

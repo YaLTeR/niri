@@ -224,6 +224,47 @@ animations {
 }
 ```
 
+##### `custom-shader`
+
+<sup>Since: 0.1.6, experimental</sup>
+
+You can write a custom shader for drawing the window during a resize animation.
+
+See [this example shader](./examples/resize-custom-shader.frag) for a full documentation with several animations to experiment with.
+
+If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
+
+> [!NOTE]
+> 
+> Custom shaders do not have a backwards compatibility guarantee.
+> I may need to change their interface as I'm developing new features.
+
+```
+animations {
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+
+        custom-shader r"
+            #version 100
+            precision mediump float;
+
+            varying vec2 v_coords;
+            uniform mat3 input_to_curr_geo;
+            uniform sampler2D tex_next;
+            uniform mat3 geo_to_tex_next;
+            uniform float alpha;
+
+            void main() {
+                vec3 coords_curr_geo = input_to_curr_geo * vec3(v_coords, 1.0);
+                vec3 coords_tex_next = geo_to_tex_next * coords_curr_geo;
+                vec4 color = texture2D(tex_next, vec2(coords_tex_next));
+                gl_FragColor = color * alpha;
+            }
+        "
+    }
+}
+```
+
 #### `config-notification-open-close`
 
 The open/close animation of the config parse error and new default config notifications.

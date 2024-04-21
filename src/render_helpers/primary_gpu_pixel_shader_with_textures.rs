@@ -120,6 +120,12 @@ impl PixelWithTexturesProgram {
             compile_program(gl, src, additional_uniforms, texture_uniforms)
         })?
     }
+
+    pub fn destroy(self, renderer: &mut GlesRenderer) -> Result<(), GlesError> {
+        renderer.with_context(move |gl| unsafe {
+            gl.DeleteProgram(self.0.program);
+        })
+    }
 }
 
 impl PrimaryGpuPixelShaderWithTexturesRenderElement {

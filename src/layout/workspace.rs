@@ -1118,14 +1118,14 @@ impl<W: LayoutElement> Workspace<W> {
                 for col in &mut self.columns[col_idx + 1..] {
                     col.animate_move_from_with_config(
                         offset,
-                        self.options.animations.window_resize.0,
+                        self.options.animations.window_resize.anim,
                     );
                 }
             } else {
                 for col in &mut self.columns[..=col_idx] {
                     col.animate_move_from_with_config(
                         -offset,
-                        self.options.animations.window_resize.0,
+                        self.options.animations.window_resize.anim,
                     );
                 }
             }
@@ -1148,7 +1148,7 @@ impl<W: LayoutElement> Workspace<W> {
             // Synchronize the horizontal view movement with the resize so that it looks nice. This
             // is especially important for always-centered view.
             let config = if started_resize_anim {
-                self.options.animations.window_resize.0
+                self.options.animations.window_resize.anim
             } else {
                 self.options.animations.horizontal_view_movement.0
             };
@@ -2356,7 +2356,7 @@ impl<W: LayoutElement> Column<W> {
             for tile in &mut self.tiles[tile_idx + 1..] {
                 tile.animate_move_y_from_with_config(
                     offset,
-                    self.options.animations.window_resize.0,
+                    self.options.animations.window_resize.anim,
                 );
             }
         }
