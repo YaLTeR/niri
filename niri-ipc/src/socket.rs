@@ -5,7 +5,7 @@ use std::path::Path;
 use serde_json::de::IoRead;
 use serde_json::StreamDeserializer;
 
-use crate::{Reply, Request, ResponseDecoder};
+use crate::{MaybeJson, Reply, Request};
 
 /// Name of the environment variable containing the niri IPC socket path.
 pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
@@ -52,18 +52,23 @@ impl NiriSocket {
     /// Handle a request to the niri IPC server
     ///
     /// # Returns
-    /// Ok(Ok([Response](crate::Response))) corresponds to a successful response from the running
-    /// niri instance. Ok(Err([String])) corresponds to an error received from the running niri
-    /// instance. Err([std::io::Error]) corresponds to an error in the IPC communication.
+    /// - Ok(Ok([Response](crate::Response))) corresponds to a successful response from the running
+    /// niri instance.
+    /// - Ok(Err([String])) corresponds to an error received from the running niri
+    /// instance.
+    /// - Err([std::io::Error]) corresponds to an error in the IPC communication.
     pub fn send_request<R: Request>(mut self, request: R) -> io::Result<Reply<R::Response>> {
-        let decoder = request.decoder();
         let mut buf = serde_json::to_vec(&request.into_message()).unwrap();
         writeln!(buf).unwrap();
         self.stream.write_all(&buf)?; // .context("error writing IPC request")?;
         self.stream.flush()?;
 
         if let Some(next) = self.responses.next() {
-            next.and_then(|v| decoder.decode(v))
+            next.and_then(serde_json::from_value)
+                .map(|v| match v {
+                    MaybeJson::Known(reply) => reply,
+                    MaybeJson::Unknown(_) => Err(crate::Error::CompositorBadProtocol),
+                })
                 .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
         } else {
             Err(io::Error::new(

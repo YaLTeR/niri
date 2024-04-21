@@ -1,7 +1,7 @@
 use anyhow::Context;
 use niri_ipc::{
-    ActionRequest, ErrorRequest, FocusedWindowRequest, LogicalOutput, Mode, NiriSocket, Output,
-    OutputRequest, Request, VersionRequest,
+    ActionRequest, Error, ErrorRequest, FocusedWindowRequest, LogicalOutput, Mode, NiriSocket,
+    Output, OutputRequest, Request, VersionRequest,
 };
 use serde_json::json;
 
@@ -9,11 +9,9 @@ use crate::cli::Msg;
 use crate::utils::version;
 
 struct CompositorError {
-    message: String,
+    error: niri_ipc::Error,
     version: Option<String>,
 }
-
-type MsgResult<T> = Result<T, CompositorError>;
 
 trait MsgRequest: Request {
     fn json(response: Self::Response) -> serde_json::Value {
@@ -30,25 +28,23 @@ trait MsgRequest: Request {
         }
     }
 
-    fn send(self) -> anyhow::Result<MsgResult<Self::Response>> {
-        let socket = NiriSocket::new().context("trying to initialize the socket")?;
-        let reply = socket
-            .send_request(self)
-            .context("while sending request to niri")?;
-        Ok(reply.map_err(|message| CompositorError {
-            message,
+    fn send(self) -> anyhow::Result<Result<Self::Response, CompositorError>> {
+        let socket = NiriSocket::new().context("problem initializing the socket")?;
+        let reply = socket.send_request(self).context("problem ")?;
+        Ok(reply.map_err(|error| CompositorError {
+            error,
             version: Self::check_version(),
         }))
     }
 }
 
 pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
-    match &msg {
-        Msg::Error => run(json, ErrorRequest),
+    match msg {
+        Msg::Error { message } => run(json, ErrorRequest(message)),
         Msg::Version => run(json, VersionRequest),
         Msg::Outputs => run(json, OutputRequest),
         Msg::FocusedWindow => run(json, FocusedWindowRequest),
-        Msg::Action { action } => run(json, ActionRequest(action.clone())),
+        Msg::Action { action } => run(json, ActionRequest(action)),
     }
 }
 
@@ -82,12 +78,28 @@ fn run<R: MsgRequest>(json: bool, request: R) -> anyhow::Result<()> {
             }
         }
         Err(CompositorError {
-            message,
+            error,
             version: server_version,
         }) => {
-            eprintln!("The compositor returned an error:");
-            eprintln!();
-            eprintln!("{message}");
+            match error {
+                Error::ClientBadJson => {
+                    eprintln!("Something went wrong in the CLI; the compositor says the JSON it sent was invalid")
+                }
+                Error::ClientBadProtocol => {
+                    eprintln!("The compositor didn't understand the request sent by the CLI.")
+                }
+                Error::CompositorBadProtocol => {
+                    eprintln!("The compositor returned a response that the CLI didn't understand.")
+                }
+                Error::InternalError => {
+                    eprintln!("Something went wrong in the compositor. I don't know what.")
+                }
+                Error::Other(msg) => {
+                    eprintln!("The compositor returned an error:");
+                    eprintln!();
+                    eprintln!("{msg}");
+                }
+            }
 
             if let Some(server_version) = server_version {
                 let my_version = version();
@@ -121,6 +133,7 @@ impl MsgRequest for ErrorRequest {
 
 impl MsgRequest for VersionRequest {
     fn check_version() -> Option<String> {
+        eprintln!("version");
         // If the version request fails, we can't exactly try again.
         None
     }

@@ -10,34 +10,19 @@ mod socket;
 
 pub use socket::{NiriSocket, SOCKET_PATH_ENV};
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+#[doc(hidden)]
+pub enum MaybeUnknown<T, U> {
+    Known(T),
+    Unknown(U),
+}
+
+#[doc(hidden)]
+pub type MaybeJson<T> = MaybeUnknown<T, serde_json::Value>;
+
 mod private {
     pub trait Sealed {}
-}
-
-// TODO: remove ResponseDecoder and AnyRequest?
-
-#[allow(missing_docs)]
-pub trait ResponseDecoder {
-    type Output: for<'de> Deserialize<'de>;
-    fn decode(&self, value: serde_json::Value) -> serde_json::Result<Self::Output>;
-}
-
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct TrivialDecoder<T: for<'de> Deserialize<'de>>(std::marker::PhantomData<T>);
-
-impl<T: for<'de> Deserialize<'de>> Default for TrivialDecoder<T> {
-    fn default() -> Self {
-        Self(std::marker::PhantomData)
-    }
-}
-
-impl<T: for<'de> Deserialize<'de>> ResponseDecoder for TrivialDecoder<T> {
-    type Output = T;
-
-    fn decode(&self, value: serde_json::Value) -> serde_json::Result<Self::Output> {
-        serde_json::from_value(value)
-    }
 }
 
 /// A request that can be sent to niri.
@@ -47,133 +32,8 @@ pub trait Request:
     /// The type of the response that niri sends for this request.
     type Response: Serialize + for<'de> Deserialize<'de>;
 
-    #[allow(missing_docs)]
-    fn decoder(&self) -> impl ResponseDecoder<Output = Reply<Self::Response>> + 'static;
-
     /// Convert the request into a RequestMessage (for serialization).
     fn into_message(self) -> RequestMessage;
-}
-
-macro_rules! requests {
-    (@$item:item$(;)?) => { $item };
-    ($($(#[$m:meta])*$variant:ident($v:vis struct $request:ident$($p:tt)?) -> $response:ty;)*) => {
-        #[derive(Debug, Serialize, Deserialize, Clone)]
-        /// A plain tag for each request type.
-        pub enum RequestType {
-            $(
-                $(#[$m])*
-                $variant,
-            )*
-        }
-
-        #[derive(Debug, Serialize, Deserialize, Clone)]
-        enum AnyRequest {
-            $(
-                $(#[$m])*
-                $variant($request),
-            )*
-        }
-
-        #[derive(Debug, Serialize, Deserialize, Clone)]
-        enum AnyResponse {
-            $(
-                $(#[$m])*
-                $variant($response),
-            )*
-        }
-
-        impl private::Sealed for AnyRequest {}
-
-        struct AnyResponseDecoder(RequestType);
-
-        impl ResponseDecoder for AnyResponseDecoder {
-            type Output = Reply<AnyResponse>;
-
-            fn decode(&self, value: serde_json::Value) -> serde_json::Result<Self::Output> {
-                match self.0 {
-                    $(
-                        RequestType::$variant => TrivialDecoder::<Reply<$response>>::default().decode(value).map(|r| r.map(AnyResponse::$variant)),
-                    )*
-                }
-            }
-        }
-
-        impl TryFrom<RequestMessage> for AnyRequest {
-            type Error = serde_json::Error;
-
-            fn try_from(message: RequestMessage) -> serde_json::Result<Self> {
-                match message.request_type {
-                    $(
-                        RequestType::$variant => serde_json::from_value(message.request_body).map(AnyRequest::$variant),
-                    )*
-                }
-            }
-        }
-
-        impl Request for AnyRequest {
-            type Response = AnyResponse;
-
-            fn decoder(&self) -> impl ResponseDecoder<Output = Reply<Self::Response>> + 'static {
-                match self {
-                    $(
-                        AnyRequest::$variant(_) => AnyResponseDecoder(RequestType::$variant),
-                    )*
-                }
-            }
-
-            fn into_message(self) -> RequestMessage {
-                match self {
-                    $(
-                        AnyRequest::$variant(request) => request.into_message(),
-                    )*
-                }
-            }
-        }
-
-
-        $(
-            requests!(@
-                $(#[$m])*
-                #[derive(Debug, Serialize, Deserialize, Clone)]
-                $v struct $request $($p)?;
-            );
-
-            impl From<$request> for AnyRequest {
-                fn from(request: $request) -> Self {
-                    AnyRequest::$variant(request)
-                }
-            }
-
-            impl crate::private::Sealed for $request {}
-
-            impl crate::Request for $request {
-                type Response = $response;
-
-                fn decoder(&self) -> impl crate::ResponseDecoder<Output = crate::Reply<Self::Response>> + 'static {
-                    TrivialDecoder::<Reply<$response>>::default()
-                }
-
-                fn into_message(self) -> RequestMessage {
-                    RequestMessage {
-                        request_type: RequestType::$variant,
-                        request_body: serde_json::to_value(self).unwrap(),
-                    }
-                }
-            }
-        )*
-    }
-}
-
-/// The message format for IPC communication.
-///
-/// This is mainly to avoid using sum types in IPC communication, which are more annoying to use
-/// with non-Rust tooling.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RequestMessage {
-    /// The type of the request.
-    pub request_type: RequestType,
-    /// The raw JSON body of the request.
-    pub request_body: serde_json::Value,
 }
 
 impl<R: Request> From<R> for RequestMessage {
@@ -182,13 +42,75 @@ impl<R: Request> From<R> for RequestMessage {
     }
 }
 
+macro_rules! requests {
+    (@$item:item$(;)?) => { $item };
+    ($dollar:tt; $($(#[$m:meta])*$variant:ident($v:vis struct $request:ident$($p:tt)?) -> $response:ty;)*) => {
+        #[derive(Debug, Serialize, Deserialize, Clone)]
+        #[doc(hidden)]
+        pub enum RequestMessage {
+            $(
+                $(#[$m])*
+                $variant($request),
+            )*
+        }
+
+        // This is for use in server code.
+        // Essentially just equivalent to the following:
+        // fn dispatch<T>(message: RequestMessage, f: impl FnOnce<R: Request>(R) -> T) -> T;
+        // except:
+        // (a) rust doesn't quite support this kind of higher-order generic functions
+        // (b) even if it did, it would have to be sound by the Request bound, which isn't possible
+        //     because the inherent usage is a per-type implementation which can only be sound by-example
+        //
+        // essentially this just cuts down on the server needing to enumerate all request types
+        #[macro_export]
+        #[doc(hidden)]
+        macro_rules! dispatch {
+            ($dollar message:expr, $dollar f:expr) => {{
+                let message: RequestMessage = $dollar message;
+                match message {
+                    $(
+                        RequestMessage::$variant(request) => {
+                            const fn ascribe<F, R>(f: F) -> F where F: FnOnce($crate::$request) -> R {
+                                f
+                            }
+                            let f = ascribe($dollar f);
+                            f(request)
+                        }
+                    )*
+                }
+            }};
+        }
+
+        $(
+            requests!(@
+                $(#[$m])*
+                #[derive(Debug, Serialize, Deserialize, Clone)]
+                $v struct $request $($p)?;
+            );
+
+            impl crate::private::Sealed for $request {}
+
+            impl crate::Request for $request {
+                type Response = $response;
+
+                fn into_message(self) -> crate::RequestMessage {
+                    RequestMessage::$variant(self)
+                }
+            }
+        )*
+    };
+}
+
 /// Uninstantiable
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Never {}
 
 requests!(
+    $;
+
     /// Always responds with an error (for testing error handling).
-    ReturnError(pub struct ErrorRequest) -> Never;
+    ReturnError(pub struct ErrorRequest(pub String)) -> Never;
 
     /// Requests the version string for the running niri instance.
     Version(pub struct VersionRequest) -> String;
@@ -203,6 +125,95 @@ requests!(
     Action(pub struct ActionRequest(pub Action)) -> ();
 );
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ErrorRepr {
+    #[serde(rename = "error_type")]
+    tag: String,
+    #[serde(rename = "error_message")]
+    message: String,
+}
+
+macro_rules! error {
+    (
+        $(#[$meta_enum:meta])*
+        $v:vis enum $name:ident {
+            $(#[$meta_end:meta])*
+            $other:ident (String)$(,)?
+            $(
+                $(#[$meta_variant:meta])*
+                $variant:ident = $msg:literal,
+            )*
+        }
+    ) => {
+        $(#[$meta_enum])*
+        $v enum $name {
+            $(
+                $(#[$meta_variant])*
+                $variant,
+            )*
+            $(#[$meta_end])* $other(String),
+        }
+
+        impl Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                match self {
+                    $(
+                        $name::$variant => ErrorRepr {
+                            tag: String::from(stringify!($variant)),
+                            message: String::from($msg),
+                        },
+                    )*
+                    $name::$other(msg) => ErrorRepr {
+                        tag: String::from(stringify!($other)),
+                        message: msg.clone(),
+                    },
+                }.serialize(serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let repr = ErrorRepr::deserialize(deserializer)?;
+                match repr.tag.as_str() {
+                    $(
+                        stringify!($variant) => Ok(Error::$variant),
+                    )*
+                    _ => Ok(Error::$other(repr.message)),
+                }
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                match self {
+                    $(
+                        $name::$variant => write!(f, $msg),
+                    )*
+                    $name::$other(msg) => write!(f, "{}", msg),
+                }
+            }
+        }
+    };
+}
+
+error! {
+    /// Errors that can occur when sending a request to niri.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Error {
+        /// An error occurred that doesn't have a specific variant.
+        /// This occurs when the compositor sends an error that this client doesn't know about.
+        Other(String),
+        /// The client didn't send valid JSON.
+        ClientBadJson = "the client didn't send valid JSON",
+        /// The compositor didn't understand our request.
+        ClientBadProtocol = "the client didn't follow the protocol; this may be caused by mismatched versions",
+        /// The compositor sent a request we didn't understand.
+        CompositorBadProtocol = "the compositor didn't follow the protocol; this may be caused by mismatched versions",
+        /// There is
+        InternalError = "an internal error occurred in the compositor",
+    }
+}
+
 /// Reply from niri to client.
 ///
 /// Every request gets one reply.
@@ -211,7 +222,7 @@ requests!(
 /// * If the request does not need any particular response, it will be
 ///   `Reply::Ok(Response::Handled)`. Kind of like an `Ok(())`.
 /// * Otherwise, it will be `Reply::Ok(response)` with one of the other [`Response`] variants.
-pub type Reply<T> = Result<T, String>;
+pub type Reply<T> = Result<T, Error>;
 
 /// Actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most, but not all,
@@ -462,6 +473,7 @@ pub struct LogicalOutput {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transform {
     /// Untransformed.
+    #[serde(rename = "normal")]
     Normal,
     /// Rotated by 90°.
     #[serde(rename = "90")]
@@ -473,12 +485,16 @@ pub enum Transform {
     #[serde(rename = "270")]
     _270,
     /// Flipped horizontally.
+    #[serde(rename = "flipped")]
     Flipped,
     /// Rotated by 90° and flipped horizontally.
+    #[serde(rename = "flipped-90")]
     Flipped90,
     /// Flipped vertically.
+    #[serde(rename = "flipped-180")]
     Flipped180,
     /// Rotated by 270° and flipped horizontally.
+    #[serde(rename = "flipped-270")]
     Flipped270,
 }
 

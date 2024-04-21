@@ -10,8 +10,8 @@ use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{AsyncBufReadExt, AsyncWriteExt, StreamExt};
 use niri_ipc::{
-    ActionRequest, ErrorRequest, FocusedWindowRequest, OutputRequest, Reply, Request,
-    RequestMessage, RequestType, VersionRequest,
+    ActionRequest, Error, ErrorRequest, FocusedWindowRequest, MaybeJson, MaybeUnknown,
+    OutputRequest, Reply, Request, RequestMessage, VersionRequest,
 };
 use smithay::desktop::Window;
 use smithay::reexports::calloop::generic::Generic;
@@ -147,45 +147,30 @@ trait HandleRequest: Request {
 }
 
 fn process(ctx: &ClientCtx, line: String) -> Reply<serde_json::Value> {
-    let request: RequestMessage = serde_json::from_str(&line).map_err(|err| {
+    let deserialized: MaybeJson<RequestMessage> = serde_json::from_str(&line).map_err(|err| {
         warn!("error parsing IPC request: {err:?}");
-        "error parsing request"
+        Error::ClientBadJson
     })?;
 
-    macro_rules! handle {
-        ($($variant:ident => $type:ty,)*) => {
-            match request.request_type {
-                $(
-                    RequestType::$variant => {
-                        let request = serde_json::from_value::<$type>(request.request_body).map_err(|err|
-                            {
-                                warn!("error parsing IPC request: {err:?}");
-                                "error parsing request"
-                            })?;
-                        HandleRequest::handle(request, ctx).and_then(|v| {
-                                serde_json::to_value(v).map_err(|err| {
-                                    warn!("error serializing response to IPC request: {err:?}");
-                                    "error serializing response".into()
-                                })
-                            })
-                    }
-                )*
-            }
-        };
+    match deserialized {
+        MaybeUnknown::Known(request) => niri_ipc::dispatch!(request, |req| {
+            req.handle(ctx).and_then(|v| {
+                serde_json::to_value(v).map_err(|err| {
+                    warn!("error serializing response to IPC request: {err:?}");
+                    Error::InternalError
+                })
+            })
+        }),
+        MaybeUnknown::Unknown(payload) => {
+            warn!("client sent an invalid payload: {payload}");
+            Err(Error::ClientBadProtocol)
+        }
     }
-
-    handle!(
-        ReturnError => ErrorRequest,
-        Version => VersionRequest,
-        Outputs => OutputRequest,
-        FocusedWindow => FocusedWindowRequest,
-        Action => ActionRequest,
-    )
 }
 
 impl HandleRequest for ErrorRequest {
     fn handle(self, _ctx: &ClientCtx) -> Reply<Self::Response> {
-        Err("client wanted an error".into())
+        Err(Error::Other(self.0))
     }
 }
 
