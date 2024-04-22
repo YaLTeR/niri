@@ -734,6 +734,8 @@ pub struct Match {
     pub is_active: Option<bool>,
     #[knuffel(property)]
     pub is_focused: Option<bool>,
+    #[knuffel(property)]
+    pub is_active_in_column: Option<bool>,
 }
 
 impl PartialEq for Match {
@@ -2416,6 +2418,7 @@ mod tests {
                         title: None,
                         is_active: None,
                         is_focused: None,
+                        is_active_in_column: None,
                     }],
                     excludes: vec![
                         Match {
@@ -2423,12 +2426,14 @@ mod tests {
                             title: Some(Regex::new("~").unwrap()),
                             is_active: None,
                             is_focused: None,
+                            is_active_in_column: None,
                         },
                         Match {
                             app_id: None,
                             title: None,
                             is_active: Some(true),
                             is_focused: Some(false),
+                            is_active_in_column: None,
                         },
                     ],
                     open_on_output: Some("eDP-1".to_owned()),

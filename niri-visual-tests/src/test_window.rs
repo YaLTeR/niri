@@ -213,6 +213,8 @@ impl LayoutElement for TestWindow {
 
     fn set_activated(&mut self, _active: bool) {}
 
+    fn set_active_in_column(&mut self, _active: bool) {}
+
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
     fn send_pending_configure(&mut self) {}

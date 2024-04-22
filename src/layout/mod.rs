@@ -152,6 +152,7 @@ pub trait LayoutElement {
     fn output_leave(&self, output: &Output);
     fn set_offscreen_element_id(&self, id: Option<Id>);
     fn set_activated(&mut self, active: bool);
+    fn set_active_in_column(&mut self, active: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
 
     fn send_pending_configure(&mut self);
@@ -2189,6 +2190,8 @@ mod tests {
         fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
         fn send_pending_configure(&mut self) {}
+
+        fn set_active_in_column(&mut self, _active: bool) {}
 
         fn is_fullscreen(&self) -> bool {
             false

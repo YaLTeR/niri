@@ -49,6 +49,9 @@ pub struct Mapped {
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
+    /// Whether this window is the active window in its column.
+    pub is_active_in_column: bool,
+
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
 
@@ -102,6 +105,7 @@ impl Mapped {
             rules,
             need_to_recompute_rules: false,
             is_focused: false,
+            is_active_in_column: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0, 0), [0., 0., 0., 1.])),
             animate_next_configure: false,
             animate_serials: Vec::new(),
@@ -455,6 +459,12 @@ impl LayoutElement for Mapped {
                 state.states.unset(xdg_toplevel::State::Activated)
             }
         });
+        self.need_to_recompute_rules |= changed;
+    }
+
+    fn set_active_in_column(&mut self, active: bool) {
+        let changed = self.is_active_in_column != active;
+        self.is_active_in_column = active;
         self.need_to_recompute_rules |= changed;
     }
 
