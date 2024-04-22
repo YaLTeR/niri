@@ -40,7 +40,7 @@ trait MsgRequest: Request {
 
 pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
     match msg {
-        Msg::Error { message } => run(json, ErrorRequest(message)),
+        Msg::RequestError { message } => run(json, ErrorRequest(message)),
         Msg::Version => run(json, VersionRequest),
         Msg::Outputs => run(json, OutputRequest),
         Msg::FocusedWindow => run(json, FocusedWindowRequest),
@@ -167,6 +167,8 @@ impl MsgRequest for OutputRequest {
                 physical_size,
                 modes,
                 current_mode,
+                vrr_supported,
+                vrr_enabled,
                 logical,
             } = output;
 
@@ -185,6 +187,13 @@ impl MsgRequest for OutputRequest {
                     let preferred = if is_preferred { " (preferred)" } else { "" };
                     println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
                 }
+            }
+
+            if vrr_supported {
+                let enabled = if vrr_enabled { "enabled" } else { "disabled" };
+                println!("  Variable refresh rate: supported, {enabled}");
+            } else {
+                println!("  Variable refresh rate: not supported");
             }
 
             if let Some((width, height)) = physical_size {

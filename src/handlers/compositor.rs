@@ -16,6 +16,7 @@ use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
+use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::niri::{ClientState, State};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
@@ -92,6 +93,11 @@ impl CompositorHandler for State {
             root_surface = parent;
         }
 
+        // Update the cached root surface.
+        self.niri
+            .root_surface
+            .insert(surface.clone(), root_surface.clone());
+
         if surface == &root_surface {
             // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
             if let Entry::Occupied(entry) = self.niri.unmapped_windows.entry(surface.clone()) {
@@ -107,6 +113,8 @@ impl CompositorHandler for State {
                     let Unmapped { window, state } = entry.remove();
 
                     window.on_commit();
+
+                    let toplevel = window.toplevel().expect("no X11 support");
 
                     let (rules, width, is_full_width, output) =
                         if let InitialConfigureState::Configured {
@@ -126,9 +134,7 @@ impl CompositorHandler for State {
                             (ResolvedWindowRules::empty(), None, false, None)
                         };
 
-                    let parent = window
-                        .toplevel()
-                        .expect("no x11 support")
+                    let parent = toplevel
                         .parent()
                         .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
                         // Only consider the parent if we configured the window for the same
@@ -142,7 +148,8 @@ impl CompositorHandler for State {
                         })
                         .map(|(mapped, _)| mapped.window.clone());
 
-                    let mapped = Mapped::new(window, rules);
+                    let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
+                    let mapped = Mapped::new(window, rules, hook);
                     let window = mapped.window.clone();
 
                     let output = if let Some(p) = parent {
@@ -187,8 +194,6 @@ impl CompositorHandler for State {
                 let window = mapped.window.clone();
                 let output = output.clone();
 
-                window.on_commit();
-
                 // This is a commit of a previously-mapped toplevel.
                 let is_mapped =
                     with_renderer_surface_state(surface, |state| state.buffer().is_some())
@@ -197,9 +202,29 @@ impl CompositorHandler for State {
                             false
                         });
 
+                // Must start the close animation before window.on_commit().
+                if !is_mapped {
+                    self.backend.with_primary_renderer(|renderer| {
+                        self.niri
+                            .layout
+                            .start_close_animation_for_window(renderer, &window);
+                    });
+                }
+
+                window.on_commit();
+
                 if !is_mapped {
                     // The toplevel got unmapped.
+                    //
+                    // Test client: wleird-unmap.
+                    let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
+                    let was_active = active_window == Some(&window);
+
                     self.niri.layout.remove_window(&window);
+
+                    if was_active {
+                        self.maybe_warp_cursor_to_focus();
+                    }
 
                     // Newly-unmapped toplevels must perform the initial commit-configure sequence
                     // afresh.
@@ -269,6 +294,24 @@ impl CompositorHandler for State {
                 }
             }
         }
+    }
+
+    fn destroyed(&mut self, surface: &WlSurface) {
+        // Clients may destroy their subsurfaces before the main surface. Ensure we have a snapshot
+        // when that happens, so that the closing animation includes all these subsurfaces.
+        //
+        // Test client: alacritty with CSD.
+        if let Some(root) = self.niri.root_surface.get(surface) {
+            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+                self.backend.with_primary_renderer(|renderer| {
+                    mapped.store_unmap_snapshot_if_empty(renderer);
+                });
+            }
+        }
+
+        self.niri
+            .root_surface
+            .retain(|k, v| k != surface && v != surface);
     }
 }
 

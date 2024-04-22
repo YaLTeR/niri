@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::rc::Rc;
 
-use niri::layout::{LayoutElement, LayoutElementRenderElement};
+use niri::layout::{LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot};
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::RenderTarget;
 use niri::window::ResolvedWindowRules;
@@ -173,7 +173,7 @@ impl LayoutElement for TestWindow {
         ]
     }
 
-    fn request_size(&self, size: Size<i32, Logical>) {
+    fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {
         self.inner.borrow_mut().requested_size = Some(size);
         self.inner.borrow_mut().pending_fullscreen = false;
     }
@@ -210,7 +210,7 @@ impl LayoutElement for TestWindow {
 
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
-    fn send_pending_configure(&self) {}
+    fn send_pending_configure(&mut self) {}
 
     fn is_fullscreen(&self) -> bool {
         false
@@ -225,5 +225,17 @@ impl LayoutElement for TestWindow {
     fn rules(&self) -> &ResolvedWindowRules {
         static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
         &EMPTY
+    }
+
+    fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot> {
+        None
+    }
+
+    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
+        None
+    }
+
+    fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
+        None
     }
 }

@@ -20,13 +20,26 @@ animations {
         spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
     }
 
+    window-open {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
+    window-close {
+        duration-ms 150
+        curve "ease-out-quad"
+    }
+
     horizontal-view-movement {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 
-    window-open {
-        duration-ms 150
-        curve "ease-out-expo"
+    window-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 
     config-notification-open-close {
@@ -58,7 +71,12 @@ animations {
 }
 ```
 
-Currently, niri only supports two curves: `ease-out-cubic` and `ease-out-expo`.
+Currently, niri only supports three curves:
+
+- `ease-out-quad` <sup>Since: 0.1.5</sup>
+- `ease-out-cubic`
+- `ease-out-expo`
+
 You can get a feel for them on pages like [easings.net](https://easings.net/).
 
 #### Spring
@@ -89,6 +107,10 @@ The `damping-ratio` goes from 0.1 to 10.0 and has the following properties:
 
 However, even with damping ratio = 1.0, the spring animation may oscillate if "launched" with enough velocity from a touchpad swipe.
 
+> [!WARNING]
+> Overdamped springs currently have some numerical stability issues and may cause graphical glitches.
+> Therefore, setting `damping-ratio` above `1.0` is not recommended.
+
 Lower `stiffness` will result in a slower animation more prone to oscillation.
 
 Set `epsilon` to a lower value if the animation "jumps" at the end.
@@ -114,23 +136,6 @@ animations {
 }
 ```
 
-#### `horizontal-view-movement`
-
-All horizontal camera view movement animations, such as:
-
-- When a window off-screen is focused and the camera scrolls to it.
-- When a new window appears off-screen and the camera scrolls to it.
-- When a window resizes bigger and the camera scrolls to show it in full.
-- After a horizontal touchpad gesture (a spring is recommended).
-
-```
-animations {
-    horizontal-view-movement {
-        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
-    }
-}
-```
-
 #### `window-open`
 
 Window opening animation.
@@ -142,6 +147,120 @@ animations {
     window-open {
         duration-ms 150
         curve "ease-out-expo"
+    }
+}
+```
+
+#### `window-close`
+
+<sup>Since: 0.1.5</sup>
+
+Window closing animation.
+
+This one uses an easing type by default.
+
+```
+animations {
+    window-open {
+        duration-ms 150
+        curve "ease-out-quad"
+    }
+}
+```
+
+#### `horizontal-view-movement`
+
+All horizontal camera view movement animations, such as:
+
+- When a window off-screen is focused and the camera scrolls to it.
+- When a new window appears off-screen and the camera scrolls to it.
+- After a horizontal touchpad gesture (a spring is recommended).
+
+```
+animations {
+    horizontal-view-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+}
+```
+
+#### `window-movement`
+
+<sup>Since: 0.1.5</sup>
+
+Movement of individual windows within a workspace.
+
+Includes:
+
+- Moving window columns with `move-column-left` and `move-column-right`.
+- Moving windows inside a column with `move-window-up` and `move-window-down`.
+- Moving windows out of the way upon window opening and closing.
+- Window movement between columns when consuming/expelling.
+
+This animation *does not* include the camera view movement, such as scrolling the workspace left and right.
+
+```
+animations {
+    window-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+}
+```
+
+#### `window-resize`
+
+<sup>Since: 0.1.5</sup>
+
+Window resize animation.
+
+Only manual window resizes are animated, i.e. when you resize the window with `switch-preset-column-width` or `maximize-column`.
+Also, very small resizes (up to 10 pixels) are not animated.
+
+```
+animations {
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+}
+```
+
+##### `custom-shader`
+
+<sup>Since: 0.1.6, experimental</sup>
+
+You can write a custom shader for drawing the window during a resize animation.
+
+See [this example shader](./examples/resize-custom-shader.frag) for a full documentation with several animations to experiment with.
+
+If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
+
+> [!NOTE]
+> 
+> Custom shaders do not have a backwards compatibility guarantee.
+> I may need to change their interface as I'm developing new features.
+
+```
+animations {
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+
+        custom-shader r"
+            #version 100
+            precision mediump float;
+
+            varying vec2 v_coords;
+            uniform mat3 input_to_curr_geo;
+            uniform sampler2D tex_next;
+            uniform mat3 geo_to_tex_next;
+            uniform float alpha;
+
+            void main() {
+                vec3 coords_curr_geo = input_to_curr_geo * vec3(v_coords, 1.0);
+                vec3 coords_tex_next = geo_to_tex_next * coords_curr_geo;
+                vec4 color = texture2D(tex_next, vec2(coords_tex_next));
+                gl_FragColor = color * alpha;
+            }
+        "
     }
 }
 ```
@@ -159,3 +278,22 @@ animations {
     }
 }
 ```
+
+### Synchronized Animations
+
+<sup>Since: 0.1.5</sup>
+
+Sometimes, when two animations are meant to play together synchronized, niri will drive them both with the same configuration.
+
+For example, if a window resize causes the view to move, then that view movement animation will also use the `window-resize` configuration (rather than the `horizontal-view-movement` configuration).
+This is especially important for animated resizes to look good when using `center-focused-column "always"`.
+
+As another example, resizing a window in a column vertically causes other windows to move up or down into their new position.
+This movement will use the `window-resize` configuration, rather than the `window-movement` configuration, to keep the animations synchronized.
+
+A few actions are still missing this synchronization logic, since in some cases it is difficult to implement properly.
+Therefore, for the best results, consider using the same parameters for related animations (they are all the same by default):
+
+- `horizontal-view-movement`
+- `window-movement`
+- `window-resize`

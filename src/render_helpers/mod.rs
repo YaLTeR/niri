@@ -2,22 +2,32 @@ use std::ptr;
 
 use anyhow::{ensure, Context};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::RenderElement;
+use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
+use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
+use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{buffer_dimensions, Bind, ExportMem, Frame, Offscreen, Renderer};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::utils::{Physical, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::shm;
+
+use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 
 pub mod gradient;
 pub mod offscreen;
 pub mod primary_gpu_pixel_shader;
+pub mod primary_gpu_pixel_shader_with_textures;
 pub mod primary_gpu_texture;
 pub mod render_elements;
 pub mod renderer;
+pub mod resize;
+pub mod resources;
 pub mod shaders;
+pub mod snapshot;
+pub mod surface;
 
 /// What we're rendering for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +38,93 @@ pub enum RenderTarget {
     Screencast,
     /// Rendering for any other screen capture.
     ScreenCapture,
+}
+
+/// Buffer with location, src and dst.
+#[derive(Debug)]
+pub struct BakedBuffer<B> {
+    pub buffer: B,
+    pub location: Point<i32, Logical>,
+    pub src: Option<Rectangle<f64, Logical>>,
+    pub dst: Option<Size<i32, Logical>>,
+}
+
+pub trait ToRenderElement {
+    type RenderElement;
+
+    fn to_render_element(
+        &self,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        kind: Kind,
+    ) -> Self::RenderElement;
+}
+
+impl ToRenderElement for BakedBuffer<TextureBuffer<GlesTexture>> {
+    type RenderElement = PrimaryGpuTextureRenderElement;
+
+    fn to_render_element(
+        &self,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        kind: Kind,
+    ) -> Self::RenderElement {
+        let elem = TextureRenderElement::from_texture_buffer(
+            (location + self.location).to_physical_precise_round(scale),
+            &self.buffer,
+            Some(alpha),
+            self.src,
+            self.dst,
+            kind,
+        );
+        PrimaryGpuTextureRenderElement(elem)
+    }
+}
+
+impl ToRenderElement for BakedBuffer<SolidColorBuffer> {
+    type RenderElement = SolidColorRenderElement;
+
+    fn to_render_element(
+        &self,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        kind: Kind,
+    ) -> Self::RenderElement {
+        SolidColorRenderElement::from_buffer(
+            &self.buffer,
+            (location + self.location)
+                .to_physical_precise_round(scale)
+                .to_i32_round(),
+            scale,
+            alpha,
+            kind,
+        )
+    }
+}
+
+pub fn render_to_encompassing_texture(
+    renderer: &mut GlesRenderer,
+    scale: Scale<f64>,
+    transform: Transform,
+    fourcc: Fourcc,
+    elements: &[impl RenderElement<GlesRenderer>],
+) -> anyhow::Result<(GlesTexture, SyncPoint, Rectangle<i32, Physical>)> {
+    let geo = elements
+        .iter()
+        .map(|ele| ele.geometry(scale))
+        .reduce(|a, b| a.merge(b))
+        .unwrap_or_default();
+    let elements = elements.iter().rev().map(|ele| {
+        RelocateRenderElement::from_element(ele, (-geo.loc.x, -geo.loc.y), Relocate::Relative)
+    });
+
+    let (texture, sync_point) =
+        render_to_texture(renderer, geo.size, scale, transform, fourcc, elements)?;
+
+    Ok((texture, sync_point, geo))
 }
 
 pub fn render_to_texture(
@@ -64,8 +161,7 @@ pub fn render_and_download(
 ) -> anyhow::Result<GlesMapping> {
     let _span = tracy_client::span!();
 
-    let (_, sync_point) = render_to_texture(renderer, size, scale, transform, fourcc, elements)?;
-    sync_point.wait();
+    let (_, _) = render_to_texture(renderer, size, scale, transform, fourcc, elements)?;
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
     let mapping = renderer

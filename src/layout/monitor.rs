@@ -127,8 +127,7 @@ impl<W: LayoutElement> Monitor<W> {
             current_idx,
             idx as f64,
             0.,
-            self.options.animations.workspace_switch,
-            niri_config::Animation::default_workspace_switch(),
+            self.options.animations.workspace_switch.0,
         )));
     }
 
@@ -346,8 +345,9 @@ impl<W: LayoutElement> Monitor<W> {
         let column = &workspace.columns[workspace.active_column_idx];
         let width = column.width;
         let is_full_width = column.is_full_width;
-        let window =
-            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_tile_idx);
+        let window = workspace
+            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
+            .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);
     }
@@ -368,8 +368,9 @@ impl<W: LayoutElement> Monitor<W> {
         let column = &workspace.columns[workspace.active_column_idx];
         let width = column.width;
         let is_full_width = column.is_full_width;
-        let window =
-            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_tile_idx);
+        let window = workspace
+            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
+            .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);
     }
@@ -390,8 +391,9 @@ impl<W: LayoutElement> Monitor<W> {
         let column = &workspace.columns[workspace.active_column_idx];
         let width = column.width;
         let is_full_width = column.is_full_width;
-        let window =
-            workspace.remove_window_by_idx(workspace.active_column_idx, column.active_tile_idx);
+        let window = workspace
+            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
+            .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);
 
@@ -544,7 +546,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn are_transitions_ongoing(&self) -> bool {
         self.workspace_switch.is_some()
-            || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
+            || self
+                .workspaces
+                .iter()
+                .any(|ws| ws.are_transitions_ongoing())
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
@@ -876,8 +881,7 @@ impl<W: LayoutElement> Monitor<W> {
             gesture.current_idx,
             new_idx as f64,
             velocity,
-            self.options.animations.workspace_switch,
-            niri_config::Animation::default_workspace_switch(),
+            self.options.animations.workspace_switch.0,
         )));
 
         true

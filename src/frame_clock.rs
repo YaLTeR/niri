@@ -7,10 +7,11 @@ use crate::utils::get_monotonic_time;
 pub struct FrameClock {
     last_presentation_time: Option<Duration>,
     refresh_interval_ns: Option<NonZeroU64>,
+    vrr: bool,
 }
 
 impl FrameClock {
-    pub fn new(refresh_interval: Option<Duration>) -> Self {
+    pub fn new(refresh_interval: Option<Duration>, vrr: bool) -> Self {
         let refresh_interval_ns = if let Some(interval) = &refresh_interval {
             assert_eq!(interval.as_secs(), 0);
             Some(NonZeroU64::new(interval.subsec_nanos().into()).unwrap())
@@ -21,12 +22,22 @@ impl FrameClock {
         Self {
             last_presentation_time: None,
             refresh_interval_ns,
+            vrr,
         }
     }
 
     pub fn refresh_interval(&self) -> Option<Duration> {
         self.refresh_interval_ns
             .map(|r| Duration::from_nanos(r.get()))
+    }
+
+    pub fn set_vrr(&mut self, vrr: bool) {
+        if self.vrr == vrr {
+            return;
+        }
+
+        self.vrr = vrr;
+        self.last_presentation_time = None;
     }
 
     pub fn presented(&mut self, presentation_time: Duration) {
@@ -71,6 +82,13 @@ impl FrameClock {
         let since_last_ns =
             since_last.as_secs() * 1_000_000_000 + u64::from(since_last.subsec_nanos());
         let to_next_ns = (since_last_ns / refresh_interval_ns + 1) * refresh_interval_ns;
-        last_presentation_time + Duration::from_nanos(to_next_ns)
+
+        // If VRR is enabled and more than one frame passed since last presentation, assume that we
+        // can present immediately.
+        if self.vrr && to_next_ns > refresh_interval_ns {
+            now
+        } else {
+            last_presentation_time + Duration::from_nanos(to_next_ns)
+        }
     }
 }

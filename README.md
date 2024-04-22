@@ -6,6 +6,10 @@
     <a href="https://github.com/YaLTeR/niri/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/YaLTeR/niri?logo=github"></a>
 </p>
 
+<p align="center">
+    <a href="https://github.com/YaLTeR/niri/wiki/Getting-Started">Getting Started</a> | <a href="https://github.com/YaLTeR/niri/wiki/Configuration:-Overview">Configuration</a>
+</p>
+
 ![](https://github.com/YaLTeR/niri/assets/1794388/2b246c2c-7cf3-4a11-96eb-ad0c7f2f4ed6)
 
 ## About
@@ -31,19 +35,20 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
     - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts
 - [Touchpad gestures](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515)
 - Configurable layout: gaps, borders, struts, window sizes
+- [Animations](https://github.com/YaLTeR/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e)
 - Live-reloading config
 
 ## Video Demo
 
-https://github.com/YaLTeR/niri/assets/1794388/5d355694-7b06-4f00-8920-8dce54a8721c
+https://github.com/YaLTeR/niri/assets/1794388/bce834b0-f205-434e-a027-b373495f9729
 
 ## Status
 
 A lot of the essential functionality is implemented, plus some goodies on top.
-Feel free to give niri a try.
+Feel free to give niri a try: follow the instructions on the [Getting Started](https://github.com/YaLTeR/niri/wiki/Getting-Started) wiki page.
 Have your [waybar]s and [fuzzel]s ready: niri is not a complete desktop environment.
 
-Note that NVIDIA GPUs might have rendering issues.
+Note that NVIDIA GPUs may have issues.
 
 ## Inspiration
 
@@ -52,147 +57,11 @@ Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top 
 One of the reasons that prompted me to try writing my own compositor is being able to properly separate the monitors.
 Being a GNOME Shell extension, PaperWM has to work against Shell's global window coordinate space to prevent windows from overflowing.
 
-## Packages
-
-There are several community-maintained distribution packages that you can use to install niri.
-Here are some of them:
-
-- Fedora COPR (I maintain this one myself): https://copr.fedorainfracloud.org/coprs/yalter/niri/
-- AUR: [niri](https://aur.archlinux.org/packages/niri), [niri-bin](https://aur.archlinux.org/packages/niri-bin), [niri-git](https://aur.archlinux.org/packages/niri-git)
-- NixOS Flake: https://github.com/sodiboo/niri-flake
-- FreeBSD Ports: https://www.freshports.org/x11-wm/niri
-- Gentoo GURU: https://gpo.zugaina.org/Overlays/guru/gui-wm/niri
-
-## Building
-
-First, install the dependencies for your distribution.
-
-- Ubuntu 23.10:
-
-    ```sh
-    sudo apt-get install -y gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev
-    ```
-
-- Fedora:
-
-    ```sh
-    sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang
-    ```
-
-Next, get latest stable Rust: https://rustup.rs/
-
-Then, build niri with `cargo build --release`.
-
-### NixOS/Nix
-
-We have a community-maintained flake which provides a devshell with required dependencies. Use `nix build` to build niri, and then run `./results/bin/niri`.
-
-If you're not on NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary:
-
-```
-nix run --impure github:guibou/nixGL -- ./results/bin/niri
-```
-
-## Installation
-
-The recommended way to install and run niri is as a standalone desktop session.
-To do that, put files into the correct directories according to this table.
-
-| File | Destination |
-| ---- | ----------- |
-| `target/release/niri` | `/usr/bin/` |
-| `resources/niri-session` | `/usr/bin/` |
-| `resources/niri.desktop` | `/usr/share/wayland-sessions/` |
-| `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |
-| `resources/niri.service` | `/usr/lib/systemd/user/` |
-| `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
-
-Doing this will make niri appear in GDM and, presumably, other display managers.
-
-## Running
-
-`cargo run --release`
-
-Inside an existing desktop session, it will run in a window.
-On a TTY, it will run natively.
-
-To exit when running on a TTY, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.
-
-### Session
-
-If you followed the recommended installation steps above, niri should appear in your display manager.
-Starting it from there will run niri as a desktop session.
-
-The niri session will autostart apps through the systemd xdg-autostart target.
-You can also autostart systemd services like [mako] by symlinking them into `$HOME/.config/systemd/user/niri.service.wants/`.
-A step-by-step process for this is explained [on the wiki](https://github.com/YaLTeR/niri/wiki/Example-systemd-Setup).
-
-Niri also works with some parts of xdg-desktop-portal-gnome.
-In particular, it supports file choosers and monitor screencasting (e.g. to [OBS]).
-
-[This wiki page](https://github.com/YaLTeR/niri/wiki/Important-Software) explains how to run important software required for normal desktop use, including portals.
-
-## Configuration
-
-Please check [this wiki page](https://github.com/YaLTeR/niri/wiki/Configuration:-Overview) for an overview of niri configuration.
-It also links to wiki pages containing thorough documentation for all options with examples.
-
-## Default Hotkeys
-
-When running on a TTY, the Mod key is <kbd>Super</kbd>.
-When running in a window, the Mod key is <kbd>Alt</kbd>.
-
-The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kbd> will move the focused window or column there.
-
-| Hotkey | Description |
-| ------ | ----------- |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>/</kbd> | Show a list of important niri hotkeys |
-| <kbd>Mod</kbd><kbd>T</kbd> | Spawn `alacritty` (terminal) |
-| <kbd>Mod</kbd><kbd>D</kbd> | Spawn `fuzzel` (application launcher) |
-| <kbd>Mod</kbd><kbd>Alt</kbd><kbd>L</kbd> | Spawn `swaylock` (screen locker) |
-| <kbd>Mod</kbd><kbd>Q</kbd> | Close the focused window |
-| <kbd>Mod</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>←</kbd> | Focus the column to the left |
-| <kbd>Mod</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>→</kbd> | Focus the column to the right |
-| <kbd>Mod</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>↓</kbd> | Focus the window below in a column |
-| <kbd>Mod</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>↑</kbd> | Focus the window above in a column |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>←</kbd> | Move the focused column to the left |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>→</kbd> | Move the focused column to the right |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>↓</kbd> | Move the focused window below in a column |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>↑</kbd> | Move the focused window above in a column |
-| <kbd>Mod</kbd><kbd>Home</kbd> and <kbd>Mod</kbd><kbd>End</kbd> | Focus the first or the last column |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Home</kbd> and <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>End</kbd> | Move the focused column to the very start or to the very end |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd> | Focus the monitor to the side |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd> | Move the focused column to the monitor to the side |
-| <kbd>Mod</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>PageDown</kbd> | Switch to the workspace below |
-| <kbd>Mod</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>PageUp</kbd> | Switch to the workspace above |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>PageDown</kbd> | Move the focused column to the workspace below |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>PageUp</kbd> | Move the focused column to the workspace above |
-| <kbd>Mod</kbd><kbd>1</kbd>–<kbd>9</kbd> | Switch to a workspace by index |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>1</kbd>–<kbd>9</kbd> | Move the focused column to a workspace by index |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageDown</kbd> | Move the focused workspace down |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageUp</kbd> | Move the focused workspace up |
-| <kbd>Mod</kbd><kbd>,</kbd> | Consume the window to the right into the focused column |
-| <kbd>Mod</kbd><kbd>.</kbd> | Expel the focused window into its own column |
-| <kbd>Mod</kbd><kbd>R</kbd> | Toggle between preset column widths |
-| <kbd>Mod</kbd><kbd>F</kbd> | Maximize column |
-| <kbd>Mod</kbd><kbd>C</kbd> | Center column within view |
-| <kbd>Mod</kbd><kbd>-</kbd> | Decrease column width by 10% |
-| <kbd>Mod</kbd><kbd>=</kbd> | Increase column width by 10% |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>-</kbd> | Decrease window height by 10% |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>=</kbd> | Increase window height by 10% |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd> | Toggle full-screen on the focused window |
-| <kbd>PrtSc</kbd> | Take an area screenshot. Select the area to screenshot with mouse, then press Space to save the screenshot, or Escape to cancel |
-| <kbd>Alt</kbd><kbd>PrtSc</kbd> | Take a screenshot of the focused window to clipboard and to `~/Pictures/Screenshots/` |
-| <kbd>Ctrl</kbd><kbd>PrtSc</kbd> | Take a screenshot of the focused monitor to clipboard and to `~/Pictures/Screenshots/` |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>E</kbd> | Exit niri |
-
 ## Contact
 
 We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
 
 [PaperWM]: https://github.com/paperwm/PaperWM
-[mako]: https://github.com/emersion/mako
-[OBS]: https://flathub.org/apps/com.obsproject.Studio
 [waybar]: https://github.com/Alexays/Waybar
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
 

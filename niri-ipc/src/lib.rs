@@ -109,9 +109,6 @@ pub enum Never {}
 requests!(
     $;
 
-    /// Always responds with an error (for testing error handling).
-    ReturnError(pub struct ErrorRequest(pub String)) -> Never;
-
     /// Requests the version string for the running niri instance.
     Version(pub struct VersionRequest) -> String;
 
@@ -123,6 +120,9 @@ requests!(
 
     /// Requests that the compositor perform an action.
     Action(pub struct ActionRequest(pub Action)) -> ();
+
+    /// Always responds with an error (for testing error handling).
+    ReturnError(pub struct ErrorRequest(pub String)) -> Never;
 );
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -433,6 +433,10 @@ pub struct Output {
     ///
     /// `None` if the output is disabled.
     pub current_mode: Option<usize>,
+    /// Whether the output supports variable refresh rate.
+    pub vrr_supported: bool,
+    /// Whether variable refresh rate is enabled on the output.
+    pub vrr_enabled: bool,
     /// Logical output information.
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).

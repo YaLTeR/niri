@@ -52,8 +52,6 @@ pub enum Sub {
 
 #[derive(Subcommand)]
 pub enum Msg {
-    /// Print an error message.
-    Error { message: String },
     /// Print the version string of the running niri instance.
     Version,
     /// List connected outputs.
@@ -65,4 +63,6 @@ pub enum Msg {
         #[command(subcommand)]
         action: Action,
     },
+    /// Print an error message.
+    RequestError { message: String },
 }

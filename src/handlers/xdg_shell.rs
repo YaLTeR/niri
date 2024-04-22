@@ -12,7 +12,10 @@ use smithay::reexports::wayland_server::protocol::wl_output;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Serial};
-use smithay::wayland::compositor::{send_surface_state, with_states};
+use smithay::wayland::compositor::{
+    add_pre_commit_hook, send_surface_state, with_states, BufferAssignment, HookId,
+    SurfaceAttributes,
+};
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::Layer;
@@ -27,6 +30,7 @@ use smithay::{
 };
 
 use crate::layout::workspace::ColumnWidth;
+use crate::layout::LayoutElement as _;
 use crate::niri::{PopupGrabState, State};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
@@ -381,6 +385,15 @@ impl XdgShellHandler for State {
         };
         let window = mapped.window.clone();
         let output = output.clone();
+
+        self.backend.with_primary_renderer(|renderer| {
+            mapped.store_unmap_snapshot_if_empty(renderer);
+        });
+        self.backend.with_primary_renderer(|renderer| {
+            self.niri
+                .layout
+                .start_close_animation_for_window(renderer, &window);
+        });
 
         let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
         let was_active = active_window == Some(&window);
@@ -798,4 +811,54 @@ fn unconstrain_with_padding(
 
     // Could not unconstrain into the padded target, so resort to the regular one.
     positioner.get_unconstrained_geometry(target)
+}
+
+pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId {
+    add_pre_commit_hook::<State, _>(toplevel.wl_surface(), move |state, _dh, surface| {
+        let _span = tracy_client::span!("mapped toplevel pre-commit");
+
+        let Some((mapped, _)) = state.niri.layout.find_window_and_output_mut(surface) else {
+            error!("pre-commit hook for mapped surfaces must be removed upon unmapping");
+            return;
+        };
+
+        let (got_unmapped, commit_serial) = with_states(surface, |states| {
+            let attrs = states.cached_state.pending::<SurfaceAttributes>();
+            let got_unmapped = matches!(attrs.buffer, Some(BufferAssignment::Removed));
+
+            let role = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            (got_unmapped, role.configure_serial)
+        });
+
+        let animate = if let Some(serial) = commit_serial {
+            mapped.should_animate_commit(serial)
+        } else {
+            error!("commit on a mapped surface without a configured serial");
+            false
+        };
+
+        if got_unmapped {
+            state.backend.with_primary_renderer(|renderer| {
+                mapped.store_unmap_snapshot_if_empty(renderer);
+            });
+        } else {
+            // The toplevel remains mapped; clear any stored unmap snapshot.
+            let _ = mapped.take_unmap_snapshot();
+
+            if animate {
+                state.backend.with_primary_renderer(|renderer| {
+                    mapped.store_animation_snapshot(renderer);
+                });
+
+                let window = mapped.window.clone();
+                state.niri.layout.prepare_for_resize_animation(&window);
+            }
+        }
+    })
 }

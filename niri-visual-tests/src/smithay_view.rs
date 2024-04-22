@@ -11,7 +11,7 @@ mod imp {
     use anyhow::{ensure, Context};
     use gtk::gdk;
     use gtk::prelude::*;
-    use niri::render_helpers::shaders;
+    use niri::render_helpers::{resources, shaders};
     use niri::utils::get_monotonic_time;
     use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
@@ -194,6 +194,7 @@ mod imp {
         let mut renderer = GlesRenderer::with_capabilities(egl_context, capabilities)
             .context("error creating GlesRenderer")?;
 
+        resources::init(&mut renderer);
         shaders::init(&mut renderer);
 
         Ok(renderer)

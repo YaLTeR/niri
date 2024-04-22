@@ -36,9 +36,11 @@ use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, Config, Struts};
 use niri_ipc::SizeChange;
-use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::element::Id;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Size, Transform};
@@ -48,14 +50,19 @@ pub use self::monitor::MonitorRenderElement;
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::{BakedBuffer, RenderTarget};
 use crate::utils::output_size;
 use crate::window::ResolvedWindowRules;
 
+pub mod closing_window;
 pub mod focus_ring;
 pub mod monitor;
 pub mod tile;
 pub mod workspace;
+
+/// Size changes up to this many pixels don't animate.
+pub const RESIZE_ANIMATION_THRESHOLD: i32 = 10;
 
 niri_render_elements! {
     LayoutElementRenderElement<R> => {
@@ -63,6 +70,9 @@ niri_render_elements! {
         SolidColor = SolidColorRenderElement,
     }
 }
+
+pub type LayoutElementRenderSnapshot =
+    RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
 
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
@@ -100,7 +110,7 @@ pub trait LayoutElement {
         target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>>;
 
-    fn request_size(&self, size: Size<i32, Logical>);
+    fn request_size(&mut self, size: Size<i32, Logical>, animate: bool);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
@@ -113,7 +123,7 @@ pub trait LayoutElement {
     fn set_activated(&mut self, active: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
 
-    fn send_pending_configure(&self);
+    fn send_pending_configure(&mut self);
 
     /// Whether the element is currently fullscreen.
     ///
@@ -129,6 +139,11 @@ pub trait LayoutElement {
 
     /// Runs periodic clean-up tasks.
     fn refresh(&self);
+
+    fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot>;
+
+    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot>;
+    fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot>;
 }
 
 #[derive(Debug)]
@@ -223,7 +238,7 @@ impl Options {
             center_focused_column: layout.center_focused_column,
             preset_widths,
             default_width,
-            animations: config.animations,
+            animations: config.animations.clone(),
         }
     }
 }
@@ -1411,7 +1426,9 @@ impl<W: LayoutElement> Layout<W> {
             let column = &ws.columns[ws.active_column_idx];
             let width = column.width;
             let is_full_width = column.is_full_width;
-            let window = ws.remove_window_by_idx(ws.active_column_idx, column.active_tile_idx);
+            let window = ws
+                .remove_tile_by_idx(ws.active_column_idx, column.active_tile_idx, None)
+                .into_window();
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
@@ -1726,6 +1743,60 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn start_close_animation_for_window(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        window: &W::Id,
+    ) {
+        let _span = tracy_client::span!("Layout::start_close_animation_for_window");
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.start_close_animation_for_window(renderer, window);
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.start_close_animation_for_window(renderer, window);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn prepare_for_resize_animation(&mut self, window: &W::Id) {
+        let _span = tracy_client::span!("Layout::prepare_for_resize_animation");
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.prepare_for_resize_animation(window);
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.prepare_for_resize_animation(window);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn refresh(&mut self) {
         let _span = tracy_client::span!("Layout::refresh");
 
@@ -1865,7 +1936,7 @@ mod tests {
             vec![]
         }
 
-        fn request_size(&self, size: Size<i32, Logical>) {
+        fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {
             self.0.requested_size.set(Some(size));
             self.0.pending_fullscreen.set(false);
         }
@@ -1902,7 +1973,7 @@ mod tests {
 
         fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
-        fn send_pending_configure(&self) {}
+        fn send_pending_configure(&mut self) {}
 
         fn is_fullscreen(&self) -> bool {
             false
@@ -1917,6 +1988,18 @@ mod tests {
         fn rules(&self) -> &ResolvedWindowRules {
             static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
             &EMPTY
+        }
+
+        fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot> {
+            None
+        }
+
+        fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
+            None
+        }
+
+        fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
+            None
         }
     }
 
@@ -2930,6 +3013,107 @@ mod tests {
             mon.workspaces[0].active_column_idx, 1,
             "the new window must become active"
         );
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_not_reset_on_removal() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FullscreenWindow(0),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowRight,
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_not_reset_on_consume() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FullscreenWindow(0),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeWindowIntoColumn,
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_not_reset_on_quick_double_toggle() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FullscreenWindow(0),
+            Op::FullscreenWindow(0),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_set_on_fullscreening_inactive_tile_in_column() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::FullscreenWindow(0),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_view_offset_not_reset_on_gesture() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (200, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FullscreenWindow(1),
+            Op::ViewOffsetGestureBegin { output_idx: 1 },
+            Op::ViewOffsetGestureEnd,
+        ];
+
+        check_ops(&ops);
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = u16> {

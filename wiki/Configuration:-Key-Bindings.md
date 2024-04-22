@@ -113,6 +113,19 @@ binds {
 }
 ```
 
+> [!TIP]
+>
+> <sup>Since: 0.1.5</sup>
+>
+> Spawn bindings have a special `allow-when-locked=true` property that makes them work even while the session is locked:
+>
+> ```
+> binds {
+>     // This mute bind will work even when the session is locked.
+>     XF86AudioMute allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
+> }
+> ```
+
 Currently, niri *does not* use a shell to run commands, which means that you need to manually separate arguments.
 
 ```

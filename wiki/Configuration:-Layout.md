@@ -140,7 +140,7 @@ The difference is that the focus ring is drawn only around the active window, wh
 | ![](./img/focus-ring.png) | ![](./img/border.png) |
 
 > [!TIP]
-> By default focus ring and border are rendered as a solid background rectangle behind windows.
+> By default, focus ring and border are rendered as a solid background rectangle behind windows.
 > That is, they will show up through semitransparent windows.
 > This is because windows using client-side decorations can have an arbitrary shape.
 > 

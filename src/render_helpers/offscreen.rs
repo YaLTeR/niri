@@ -4,7 +4,7 @@ use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderE
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer};
-use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
 use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 
 use super::primary_gpu_texture::PrimaryGpuTextureRenderElement;
@@ -130,7 +130,7 @@ impl Element for OffscreenRenderElement {
         &self,
         scale: Scale<f64>,
         commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    ) -> DamageSet<i32, Physical> {
         if let Some(texture) = &self.texture {
             texture.damage_since(scale, commit)
         } else {

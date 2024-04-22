@@ -82,7 +82,7 @@ use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
-use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatTrait};
+use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
@@ -107,7 +107,9 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::{render_to_shm, render_to_texture, render_to_vec, RenderTarget};
+use crate::render_helpers::{
+    render_to_shm, render_to_texture, render_to_vec, shaders, RenderTarget,
+};
 use crate::scroll_tracker::ScrollTracker;
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
@@ -150,6 +152,10 @@ pub struct Niri {
 
     // Windows which don't have a buffer attached yet.
     pub unmapped_windows: HashMap<WlSurface, Unmapped>,
+
+    // Cached root surface for every surface, so that we can access it in destroyed() where the
+    // normal get_parent() is cleared out.
+    pub root_surface: HashMap<WlSurface, WlSurface>,
 
     pub output_state: HashMap<Output, OutputState>,
     pub output_by_name: HashMap<String, Output>,
@@ -207,6 +213,11 @@ pub struct Niri {
     pub cursor_shape_manager_state: CursorShapeManagerState,
     pub dnd_icon: Option<WlSurface>,
     pub pointer_focus: PointerFocus,
+    /// Whether the pointer is hidden, for example due to a previous touch input.
+    ///
+    /// When this happens, the pointer also loses any focus. This is so that touch can prevent
+    /// various tooltips from sticking around.
+    pub pointer_hidden: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -481,6 +492,10 @@ impl State {
             },
         );
         pointer.frame(self);
+
+        // We moved the pointer, show it.
+        self.niri.pointer_hidden = false;
+
         // FIXME: granular
         self.niri.queue_redraw_all();
     }
@@ -595,7 +610,11 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = self.niri.surface_under_and_global_space(location);
+        let under = if self.niri.pointer_hidden {
+            PointerFocus::default()
+        } else {
+            self.niri.surface_under_and_global_space(location)
+        };
 
         // We're not changing the global cursor location here, so if the focus did not change, then
         // nothing changed.
@@ -876,6 +895,15 @@ impl State {
 
         if config.window_rules != old_config.window_rules {
             window_rules_changed = true;
+        }
+
+        if config.animations.window_resize.custom_shader
+            != old_config.animations.window_resize.custom_shader
+        {
+            let src = config.animations.window_resize.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_resize_program(renderer, src);
+            });
         }
 
         *old_config = config;
@@ -1219,23 +1247,6 @@ impl Niri {
         let mods_with_finger_scroll_binds =
             mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
 
-        let (tx, rx) = calloop::channel::channel();
-        event_loop
-            .insert_source(rx, move |event, _, state| {
-                if let calloop::channel::Event::Msg(image) = event {
-                    state.niri.cursor_manager.set_cursor_image(image);
-                    // FIXME: granular.
-                    state.niri.queue_redraw_all();
-                }
-            })
-            .unwrap();
-        seat.tablet_seat()
-            .on_cursor_surface(move |_tool, new_image| {
-                if let Err(err) = tx.send(new_image) {
-                    warn!("error sending new tablet cursor image: {err:?}");
-                };
-            });
-
         let screenshot_ui = ScreenshotUi::new();
         let config_error_notification = ConfigErrorNotification::new(config.clone());
 
@@ -1322,6 +1333,7 @@ impl Niri {
             output_state: HashMap::new(),
             output_by_name: HashMap::new(),
             unmapped_windows: HashMap::new(),
+            root_surface: HashMap::new(),
             monitors_active: true,
 
             devices: HashSet::new(),
@@ -1371,6 +1383,7 @@ impl Niri {
             cursor_shape_manager_state,
             dnd_icon: None,
             pointer_focus: PointerFocus::default(),
+            pointer_hidden: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -1541,7 +1554,7 @@ impl Niri {
         }
     }
 
-    pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>) {
+    pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>, vrr: bool) {
         let global = output.create_global::<State>(&self.display_handle);
 
         let name = output.name();
@@ -1581,7 +1594,7 @@ impl Niri {
             global,
             redraw_state: RedrawState::Idle,
             unfinished_animations_remain: false,
-            frame_clock: FrameClock::new(refresh_interval),
+            frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
             frame_callback_sequence: 0,
             background_buffer: SolidColorBuffer::new(size, CLEAR_COLOR),
@@ -2023,6 +2036,10 @@ impl Niri {
         renderer: &mut R,
         output: &Output,
     ) -> Vec<OutputRenderElements<R>> {
+        if self.pointer_hidden {
+            return vec![];
+        }
+
         let _span = tracy_client::span!("Niri::pointer_element");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
@@ -2106,6 +2123,10 @@ impl Niri {
     }
 
     pub fn refresh_pointer_outputs(&mut self) {
+        if self.pointer_hidden {
+            return;
+        }
+
         let _span = tracy_client::span!("Niri::refresh_pointer_outputs");
 
         // Check whether we need to draw the tablet cursor or the regular cursor.

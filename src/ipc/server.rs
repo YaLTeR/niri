@@ -220,8 +220,9 @@ impl HandleRequest for FocusedWindowRequest {
 
 impl HandleRequest for ActionRequest {
     fn handle(self, ctx: &ClientCtx) -> Reply<Self::Response> {
+        let action = niri_config::Action::from(self.0);
         ctx.event_loop.insert_idle(move |state| {
-            state.do_action(self.0.into());
+            state.do_action(action, false);
         });
         Ok(())
     }

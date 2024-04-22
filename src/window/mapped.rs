@@ -3,26 +3,34 @@ use std::cmp::{max, min};
 
 use niri_config::{BlockOutFrom, WindowRule};
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::{AsRenderElements as _, Id, Kind};
+use smithay::backend::renderer::element::{AsRenderElements, Id, Kind};
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
-use smithay::desktop::Window;
+use smithay::desktop::{PopupManager, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
-use smithay::wayland::compositor::{send_surface_state, with_states};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
+use smithay::wayland::compositor::{
+    remove_pre_commit_hook, send_surface_state, with_states, HookId,
+};
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
-use crate::layout::{LayoutElement, LayoutElementRenderElement};
+use crate::layout::{LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot};
 use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::surface::render_snapshot_from_surface_tree;
+use crate::render_helpers::{BakedBuffer, RenderTarget};
 
 #[derive(Debug)]
 pub struct Mapped {
     pub window: Window,
+
+    /// Pre-commit hook that we have on all mapped toplevel surfaces.
+    pre_commit_hook: HookId,
 
     /// Up-to-date rules.
     rules: ResolvedWindowRules,
@@ -38,16 +46,33 @@ pub struct Mapped {
 
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
+
+    /// Snapshot of the last render for use in the close animation.
+    unmap_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
+
+    /// Whether the next configure should be animated, if the configured state changed.
+    animate_next_configure: bool,
+
+    /// Serials of commits that should be animated.
+    animate_serials: Vec<Serial>,
+
+    /// Snapshot right before an animated commit.
+    animation_snapshot: Option<LayoutElementRenderSnapshot>,
 }
 
 impl Mapped {
-    pub fn new(window: Window, rules: ResolvedWindowRules) -> Self {
+    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
         Self {
             window,
+            pre_commit_hook: hook,
             rules,
             need_to_recompute_rules: false,
             is_focused: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0, 0), [0., 0., 0., 1.])),
+            unmap_snapshot: RefCell::new(None),
+            animate_next_configure: false,
+            animate_serials: Vec::new(),
+            animation_snapshot: None,
         }
     }
 
@@ -87,6 +112,80 @@ impl Mapped {
 
         self.is_focused = is_focused;
         self.need_to_recompute_rules = true;
+    }
+
+    fn render_snapshot(&self, renderer: &mut GlesRenderer) -> LayoutElementRenderSnapshot {
+        let _span = tracy_client::span!("Mapped::render_snapshot");
+
+        let size = self.size();
+
+        let mut buffer = self.block_out_buffer.borrow_mut();
+        buffer.resize(size);
+        let blocked_out_contents = vec![BakedBuffer {
+            buffer: buffer.clone(),
+            location: Point::from((0, 0)),
+            src: None,
+            dst: None,
+        }];
+
+        let buf_pos = self.window.geometry().loc.upscale(-1);
+
+        let mut contents = vec![];
+
+        let surface = self.toplevel().wl_surface();
+        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+            let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
+
+            render_snapshot_from_surface_tree(
+                renderer,
+                popup.wl_surface(),
+                buf_pos + offset,
+                &mut contents,
+            );
+        }
+
+        render_snapshot_from_surface_tree(renderer, surface, buf_pos, &mut contents);
+
+        RenderSnapshot {
+            contents,
+            blocked_out_contents,
+            block_out_from: self.rules().block_out_from,
+            size,
+            texture: Default::default(),
+            blocked_out_texture: Default::default(),
+        }
+    }
+
+    pub fn store_unmap_snapshot_if_empty(&self, renderer: &mut GlesRenderer) {
+        let mut snapshot = self.unmap_snapshot.borrow_mut();
+        if snapshot.is_some() {
+            return;
+        }
+
+        *snapshot = Some(self.render_snapshot(renderer));
+    }
+
+    pub fn should_animate_commit(&mut self, commit_serial: Serial) -> bool {
+        let mut should_animate = false;
+        self.animate_serials.retain_mut(|serial| {
+            if commit_serial.is_no_older_than(serial) {
+                should_animate = true;
+                false
+            } else {
+                true
+            }
+        });
+        should_animate
+    }
+
+    pub fn store_animation_snapshot(&mut self, renderer: &mut GlesRenderer) {
+        self.animation_snapshot = Some(self.render_snapshot(renderer));
+    }
+}
+
+impl Drop for Mapped {
+    fn drop(&mut self) {
+        remove_pre_commit_hook(self.toplevel().wl_surface(), self.pre_commit_hook);
     }
 }
 
@@ -137,20 +236,22 @@ impl LayoutElement for Mapped {
             vec![elem.into()]
         } else {
             let buf_pos = location - self.window.geometry().loc;
-            self.window.render_elements(
-                renderer,
-                buf_pos.to_physical_precise_round(scale),
-                scale,
-                alpha,
-            )
+            let buf_pos = buf_pos.to_physical_precise_round(scale);
+            self.window.render_elements(renderer, buf_pos, scale, alpha)
         }
     }
 
-    fn request_size(&self, size: Size<i32, Logical>) {
-        self.toplevel().with_pending_state(|state| {
+    fn request_size(&mut self, size: Size<i32, Logical>, animate: bool) {
+        let changed = self.toplevel().with_pending_state(|state| {
+            let changed = state.size != Some(size);
             state.size = Some(size);
             state.states.unset(xdg_toplevel::State::Fullscreen);
+            changed
         });
+
+        if changed && animate {
+            self.animate_next_configure = true;
+        }
     }
 
     fn request_fullscreen(&self, size: Size<i32, Logical>) {
@@ -249,8 +350,14 @@ impl LayoutElement for Mapped {
         });
     }
 
-    fn send_pending_configure(&self) {
-        self.toplevel().send_pending_configure();
+    fn send_pending_configure(&mut self) {
+        if let Some(serial) = self.toplevel().send_pending_configure() {
+            if self.animate_next_configure {
+                self.animate_serials.push(serial);
+            }
+        }
+
+        self.animate_next_configure = false;
     }
 
     fn is_fullscreen(&self) -> bool {
@@ -271,5 +378,17 @@ impl LayoutElement for Mapped {
 
     fn rules(&self) -> &ResolvedWindowRules {
         &self.rules
+    }
+
+    fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot> {
+        self.unmap_snapshot.take()
+    }
+
+    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
+        self.animation_snapshot.as_ref()
+    }
+
+    fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
+        self.animation_snapshot.take()
     }
 }

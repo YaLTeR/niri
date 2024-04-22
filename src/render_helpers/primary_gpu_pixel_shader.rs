@@ -1,13 +1,13 @@
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer};
-use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
 use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 
 use super::renderer::AsGlesFrame;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
-/// Wrapper for a poxel shader from the primary GPU for rendering with the primary GPU.
+/// Wrapper for a pixel shader from the primary GPU for rendering with the primary GPU.
 #[derive(Debug)]
 pub struct PrimaryGpuPixelShaderRenderElement(pub PixelShaderElement);
 
@@ -36,7 +36,7 @@ impl Element for PrimaryGpuPixelShaderRenderElement {
         &self,
         scale: Scale<f64>,
         commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    ) -> DamageSet<i32, Physical> {
         self.0.damage_since(scale, commit)
     }
 
