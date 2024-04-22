@@ -720,6 +720,8 @@ pub struct Match {
     pub is_active: Option<bool>,
     #[knuffel(property)]
     pub is_focused: Option<bool>,
+    #[knuffel(property)]
+    pub is_active_in_column: Option<bool>,
 }
 
 impl PartialEq for Match {

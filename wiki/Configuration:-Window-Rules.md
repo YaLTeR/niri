@@ -157,6 +157,19 @@ window-rule {
 }
 ```
 
+#### `is-active-in-column`
+Can be `true` or `false`.
+Matches any window that is the "active" window in a column.
+Contrary to
+`is-active` there is one `is-active-in-column` window per column. It is the
+window that was last focused in each column, i.e. the one that will gain focus
+if focus is moved to the column.
+
+window-rule {
+    match is-active-in-column=true
+}
+```
+
 ### Window Opening Properties
 
 These properties apply once, when a window first opens.

@@ -2139,10 +2139,15 @@ impl<W: LayoutElement> Workspace<W> {
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
             for (tile_idx, tile) in col.tiles.iter_mut().enumerate() {
                 let win = tile.window_mut();
+
+                let active_in_column =  col.active_tile_idx == tile_idx;
+                win.set_active_in_column(active_in_column);
+
                 let active = is_active
                     && self.active_column_idx == col_idx
-                    && col.active_tile_idx == tile_idx;
+                    && active_in_column;
                 win.set_activated(active);
+
 
                 win.set_bounds(bounds);
                 win.send_pending_configure();

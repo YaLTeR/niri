@@ -74,6 +74,13 @@ impl<'a> WindowRef<'a> {
             WindowRef::Mapped(mapped) => mapped.is_focused(),
         }
     }
+
+    pub fn is_active_in_column(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_active_in_column,
+        }
+    }
 }
 
 impl ResolvedWindowRules {
@@ -210,6 +217,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
             return false;
         };
         if !title_re.is_match(title) {
+            return false;
+        }
+    }
+
+    if let Some(is_active_in_column) = m.is_active_in_column {
+        if window.is_active_in_column() != is_active_in_column {
             return false;
         }
     }
