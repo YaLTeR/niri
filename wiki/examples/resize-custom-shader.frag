@@ -1,72 +1,87 @@
-#version 100
-
-precision mediump float;
-
-// Coordinates of the current pixel.
+// Your shader must contain one function (see the bottom of this file).
 //
-// These range from 0 to 1 over the whole area of the shader. The location and
-// the size of the area are unspecified, but niri will make it large enough to
-// accomodate a crossfade.
+// It should not contain any uniform definitions or anything else, as niri
+// provides them for you.
 //
-// You very likely want to convert these coordinates to geometry coordinates
-// before using them (see below).
-varying vec2 v_coords;
+// All symbols defined by niri will have a niri_ prefix, so don't use it for
+// your own variables and functions.
 
-// Pixel size of the whole area of the shader.
-uniform vec2 size;
+// The function that you must define looks like this:
+vec4 resize_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
+    vec4 color = /* ...compute the color... */;
+    return color;
+}
 
-// Matrix that converts the input v_coords into coordinates inside the current
+// It takes as input:
+//
+// * coords_curr_geo: coordinates of the current pixel relative to the current
 // window geometry.
 //
+// These are homogeneous (the Z component is equal to 1) and scaled in such a
+// way that the 0 to 1 coordinates lie within the current window geometry (in
+// the middle of a resize). Pixels outside the window geometry will have
+// coordinates below 0 or above 1.
+//
 // The window geometry is its "visible bounds" from the user's perspective.
-// After applying this matrix, the 0 to 1 coordinate range will correspond to
-// the current geometry (in the middle of a resize), and pixels outside the
-// geometry will have coordinates below 0 or above 1.
-uniform mat3 input_to_curr_geo;
+//
+// The shader runs over an area of unspecified size and location, so you must
+// expect and handle coordinates outside the [0, 1] range. The area will be
+// large enough to accomodate a crossfade effect.
+//
+// * size_curr_geo: size of the current window geometry in physical pixels.
+//
+// It is homogeneous (the Z component is equal to 1).
+//
+// The function must return the color of the pixel (with premultiplied alpha).
+// The pixel color will be further processed by niri (for example, to apply the
+// final opacity from window rules).
 
-// Matrix that converts the input v_coords into coordinates inside the previous
-// (before resize) window geometry.
-uniform mat3 input_to_prev_geo;
-
-// Matrix that converts the input v_coords into coordinates inside the next
-// (after resize) window geometry.
-uniform mat3 input_to_next_geo;
+// Now let's go over the uniforms that niri defines.
 
 // Previous (before resize) window texture.
-uniform sampler2D tex_prev;
+uniform sampler2D niri_tex_prev;
 
 // Matrix that converts geometry coordinates into the previous window texture
 // coordinates.
 //
 // The window texture can and will go outside the geometry (for client-side
 // decoration shadows for example), which is why this matrix is necessary.
-uniform mat3 geo_to_tex_prev;
+uniform mat3 niri_geo_to_tex_prev;
 
 // Next (after resize) window texture.
-uniform sampler2D tex_next;
+uniform sampler2D niri_tex_next;
 
 // Matrix that converts geometry coordinates into the next window texture
 // coordinates.
-uniform mat3 geo_to_tex_next;
+uniform mat3 niri_geo_to_tex_next;
+
+
+// Matrix that converts coords_curr_geo into coordinates inside the previous
+// (before resize) window geometry.
+uniform mat3 niri_curr_geo_to_prev_geo;
+
+// Matrix that converts coords_curr_geo into coordinates inside the next
+// (after resize) window geometry.
+uniform mat3 niri_curr_geo_to_next_geo;
+
 
 // Unclamped progress of the resize.
 //
 // Goes from 0 to 1 but may overshoot and oscillate.
-uniform float progress;
+uniform float niri_progress;
 
 // Clamped progress of the resize.
 //
 // Goes from 0 to 1, but will stop at 1 as soon as it first reaches 1. Will not
 // overshoot or oscillate.
-uniform float clamped_progress;
+uniform float niri_clamped_progress;
 
-// Additional opacity to apply to the final color.
-uniform float alpha;
+// Now let's look at some examples. You can copy everything below this line
+// into your custom-shader to experiment.
 
 // Example: fill the current geometry with a solid vertical gradient.
-vec4 solid_gradient() {
-    vec3 coords = input_to_curr_geo * vec3(v_coords, 1.0);
-
+vec4 solid_gradient(vec3 coords_curr_geo, vec3 size_curr_geo) {
+    vec3 coords = coords_curr_geo;
     vec4 color = vec4(0.0);
 
     // Paint only the area inside the current geometry.
@@ -83,35 +98,33 @@ vec4 solid_gradient() {
 
 // Example: crossfade between previous and next texture, stretched to the
 // current geometry.
-vec4 crossfade() {
-    vec3 coords_curr_geo = input_to_curr_geo * vec3(v_coords, 1.0);
+vec4 crossfade(vec3 coords_curr_geo, vec3 size_curr_geo) {
+    // Convert coordinates into the texture space for sampling.
+    vec3 coords_tex_prev = niri_geo_to_tex_prev * coords_curr_geo;
+    vec4 color_prev = texture2D(niri_tex_prev, coords_tex_prev.st);
 
-    vec3 coords_tex_prev = geo_to_tex_prev * coords_curr_geo;
-    vec4 color_prev = texture2D(tex_prev, vec2(coords_tex_prev));
+    // Convert coordinates into the texture space for sampling.
+    vec3 coords_tex_next = niri_geo_to_tex_next * coords_curr_geo;
+    vec4 color_next = texture2D(niri_tex_next, coords_tex_next.st);
 
-    vec3 coords_tex_next = geo_to_tex_next * coords_curr_geo;
-    vec4 color_next = texture2D(tex_next, vec2(coords_tex_next));
-
-    vec4 color = mix(color_prev, color_next, clamped_progress);
+    vec4 color = mix(color_prev, color_next, niri_clamped_progress);
     return color;
 }
 
 // Example: next texture, stretched to the current geometry.
-vec4 stretch_next() {
-    vec3 coords_curr_geo = input_to_curr_geo * vec3(v_coords, 1.0);
-    vec3 coords_tex_next = geo_to_tex_next * coords_curr_geo;
-    vec4 color = texture2D(tex_next, vec2(coords_tex_next));
+vec4 stretch_next(vec3 coords_curr_geo, vec3 size_curr_geo) {
+    vec3 coords_tex_next = niri_geo_to_tex_next * coords_curr_geo;
+    vec4 color = texture2D(niri_tex_next, coords_tex_next.st);
     return color;
 }
 
 // Example: next texture, stretched to the current geometry if smaller, and
 // cropped if bigger.
-vec4 stretch_or_crop_next() {
-    vec3 coords_curr_geo = input_to_curr_geo * vec3(v_coords, 1.0);
-    vec3 coords_next_geo = input_to_next_geo * vec3(v_coords, 1.0);
+vec4 stretch_or_crop_next(vec3 coords_curr_geo, vec3 size_curr_geo) {
+    vec3 coords_next_geo = niri_curr_geo_to_next_geo * coords_curr_geo;
 
-    vec3 coords_stretch = geo_to_tex_next * coords_curr_geo;
-    vec3 coords_crop = geo_to_tex_next * coords_next_geo;
+    vec3 coords_stretch = niri_geo_to_tex_next * coords_curr_geo;
+    vec3 coords_crop = niri_geo_to_tex_next * coords_next_geo;
 
     // If the crop coord is smaller than the stretch coord, then the next
     // texture size is bigger than the current geometry, which means that we
@@ -122,7 +135,7 @@ vec4 stretch_or_crop_next() {
     if (coords_crop.y < coords_stretch.y)
         coords.y = coords_crop.y;
 
-    vec4 color = texture2D(tex_next, vec2(coords));
+    vec4 color = texture2D(niri_tex_next, coords.st);
 
     // However, when we crop, we also want to crop out anything outside the
     // current geometry. This is because the area of the shader is unspecified
@@ -142,11 +155,9 @@ vec4 stretch_or_crop_next() {
     return color;
 }
 
-// The main entry point of the shader.
-void main() {
+// This is the function that you must define.
+vec4 resize_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
     // You can pick one of the example functions or write your own.
-    vec4 color = stretch_or_crop_next();
-
-    gl_FragColor = color * alpha;
+    return stretch_or_crop_next(coords_curr_geo, size_curr_geo);
 }
 

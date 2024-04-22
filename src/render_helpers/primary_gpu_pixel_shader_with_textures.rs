@@ -63,8 +63,8 @@ unsafe fn compile_program(
     let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
     let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
     let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-    let size = CStr::from_bytes_with_nul(b"size\0").expect("NULL terminated");
-    let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
+    let size = CStr::from_bytes_with_nul(b"niri_size\0").expect("NULL terminated");
+    let alpha = CStr::from_bytes_with_nul(b"niri_alpha\0").expect("NULL terminated");
 
     Ok(PixelWithTexturesProgram(Rc::new(
         PixelWithTexturesProgramInner {

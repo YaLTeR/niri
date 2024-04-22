@@ -74,10 +74,9 @@ impl ResizeRenderElement {
         // Compute the transformation matrices.
         let input_to_curr_geo = Mat3::from_scale(area_size / curr_geo_size)
             * Mat3::from_translation((area_loc - curr_geo_loc) / area_size);
-        let input_to_prev_geo = Mat3::from_scale(area_size / size_prev)
-            * Mat3::from_translation((area_loc - curr_geo_loc) / area_size);
-        let input_to_next_geo = Mat3::from_scale(area_size / size_next)
-            * Mat3::from_translation((area_loc - curr_geo_loc) / area_size);
+
+        let curr_geo_to_prev_geo = Mat3::from_scale(curr_geo_size / size_prev);
+        let curr_geo_to_next_geo = Mat3::from_scale(curr_geo_size / size_next);
 
         let geo_to_tex_prev = Mat3::from_translation(-tex_prev_geo_loc / tex_prev_geo_size)
             * Mat3::from_scale(size_prev / tex_prev_geo_size * scale);
@@ -99,21 +98,21 @@ impl ResizeRenderElement {
             Self(PrimaryGpuPixelShaderWithTexturesRenderElement::new(
                 shader,
                 HashMap::from([
-                    (String::from("tex_prev"), texture_prev),
-                    (String::from("tex_next"), texture_next),
+                    (String::from("niri_tex_prev"), texture_prev),
+                    (String::from("niri_tex_next"), texture_next),
                 ]),
                 area,
                 size,
                 None,
                 result_alpha,
                 vec![
-                    make_uniform("input_to_curr_geo", input_to_curr_geo),
-                    make_uniform("input_to_prev_geo", input_to_prev_geo),
-                    make_uniform("input_to_next_geo", input_to_next_geo),
-                    make_uniform("geo_to_tex_prev", geo_to_tex_prev),
-                    make_uniform("geo_to_tex_next", geo_to_tex_next),
-                    Uniform::new("progress", progress),
-                    Uniform::new("clamped_progress", clamped_progress),
+                    make_uniform("niri_input_to_curr_geo", input_to_curr_geo),
+                    make_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
+                    make_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
+                    make_uniform("niri_geo_to_tex_prev", geo_to_tex_prev),
+                    make_uniform("niri_geo_to_tex_next", geo_to_tex_next),
+                    Uniform::new("niri_progress", progress),
+                    Uniform::new("niri_clamped_progress", clamped_progress),
                 ],
                 Kind::Unspecified,
             ))

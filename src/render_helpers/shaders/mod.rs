@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 
-use smithay::backend::renderer::gles::{GlesPixelProgram, GlesRenderer, UniformName, UniformType};
+use smithay::backend::renderer::gles::{
+    GlesError, GlesPixelProgram, GlesRenderer, UniformName, UniformType,
+};
 
 use super::primary_gpu_pixel_shader_with_textures::PixelWithTexturesProgram;
 use super::renderer::NiriRenderer;
@@ -31,24 +33,11 @@ impl Shaders {
             })
             .ok();
 
-        let resize = PixelWithTexturesProgram::compile(
-            renderer,
-            include_str!("resize.frag"),
-            &[
-                UniformName::new("input_to_curr_geo", UniformType::Matrix3x3),
-                UniformName::new("input_to_prev_geo", UniformType::Matrix3x3),
-                UniformName::new("input_to_next_geo", UniformType::Matrix3x3),
-                UniformName::new("geo_to_tex_prev", UniformType::Matrix3x3),
-                UniformName::new("geo_to_tex_next", UniformType::Matrix3x3),
-                UniformName::new("progress", UniformType::_1f),
-                UniformName::new("clamped_progress", UniformType::_1f),
-            ],
-            &["tex_prev", "tex_next"],
-        )
-        .map_err(|err| {
-            warn!("error compiling resize shader: {err:?}");
-        })
-        .ok();
+        let resize = compile_resize_program(renderer, include_str!("resize.frag"))
+            .map_err(|err| {
+                warn!("error compiling resize shader: {err:?}");
+            })
+            .ok();
 
         Self {
             gradient_border,
@@ -87,22 +76,33 @@ pub fn init(renderer: &mut GlesRenderer) {
     }
 }
 
+fn compile_resize_program(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Result<PixelWithTexturesProgram, GlesError> {
+    let mut program = include_str!("resize-prelude.frag").to_string();
+    program.push_str(src);
+    program.push_str(include_str!("resize-epilogue.frag"));
+
+    PixelWithTexturesProgram::compile(
+        renderer,
+        &program,
+        &[
+            UniformName::new("niri_input_to_curr_geo", UniformType::Matrix3x3),
+            UniformName::new("niri_curr_geo_to_prev_geo", UniformType::Matrix3x3),
+            UniformName::new("niri_curr_geo_to_next_geo", UniformType::Matrix3x3),
+            UniformName::new("niri_geo_to_tex_prev", UniformType::Matrix3x3),
+            UniformName::new("niri_geo_to_tex_next", UniformType::Matrix3x3),
+            UniformName::new("niri_progress", UniformType::_1f),
+            UniformName::new("niri_clamped_progress", UniformType::_1f),
+        ],
+        &["niri_tex_prev", "niri_tex_next"],
+    )
+}
+
 pub fn set_custom_resize_program(renderer: &mut GlesRenderer, src: Option<&str>) {
     let program = if let Some(src) = src {
-        match PixelWithTexturesProgram::compile(
-            renderer,
-            src,
-            &[
-                UniformName::new("input_to_curr_geo", UniformType::Matrix3x3),
-                UniformName::new("input_to_prev_geo", UniformType::Matrix3x3),
-                UniformName::new("input_to_next_geo", UniformType::Matrix3x3),
-                UniformName::new("geo_to_tex_prev", UniformType::Matrix3x3),
-                UniformName::new("geo_to_tex_next", UniformType::Matrix3x3),
-                UniformName::new("progress", UniformType::_1f),
-                UniformName::new("clamped_progress", UniformType::_1f),
-            ],
-            &["tex_prev", "tex_next"],
-        ) {
+        match compile_resize_program(renderer, src) {
             Ok(program) => Some(program),
             Err(err) => {
                 warn!("error compiling custom resize shader: {err:?}");
