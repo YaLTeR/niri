@@ -51,6 +51,7 @@ use smithay::reexports::wayland_protocols_misc::server_decoration as _server_dec
 use smithay::reexports::wayland_server::backend::{
     ClientData, ClientId, DisconnectReason, GlobalId,
 };
+use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
 use smithay::utils::{
@@ -1179,7 +1180,10 @@ impl Niri {
             SessionLockManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
-        let shm_state = ShmState::new::<State>(&display_handle, vec![]);
+        let shm_state = ShmState::new::<State>(
+            &display_handle,
+            vec![wl_shm::Format::Xbgr8888, wl_shm::Format::Abgr8888],
+        );
         let output_manager_state =
             OutputManagerState::new_with_xdg_output::<State>(&display_handle);
         let dmabuf_state = DmabufState::new();
