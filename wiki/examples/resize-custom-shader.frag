@@ -126,13 +126,16 @@ vec4 stretch_or_crop_next(vec3 coords_curr_geo, vec3 size_curr_geo) {
     vec3 coords_stretch = niri_geo_to_tex_next * coords_curr_geo;
     vec3 coords_crop = niri_geo_to_tex_next * coords_next_geo;
 
-    // If the crop coord is smaller than the stretch coord, then the next
-    // texture size is bigger than the current geometry, which means that we
-    // can crop.
+    // We can crop if the current window size is smaller than the next window
+    // size. One way to tell is by comparing to 1.0 the X and Y scaling
+    // coefficients in the current-to-next transformation matrix.
+    bool can_crop_by_x = niri_curr_geo_to_next_geo[0][0] <= 1.0;
+    bool can_crop_by_y = niri_curr_geo_to_next_geo[1][1] <= 1.0;
+
     vec3 coords = coords_stretch;
-    if (coords_crop.x < coords_stretch.x)
+    if (can_crop_by_x)
         coords.x = coords_crop.x;
-    if (coords_crop.y < coords_stretch.y)
+    if (can_crop_by_y)
         coords.y = coords_crop.y;
 
     vec4 color = texture2D(niri_tex_next, coords.st);
@@ -145,11 +148,9 @@ vec4 stretch_or_crop_next(vec3 coords_curr_geo, vec3 size_curr_geo) {
     // When stretching, this is not an issue because the area outside will
     // correspond to client-side decoration shadows, which are already supposed
     // to be outside.
-    if (coords_crop.x < coords_stretch.x
-            && (coords_curr_geo.x < 0.0 || 1.0 < coords_curr_geo.x))
+    if (can_crop_by_x && (coords_curr_geo.x < 0.0 || 1.0 < coords_curr_geo.x))
         color = vec4(0.0);
-    if (coords_crop.y < coords_stretch.y
-            && (coords_curr_geo.y < 0.0 || 1.0 < coords_curr_geo.y))
+    if (can_crop_by_y && (coords_curr_geo.y < 0.0 || 1.0 < coords_curr_geo.y))
         color = vec4(0.0);
 
     return color;

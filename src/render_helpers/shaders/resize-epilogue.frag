@@ -1,3 +1,4 @@
+
 void main() {
     vec3 coords_curr_geo = niri_input_to_curr_geo * vec3(niri_v_coords, 1.0);
     vec3 size_curr_geo = niri_input_to_curr_geo * vec3(niri_size, 1.0);
