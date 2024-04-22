@@ -861,6 +861,28 @@ impl Tty {
         let egl_context = renderer.as_ref().egl_context();
         let render_formats = egl_context.dmabuf_render_formats();
 
+        // Filter out the CCS modifiers as they have increased bandwidth, causing some monitor
+        // configurations to stop working.
+        let mut render_formats = render_formats.clone();
+        render_formats.retain(|format| {
+            !matches!(
+                format.modifier,
+                Modifier::I915_y_tiled_ccs
+                    // I915_FORMAT_MOD_Yf_TILED_CCS
+                    | Modifier::Unrecognized(0x100000000000005)
+                    | Modifier::I915_y_tiled_gen12_rc_ccs
+                    | Modifier::I915_y_tiled_gen12_mc_ccs
+                    // I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC
+                    | Modifier::Unrecognized(0x100000000000008)
+                    // I915_FORMAT_MOD_4_TILED_DG2_RC_CCS
+                    | Modifier::Unrecognized(0x10000000000000a)
+                    // I915_FORMAT_MOD_4_TILED_DG2_MC_CCS
+                    | Modifier::Unrecognized(0x10000000000000b)
+                    // I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC
+                    | Modifier::Unrecognized(0x10000000000000c)
+            )
+        });
+
         // Create the compositor.
         let mut compositor = DrmCompositor::new(
             OutputModeSource::Auto(output.clone()),
