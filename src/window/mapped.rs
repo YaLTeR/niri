@@ -44,7 +44,7 @@ pub struct Mapped {
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
-    /// Whether this window is the active window in a column
+    /// Whether this window is the active window in its column.
     pub is_active_in_column: bool,
 
     /// Buffer to draw instead of the window when it should be blocked out.

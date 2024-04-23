@@ -158,12 +158,12 @@ window-rule {
 ```
 
 #### `is-active-in-column`
+
 Can be `true` or `false`.
-Matches any window that is the "active" window in a column.
-Contrary to
-`is-active` there is one `is-active-in-column` window per column. It is the
-window that was last focused in each column, i.e. the one that will gain focus
-if focus is moved to the column.
+Matches the window that is the "active" window in its column.
+
+Contrary to `is-active`, there is always one `is-active-in-column` window in each column.
+It is the window that was last focused in the column, i.e. the one that will gain focus if this column is focused.
 
 window-rule {
     match is-active-in-column=true

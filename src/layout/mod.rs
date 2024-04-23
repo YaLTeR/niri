@@ -1976,6 +1976,8 @@ mod tests {
 
         fn send_pending_configure(&mut self) {}
 
+        fn set_active_in_column(&mut self, _active: bool) {}
+
         fn is_fullscreen(&self) -> bool {
             false
         }
