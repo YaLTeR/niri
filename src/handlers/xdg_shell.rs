@@ -649,7 +649,7 @@ impl State {
                         popup.send_configure().expect("initial configure failed");
                     }
                 }
-                // Input method popup can arbitrary change its geometry, so we need to unconstraint
+                // Input method popup can arbitrary change its geometry, so we need to unconstrain
                 // it on commit.
                 PopupKind::InputMethod(_) => {
                     self.unconstrain_popup(&popup);
