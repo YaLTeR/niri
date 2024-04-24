@@ -109,11 +109,12 @@ impl<W: LayoutElement> Tile<W> {
     pub fn new(window: W, options: Rc<Options>) -> Self {
         let rules = window.rules();
         let border_config = rules.border.resolve_against(options.border);
+        let focus_ring_config = rules.focus_ring.resolve_against(options.focus_ring.into());
 
         Self {
             window,
             border: FocusRing::new(border_config.into()),
-            focus_ring: FocusRing::new(options.focus_ring),
+            focus_ring: FocusRing::new(focus_ring_config.into()),
             is_fullscreen: false, // FIXME: up-to-date fullscreen right away, but we need size.
             fullscreen_backdrop: SolidColorBuffer::new((0, 0), [0., 0., 0., 1.]),
             fullscreen_size: Default::default(),
@@ -131,7 +132,11 @@ impl<W: LayoutElement> Tile<W> {
         let border_config = rules.border.resolve_against(self.options.border);
         self.border.update_config(border_config.into());
 
-        self.focus_ring.update_config(options.focus_ring);
+        let focus_ring_config = rules
+            .focus_ring
+            .resolve_against(self.options.focus_ring.into());
+        self.focus_ring.update_config(focus_ring_config.into());
+
         self.options = options;
     }
 
@@ -175,6 +180,10 @@ impl<W: LayoutElement> Tile<W> {
         let rules = self.window.rules();
         let border_config = rules.border.resolve_against(self.options.border);
         self.border.update_config(border_config.into());
+        let focus_ring_config = rules
+            .focus_ring
+            .resolve_against(self.options.focus_ring.into());
+        self.focus_ring.update_config(focus_ring_config.into());
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {

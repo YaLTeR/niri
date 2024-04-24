@@ -48,6 +48,8 @@ pub struct ResolvedWindowRules {
     /// Extra bound on the maximum window height.
     pub max_height: Option<u16>,
 
+    /// Focus ring overrides.
+    pub focus_ring: BorderRule,
     /// Window border overrides.
     pub border: BorderRule,
 
@@ -90,6 +92,15 @@ impl ResolvedWindowRules {
             min_height: None,
             max_width: None,
             max_height: None,
+            focus_ring: BorderRule {
+                off: false,
+                on: false,
+                width: None,
+                active_color: None,
+                inactive_color: None,
+                active_gradient: None,
+                inactive_gradient: None,
+            },
             border: BorderRule {
                 off: false,
                 on: false,
@@ -170,6 +181,7 @@ impl ResolvedWindowRules {
                     resolved.max_height = Some(x);
                 }
 
+                resolved.focus_ring.merge_with(&rule.focus_ring);
                 resolved.border.merge_with(&rule.border);
 
                 if let Some(x) = rule.draw_border_with_background {

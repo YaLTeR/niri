@@ -412,6 +412,19 @@ impl From<Border> for FocusRing {
     }
 }
 
+impl From<FocusRing> for Border {
+    fn from(value: FocusRing) -> Self {
+        Self {
+            off: value.off,
+            width: value.width,
+            active_color: value.active_color,
+            inactive_color: value.inactive_color,
+            active_gradient: value.active_gradient,
+            inactive_gradient: value.inactive_gradient,
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     pub r: u8,
@@ -701,6 +714,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub max_height: Option<u16>,
 
+    #[knuffel(child, default)]
+    pub focus_ring: BorderRule,
     #[knuffel(child, default)]
     pub border: BorderRule,
     #[knuffel(child, unwrap(argument))]
@@ -2048,6 +2063,11 @@ mod tests {
                 open-maximized true
                 open-fullscreen false
 
+                focus-ring {
+                    off
+                    width 3
+                }
+
                 border {
                     on
                     width 8
@@ -2254,6 +2274,11 @@ mod tests {
                     open_on_output: Some("eDP-1".to_owned()),
                     open_maximized: Some(true),
                     open_fullscreen: Some(false),
+                    focus_ring: BorderRule {
+                        off: true,
+                        width: Some(3),
+                        ..Default::default()
+                    },
                     border: BorderRule {
                         on: true,
                         width: Some(8),

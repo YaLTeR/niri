@@ -45,14 +45,18 @@ window-rule {
     block-out-from "screencast"
     // block-out-from "screen-capture"
 
-    border {
+    focus-ring {
         // off
         on
         width 4
-        active-color "#ffc87f"
+        active-color "#7fc8ff"
         inactive-color "#505050"
-        active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
-        inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // active-gradient from="#80c8ff" to="#bbddff" angle=45
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+    }
+
+    border {
+        // Same as focus-ring.
     }
 
     min-width 100
@@ -347,18 +351,25 @@ window-rule {
 }
 ```
 
-#### `border`
+#### `focus-ring` and `border`
 
 <sup>Since: 0.1.6</sup>
 
-Override the border options for the window.
+Override the focus ring and border options for the window.
 
-This rule has the same options as the normal border config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+These rules have the same options as the normal focus ring and border config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
 
-However, in addition to `off` to disable the border, this window rule has an `on` flag that enables the border for the window even if the border is otherwise disabled.
+However, in addition to `off` to disable the border/focus ring, this window rule has an `on` flag that enables the border/focus ring for the window even if it was otherwise disabled.
 The `on` flag has precedence over the `off` flag, in case both are set.
 
 ```
+window-rule {
+    focus-ring {
+        off
+        width 2
+    }
+}
+
 window-rule {
     border {
         on
