@@ -669,6 +669,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
+name = "colored"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbf2150cce219b664a8a70df7a1f933836724b503f8a413af9365b4dcc4d90b8"
+dependencies = [
+ "lazy_static",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -813,6 +823,12 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
+
+[[package]]
+name = "diff"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
 
 [[package]]
 name = "digest"
@@ -1790,6 +1806,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "k9"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "088bcebb5b68b1b14b64d7f05b0f802719250b97fdc0338ec42529ea777ed614"
+dependencies = [
+ "anyhow",
+ "colored",
+ "diff",
+ "lazy_static",
+ "libc",
+ "proc-macro2",
+ "regex",
+ "syn 2.0.55",
+ "terminal_size",
+]
+
+[[package]]
 name = "keyframe"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2174,6 +2207,7 @@ dependencies = [
  "git-version",
  "glam",
  "input",
+ "k9",
  "keyframe",
  "libc",
  "log",
@@ -3306,6 +3340,16 @@ dependencies = [
  "fastrand 2.0.2",
  "rustix 0.38.32",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "terminal_size"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e6bf6f19e9f8ed8d4048dc22981458ebcf406d67e94cd422e5ecd73d63b3237"
+dependencies = [
+ "rustix 0.37.27",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -116,6 +116,7 @@ use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
+use crate::utils::scale::guess_monitor_scale;
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
@@ -934,7 +935,11 @@ impl State {
                 let config = self.niri.config.borrow_mut();
                 let config = config.outputs.iter().find(|o| o.name == name);
 
-                let scale = config.map(|c| c.scale).unwrap_or(1.);
+                let scale = config.map(|c| c.scale).unwrap_or_else(|| {
+                    let size_mm = output.physical_properties().size;
+                    let resolution = output.current_mode().unwrap().size;
+                    guess_monitor_scale(size_mm, resolution)
+                });
                 let scale = scale.clamp(1., 10.).ceil() as i32;
 
                 let mut transform = config
@@ -1565,7 +1570,11 @@ impl Niri {
 
         let config = self.config.borrow();
         let c = config.outputs.iter().find(|o| o.name == name);
-        let scale = c.map(|c| c.scale).unwrap_or(1.);
+        let scale = c.map(|c| c.scale).unwrap_or_else(|| {
+            let size_mm = output.physical_properties().size;
+            let resolution = output.current_mode().unwrap().size;
+            guess_monitor_scale(size_mm, resolution)
+        });
         let scale = scale.clamp(1., 10.).ceil() as i32;
         let mut transform = c
             .map(|c| ipc_transform_to_smithay(c.transform))
