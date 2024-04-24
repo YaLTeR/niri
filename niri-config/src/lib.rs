@@ -701,6 +701,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub max_height: Option<u16>,
 
+    #[knuffel(child, default)]
+    pub border: BorderRule,
     #[knuffel(child, unwrap(argument))]
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -735,6 +737,24 @@ impl PartialEq for Match {
 pub enum BlockOutFrom {
     Screencast,
     ScreenCapture,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct BorderRule {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub width: Option<u16>,
+    #[knuffel(child)]
+    pub active_color: Option<Color>,
+    #[knuffel(child)]
+    pub inactive_color: Option<Color>,
+    #[knuffel(child)]
+    pub active_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub inactive_gradient: Option<Gradient>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -989,6 +1009,56 @@ impl Default for Config {
             include_str!("../../resources/default-config.kdl"),
         )
         .unwrap()
+    }
+}
+
+impl BorderRule {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.off |= other.off;
+        self.on |= other.on;
+
+        if let Some(x) = other.width {
+            self.width = Some(x);
+        }
+        if let Some(x) = other.active_color {
+            self.active_color = Some(x);
+        }
+        if let Some(x) = other.inactive_color {
+            self.inactive_color = Some(x);
+        }
+        if let Some(x) = other.active_gradient {
+            self.active_gradient = Some(x);
+        }
+        if let Some(x) = other.inactive_gradient {
+            self.inactive_gradient = Some(x);
+        }
+    }
+
+    pub fn resolve_against(&self, mut config: Border) -> Border {
+        config.off |= self.off;
+        if self.on {
+            config.off = false;
+        }
+
+        if let Some(x) = self.width {
+            config.width = x;
+        }
+        if let Some(x) = self.active_color {
+            config.active_color = x;
+            config.active_gradient = None;
+        }
+        if let Some(x) = self.inactive_color {
+            config.inactive_color = x;
+            config.inactive_gradient = None;
+        }
+        if let Some(x) = self.active_gradient {
+            config.active_gradient = Some(x);
+        }
+        if let Some(x) = self.inactive_gradient {
+            config.inactive_gradient = Some(x);
+        }
+
+        config
     }
 }
 
@@ -1977,6 +2047,11 @@ mod tests {
                 open-on-output "eDP-1"
                 open-maximized true
                 open-fullscreen false
+
+                border {
+                    on
+                    width 8
+                }
             }
 
             binds {
@@ -2179,6 +2254,11 @@ mod tests {
                     open_on_output: Some("eDP-1".to_owned()),
                     open_maximized: Some(true),
                     open_fullscreen: Some(false),
+                    border: BorderRule {
+                        on: true,
+                        width: Some(8),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 }],
                 binds: Binds(vec![

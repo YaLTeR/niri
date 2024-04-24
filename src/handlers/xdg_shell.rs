@@ -230,7 +230,7 @@ impl XdgShellHandler for State {
 
                     // The required configure will be the initial configure.
                 }
-                InitialConfigureState::Configured { output, .. } => {
+                InitialConfigureState::Configured { rules, output, .. } => {
                     // Figure out the monitor following a similar logic to initial configure.
                     // FIXME: deduplicate.
                     let mon = requested_output
@@ -269,7 +269,7 @@ impl XdgShellHandler for State {
                         toplevel.with_pending_state(|state| {
                             state.states.set(xdg_toplevel::State::Fullscreen);
                         });
-                        ws.configure_new_window(&unmapped.window, None);
+                        ws.configure_new_window(&unmapped.window, None, rules);
                     }
 
                     // We already sent the initial configure, so we need to reconfigure.
@@ -302,10 +302,10 @@ impl XdgShellHandler for State {
                     // The required configure will be the initial configure.
                 }
                 InitialConfigureState::Configured {
+                    rules,
                     width,
                     is_full_width,
                     output,
-                    ..
                 } => {
                     // Figure out the monitor following a similar logic to initial configure.
                     // FIXME: deduplicate.
@@ -349,7 +349,7 @@ impl XdgShellHandler for State {
                         } else {
                             *width
                         };
-                        ws.configure_new_window(&unmapped.window, configure_width);
+                        ws.configure_new_window(&unmapped.window, configure_width, rules);
                     }
 
                     // We already sent the initial configure, so we need to reconfigure.
@@ -580,7 +580,7 @@ impl State {
             } else {
                 width
             };
-            ws.configure_new_window(window, configure_width);
+            ws.configure_new_window(window, configure_width, &rules);
         }
 
         // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get

@@ -45,6 +45,16 @@ window-rule {
     block-out-from "screencast"
     // block-out-from "screen-capture"
 
+    border {
+        // off
+        on
+        width 4
+        active-color "#ffc87f"
+        inactive-color "#505050"
+        active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
+        inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+    }
+
     min-width 100
     max-width 200
     min-height 300
@@ -334,6 +344,26 @@ This property can be useful for rectangular windows that do not support the xdg-
 ```
 window-rule {
     draw-border-with-background false
+}
+```
+
+#### `border`
+
+<sup>Since: 0.1.6</sup>
+
+Override the border options for the window.
+
+This rule has the same options as the normal border config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+
+However, in addition to `off` to disable the border, this window rule has an `on` flag that enables the border for the window even if the border is otherwise disabled.
+The `on` flag has precedence over the `off` flag, in case both are set.
+
+```
+window-rule {
+    border {
+        on
+        width 8
+    }
 }
 ```
 

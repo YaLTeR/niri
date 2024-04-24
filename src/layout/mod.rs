@@ -463,8 +463,10 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Option<&Output> {
         let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
         if let ColumnWidth::Fixed(w) = &mut width {
-            if !self.options.border.off {
-                *w += self.options.border.width as i32 * 2;
+            let rules = window.rules();
+            let border_config = rules.border.resolve_against(self.options.border);
+            if !border_config.off {
+                *w += border_config.width as i32 * 2;
             }
         }
 
@@ -519,8 +521,10 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Option<&Output> {
         let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
         if let ColumnWidth::Fixed(w) = &mut width {
-            if !self.options.border.off {
-                *w += self.options.border.width as i32 * 2;
+            let rules = window.rules();
+            let border_config = rules.border.resolve_against(self.options.border);
+            if !border_config.off {
+                *w += border_config.width as i32 * 2;
             }
         }
 
@@ -555,8 +559,10 @@ impl<W: LayoutElement> Layout<W> {
     ) {
         let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
         if let ColumnWidth::Fixed(w) = &mut width {
-            if !self.options.border.off {
-                *w += self.options.border.width as i32 * 2;
+            let rules = window.rules();
+            let border_config = rules.border.resolve_against(self.options.border);
+            if !border_config.off {
+                *w += border_config.width as i32 * 2;
             }
         }
 

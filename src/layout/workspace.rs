@@ -23,6 +23,7 @@ use crate::render_helpers::RenderTarget;
 use crate::swipe_tracker::SwipeTracker;
 use crate::utils::id::IdCounter;
 use crate::utils::output_size;
+use crate::window::ResolvedWindowRules;
 
 /// Amount of touchpad movement to scroll the view for the width of one working area.
 const VIEW_GESTURE_WORKING_AREA_MOVEMENT: f64 = 1200.;
@@ -406,16 +407,9 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    fn toplevel_bounds(&self) -> Size<i32, Logical> {
-        let mut border = 0;
-        if !self.options.border.off {
-            border = self.options.border.width as i32 * 2;
-        }
-
-        Size::from((
-            max(self.working_area.size.w - self.options.gaps * 2 - border, 1),
-            max(self.working_area.size.h - self.options.gaps * 2 - border, 1),
-        ))
+    fn toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
+        let border_config = rules.border.resolve_against(self.options.border);
+        compute_toplevel_bounds(border_config, self.working_area.size, self.options.gaps)
     }
 
     pub fn resolve_default_width(
@@ -429,14 +423,20 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn new_window_size(&self, width: Option<ColumnWidth>) -> Size<i32, Logical> {
+    pub fn new_window_size(
+        &self,
+        width: Option<ColumnWidth>,
+        rules: &ResolvedWindowRules,
+    ) -> Size<i32, Logical> {
+        let border = rules.border.resolve_against(self.options.border);
+
         let width = if let Some(width) = width {
             let is_fixed = matches!(width, ColumnWidth::Fixed(_));
 
             let mut width = width.resolve(&self.options, self.working_area.size.w);
 
-            if !is_fixed && !self.options.border.off {
-                width -= self.options.border.width as i32 * 2;
+            if !is_fixed && !border.off {
+                width -= border.width as i32 * 2;
             }
 
             max(1, width)
@@ -445,14 +445,19 @@ impl<W: LayoutElement> Workspace<W> {
         };
 
         let mut height = self.working_area.size.h - self.options.gaps * 2;
-        if !self.options.border.off {
-            height -= self.options.border.width as i32 * 2;
+        if !border.off {
+            height -= border.width as i32 * 2;
         }
 
         Size::from((width, max(height, 1)))
     }
 
-    pub fn configure_new_window(&self, window: &Window, width: Option<ColumnWidth>) {
+    pub fn configure_new_window(
+        &self,
+        window: &Window,
+        width: Option<ColumnWidth>,
+        rules: &ResolvedWindowRules,
+    ) {
         if let Some(output) = self.output.as_ref() {
             let scale = output.current_scale().integer_scale();
             let transform = output.current_transform();
@@ -468,10 +473,10 @@ impl<W: LayoutElement> Workspace<W> {
                 if state.states.contains(xdg_toplevel::State::Fullscreen) {
                     state.size = Some(self.view_size);
                 } else {
-                    state.size = Some(self.new_window_size(width));
+                    state.size = Some(self.new_window_size(width, rules));
                 }
 
-                state.bounds = Some(self.toplevel_bounds());
+                state.bounds = Some(self.toplevel_bounds(rules));
             });
     }
 
@@ -2134,8 +2139,6 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn refresh(&mut self, is_active: bool) {
-        let bounds = self.toplevel_bounds();
-
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
             for (tile_idx, tile) in col.tiles.iter_mut().enumerate() {
                 let win = tile.window_mut();
@@ -2144,7 +2147,14 @@ impl<W: LayoutElement> Workspace<W> {
                     && col.active_tile_idx == tile_idx;
                 win.set_activated(active);
 
+                let border_config = win.rules().border.resolve_against(self.options.border);
+                let bounds = compute_toplevel_bounds(
+                    border_config,
+                    self.working_area.size,
+                    self.options.gaps,
+                );
                 win.set_bounds(bounds);
+
                 win.send_pending_configure();
                 win.refresh();
             }
@@ -2823,4 +2833,20 @@ pub fn compute_working_area(output: &Output, struts: Struts) -> Rectangle<i32, L
     working_area.loc.y += struts.top as i32;
 
     working_area
+}
+
+fn compute_toplevel_bounds(
+    border_config: niri_config::Border,
+    working_area_size: Size<i32, Logical>,
+    gaps: i32,
+) -> Size<i32, Logical> {
+    let mut border = 0;
+    if !border_config.off {
+        border = border_config.width as i32 * 2;
+    }
+
+    Size::from((
+        max(working_area_size.w - gaps * 2 - border, 1),
+        max(working_area_size.h - gaps * 2 - border, 1),
+    ))
 }

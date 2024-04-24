@@ -147,7 +147,7 @@ impl Layout {
 
     fn add_window(&mut self, mut window: TestWindow, width: Option<ColumnWidth>) {
         let ws = self.layout.active_workspace().unwrap();
-        window.request_size(ws.new_window_size(width), false);
+        window.request_size(ws.new_window_size(width, window.rules()), false);
         window.communicate();
 
         self.layout.add_window(window.clone(), width, false);
@@ -161,7 +161,7 @@ impl Layout {
         width: Option<ColumnWidth>,
     ) {
         let ws = self.layout.active_workspace().unwrap();
-        window.request_size(ws.new_window_size(width), false);
+        window.request_size(ws.new_window_size(width, window.rules()), false);
         window.communicate();
 
         self.layout
