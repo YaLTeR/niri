@@ -900,6 +900,7 @@ impl Tty {
         if self.debug_tint {
             compositor.set_debug_flags(DebugFlags::TINT);
         }
+        compositor.use_direct_scanout(!config.debug.disable_direct_scanout);
 
         let mut dmabuf_feedback = None;
         if let Ok(primary_renderer) = self.gpu_manager.single_renderer(&self.primary_render_node) {
@@ -1715,6 +1716,19 @@ impl Tty {
         }
 
         self.refresh_ipc_outputs(niri);
+    }
+
+    pub fn on_debug_config_changed(&mut self) {
+        let config = self.config.borrow();
+        let debug = &config.debug;
+        let use_direct_scanout = !debug.disable_direct_scanout;
+
+        // FIXME: reload other flags if possible?
+        for device in self.devices.values_mut() {
+            for surface in device.surfaces.values_mut() {
+                surface.compositor.use_direct_scanout(use_direct_scanout);
+            }
+        }
     }
 
     pub fn get_device_from_node(&mut self, node: DrmNode) -> Option<&mut OutputDevice> {

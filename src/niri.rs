@@ -852,6 +852,7 @@ impl State {
         let mut libinput_config_changed = false;
         let mut output_config_changed = false;
         let mut window_rules_changed = false;
+        let mut debug_config_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
@@ -908,6 +909,10 @@ impl State {
             self.backend.with_primary_renderer(|renderer| {
                 shaders::set_custom_resize_program(renderer, src);
             });
+        }
+
+        if config.debug != old_config.debug {
+            debug_config_changed = true;
         }
 
         *old_config = config;
@@ -976,6 +981,10 @@ impl State {
             if let Some(touch) = self.niri.seat.get_touch() {
                 touch.cancel(self);
             }
+        }
+
+        if debug_config_changed {
+            self.backend.on_debug_config_changed();
         }
 
         if window_rules_changed {

@@ -144,6 +144,13 @@ impl Backend {
         }
     }
 
+    pub fn on_debug_config_changed(&mut self) {
+        match self {
+            Backend::Tty(tty) => tty.on_debug_config_changed(),
+            Backend::Winit(_) => (),
+        }
+    }
+
     pub fn tty(&mut self) -> &mut Tty {
         if let Self::Tty(v) = self {
             v

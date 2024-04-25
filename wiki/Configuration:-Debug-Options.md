@@ -15,6 +15,7 @@ debug {
     // preview-render "screen-capture"
     enable-overlay-planes
     disable-cursor-plane
+    disable-direct-scanout
     render-drm-device "/dev/dri/renderD129"
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
@@ -59,6 +60,16 @@ Useful to work around driver bugs on specific hardware.
 ```
 debug {
     disable-cursor-plane
+}
+```
+
+### `disable-direct-scanout`
+
+Disable direct scanout to both the primary plane and the overlay planes.
+
+```
+debug {
+    disable-direct-scanout
 }
 ```
 

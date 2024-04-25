@@ -977,6 +977,8 @@ pub struct DebugConfig {
     pub enable_overlay_planes: bool,
     #[knuffel(child)]
     pub disable_cursor_plane: bool,
+    #[knuffel(child)]
+    pub disable_direct_scanout: bool,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
     #[knuffel(child)]
