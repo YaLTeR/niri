@@ -702,6 +702,7 @@ impl State {
                     })
             };
             let layer_focus = |surface: &LayerSurface| {
+                // FIXME: support on-demand.
                 let can_receive_keyboard_focus = surface.cached_state().keyboard_interactivity
                     == wlr_layer::KeyboardInteractivity::Exclusive;
                 can_receive_keyboard_focus
