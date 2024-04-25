@@ -18,7 +18,7 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
-use smithay::wayland::shell::wlr_layer::Layer;
+use smithay::wayland::shell::wlr_layer::{self, Layer};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
@@ -121,19 +121,20 @@ impl XdgShellHandler for State {
                     return;
                 }
             } else {
-                if layers
-                    .layers_on(Layer::Overlay)
-                    .any(|l| l.can_receive_keyboard_focus())
-                {
+                if layers.layers_on(Layer::Overlay).any(|l| {
+                    l.cached_state().keyboard_interactivity
+                        == wlr_layer::KeyboardInteractivity::Exclusive
+                }) {
                     let _ = PopupManager::dismiss_popup(&root, &popup);
                     return;
                 }
 
                 let mon = self.niri.layout.monitor_for_output(output).unwrap();
                 if !mon.render_above_top_layer()
-                    && layers
-                        .layers_on(Layer::Top)
-                        .any(|l| l.can_receive_keyboard_focus())
+                    && layers.layers_on(Layer::Top).any(|l| {
+                        l.cached_state().keyboard_interactivity
+                            == wlr_layer::KeyboardInteractivity::Exclusive
+                    })
                 {
                     let _ = PopupManager::dismiss_popup(&root, &popup);
                     return;

@@ -78,7 +78,7 @@ use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
 use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
-use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
+use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
@@ -702,8 +702,9 @@ impl State {
                     })
             };
             let layer_focus = |surface: &LayerSurface| {
-                surface
-                    .can_receive_keyboard_focus()
+                let can_receive_keyboard_focus = surface.cached_state().keyboard_interactivity
+                    == wlr_layer::KeyboardInteractivity::Exclusive;
+                can_receive_keyboard_focus
                     .then(|| surface.wl_surface().clone())
                     .map(|surface| KeyboardFocus::LayerShell { surface })
             };
