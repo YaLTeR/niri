@@ -77,6 +77,8 @@ pub struct Input {
     pub focus_follows_mouse: bool,
     #[knuffel(child)]
     pub workspace_auto_back_and_forth: bool,
+    #[knuffel(child, unwrap(argument), default = 3)]
+    pub gesture_swipe_fingers: u32,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
@@ -1978,6 +1980,7 @@ mod tests {
                 warp-mouse-to-focus
                 focus-follows-mouse
                 workspace-auto-back-and-forth
+                gesture-swipe-fingers 3
             }
 
             output "eDP-1" {
@@ -2133,6 +2136,7 @@ mod tests {
                     warp_mouse_to_focus: true,
                     focus_follows_mouse: true,
                     workspace_auto_back_and_forth: true,
+                    gesture_swipe_fingers: 3,
                 },
                 outputs: vec![Output {
                     off: false,
