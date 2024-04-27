@@ -81,6 +81,8 @@ impl ResizeRenderElement {
         let geo_to_tex_next = Mat3::from_translation(-tex_next_geo_loc / tex_next_geo_size)
             * Mat3::from_scale(size_next / tex_next_geo_size * scale);
 
+        let curr_geo_size = curr_geo_size * scale;
+
         // Create the shader.
         Shaders::get(renderer).resize().map(|shader| {
             Self(PrimaryGpuPixelShaderWithTexturesRenderElement::new(
@@ -97,6 +99,7 @@ impl ResizeRenderElement {
                     mat3_uniform("niri_input_to_curr_geo", input_to_curr_geo),
                     mat3_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
                     mat3_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
+                    Uniform::new("niri_curr_geo_size", curr_geo_size.to_array()),
                     mat3_uniform("niri_geo_to_tex_prev", geo_to_tex_prev),
                     mat3_uniform("niri_geo_to_tex_next", geo_to_tex_next),
                     Uniform::new("niri_progress", progress),

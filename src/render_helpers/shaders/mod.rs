@@ -92,6 +92,7 @@ fn compile_resize_program(
             UniformName::new("niri_input_to_curr_geo", UniformType::Matrix3x3),
             UniformName::new("niri_curr_geo_to_prev_geo", UniformType::Matrix3x3),
             UniformName::new("niri_curr_geo_to_next_geo", UniformType::Matrix3x3),
+            UniformName::new("niri_curr_geo_size", UniformType::_2f),
             UniformName::new("niri_geo_to_tex_prev", UniformType::Matrix3x3),
             UniformName::new("niri_geo_to_tex_next", UniformType::Matrix3x3),
             UniformName::new("niri_progress", UniformType::_1f),
