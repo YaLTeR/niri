@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 
+use glam::Mat3;
 use smithay::backend::renderer::gles::{
-    GlesError, GlesPixelProgram, GlesRenderer, UniformName, UniformType,
+    GlesError, GlesPixelProgram, GlesRenderer, Uniform, UniformName, UniformType, UniformValue,
 };
 
 use super::primary_gpu_pixel_shader_with_textures::PixelWithTexturesProgram;
@@ -118,4 +119,14 @@ pub fn set_custom_resize_program(renderer: &mut GlesRenderer, src: Option<&str>)
             warn!("error destroying previous custom resize shader: {err:?}");
         }
     }
+}
+
+pub fn mat3_uniform(name: &str, mat: Mat3) -> Uniform {
+    Uniform::new(
+        name,
+        UniformValue::Matrix3x3 {
+            matrices: vec![mat.to_cols_array()],
+            transpose: false,
+        },
+    )
 }

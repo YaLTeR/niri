@@ -2,15 +2,13 @@ use std::collections::HashMap;
 
 use glam::{Mat3, Vec2};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
-use smithay::backend::renderer::gles::{
-    GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform, UniformValue,
-};
+use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
 use super::primary_gpu_pixel_shader_with_textures::PrimaryGpuPixelShaderWithTexturesRenderElement;
 use super::renderer::AsGlesFrame;
-use super::shaders::Shaders;
+use super::shaders::{mat3_uniform, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 #[derive(Debug)]
@@ -84,16 +82,6 @@ impl ResizeRenderElement {
             * Mat3::from_scale(size_next / tex_next_geo_size * scale);
 
         // Create the shader.
-        let make_uniform = |name, mat: Mat3| {
-            Uniform::new(
-                name,
-                UniformValue::Matrix3x3 {
-                    matrices: vec![mat.to_cols_array()],
-                    transpose: false,
-                },
-            )
-        };
-
         Shaders::get(renderer).resize().map(|shader| {
             Self(PrimaryGpuPixelShaderWithTexturesRenderElement::new(
                 shader,
@@ -106,11 +94,11 @@ impl ResizeRenderElement {
                 None,
                 result_alpha,
                 vec![
-                    make_uniform("niri_input_to_curr_geo", input_to_curr_geo),
-                    make_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
-                    make_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
-                    make_uniform("niri_geo_to_tex_prev", geo_to_tex_prev),
-                    make_uniform("niri_geo_to_tex_next", geo_to_tex_next),
+                    mat3_uniform("niri_input_to_curr_geo", input_to_curr_geo),
+                    mat3_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
+                    mat3_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
+                    mat3_uniform("niri_geo_to_tex_prev", geo_to_tex_prev),
+                    mat3_uniform("niri_geo_to_tex_next", geo_to_tex_next),
                     Uniform::new("niri_progress", progress),
                     Uniform::new("niri_clamped_progress", clamped_progress),
                 ],
