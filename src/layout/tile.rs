@@ -620,6 +620,18 @@ impl<W: LayoutElement> Tile<W> {
             .chain(resize_fallback)
             .chain(window.into_iter().flatten());
 
+        let elem = self.is_fullscreen.then(|| {
+            SolidColorRenderElement::from_buffer(
+                &self.fullscreen_backdrop,
+                location.to_physical_precise_round(scale),
+                scale,
+                1.,
+                Kind::Unspecified,
+            )
+            .into()
+        });
+        let rv = rv.chain(elem);
+
         let elem = self.effective_border_width().map(|width| {
             self.border
                 .render(
@@ -637,19 +649,7 @@ impl<W: LayoutElement> Tile<W> {
                 .render(renderer, location, scale, view_size)
                 .map(Into::into)
         });
-        let rv = rv.chain(elem.into_iter().flatten());
-
-        let elem = self.is_fullscreen.then(|| {
-            SolidColorRenderElement::from_buffer(
-                &self.fullscreen_backdrop,
-                location.to_physical_precise_round(scale),
-                scale,
-                1.,
-                Kind::Unspecified,
-            )
-            .into()
-        });
-        rv.chain(elem)
+        rv.chain(elem.into_iter().flatten())
     }
 
     pub fn render<R: NiriRenderer>(
