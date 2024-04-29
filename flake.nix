@@ -74,6 +74,8 @@
             wayland
             mesa
             libglvnd # For libEGL
+            xorg.libXcursor
+            xorg.libXi
           ];
 
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
