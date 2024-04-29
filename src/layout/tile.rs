@@ -20,7 +20,6 @@ use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
-use crate::render_helpers::shaders::Shaders;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget, ToRenderElement};
 
@@ -552,7 +551,7 @@ impl<W: LayoutElement> Tile<W> {
         let mut resize_fallback = None;
 
         if let Some(resize) = &self.resize_animation {
-            if Shaders::get(gles_renderer).resize().is_some() {
+            if let Some(shader) = ResizeRenderElement::shader(gles_renderer) {
                 if let Some(texture_from) = resize.snapshot.texture(gles_renderer, scale, target) {
                     let window_elements =
                         self.window
@@ -569,7 +568,7 @@ impl<W: LayoutElement> Tile<W> {
 
                     if let Some((texture_current, _sync_point, texture_current_geo)) = current {
                         let elem = ResizeRenderElement::new(
-                            gles_renderer,
+                            shader,
                             area,
                             scale,
                             texture_from.clone(),
@@ -579,8 +578,7 @@ impl<W: LayoutElement> Tile<W> {
                             resize.anim.value() as f32,
                             resize.anim.clamped_value().clamp(0., 1.) as f32,
                             alpha,
-                        )
-                        .expect("we checked the resize shader above");
+                        );
                         self.window
                             .set_offscreen_element_id(Some(elem.id().clone()));
                         resize_shader = Some(elem.into());

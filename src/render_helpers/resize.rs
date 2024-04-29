@@ -6,8 +6,10 @@ use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesT
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
-use super::primary_gpu_pixel_shader_with_textures::PrimaryGpuPixelShaderWithTexturesRenderElement;
-use super::renderer::AsGlesFrame;
+use super::primary_gpu_pixel_shader_with_textures::{
+    PixelWithTexturesProgram, PrimaryGpuPixelShaderWithTexturesRenderElement,
+};
+use super::renderer::{AsGlesFrame, NiriRenderer};
 use super::shaders::{mat3_uniform, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
@@ -17,7 +19,7 @@ pub struct ResizeRenderElement(PrimaryGpuPixelShaderWithTexturesRenderElement);
 impl ResizeRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        renderer: &mut GlesRenderer,
+        shader: PixelWithTexturesProgram,
         area: Rectangle<i32, Logical>,
         scale: Scale<f64>,
         texture_prev: (GlesTexture, Rectangle<i32, Physical>),
@@ -27,7 +29,7 @@ impl ResizeRenderElement {
         progress: f32,
         clamped_progress: f32,
         result_alpha: f32,
-    ) -> Option<Self> {
+    ) -> Self {
         let curr_geo = area;
 
         let (texture_prev, tex_prev_geo) = texture_prev;
@@ -84,30 +86,32 @@ impl ResizeRenderElement {
         let curr_geo_size = curr_geo_size * scale;
 
         // Create the shader.
-        Shaders::get(renderer).resize().map(|shader| {
-            Self(PrimaryGpuPixelShaderWithTexturesRenderElement::new(
-                shader,
-                HashMap::from([
-                    (String::from("niri_tex_prev"), texture_prev),
-                    (String::from("niri_tex_next"), texture_next),
-                ]),
-                area,
-                size,
-                None,
-                result_alpha,
-                vec![
-                    mat3_uniform("niri_input_to_curr_geo", input_to_curr_geo),
-                    mat3_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
-                    mat3_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
-                    Uniform::new("niri_curr_geo_size", curr_geo_size.to_array()),
-                    mat3_uniform("niri_geo_to_tex_prev", geo_to_tex_prev),
-                    mat3_uniform("niri_geo_to_tex_next", geo_to_tex_next),
-                    Uniform::new("niri_progress", progress),
-                    Uniform::new("niri_clamped_progress", clamped_progress),
-                ],
-                Kind::Unspecified,
-            ))
-        })
+        Self(PrimaryGpuPixelShaderWithTexturesRenderElement::new(
+            shader,
+            HashMap::from([
+                (String::from("niri_tex_prev"), texture_prev),
+                (String::from("niri_tex_next"), texture_next),
+            ]),
+            area,
+            size,
+            None,
+            result_alpha,
+            vec![
+                mat3_uniform("niri_input_to_curr_geo", input_to_curr_geo),
+                mat3_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
+                mat3_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
+                Uniform::new("niri_curr_geo_size", curr_geo_size.to_array()),
+                mat3_uniform("niri_geo_to_tex_prev", geo_to_tex_prev),
+                mat3_uniform("niri_geo_to_tex_next", geo_to_tex_next),
+                Uniform::new("niri_progress", progress),
+                Uniform::new("niri_clamped_progress", clamped_progress),
+            ],
+            Kind::Unspecified,
+        ))
+    }
+
+    pub fn shader(renderer: &mut impl NiriRenderer) -> Option<PixelWithTexturesProgram> {
+        Shaders::get(renderer).resize()
     }
 }
 
