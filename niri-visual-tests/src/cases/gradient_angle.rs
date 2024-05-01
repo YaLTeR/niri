@@ -3,7 +3,8 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use niri::animation::ANIMATION_SLOWDOWN;
-use niri::render_helpers::gradient::GradientRenderElement;
+use niri::render_helpers::border::BorderRenderElement;
+use niri_config::CornerRadius;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Rectangle, Scale, Size};
@@ -60,17 +61,23 @@ impl TestCase for GradientAngle {
         let size = (size.w - a * 2, size.h - b * 2);
         let area = Rectangle::from_loc_and_size((a, b), size);
 
-        GradientRenderElement::new(
-            renderer,
-            Scale::from(1.),
-            area,
-            area,
-            [1., 0., 0., 1.],
-            [0., 1., 0., 1.],
-            self.angle - FRAC_PI_2,
-        )
-        .into_iter()
-        .map(|elem| Box::new(elem) as _)
-        .collect()
+        BorderRenderElement::shader(renderer)
+            .map(|shader| {
+                BorderRenderElement::new(
+                    shader.clone(),
+                    Scale::from(1.),
+                    area,
+                    area,
+                    [1., 0., 0., 1.],
+                    [0., 1., 0., 1.],
+                    self.angle - FRAC_PI_2,
+                    area,
+                    0.,
+                    CornerRadius::default(),
+                )
+            })
+            .into_iter()
+            .map(|elem| Box::new(elem) as _)
+            .collect()
     }
 }

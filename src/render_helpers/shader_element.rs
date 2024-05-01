@@ -9,18 +9,17 @@ use smithay::backend::renderer::gles::{
     UniformDesc, UniformName,
 };
 use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::DebugFlags;
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size};
 
 use super::renderer::AsGlesFrame;
 use super::resources::Resources;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
-/// Wrapper for a pixel shader from the primary GPU for rendering with the primary GPU.
-///
-/// The shader accepts textures as input.
+/// Renders a shader with optional texture input, on the primary GPU.
 #[derive(Debug)]
-pub struct PrimaryGpuPixelShaderWithTexturesRenderElement {
-    shader: PixelWithTexturesProgram,
+pub struct ShaderRenderElement {
+    shader: ShaderProgram,
     textures: HashMap<String, GlesTexture>,
     id: Id,
     commit_counter: CommitCounter,
@@ -33,10 +32,17 @@ pub struct PrimaryGpuPixelShaderWithTexturesRenderElement {
 }
 
 #[derive(Debug, Clone)]
-pub struct PixelWithTexturesProgram(Rc<PixelWithTexturesProgramInner>);
+pub struct ShaderProgram(Rc<ShaderProgramInner>);
 
 #[derive(Debug)]
-struct PixelWithTexturesProgramInner {
+struct ShaderProgramInner {
+    normal: ShaderProgramInternal,
+    debug: ShaderProgramInternal,
+    uniform_tint: ffi::types::GLint,
+}
+
+#[derive(Debug)]
+struct ShaderProgramInternal {
     program: ffi::types::GLuint,
     uniform_tex_matrix: ffi::types::GLint,
     uniform_matrix: ffi::types::GLint,
@@ -54,10 +60,12 @@ unsafe fn compile_program(
     additional_uniforms: &[UniformName<'_>],
     texture_uniforms: &[&str],
     // destruction_callback_sender: Sender<CleanupResource>,
-) -> Result<PixelWithTexturesProgram, GlesError> {
-    let shader = src;
-
-    let program = unsafe { link_program(gl, include_str!("shaders/texture.vert"), shader)? };
+) -> Result<ShaderProgram, GlesError> {
+    let shader = format!("#version 100\n{}", src);
+    let program = unsafe { link_program(gl, include_str!("shaders/texture.vert"), &shader)? };
+    let debug_shader = format!("#version 100\n#define DEBUG_FLAGS\n{}", src);
+    let debug_program =
+        unsafe { link_program(gl, include_str!("shaders/texture.vert"), &debug_shader)? };
 
     let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
     let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
@@ -65,9 +73,10 @@ unsafe fn compile_program(
     let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
     let size = CStr::from_bytes_with_nul(b"niri_size\0").expect("NULL terminated");
     let alpha = CStr::from_bytes_with_nul(b"niri_alpha\0").expect("NULL terminated");
+    let tint = CStr::from_bytes_with_nul(b"niri_tint\0").expect("NULL terminated");
 
-    Ok(PixelWithTexturesProgram(Rc::new(
-        PixelWithTexturesProgramInner {
+    Ok(ShaderProgram(Rc::new(ShaderProgramInner {
+        normal: ShaderProgramInternal {
             program,
             uniform_matrix: gl
                 .GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
@@ -106,10 +115,60 @@ unsafe fn compile_program(
                 })
                 .collect(),
         },
-    )))
+        debug: ShaderProgramInternal {
+            program: debug_program,
+            uniform_matrix: gl
+                .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
+            uniform_tex_matrix: gl.GetUniformLocation(
+                debug_program,
+                tex_matrix.as_ptr() as *const ffi::types::GLchar,
+            ),
+            uniform_size: gl
+                .GetUniformLocation(debug_program, size.as_ptr() as *const ffi::types::GLchar),
+            uniform_alpha: gl
+                .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
+            attrib_vert: gl
+                .GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
+            attrib_vert_position: gl.GetAttribLocation(
+                debug_program,
+                vert_position.as_ptr() as *const ffi::types::GLchar,
+            ),
+            additional_uniforms: additional_uniforms
+                .iter()
+                .map(|uniform| {
+                    let name =
+                        CString::new(uniform.name.as_bytes()).expect("Interior null in name");
+                    let location = gl.GetUniformLocation(
+                        debug_program,
+                        name.as_ptr() as *const ffi::types::GLchar,
+                    );
+                    (
+                        uniform.name.clone().into_owned(),
+                        UniformDesc {
+                            location,
+                            type_: uniform.type_,
+                        },
+                    )
+                })
+                .collect(),
+            texture_uniforms: texture_uniforms
+                .iter()
+                .map(|name_| {
+                    let name = CString::new(name_.as_bytes()).expect("Interior null in name");
+                    let location = gl.GetUniformLocation(
+                        debug_program,
+                        name.as_ptr() as *const ffi::types::GLchar,
+                    );
+                    (name_.to_string(), location)
+                })
+                .collect(),
+        },
+        uniform_tint: gl
+            .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
+    })))
 }
 
-impl PixelWithTexturesProgram {
+impl ShaderProgram {
     pub fn compile(
         renderer: &mut GlesRenderer,
         src: &str,
@@ -123,15 +182,16 @@ impl PixelWithTexturesProgram {
 
     pub fn destroy(self, renderer: &mut GlesRenderer) -> Result<(), GlesError> {
         renderer.with_context(move |gl| unsafe {
-            gl.DeleteProgram(self.0.program);
+            gl.DeleteProgram(self.0.normal.program);
+            gl.DeleteProgram(self.0.debug.program);
         })
     }
 }
 
-impl PrimaryGpuPixelShaderWithTexturesRenderElement {
+impl ShaderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        shader: PixelWithTexturesProgram,
+        shader: ShaderProgram,
         textures: HashMap<String, GlesTexture>,
         area: Rectangle<i32, Logical>,
         size: Size<f64, Buffer>,
@@ -158,7 +218,7 @@ impl PrimaryGpuPixelShaderWithTexturesRenderElement {
     }
 }
 
-impl Element for PrimaryGpuPixelShaderWithTexturesRenderElement {
+impl Element for ShaderRenderElement {
     fn id(&self) -> &Id {
         &self.id
     }
@@ -191,7 +251,7 @@ impl Element for PrimaryGpuPixelShaderWithTexturesRenderElement {
     }
 }
 
-impl RenderElement<GlesRenderer> for PrimaryGpuPixelShaderWithTexturesRenderElement {
+impl RenderElement<GlesRenderer> for ShaderRenderElement {
     fn draw(
         &self,
         frame: &mut GlesFrame<'_>,
@@ -274,7 +334,14 @@ impl RenderElement<GlesRenderer> for PrimaryGpuPixelShaderWithTexturesRenderElem
         //apply output transformation
         matrix = Mat3::from_cols_array(frame.projection()) * matrix;
 
-        let program = &self.shader.0;
+        let has_debug = !frame.debug_flags().is_empty();
+        let has_tint = frame.debug_flags().contains(DebugFlags::TINT);
+
+        let program = if has_debug {
+            &self.shader.0.debug
+        } else {
+            &self.shader.0.normal
+        };
 
         // render
         frame.with_context(move |gl| -> Result<(), GlesError> {
@@ -316,6 +383,11 @@ impl RenderElement<GlesRenderer> for PrimaryGpuPixelShaderWithTexturesRenderElem
                 );
                 gl.Uniform2f(program.uniform_size, dest.size.w as f32, dest.size.h as f32);
                 gl.Uniform1f(program.uniform_alpha, self.alpha);
+
+                let tint = if has_tint { 1.0f32 } else { 0.0f32 };
+                if has_debug {
+                    gl.Uniform1f(self.shader.0.uniform_tint, tint);
+                }
 
                 for uniform in &self.additional_uniforms {
                     let desc =
@@ -408,9 +480,7 @@ impl RenderElement<GlesRenderer> for PrimaryGpuPixelShaderWithTexturesRenderElem
     }
 }
 
-impl<'render> RenderElement<TtyRenderer<'render>>
-    for PrimaryGpuPixelShaderWithTexturesRenderElement
-{
+impl<'render> RenderElement<TtyRenderer<'render>> for ShaderRenderElement {
     fn draw(
         &self,
         frame: &mut TtyFrame<'_, '_>,

@@ -3,6 +3,7 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::CornerRadius;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
@@ -17,6 +18,8 @@ use super::{
 };
 use crate::animation::Animation;
 use crate::niri_render_elements;
+use crate::render_helpers::border::BorderRenderElement;
+use crate::render_helpers::clipped_surface::ClippedSurfaceRenderElement;
 use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
@@ -76,6 +79,8 @@ niri_render_elements! {
         SolidColor = SolidColorRenderElement,
         Offscreen = RescaleRenderElement<OffscreenRenderElement>,
         Resize = ResizeRenderElement,
+        Border = BorderRenderElement,
+        ClippedSurface = ClippedSurfaceRenderElement<R>,
     }
 }
 
@@ -205,13 +210,26 @@ impl<W: LayoutElement> Tile<W> {
             }
         }
 
-        let draw_border_with_background = self
-            .window
-            .rules()
+        let rules = self.window.rules();
+
+        let draw_border_with_background = rules
             .draw_border_with_background
             .unwrap_or_else(|| !self.window.has_ssd());
-        self.border
-            .update(self.animated_window_size(), !draw_border_with_background);
+        let border_width = self.effective_border_width().unwrap_or(0);
+        let radius = if self.is_fullscreen {
+            CornerRadius::default()
+        } else {
+            rules
+                .geometry_corner_radius
+                .map_or(CornerRadius::default(), |radius| {
+                    radius.expanded_by(border_width as f32)
+                })
+        };
+        self.border.update(
+            self.animated_window_size(),
+            !draw_border_with_background,
+            radius,
+        );
         self.border.set_active(is_active);
 
         let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
@@ -219,8 +237,19 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             draw_border_with_background
         };
-        self.focus_ring
-            .update(self.animated_tile_size(), !draw_focus_ring_with_background);
+        let radius = if self.is_fullscreen {
+            CornerRadius::default()
+        } else if self.effective_border_width().is_some() {
+            radius
+        } else {
+            rules.geometry_corner_radius.unwrap_or_default()
+        }
+        .expanded_by(self.focus_ring.width() as f32);
+        self.focus_ring.update(
+            self.animated_tile_size(),
+            !draw_focus_ring_with_background,
+            radius,
+        );
         self.focus_ring.set_active(is_active);
     }
 
@@ -573,6 +602,11 @@ impl<W: LayoutElement> Tile<W> {
                     .map_err(|err| warn!("error rendering window to texture: {err:?}"))
                     .ok();
 
+                    let rules = self.window.rules();
+                    let clip_to_geometry =
+                        !self.is_fullscreen && rules.clip_to_geometry == Some(true);
+                    let corner_radius = rules.geometry_corner_radius.unwrap_or_default();
+
                     if let Some((texture_current, _sync_point, texture_current_geo)) = current {
                         let elem = ResizeRenderElement::new(
                             shader,
@@ -584,8 +618,12 @@ impl<W: LayoutElement> Tile<W> {
                             window_size,
                             resize.anim.value() as f32,
                             resize.anim.clamped_value().clamp(0., 1.) as f32,
+                            corner_radius,
+                            clip_to_geometry,
                             alpha,
                         );
+                        // FIXME: with split popups, this will use the resize element ID for
+                        // popups, but we want the real IDs.
                         self.window
                             .set_offscreen_element_id(Some(elem.id().clone()));
                         resize_shader = Some(elem.into());
@@ -610,14 +648,77 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         // If we're not resizing, render the window itself.
-        let mut window = None;
+        let mut window_surface = None;
+        let mut window_popups = None;
         if resize_shader.is_none() && resize_fallback.is_none() {
-            window = Some(
-                self.window
-                    .render(renderer, window_render_loc, scale, alpha, target)
-                    .into_iter()
-                    .map(Into::into),
-            );
+            let window = self
+                .window
+                .render(renderer, window_render_loc, scale, alpha, target);
+
+            let geo = Rectangle::from_loc_and_size(window_render_loc, window_size);
+
+            let rules = self.window.rules();
+            let clip_to_geometry = !self.is_fullscreen && rules.clip_to_geometry == Some(true);
+            let radius = rules
+                .geometry_corner_radius
+                .unwrap_or_default()
+                .fit_to(window_size.w as f32, window_size.h as f32);
+
+            let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
+            let border_shader = BorderRenderElement::shader(renderer).cloned();
+
+            window_surface = Some(window.normal.into_iter().map(move |elem| match elem {
+                LayoutElementRenderElement::Wayland(elem) => {
+                    // If we should clip to geometry, render a clipped window.
+                    if clip_to_geometry {
+                        if let Some(shader) = clip_shader.clone() {
+                            if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
+                                return ClippedSurfaceRenderElement::new(
+                                    elem,
+                                    scale,
+                                    geo,
+                                    shader.clone(),
+                                    radius,
+                                )
+                                .into();
+                            }
+                        }
+                    }
+
+                    // Otherwise, render it normally.
+                    LayoutElementRenderElement::Wayland(elem).into()
+                }
+                LayoutElementRenderElement::SolidColor(elem) => {
+                    // In this branch we're rendering a blocked-out window with a solid
+                    // color. We need to render it with a rounded corner shader even if
+                    // clip_to_geometry is false, because in this case we're assuming that
+                    // the unclipped window CSD already has corners rounded to the
+                    // user-provided radius, so our blocked-out rendering should match that
+                    // radius.
+                    if radius != CornerRadius::default() {
+                        if let Some(shader) = border_shader.clone() {
+                            return BorderRenderElement::new(
+                                shader,
+                                scale,
+                                elem.geometry(Scale::from(1.)).to_logical(1),
+                                Rectangle::from_loc_and_size(Point::from((0, 0)), geo.size),
+                                elem.color(),
+                                elem.color(),
+                                0.,
+                                elem.geometry(Scale::from(1.)).to_logical(1),
+                                0.,
+                                radius,
+                            )
+                            .into();
+                        }
+                    }
+
+                    // Otherwise, render the solid color as is.
+                    LayoutElementRenderElement::SolidColor(elem).into()
+                }
+            }));
+
+            window_popups = Some(window.popups.into_iter().map(Into::into));
         }
 
         let rv = resize_popups
@@ -625,7 +726,8 @@ impl<W: LayoutElement> Tile<W> {
             .flatten()
             .chain(resize_shader)
             .chain(resize_fallback)
-            .chain(window.into_iter().flatten());
+            .chain(window_popups.into_iter().flatten())
+            .chain(window_surface.into_iter().flatten());
 
         let elem = self.is_fullscreen.then(|| {
             SolidColorRenderElement::from_buffer(

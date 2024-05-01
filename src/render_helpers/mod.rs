@@ -16,15 +16,15 @@ use smithay::wayland::shm;
 
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 
-pub mod gradient;
+pub mod border;
+pub mod clipped_surface;
 pub mod offscreen;
-pub mod primary_gpu_pixel_shader;
-pub mod primary_gpu_pixel_shader_with_textures;
 pub mod primary_gpu_texture;
 pub mod render_elements;
 pub mod renderer;
 pub mod resize;
 pub mod resources;
+pub mod shader_element;
 pub mod shaders;
 pub mod snapshot;
 pub mod surface;

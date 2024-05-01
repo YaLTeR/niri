@@ -59,6 +59,9 @@ window-rule {
         // Same as focus-ring.
     }
 
+    geometry-corner-radius 12
+    clip-to-geometry true
+
     min-width 100
     max-width 200
     min-height 300
@@ -375,6 +378,77 @@ window-rule {
         on
         width 8
     }
+}
+```
+
+#### `geometry-corner-radius`
+
+<sup>Since: 0.1.6</sup>
+
+Set the corner radius of the window.
+
+On its own, this setting will only affect the border and the focus ring—they will round their corners to match the geometry corner radius.
+If you'd like to force-round the corners of the window itself, set `clip-to-geometry true` in addition to this setting.
+
+```
+window-rule {
+    geometry-corner-radius 12
+}
+```
+
+The radius is set in logical pixels, and controls the radius of the window itself, that is, the inner radius of the border:
+
+![](./img/geometry-corner-radius.png)
+
+Instead of one radius, you can set four, for each corner.
+The order is the same as in CSS: top-left, top-right, bottom-right, bottom-left.
+
+```
+window-rule {
+    geometry-corner-radius 8 8 0 0
+}
+```
+
+This way, you can match GTK 3 applications which have square bottom corners:
+
+![](./img/different-corner-radius.png)
+
+#### `clip-to-geometry`
+
+<sup>Since: 0.1.6</sup>
+
+Clips the window to its visual geometry.
+
+This will cut out any client-side window shadows, and also round window corners according to `geometry-corner-radius`.
+
+![](./img/clip-to-geometry.png)
+
+```
+window-rule {
+    clip-to-geometry true
+}
+```
+
+Enable border, set `geometry-corner-radius` and `clip-to-geometry`, and you've got a classic setup:
+
+![](./img/border-radius-clip.png)
+
+```
+prefer-no-csd
+
+layout {
+    focus-ring {
+        off
+    }
+
+    border {
+        width 2
+    }
+}
+
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
 }
 ```
 

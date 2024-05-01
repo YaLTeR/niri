@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use niri::animation::ANIMATION_SLOWDOWN;
 use niri::layout::focus_ring::FocusRing;
-use niri::render_helpers::gradient::GradientRenderElement;
-use niri_config::Color;
+use niri::render_helpers::border::BorderRenderElement;
+use niri_config::{Color, CornerRadius};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
@@ -85,7 +85,7 @@ impl TestCase for GradientArea {
         let g_loc = ((size.w - g_size.w) / 2, (size.h - g_size.h) / 2);
         let g_area = Rectangle::from_loc_and_size(g_loc, g_size);
 
-        self.border.update(g_size, true);
+        self.border.update(g_size, true, CornerRadius::default());
         rv.extend(
             self.border
                 .render(
@@ -98,17 +98,23 @@ impl TestCase for GradientArea {
         );
 
         rv.extend(
-            GradientRenderElement::new(
-                renderer,
-                Scale::from(1.),
-                area,
-                g_area,
-                [1., 0., 0., 1.],
-                [0., 1., 0., 1.],
-                FRAC_PI_4,
-            )
-            .into_iter()
-            .map(|elem| Box::new(elem) as _),
+            BorderRenderElement::shader(renderer)
+                .map(|shader| {
+                    BorderRenderElement::new(
+                        shader.clone(),
+                        Scale::from(1.),
+                        area,
+                        g_area,
+                        [1., 0., 0., 1.],
+                        [0., 1., 0., 1.],
+                        FRAC_PI_4,
+                        area,
+                        0.,
+                        CornerRadius::default(),
+                    )
+                })
+                .into_iter()
+                .map(|elem| Box::new(elem) as _),
         );
 
         rv

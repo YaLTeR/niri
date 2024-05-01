@@ -2,35 +2,55 @@ use std::cell::RefCell;
 
 use glam::Mat3;
 use smithay::backend::renderer::gles::{
-    GlesError, GlesPixelProgram, GlesRenderer, Uniform, UniformName, UniformType, UniformValue,
+    GlesError, GlesRenderer, GlesTexProgram, Uniform, UniformName, UniformType, UniformValue,
 };
 
-use super::primary_gpu_pixel_shader_with_textures::PixelWithTexturesProgram;
 use super::renderer::NiriRenderer;
+use super::shader_element::ShaderProgram;
 
 pub struct Shaders {
-    pub gradient_border: Option<GlesPixelProgram>,
-    pub resize: Option<PixelWithTexturesProgram>,
-    pub custom_resize: RefCell<Option<PixelWithTexturesProgram>>,
+    pub border: Option<ShaderProgram>,
+    pub clipped_surface: Option<GlesTexProgram>,
+    pub resize: Option<ShaderProgram>,
+    pub custom_resize: RefCell<Option<ShaderProgram>>,
 }
 
 impl Shaders {
     fn compile(renderer: &mut GlesRenderer) -> Self {
         let _span = tracy_client::span!("Shaders::compile");
 
-        let gradient_border = renderer
-            .compile_custom_pixel_shader(
-                include_str!("gradient_border.frag"),
+        let border = ShaderProgram::compile(
+            renderer,
+            include_str!("border.frag"),
+            &[
+                UniformName::new("color_from", UniformType::_4f),
+                UniformName::new("color_to", UniformType::_4f),
+                UniformName::new("grad_offset", UniformType::_2f),
+                UniformName::new("grad_width", UniformType::_1f),
+                UniformName::new("grad_vec", UniformType::_2f),
+                UniformName::new("input_to_geo", UniformType::Matrix3x3),
+                UniformName::new("geo_size", UniformType::_2f),
+                UniformName::new("outer_radius", UniformType::_4f),
+                UniformName::new("border_width", UniformType::_1f),
+            ],
+            &[],
+        )
+        .map_err(|err| {
+            warn!("error compiling border shader: {err:?}");
+        })
+        .ok();
+
+        let clipped_surface = renderer
+            .compile_custom_texture_shader(
+                include_str!("clipped_surface.frag"),
                 &[
-                    UniformName::new("color_from", UniformType::_4f),
-                    UniformName::new("color_to", UniformType::_4f),
-                    UniformName::new("grad_offset", UniformType::_2f),
-                    UniformName::new("grad_width", UniformType::_1f),
-                    UniformName::new("grad_vec", UniformType::_2f),
+                    UniformName::new("geo_size", UniformType::_2f),
+                    UniformName::new("corner_radius", UniformType::_4f),
+                    UniformName::new("input_to_geo", UniformType::Matrix3x3),
                 ],
             )
             .map_err(|err| {
-                warn!("error compiling gradient border shader: {err:?}");
+                warn!("error compiling clipped surface shader: {err:?}");
             })
             .ok();
 
@@ -41,7 +61,8 @@ impl Shaders {
             .ok();
 
         Self {
-            gradient_border,
+            border,
+            clipped_surface,
             resize,
             custom_resize: RefCell::new(None),
         }
@@ -56,12 +77,12 @@ impl Shaders {
 
     pub fn replace_custom_resize_program(
         &self,
-        program: Option<PixelWithTexturesProgram>,
-    ) -> Option<PixelWithTexturesProgram> {
+        program: Option<ShaderProgram>,
+    ) -> Option<ShaderProgram> {
         self.custom_resize.replace(program)
     }
 
-    pub fn resize(&self) -> Option<PixelWithTexturesProgram> {
+    pub fn resize(&self) -> Option<ShaderProgram> {
         self.custom_resize
             .borrow()
             .clone()
@@ -80,12 +101,12 @@ pub fn init(renderer: &mut GlesRenderer) {
 fn compile_resize_program(
     renderer: &mut GlesRenderer,
     src: &str,
-) -> Result<PixelWithTexturesProgram, GlesError> {
-    let mut program = include_str!("resize-prelude.frag").to_string();
+) -> Result<ShaderProgram, GlesError> {
+    let mut program = include_str!("resize_prelude.frag").to_string();
     program.push_str(src);
-    program.push_str(include_str!("resize-epilogue.frag"));
+    program.push_str(include_str!("resize_epilogue.frag"));
 
-    PixelWithTexturesProgram::compile(
+    ShaderProgram::compile(
         renderer,
         &program,
         &[
@@ -97,6 +118,8 @@ fn compile_resize_program(
             UniformName::new("niri_geo_to_tex_next", UniformType::Matrix3x3),
             UniformName::new("niri_progress", UniformType::_1f),
             UniformName::new("niri_clamped_progress", UniformType::_1f),
+            UniformName::new("niri_corner_radius", UniformType::_4f),
+            UniformName::new("niri_clip_to_geometry", UniformType::_1f),
         ],
         &["niri_tex_prev", "niri_tex_next"],
     )

@@ -1,4 +1,4 @@
-use niri_config::{BlockOutFrom, BorderRule, Match, WindowRule};
+use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, WindowRule};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
@@ -61,6 +61,12 @@ pub struct ResolvedWindowRules {
     /// Extra opacity to draw this window with.
     pub opacity: Option<f32>,
 
+    /// Corner radius to assume this window has.
+    pub geometry_corner_radius: Option<CornerRadius>,
+
+    /// Whether to clip this window to its geometry, including the corner radius.
+    pub clip_to_geometry: Option<bool>,
+
     /// Whether to block out this window from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 }
@@ -112,6 +118,8 @@ impl ResolvedWindowRules {
             },
             draw_border_with_background: None,
             opacity: None,
+            geometry_corner_radius: None,
+            clip_to_geometry: None,
             block_out_from: None,
         }
     }
@@ -189,6 +197,12 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.opacity {
                     resolved.opacity = Some(x);
+                }
+                if let Some(x) = rule.geometry_corner_radius {
+                    resolved.geometry_corner_radius = Some(x);
+                }
+                if let Some(x) = rule.clip_to_geometry {
+                    resolved.clip_to_geometry = Some(x);
                 }
                 if let Some(x) = rule.block_out_from {
                     resolved.block_out_from = Some(x);

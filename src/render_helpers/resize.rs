@@ -1,25 +1,24 @@
 use std::collections::HashMap;
 
 use glam::{Mat3, Vec2};
+use niri_config::CornerRadius;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
-use super::primary_gpu_pixel_shader_with_textures::{
-    PixelWithTexturesProgram, PrimaryGpuPixelShaderWithTexturesRenderElement,
-};
 use super::renderer::{AsGlesFrame, NiriRenderer};
+use super::shader_element::{ShaderProgram, ShaderRenderElement};
 use super::shaders::{mat3_uniform, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 #[derive(Debug)]
-pub struct ResizeRenderElement(PrimaryGpuPixelShaderWithTexturesRenderElement);
+pub struct ResizeRenderElement(ShaderRenderElement);
 
 impl ResizeRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        shader: PixelWithTexturesProgram,
+        shader: ShaderProgram,
         area: Rectangle<i32, Logical>,
         scale: Scale<f64>,
         texture_prev: (GlesTexture, Rectangle<i32, Physical>),
@@ -28,6 +27,8 @@ impl ResizeRenderElement {
         size_next: Size<i32, Logical>,
         progress: f32,
         clamped_progress: f32,
+        corner_radius: CornerRadius,
+        clip_to_geometry: bool,
         result_alpha: f32,
     ) -> Self {
         let curr_geo = area;
@@ -84,9 +85,13 @@ impl ResizeRenderElement {
             * Mat3::from_scale(size_next / tex_next_geo_size * scale);
 
         let curr_geo_size = curr_geo_size * scale;
+        let corner_radius = corner_radius
+            .scaled_by(scale.x)
+            .fit_to(curr_geo_size.x, curr_geo_size.y);
+        let clip_to_geometry = if clip_to_geometry { 1. } else { 0. };
 
         // Create the shader.
-        Self(PrimaryGpuPixelShaderWithTexturesRenderElement::new(
+        Self(ShaderRenderElement::new(
             shader,
             HashMap::from([
                 (String::from("niri_tex_prev"), texture_prev),
@@ -105,12 +110,14 @@ impl ResizeRenderElement {
                 mat3_uniform("niri_geo_to_tex_next", geo_to_tex_next),
                 Uniform::new("niri_progress", progress),
                 Uniform::new("niri_clamped_progress", clamped_progress),
+                Uniform::new("niri_corner_radius", <[f32; 4]>::from(corner_radius)),
+                Uniform::new("niri_clip_to_geometry", clip_to_geometry),
             ],
             Kind::Unspecified,
         ))
     }
 
-    pub fn shader(renderer: &mut impl NiriRenderer) -> Option<PixelWithTexturesProgram> {
+    pub fn shader(renderer: &mut impl NiriRenderer) -> Option<ShaderProgram> {
         Shaders::get(renderer).resize()
     }
 }
