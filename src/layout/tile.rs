@@ -651,6 +651,8 @@ impl<W: LayoutElement> Tile<W> {
         focus_ring: bool,
         target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
+        let _span = tracy_client::span!("Tile::render");
+
         if let Some(anim) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
             let elements =
