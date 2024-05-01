@@ -524,6 +524,8 @@ impl<W: LayoutElement> Tile<W> {
         focus_ring: bool,
         target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
+        let _span = tracy_client::span!("Tile::render_inner");
+
         let alpha = if self.is_fullscreen {
             1.
         } else {
