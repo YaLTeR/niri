@@ -227,10 +227,6 @@ impl LayoutElement for TestWindow {
         &EMPTY
     }
 
-    fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot> {
-        None
-    }
-
     fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
         None
     }

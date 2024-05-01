@@ -140,8 +140,6 @@ pub trait LayoutElement {
     /// Runs periodic clean-up tasks.
     fn refresh(&self);
 
-    fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot>;
-
     fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot>;
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot>;
 }
@@ -1749,6 +1747,54 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
+        let _span = tracy_client::span!("Layout::store_unmap_snapshot");
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.store_unmap_snapshot_if_empty(renderer, window);
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.store_unmap_snapshot_if_empty(renderer, window);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn clear_unmap_snapshot(&mut self, window: &W::Id) {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.clear_unmap_snapshot(window);
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.clear_unmap_snapshot(window);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn start_close_animation_for_window(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -1994,10 +2040,6 @@ mod tests {
         fn rules(&self) -> &ResolvedWindowRules {
             static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
             &EMPTY
-        }
-
-        fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot> {
-            None
         }
 
         fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {

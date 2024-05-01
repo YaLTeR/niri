@@ -30,7 +30,6 @@ use smithay::{
 };
 
 use crate::layout::workspace::ColumnWidth;
-use crate::layout::LayoutElement as _;
 use crate::niri::{PopupGrabState, State};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
@@ -389,7 +388,7 @@ impl XdgShellHandler for State {
         let output = output.clone();
 
         self.backend.with_primary_renderer(|renderer| {
-            mapped.store_unmap_snapshot_if_empty(renderer);
+            self.niri.layout.store_unmap_snapshot(renderer, &window);
         });
         self.backend.with_primary_renderer(|renderer| {
             self.niri
@@ -881,22 +880,22 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             false
         };
 
+        let window = mapped.window.clone();
         if got_unmapped {
             state.backend.with_primary_renderer(|renderer| {
-                mapped.store_unmap_snapshot_if_empty(renderer);
+                state.niri.layout.store_unmap_snapshot(renderer, &window);
             });
         } else {
-            // The toplevel remains mapped; clear any stored unmap snapshot.
-            let _ = mapped.take_unmap_snapshot();
-
             if animate {
                 state.backend.with_primary_renderer(|renderer| {
                     mapped.store_animation_snapshot(renderer);
                 });
 
-                let window = mapped.window.clone();
                 state.niri.layout.prepare_for_resize_animation(&window);
             }
+
+            // The toplevel remains mapped; clear any stored unmap snapshot.
+            state.niri.layout.clear_unmap_snapshot(&window);
         }
     })
 }

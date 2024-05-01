@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
@@ -17,11 +18,10 @@ use super::{
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::OffscreenRenderElement;
-use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
-use crate::render_helpers::{render_to_encompassing_texture, RenderTarget, ToRenderElement};
+use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -62,6 +62,9 @@ pub struct Tile<W: LayoutElement> {
     /// The animation of a tile visually moving vertically.
     move_y_animation: Option<MoveAnimation>,
 
+    /// Snapshot of the last render for use in the close animation.
+    unmap_snapshot: RefCell<Option<TileRenderSnapshot>>,
+
     /// Configurable properties of the layout.
     pub options: Rc<Options>,
 }
@@ -76,20 +79,8 @@ niri_render_elements! {
     }
 }
 
-niri_render_elements! {
-    TileSnapshotContentsRenderElement => {
-        Texture = PrimaryGpuTextureRenderElement,
-        SolidColor = SolidColorRenderElement,
-    }
-}
-
-niri_render_elements! {
-    TileSnapshotRenderElement => {
-        Contents = RescaleRenderElement<TileSnapshotContentsRenderElement>,
-        FocusRing = FocusRingRenderElement,
-        SolidColor = SolidColorRenderElement,
-    }
-}
+type TileRenderSnapshot =
+    RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
 #[derive(Debug)]
 struct ResizeAnimation {
@@ -121,6 +112,7 @@ impl<W: LayoutElement> Tile<W> {
             resize_animation: None,
             move_x_animation: None,
             move_y_animation: None,
+            unmap_snapshot: RefCell::new(None),
             options,
         }
     }
@@ -696,80 +688,58 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    fn render_snapshot<E, C>(
+    pub fn store_unmap_snapshot_if_empty(
         &self,
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
         view_size: Size<i32, Logical>,
-        contents: Vec<C>,
-    ) -> Vec<TileSnapshotRenderElement>
-    where
-        E: Into<TileSnapshotContentsRenderElement>,
-        C: ToRenderElement<RenderElement = E>,
-    {
-        let alpha = if self.is_fullscreen {
-            1.
-        } else {
-            self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)
-        };
-
-        let window_size = self.window_size();
-        let animated_window_size = self.animated_window_size();
-        let animated_scale = animated_window_size.to_f64() / window_size.to_f64();
-
-        let mut rv = vec![];
-
-        for baked in contents {
-            let elem = baked.to_render_element(self.window_loc(), scale, alpha, Kind::Unspecified);
-            let elem: TileSnapshotContentsRenderElement = elem.into();
-
-            let origin = self.window_loc().to_physical_precise_round(scale);
-            let elem = RescaleRenderElement::from_element(elem, origin, animated_scale);
-            rv.push(elem.into());
+    ) {
+        let mut snapshot = self.unmap_snapshot.borrow_mut();
+        if snapshot.is_some() {
+            return;
         }
 
-        if let Some(width) = self.effective_border_width() {
-            rv.extend(
-                self.border
-                    .render(renderer, Point::from((width, width)), scale, view_size)
-                    .map(Into::into),
-            );
-        }
-
-        if self.is_fullscreen {
-            let elem = SolidColorRenderElement::from_buffer(
-                &self.fullscreen_backdrop,
-                Point::from((0, 0)),
-                scale,
-                1.,
-                Kind::Unspecified,
-            );
-            rv.push(elem.into());
-        }
-
-        rv
+        *snapshot = Some(self.render_snapshot(renderer, scale, view_size));
     }
 
-    pub fn take_snapshot_for_close_anim(
+    fn render_snapshot(
         &self,
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
         view_size: Size<i32, Logical>,
-    ) -> Option<RenderSnapshot<TileSnapshotRenderElement, TileSnapshotRenderElement>> {
-        let snapshot = self.window.take_unmap_snapshot()?;
+    ) -> TileRenderSnapshot {
+        let _span = tracy_client::span!("Tile::render_snapshot");
 
-        Some(RenderSnapshot {
-            contents: self.render_snapshot(renderer, scale, view_size, snapshot.contents),
-            blocked_out_contents: self.render_snapshot(
-                renderer,
-                scale,
-                view_size,
-                snapshot.blocked_out_contents,
-            ),
-            block_out_from: snapshot.block_out_from,
+        let contents = self.render_inner(
+            renderer,
+            Point::from((0, 0)),
+            scale,
+            view_size,
+            false,
+            RenderTarget::Output,
+        );
+
+        // A bit of a hack to render blocked out as for screencast, but I think it's fine here.
+        let blocked_out_contents = self.render_inner(
+            renderer,
+            Point::from((0, 0)),
+            scale,
+            view_size,
+            false,
+            RenderTarget::Screencast,
+        );
+
+        RenderSnapshot {
+            contents: contents.collect(),
+            blocked_out_contents: blocked_out_contents.collect(),
+            block_out_from: self.window.rules().block_out_from,
             size: self.animated_tile_size(),
             texture: Default::default(),
             blocked_out_texture: Default::default(),
-        })
+        }
+    }
+
+    pub fn take_unmap_snapshot(&self) -> Option<TileRenderSnapshot> {
+        self.unmap_snapshot.take()
     }
 }

@@ -47,9 +47,6 @@ pub struct Mapped {
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
 
-    /// Snapshot of the last render for use in the close animation.
-    unmap_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
-
     /// Whether the next configure should be animated, if the configured state changed.
     animate_next_configure: bool,
 
@@ -69,7 +66,6 @@ impl Mapped {
             need_to_recompute_rules: false,
             is_focused: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0, 0), [0., 0., 0., 1.])),
-            unmap_snapshot: RefCell::new(None),
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
@@ -154,15 +150,6 @@ impl Mapped {
             texture: Default::default(),
             blocked_out_texture: Default::default(),
         }
-    }
-
-    pub fn store_unmap_snapshot_if_empty(&self, renderer: &mut GlesRenderer) {
-        let mut snapshot = self.unmap_snapshot.borrow_mut();
-        if snapshot.is_some() {
-            return;
-        }
-
-        *snapshot = Some(self.render_snapshot(renderer));
     }
 
     pub fn should_animate_commit(&mut self, commit_serial: Serial) -> bool {
@@ -378,10 +365,6 @@ impl LayoutElement for Mapped {
 
     fn rules(&self) -> &ResolvedWindowRules {
         &self.rules
-    }
-
-    fn take_unmap_snapshot(&self) -> Option<LayoutElementRenderSnapshot> {
-        self.unmap_snapshot.take()
     }
 
     fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {

@@ -1176,6 +1176,32 @@ impl<W: LayoutElement> Workspace<W> {
         self.activate_column(column_idx);
     }
 
+    pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
+        let (tile, _) = self
+            .tiles_in_render_order()
+            .find(|(tile, _)| tile.window().id() == window)
+            .unwrap();
+
+        // FIXME: workspaces should probably cache their last used scale so they can be correctly
+        // rendered even with no outputs connected.
+        let output_scale = self
+            .output
+            .as_ref()
+            .map(|o| Scale::from(o.current_scale().fractional_scale()))
+            .unwrap_or(Scale::from(1.));
+
+        tile.store_unmap_snapshot_if_empty(renderer, output_scale, self.view_size);
+    }
+
+    pub fn clear_unmap_snapshot(&mut self, window: &W::Id) {
+        let (tile, _) = self
+            .tiles_in_render_order()
+            .find(|(tile, _)| tile.window().id() == window)
+            .unwrap();
+
+        let _ = tile.take_unmap_snapshot();
+    }
+
     pub fn start_close_animation_for_window(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -1194,9 +1220,7 @@ impl<W: LayoutElement> Workspace<W> {
             .map(|o| Scale::from(o.current_scale().fractional_scale()))
             .unwrap_or(Scale::from(1.));
 
-        let Some(snapshot) =
-            tile.take_snapshot_for_close_anim(renderer, output_scale, self.view_size)
-        else {
+        let Some(snapshot) = tile.take_unmap_snapshot() else {
             return;
         };
 

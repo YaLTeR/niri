@@ -303,8 +303,9 @@ impl CompositorHandler for State {
         // Test client: alacritty with CSD.
         if let Some(root) = self.niri.root_surface.get(surface) {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+                let window = mapped.window.clone();
                 self.backend.with_primary_renderer(|renderer| {
-                    mapped.store_unmap_snapshot_if_empty(renderer);
+                    self.niri.layout.store_unmap_snapshot(renderer, &window);
                 });
             }
         }
