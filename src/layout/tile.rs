@@ -536,18 +536,31 @@ impl<W: LayoutElement> Tile<W> {
         let window_render_loc = location + window_loc;
         let area = Rectangle::from_loc_and_size(window_render_loc, animated_window_size);
 
-        let gles_renderer = renderer.as_gles_renderer();
-
         // If we're resizing, try to render a shader, or a fallback.
         let mut resize_shader = None;
+        let mut resize_popups = None;
         let mut resize_fallback = None;
 
         if let Some(resize) = &self.resize_animation {
-            if let Some(shader) = ResizeRenderElement::shader(gles_renderer) {
+            resize_popups = Some(
+                self.window
+                    .render_popups(renderer, window_render_loc, scale, alpha, target)
+                    .into_iter()
+                    .map(Into::into),
+            );
+
+            if let Some(shader) = ResizeRenderElement::shader(renderer) {
+                let gles_renderer = renderer.as_gles_renderer();
+
                 if let Some(texture_from) = resize.snapshot.texture(gles_renderer, scale, target) {
-                    let window_elements =
-                        self.window
-                            .render(gles_renderer, Point::from((0, 0)), scale, 1., target);
+                    let window_elements = self.window.render_normal(
+                        gles_renderer,
+                        Point::from((0, 0)),
+                        scale,
+                        1.,
+                        target,
+                    );
+
                     let current = render_to_encompassing_texture(
                         gles_renderer,
                         scale,
@@ -605,8 +618,10 @@ impl<W: LayoutElement> Tile<W> {
             );
         }
 
-        let rv = resize_shader
+        let rv = resize_popups
             .into_iter()
+            .flatten()
+            .chain(resize_shader)
             .chain(resize_fallback)
             .chain(window.into_iter().flatten());
 

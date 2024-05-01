@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use niri::layout::{LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot};
 use niri::render_helpers::renderer::NiriRenderer;
-use niri::render_helpers::RenderTarget;
+use niri::render_helpers::{RenderTarget, SplitElements};
 use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::{Id, Kind};
@@ -149,28 +149,31 @@ impl LayoutElement for TestWindow {
         scale: Scale<f64>,
         alpha: f32,
         _target: RenderTarget,
-    ) -> Vec<LayoutElementRenderElement<R>> {
+    ) -> SplitElements<LayoutElementRenderElement<R>> {
         let inner = self.inner.borrow();
 
-        vec![
-            SolidColorRenderElement::from_buffer(
-                &inner.buffer,
-                location.to_physical_precise_round(scale),
-                scale,
-                alpha,
-                Kind::Unspecified,
-            )
-            .into(),
-            SolidColorRenderElement::from_buffer(
-                &inner.csd_shadow_buffer,
-                (location - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)))
-                    .to_physical_precise_round(scale),
-                scale,
-                alpha,
-                Kind::Unspecified,
-            )
-            .into(),
-        ]
+        SplitElements {
+            normal: vec![
+                SolidColorRenderElement::from_buffer(
+                    &inner.buffer,
+                    location.to_physical_precise_round(scale),
+                    scale,
+                    alpha,
+                    Kind::Unspecified,
+                )
+                .into(),
+                SolidColorRenderElement::from_buffer(
+                    &inner.csd_shadow_buffer,
+                    (location - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)))
+                        .to_physical_precise_round(scale),
+                    scale,
+                    alpha,
+                    Kind::Unspecified,
+                )
+                .into(),
+            ],
+            popups: vec![],
+        }
     }
 
     fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {

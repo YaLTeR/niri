@@ -51,7 +51,7 @@ use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Works
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
-use crate::render_helpers::{BakedBuffer, RenderTarget};
+use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::output_size;
 use crate::window::ResolvedWindowRules;
 
@@ -108,7 +108,31 @@ pub trait LayoutElement {
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
-    ) -> Vec<LayoutElementRenderElement<R>>;
+    ) -> SplitElements<LayoutElementRenderElement<R>>;
+
+    /// Renders the non-popup parts of the element.
+    fn render_normal<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        target: RenderTarget,
+    ) -> Vec<LayoutElementRenderElement<R>> {
+        self.render(renderer, location, scale, alpha, target).normal
+    }
+
+    /// Renders the popups of the element.
+    fn render_popups<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        target: RenderTarget,
+    ) -> Vec<LayoutElementRenderElement<R>> {
+        self.render(renderer, location, scale, alpha, target).popups
+    }
 
     fn request_size(&mut self, size: Size<i32, Logical>, animate: bool);
     fn request_fullscreen(&self, size: Size<i32, Logical>);
@@ -1984,8 +2008,8 @@ mod tests {
             _scale: Scale<f64>,
             _alpha: f32,
             _target: RenderTarget,
-        ) -> Vec<LayoutElementRenderElement<R>> {
-            vec![]
+        ) -> SplitElements<LayoutElementRenderElement<R>> {
+            SplitElements::default()
         }
 
         fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {

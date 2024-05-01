@@ -3,7 +3,8 @@ use std::cmp::{max, min};
 
 use niri_config::{BlockOutFrom, WindowRule};
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::{AsRenderElements, Id, Kind};
+use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
+use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
 use smithay::desktop::{PopupManager, Window};
@@ -23,7 +24,7 @@ use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
-use crate::render_helpers::{BakedBuffer, RenderTarget};
+use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -203,6 +204,63 @@ impl LayoutElement for Mapped {
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
+    ) -> SplitElements<LayoutElementRenderElement<R>> {
+        let mut rv = SplitElements::default();
+
+        let block_out = match self.rules.block_out_from {
+            None => false,
+            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
+            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
+        };
+
+        if block_out {
+            let mut buffer = self.block_out_buffer.borrow_mut();
+            buffer.resize(self.window.geometry().size);
+            let elem = SolidColorRenderElement::from_buffer(
+                &buffer,
+                location.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::Unspecified,
+            );
+            rv.normal.push(elem.into());
+        } else {
+            let buf_pos = location - self.window.geometry().loc;
+
+            let surface = self.toplevel().wl_surface();
+            for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+                let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
+
+                rv.popups.extend(render_elements_from_surface_tree(
+                    renderer,
+                    popup.wl_surface(),
+                    (buf_pos + offset).to_physical_precise_round(scale),
+                    scale,
+                    alpha,
+                    Kind::Unspecified,
+                ));
+            }
+
+            rv.normal = render_elements_from_surface_tree(
+                renderer,
+                surface,
+                buf_pos.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::Unspecified,
+            );
+        }
+
+        rv
+    }
+
+    fn render_normal<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>> {
         let block_out = match self.rules.block_out_from {
             None => false,
@@ -223,8 +281,53 @@ impl LayoutElement for Mapped {
             vec![elem.into()]
         } else {
             let buf_pos = location - self.window.geometry().loc;
-            let buf_pos = buf_pos.to_physical_precise_round(scale);
-            self.window.render_elements(renderer, buf_pos, scale, alpha)
+            let surface = self.toplevel().wl_surface();
+            render_elements_from_surface_tree(
+                renderer,
+                surface,
+                buf_pos.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::Unspecified,
+            )
+        }
+    }
+
+    fn render_popups<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        target: RenderTarget,
+    ) -> Vec<LayoutElementRenderElement<R>> {
+        let block_out = match self.rules.block_out_from {
+            None => false,
+            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
+            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
+        };
+
+        if block_out {
+            vec![]
+        } else {
+            let mut rv = vec![];
+
+            let buf_pos = location - self.window.geometry().loc;
+            let surface = self.toplevel().wl_surface();
+            for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+                let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
+
+                rv.extend(render_elements_from_surface_tree(
+                    renderer,
+                    popup.wl_surface(),
+                    (buf_pos + offset).to_physical_precise_round(scale),
+                    scale,
+                    alpha,
+                    Kind::Unspecified,
+                ));
+            }
+
+            rv
         }
     }
 

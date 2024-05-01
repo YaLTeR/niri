@@ -49,6 +49,13 @@ pub struct BakedBuffer<B> {
     pub dst: Option<Size<i32, Logical>>,
 }
 
+/// Render elements split into normal and popup.
+#[derive(Debug)]
+pub struct SplitElements<E> {
+    pub normal: Vec<E>,
+    pub popups: Vec<E>,
+}
+
 pub trait ToRenderElement {
     type RenderElement;
 
@@ -59,6 +66,36 @@ pub trait ToRenderElement {
         alpha: f32,
         kind: Kind,
     ) -> Self::RenderElement;
+}
+
+impl<E> Default for SplitElements<E> {
+    fn default() -> Self {
+        Self {
+            normal: Vec::new(),
+            popups: Vec::new(),
+        }
+    }
+}
+
+impl<E> IntoIterator for SplitElements<E> {
+    type Item = E;
+    type IntoIter = std::iter::Chain<std::vec::IntoIter<E>, std::vec::IntoIter<E>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.popups.into_iter().chain(self.normal)
+    }
+}
+
+impl<E> SplitElements<E> {
+    pub fn iter(&self) -> std::iter::Chain<std::slice::Iter<E>, std::slice::Iter<E>> {
+        self.popups.iter().chain(&self.normal)
+    }
+
+    pub fn into_vec(self) -> Vec<E> {
+        let Self { normal, mut popups } = self;
+        popups.extend(normal);
+        popups
+    }
 }
 
 impl ToRenderElement for BakedBuffer<TextureBuffer<GlesTexture>> {
