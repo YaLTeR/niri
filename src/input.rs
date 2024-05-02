@@ -368,6 +368,10 @@ impl State {
                 self.backend.toggle_debug_tint();
                 self.niri.queue_redraw_all();
             }
+            Action::DebugToggleOpaqueRegions => {
+                self.niri.debug_draw_opaque_regions = !self.niri.debug_draw_opaque_regions;
+                self.niri.queue_redraw_all();
+            }
             Action::Spawn(command) => {
                 spawn(command);
             }

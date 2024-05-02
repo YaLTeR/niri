@@ -107,6 +107,7 @@ use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
+use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::{
     render_to_shm, render_to_texture, render_to_vec, shaders, RenderTarget,
@@ -235,6 +236,8 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
+
+    pub debug_draw_opaque_regions: bool,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -1422,6 +1425,8 @@ impl Niri {
             hotkey_overlay,
             exit_confirm_dialog,
 
+            debug_draw_opaque_regions: false,
+
             #[cfg(feature = "dbus")]
             dbus: None,
             #[cfg(feature = "dbus")]
@@ -2382,6 +2387,9 @@ impl Niri {
                 .into(),
             );
 
+            if self.debug_draw_opaque_regions {
+                draw_opaque_regions(&mut elements, output_scale);
+            }
             return elements;
         }
 
@@ -2408,6 +2416,9 @@ impl Niri {
             // Add the background for outputs that were connected while the screenshot UI was open.
             elements.push(background);
 
+            if self.debug_draw_opaque_regions {
+                draw_opaque_regions(&mut elements, output_scale);
+            }
             return elements;
         }
 
@@ -2463,6 +2474,9 @@ impl Niri {
         // Then the background.
         elements.push(background);
 
+        if self.debug_draw_opaque_regions {
+            draw_opaque_regions(&mut elements, output_scale);
+        }
         elements
     }
 

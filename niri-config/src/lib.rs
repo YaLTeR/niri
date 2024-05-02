@@ -846,6 +846,7 @@ pub enum Action {
     Suspend,
     PowerOffMonitors,
     ToggleDebugTint,
+    DebugToggleOpaqueRegions,
     Spawn(#[knuffel(arguments)] Vec<String>),
     #[knuffel(skip)]
     ConfirmScreenshot,
@@ -982,6 +983,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWorkspaceToMonitorDown => Self::MoveWorkspaceToMonitorDown,
             niri_ipc::Action::MoveWorkspaceToMonitorUp => Self::MoveWorkspaceToMonitorUp,
             niri_ipc::Action::ToggleDebugTint => Self::ToggleDebugTint,
+            niri_ipc::Action::DebugToggleOpaqueRegions => Self::DebugToggleOpaqueRegions,
         }
     }
 }

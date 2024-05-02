@@ -217,6 +217,8 @@ pub enum Action {
     MoveWorkspaceToMonitorUp,
     /// Toggle a debug tint on windows.
     ToggleDebugTint,
+    /// Toggle visualization of render element opaque regions.
+    DebugToggleOpaqueRegions,
 }
 
 /// Change in window or column size.
