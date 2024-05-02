@@ -137,15 +137,32 @@ debug {
 }
 ```
 
-### `toggle-debug-tint` Key Binding
+### Key Bindings
 
-This one is not a debug option, but rather a key binding.
+These are not debug options, but rather key bindings.
 
-It will tint all surfaces green, unless they are being directly scanned out.
-It's therefore useful to check if direct scanout is working.
+#### `toggle-debug-tint`
+
+Tints all surfaces green, unless they are being directly scanned out.
+
+Useful to check if direct scanout is working.
 
 ```
 binds {
     Mod+Shift+Ctrl+T { toggle-debug-tint; }
+}
+```
+
+#### `debug-toggle-opaque-regions`
+
+<sup>Since: 0.1.6</sup>
+
+Tints regions marked as opaque with blue and the rest of the render elements with red.
+
+Useful to check how Wayland surfaces and internal render elements mark their parts as opaque, which is a rendering performance optimization.
+
+```
+binds {
+    Mod+Shift+Ctrl+O { debug-toggle-opaque-regions; }
 }
 ```
