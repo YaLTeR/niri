@@ -19,7 +19,8 @@ use super::{
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
-use crate::render_helpers::clipped_surface::ClippedSurfaceRenderElement;
+use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
+use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
@@ -68,6 +69,9 @@ pub struct Tile<W: LayoutElement> {
     /// Snapshot of the last render for use in the close animation.
     unmap_snapshot: RefCell<Option<TileRenderSnapshot>>,
 
+    /// Extra damage for clipped surface corner radius changes.
+    rounded_corner_damage: RoundedCornerDamage,
+
     /// Configurable properties of the layout.
     pub options: Rc<Options>,
 }
@@ -81,6 +85,7 @@ niri_render_elements! {
         Resize = ResizeRenderElement,
         Border = BorderRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
+        ExtraDamage = ExtraDamage,
     }
 }
 
@@ -118,6 +123,7 @@ impl<W: LayoutElement> Tile<W> {
             move_x_animation: None,
             move_y_animation: None,
             unmap_snapshot: RefCell::new(None),
+            rounded_corner_damage: Default::default(),
             options,
         }
     }
@@ -180,6 +186,14 @@ impl<W: LayoutElement> Tile<W> {
             .focus_ring
             .resolve_against(self.options.focus_ring.into());
         self.focus_ring.update_config(focus_ring_config.into());
+
+        let window_size = self.window_size();
+        let radius = rules
+            .geometry_corner_radius
+            .unwrap_or_default()
+            .fit_to(window_size.w as f32, window_size.h as f32);
+        self.rounded_corner_damage.set_corner_radius(radius);
+        self.rounded_corner_damage.set_size(window_size);
     }
 
     pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
@@ -650,6 +664,7 @@ impl<W: LayoutElement> Tile<W> {
         // If we're not resizing, render the window itself.
         let mut window_surface = None;
         let mut window_popups = None;
+        let mut rounded_corner_damage = None;
         if resize_shader.is_none() && resize_fallback.is_none() {
             let window = self
                 .window
@@ -666,6 +681,11 @@ impl<W: LayoutElement> Tile<W> {
 
             let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
             let border_shader = BorderRenderElement::shader(renderer).cloned();
+
+            if clip_to_geometry && clip_shader.is_some() {
+                let damage = self.rounded_corner_damage.element();
+                rounded_corner_damage = Some(damage.with_location(window_render_loc).into());
+            }
 
             window_surface = Some(window.normal.into_iter().map(move |elem| match elem {
                 LayoutElementRenderElement::Wayland(elem) => {
@@ -727,6 +747,7 @@ impl<W: LayoutElement> Tile<W> {
             .chain(resize_shader)
             .chain(resize_fallback)
             .chain(window_popups.into_iter().flatten())
+            .chain(rounded_corner_damage)
             .chain(window_surface.into_iter().flatten());
 
         let elem = self.is_fullscreen.then(|| {

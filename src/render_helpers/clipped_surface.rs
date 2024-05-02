@@ -6,8 +6,9 @@ use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform,
 };
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform};
+use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
+use super::damage::ExtraDamage;
 use super::renderer::{AsGlesFrame as _, NiriRenderer};
 use super::shaders::{mat3_uniform, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
@@ -19,6 +20,12 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     corner_radius: CornerRadius,
     geometry: Rectangle<i32, Logical>,
     input_to_geo: Mat3,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct RoundedCornerDamage {
+    damage: ExtraDamage,
+    corner_radius: CornerRadius,
 }
 
 impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
@@ -265,5 +272,25 @@ impl<'render> RenderElement<TtyRenderer<'render>>
         // If scanout for things other than Wayland buffers is implemented, this will need to take
         // the target GPU into account.
         None
+    }
+}
+
+impl RoundedCornerDamage {
+    pub fn set_size(&mut self, size: Size<i32, Logical>) {
+        self.damage.set_size(size);
+    }
+
+    pub fn set_corner_radius(&mut self, corner_radius: CornerRadius) {
+        if self.corner_radius == corner_radius {
+            return;
+        }
+
+        // FIXME: make the damage granular.
+        self.corner_radius = corner_radius;
+        self.damage.damage_all();
+    }
+
+    pub fn element(&self) -> ExtraDamage {
+        self.damage.clone()
     }
 }
