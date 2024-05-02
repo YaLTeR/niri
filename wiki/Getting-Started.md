@@ -8,11 +8,12 @@ After installing, start niri from your display manager like GDM.
 Press <kbd>Super</kbd><kbd>T</kbd> to run a terminal ([Alacritty]) and <kbd>Super</kbd><kbd>D</kbd> to run an application launcher ([fuzzel]).
 To exit niri, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.
 
-If you're not using a display manager, you should run `niri --session` from a TTY.
+If you're not using a display manager, you should run `niri-session` (systemd) or `niri --session` (not systemd) from a TTY.
 The `--session` flag will make niri import its environment variables globally into systemd and D-Bus, and start its D-Bus services.
 
 You can also run `niri` inside an existing desktop session.
 Then it will open as a window, where you can give it a try.
+Note that this windowed mode is mainly meant for development, so it is a bit buggy (in particular, there are issues with hotkeys).
 
 Next, see the [list of important software](./Important-Software.md) required for normal desktop use, like a notification daemon and portals.
 Also, check the [configuration overview](./Configuration:-Overview.md) page to get started configuring niri.
