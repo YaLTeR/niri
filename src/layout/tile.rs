@@ -721,7 +721,6 @@ impl<W: LayoutElement> Tile<W> {
                     // radius.
                     if radius != CornerRadius::default() && has_border_shader {
                         return BorderRenderElement::new(
-                            scale,
                             elem.geometry(Scale::from(1.)).to_logical(1),
                             Rectangle::from_loc_and_size(Point::from((0, 0)), geo.size),
                             elem.color(),

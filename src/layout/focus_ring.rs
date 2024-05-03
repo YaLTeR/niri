@@ -201,7 +201,6 @@ impl FocusRing {
                         GradientRelativeTo::WorkspaceView => view_rect,
                     };
                     border.update(
-                        scale,
                         Rectangle::from_loc_and_size(location, size),
                         gradient_area,
                         gradient.from.into(),
@@ -214,7 +213,6 @@ impl FocusRing {
                     Some(border.clone().into())
                 } else if self.radius != CornerRadius::default() {
                     border.update(
-                        scale,
                         Rectangle::from_loc_and_size(location, size),
                         full_rect,
                         color.into(),

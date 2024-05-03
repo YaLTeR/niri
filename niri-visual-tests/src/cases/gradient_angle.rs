@@ -7,7 +7,7 @@ use niri::render_helpers::border::BorderRenderElement;
 use niri_config::CornerRadius;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Rectangle, Scale, Size};
+use smithay::utils::{Logical, Physical, Rectangle, Size};
 
 use super::TestCase;
 
@@ -62,7 +62,6 @@ impl TestCase for GradientAngle {
         let area = Rectangle::from_loc_and_size((a, b), size);
 
         [BorderRenderElement::new(
-            Scale::from(1.),
             area,
             area,
             [1., 0., 0., 1.],

@@ -60,9 +60,8 @@ float rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius) {
 }
 
 void main() {
-    vec4 color = gradient_color(niri_v_coords * niri_size);
-
     vec3 coords_geo = input_to_geo * vec3(niri_v_coords, 1.0);
+    vec4 color = gradient_color(coords_geo.xy);
     color = color * rounding_alpha(coords_geo.xy, geo_size, outer_radius);
 
     if (border_width > 0.0) {

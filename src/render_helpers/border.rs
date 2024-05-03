@@ -5,7 +5,7 @@ use niri_config::CornerRadius;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform};
+use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderRenderElement;
@@ -26,7 +26,6 @@ pub struct BorderRenderElement {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Parameters {
-    scale: Scale<f64>,
     area: Rectangle<i32, Logical>,
     gradient_area: Rectangle<i32, Logical>,
     color_from: [f32; 4],
@@ -40,7 +39,6 @@ struct Parameters {
 impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        scale: Scale<f64>,
         area: Rectangle<i32, Logical>,
         gradient_area: Rectangle<i32, Logical>,
         color_from: [f32; 4],
@@ -54,7 +52,6 @@ impl BorderRenderElement {
         let mut rv = Self {
             inner,
             params: Parameters {
-                scale,
                 area,
                 gradient_area,
                 color_from,
@@ -74,7 +71,6 @@ impl BorderRenderElement {
         Self {
             inner,
             params: Parameters {
-                scale: Scale::from(1.),
                 area: Default::default(),
                 gradient_area: Default::default(),
                 color_from: Default::default(),
@@ -94,7 +90,6 @@ impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        scale: Scale<f64>,
         area: Rectangle<i32, Logical>,
         gradient_area: Rectangle<i32, Logical>,
         color_from: [f32; 4],
@@ -105,7 +100,6 @@ impl BorderRenderElement {
         corner_radius: CornerRadius,
     ) {
         let params = Parameters {
-            scale,
             area,
             gradient_area,
             color_from,
@@ -125,7 +119,6 @@ impl BorderRenderElement {
 
     fn update_inner(&mut self) {
         let Parameters {
-            scale,
             area,
             gradient_area,
             color_from,
@@ -136,12 +129,12 @@ impl BorderRenderElement {
             corner_radius,
         } = self.params;
 
-        let grad_offset = (area.loc - gradient_area.loc).to_f64().to_physical(scale);
+        let grad_offset = geometry.loc - gradient_area.loc;
+        let grad_offset = Vec2::new(grad_offset.x as f32, grad_offset.y as f32);
 
         let grad_dir = Vec2::from_angle(angle);
 
-        let grad_area_size = gradient_area.size.to_f64().to_physical(scale);
-        let (w, h) = (grad_area_size.w as f32, grad_area_size.h as f32);
+        let (w, h) = (gradient_area.size.w as f32, gradient_area.size.h as f32);
 
         let mut grad_area_diag = Vec2::new(w, h);
         if (grad_dir.x < 0. && 0. <= grad_dir.y) || (0. <= grad_dir.x && grad_dir.y < 0.) {
@@ -153,27 +146,23 @@ impl BorderRenderElement {
             grad_vec = -grad_vec;
         }
 
-        let area_physical = area.to_physical_precise_round(scale);
-        let area_loc = Vec2::new(area_physical.loc.x, area_physical.loc.y);
-        let area_size = Vec2::new(area_physical.size.w, area_physical.size.h);
+        let area_loc = Vec2::new(area.loc.x as f32, area.loc.y as f32);
+        let area_size = Vec2::new(area.size.w as f32, area.size.h as f32);
 
-        let geo = geometry.to_physical_precise_round(scale);
-        let geo_loc = Vec2::new(geo.loc.x, geo.loc.y);
-        let geo_size = Vec2::new(geo.size.w, geo.size.h);
+        let geo_loc = Vec2::new(geometry.loc.x as f32, geometry.loc.y as f32);
+        let geo_size = Vec2::new(geometry.size.w as f32, geometry.size.h as f32);
 
         let input_to_geo =
             Mat3::from_scale(area_size) * Mat3::from_translation((area_loc - geo_loc) / area_size);
-        let corner_radius = corner_radius.scaled_by(scale.x as f32);
-        let border_width = border_width * scale.x as f32;
 
         self.inner.update(
             area,
-            area.size.to_f64().to_buffer(scale, Transform::Normal),
+            Size::from((1., 1.)),
             None,
             vec![
                 Uniform::new("color_from", color_from),
                 Uniform::new("color_to", color_to),
-                Uniform::new("grad_offset", (grad_offset.x as f32, grad_offset.y as f32)),
+                Uniform::new("grad_offset", grad_offset.to_array()),
                 Uniform::new("grad_width", w),
                 Uniform::new("grad_vec", grad_vec.to_array()),
                 mat3_uniform("input_to_geo", input_to_geo),

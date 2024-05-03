@@ -99,7 +99,6 @@ impl TestCase for GradientArea {
 
         rv.extend(
             [BorderRenderElement::new(
-                Scale::from(1.),
                 area,
                 g_area,
                 [1., 0., 0., 1.],
