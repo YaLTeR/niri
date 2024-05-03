@@ -1,27 +1,217 @@
 //! Types for communicating with niri via IPC.
 #![warn(missing_docs)]
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
 mod socket;
-pub use socket::{Socket, SOCKET_PATH_ENV};
 
-/// Request from client to niri.
+pub use socket::{NiriSocket, SOCKET_PATH_ENV};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+#[doc(hidden)]
+pub enum MaybeUnknown<T, U> {
+    Known(T),
+    Unknown(U),
+}
+
+#[doc(hidden)]
+pub type MaybeJson<T> = MaybeUnknown<T, serde_json::Value>;
+
+mod private {
+    pub trait Sealed {}
+}
+
+/// A request that can be sent to niri.
+pub trait Request:
+    Serialize + for<'de> Deserialize<'de> + private::Sealed + Into<RequestMessage>
+{
+    /// The type of the response that niri sends for this request.
+    type Response: Serialize + for<'de> Deserialize<'de>;
+
+    /// Convert the request into a RequestMessage (for serialization).
+    fn into_message(self) -> RequestMessage;
+}
+
+impl<R: Request> From<R> for RequestMessage {
+    fn from(value: R) -> Self {
+        value.into_message()
+    }
+}
+
+macro_rules! requests {
+    (@$item:item$(;)?) => { $item };
+    ($dollar:tt; $($(#[$m:meta])*$variant:ident($v:vis struct $request:ident$($p:tt)?) -> $response:ty;)*) => {
+        #[derive(Debug, Serialize, Deserialize, Clone)]
+        #[doc(hidden)]
+        pub enum RequestMessage {
+            $(
+                $(#[$m])*
+                $variant($request),
+            )*
+        }
+
+        // This is for use in server code.
+        // Essentially just equivalent to the following:
+        // fn dispatch<T>(message: RequestMessage, f: impl FnOnce<R: Request>(R) -> T) -> T;
+        // except:
+        // (a) rust doesn't quite support this kind of higher-order generic functions
+        // (b) even if it did, it would have to be sound by the Request bound, which isn't possible
+        //     because the inherent usage is a per-type implementation which can only be sound by-example
+        //
+        // essentially this just cuts down on the server needing to enumerate all request types
+        #[macro_export]
+        #[doc(hidden)]
+        macro_rules! dispatch {
+            ($dollar message:expr, $dollar f:expr) => {{
+                let message: RequestMessage = $dollar message;
+                match message {
+                    $(
+                        RequestMessage::$variant(request) => {
+                            const fn ascribe<F, R>(f: F) -> F where F: FnOnce($crate::$request) -> R {
+                                f
+                            }
+                            let f = ascribe($dollar f);
+                            f(request)
+                        }
+                    )*
+                }
+            }};
+        }
+
+        $(
+            requests!(@
+                $(#[$m])*
+                #[derive(Debug, Serialize, Deserialize, Clone)]
+                $v struct $request $($p)?;
+            );
+
+            impl crate::private::Sealed for $request {}
+
+            impl crate::Request for $request {
+                type Response = $response;
+
+                fn into_message(self) -> crate::RequestMessage {
+                    RequestMessage::$variant(self)
+                }
+            }
+        )*
+    };
+}
+
+/// Uninstantiable
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum Request {
-    /// Request the version string for the running niri instance.
-    Version,
-    /// Request information about connected outputs.
-    Outputs,
-    /// Request information about the focused window.
-    FocusedWindow,
-    /// Perform an action.
-    Action(Action),
-    /// Respond with an error (for testing error handling).
-    ReturnError,
+pub enum Never {}
+
+requests!(
+    $;
+
+    /// Requests the version string for the running niri instance.
+    Version(pub struct VersionRequest) -> String;
+
+    /// Requests information about connected outputs.
+    Outputs(pub struct OutputRequest) -> BTreeMap<String, Output>;
+
+    /// Requests information about the focused window.
+    FocusedWindow(pub struct FocusedWindowRequest) -> Option<Window>;
+
+    /// Requests that the compositor perform an action.
+    Action(pub struct ActionRequest(pub Action)) -> ();
+
+    /// Always responds with an error (for testing error handling).
+    ReturnError(pub struct ErrorRequest(pub String)) -> Never;
+);
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ErrorRepr {
+    #[serde(rename = "error_type")]
+    tag: String,
+    #[serde(rename = "error_message")]
+    message: String,
+}
+
+macro_rules! error {
+    (
+        $(#[$meta_enum:meta])*
+        $v:vis enum $name:ident {
+            $(#[$meta_end:meta])*
+            $other:ident (String)$(,)?
+            $(
+                $(#[$meta_variant:meta])*
+                $variant:ident = $msg:literal,
+            )*
+        }
+    ) => {
+        $(#[$meta_enum])*
+        $v enum $name {
+            $(
+                $(#[$meta_variant])*
+                $variant,
+            )*
+            $(#[$meta_end])* $other(String),
+        }
+
+        impl Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                match self {
+                    $(
+                        $name::$variant => ErrorRepr {
+                            tag: String::from(stringify!($variant)),
+                            message: String::from($msg),
+                        },
+                    )*
+                    $name::$other(msg) => ErrorRepr {
+                        tag: String::from(stringify!($other)),
+                        message: msg.clone(),
+                    },
+                }.serialize(serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let repr = ErrorRepr::deserialize(deserializer)?;
+                match repr.tag.as_str() {
+                    $(
+                        stringify!($variant) => Ok(Error::$variant),
+                    )*
+                    _ => Ok(Error::$other(repr.message)),
+                }
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                match self {
+                    $(
+                        $name::$variant => write!(f, $msg),
+                    )*
+                    $name::$other(msg) => write!(f, "{}", msg),
+                }
+            }
+        }
+    };
+}
+
+error! {
+    /// Errors that can occur when sending a request to niri.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Error {
+        /// An error occurred that doesn't have a specific variant.
+        /// This occurs when the compositor sends an error that this client doesn't know about.
+        Other(String),
+        /// The client didn't send valid JSON.
+        ClientBadJson = "the client didn't send valid JSON",
+        /// The compositor didn't understand our request.
+        ClientBadProtocol = "the client didn't follow the protocol; this may be caused by mismatched versions",
+        /// The compositor sent a request we didn't understand.
+        CompositorBadProtocol = "the compositor didn't follow the protocol; this may be caused by mismatched versions",
+        /// There is
+        InternalError = "an internal error occurred in the compositor",
+    }
 }
 
 /// Reply from niri to client.
@@ -32,22 +222,7 @@ pub enum Request {
 /// * If the request does not need any particular response, it will be
 ///   `Reply::Ok(Response::Handled)`. Kind of like an `Ok(())`.
 /// * Otherwise, it will be `Reply::Ok(response)` with one of the other [`Response`] variants.
-pub type Reply = Result<Response, String>;
-
-/// Successful response from niri to client.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum Response {
-    /// A request that does not need a response was handled successfully.
-    Handled,
-    /// The version string for the running niri instance.
-    Version(String),
-    /// Information about connected outputs.
-    ///
-    /// Map from connector name to output info.
-    Outputs(HashMap<String, Output>),
-    /// Information about the focused window.
-    FocusedWindow(Option<Window>),
-}
+pub type Reply<T> = Result<T, Error>;
 
 /// Actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most, but not all,
@@ -306,6 +481,7 @@ pub struct LogicalOutput {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transform {
     /// Untransformed.
+    #[serde(rename = "normal")]
     Normal,
     /// Rotated by 90°.
     #[serde(rename = "90")]
@@ -317,12 +493,16 @@ pub enum Transform {
     #[serde(rename = "270")]
     _270,
     /// Flipped horizontally.
+    #[serde(rename = "flipped")]
     Flipped,
     /// Rotated by 90° and flipped horizontally.
+    #[serde(rename = "flipped-90")]
     Flipped90,
     /// Flipped vertically.
+    #[serde(rename = "flipped-180")]
     Flipped180,
     /// Rotated by 270° and flipped horizontally.
+    #[serde(rename = "flipped-270")]
     Flipped270,
 }
 

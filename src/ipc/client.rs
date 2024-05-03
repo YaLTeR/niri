@@ -1,243 +1,284 @@
-use anyhow::{anyhow, bail, Context};
-use niri_ipc::{LogicalOutput, Mode, Output, Request, Response, Socket, Transform};
+use anyhow::Context;
+use niri_ipc::{
+    ActionRequest, Error, ErrorRequest, FocusedWindowRequest, LogicalOutput, Mode, NiriSocket,
+    Output, OutputRequest, Request, VersionRequest,
+};
 use serde_json::json;
 
 use crate::cli::Msg;
 use crate::utils::version;
 
-pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
-    let request = match &msg {
-        Msg::Version => Request::Version,
-        Msg::Outputs => Request::Outputs,
-        Msg::FocusedWindow => Request::FocusedWindow,
-        Msg::Action { action } => Request::Action(action.clone()),
-        Msg::RequestError => Request::ReturnError,
-    };
+struct CompositorError {
+    error: niri_ipc::Error,
+    version: Option<String>,
+}
 
-    let socket = Socket::connect().context("error connecting to the niri socket")?;
+trait MsgRequest: Request {
+    fn json(response: Self::Response) -> serde_json::Value {
+        json!(response)
+    }
 
-    let reply = socket
-        .send(request)
-        .context("error communicating with niri")?;
+    fn show_to_human(response: Self::Response);
 
-    let compositor_version = match reply {
-        Err(_) if !matches!(msg, Msg::Version) => {
-            // If we got an error, it might be that the CLI is a different version from the running
-            // niri instance. Request the running instance version to compare and print a message.
-            Socket::connect()
-                .and_then(|socket| socket.send(Request::Version))
-                .ok()
+    fn check_version() -> Option<String> {
+        if let Ok(Ok(version)) = VersionRequest.send() {
+            Some(version)
+        } else {
+            None
         }
-        _ => None,
-    };
+    }
 
-    // Default SIGPIPE so that our prints don't panic on stdout closing.
+    fn send(self) -> anyhow::Result<Result<Self::Response, CompositorError>> {
+        let socket = NiriSocket::new().context("problem initializing the socket")?;
+        let reply = socket.send_request(self).context("problem ")?;
+        Ok(reply.map_err(|error| CompositorError {
+            error,
+            version: Self::check_version(),
+        }))
+    }
+}
+
+pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
+    match msg {
+        Msg::RequestError { message } => run(json, ErrorRequest(message)),
+        Msg::Version => run(json, VersionRequest),
+        Msg::Outputs => run(json, OutputRequest),
+        Msg::FocusedWindow => run(json, FocusedWindowRequest),
+        Msg::Action { action } => run(json, ActionRequest(action)),
+    }
+}
+
+fn run<R: MsgRequest>(json: bool, request: R) -> anyhow::Result<()> {
+    let reply = request.send().context("a communication error occurred")?;
+
+    // Piping `niri msg` into a command like `jq invalid` will cause jq to exit early
+    // from the invalid expression. That also causes the pipe to close, and the piped process
+    // receives a SIGPIPE. Normally, this would cause println! to panic, but because the error
+    // ultimately doesn't originate in niri, and it's not a bug in niri, the resulting backtrace is
+    // quite unhelpful to the user considering that the actual error (invalid jq expression) is
+    // already shown on the terminal.
+    //
+    // To avoid this, we ignore any SIGPIPE we receive from here on out. This can potentially
+    // interfere with IPC code, so we ensure that it is already finished by the time we reach this
+    // point. Actual errors with the IPC code are not handled by us; they're bubbled up to
+    // main() as Err(_). Those are separate from the pipe closing; and should be printed anyways.
+    // But after this point, we only really print things, so it's safe to ignore SIGPIPE.
+    // And since stdio panics are the *only* error path, we can be confident that there is actually
+    // no error path from this point on.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
-    let response = reply.map_err(|err_msg| {
-        // Check for CLI-server version mismatch to add helpful context.
-        match compositor_version {
-            Some(Ok(Response::Version(compositor_version))) => {
-                let cli_version = version();
-                if cli_version != compositor_version {
-                    eprintln!("Running niri compositor has a different version from the niri CLI:");
-                    eprintln!("Compositor version: {compositor_version}");
-                    eprintln!("CLI version:        {cli_version}");
-                    eprintln!("Did you forget to restart niri after an update?");
+    match reply {
+        Ok(response) => {
+            if json {
+                println!("{}", R::json(response));
+            } else {
+                R::show_to_human(response);
+            }
+        }
+        Err(CompositorError {
+            error,
+            version: server_version,
+        }) => {
+            match error {
+                Error::ClientBadJson => {
+                    eprintln!("Something went wrong in the CLI; the compositor says the JSON it sent was invalid")
+                }
+                Error::ClientBadProtocol => {
+                    eprintln!("The compositor didn't understand the request sent by the CLI.")
+                }
+                Error::CompositorBadProtocol => {
+                    eprintln!("The compositor returned a response that the CLI didn't understand.")
+                }
+                Error::InternalError => {
+                    eprintln!("Something went wrong in the compositor. I don't know what.")
+                }
+                Error::Other(msg) => {
+                    eprintln!("The compositor returned an error:");
                     eprintln!();
+                    eprintln!("{msg}");
                 }
             }
-            Some(_) => {
-                eprintln!("Unable to get the running niri compositor version.");
-                eprintln!("Did you forget to restart niri after an update?");
-                eprintln!();
-            }
-            None => {
-                // Communication error, or the original request was already a version request.
-                // Don't add irrelevant context.
-            }
-        }
 
-        anyhow!(err_msg).context("niri returned an error")
-    })?;
-
-    match msg {
-        Msg::RequestError => {
-            bail!("unexpected response: expected an error, got {response:?}");
-        }
-        Msg::Version => {
-            let Response::Version(compositor_version) = response else {
-                bail!("unexpected response: expected Version, got {response:?}");
-            };
-
-            let cli_version = version();
-
-            if json {
-                println!(
-                    "{}",
-                    json!({
-                        "compositor": compositor_version,
-                        "cli": cli_version,
-                    })
-                );
-                return Ok(());
-            }
-
-            if cli_version != compositor_version {
-                eprintln!("Running niri compositor has a different version from the niri CLI.");
-                eprintln!("Did you forget to restart niri after an update?");
-                eprintln!();
-            }
-
-            println!("Compositor version: {compositor_version}");
-            println!("CLI version:        {cli_version}");
-        }
-        Msg::Outputs => {
-            let Response::Outputs(outputs) = response else {
-                bail!("unexpected response: expected Outputs, got {response:?}");
-            };
-
-            if json {
-                let output =
-                    serde_json::to_string(&outputs).context("error formatting response")?;
-                println!("{output}");
-                return Ok(());
-            }
-
-            let mut outputs = outputs.into_iter().collect::<Vec<_>>();
-            outputs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-
-            for (connector, output) in outputs.into_iter() {
-                let Output {
-                    name,
-                    make,
-                    model,
-                    physical_size,
-                    modes,
-                    current_mode,
-                    vrr_supported,
-                    vrr_enabled,
-                    logical,
-                } = output;
-
-                println!(r#"Output "{connector}" ({make} - {model} - {name})"#);
-
-                if let Some(current) = current_mode {
-                    let mode = *modes
-                        .get(current)
-                        .context("invalid response: current mode does not exist")?;
-                    let Mode {
-                        width,
-                        height,
-                        refresh_rate,
-                        is_preferred,
-                    } = mode;
-                    let refresh = refresh_rate as f64 / 1000.;
-                    let preferred = if is_preferred { " (preferred)" } else { "" };
-                    println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
-                } else {
-                    println!("  Disabled");
-                }
-
-                if vrr_supported {
-                    let enabled = if vrr_enabled { "enabled" } else { "disabled" };
-                    println!("  Variable refresh rate: supported, {enabled}");
-                } else {
-                    println!("  Variable refresh rate: not supported");
-                }
-
-                if let Some((width, height)) = physical_size {
-                    println!("  Physical size: {width}x{height} mm");
-                } else {
-                    println!("  Physical size: unknown");
-                }
-
-                if let Some(logical) = logical {
-                    let LogicalOutput {
-                        x,
-                        y,
-                        width,
-                        height,
-                        scale,
-                        transform,
-                    } = logical;
-                    println!("  Logical position: {x}, {y}");
-                    println!("  Logical size: {width}x{height}");
-                    println!("  Scale: {scale}");
-
-                    let transform = match transform {
-                        Transform::Normal => "normal",
-                        Transform::_90 => "90° counter-clockwise",
-                        Transform::_180 => "180°",
-                        Transform::_270 => "270° counter-clockwise",
-                        Transform::Flipped => "flipped horizontally",
-                        Transform::Flipped90 => "90° counter-clockwise, flipped horizontally",
-                        Transform::Flipped180 => "flipped vertically",
-                        Transform::Flipped270 => "270° counter-clockwise, flipped horizontally",
-                    };
-                    println!("  Transform: {transform}");
-                }
-
-                println!("  Available modes:");
-                for (idx, mode) in modes.into_iter().enumerate() {
-                    let Mode {
-                        width,
-                        height,
-                        refresh_rate,
-                        is_preferred,
-                    } = mode;
-                    let refresh = refresh_rate as f64 / 1000.;
-
-                    let is_current = Some(idx) == current_mode;
-                    let qualifier = match (is_current, is_preferred) {
-                        (true, true) => " (current, preferred)",
-                        (true, false) => " (current)",
-                        (false, true) => " (preferred)",
-                        (false, false) => "",
-                    };
-
-                    println!("    {width}x{height}@{refresh:.3}{qualifier}");
-                }
-                println!();
-            }
-        }
-        Msg::FocusedWindow => {
-            let Response::FocusedWindow(window) = response else {
-                bail!("unexpected response: expected FocusedWindow, got {response:?}");
-            };
-
-            if json {
-                let window = serde_json::to_string(&window).context("error formatting response")?;
-                println!("{window}");
-                return Ok(());
-            }
-
-            if let Some(window) = window {
-                println!("Focused window:");
-
-                if let Some(title) = window.title {
-                    println!("  Title: \"{title}\"");
-                } else {
-                    println!("  Title: (unset)");
-                }
-
-                if let Some(app_id) = window.app_id {
-                    println!("  App ID: \"{app_id}\"");
-                } else {
-                    println!("  App ID: (unset)");
+            if let Some(server_version) = server_version {
+                let my_version = version();
+                if my_version != server_version {
+                    eprintln!();
+                    eprintln!("Note: niri msg was invoked with a different version of niri than the running compositor.");
+                    eprintln!("niri msg: {my_version}");
+                    eprintln!("compositor: {server_version}");
+                    eprintln!("Did you forget to restart niri after an update?");
                 }
             } else {
-                println!("No window is focused.");
+                eprintln!();
+                eprintln!("Note: unable to get the compositor's version.");
+                eprintln!("Did you forget to restart niri after an update?");
             }
-        }
-        Msg::Action { .. } => {
-            let Response::Handled = response else {
-                bail!("unexpected response: expected Handled, got {response:?}");
-            };
         }
     }
 
     Ok(())
+}
+
+impl MsgRequest for ErrorRequest {
+    fn json(response: Self::Response) -> serde_json::Value {
+        match response {}
+    }
+
+    fn show_to_human(response: Self::Response) {
+        match response {}
+    }
+}
+
+impl MsgRequest for VersionRequest {
+    fn check_version() -> Option<String> {
+        eprintln!("version");
+        // If the version request fails, we can't exactly try again.
+        None
+    }
+    fn json(response: Self::Response) -> serde_json::Value {
+        json!({
+            "cli": version(),
+            "compositor": response,
+        })
+    }
+    fn show_to_human(response: Self::Response) {
+        let client_version = version();
+        let server_version = response;
+        println!("niri msg is {client_version}");
+        println!("the compositor is {server_version}");
+        if client_version != server_version {
+            eprintln!();
+            eprintln!("These are different");
+            eprintln!("Did you forget to restart niri after an update?");
+        }
+        println!();
+    }
+}
+
+impl MsgRequest for OutputRequest {
+    fn show_to_human(response: Self::Response) {
+        for (connector, output) in response {
+            let Output {
+                name,
+                make,
+                model,
+                physical_size,
+                modes,
+                current_mode,
+                vrr_supported,
+                vrr_enabled,
+                logical,
+            } = output;
+
+            println!(r#"Output "{connector}" ({make} - {model} - {name})"#);
+
+            match current_mode.map(|idx| modes.get(idx)) {
+                None => println!("  Disabled"),
+                Some(None) => println!("  Current mode: (invalid index)"),
+                Some(Some(&Mode {
+                    width,
+                    height,
+                    refresh_rate,
+                    is_preferred,
+                })) => {
+                    let refresh = refresh_rate as f64 / 1000.;
+                    let preferred = if is_preferred { " (preferred)" } else { "" };
+                    println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
+                }
+            }
+
+            if vrr_supported {
+                let enabled = if vrr_enabled { "enabled" } else { "disabled" };
+                println!("  Variable refresh rate: supported, {enabled}");
+            } else {
+                println!("  Variable refresh rate: not supported");
+            }
+
+            if let Some((width, height)) = physical_size {
+                println!("  Physical size: {width}x{height} mm");
+            } else {
+                println!("  Physical size: unknown");
+            }
+
+            if let Some(logical) = logical {
+                let LogicalOutput {
+                    x,
+                    y,
+                    width,
+                    height,
+                    scale,
+                    transform,
+                } = logical;
+                println!("  Logical position: {x}, {y}");
+                println!("  Logical size: {width}x{height}");
+                println!("  Scale: {scale}");
+
+                let transform = match transform {
+                    niri_ipc::Transform::Normal => "normal",
+                    niri_ipc::Transform::_90 => "90° counter-clockwise",
+                    niri_ipc::Transform::_180 => "180°",
+                    niri_ipc::Transform::_270 => "270° counter-clockwise",
+                    niri_ipc::Transform::Flipped => "flipped horizontally",
+                    niri_ipc::Transform::Flipped90 => "90° counter-clockwise, flipped horizontally",
+                    niri_ipc::Transform::Flipped180 => "flipped vertically",
+                    niri_ipc::Transform::Flipped270 => {
+                        "270° counter-clockwise, flipped horizontally"
+                    }
+                };
+                println!("  Transform: {transform}");
+            }
+
+            println!("  Available modes:");
+            for (idx, mode) in modes.into_iter().enumerate() {
+                let Mode {
+                    width,
+                    height,
+                    refresh_rate,
+                    is_preferred,
+                } = mode;
+                let refresh = refresh_rate as f64 / 1000.;
+
+                let is_current = Some(idx) == current_mode;
+                let qualifier = match (is_current, is_preferred) {
+                    (true, true) => " (current, preferred)",
+                    (true, false) => " (current)",
+                    (false, true) => " (preferred)",
+                    (false, false) => "",
+                };
+
+                println!("    {width}x{height}@{refresh:.3}{qualifier}");
+            }
+            println!();
+        }
+    }
+}
+
+impl MsgRequest for FocusedWindowRequest {
+    fn show_to_human(response: Self::Response) {
+        if let Some(window) = response {
+            println!("Focused window:");
+
+            if let Some(title) = window.title {
+                println!("  Title: \"{title}\"");
+            } else {
+                println!("  Title: (unset)");
+            }
+
+            if let Some(app_id) = window.app_id {
+                println!("  App ID: \"{app_id}\"");
+            } else {
+                println!("  App ID: (unset)");
+            }
+        } else {
+            println!("No window is focused.");
+        }
+    }
+}
+
+impl MsgRequest for ActionRequest {
+    fn show_to_human(response: Self::Response) {
+        response
+    }
 }
