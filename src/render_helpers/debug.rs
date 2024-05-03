@@ -1,3 +1,4 @@
+use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind};
 use smithay::backend::renderer::utils::CommitCounter;
@@ -54,5 +55,27 @@ pub fn draw_opaque_regions<R: NiriRenderer>(
             elements.insert(i - 1, OutputRenderElements::SolidColor(color));
             i += 1;
         }
+    }
+}
+
+pub fn draw_damage<R: NiriRenderer>(
+    damage_tracker: &mut OutputDamageTracker,
+    elements: &mut Vec<OutputRenderElements<R>>,
+) {
+    let _span = tracy_client::span!("draw_damage");
+
+    let Ok((Some(damage), _)) = damage_tracker.damage_output(1, elements) else {
+        return;
+    };
+
+    for rect in damage {
+        let color = SolidColorRenderElement::new(
+            Id::new(),
+            *rect,
+            CommitCounter::default(),
+            [0.3, 0., 0., 0.3],
+            Kind::Unspecified,
+        );
+        elements.insert(0, OutputRenderElements::SolidColor(color));
     }
 }

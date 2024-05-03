@@ -58,6 +58,7 @@ use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use super::{IpcOutputMap, RenderResult};
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
+use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output};
@@ -1243,8 +1244,14 @@ impl Tty {
         };
 
         // Render the elements.
-        let elements =
+        let mut elements =
             niri.render::<TtyRenderer>(&mut renderer, output, true, RenderTarget::Output);
+
+        // Visualize the damage, if enabled.
+        if niri.debug_draw_damage {
+            let output_state = niri.output_state.get_mut(output).unwrap();
+            draw_damage(&mut output_state.debug_damage_tracker, &mut elements);
+        }
 
         // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;

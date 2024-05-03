@@ -166,3 +166,15 @@ binds {
     Mod+Shift+Ctrl+O { debug-toggle-opaque-regions; }
 }
 ```
+
+#### `debug-toggle-damage`
+
+<sup>Since: 0.1.6</sup>
+
+Tints damaged regions with red.
+
+```
+binds {
+    Mod+Shift+Ctrl+D { debug-toggle-damage; }
+}
+```

@@ -219,6 +219,8 @@ pub enum Action {
     ToggleDebugTint,
     /// Toggle visualization of render element opaque regions.
     DebugToggleOpaqueRegions,
+    /// Toggle visualization of output damage.
+    DebugToggleDamage,
 }
 
 /// Change in window or column size.

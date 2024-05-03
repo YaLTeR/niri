@@ -13,6 +13,7 @@ use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{Config, Key, Modifiers, PreviewRender, TrackLayout};
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
@@ -238,6 +239,7 @@ pub struct Niri {
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
 
     pub debug_draw_opaque_regions: bool,
+    pub debug_draw_damage: bool,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -287,6 +289,8 @@ pub struct OutputState {
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
+    /// Damage tracker used for the debug damage visualization.
+    pub debug_damage_tracker: OutputDamageTracker,
 }
 
 #[derive(Default)]
@@ -1426,6 +1430,7 @@ impl Niri {
             exit_confirm_dialog,
 
             debug_draw_opaque_regions: false,
+            debug_draw_damage: false,
 
             #[cfg(feature = "dbus")]
             dbus: None,
@@ -1630,6 +1635,7 @@ impl Niri {
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
+            debug_damage_tracker: OutputDamageTracker::from_output(&output),
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
@@ -2477,6 +2483,7 @@ impl Niri {
         if self.debug_draw_opaque_regions {
             draw_opaque_regions(&mut elements, output_scale);
         }
+
         elements
     }
 
@@ -3186,6 +3193,18 @@ impl Niri {
                     .await
             });
         }
+    }
+
+    pub fn debug_toggle_damage(&mut self) {
+        self.debug_draw_damage = !self.debug_draw_damage;
+
+        if self.debug_draw_damage {
+            for (output, state) in &mut self.output_state {
+                state.debug_damage_tracker = OutputDamageTracker::from_output(output);
+            }
+        }
+
+        self.queue_redraw_all();
     }
 
     pub fn open_screenshot_ui(&mut self, renderer: &mut GlesRenderer) {

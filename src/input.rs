@@ -372,6 +372,9 @@ impl State {
                 self.niri.debug_draw_opaque_regions = !self.niri.debug_draw_opaque_regions;
                 self.niri.queue_redraw_all();
             }
+            Action::DebugToggleDamage => {
+                self.niri.debug_toggle_damage();
+            }
             Action::Spawn(command) => {
                 spawn(command);
             }

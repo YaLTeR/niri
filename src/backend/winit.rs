@@ -19,6 +19,7 @@ use smithay::reexports::winit::window::WindowBuilder;
 
 use super::{IpcOutputMap, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
+use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output};
 
@@ -159,12 +160,18 @@ impl Winit {
         let _span = tracy_client::span!("Winit::render");
 
         // Render the elements.
-        let elements = niri.render::<GlesRenderer>(
+        let mut elements = niri.render::<GlesRenderer>(
             self.backend.renderer(),
             output,
             true,
             RenderTarget::Output,
         );
+
+        // Visualize the damage, if enabled.
+        if niri.debug_draw_damage {
+            let output_state = niri.output_state.get_mut(output).unwrap();
+            draw_damage(&mut output_state.debug_damage_tracker, &mut elements);
+        }
 
         // Hand them over to winit.
         self.backend.bind().unwrap();
