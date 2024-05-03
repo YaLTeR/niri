@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::iter::zip;
 
@@ -16,6 +17,7 @@ pub struct FocusRing {
     buffers: [SolidColorBuffer; 8],
     locations: [Point<i32, Logical>; 8],
     sizes: [Size<i32, Logical>; 8],
+    borders: RefCell<Option<[BorderRenderElement; 8]>>,
     full_size: Size<i32, Logical>,
     is_active: bool,
     is_border: bool,
@@ -36,6 +38,7 @@ impl FocusRing {
             buffers: Default::default(),
             locations: Default::default(),
             sizes: Default::default(),
+            borders: Default::default(),
             full_size: Default::default(),
             is_active: false,
             is_border: false,
@@ -179,15 +182,40 @@ impl FocusRing {
         };
         let shader = BorderRenderElement::shader(renderer);
 
-        let mut push = |buffer, location: Point<i32, Logical>, size: Size<i32, Logical>| {
+        let mut borders = self.borders.borrow_mut();
+
+        // Initialize the border render elements.
+        if let Some(shader) = shader {
+            if let Some(borders) = &mut *borders {
+                for elem in borders {
+                    elem.update_shader(shader);
+                }
+            } else {
+                *borders = Some([(); 8].map(|()| BorderRenderElement::empty(shader.clone())));
+            }
+        }
+
+        let mut borders = if let Some(borders) = &mut *borders {
+            let a = Some(borders.iter_mut().map(Some));
+            let b = None;
+            a.into_iter().flatten().chain(b.into_iter().flatten())
+        } else {
+            let a = None;
+            let b = Some([None, None, None, None, None, None, None, None].into_iter());
+            a.into_iter().flatten().chain(b.into_iter().flatten())
+        };
+
+        let mut push = |buffer,
+                        border: Option<&mut BorderRenderElement>,
+                        location: Point<i32, Logical>,
+                        size: Size<i32, Logical>| {
             let elem = if let Some(gradient) = gradient {
                 let gradient_area = match gradient.relative_to {
                     GradientRelativeTo::Window => full_rect,
                     GradientRelativeTo::WorkspaceView => view_rect,
                 };
-                shader.cloned().map(|shader| {
-                    BorderRenderElement::new(
-                        shader,
+                border.map(|border| {
+                    border.update(
                         scale,
                         Rectangle::from_loc_and_size(location, size),
                         gradient_area,
@@ -197,13 +225,12 @@ impl FocusRing {
                         full_rect,
                         border_width,
                         self.radius,
-                    )
-                    .into()
+                    );
+                    border.clone().into()
                 })
             } else if self.radius != CornerRadius::default() {
-                shader.cloned().map(|shader| {
-                    BorderRenderElement::new(
-                        shader,
+                border.map(|border| {
+                    border.update(
                         scale,
                         Rectangle::from_loc_and_size(location, size),
                         full_rect,
@@ -213,8 +240,8 @@ impl FocusRing {
                         full_rect,
                         border_width,
                         self.radius,
-                    )
-                    .into()
+                    );
+                    border.clone().into()
                 })
             } else {
                 None
@@ -234,12 +261,16 @@ impl FocusRing {
         };
 
         if self.is_border {
-            for (buf, (loc, size)) in zip(&self.buffers, zip(self.locations, self.sizes)) {
-                push(buf, location + loc, size);
+            for ((buf, border), (loc, size)) in zip(
+                zip(&self.buffers, &mut borders),
+                zip(self.locations, self.sizes),
+            ) {
+                push(buf, border, location + loc, size);
             }
         } else {
             push(
                 &self.buffers[0],
+                borders.next().unwrap(),
                 location + self.locations[0],
                 self.sizes[0],
             );

@@ -93,10 +93,6 @@ impl ResizeRenderElement {
         // Create the shader.
         Self(ShaderRenderElement::new(
             shader,
-            HashMap::from([
-                (String::from("niri_tex_prev"), texture_prev),
-                (String::from("niri_tex_next"), texture_next),
-            ]),
             area,
             size,
             None,
@@ -113,6 +109,10 @@ impl ResizeRenderElement {
                 Uniform::new("niri_corner_radius", <[f32; 4]>::from(corner_radius)),
                 Uniform::new("niri_clip_to_geometry", clip_to_geometry),
             ],
+            HashMap::from([
+                (String::from("niri_tex_prev"), texture_prev),
+                (String::from("niri_tex_next"), texture_next),
+            ]),
             Kind::Unspecified,
         ))
     }

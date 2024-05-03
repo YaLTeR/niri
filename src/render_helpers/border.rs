@@ -18,8 +18,25 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 /// * sub- or super-rect of an angled linear gradient like CSS linear-gradient(angle, a, b).
 /// * corner rounding.
 /// * as a background rectangle and as parts of a border line.
-#[derive(Debug)]
-pub struct BorderRenderElement(ShaderRenderElement);
+#[derive(Debug, Clone)]
+pub struct BorderRenderElement {
+    inner: ShaderRenderElement,
+    shader: ShaderProgram,
+    params: Parameters,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Parameters {
+    scale: Scale<f64>,
+    area: Rectangle<i32, Logical>,
+    gradient_area: Rectangle<i32, Logical>,
+    color_from: [f32; 4],
+    color_to: [f32; 4],
+    angle: f32,
+    geometry: Rectangle<i32, Logical>,
+    border_width: f32,
+    corner_radius: CornerRadius,
+}
 
 impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
@@ -35,6 +52,127 @@ impl BorderRenderElement {
         border_width: f32,
         corner_radius: CornerRadius,
     ) -> Self {
+        let inner = ShaderRenderElement::new(
+            shader.clone(),
+            Default::default(),
+            Default::default(),
+            None,
+            1.,
+            vec![],
+            HashMap::new(),
+            Kind::Unspecified,
+        );
+        let mut rv = Self {
+            inner,
+            shader,
+            params: Parameters {
+                scale,
+                area,
+                gradient_area,
+                color_from,
+                color_to,
+                angle,
+                geometry,
+                border_width,
+                corner_radius,
+            },
+        };
+        rv.update_inner();
+        rv
+    }
+
+    pub fn empty(shader: ShaderProgram) -> Self {
+        let inner = ShaderRenderElement::new(
+            shader.clone(),
+            Default::default(),
+            Default::default(),
+            None,
+            1.,
+            vec![],
+            HashMap::new(),
+            Kind::Unspecified,
+        );
+        Self {
+            inner,
+            shader,
+            params: Parameters {
+                scale: Scale::from(1.),
+                area: Default::default(),
+                gradient_area: Default::default(),
+                color_from: Default::default(),
+                color_to: Default::default(),
+                angle: 0.,
+                geometry: Default::default(),
+                border_width: 0.,
+                corner_radius: Default::default(),
+            },
+        }
+    }
+
+    pub fn update_shader(&mut self, shader: &ShaderProgram) {
+        if &self.shader == shader {
+            return;
+        }
+
+        self.inner = ShaderRenderElement::new(
+            shader.clone(),
+            Default::default(),
+            Default::default(),
+            None,
+            1.,
+            vec![],
+            HashMap::new(),
+            Kind::Unspecified,
+        );
+        self.update_inner();
+        self.shader = shader.clone();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(
+        &mut self,
+        scale: Scale<f64>,
+        area: Rectangle<i32, Logical>,
+        gradient_area: Rectangle<i32, Logical>,
+        color_from: [f32; 4],
+        color_to: [f32; 4],
+        angle: f32,
+        geometry: Rectangle<i32, Logical>,
+        border_width: f32,
+        corner_radius: CornerRadius,
+    ) {
+        let params = Parameters {
+            scale,
+            area,
+            gradient_area,
+            color_from,
+            color_to,
+            angle,
+            geometry,
+            border_width,
+            corner_radius,
+        };
+        if self.params == params {
+            return;
+        }
+
+        self.params = params;
+        self.update_inner();
+    }
+
+    fn update_inner(&mut self) {
+        let Parameters {
+            scale,
+            area,
+            gradient_area,
+            color_from,
+            color_to,
+            angle,
+            geometry,
+            border_width,
+            corner_radius,
+        } = self.params;
+
         let grad_offset = (area.loc - gradient_area.loc).to_f64().to_physical(scale);
 
         let grad_dir = Vec2::from_angle(angle);
@@ -65,13 +203,10 @@ impl BorderRenderElement {
         let corner_radius = corner_radius.scaled_by(scale.x as f32);
         let border_width = border_width * scale.x as f32;
 
-        let elem = ShaderRenderElement::new(
-            shader,
-            HashMap::new(),
+        self.inner.update(
             area,
             area.size.to_f64().to_buffer(scale, Transform::Normal),
             None,
-            1.,
             vec![
                 Uniform::new("color_from", color_from),
                 Uniform::new("color_to", color_to),
@@ -83,9 +218,8 @@ impl BorderRenderElement {
                 Uniform::new("outer_radius", <[f32; 4]>::from(corner_radius)),
                 Uniform::new("border_width", border_width),
             ],
-            Kind::Unspecified,
+            HashMap::new(),
         );
-        Self(elem)
     }
 
     pub fn shader(renderer: &mut impl NiriRenderer) -> Option<&ShaderProgram> {
@@ -95,23 +229,23 @@ impl BorderRenderElement {
 
 impl Element for BorderRenderElement {
     fn id(&self) -> &Id {
-        self.0.id()
+        self.inner.id()
     }
 
     fn current_commit(&self) -> CommitCounter {
-        self.0.current_commit()
+        self.inner.current_commit()
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        self.0.geometry(scale)
+        self.inner.geometry(scale)
     }
 
     fn transform(&self) -> Transform {
-        self.0.transform()
+        self.inner.transform()
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        self.0.src()
+        self.inner.src()
     }
 
     fn damage_since(
@@ -119,19 +253,19 @@ impl Element for BorderRenderElement {
         scale: Scale<f64>,
         commit: Option<CommitCounter>,
     ) -> DamageSet<i32, Physical> {
-        self.0.damage_since(scale, commit)
+        self.inner.damage_since(scale, commit)
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        self.0.opaque_regions(scale)
+        self.inner.opaque_regions(scale)
     }
 
     fn alpha(&self) -> f32 {
-        self.0.alpha()
+        self.inner.alpha()
     }
 
     fn kind(&self) -> Kind {
-        self.0.kind()
+        self.inner.kind()
     }
 }
 
@@ -143,11 +277,11 @@ impl RenderElement<GlesRenderer> for BorderRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(&self.0, frame, src, dst, damage)
+        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage)
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
-        self.0.underlying_storage(renderer)
+        self.inner.underlying_storage(renderer)
     }
 }
 
@@ -159,10 +293,10 @@ impl<'render> RenderElement<TtyRenderer<'render>> for BorderRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
-        RenderElement::<TtyRenderer<'_>>::draw(&self.0, frame, src, dst, damage)
+        RenderElement::<TtyRenderer<'_>>::draw(&self.inner, frame, src, dst, damage)
     }
 
     fn underlying_storage(&self, renderer: &mut TtyRenderer<'render>) -> Option<UnderlyingStorage> {
-        self.0.underlying_storage(renderer)
+        self.inner.underlying_storage(renderer)
     }
 }

@@ -17,7 +17,7 @@ use super::resources::Resources;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 /// Renders a shader with optional texture input, on the primary GPU.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ShaderRenderElement {
     shader: ShaderProgram,
     textures: HashMap<String, GlesTexture>,
@@ -52,6 +52,12 @@ struct ShaderProgramInternal {
     attrib_vert_position: ffi::types::GLint,
     additional_uniforms: HashMap<String, UniformDesc>,
     texture_uniforms: HashMap<String, ffi::types::GLint>,
+}
+
+impl PartialEq for ShaderProgram {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 unsafe fn compile_program(
@@ -192,12 +198,12 @@ impl ShaderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         shader: ShaderProgram,
-        textures: HashMap<String, GlesTexture>,
         area: Rectangle<i32, Logical>,
         size: Size<f64, Buffer>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         alpha: f32,
-        additional_uniforms: Vec<Uniform<'_>>,
+        uniforms: Vec<Uniform<'_>>,
+        textures: HashMap<String, GlesTexture>,
         kind: Kind,
     ) -> Self {
         Self {
@@ -209,12 +215,26 @@ impl ShaderRenderElement {
             size,
             opaque_regions: opaque_regions.unwrap_or_default(),
             alpha,
-            additional_uniforms: additional_uniforms
-                .into_iter()
-                .map(|u| u.into_owned())
-                .collect(),
+            additional_uniforms: uniforms.into_iter().map(|u| u.into_owned()).collect(),
             kind,
         }
+    }
+
+    pub fn update(
+        &mut self,
+        area: Rectangle<i32, Logical>,
+        size: Size<f64, Buffer>,
+        opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
+        uniforms: Vec<Uniform<'_>>,
+        textures: HashMap<String, GlesTexture>,
+    ) {
+        self.area = area;
+        self.size = size;
+        self.opaque_regions = opaque_regions.unwrap_or_default();
+        self.additional_uniforms = uniforms.into_iter().map(|u| u.into_owned()).collect();
+        self.textures = textures;
+
+        self.commit_counter.increment();
     }
 }
 
