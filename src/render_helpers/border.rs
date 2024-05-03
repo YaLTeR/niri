@@ -21,7 +21,6 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 #[derive(Debug, Clone)]
 pub struct BorderRenderElement {
     inner: ShaderRenderElement,
-    shader: ShaderProgram,
     params: Parameters,
 }
 
@@ -41,7 +40,7 @@ struct Parameters {
 impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        shader: ShaderProgram,
+        shader: &ShaderProgram,
         scale: Scale<f64>,
         area: Rectangle<i32, Logical>,
         gradient_area: Rectangle<i32, Logical>,
@@ -52,19 +51,10 @@ impl BorderRenderElement {
         border_width: f32,
         corner_radius: CornerRadius,
     ) -> Self {
-        let inner = ShaderRenderElement::new(
-            shader.clone(),
-            Default::default(),
-            Default::default(),
-            None,
-            1.,
-            vec![],
-            HashMap::new(),
-            Kind::Unspecified,
-        );
+        let mut inner = ShaderRenderElement::empty(Kind::Unspecified);
+        inner.update_shader(Some(shader));
         let mut rv = Self {
             inner,
-            shader,
             params: Parameters {
                 scale,
                 area,
@@ -81,20 +71,10 @@ impl BorderRenderElement {
         rv
     }
 
-    pub fn empty(shader: ShaderProgram) -> Self {
-        let inner = ShaderRenderElement::new(
-            shader.clone(),
-            Default::default(),
-            Default::default(),
-            None,
-            1.,
-            vec![],
-            HashMap::new(),
-            Kind::Unspecified,
-        );
+    pub fn empty() -> Self {
+        let inner = ShaderRenderElement::empty(Kind::Unspecified);
         Self {
             inner,
-            shader,
             params: Parameters {
                 scale: Scale::from(1.),
                 area: Default::default(),
@@ -109,23 +89,8 @@ impl BorderRenderElement {
         }
     }
 
-    pub fn update_shader(&mut self, shader: &ShaderProgram) {
-        if &self.shader == shader {
-            return;
-        }
-
-        self.inner = ShaderRenderElement::new(
-            shader.clone(),
-            Default::default(),
-            Default::default(),
-            None,
-            1.,
-            vec![],
-            HashMap::new(),
-            Kind::Unspecified,
-        );
-        self.update_inner();
-        self.shader = shader.clone();
+    pub fn update_shader(&mut self, shader: Option<&ShaderProgram>) {
+        self.inner.update_shader(shader);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -222,8 +187,18 @@ impl BorderRenderElement {
         );
     }
 
+    pub fn has_shader(&self) -> bool {
+        self.inner.has_shader()
+    }
+
     pub fn shader(renderer: &mut impl NiriRenderer) -> Option<&ShaderProgram> {
         Shaders::get(renderer).border.as_ref()
+    }
+}
+
+impl Default for BorderRenderElement {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 

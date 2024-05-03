@@ -718,7 +718,7 @@ impl<W: LayoutElement> Tile<W> {
                     if radius != CornerRadius::default() {
                         if let Some(shader) = border_shader.clone() {
                             return BorderRenderElement::new(
-                                shader,
+                                &shader,
                                 scale,
                                 elem.geometry(Scale::from(1.)).to_logical(1),
                                 Rectangle::from_loc_and_size(Point::from((0, 0)), geo.size),

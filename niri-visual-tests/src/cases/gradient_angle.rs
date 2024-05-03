@@ -64,7 +64,7 @@ impl TestCase for GradientAngle {
         BorderRenderElement::shader(renderer)
             .map(|shader| {
                 BorderRenderElement::new(
-                    shader.clone(),
+                    shader,
                     Scale::from(1.),
                     area,
                     area,

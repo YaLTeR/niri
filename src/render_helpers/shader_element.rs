@@ -19,8 +19,7 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 /// Renders a shader with optional texture input, on the primary GPU.
 #[derive(Debug, Clone)]
 pub struct ShaderRenderElement {
-    shader: ShaderProgram,
-    textures: HashMap<String, GlesTexture>,
+    shader: Option<ShaderProgram>,
     id: Id,
     commit_counter: CommitCounter,
     area: Rectangle<i32, Logical>,
@@ -28,6 +27,7 @@ pub struct ShaderRenderElement {
     opaque_regions: Vec<Rectangle<i32, Logical>>,
     alpha: f32,
     additional_uniforms: Vec<Uniform<'static>>,
+    textures: HashMap<String, GlesTexture>,
     kind: Kind,
 }
 
@@ -197,7 +197,7 @@ impl ShaderProgram {
 impl ShaderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        shader: ShaderProgram,
+        shader: Option<ShaderProgram>,
         area: Rectangle<i32, Logical>,
         size: Size<f64, Buffer>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
@@ -208,7 +208,6 @@ impl ShaderRenderElement {
     ) -> Self {
         Self {
             shader,
-            textures,
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area,
@@ -216,8 +215,33 @@ impl ShaderRenderElement {
             opaque_regions: opaque_regions.unwrap_or_default(),
             alpha,
             additional_uniforms: uniforms.into_iter().map(|u| u.into_owned()).collect(),
+            textures,
             kind,
         }
+    }
+
+    pub fn empty(kind: Kind) -> Self {
+        Self {
+            shader: None,
+            id: Id::new(),
+            commit_counter: CommitCounter::default(),
+            area: Rectangle::default(),
+            size: Size::default(),
+            opaque_regions: vec![],
+            alpha: 1.,
+            additional_uniforms: vec![],
+            textures: HashMap::new(),
+            kind,
+        }
+    }
+
+    pub fn update_shader(&mut self, shader: Option<&ShaderProgram>) {
+        if self.shader.as_ref() == shader {
+            return;
+        }
+
+        self.shader = shader.cloned();
+        self.commit_counter.increment();
     }
 
     pub fn update(
@@ -235,6 +259,10 @@ impl ShaderRenderElement {
         self.textures = textures;
 
         self.commit_counter.increment();
+    }
+
+    pub fn has_shader(&self) -> bool {
+        self.shader.is_some()
     }
 }
 
@@ -280,6 +308,10 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         let frame = frame.as_gles_frame();
+
+        let Some(shader) = &self.shader else {
+            return Ok(());
+        };
 
         let Some(resources) = Resources::get(frame) else {
             return Ok(());
@@ -358,9 +390,9 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         let has_tint = frame.debug_flags().contains(DebugFlags::TINT);
 
         let program = if has_debug {
-            &self.shader.0.debug
+            &shader.0.debug
         } else {
-            &self.shader.0.normal
+            &shader.0.normal
         };
 
         // render
@@ -406,7 +438,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
 
                 let tint = if has_tint { 1.0f32 } else { 0.0f32 };
                 if has_debug {
-                    gl.Uniform1f(self.shader.0.uniform_tint, tint);
+                    gl.Uniform1f(shader.0.uniform_tint, tint);
                 }
 
                 for uniform in &self.additional_uniforms {

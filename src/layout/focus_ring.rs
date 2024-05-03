@@ -17,7 +17,7 @@ pub struct FocusRing {
     buffers: [SolidColorBuffer; 8],
     locations: [Point<i32, Logical>; 8],
     sizes: [Size<i32, Logical>; 8],
-    borders: RefCell<Option<[BorderRenderElement; 8]>>,
+    borders: RefCell<[BorderRenderElement; 8]>,
     full_size: Size<i32, Logical>,
     is_active: bool,
     is_border: bool,
@@ -183,38 +183,20 @@ impl FocusRing {
         let shader = BorderRenderElement::shader(renderer);
 
         let mut borders = self.borders.borrow_mut();
-
-        // Initialize the border render elements.
-        if let Some(shader) = shader {
-            if let Some(borders) = &mut *borders {
-                for elem in borders {
-                    elem.update_shader(shader);
-                }
-            } else {
-                *borders = Some([(); 8].map(|()| BorderRenderElement::empty(shader.clone())));
-            }
+        for elem in &mut *borders {
+            elem.update_shader(shader);
         }
 
-        let mut borders = if let Some(borders) = &mut *borders {
-            let a = Some(borders.iter_mut().map(Some));
-            let b = None;
-            a.into_iter().flatten().chain(b.into_iter().flatten())
-        } else {
-            let a = None;
-            let b = Some([None, None, None, None, None, None, None, None].into_iter());
-            a.into_iter().flatten().chain(b.into_iter().flatten())
-        };
-
         let mut push = |buffer,
-                        border: Option<&mut BorderRenderElement>,
+                        border: &mut BorderRenderElement,
                         location: Point<i32, Logical>,
                         size: Size<i32, Logical>| {
-            let elem = if let Some(gradient) = gradient {
-                let gradient_area = match gradient.relative_to {
-                    GradientRelativeTo::Window => full_rect,
-                    GradientRelativeTo::WorkspaceView => view_rect,
-                };
-                border.map(|border| {
+            let elem = if border.has_shader() {
+                if let Some(gradient) = gradient {
+                    let gradient_area = match gradient.relative_to {
+                        GradientRelativeTo::Window => full_rect,
+                        GradientRelativeTo::WorkspaceView => view_rect,
+                    };
                     border.update(
                         scale,
                         Rectangle::from_loc_and_size(location, size),
@@ -226,10 +208,8 @@ impl FocusRing {
                         border_width,
                         self.radius,
                     );
-                    border.clone().into()
-                })
-            } else if self.radius != CornerRadius::default() {
-                border.map(|border| {
+                    Some(border.clone().into())
+                } else if self.radius != CornerRadius::default() {
                     border.update(
                         scale,
                         Rectangle::from_loc_and_size(location, size),
@@ -241,8 +221,10 @@ impl FocusRing {
                         border_width,
                         self.radius,
                     );
-                    border.clone().into()
-                })
+                    Some(border.clone().into())
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -262,7 +244,7 @@ impl FocusRing {
 
         if self.is_border {
             for ((buf, border), (loc, size)) in zip(
-                zip(&self.buffers, &mut borders),
+                zip(&self.buffers, &mut *borders),
                 zip(self.locations, self.sizes),
             ) {
                 push(buf, border, location + loc, size);
@@ -270,7 +252,7 @@ impl FocusRing {
         } else {
             push(
                 &self.buffers[0],
-                borders.next().unwrap(),
+                &mut borders[0],
                 location + self.locations[0],
                 self.sizes[0],
             );

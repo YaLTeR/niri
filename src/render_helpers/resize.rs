@@ -92,7 +92,7 @@ impl ResizeRenderElement {
 
         // Create the shader.
         Self(ShaderRenderElement::new(
-            shader,
+            Some(shader),
             area,
             size,
             None,
