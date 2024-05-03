@@ -2,7 +2,8 @@ use std::cell::RefCell;
 
 use glam::Mat3;
 use smithay::backend::renderer::gles::{
-    GlesError, GlesRenderer, GlesTexProgram, Uniform, UniformName, UniformType, UniformValue,
+    GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform, UniformName, UniformType,
+    UniformValue,
 };
 
 use super::renderer::NiriRenderer;
@@ -13,6 +14,12 @@ pub struct Shaders {
     pub clipped_surface: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ProgramType {
+    Border,
+    Resize,
 }
 
 impl Shaders {
@@ -68,6 +75,12 @@ impl Shaders {
         }
     }
 
+    pub fn get_from_frame<'a>(frame: &'a mut GlesFrame<'_>) -> &'a Self {
+        let data = frame.egl_context().user_data();
+        data.get()
+            .expect("shaders::init() must be called when creating the renderer")
+    }
+
     pub fn get(renderer: &mut impl NiriRenderer) -> &Self {
         let renderer = renderer.as_gles_renderer();
         let data = renderer.egl_context().user_data();
@@ -82,11 +95,15 @@ impl Shaders {
         self.custom_resize.replace(program)
     }
 
-    pub fn resize(&self) -> Option<ShaderProgram> {
-        self.custom_resize
-            .borrow()
-            .clone()
-            .or_else(|| self.resize.clone())
+    pub fn program(&self, program: ProgramType) -> Option<ShaderProgram> {
+        match program {
+            ProgramType::Border => self.border.clone(),
+            ProgramType::Resize => self
+                .custom_resize
+                .borrow()
+                .clone()
+                .or_else(|| self.resize.clone()),
+        }
     }
 }
 

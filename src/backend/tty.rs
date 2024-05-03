@@ -502,6 +502,8 @@ impl Tty {
             }
             drop(config);
 
+            niri.layout.update_shaders();
+
             // Create the dmabuf global.
             let primary_formats = renderer.dmabuf_formats().collect::<HashSet<_>>();
             let default_feedback =

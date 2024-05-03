@@ -8,8 +8,8 @@ use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
 use super::renderer::{AsGlesFrame, NiriRenderer};
-use super::shader_element::{ShaderProgram, ShaderRenderElement};
-use super::shaders::{mat3_uniform, Shaders};
+use super::shader_element::ShaderRenderElement;
+use super::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 #[derive(Debug)]
@@ -18,7 +18,6 @@ pub struct ResizeRenderElement(ShaderRenderElement);
 impl ResizeRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        shader: ShaderProgram,
         area: Rectangle<i32, Logical>,
         scale: Scale<f64>,
         texture_prev: (GlesTexture, Rectangle<i32, Physical>),
@@ -92,7 +91,7 @@ impl ResizeRenderElement {
 
         // Create the shader.
         Self(ShaderRenderElement::new(
-            Some(shader),
+            ProgramType::Resize,
             area,
             size,
             None,
@@ -117,8 +116,10 @@ impl ResizeRenderElement {
         ))
     }
 
-    pub fn shader(renderer: &mut impl NiriRenderer) -> Option<ShaderProgram> {
-        Shaders::get(renderer).resize()
+    pub fn has_shader(renderer: &mut impl NiriRenderer) -> bool {
+        Shaders::get(renderer)
+            .program(ProgramType::Resize)
+            .is_some()
     }
 }
 

@@ -860,6 +860,7 @@ impl State {
         let mut output_config_changed = false;
         let mut window_rules_changed = false;
         let mut debug_config_changed = false;
+        let mut shaders_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
@@ -916,6 +917,7 @@ impl State {
             self.backend.with_primary_renderer(|renderer| {
                 shaders::set_custom_resize_program(renderer, src);
             });
+            shaders_changed = true;
         }
 
         if config.debug != old_config.debug {
@@ -1016,6 +1018,10 @@ impl State {
             for win in windows {
                 self.niri.layout.update_window(&win);
             }
+        }
+
+        if shaders_changed {
+            self.niri.layout.update_shaders();
         }
 
         // Can't really update xdg-decoration settings since we have to hide the globals for CSD

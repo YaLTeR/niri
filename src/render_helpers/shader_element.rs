@@ -14,12 +14,13 @@ use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size};
 
 use super::renderer::AsGlesFrame;
 use super::resources::Resources;
+use super::shaders::{ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 /// Renders a shader with optional texture input, on the primary GPU.
 #[derive(Debug, Clone)]
 pub struct ShaderRenderElement {
-    shader: Option<ShaderProgram>,
+    program: ProgramType,
     id: Id,
     commit_counter: CommitCounter,
     area: Rectangle<i32, Logical>,
@@ -197,7 +198,7 @@ impl ShaderProgram {
 impl ShaderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        shader: Option<ShaderProgram>,
+        program: ProgramType,
         area: Rectangle<i32, Logical>,
         size: Size<f64, Buffer>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
@@ -207,7 +208,7 @@ impl ShaderRenderElement {
         kind: Kind,
     ) -> Self {
         Self {
-            shader,
+            program,
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area,
@@ -220,9 +221,9 @@ impl ShaderRenderElement {
         }
     }
 
-    pub fn empty(kind: Kind) -> Self {
+    pub fn empty(program: ProgramType, kind: Kind) -> Self {
         Self {
-            shader: None,
+            program,
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area: Rectangle::default(),
@@ -235,12 +236,7 @@ impl ShaderRenderElement {
         }
     }
 
-    pub fn update_shader(&mut self, shader: Option<&ShaderProgram>) {
-        if self.shader.as_ref() == shader {
-            return;
-        }
-
-        self.shader = shader.cloned();
+    pub fn damage_all(&mut self) {
         self.commit_counter.increment();
     }
 
@@ -259,10 +255,6 @@ impl ShaderRenderElement {
         self.textures = textures;
 
         self.commit_counter.increment();
-    }
-
-    pub fn has_shader(&self) -> bool {
-        self.shader.is_some()
     }
 }
 
@@ -309,7 +301,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
     ) -> Result<(), GlesError> {
         let frame = frame.as_gles_frame();
 
-        let Some(shader) = &self.shader else {
+        let Some(shader) = Shaders::get_from_frame(frame).program(self.program) else {
             return Ok(());
         };
 
@@ -389,14 +381,14 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         let has_debug = !frame.debug_flags().is_empty();
         let has_tint = frame.debug_flags().contains(DebugFlags::TINT);
 
-        let program = if has_debug {
-            &shader.0.debug
-        } else {
-            &shader.0.normal
-        };
-
         // render
         frame.with_context(move |gl| -> Result<(), GlesError> {
+            let program = if has_debug {
+                &shader.0.debug
+            } else {
+                &shader.0.normal
+            };
+
             unsafe {
                 for (i, texture) in self.textures.values().enumerate() {
                     gl.ActiveTexture(ffi::TEXTURE0 + i as u32);

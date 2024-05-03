@@ -98,23 +98,19 @@ impl TestCase for GradientArea {
         );
 
         rv.extend(
-            BorderRenderElement::shader(renderer)
-                .map(|shader| {
-                    BorderRenderElement::new(
-                        shader,
-                        Scale::from(1.),
-                        area,
-                        g_area,
-                        [1., 0., 0., 1.],
-                        [0., 1., 0., 1.],
-                        FRAC_PI_4,
-                        area,
-                        0.,
-                        CornerRadius::default(),
-                    )
-                })
-                .into_iter()
-                .map(|elem| Box::new(elem) as _),
+            [BorderRenderElement::new(
+                Scale::from(1.),
+                area,
+                g_area,
+                [1., 0., 0., 1.],
+                [0., 1., 0., 1.],
+                FRAC_PI_4,
+                area,
+                0.,
+                CornerRadius::default(),
+            )]
+            .into_iter()
+            .map(|elem| Box::new(elem) as _),
         );
 
         rv

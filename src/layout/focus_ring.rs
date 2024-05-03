@@ -51,6 +51,13 @@ impl FocusRing {
         self.config = config;
     }
 
+    pub fn update_shaders(&mut self) {
+        let mut borders = self.borders.borrow_mut();
+        for elem in &mut *borders {
+            elem.damage_all();
+        }
+    }
+
     pub fn update(&mut self, win_size: Size<i32, Logical>, is_border: bool, radius: CornerRadius) {
         let width = i32::from(self.config.width);
         self.full_size = win_size + Size::from((width * 2, width * 2));
@@ -138,9 +145,9 @@ impl FocusRing {
         self.is_active = is_active;
     }
 
-    pub fn render<R: NiriRenderer>(
+    pub fn render(
         &self,
-        renderer: &mut R,
+        renderer: &mut impl NiriRenderer,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
         view_size: Size<i32, Logical>,
@@ -180,18 +187,14 @@ impl FocusRing {
         } else {
             0.
         };
-        let shader = BorderRenderElement::shader(renderer);
-
+        let has_border_shader = BorderRenderElement::has_shader(renderer);
         let mut borders = self.borders.borrow_mut();
-        for elem in &mut *borders {
-            elem.update_shader(shader);
-        }
 
         let mut push = |buffer,
                         border: &mut BorderRenderElement,
                         location: Point<i32, Logical>,
                         size: Size<i32, Logical>| {
-            let elem = if border.has_shader() {
+            let elem = if has_border_shader {
                 if let Some(gradient) = gradient {
                     let gradient_area = match gradient.relative_to {
                         GradientRelativeTo::Window => full_rect,

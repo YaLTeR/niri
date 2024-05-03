@@ -8,8 +8,8 @@ use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform};
 
 use super::renderer::NiriRenderer;
-use super::shader_element::{ShaderProgram, ShaderRenderElement};
-use super::shaders::{mat3_uniform, Shaders};
+use super::shader_element::ShaderRenderElement;
+use super::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 /// Renders a wide variety of borders and border parts.
@@ -40,7 +40,6 @@ struct Parameters {
 impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        shader: &ShaderProgram,
         scale: Scale<f64>,
         area: Rectangle<i32, Logical>,
         gradient_area: Rectangle<i32, Logical>,
@@ -51,8 +50,7 @@ impl BorderRenderElement {
         border_width: f32,
         corner_radius: CornerRadius,
     ) -> Self {
-        let mut inner = ShaderRenderElement::empty(Kind::Unspecified);
-        inner.update_shader(Some(shader));
+        let inner = ShaderRenderElement::empty(ProgramType::Border, Kind::Unspecified);
         let mut rv = Self {
             inner,
             params: Parameters {
@@ -72,7 +70,7 @@ impl BorderRenderElement {
     }
 
     pub fn empty() -> Self {
-        let inner = ShaderRenderElement::empty(Kind::Unspecified);
+        let inner = ShaderRenderElement::empty(ProgramType::Border, Kind::Unspecified);
         Self {
             inner,
             params: Parameters {
@@ -89,8 +87,8 @@ impl BorderRenderElement {
         }
     }
 
-    pub fn update_shader(&mut self, shader: Option<&ShaderProgram>) {
-        self.inner.update_shader(shader);
+    pub fn damage_all(&mut self) {
+        self.inner.damage_all();
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -187,12 +185,10 @@ impl BorderRenderElement {
         );
     }
 
-    pub fn has_shader(&self) -> bool {
-        self.inner.has_shader()
-    }
-
-    pub fn shader(renderer: &mut impl NiriRenderer) -> Option<&ShaderProgram> {
-        Shaders::get(renderer).border.as_ref()
+    pub fn has_shader(renderer: &mut impl NiriRenderer) -> bool {
+        Shaders::get(renderer)
+            .program(ProgramType::Border)
+            .is_some()
     }
 }
 

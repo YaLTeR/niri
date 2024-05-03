@@ -54,30 +54,26 @@ impl TestCase for GradientAngle {
 
     fn render(
         &mut self,
-        renderer: &mut GlesRenderer,
+        _renderer: &mut GlesRenderer,
         size: Size<i32, Physical>,
     ) -> Vec<Box<dyn RenderElement<GlesRenderer>>> {
         let (a, b) = (size.w / 4, size.h / 4);
         let size = (size.w - a * 2, size.h - b * 2);
         let area = Rectangle::from_loc_and_size((a, b), size);
 
-        BorderRenderElement::shader(renderer)
-            .map(|shader| {
-                BorderRenderElement::new(
-                    shader,
-                    Scale::from(1.),
-                    area,
-                    area,
-                    [1., 0., 0., 1.],
-                    [0., 1., 0., 1.],
-                    self.angle - FRAC_PI_2,
-                    area,
-                    0.,
-                    CornerRadius::default(),
-                )
-            })
-            .into_iter()
-            .map(|elem| Box::new(elem) as _)
-            .collect()
+        [BorderRenderElement::new(
+            Scale::from(1.),
+            area,
+            area,
+            [1., 0., 0., 1.],
+            [0., 1., 0., 1.],
+            self.angle - FRAC_PI_2,
+            area,
+            0.,
+            CornerRadius::default(),
+        )]
+        .into_iter()
+        .map(|elem| Box::new(elem) as _)
+        .collect()
     }
 }

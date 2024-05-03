@@ -1371,6 +1371,23 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn update_shaders(&mut self) {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        ws.update_shaders();
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    ws.update_shaders();
+                }
+            }
+        }
+    }
+
     pub fn update_config(&mut self, config: &Config) {
         let options = Rc::new(Options::from_config(config));
 

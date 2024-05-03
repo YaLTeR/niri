@@ -333,6 +333,14 @@ impl<W: LayoutElement> Workspace<W> {
         self.options = options;
     }
 
+    pub fn update_shaders(&mut self) {
+        for col in &mut self.columns {
+            for tile in &mut col.tiles {
+                tile.update_shaders();
+            }
+        }
+    }
+
     pub fn windows(&self) -> impl Iterator<Item = &W> + '_ {
         self.columns
             .iter()

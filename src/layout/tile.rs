@@ -142,6 +142,11 @@ impl<W: LayoutElement> Tile<W> {
         self.options = options;
     }
 
+    pub fn update_shaders(&mut self) {
+        self.border.update_shaders();
+        self.focus_ring.update_shaders();
+    }
+
     pub fn update_window(&mut self) {
         // FIXME: remove when we can get a fullscreen size right away.
         if self.fullscreen_size != Size::from((0, 0)) {
@@ -594,7 +599,7 @@ impl<W: LayoutElement> Tile<W> {
                     .map(Into::into),
             );
 
-            if let Some(shader) = ResizeRenderElement::shader(renderer) {
+            if ResizeRenderElement::has_shader(renderer) {
                 let gles_renderer = renderer.as_gles_renderer();
 
                 if let Some(texture_from) = resize.snapshot.texture(gles_renderer, scale, target) {
@@ -623,7 +628,6 @@ impl<W: LayoutElement> Tile<W> {
 
                     if let Some((texture_current, _sync_point, texture_current_geo)) = current {
                         let elem = ResizeRenderElement::new(
-                            shader,
                             area,
                             scale,
                             texture_from.clone(),
@@ -680,7 +684,7 @@ impl<W: LayoutElement> Tile<W> {
                 .fit_to(window_size.w as f32, window_size.h as f32);
 
             let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
-            let border_shader = BorderRenderElement::shader(renderer).cloned();
+            let has_border_shader = BorderRenderElement::has_shader(renderer);
 
             if clip_to_geometry && clip_shader.is_some() {
                 let damage = self.rounded_corner_damage.element();
@@ -715,22 +719,19 @@ impl<W: LayoutElement> Tile<W> {
                     // the unclipped window CSD already has corners rounded to the
                     // user-provided radius, so our blocked-out rendering should match that
                     // radius.
-                    if radius != CornerRadius::default() {
-                        if let Some(shader) = border_shader.clone() {
-                            return BorderRenderElement::new(
-                                &shader,
-                                scale,
-                                elem.geometry(Scale::from(1.)).to_logical(1),
-                                Rectangle::from_loc_and_size(Point::from((0, 0)), geo.size),
-                                elem.color(),
-                                elem.color(),
-                                0.,
-                                elem.geometry(Scale::from(1.)).to_logical(1),
-                                0.,
-                                radius,
-                            )
-                            .into();
-                        }
+                    if radius != CornerRadius::default() && has_border_shader {
+                        return BorderRenderElement::new(
+                            scale,
+                            elem.geometry(Scale::from(1.)).to_logical(1),
+                            Rectangle::from_loc_and_size(Point::from((0, 0)), geo.size),
+                            elem.color(),
+                            elem.color(),
+                            0.,
+                            elem.geometry(Scale::from(1.)).to_logical(1),
+                            0.,
+                            radius,
+                        )
+                        .into();
                     }
 
                     // Otherwise, render the solid color as is.

@@ -142,6 +142,8 @@ impl Winit {
         }
         drop(config);
 
+        niri.layout.update_shaders();
+
         niri.add_output(self.output.clone(), None, false);
     }
 
