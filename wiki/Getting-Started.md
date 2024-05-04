@@ -20,6 +20,21 @@ Also, check the [configuration overview](./Configuration:-Overview.md) page to g
 There you can find links to other pages containing thorough documentation and examples for all options.
 Finally, the [Xwayland](./Xwayland.md) page explains how to run X11 applications on niri.
 
+### NVIDIA
+
+NVIDIA GPUs tend to have problems running niri (for example, the screen remains black upon starting from a TTY).
+Sometimes, the problems can be fixed.
+You can try the following:
+
+1. Update NVIDIA drivers. You need a GPU and drivers recent enough to support GBM.
+2. Make sure kernel modesetting is enabled. This usually involves adding `nvidia-drm.modeset=1` to the kernel command line. Find and follow a guide for your distribution. Guides from other Wayland compositors can help.
+
+### Nix/NixOS
+
+There's a common problem of mesa drivers going out of sync with niri, so make sure your system mesa version matches the niri mesa version.
+
+Also, on Intel graphics, you may need a workaround described here: https://nixos.wiki/wiki/Intel_Graphics
+
 ### Virtual Machines
 
 To run niri in a VM, make sure to enable 3D acceleration.
