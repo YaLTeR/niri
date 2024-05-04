@@ -10,7 +10,7 @@ use smithay::backend::renderer::gles::{
 };
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::DebugFlags;
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size};
+use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale};
 
 use super::renderer::AsGlesFrame;
 use super::resources::Resources;
@@ -24,7 +24,6 @@ pub struct ShaderRenderElement {
     id: Id,
     commit_counter: CommitCounter,
     area: Rectangle<i32, Logical>,
-    size: Size<f64, Buffer>,
     opaque_regions: Vec<Rectangle<i32, Logical>>,
     alpha: f32,
     additional_uniforms: Vec<Uniform<'static>>,
@@ -200,7 +199,6 @@ impl ShaderRenderElement {
     pub fn new(
         program: ProgramType,
         area: Rectangle<i32, Logical>,
-        size: Size<f64, Buffer>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         alpha: f32,
         uniforms: Vec<Uniform<'_>>,
@@ -212,7 +210,6 @@ impl ShaderRenderElement {
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area,
-            size,
             opaque_regions: opaque_regions.unwrap_or_default(),
             alpha,
             additional_uniforms: uniforms.into_iter().map(|u| u.into_owned()).collect(),
@@ -227,7 +224,6 @@ impl ShaderRenderElement {
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area: Rectangle::default(),
-            size: Size::default(),
             opaque_regions: vec![],
             alpha: 1.,
             additional_uniforms: vec![],
@@ -243,13 +239,11 @@ impl ShaderRenderElement {
     pub fn update(
         &mut self,
         area: Rectangle<i32, Logical>,
-        size: Size<f64, Buffer>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         uniforms: Vec<Uniform<'_>>,
         textures: HashMap<String, GlesTexture>,
     ) {
         self.area = area;
-        self.size = size;
         self.opaque_regions = opaque_regions.unwrap_or_default();
         self.additional_uniforms = uniforms.into_iter().map(|u| u.into_owned()).collect();
         self.textures = textures;
@@ -268,7 +262,7 @@ impl Element for ShaderRenderElement {
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        Rectangle::from_loc_and_size((0., 0.), self.size.to_f64())
+        Rectangle::from_loc_and_size((0., 0.), (1., 1.))
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
@@ -370,10 +364,6 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         let tex_matrix = Mat3::from_scale(Vec2::new(scale.x as f32, scale.y as f32));
         let tex_matrix =
             Mat3::from_translation(Vec2::new(src.loc.x as f32, src.loc.y as f32)) * tex_matrix;
-        let tex_matrix = Mat3::from_scale(Vec2::new(
-            (1.0f64 / self.size.w) as f32,
-            (1.0f64 / self.size.h) as f32,
-        )) * tex_matrix;
 
         //apply output transformation
         matrix = Mat3::from_cols_array(frame.projection()) * matrix;

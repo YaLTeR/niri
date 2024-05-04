@@ -5,7 +5,7 @@ use niri_config::CornerRadius;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform};
 
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderRenderElement;
@@ -157,7 +157,6 @@ impl BorderRenderElement {
 
         self.inner.update(
             area,
-            Size::from((1., 1.)),
             None,
             vec![
                 Uniform::new("color_from", color_from),

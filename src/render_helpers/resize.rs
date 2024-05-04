@@ -43,11 +43,6 @@ impl ResizeRenderElement {
         let tex_next_geo_scaled = tex_next_geo.to_f64().upscale(scale_next);
         let combined_geo = tex_prev_geo_scaled.merge(tex_next_geo_scaled);
 
-        let size = combined_geo
-            .size
-            .to_logical(1.)
-            .to_buffer(1., Transform::Normal);
-
         let area = Rectangle::from_loc_and_size(
             area.loc + combined_geo.loc.to_logical(scale).to_i32_round(),
             combined_geo.size.to_logical(scale).to_i32_round(),
@@ -93,7 +88,6 @@ impl ResizeRenderElement {
         Self(ShaderRenderElement::new(
             ProgramType::Resize,
             area,
-            size,
             None,
             result_alpha,
             vec![
