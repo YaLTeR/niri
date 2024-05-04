@@ -1194,11 +1194,6 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
-        let (tile, _) = self
-            .tiles_in_render_order()
-            .find(|(tile, _)| tile.window().id() == window)
-            .unwrap();
-
         // FIXME: workspaces should probably cache their last used scale so they can be correctly
         // rendered even with no outputs connected.
         let output_scale = self
@@ -1207,16 +1202,37 @@ impl<W: LayoutElement> Workspace<W> {
             .map(|o| Scale::from(o.current_scale().fractional_scale()))
             .unwrap_or(Scale::from(1.));
 
-        tile.store_unmap_snapshot_if_empty(renderer, output_scale);
+        let mut view_rect_ws = Rectangle::from_loc_and_size((self.view_pos(), 0), self.view_size);
+        for col in &mut self.columns {
+            let mut view_rect = view_rect_ws;
+            view_rect.loc -= col.render_offset();
+            if !col.is_fullscreen {
+                view_rect.loc.y -= self.working_area.loc.y + self.options.gaps;
+            }
+
+            for tile in &mut col.tiles {
+                if tile.window().id() == window {
+                    tile.update(false, view_rect);
+                    tile.store_unmap_snapshot_if_empty(renderer, output_scale);
+                    return;
+                }
+
+                view_rect.loc.y -= tile.tile_size().h + self.options.gaps;
+            }
+
+            view_rect_ws.loc.x -= col.width() + self.options.gaps;
+        }
     }
 
     pub fn clear_unmap_snapshot(&mut self, window: &W::Id) {
-        let (tile, _) = self
-            .tiles_in_render_order()
-            .find(|(tile, _)| tile.window().id() == window)
-            .unwrap();
-
-        let _ = tile.take_unmap_snapshot();
+        for col in &mut self.columns {
+            for tile in &mut col.tiles {
+                if tile.window().id() == window {
+                    let _ = tile.take_unmap_snapshot();
+                    return;
+                }
+            }
+        }
     }
 
     pub fn start_close_animation_for_window(

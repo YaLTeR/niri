@@ -832,13 +832,16 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    pub fn store_unmap_snapshot_if_empty(&self, renderer: &mut GlesRenderer, scale: Scale<f64>) {
-        let mut snapshot = self.unmap_snapshot.borrow_mut();
-        if snapshot.is_some() {
+    pub fn store_unmap_snapshot_if_empty(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        scale: Scale<f64>,
+    ) {
+        if self.unmap_snapshot.get_mut().is_some() {
             return;
         }
 
-        *snapshot = Some(self.render_snapshot(renderer, scale));
+        *self.unmap_snapshot.get_mut() = Some(self.render_snapshot(renderer, scale));
     }
 
     fn render_snapshot(
