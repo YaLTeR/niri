@@ -594,6 +594,10 @@ impl<W: LayoutElement> Tile<W> {
         let window_render_loc = location + window_loc;
         let area = Rectangle::from_loc_and_size(window_render_loc, animated_window_size);
 
+        let rules = self.window.rules();
+        let clip_to_geometry = !self.is_fullscreen && rules.clip_to_geometry == Some(true);
+        let radius = rules.geometry_corner_radius.unwrap_or_default();
+
         // If we're resizing, try to render a shader, or a fallback.
         let mut resize_shader = None;
         let mut resize_popups = None;
@@ -629,11 +633,6 @@ impl<W: LayoutElement> Tile<W> {
                     .map_err(|err| warn!("error rendering window to texture: {err:?}"))
                     .ok();
 
-                    let rules = self.window.rules();
-                    let clip_to_geometry =
-                        !self.is_fullscreen && rules.clip_to_geometry == Some(true);
-                    let corner_radius = rules.geometry_corner_radius.unwrap_or_default();
-
                     if let Some((texture_current, _sync_point, texture_current_geo)) = current {
                         let elem = ResizeRenderElement::new(
                             area,
@@ -644,7 +643,7 @@ impl<W: LayoutElement> Tile<W> {
                             window_size,
                             resize.anim.value() as f32,
                             resize.anim.clamped_value().clamp(0., 1.) as f32,
-                            corner_radius,
+                            radius,
                             clip_to_geometry,
                             alpha,
                         );
@@ -683,13 +682,7 @@ impl<W: LayoutElement> Tile<W> {
                 .render(renderer, window_render_loc, scale, alpha, target);
 
             let geo = Rectangle::from_loc_and_size(window_render_loc, window_size);
-
-            let rules = self.window.rules();
-            let clip_to_geometry = !self.is_fullscreen && rules.clip_to_geometry == Some(true);
-            let radius = rules
-                .geometry_corner_radius
-                .unwrap_or_default()
-                .fit_to(window_size.w as f32, window_size.h as f32);
+            let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
 
             let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
             let has_border_shader = BorderRenderElement::has_shader(renderer);
