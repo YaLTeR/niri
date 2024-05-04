@@ -33,7 +33,7 @@ You can try the following:
 
 There's a common problem of mesa drivers going out of sync with niri, so make sure your system mesa version matches the niri mesa version.
 
-Also, on Intel graphics, you may need a workaround described here: https://nixos.wiki/wiki/Intel_Graphics
+Also, on Intel graphics, you may need a workaround described [here](https://nixos.wiki/wiki/Intel_Graphics).
 
 ### Virtual Machines
 
