@@ -62,15 +62,16 @@ impl TestCase for GradientAngle {
         let area = Rectangle::from_loc_and_size((a, b), size);
 
         [BorderRenderElement::new(
-            area,
-            area,
+            area.size,
+            Rectangle::from_loc_and_size((0, 0), area.size),
             [1., 0., 0., 1.],
             [0., 1., 0., 1.],
             self.angle - FRAC_PI_2,
-            area,
+            Rectangle::from_loc_and_size((0, 0), area.size),
             0.,
             CornerRadius::default(),
-        )]
+        )
+        .with_location(area.loc)]
         .into_iter()
         .map(|elem| Box::new(elem) as _)
         .collect()

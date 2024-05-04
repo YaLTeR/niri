@@ -194,6 +194,9 @@ impl FocusRing {
                         border: &mut BorderRenderElement,
                         location: Point<i32, Logical>,
                         size: Size<i32, Logical>| {
+            let full_rect = Rectangle::from_loc_and_size(full_rect.loc - location, full_rect.size);
+            let view_rect = Rectangle::from_loc_and_size(view_rect.loc - location, view_rect.size);
+
             let elem = if has_border_shader {
                 if let Some(gradient) = gradient {
                     let gradient_area = match gradient.relative_to {
@@ -201,7 +204,7 @@ impl FocusRing {
                         GradientRelativeTo::WorkspaceView => view_rect,
                     };
                     border.update(
-                        Rectangle::from_loc_and_size(location, size),
+                        size,
                         gradient_area,
                         gradient.from.into(),
                         gradient.to.into(),
@@ -210,10 +213,10 @@ impl FocusRing {
                         border_width,
                         self.radius,
                     );
-                    Some(border.clone().into())
+                    Some(border.clone().with_location(location).into())
                 } else if self.radius != CornerRadius::default() {
                     border.update(
-                        Rectangle::from_loc_and_size(location, size),
+                        size,
                         full_rect,
                         color.into(),
                         color.into(),
@@ -222,7 +225,7 @@ impl FocusRing {
                         border_width,
                         self.radius,
                     );
-                    Some(border.clone().into())
+                    Some(border.clone().with_location(location).into())
                 } else {
                     None
                 }

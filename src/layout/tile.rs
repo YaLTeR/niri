@@ -720,16 +720,18 @@ impl<W: LayoutElement> Tile<W> {
                     // user-provided radius, so our blocked-out rendering should match that
                     // radius.
                     if radius != CornerRadius::default() && has_border_shader {
+                        let elem_geo = elem.geometry(Scale::from(1.)).to_logical(1);
                         return BorderRenderElement::new(
-                            elem.geometry(Scale::from(1.)).to_logical(1),
-                            Rectangle::from_loc_and_size(Point::from((0, 0)), geo.size),
+                            elem_geo.size,
+                            Rectangle::from_loc_and_size((0, 0), elem_geo.size),
                             elem.color(),
                             elem.color(),
                             0.,
-                            elem.geometry(Scale::from(1.)).to_logical(1),
+                            Rectangle::from_loc_and_size(geo.loc - elem_geo.loc, geo.size),
                             0.,
                             radius,
                         )
+                        .with_location(elem_geo.loc)
                         .into();
                     }
 

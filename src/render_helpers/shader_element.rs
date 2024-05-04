@@ -10,7 +10,7 @@ use smithay::backend::renderer::gles::{
 };
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::DebugFlags;
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale};
+use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size};
 
 use super::renderer::AsGlesFrame;
 use super::resources::Resources;
@@ -198,7 +198,7 @@ impl ShaderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         program: ProgramType,
-        area: Rectangle<i32, Logical>,
+        size: Size<i32, Logical>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         alpha: f32,
         uniforms: Vec<Uniform<'_>>,
@@ -209,7 +209,7 @@ impl ShaderRenderElement {
             program,
             id: Id::new(),
             commit_counter: CommitCounter::default(),
-            area,
+            area: Rectangle::from_loc_and_size((0, 0), size),
             opaque_regions: opaque_regions.unwrap_or_default(),
             alpha,
             additional_uniforms: uniforms.into_iter().map(|u| u.into_owned()).collect(),
@@ -238,17 +238,22 @@ impl ShaderRenderElement {
 
     pub fn update(
         &mut self,
-        area: Rectangle<i32, Logical>,
+        size: Size<i32, Logical>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         uniforms: Vec<Uniform<'_>>,
         textures: HashMap<String, GlesTexture>,
     ) {
-        self.area = area;
+        self.area.size = size;
         self.opaque_regions = opaque_regions.unwrap_or_default();
         self.additional_uniforms = uniforms.into_iter().map(|u| u.into_owned()).collect();
         self.textures = textures;
 
         self.commit_counter.increment();
+    }
+
+    pub fn with_location(mut self, location: Point<i32, Logical>) -> Self {
+        self.area.loc = location;
+        self
     }
 }
 

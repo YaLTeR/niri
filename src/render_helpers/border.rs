@@ -5,7 +5,7 @@ use niri_config::CornerRadius;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform};
+use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderRenderElement;
@@ -26,7 +26,7 @@ pub struct BorderRenderElement {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Parameters {
-    area: Rectangle<i32, Logical>,
+    size: Size<i32, Logical>,
     gradient_area: Rectangle<i32, Logical>,
     color_from: [f32; 4],
     color_to: [f32; 4],
@@ -39,7 +39,7 @@ struct Parameters {
 impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        area: Rectangle<i32, Logical>,
+        size: Size<i32, Logical>,
         gradient_area: Rectangle<i32, Logical>,
         color_from: [f32; 4],
         color_to: [f32; 4],
@@ -52,7 +52,7 @@ impl BorderRenderElement {
         let mut rv = Self {
             inner,
             params: Parameters {
-                area,
+                size,
                 gradient_area,
                 color_from,
                 color_to,
@@ -71,7 +71,7 @@ impl BorderRenderElement {
         Self {
             inner,
             params: Parameters {
-                area: Default::default(),
+                size: Default::default(),
                 gradient_area: Default::default(),
                 color_from: Default::default(),
                 color_to: Default::default(),
@@ -90,7 +90,7 @@ impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        area: Rectangle<i32, Logical>,
+        size: Size<i32, Logical>,
         gradient_area: Rectangle<i32, Logical>,
         color_from: [f32; 4],
         color_to: [f32; 4],
@@ -100,7 +100,7 @@ impl BorderRenderElement {
         corner_radius: CornerRadius,
     ) {
         let params = Parameters {
-            area,
+            size,
             gradient_area,
             color_from,
             color_to,
@@ -119,7 +119,7 @@ impl BorderRenderElement {
 
     fn update_inner(&mut self) {
         let Parameters {
-            area,
+            size,
             gradient_area,
             color_from,
             color_to,
@@ -146,17 +146,16 @@ impl BorderRenderElement {
             grad_vec = -grad_vec;
         }
 
-        let area_loc = Vec2::new(area.loc.x as f32, area.loc.y as f32);
-        let area_size = Vec2::new(area.size.w as f32, area.size.h as f32);
+        let area_size = Vec2::new(size.w as f32, size.h as f32);
 
         let geo_loc = Vec2::new(geometry.loc.x as f32, geometry.loc.y as f32);
         let geo_size = Vec2::new(geometry.size.w as f32, geometry.size.h as f32);
 
         let input_to_geo =
-            Mat3::from_scale(area_size) * Mat3::from_translation((area_loc - geo_loc) / area_size);
+            Mat3::from_scale(area_size) * Mat3::from_translation(-geo_loc / area_size);
 
         self.inner.update(
-            area,
+            size,
             None,
             vec![
                 Uniform::new("color_from", color_from),
@@ -171,6 +170,11 @@ impl BorderRenderElement {
             ],
             HashMap::new(),
         );
+    }
+
+    pub fn with_location(mut self, location: Point<i32, Logical>) -> Self {
+        self.inner = self.inner.with_location(location);
+        self
     }
 
     pub fn has_shader(renderer: &mut impl NiriRenderer) -> bool {

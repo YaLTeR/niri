@@ -83,7 +83,8 @@ impl TestCase for GradientArea {
             (size.h as f32 / 8. + size.h as f32 / 8. * 7. * f).round() as i32,
         ));
         let g_loc = ((size.w - g_size.w) / 2, (size.h - g_size.h) / 2);
-        let g_area = Rectangle::from_loc_and_size(g_loc, g_size);
+        let mut g_area = Rectangle::from_loc_and_size(g_loc, g_size);
+        g_area.loc -= area.loc;
 
         self.border.update(g_size, true, CornerRadius::default());
         rv.extend(
@@ -99,15 +100,16 @@ impl TestCase for GradientArea {
 
         rv.extend(
             [BorderRenderElement::new(
-                area,
+                area.size,
                 g_area,
                 [1., 0., 0., 1.],
                 [0., 1., 0., 1.],
                 FRAC_PI_4,
-                area,
+                Rectangle::from_loc_and_size((0, 0), rect_size),
                 0.,
                 CornerRadius::default(),
-            )]
+            )
+            .with_location(area.loc)]
             .into_iter()
             .map(|elem| Box::new(elem) as _),
         );

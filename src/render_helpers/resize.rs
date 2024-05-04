@@ -85,29 +85,32 @@ impl ResizeRenderElement {
         let clip_to_geometry = if clip_to_geometry { 1. } else { 0. };
 
         // Create the shader.
-        Self(ShaderRenderElement::new(
-            ProgramType::Resize,
-            area,
-            None,
-            result_alpha,
-            vec![
-                mat3_uniform("niri_input_to_curr_geo", input_to_curr_geo),
-                mat3_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
-                mat3_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
-                Uniform::new("niri_curr_geo_size", curr_geo_size.to_array()),
-                mat3_uniform("niri_geo_to_tex_prev", geo_to_tex_prev),
-                mat3_uniform("niri_geo_to_tex_next", geo_to_tex_next),
-                Uniform::new("niri_progress", progress),
-                Uniform::new("niri_clamped_progress", clamped_progress),
-                Uniform::new("niri_corner_radius", <[f32; 4]>::from(corner_radius)),
-                Uniform::new("niri_clip_to_geometry", clip_to_geometry),
-            ],
-            HashMap::from([
-                (String::from("niri_tex_prev"), texture_prev),
-                (String::from("niri_tex_next"), texture_next),
-            ]),
-            Kind::Unspecified,
-        ))
+        Self(
+            ShaderRenderElement::new(
+                ProgramType::Resize,
+                area.size,
+                None,
+                result_alpha,
+                vec![
+                    mat3_uniform("niri_input_to_curr_geo", input_to_curr_geo),
+                    mat3_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
+                    mat3_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
+                    Uniform::new("niri_curr_geo_size", curr_geo_size.to_array()),
+                    mat3_uniform("niri_geo_to_tex_prev", geo_to_tex_prev),
+                    mat3_uniform("niri_geo_to_tex_next", geo_to_tex_next),
+                    Uniform::new("niri_progress", progress),
+                    Uniform::new("niri_clamped_progress", clamped_progress),
+                    Uniform::new("niri_corner_radius", <[f32; 4]>::from(corner_radius)),
+                    Uniform::new("niri_clip_to_geometry", clip_to_geometry),
+                ],
+                HashMap::from([
+                    (String::from("niri_tex_prev"), texture_prev),
+                    (String::from("niri_tex_next"), texture_next),
+                ]),
+                Kind::Unspecified,
+            )
+            .with_location(area.loc),
+        )
     }
 
     pub fn has_shader(renderer: &mut impl NiriRenderer) -> bool {
