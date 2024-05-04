@@ -2525,6 +2525,8 @@ impl Niri {
                 .cursor_manager
                 .is_current_cursor_animated(output.current_scale().integer_scale());
 
+            self.layout.update_render_elements(output);
+
             // Render.
             res = backend.render(self, output, target_presentation_time);
         }

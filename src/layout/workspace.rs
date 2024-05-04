@@ -289,7 +289,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.id
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
+    pub fn advance_animations(&mut self, current_time: Duration) {
         if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
             anim.set_current_time(current_time);
             self.view_offset = anim.value().round() as i32;
@@ -300,9 +300,8 @@ impl<W: LayoutElement> Workspace<W> {
             self.view_offset = gesture.current_view_offset.round() as i32;
         }
 
-        for (col_idx, col) in self.columns.iter_mut().enumerate() {
-            let is_active = is_active && col_idx == self.active_column_idx;
-            col.advance_animations(current_time, is_active);
+        for col in &mut self.columns {
+            col.advance_animations(current_time);
         }
 
         self.closing_windows.retain_mut(|closing| {
@@ -323,6 +322,16 @@ impl<W: LayoutElement> Workspace<W> {
         self.view_offset_adj.is_some()
             || self.columns.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
+    }
+
+    pub fn update_render_elements(&mut self, is_active: bool) {
+        let mut view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0), self.view_size);
+
+        for (col_idx, col) in self.columns.iter_mut().enumerate() {
+            let is_active = is_active && col_idx == self.active_column_idx;
+            col.update_render_elements(is_active, view_rect);
+            view_rect.loc.x -= col.width() + self.options.gaps;
+        }
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
@@ -1198,7 +1207,7 @@ impl<W: LayoutElement> Workspace<W> {
             .map(|o| Scale::from(o.current_scale().fractional_scale()))
             .unwrap_or(Scale::from(1.));
 
-        tile.store_unmap_snapshot_if_empty(renderer, output_scale, self.view_size);
+        tile.store_unmap_snapshot_if_empty(renderer, output_scale);
     }
 
     pub fn clear_unmap_snapshot(&mut self, window: &W::Id) {
@@ -1947,15 +1956,8 @@ impl<W: LayoutElement> Workspace<W> {
             first = false;
 
             rv.extend(
-                tile.render(
-                    renderer,
-                    tile_pos,
-                    output_scale,
-                    self.view_size,
-                    focus_ring,
-                    target,
-                )
-                .map(Into::into),
+                tile.render(renderer, tile_pos, output_scale, focus_ring, target)
+                    .map(Into::into),
             );
         }
 
@@ -2298,7 +2300,7 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(true);
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
+    pub fn advance_animations(&mut self, current_time: Duration) {
         match &mut self.move_animation {
             Some(anim) => {
                 anim.set_current_time(current_time);
@@ -2309,14 +2311,31 @@ impl<W: LayoutElement> Column<W> {
             None => (),
         }
 
-        for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
-            let is_active = is_active && tile_idx == self.active_tile_idx;
-            tile.advance_animations(current_time, is_active);
+        for tile in &mut self.tiles {
+            tile.advance_animations(current_time);
         }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
         self.move_animation.is_some() || self.tiles.iter().any(Tile::are_animations_ongoing)
+    }
+
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        mut view_rect: Rectangle<i32, Logical>,
+    ) {
+        view_rect.loc -= self.render_offset();
+
+        if !self.is_fullscreen {
+            view_rect.loc.y -= self.working_area.loc.y + self.options.gaps;
+        }
+
+        for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
+            let is_active = is_active && tile_idx == self.active_tile_idx;
+            tile.update(is_active, view_rect);
+            view_rect.loc.y -= tile.tile_size().h + self.options.gaps;
+        }
     }
 
     pub fn render_offset(&self) -> Point<i32, Logical> {

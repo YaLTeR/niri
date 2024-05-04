@@ -201,7 +201,7 @@ impl<W: LayoutElement> Tile<W> {
         self.rounded_corner_damage.set_size(window_size);
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
+    pub fn advance_animations(&mut self, current_time: Duration) {
         if let Some(anim) = &mut self.open_animation {
             anim.set_current_time(current_time);
             if anim.is_done() {
@@ -228,6 +228,17 @@ impl<W: LayoutElement> Tile<W> {
                 self.move_y_animation = None;
             }
         }
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        self.open_animation.is_some()
+            || self.resize_animation.is_some()
+            || self.move_x_animation.is_some()
+            || self.move_y_animation.is_some()
+    }
+
+    pub fn update(&mut self, is_active: bool, mut view_rect: Rectangle<i32, Logical>) {
+        view_rect.loc -= self.render_offset();
 
         let rules = self.window.rules();
 
@@ -244,12 +255,16 @@ impl<W: LayoutElement> Tile<W> {
                     radius.expanded_by(border_width as f32)
                 })
         };
-        self.border.update(
+        self.border.update_render_elements(
             self.animated_window_size(),
+            is_active,
             !draw_border_with_background,
+            Rectangle::from_loc_and_size(
+                view_rect.loc - Point::from((border_width, border_width)),
+                view_rect.size,
+            ),
             radius,
         );
-        self.border.set_active(is_active);
 
         let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
             false
@@ -264,19 +279,13 @@ impl<W: LayoutElement> Tile<W> {
             rules.geometry_corner_radius.unwrap_or_default()
         }
         .expanded_by(self.focus_ring.width() as f32);
-        self.focus_ring.update(
+        self.focus_ring.update_render_elements(
             self.animated_tile_size(),
+            is_active,
             !draw_focus_ring_with_background,
+            view_rect,
             radius,
         );
-        self.focus_ring.set_active(is_active);
-    }
-
-    pub fn are_animations_ongoing(&self) -> bool {
-        self.open_animation.is_some()
-            || self.resize_animation.is_some()
-            || self.move_x_animation.is_some()
-            || self.move_y_animation.is_some()
     }
 
     pub fn render_offset(&self) -> Point<i32, Logical> {
@@ -568,7 +577,6 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-        view_size: Size<i32, Logical>,
         focus_ring: bool,
         target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
@@ -766,19 +774,14 @@ impl<W: LayoutElement> Tile<W> {
 
         let elem = self.effective_border_width().map(|width| {
             self.border
-                .render(
-                    renderer,
-                    location + Point::from((width, width)),
-                    scale,
-                    view_size,
-                )
+                .render(renderer, location + Point::from((width, width)), scale)
                 .map(Into::into)
         });
         let rv = rv.chain(elem.into_iter().flatten());
 
         let elem = focus_ring.then(|| {
             self.focus_ring
-                .render(renderer, location, scale, view_size)
+                .render(renderer, location, scale)
                 .map(Into::into)
         });
         rv.chain(elem.into_iter().flatten())
@@ -789,7 +792,6 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut R,
         location: Point<i32, Logical>,
         scale: Scale<f64>,
-        view_size: Size<i32, Logical>,
         focus_ring: bool,
         target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
@@ -797,8 +799,7 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(anim) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
-            let elements =
-                self.render_inner(renderer, location, scale, view_size, focus_ring, target);
+            let elements = self.render_inner(renderer, location, scale, focus_ring, target);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
 
             let elem = OffscreenRenderElement::new(
@@ -826,31 +827,24 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             self.window().set_offscreen_element_id(None);
 
-            let elements =
-                self.render_inner(renderer, location, scale, view_size, focus_ring, target);
+            let elements = self.render_inner(renderer, location, scale, focus_ring, target);
             None.into_iter().chain(Some(elements).into_iter().flatten())
         }
     }
 
-    pub fn store_unmap_snapshot_if_empty(
-        &self,
-        renderer: &mut GlesRenderer,
-        scale: Scale<f64>,
-        view_size: Size<i32, Logical>,
-    ) {
+    pub fn store_unmap_snapshot_if_empty(&self, renderer: &mut GlesRenderer, scale: Scale<f64>) {
         let mut snapshot = self.unmap_snapshot.borrow_mut();
         if snapshot.is_some() {
             return;
         }
 
-        *snapshot = Some(self.render_snapshot(renderer, scale, view_size));
+        *snapshot = Some(self.render_snapshot(renderer, scale));
     }
 
     fn render_snapshot(
         &self,
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
-        view_size: Size<i32, Logical>,
     ) -> TileRenderSnapshot {
         let _span = tracy_client::span!("Tile::render_snapshot");
 
@@ -858,7 +852,6 @@ impl<W: LayoutElement> Tile<W> {
             renderer,
             Point::from((0, 0)),
             scale,
-            view_size,
             false,
             RenderTarget::Output,
         );
@@ -868,7 +861,6 @@ impl<W: LayoutElement> Tile<W> {
             renderer,
             Point::from((0, 0)),
             scale,
-            view_size,
             false,
             RenderTarget::Screencast,
         );

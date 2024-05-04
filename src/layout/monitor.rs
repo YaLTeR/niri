@@ -523,7 +523,7 @@ impl<W: LayoutElement> Monitor<W> {
         Some(column.tiles[column.active_tile_idx].window())
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration, is_active: bool) {
+    pub fn advance_animations(&mut self, current_time: Duration) {
         if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
             anim.set_current_time(current_time);
             if anim.is_done() {
@@ -533,7 +533,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         for ws in &mut self.workspaces {
-            ws.advance_animations(current_time, is_active);
+            ws.advance_animations(current_time);
         }
     }
 
@@ -550,6 +550,35 @@ impl<W: LayoutElement> Monitor<W> {
                 .workspaces
                 .iter()
                 .any(|ws| ws.are_transitions_ongoing())
+    }
+
+    pub fn update_render_elements(&mut self, is_active: bool) {
+        match &self.workspace_switch {
+            Some(switch) => {
+                let render_idx = switch.current_idx();
+                let before_idx = render_idx.floor();
+                let after_idx = render_idx.ceil();
+
+                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
+                    return;
+                }
+
+                let after_idx = after_idx as usize;
+                if after_idx < self.workspaces.len() {
+                    self.workspaces[after_idx].update_render_elements(is_active);
+
+                    if before_idx < 0. {
+                        return;
+                    }
+                }
+
+                let before_idx = before_idx as usize;
+                self.workspaces[before_idx].update_render_elements(is_active);
+            }
+            None => {
+                self.workspaces[self.active_workspace_idx].update_render_elements(is_active);
+            }
+        }
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {

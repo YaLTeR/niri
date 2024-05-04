@@ -6,7 +6,7 @@ use niri::render_helpers::RenderTarget;
 use niri_config::Color;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Point, Scale, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 
 use super::TestCase;
 use crate::test_window::TestWindow;
@@ -94,7 +94,7 @@ impl TestCase for Tile {
     }
 
     fn advance_animations(&mut self, current_time: Duration) {
-        self.tile.advance_animations(current_time, true);
+        self.tile.advance_animations(current_time);
     }
 
     fn render(
@@ -105,12 +105,15 @@ impl TestCase for Tile {
         let tile_size = self.tile.tile_size().to_physical(1);
         let location = Point::from(((size.w - tile_size.w) / 2, (size.h - tile_size.h) / 2));
 
+        self.tile.update(
+            true,
+            Rectangle::from_loc_and_size((-location.x, -location.y), size.to_logical(1)),
+        );
         self.tile
             .render(
                 renderer,
                 location,
                 Scale::from(1.),
-                size.to_logical(1),
                 true,
                 RenderTarget::Output,
             )

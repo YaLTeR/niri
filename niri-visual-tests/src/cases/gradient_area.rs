@@ -20,7 +20,7 @@ pub struct GradientArea {
 
 impl GradientArea {
     pub fn new(_size: Size<i32, Logical>) -> Self {
-        let mut border = FocusRing::new(niri_config::FocusRing {
+        let border = FocusRing::new(niri_config::FocusRing {
             off: false,
             width: 1,
             active_color: Color::new(255, 255, 255, 128),
@@ -28,7 +28,6 @@ impl GradientArea {
             active_gradient: None,
             inactive_gradient: None,
         });
-        border.set_active(true);
 
         Self {
             progress: 0.,
@@ -86,15 +85,16 @@ impl TestCase for GradientArea {
         let mut g_area = Rectangle::from_loc_and_size(g_loc, g_size);
         g_area.loc -= area.loc;
 
-        self.border.update(g_size, true, CornerRadius::default());
+        self.border.update_render_elements(
+            g_size,
+            true,
+            true,
+            Rectangle::default(),
+            CornerRadius::default(),
+        );
         rv.extend(
             self.border
-                .render(
-                    renderer,
-                    Point::from(g_loc),
-                    Scale::from(1.),
-                    size.to_logical(1),
-                )
+                .render(renderer, Point::from(g_loc), Scale::from(1.))
                 .map(|elem| Box::new(elem) as _),
         );
 

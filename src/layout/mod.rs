@@ -1354,19 +1354,36 @@ impl<W: LayoutElement> Layout<W> {
         let _span = tracy_client::span!("Layout::advance_animations");
 
         match &mut self.monitor_set {
-            MonitorSet::Normal {
-                monitors,
-                active_monitor_idx,
-                ..
-            } => {
-                for (idx, mon) in monitors.iter_mut().enumerate() {
-                    mon.advance_animations(current_time, idx == *active_monitor_idx);
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    mon.advance_animations(current_time);
                 }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
-                    ws.advance_animations(current_time, false);
+                    ws.advance_animations(current_time);
                 }
+            }
+        }
+    }
+
+    pub fn update_render_elements(&mut self, output: &Output) {
+        let _span = tracy_client::span!("Layout::update_render_elements");
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            error!("update_render_elements called with no monitors");
+            return;
+        };
+
+        for (idx, mon) in monitors.iter_mut().enumerate() {
+            if mon.output == *output {
+                mon.update_render_elements(idx == *active_monitor_idx);
+                return;
             }
         }
     }
