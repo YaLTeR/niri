@@ -47,13 +47,7 @@ where
         scale: Scale<f64>,
         target: RenderTarget,
     ) -> Option<&(GlesTexture, Rectangle<i32, Physical>)> {
-        let block_out = match self.block_out_from {
-            None => false,
-            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
-        };
-
-        if block_out {
+        if target.should_block_out(self.block_out_from) {
             self.blocked_out_texture.get_or_init(|| {
                 let _span = tracy_client::span!("RenderSnapshot::Texture");
 

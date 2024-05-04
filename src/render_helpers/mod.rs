@@ -1,6 +1,7 @@
 use std::ptr;
 
 use anyhow::{ensure, Context};
+use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
@@ -68,6 +69,16 @@ pub trait ToRenderElement {
         alpha: f32,
         kind: Kind,
     ) -> Self::RenderElement;
+}
+
+impl RenderTarget {
+    pub fn should_block_out(self, block_out_from: Option<BlockOutFrom>) -> bool {
+        match block_out_from {
+            None => false,
+            Some(BlockOutFrom::Screencast) => self == RenderTarget::Screencast,
+            Some(BlockOutFrom::ScreenCapture) => self != RenderTarget::Output,
+        }
+    }
 }
 
 impl<E> Default for SplitElements<E> {

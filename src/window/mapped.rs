@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
 
-use niri_config::{BlockOutFrom, WindowRule};
+use niri_config::WindowRule;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::backend::renderer::element::{Id, Kind};
@@ -207,13 +207,7 @@ impl LayoutElement for Mapped {
     ) -> SplitElements<LayoutElementRenderElement<R>> {
         let mut rv = SplitElements::default();
 
-        let block_out = match self.rules.block_out_from {
-            None => false,
-            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
-        };
-
-        if block_out {
+        if target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size);
             let elem = SolidColorRenderElement::from_buffer(
@@ -262,13 +256,7 @@ impl LayoutElement for Mapped {
         alpha: f32,
         target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>> {
-        let block_out = match self.rules.block_out_from {
-            None => false,
-            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
-        };
-
-        if block_out {
+        if target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size);
             let elem = SolidColorRenderElement::from_buffer(
@@ -301,13 +289,7 @@ impl LayoutElement for Mapped {
         alpha: f32,
         target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>> {
-        let block_out = match self.rules.block_out_from {
-            None => false,
-            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
-        };
-
-        if block_out {
+        if target.should_block_out(self.rules.block_out_from) {
             vec![]
         } else {
             let mut rv = vec![];

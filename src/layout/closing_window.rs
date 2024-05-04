@@ -123,12 +123,7 @@ impl ClosingWindow {
     ) -> ClosingWindowRenderElement {
         let val = self.anim.clamped_value();
 
-        let block_out = match self.block_out_from {
-            None => false,
-            Some(BlockOutFrom::Screencast) => target == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => target != RenderTarget::Output,
-        };
-        let (buffer, offset) = if block_out {
+        let (buffer, offset) = if target.should_block_out(self.block_out_from) {
             (&self.blocked_out_buffer, self.blocked_out_buffer_offset)
         } else {
             (&self.buffer, self.buffer_offset)
