@@ -633,6 +633,17 @@ impl<W: LayoutElement> Tile<W> {
                     .map_err(|err| warn!("error rendering window to texture: {err:?}"))
                     .ok();
 
+                    // Clip blocked-out resizes unconditionally because they use solid color render
+                    // elements.
+                    let clip_to_geometry = if target
+                        .should_block_out(resize.snapshot.block_out_from)
+                        && target.should_block_out(rules.block_out_from)
+                    {
+                        true
+                    } else {
+                        clip_to_geometry
+                    };
+
                     if let Some((texture_current, _sync_point, texture_current_geo)) = current {
                         let elem = ResizeRenderElement::new(
                             area,
