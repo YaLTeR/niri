@@ -129,6 +129,8 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
+        self.options = options;
+
         let rules = self.window.rules();
 
         let border_config = rules.border.resolve_against(self.options.border);
@@ -138,8 +140,6 @@ impl<W: LayoutElement> Tile<W> {
             .focus_ring
             .resolve_against(self.options.focus_ring.into());
         self.focus_ring.update_config(focus_ring_config.into());
-
-        self.options = options;
     }
 
     pub fn update_shaders(&mut self) {
