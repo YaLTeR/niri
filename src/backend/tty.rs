@@ -714,7 +714,7 @@ impl Tty {
             .borrow()
             .outputs
             .iter()
-            .find(|o| o.name == output_name)
+            .find(|o| o.name.eq_ignore_ascii_case(&output_name))
             .cloned()
             .unwrap_or_default();
 
@@ -1574,7 +1574,7 @@ impl Tty {
                     .borrow()
                     .outputs
                     .iter()
-                    .find(|o| o.name == surface.name)
+                    .find(|o| o.name.eq_ignore_ascii_case(&surface.name))
                     .cloned()
                     .unwrap_or_default();
                 if config.off {
@@ -1704,7 +1704,7 @@ impl Tty {
                     .borrow()
                     .outputs
                     .iter()
-                    .find(|o| o.name == output_name)
+                    .find(|o| o.name.eq_ignore_ascii_case(&output_name))
                     .cloned()
                     .unwrap_or_default();
 

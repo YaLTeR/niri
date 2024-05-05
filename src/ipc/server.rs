@@ -171,7 +171,10 @@ fn process(ctx: &ClientCtx, request: Request) -> Reply {
         }
         Request::Output { output, action } => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
-            let response = if ipc_outputs.contains_key(&output) {
+            let found = ipc_outputs
+                .keys()
+                .any(|name| name.eq_ignore_ascii_case(&output));
+            let response = if found {
                 OutputConfigChanged::Applied
             } else {
                 OutputConfigChanged::OutputWasMissing

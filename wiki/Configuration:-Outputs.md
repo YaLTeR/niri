@@ -24,6 +24,8 @@ Outputs are matched by connector name (i.e. `eDP-1`, `HDMI-A-1`) which you can f
 Usually, the built-in monitor in laptops will be called `eDP-1`.
 Matching by output manufacturer and model is planned, but blocked on Smithay adopting libdisplay-info instead of edid-rs.
 
+<sup>Since: 0.1.6</sup> The output name is case-insensitive.
+
 ### `off`
 
 This flag turns off that output entirely.

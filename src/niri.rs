@@ -1012,7 +1012,10 @@ impl State {
         for output in self.niri.global_space.outputs() {
             let name = output.name();
             let config = self.niri.config.borrow_mut();
-            let config = config.outputs.iter().find(|o| o.name == name);
+            let config = config
+                .outputs
+                .iter()
+                .find(|o| o.name.eq_ignore_ascii_case(&name));
 
             let scale = config.and_then(|c| c.scale).unwrap_or_else(|| {
                 let size_mm = output.physical_properties().size;
@@ -1058,7 +1061,11 @@ impl State {
     pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
         {
             let mut config = self.niri.config.borrow_mut();
-            let config = if let Some(config) = config.outputs.iter_mut().find(|o| o.name == name) {
+            let config = if let Some(config) = config
+                .outputs
+                .iter_mut()
+                .find(|o| o.name.eq_ignore_ascii_case(name))
+            {
                 config
             } else {
                 config.outputs.push(niri_config::Output {
@@ -1564,7 +1571,7 @@ impl Niri {
             let config = config
                 .outputs
                 .iter()
-                .find(|o| o.name == name)
+                .find(|o| o.name.eq_ignore_ascii_case(&name))
                 .and_then(|c| c.position);
 
             outputs.push(Data {
@@ -1670,7 +1677,10 @@ impl Niri {
         let name = output.name();
 
         let config = self.config.borrow();
-        let c = config.outputs.iter().find(|o| o.name == name);
+        let c = config
+            .outputs
+            .iter()
+            .find(|o| o.name.eq_ignore_ascii_case(&name));
         let scale = c.and_then(|c| c.scale).unwrap_or_else(|| {
             let size_mm = output.physical_properties().size;
             let resolution = output.current_mode().unwrap().size;
