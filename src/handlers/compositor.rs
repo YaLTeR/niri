@@ -59,19 +59,21 @@ impl CompositorHandler for State {
             });
             if let Some(dmabuf) = maybe_dmabuf {
                 if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
-                    let client = surface.client().unwrap();
-                    let res = state
-                        .niri
-                        .event_loop
-                        .insert_source(source, move |_, _, state| {
-                            let display_handle = state.niri.display_handle.clone();
+                    if let Some(client) = surface.client() {
+                        let res =
                             state
-                                .client_compositor_state(&client)
-                                .blocker_cleared(state, &display_handle);
-                            Ok(())
-                        });
-                    if res.is_ok() {
-                        add_blocker(surface, blocker);
+                                .niri
+                                .event_loop
+                                .insert_source(source, move |_, _, state| {
+                                    let display_handle = state.niri.display_handle.clone();
+                                    state
+                                        .client_compositor_state(&client)
+                                        .blocker_cleared(state, &display_handle);
+                                    Ok(())
+                                });
+                        if res.is_ok() {
+                            add_blocker(surface, blocker);
+                        }
                     }
                 }
             }
