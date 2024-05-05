@@ -1,5 +1,7 @@
 use anyhow::{anyhow, bail, Context};
-use niri_ipc::{LogicalOutput, Mode, Output, Request, Response, Socket, Transform};
+use niri_ipc::{
+    LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response, Socket, Transform,
+};
 use serde_json::json;
 
 use crate::cli::Msg;
@@ -241,10 +243,15 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 bail!("unexpected response: expected Handled, got {response:?}");
             };
         }
-        Msg::Output { .. } => {
-            let Response::Handled = response else {
-                bail!("unexpected response: expected Handled, got {response:?}");
+        Msg::Output { output, .. } => {
+            let Response::OutputConfigChanged(response) = response else {
+                bail!("unexpected response: expected OutputConfigChanged, got {response:?}");
             };
+
+            if response == OutputConfigChanged::OutputWasMissing {
+                println!("Output \"{output}\" is not connected.");
+                println!("The change will apply when it is connected.");
+            }
         }
     }
 

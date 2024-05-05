@@ -58,6 +58,8 @@ pub enum Response {
     Outputs(HashMap<String, Output>),
     /// Information about the focused window.
     FocusedWindow(Option<Window>),
+    /// Output configuration change result.
+    OutputConfigChanged(OutputConfigChanged),
 }
 
 /// Actions that niri can perform.
@@ -454,6 +456,15 @@ pub struct Window {
     pub title: Option<String>,
     /// Application ID, if set.
     pub app_id: Option<String>,
+}
+
+/// Output configuration change result.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputConfigChanged {
+    /// The target output was connected and the change was applied.
+    Applied,
+    /// The target output was not found, the change will be applied when it is connected.
+    OutputWasMissing,
 }
 
 impl FromStr for SizeChange {

@@ -8,7 +8,7 @@ use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{AsyncBufReadExt, AsyncWriteExt};
-use niri_ipc::{Reply, Request, Response};
+use niri_ipc::{OutputConfigChanged, Reply, Request, Response};
 use smithay::desktop::Window;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -170,10 +170,19 @@ fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::Handled
         }
         Request::Output { output, action } => {
+            let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
+            let response = if ipc_outputs.contains_key(&output) {
+                OutputConfigChanged::Applied
+            } else {
+                OutputConfigChanged::OutputWasMissing
+            };
+            drop(ipc_outputs);
+
             ctx.event_loop.insert_idle(move |state| {
                 state.apply_transient_output_config(&output, action);
             });
-            Response::Handled
+
+            Response::OutputConfigChanged(response)
         }
     };
 
