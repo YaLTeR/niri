@@ -1129,18 +1129,21 @@ impl CornerRadius {
         }
     }
 
-    pub fn expanded_by(self, width: f32) -> Self {
-        // Preserve zero radius.
-        if self == Self::default() {
-            return self;
+    pub fn expanded_by(mut self, width: f32) -> Self {
+        if self.top_left > 0. {
+            self.top_left += width;
+        }
+        if self.top_right > 0. {
+            self.top_right += width;
+        }
+        if self.bottom_right > 0. {
+            self.bottom_right += width;
+        }
+        if self.bottom_left > 0. {
+            self.bottom_left += width;
         }
 
-        Self {
-            top_left: self.top_left + width,
-            top_right: self.top_right + width,
-            bottom_right: self.bottom_right + width,
-            bottom_left: self.bottom_left + width,
-        }
+        self
     }
 
     pub fn scaled_by(self, scale: f32) -> Self {
