@@ -11,7 +11,7 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
-use niri_ipc::{LayoutSwitchTarget, SizeChange, Transform};
+use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform};
 use regex::Regex;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
@@ -250,7 +250,7 @@ pub struct Output {
     #[knuffel(child)]
     pub position: Option<Position>,
     #[knuffel(child, unwrap(argument, str))]
-    pub mode: Option<Mode>,
+    pub mode: Option<ConfiguredMode>,
     #[knuffel(child)]
     pub variable_refresh_rate: bool,
 }
@@ -275,13 +275,6 @@ pub struct Position {
     pub x: i32,
     #[knuffel(property)]
     pub y: i32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Mode {
-    pub width: u16,
-    pub height: u16,
-    pub refresh: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
@@ -1971,41 +1964,6 @@ where
     }
 }
 
-impl FromStr for Mode {
-    type Err = miette::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let Some((width, rest)) = s.split_once('x') else {
-            return Err(miette!("no 'x' separator found"));
-        };
-
-        let (height, refresh) = match rest.split_once('@') {
-            Some((height, refresh)) => (height, Some(refresh)),
-            None => (rest, None),
-        };
-
-        let width = width
-            .parse()
-            .into_diagnostic()
-            .context("error parsing width")?;
-        let height = height
-            .parse()
-            .into_diagnostic()
-            .context("error parsing height")?;
-        let refresh = refresh
-            .map(str::parse)
-            .transpose()
-            .into_diagnostic()
-            .context("error parsing refresh rate")?;
-
-        Ok(Self {
-            width,
-            height,
-            refresh,
-        })
-    }
-}
-
 impl FromStr for Key {
     type Err = miette::Error;
 
@@ -2336,7 +2294,7 @@ mod tests {
                     scale: 2.,
                     transform: Transform::Flipped90,
                     position: Some(Position { x: 10, y: 20 }),
-                    mode: Some(Mode {
+                    mode: Some(ConfiguredMode {
                         width: 1920,
                         height: 1080,
                         refresh: Some(144.),
@@ -2574,8 +2532,8 @@ mod tests {
     #[test]
     fn parse_mode() {
         assert_eq!(
-            "2560x1600@165.004".parse::<Mode>().unwrap(),
-            Mode {
+            "2560x1600@165.004".parse::<ConfiguredMode>().unwrap(),
+            ConfiguredMode {
                 width: 2560,
                 height: 1600,
                 refresh: Some(165.004),
@@ -2583,18 +2541,18 @@ mod tests {
         );
 
         assert_eq!(
-            "1920x1080".parse::<Mode>().unwrap(),
-            Mode {
+            "1920x1080".parse::<ConfiguredMode>().unwrap(),
+            ConfiguredMode {
                 width: 1920,
                 height: 1080,
                 refresh: None,
             },
         );
 
-        assert!("1920".parse::<Mode>().is_err());
-        assert!("1920x".parse::<Mode>().is_err());
-        assert!("1920x1080@".parse::<Mode>().is_err());
-        assert!("1920x1080@60Hz".parse::<Mode>().is_err());
+        assert!("1920".parse::<ConfiguredMode>().is_err());
+        assert!("1920x".parse::<ConfiguredMode>().is_err());
+        assert!("1920x1080@".parse::<ConfiguredMode>().is_err());
+        assert!("1920x1080@60Hz".parse::<ConfiguredMode>().is_err());
     }
 
     #[test]

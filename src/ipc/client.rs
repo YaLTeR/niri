@@ -11,6 +11,10 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
         Msg::Action { action } => Request::Action(action.clone()),
+        Msg::Output { output, action } => Request::Output {
+            output: output.clone(),
+            action: action.clone(),
+        },
         Msg::RequestError => Request::ReturnError,
     };
 
@@ -233,6 +237,11 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             }
         }
         Msg::Action { .. } => {
+            let Response::Handled = response else {
+                bail!("unexpected response: expected Handled, got {response:?}");
+            };
+        }
+        Msg::Output { .. } => {
             let Response::Handled = response else {
                 bail!("unexpected response: expected Handled, got {response:?}");
             };

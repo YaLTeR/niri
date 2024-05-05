@@ -169,6 +169,12 @@ fn process(ctx: &ClientCtx, request: Request) -> Reply {
             });
             Response::Handled
         }
+        Request::Output { output, action } => {
+            ctx.event_loop.insert_idle(move |state| {
+                state.apply_transient_output_config(&output, action);
+            });
+            Response::Handled
+        }
     };
 
     Ok(response)

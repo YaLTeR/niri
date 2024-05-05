@@ -2111,7 +2111,7 @@ fn queue_estimated_vblank_timer(
 
 fn pick_mode(
     connector: &connector::Info,
-    target: Option<niri_config::Mode>,
+    target: Option<niri_ipc::ConfiguredMode>,
 ) -> Option<(control::Mode, bool)> {
     let mut mode = None;
     let mut fallback = false;

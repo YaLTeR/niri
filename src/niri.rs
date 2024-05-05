@@ -138,6 +138,13 @@ const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
 
+    /// Output config from the config file.
+    ///
+    /// This does not include transient output config changes done via IPC. It is only used when
+    /// reloading the config from disk to determine if the output configuration should be reloaded
+    /// (and transient changes dropped).
+    pub config_file_output_config: Vec<niri_config::Output>,
+
     pub event_loop: LoopHandle<'static, State>,
     pub scheduler: Scheduler<()>,
     pub stop_signal: LoopSignal,
@@ -858,6 +865,7 @@ impl State {
         let mut reload_xkb = None;
         let mut libinput_config_changed = false;
         let mut output_config_changed = false;
+        let mut preserved_output_config = None;
         let mut window_rules_changed = false;
         let mut debug_config_changed = false;
         let mut shaders_changed = false;
@@ -894,8 +902,15 @@ impl State {
             libinput_config_changed = true;
         }
 
-        if config.outputs != old_config.outputs {
+        if config.outputs != self.niri.config_file_output_config {
             output_config_changed = true;
+            self.niri
+                .config_file_output_config
+                .clone_from(&config.outputs);
+        } else {
+            // Output config did not change from the last disk load, so we need to preserve the
+            // transient changes.
+            preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
         if config.binds != old_config.binds {
@@ -926,6 +941,10 @@ impl State {
 
         *old_config = config;
 
+        if let Some(outputs) = preserved_output_config {
+            old_config.outputs = outputs;
+        }
+
         // Release the borrow.
         drop(old_config);
 
@@ -945,51 +964,7 @@ impl State {
         }
 
         if output_config_changed {
-            let mut resized_outputs = vec![];
-            for output in self.niri.global_space.outputs() {
-                let name = output.name();
-                let config = self.niri.config.borrow_mut();
-                let config = config.outputs.iter().find(|o| o.name == name);
-
-                let scale = config.map(|c| c.scale).unwrap_or_else(|| {
-                    let size_mm = output.physical_properties().size;
-                    let resolution = output.current_mode().unwrap().size;
-                    guess_monitor_scale(size_mm, resolution)
-                });
-                let scale = scale.clamp(1., 10.).ceil() as i32;
-
-                let mut transform = config
-                    .map(|c| ipc_transform_to_smithay(c.transform))
-                    .unwrap_or(Transform::Normal);
-                // FIXME: fix winit damage on other transforms.
-                if name == "winit" {
-                    transform = Transform::Flipped180;
-                }
-
-                if output.current_scale().integer_scale() != scale
-                    || output.current_transform() != transform
-                {
-                    output.change_current_state(
-                        None,
-                        Some(transform),
-                        Some(output::Scale::Integer(scale)),
-                        None,
-                    );
-                    self.niri.ipc_outputs_changed = true;
-                    resized_outputs.push(output.clone());
-                }
-            }
-            for output in resized_outputs {
-                self.niri.output_resized(&output);
-            }
-
-            self.backend.on_output_config_changed(&mut self.niri);
-
-            self.niri.reposition_outputs(None);
-
-            if let Some(touch) = self.niri.seat.get_touch() {
-                touch.cancel(self);
-            }
+            self.reload_output_config();
         }
 
         if debug_config_changed {
@@ -1030,6 +1005,98 @@ impl State {
         // clients will use the new xdg-decoration setting.
 
         self.niri.queue_redraw_all();
+    }
+
+    fn reload_output_config(&mut self) {
+        let mut resized_outputs = vec![];
+        for output in self.niri.global_space.outputs() {
+            let name = output.name();
+            let config = self.niri.config.borrow_mut();
+            let config = config.outputs.iter().find(|o| o.name == name);
+
+            let scale = config.map(|c| c.scale).unwrap_or_else(|| {
+                let size_mm = output.physical_properties().size;
+                let resolution = output.current_mode().unwrap().size;
+                guess_monitor_scale(size_mm, resolution)
+            });
+            let scale = scale.clamp(1., 10.).ceil() as i32;
+
+            let mut transform = config
+                .map(|c| ipc_transform_to_smithay(c.transform))
+                .unwrap_or(Transform::Normal);
+            // FIXME: fix winit damage on other transforms.
+            if name == "winit" {
+                transform = Transform::Flipped180;
+            }
+
+            if output.current_scale().integer_scale() != scale
+                || output.current_transform() != transform
+            {
+                output.change_current_state(
+                    None,
+                    Some(transform),
+                    Some(output::Scale::Integer(scale)),
+                    None,
+                );
+                self.niri.ipc_outputs_changed = true;
+                resized_outputs.push(output.clone());
+            }
+        }
+        for output in resized_outputs {
+            self.niri.output_resized(&output);
+        }
+
+        self.backend.on_output_config_changed(&mut self.niri);
+
+        self.niri.reposition_outputs(None);
+
+        if let Some(touch) = self.niri.seat.get_touch() {
+            touch.cancel(self);
+        }
+    }
+
+    pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
+        {
+            let mut config = self.niri.config.borrow_mut();
+            let config = if let Some(config) = config.outputs.iter_mut().find(|o| o.name == name) {
+                config
+            } else {
+                config.outputs.push(niri_config::Output {
+                    name: String::from(name),
+                    ..Default::default()
+                });
+                config.outputs.last_mut().unwrap()
+            };
+
+            match action {
+                niri_ipc::OutputAction::Off => config.off = true,
+                niri_ipc::OutputAction::On => config.off = false,
+                niri_ipc::OutputAction::Mode { mode } => {
+                    config.mode = match mode {
+                        niri_ipc::ModeToSet::Automatic => None,
+                        niri_ipc::ModeToSet::Specific(mode) => Some(mode),
+                    }
+                }
+                niri_ipc::OutputAction::Scale { scale } => config.scale = scale,
+                niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
+                niri_ipc::OutputAction::Position { position } => {
+                    config.position = match position {
+                        niri_ipc::PositionToSet::Automatic => None,
+                        niri_ipc::PositionToSet::Specific(position) => {
+                            Some(niri_config::Position {
+                                x: position.x,
+                                y: position.y,
+                            })
+                        }
+                    }
+                }
+                niri_ipc::OutputAction::Vrr { enable } => {
+                    config.variable_refresh_rate = enable;
+                }
+            }
+        }
+
+        self.reload_output_config();
     }
 
     pub fn refresh_ipc_outputs(&mut self) {
@@ -1175,6 +1242,7 @@ impl Niri {
 
         let display_handle = display.handle();
         let config_ = config.borrow();
+        let config_file_output_config = config_.outputs.clone();
 
         let layout = Layout::new(&config_);
 
@@ -1353,6 +1421,7 @@ impl Niri {
         drop(config_);
         Self {
             config,
+            config_file_output_config,
 
             event_loop,
             scheduler,

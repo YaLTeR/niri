@@ -20,6 +20,17 @@ pub enum Request {
     FocusedWindow,
     /// Perform an action.
     Action(Action),
+    /// Change output configuration temporarily.
+    ///
+    /// The configuration is changed temporarily and not saved into the config file. If the output
+    /// configuration subsequently changes in the config file, these temporary changes will be
+    /// forgotten.
+    Output {
+        /// Output name.
+        output: String,
+        /// Configuration to apply.
+        action: OutputAction,
+    },
     /// Respond with an error (for testing error handling).
     ReturnError,
 }
@@ -245,6 +256,103 @@ pub enum LayoutSwitchTarget {
     Prev,
 }
 
+/// Output actions that niri can perform.
+// Variants in this enum should match the spelling of the ones in niri-config. Most thigs from
+// niri-config should be present here.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+pub enum OutputAction {
+    /// Turn off the output.
+    Off,
+    /// Turn on the output.
+    On,
+    /// Set the output mode.
+    Mode {
+        /// Mode to set, or "auto" for automatic selection.
+        ///
+        /// Run `niri msg outputs` to see the avaliable modes.
+        #[cfg_attr(feature = "clap", arg())]
+        mode: ModeToSet,
+    },
+    /// Set the output scale.
+    Scale {
+        /// Scale factor to set.
+        #[cfg_attr(feature = "clap", arg())]
+        scale: f64,
+    },
+    /// Set the output transform.
+    Transform {
+        /// Transform to set, counter-clockwise.
+        #[cfg_attr(feature = "clap", arg())]
+        transform: Transform,
+    },
+    /// Set the output position.
+    Position {
+        /// Position to set, or "auto" for automatic selection.
+        #[cfg_attr(feature = "clap", command(subcommand))]
+        position: PositionToSet,
+    },
+    /// Toggle variable refresh rate.
+    Vrr {
+        /// Whether to enable variable refresh rate.
+        #[cfg_attr(
+            feature = "clap",
+            arg(
+                value_name = "ON|OFF",
+                action = clap::ArgAction::Set,
+                value_parser = clap::builder::BoolishValueParser::new(),
+            ),
+        )]
+        enable: bool,
+    },
+}
+
+/// Output mode to set.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub enum ModeToSet {
+    /// Niri will pick the mode automatically.
+    Automatic,
+    /// Specific mode.
+    Specific(ConfiguredMode),
+}
+
+/// Output mode as set in the config file.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub struct ConfiguredMode {
+    /// Width in physical pixels.
+    pub width: u16,
+    /// Height in physical pixels.
+    pub height: u16,
+    /// Refresh rate.
+    pub refresh: Option<f64>,
+}
+
+/// Output position to set.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Subcommand))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "POSITION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Position Values"))]
+pub enum PositionToSet {
+    /// Position the output automatically.
+    #[cfg_attr(feature = "clap", command(name = "auto"))]
+    Automatic,
+    /// Set a specific position.
+    #[cfg_attr(feature = "clap", command(name = "set"))]
+    Specific(ConfiguredPosition),
+}
+
+/// Output position as set in the config file.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+pub struct ConfiguredPosition {
+    /// Logical X position.
+    pub x: i32,
+    /// Logical Y position.
+    pub y: i32,
+}
+
 /// Connected output.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Output {
@@ -304,6 +412,7 @@ pub struct LogicalOutput {
 
 /// Output transform, which goes counter-clockwise.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum Transform {
     /// Untransformed.
     Normal,
@@ -319,10 +428,13 @@ pub enum Transform {
     /// Flipped horizontally.
     Flipped,
     /// Rotated by 90° and flipped horizontally.
+    #[cfg_attr(feature = "clap", value(name("flipped-90")))]
     Flipped90,
     /// Flipped vertically.
+    #[cfg_attr(feature = "clap", value(name("flipped-180")))]
     Flipped180,
     /// Rotated by 270° and flipped horizontally.
+    #[cfg_attr(feature = "clap", value(name("flipped-270")))]
     Flipped270,
 }
 
@@ -405,5 +517,46 @@ impl FromStr for Transform {
                 r#""flipped", "flipped-90", "flipped-180" or "flipped-270""#
             )),
         }
+    }
+}
+
+impl FromStr for ModeToSet {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("auto") {
+            return Ok(Self::Automatic);
+        }
+
+        let mode = s.parse()?;
+        Ok(Self::Specific(mode))
+    }
+}
+
+impl FromStr for ConfiguredMode {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((width, rest)) = s.split_once('x') else {
+            return Err("no 'x' separator found");
+        };
+
+        let (height, refresh) = match rest.split_once('@') {
+            Some((height, refresh)) => (height, Some(refresh)),
+            None => (rest, None),
+        };
+
+        let width = width.parse().map_err(|_| "error parsing width")?;
+        let height = height.parse().map_err(|_| "error parsing height")?;
+        let refresh = refresh
+            .map(str::parse)
+            .transpose()
+            .map_err(|_| "error parsing refresh rate")?;
+
+        Ok(Self {
+            width,
+            height,
+            refresh,
+        })
     }
 }

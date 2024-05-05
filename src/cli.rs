@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use niri_ipc::Action;
+use niri_ipc::{Action, OutputAction};
 
 use crate::utils::version;
 
@@ -62,6 +62,21 @@ pub enum Msg {
     Action {
         #[command(subcommand)]
         action: Action,
+    },
+    /// Change output configuration temporarily.
+    ///
+    /// The configuration is changed temporarily and not saved into the config file. If the output
+    /// configuration subsequently changes in the config file, these temporary changes will be
+    /// forgotten.
+    Output {
+        /// Output name.
+        ///
+        /// Run `niri msg outputs` to see the output names.
+        #[arg()]
+        output: String,
+        /// Configuration to apply.
+        #[command(subcommand)]
+        action: OutputAction,
     },
     /// Request an error from the running niri instance.
     RequestError,
