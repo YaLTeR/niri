@@ -243,8 +243,8 @@ pub struct Output {
     pub off: bool,
     #[knuffel(argument)]
     pub name: String,
-    #[knuffel(child, unwrap(argument), default = 1.)]
-    pub scale: f64,
+    #[knuffel(child, unwrap(argument))]
+    pub scale: Option<f64>,
     #[knuffel(child, unwrap(argument, str), default = Transform::Normal)]
     pub transform: Transform,
     #[knuffel(child)]
@@ -260,7 +260,7 @@ impl Default for Output {
         Self {
             off: false,
             name: String::new(),
-            scale: 1.,
+            scale: None,
             transform: Transform::Normal,
             position: None,
             mode: None,
@@ -2291,7 +2291,7 @@ mod tests {
                 outputs: vec![Output {
                     off: false,
                     name: "eDP-1".to_owned(),
-                    scale: 2.,
+                    scale: Some(2.),
                     transform: Transform::Flipped90,
                     position: Some(Position { x: 10, y: 20 }),
                     mode: Some(ConfiguredMode {

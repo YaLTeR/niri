@@ -1014,7 +1014,7 @@ impl State {
             let config = self.niri.config.borrow_mut();
             let config = config.outputs.iter().find(|o| o.name == name);
 
-            let scale = config.map(|c| c.scale).unwrap_or_else(|| {
+            let scale = config.and_then(|c| c.scale).unwrap_or_else(|| {
                 let size_mm = output.physical_properties().size;
                 let resolution = output.current_mode().unwrap().size;
                 guess_monitor_scale(size_mm, resolution)
@@ -1077,7 +1077,12 @@ impl State {
                         niri_ipc::ModeToSet::Specific(mode) => Some(mode),
                     }
                 }
-                niri_ipc::OutputAction::Scale { scale } => config.scale = scale,
+                niri_ipc::OutputAction::Scale { scale } => {
+                    config.scale = match scale {
+                        niri_ipc::ScaleToSet::Automatic => None,
+                        niri_ipc::ScaleToSet::Specific(scale) => Some(scale),
+                    }
+                }
                 niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
                 niri_ipc::OutputAction::Position { position } => {
                     config.position = match position {
@@ -1666,7 +1671,7 @@ impl Niri {
 
         let config = self.config.borrow();
         let c = config.outputs.iter().find(|o| o.name == name);
-        let scale = c.map(|c| c.scale).unwrap_or_else(|| {
+        let scale = c.and_then(|c| c.scale).unwrap_or_else(|| {
             let size_mm = output.physical_properties().size;
             let resolution = output.current_mode().unwrap().size;
             guess_monitor_scale(size_mm, resolution)

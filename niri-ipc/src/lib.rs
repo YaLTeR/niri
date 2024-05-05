@@ -278,9 +278,9 @@ pub enum OutputAction {
     },
     /// Set the output scale.
     Scale {
-        /// Scale factor to set.
+        /// Scale factor to set, or "auto" for automatic selection.
         #[cfg_attr(feature = "clap", arg())]
-        scale: f64,
+        scale: ScaleToSet,
     },
     /// Set the output transform.
     Transform {
@@ -327,6 +327,15 @@ pub struct ConfiguredMode {
     pub height: u16,
     /// Refresh rate.
     pub refresh: Option<f64>,
+}
+
+/// Output scale to set.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub enum ScaleToSet {
+    /// Niri will pick the scale automatically.
+    Automatic,
+    /// Specific scale.
+    Specific(f64),
 }
 
 /// Output position to set.
@@ -558,5 +567,18 @@ impl FromStr for ConfiguredMode {
             height,
             refresh,
         })
+    }
+}
+
+impl FromStr for ScaleToSet {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("auto") {
+            return Ok(Self::Automatic);
+        }
+
+        let scale = s.parse().map_err(|_| "error parsing scale")?;
+        Ok(Self::Specific(scale))
     }
 }
