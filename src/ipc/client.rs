@@ -248,6 +248,13 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 bail!("unexpected response: expected OutputConfigChanged, got {response:?}");
             };
 
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
             if response == OutputConfigChanged::OutputWasMissing {
                 println!("Output \"{output}\" is not connected.");
                 println!("The change will apply when it is connected.");
