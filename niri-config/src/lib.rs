@@ -842,6 +842,7 @@ pub enum Action {
     DebugToggleOpaqueRegions,
     DebugToggleDamage,
     Spawn(#[knuffel(arguments)] Vec<String>),
+    DoScreenTransition(#[knuffel(property(name = "delay-ms"))] Option<u16>),
     #[knuffel(skip)]
     ConfirmScreenshot,
     #[knuffel(skip)]
@@ -914,6 +915,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::Quit { skip_confirmation } => Self::Quit(skip_confirmation),
             niri_ipc::Action::PowerOffMonitors => Self::PowerOffMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
+            niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
             niri_ipc::Action::Screenshot => Self::Screenshot,
             niri_ipc::Action::ScreenshotScreen => Self::ScreenshotScreen,
             niri_ipc::Action::ScreenshotWindow => Self::ScreenshotWindow,

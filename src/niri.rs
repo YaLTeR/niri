@@ -19,6 +19,7 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
+use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
@@ -109,6 +110,7 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::debug::draw_opaque_regions;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::{
     render_to_shm, render_to_texture, render_to_vec, shaders, RenderTarget,
@@ -117,6 +119,7 @@ use crate::scroll_tracker::ScrollTracker;
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
+use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::guess_monitor_scale;
 use crate::utils::spawning::CHILD_ENV;
@@ -296,6 +299,7 @@ pub struct OutputState {
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
+    screen_transition: Option<ScreenTransition>,
     /// Damage tracker used for the debug damage visualization.
     pub debug_damage_tracker: OutputDamageTracker,
 }
@@ -1725,6 +1729,7 @@ impl Niri {
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
+            screen_transition: None,
             debug_damage_tracker: OutputDamageTracker::from_output(&output),
         };
         let rv = self.output_state.insert(output.clone(), state);
@@ -2445,6 +2450,14 @@ impl Niri {
             elements = self.pointer_element(renderer, output);
         }
 
+        // Next, the screen transition texture.
+        {
+            let state = self.output_state.get(output).unwrap();
+            if let Some(transition) = &state.screen_transition {
+                elements.push(transition.render(target).into());
+            }
+        }
+
         // Next, the exit confirm dialog.
         if let Some(dialog) = &self.exit_confirm_dialog {
             if let Some(element) = dialog.render(renderer, output) {
@@ -2593,6 +2606,14 @@ impl Niri {
         if self.monitors_active {
             // Update from the config and advance the animations.
             self.layout.advance_animations(target_presentation_time);
+
+            if let Some(transition) = &mut state.screen_transition {
+                transition.advance_animations(target_presentation_time);
+                if transition.is_done() {
+                    state.screen_transition = None;
+                }
+            }
+
             state.unfinished_animations_remain = self
                 .layout
                 .monitor_for_output(output)
@@ -2608,6 +2629,9 @@ impl Niri {
             state.unfinished_animations_remain |= self
                 .cursor_manager
                 .is_current_cursor_animated(output.current_scale().integer_scale());
+
+            // Also keep redrawing during a screen transition.
+            state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             self.layout.update_render_elements(output);
 
@@ -3718,6 +3742,77 @@ impl Niri {
             }
         }
     }
+
+    pub fn do_screen_transition(&mut self, renderer: &mut GlesRenderer, delay_ms: Option<u16>) {
+        let textures: Vec<_> = self
+            .output_state
+            .keys()
+            .cloned()
+            .filter_map(|output| {
+                let size = output.current_mode().unwrap().size;
+                let transform = output.current_transform();
+                let size = transform.transform_size(size);
+
+                let scale = Scale::from(output.current_scale().fractional_scale());
+                let targets = [
+                    RenderTarget::Output,
+                    RenderTarget::Screencast,
+                    RenderTarget::ScreenCapture,
+                ];
+                let textures = targets.map(|target| {
+                    let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
+                    let elements = elements.iter().rev();
+
+                    let res = render_to_texture(
+                        renderer,
+                        size,
+                        scale,
+                        Transform::Normal,
+                        Fourcc::Abgr8888,
+                        elements,
+                    );
+
+                    if let Err(err) = &res {
+                        warn!("error rendering output {}: {err:?}", output.name());
+                    }
+
+                    res
+                });
+
+                if textures.iter().any(|res| res.is_err()) {
+                    return None;
+                }
+
+                let textures = textures.map(|res| {
+                    let texture = res.unwrap().0;
+                    TextureBuffer::from_texture(
+                        renderer,
+                        texture,
+                        output.current_scale().integer_scale(),
+                        Transform::Normal,
+                        Some(vec![Rectangle::from_loc_and_size(
+                            (0, 0),
+                            size.to_logical(1).to_buffer(1, Transform::Normal),
+                        )]),
+                    )
+                });
+
+                Some((output, textures))
+            })
+            .collect();
+
+        let delay = delay_ms.map_or(screen_transition::DELAY, |d| {
+            Duration::from_millis(u64::from(d))
+        });
+        let start_at = get_monotonic_time() + delay;
+        for (output, from_texture) in textures {
+            let state = self.output_state.get_mut(&output).unwrap();
+            state.screen_transition = Some(ScreenTransition::new(from_texture, start_at));
+        }
+
+        // We don't actually need to queue a redraw because the point is to freeze the screen for a
+        // bit, and even if the delay was zero, we're drawing the same contents anyway.
+    }
 }
 
 pub struct ClientState {
@@ -3739,6 +3834,7 @@ niri_render_elements! {
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         ScreenshotUi = ScreenshotUiRenderElement,
+        Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
     }

@@ -186,3 +186,38 @@ binds {
     Mod+Shift+E { quit skip-confirmation=true; }
 }
 ```
+
+#### `do-screen-transition`
+
+Freeze the screen for a brief moment then crossfade to the new contents.
+
+```
+binds {
+    Mod+Return { do-screen-transition; }
+}
+```
+
+This action is mainly useful to trigger from scripts changing the system theme or style (between light and dark for example).
+It makes transitions like this, where windows change their style one by one, look smooth and synchronized.
+
+For example, using the GNOME color scheme setting:
+
+```shell
+niri msg action do-screen-transition
+dconf write /org/gnome/desktop/interface/color-scheme "\"prefer-dark\""
+```
+
+By default, the screen is frozen for 250 ms to give windows time to redraw, before the crossfade.
+You can set this delay like this:
+
+```
+binds {
+    Mod+Return { do-screen-transition delay-ms=100; }
+}
+```
+
+Or, in scripts:
+
+```shell
+niri msg action do-screen-transition --delay-ms 100
+```

@@ -378,6 +378,11 @@ impl State {
             Action::Spawn(command) => {
                 spawn(command);
             }
+            Action::DoScreenTransition(delay_ms) => {
+                self.backend.with_primary_renderer(|renderer| {
+                    self.niri.do_screen_transition(renderer, delay_ms);
+                });
+            }
             Action::ScreenshotScreen => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
