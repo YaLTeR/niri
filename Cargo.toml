@@ -43,7 +43,7 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 [dependencies]
 anyhow.workspace = true
 arrayvec = "0.7.4"
-async-channel = { version = "2.2.0", optional = true }
+async-channel = "2.2.0"
 async-io = { version = "1.13.0", optional = true }
 bitflags.workspace = true
 bytemuck = { version = "1.15.0", features = ["derive"] }
@@ -104,7 +104,7 @@ xshell = "0.2.5"
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
 # Enables D-Bus support (serve various freedesktop and GNOME interfaces, power button handling).
-dbus = ["zbus", "async-channel", "async-io", "notify-rust", "url"]
+dbus = ["zbus", "async-io", "notify-rust", "url"]
 # Enables systemd integration (global environment, apps in transient scopes).
 systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
