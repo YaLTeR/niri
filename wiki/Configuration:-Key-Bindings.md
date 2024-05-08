@@ -189,6 +189,8 @@ binds {
 
 #### `do-screen-transition`
 
+<sup>Since: 0.1.6</sup>
+
 Freeze the screen for a brief moment then crossfade to the new contents.
 
 ```
