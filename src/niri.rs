@@ -3744,6 +3744,8 @@ impl Niri {
     }
 
     pub fn do_screen_transition(&mut self, renderer: &mut GlesRenderer, delay_ms: Option<u16>) {
+        let _span = tracy_client::span!("Niri::do_screen_transition");
+
         let textures: Vec<_> = self
             .output_state
             .keys()
