@@ -3792,10 +3792,7 @@ impl Niri {
                         texture,
                         output.current_scale().integer_scale(),
                         Transform::Normal,
-                        Some(vec![Rectangle::from_loc_and_size(
-                            (0, 0),
-                            size.to_logical(1).to_buffer(1, Transform::Normal),
-                        )]),
+                        None, // We want windows below to get frame callbacks.
                     )
                 });
 
