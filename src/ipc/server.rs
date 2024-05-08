@@ -120,7 +120,10 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
         .map_err(|err| err.to_string());
     let requested_error = matches!(request, Ok(Request::ReturnError));
 
-    let reply = request.and_then(|request| process(&ctx, request));
+    let reply = match request {
+        Ok(request) => process(&ctx, request).await,
+        Err(err) => Err(err),
+    };
 
     if let Err(err) = &reply {
         if !requested_error {
@@ -134,7 +137,7 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
     Ok(())
 }
 
-fn process(ctx: &ClientCtx, request: Request) -> Reply {
+async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     let response = match request {
         Request::ReturnError => return Err(String::from("example compositor error")),
         Request::Version => Response::Version(version()),
@@ -163,10 +166,18 @@ fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::FocusedWindow(window)
         }
         Request::Action(action) => {
+            let (tx, rx) = async_channel::bounded(1);
+
             let action = niri_config::Action::from(action);
             ctx.event_loop.insert_idle(move |state| {
                 state.do_action(action, false);
+                let _ = tx.send_blocking(());
             });
+
+            // Wait until the action has been processed before returning. This is important for a
+            // few actions, for instance for DoScreenTransition this wait ensures that the screen
+            // contents were sampled into the texture.
+            let _ = rx.recv().await;
             Response::Handled
         }
         Request::Output { output, action } => {
