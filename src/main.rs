@@ -80,8 +80,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::set_var("XDG_SESSION_TYPE", "wayland");
     }
 
-    let _client = tracy_client::Client::start();
-
     // Set a better error printer for config loading.
     niri_config::set_miette_hook().unwrap();
 
@@ -89,6 +87,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(subcommand) = cli.subcommand {
         match subcommand {
             Sub::Validate { config } => {
+                tracy_client::Client::start();
+
                 let path = config
                     .or_else(default_config_path)
                     .expect("error getting config path");
@@ -103,6 +103,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Panic => cause_panic(),
         }
     }
+
+    // Avoid starting Tracy for the `niri msg` code path since starting/stopping Tracy is a bit
+    // slow.
+    tracy_client::Client::start();
 
     info!("starting version {}", &version());
 
