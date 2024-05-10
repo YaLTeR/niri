@@ -19,7 +19,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::swipe_tracker::SwipeTracker;
-use crate::utils::output_size;
+use crate::utils::{output_size, ResizeEdge};
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
@@ -718,6 +718,47 @@ impl<W: LayoutElement> Monitor<W> {
             None => {
                 let ws = &self.workspaces[self.active_workspace_idx];
                 ws.window_under(pos_within_output)
+            }
+        }
+    }
+
+    pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
+        match &self.workspace_switch {
+            Some(switch) => {
+                let size = output_size(&self.output);
+
+                let render_idx = switch.current_idx();
+                let before_idx = render_idx.floor();
+                let after_idx = render_idx.ceil();
+
+                let offset = ((render_idx - before_idx) * size.h as f64).round() as i32;
+
+                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
+                    return None;
+                }
+
+                let after_idx = after_idx as usize;
+
+                let (idx, ws_offset) = if pos_within_output.y < (size.h - offset) as f64 {
+                    if before_idx < 0. {
+                        return None;
+                    }
+
+                    (before_idx as usize, Point::from((0, offset)))
+                } else {
+                    if after_idx >= self.workspaces.len() {
+                        return None;
+                    }
+
+                    (after_idx, Point::from((0, -size.h + offset)))
+                };
+
+                let ws = &self.workspaces[idx];
+                ws.resize_edges_under(pos_within_output + ws_offset.to_f64())
+            }
+            None => {
+                let ws = &self.workspaces[self.active_workspace_idx];
+                ws.resize_edges_under(pos_within_output)
             }
         }
     }

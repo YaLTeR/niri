@@ -186,7 +186,7 @@ impl TestCase for Layout {
         self.layout.update_output_size(&self.output);
         for win in &self.windows {
             if win.communicate() {
-                self.layout.update_window(win.id());
+                self.layout.update_window(win.id(), None);
             }
         }
     }

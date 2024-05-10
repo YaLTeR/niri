@@ -15,6 +15,7 @@ pub mod layout;
 pub mod niri;
 pub mod protocols;
 pub mod render_helpers;
+pub mod resize_grab;
 pub mod rubber_band;
 pub mod scroll_tracker;
 pub mod swipe_tracker;

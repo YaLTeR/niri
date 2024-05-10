@@ -43,7 +43,7 @@ use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Scale, Size, Transform};
+use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
 
 use self::monitor::Monitor;
 pub use self::monitor::MonitorRenderElement;
@@ -52,7 +52,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
-use crate::utils::output_size;
+use crate::utils::{output_size, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
@@ -74,9 +74,16 @@ niri_render_elements! {
 pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
 
+#[derive(Debug, Clone, Copy)]
+pub struct InteractiveResizeData {
+    pub edges: ResizeEdge,
+    pub original_view_offset: i32,
+    pub original_column_width: i32,
+}
+
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
-    type Id: PartialEq;
+    type Id: PartialEq + std::fmt::Debug;
 
     /// Unique ID of this element.
     fn id(&self) -> &Self::Id;
@@ -166,6 +173,10 @@ pub trait LayoutElement {
 
     fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot>;
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot>;
+
+    fn set_interactive_resize(&mut self, data: Option<InteractiveResizeData>);
+    fn cancel_interactive_resize(&mut self);
+    fn interactive_resize_data(&mut self, serial: Serial) -> Option<InteractiveResizeData>;
 }
 
 #[derive(Debug)]
@@ -669,13 +680,13 @@ impl<W: LayoutElement> Layout<W> {
         rv
     }
 
-    pub fn update_window(&mut self, window: &W::Id) {
+    pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mut mon.workspaces {
                         if ws.has_window(window) {
-                            ws.update_window(window);
+                            ws.update_window(window, serial);
                             return;
                         }
                     }
@@ -684,7 +695,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     if ws.has_window(window) {
-                        ws.update_window(window);
+                        ws.update_window(window, serial);
                         return;
                     }
                 }
@@ -1225,6 +1236,19 @@ impl<W: LayoutElement> Layout<W> {
         mon.window_under(pos_within_output)
     }
 
+    pub fn resize_edges_under(
+        &self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<ResizeEdge> {
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return None;
+        };
+
+        let mon = monitors.iter().find(|mon| &mon.output == output)?;
+        mon.resize_edges_under(pos_within_output)
+    }
+
     #[cfg(test)]
     fn verify_invariants(&self) {
         use std::collections::HashSet;
@@ -1760,6 +1784,79 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(&window) {
+                            return ws.interactive_resize_begin(window, edges);
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(&window) {
+                        return ws.interactive_resize_begin(window, edges);
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn interactive_resize_update(
+        &mut self,
+        window: &W::Id,
+        delta: Point<f64, Logical>,
+    ) -> bool {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            return ws.interactive_resize_update(window, delta);
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        return ws.interactive_resize_update(window, delta);
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn interactive_resize_end(&mut self, window: &W::Id) {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.interactive_resize_end(Some(window));
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.interactive_resize_end(Some(window));
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn move_workspace_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -2107,6 +2204,14 @@ mod tests {
         fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
             None
         }
+
+        fn set_interactive_resize(&mut self, _data: Option<InteractiveResizeData>) {}
+
+        fn cancel_interactive_resize(&mut self) {}
+
+        fn interactive_resize_data(&mut self, _serial: Serial) -> Option<InteractiveResizeData> {
+            None
+        }
     }
 
     fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {
@@ -2146,6 +2251,20 @@ mod tests {
 
     fn arbitrary_view_offset_gesture_delta() -> impl Strategy<Value = f64> {
         prop_oneof![(-10f64..10f64), (-50000f64..50000f64),]
+    }
+
+    fn arbitrary_resize_edge() -> impl Strategy<Value = ResizeEdge> {
+        prop_oneof![
+            Just(ResizeEdge::RIGHT),
+            Just(ResizeEdge::BOTTOM),
+            Just(ResizeEdge::LEFT),
+            Just(ResizeEdge::TOP),
+            Just(ResizeEdge::BOTTOM_RIGHT),
+            Just(ResizeEdge::BOTTOM_LEFT),
+            Just(ResizeEdge::TOP_RIGHT),
+            Just(ResizeEdge::TOP_LEFT),
+            Just(ResizeEdge::empty()),
+        ]
     }
 
     #[derive(Debug, Clone, Copy, Arbitrary)]
@@ -2236,6 +2355,24 @@ mod tests {
         },
         WorkspaceSwitchGestureEnd {
             cancelled: bool,
+        },
+        InteractiveResizeBegin {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
+            #[proptest(strategy = "arbitrary_resize_edge()")]
+            edges: ResizeEdge,
+        },
+        InteractiveResizeUpdate {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
+            #[proptest(strategy = "-20000f64..20000f64")]
+            dx: f64,
+            #[proptest(strategy = "-20000f64..20000f64")]
+            dy: f64,
+        },
+        InteractiveResizeEnd {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
         },
     }
 
@@ -2455,7 +2592,8 @@ mod tests {
                     }
 
                     if update {
-                        layout.update_window(&id);
+                        // FIXME: serial.
+                        layout.update_window(&id, None);
                     }
                 }
                 Op::MoveWorkspaceToOutput(id) => {
@@ -2494,6 +2632,15 @@ mod tests {
                 }
                 Op::WorkspaceSwitchGestureEnd { cancelled } => {
                     layout.workspace_switch_gesture_end(cancelled);
+                }
+                Op::InteractiveResizeBegin { window, edges } => {
+                    layout.interactive_resize_begin(window, edges);
+                }
+                Op::InteractiveResizeUpdate { window, dx, dy } => {
+                    layout.interactive_resize_update(&window, Point::from((dx, dy)));
+                }
+                Op::InteractiveResizeEnd { window } => {
+                    layout.interactive_resize_end(&window);
                 }
             }
         }

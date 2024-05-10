@@ -19,7 +19,9 @@ use smithay::wayland::compositor::{
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
-use crate::layout::{LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot};
+use crate::layout::{
+    InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
+};
 use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
@@ -56,6 +58,23 @@ pub struct Mapped {
 
     /// Snapshot right before an animated commit.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
+
+    /// State of an ongoing interactive resize.
+    interactive_resize: Option<InteractiveResize>,
+}
+
+/// Interactive resize state.
+#[derive(Debug)]
+enum InteractiveResize {
+    /// The resize is ongoing.
+    Ongoing(InteractiveResizeData),
+    /// The resize has stopped and we're waiting to send the last configure.
+    WaitingForLastConfigure(InteractiveResizeData),
+    /// We had sent the last resize configure and are waiting for the corresponding commit.
+    WaitingForLastCommit {
+        data: InteractiveResizeData,
+        serial: Serial,
+    },
 }
 
 impl Mapped {
@@ -70,6 +89,7 @@ impl Mapped {
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
+            interactive_resize: None,
         }
     }
 
@@ -427,6 +447,20 @@ impl LayoutElement for Mapped {
             if self.animate_next_configure {
                 self.animate_serials.push(serial);
             }
+
+            self.interactive_resize = match self.interactive_resize.take() {
+                Some(InteractiveResize::WaitingForLastConfigure(data)) => {
+                    Some(InteractiveResize::WaitingForLastCommit { data, serial })
+                }
+                x => x,
+            }
+        } else {
+            self.interactive_resize = match self.interactive_resize.take() {
+                // We probably started and stopped resizing in the same loop cycle without anything
+                // changing.
+                Some(InteractiveResize::WaitingForLastConfigure { .. }) => None,
+                x => x,
+            }
         }
 
         self.animate_next_configure = false;
@@ -458,5 +492,47 @@ impl LayoutElement for Mapped {
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
         self.animation_snapshot.take()
+    }
+
+    fn set_interactive_resize(&mut self, data: Option<InteractiveResizeData>) {
+        self.toplevel().with_pending_state(|state| {
+            if data.is_some() {
+                state.states.set(xdg_toplevel::State::Resizing);
+            } else {
+                state.states.unset(xdg_toplevel::State::Resizing);
+            }
+        });
+
+        if let Some(data) = data {
+            self.interactive_resize = Some(InteractiveResize::Ongoing(data));
+        } else {
+            self.interactive_resize = match self.interactive_resize.take() {
+                Some(InteractiveResize::Ongoing(data)) => {
+                    Some(InteractiveResize::WaitingForLastConfigure(data))
+                }
+                x => x,
+            }
+        }
+    }
+
+    fn cancel_interactive_resize(&mut self) {
+        self.set_interactive_resize(None);
+        self.interactive_resize = None;
+    }
+
+    fn interactive_resize_data(&mut self, commit_serial: Serial) -> Option<InteractiveResizeData> {
+        let resize = self.interactive_resize.as_ref()?;
+        match resize {
+            InteractiveResize::Ongoing(data) | InteractiveResize::WaitingForLastConfigure(data) => {
+                Some(*data)
+            }
+            InteractiveResize::WaitingForLastCommit { data, serial } => {
+                let rv = Some(*data);
+                if commit_serial.is_no_older_than(serial) {
+                    self.interactive_resize = None;
+                }
+                rv
+            }
+        }
     }
 }

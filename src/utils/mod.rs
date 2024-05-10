@@ -7,11 +7,13 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use anyhow::{ensure, Context};
+use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
 use niri_config::Config;
 use smithay::output::Output;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
 pub mod id;
@@ -20,6 +22,32 @@ pub mod spawning;
 pub mod watcher;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
+
+bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct ResizeEdge: u32 {
+        const TOP          = 0b0001;
+        const BOTTOM       = 0b0010;
+        const LEFT         = 0b0100;
+        const RIGHT        = 0b1000;
+
+        const TOP_LEFT     = Self::TOP.bits() | Self::LEFT.bits();
+        const BOTTOM_LEFT  = Self::BOTTOM.bits() | Self::LEFT.bits();
+
+        const TOP_RIGHT    = Self::TOP.bits() | Self::RIGHT.bits();
+        const BOTTOM_RIGHT = Self::BOTTOM.bits() | Self::RIGHT.bits();
+
+        const LEFT_RIGHT   = Self::LEFT.bits() | Self::RIGHT.bits();
+        const TOP_BOTTOM   = Self::TOP.bits() | Self::BOTTOM.bits();
+    }
+}
+
+impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
+    #[inline]
+    fn from(x: xdg_toplevel::ResizeEdge) -> Self {
+        Self::from_bits(x as u32).unwrap()
+    }
+}
 
 pub fn version() -> String {
     format!(

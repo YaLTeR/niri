@@ -995,7 +995,7 @@ impl State {
                 }
             });
             for win in windows {
-                self.niri.layout.update_window(&win);
+                self.niri.layout.update_window(&win, None);
             }
         }
 
@@ -2414,7 +2414,7 @@ impl Niri {
         drop(config);
 
         for win in windows {
-            self.layout.update_window(&win);
+            self.layout.update_window(&win, None);
             win.toplevel()
                 .expect("no X11 support")
                 .send_pending_configure();

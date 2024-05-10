@@ -10,16 +10,17 @@ use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
-    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
+    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, MouseButton, PointerAxisEvent,
+    PointerButtonEvent, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
     TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{
-    AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
+    AxisFrame, ButtonEvent, CursorImageStatus, Focus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
-    GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent, RelativeMotionEvent,
+    GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData,
+    MotionEvent, RelativeMotionEvent,
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
@@ -27,6 +28,7 @@ use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerCons
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use crate::niri::State;
+use crate::resize_grab::ResizeGrab;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time};
@@ -1072,6 +1074,37 @@ impl State {
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();
                 self.niri.layout.activate_window(&window);
+
+                // Check if we need to start an interactive resize.
+                if event.button() == Some(MouseButton::Right) && !pointer.is_grabbed() {
+                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                    let mod_down = match self.backend.mod_key() {
+                        CompositorMod::Super => mods.logo,
+                        CompositorMod::Alt => mods.alt,
+                    };
+                    if mod_down {
+                        let location = pointer.current_location();
+                        let (output, pos_within_output) = self.niri.output_under(location).unwrap();
+                        let edges = self
+                            .niri
+                            .layout
+                            .resize_edges_under(output, pos_within_output)
+                            .unwrap();
+                        if self
+                            .niri
+                            .layout
+                            .interactive_resize_begin(window.clone(), edges)
+                        {
+                            let start_data = PointerGrabStartData {
+                                focus: None,
+                                button: event.button_code(),
+                                location,
+                            };
+                            let grab = ResizeGrab::new(start_data, window);
+                            pointer.set_grab(self, grab, serial, Focus::Clear);
+                        }
+                    }
+                }
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();

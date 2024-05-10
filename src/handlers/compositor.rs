@@ -13,6 +13,7 @@ use smithay::wayland::compositor::{
     SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
+use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
@@ -237,8 +238,21 @@ impl CompositorHandler for State {
                     return;
                 }
 
+                let serial = with_states(surface, |states| {
+                    let role = states
+                        .data_map
+                        .get::<XdgToplevelSurfaceData>()
+                        .unwrap()
+                        .lock()
+                        .unwrap();
+                    role.configure_serial
+                });
+                if serial.is_none() {
+                    error!("commit on a mapped surface without a configured serial");
+                }
+
                 // The toplevel remains mapped.
-                self.niri.layout.update_window(&window);
+                self.niri.layout.update_window(&window, serial);
 
                 // Popup placement depends on window size which might have changed.
                 self.update_reactive_popups(&window, &output);
@@ -256,7 +270,7 @@ impl CompositorHandler for State {
             let window = mapped.window.clone();
             let output = output.clone();
             window.on_commit();
-            self.niri.layout.update_window(&window);
+            self.niri.layout.update_window(&window, None);
             self.niri.queue_redraw(&output);
             return;
         }

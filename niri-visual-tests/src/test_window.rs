@@ -2,7 +2,9 @@ use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::rc::Rc;
 
-use niri::layout::{LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot};
+use niri::layout::{
+    InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
+};
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::{RenderTarget, SplitElements};
 use niri::window::ResolvedWindowRules;
@@ -10,7 +12,7 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Scale, Size, Transform};
+use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
 
 #[derive(Debug)]
 struct TestWindowInner {
@@ -235,6 +237,14 @@ impl LayoutElement for TestWindow {
     }
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
+        None
+    }
+
+    fn set_interactive_resize(&mut self, _data: Option<InteractiveResizeData>) {}
+
+    fn cancel_interactive_resize(&mut self) {}
+
+    fn interactive_resize_data(&mut self, _serial: Serial) -> Option<InteractiveResizeData> {
         None
     }
 }

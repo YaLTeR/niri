@@ -11,6 +11,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{se
 use smithay::reexports::wayland_server::protocol::wl_output;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::compositor::{
     add_pre_commit_hook, send_surface_state, with_states, BufferAssignment, HookId,
@@ -31,6 +32,7 @@ use smithay::{
 
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
+use crate::resize_grab::ResizeGrab;
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
 impl XdgShellHandler for State {
@@ -60,12 +62,44 @@ impl XdgShellHandler for State {
 
     fn resize_request(
         &mut self,
-        _surface: ToplevelSurface,
+        surface: ToplevelSurface,
         _seat: WlSeat,
-        _serial: Serial,
-        _edges: ResizeEdge,
+        serial: Serial,
+        edges: ResizeEdge,
     ) {
-        // FIXME
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        if !pointer.has_grab(serial) {
+            return;
+        }
+
+        let Some(start_data) = pointer.grab_start_data() else {
+            return;
+        };
+
+        let Some((focus, _)) = &start_data.focus else {
+            return;
+        };
+
+        let wl_surface = surface.wl_surface();
+        if !focus.id().same_client_as(&wl_surface.id()) {
+            return;
+        }
+
+        let Some((mapped, _)) = self.niri.layout.find_window_and_output(wl_surface) else {
+            return;
+        };
+
+        let window = mapped.window.clone();
+        if !self
+            .niri
+            .layout
+            .interactive_resize_begin(window.clone(), edges.into())
+        {
+            return;
+        }
+
+        let grab = ResizeGrab::new(start_data, window);
+        pointer.set_grab(self, grab, serial, Focus::Clear);
     }
 
     fn reposition_request(
@@ -799,7 +833,7 @@ impl State {
                 drop(config);
                 let output = output.cloned();
                 let window = mapped.window.clone();
-                self.niri.layout.update_window(&window);
+                self.niri.layout.update_window(&window, None);
 
                 if let Some(output) = output {
                     self.niri.queue_redraw(&output);
