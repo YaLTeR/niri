@@ -1485,7 +1485,7 @@ impl State {
     }
 
     fn on_gesture_swipe_begin<I: InputBackend>(&mut self, event: I::GestureSwipeBeginEvent) {
-        if event.fingers() == 3 {
+        if event.fingers() == self.niri.config.borrow().input.gesture_swipe_fingers {
             self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
 
             // We handled this event.
