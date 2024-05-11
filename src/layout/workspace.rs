@@ -3,7 +3,7 @@ use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, PresetWidth, Struts};
+use niri_config::{CenterFocusedColumn, PresetWidth, Struts, Workspace as WorkspaceConfig};
 use niri_ipc::SizeChange;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -93,6 +93,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     pub options: Rc<Options>,
+
+    /// Optional name of this workspace.
+    pub name: Option<String>,
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
@@ -313,9 +316,23 @@ impl TileData {
 
 impl<W: LayoutElement> Workspace<W> {
     pub fn new(output: Output, options: Rc<Options>) -> Self {
+        Self::new_with_config(output, None, options)
+    }
+
+    pub fn new_with_config(
+        output: Output,
+        config: Option<WorkspaceConfig>,
+        options: Rc<Options>,
+    ) -> Self {
+        let original_output = config
+            .as_ref()
+            .and_then(|c| c.open_on_output.clone())
+            .map(OutputId)
+            .unwrap_or(OutputId::new(&output));
+
         let working_area = compute_working_area(&output, options.struts);
         Self {
-            original_output: OutputId::new(&output),
+            original_output,
             view_size: output_size(&output),
             working_area,
             output: Some(output),
@@ -329,14 +346,24 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
             options,
+            name: config.map(|c| c.name.0),
             id: WorkspaceId::next(),
         }
     }
 
-    pub fn new_no_outputs(options: Rc<Options>) -> Self {
+    pub fn new_with_config_no_outputs(
+        config: Option<WorkspaceConfig>,
+        options: Rc<Options>,
+    ) -> Self {
+        let original_output = OutputId(
+            config
+                .clone()
+                .and_then(|c| c.open_on_output)
+                .unwrap_or_default(),
+        );
         Self {
             output: None,
-            original_output: OutputId(String::new()),
+            original_output,
             view_size: Size::from((1280, 720)),
             working_area: Rectangle::from_loc_and_size((0, 0), (1280, 720)),
             columns: vec![],
@@ -349,12 +376,21 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
             options,
+            name: config.map(|c| c.name.0),
             id: WorkspaceId::next(),
         }
     }
 
+    pub fn new_no_outputs(options: Rc<Options>) -> Self {
+        Self::new_with_config_no_outputs(None, options)
+    }
+
     pub fn id(&self) -> WorkspaceId {
         self.id
+    }
+
+    pub fn unname(&mut self) {
+        self.name = None;
     }
 
     pub fn advance_animations(&mut self, current_time: Duration) {
@@ -433,6 +469,10 @@ impl<W: LayoutElement> Workspace<W> {
             .iter_mut()
             .flat_map(|col| col.tiles.iter_mut())
             .map(Tile::window_mut)
+    }
+
+    pub fn current_output(&self) -> Option<&Output> {
+        self.output.as_ref()
     }
 
     pub fn set_output(&mut self, output: Option<Output>) {

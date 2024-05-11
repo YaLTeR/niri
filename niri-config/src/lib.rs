@@ -11,7 +11,7 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
-use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform};
+use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform, WorkspaceReferenceArg};
 use regex::Regex;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
@@ -52,6 +52,8 @@ pub struct Config {
     pub binds: Binds,
     #[knuffel(child, default)]
     pub debug: DebugConfig,
+    #[knuffel(children(name = "workspace"))]
+    pub workspaces: Vec<Workspace>,
 }
 
 // FIXME: Add other devices.
@@ -693,6 +695,17 @@ pub struct EnvironmentVariable {
     pub value: Option<String>,
 }
 
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct Workspace {
+    #[knuffel(argument)]
+    pub name: WorkspaceName,
+    #[knuffel(child, unwrap(argument))]
+    pub open_on_output: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceName(pub String);
+
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct WindowRule {
     #[knuffel(children(name = "match"))]
@@ -705,6 +718,8 @@ pub struct WindowRule {
     pub default_column_width: Option<DefaultColumnWidth>,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_on_workspace: Option<String>,
     #[knuffel(child, unwrap(argument))]
     pub open_maximized: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -890,14 +905,14 @@ pub enum Action {
     CenterColumn,
     FocusWorkspaceDown,
     FocusWorkspaceUp,
-    FocusWorkspace(#[knuffel(argument)] u8),
+    FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
     FocusWorkspacePrevious,
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
-    MoveWindowToWorkspace(#[knuffel(argument)] u8),
+    MoveWindowToWorkspace(#[knuffel(argument)] WorkspaceReference),
     MoveColumnToWorkspaceDown,
     MoveColumnToWorkspaceUp,
-    MoveColumnToWorkspace(#[knuffel(argument)] u8),
+    MoveColumnToWorkspace(#[knuffel(argument)] WorkspaceReference),
     MoveWorkspaceDown,
     MoveWorkspaceUp,
     FocusMonitorLeft,
@@ -962,14 +977,20 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterColumn => Self::CenterColumn,
             niri_ipc::Action::FocusWorkspaceDown => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp => Self::FocusWorkspaceUp,
-            niri_ipc::Action::FocusWorkspace { index } => Self::FocusWorkspace(index),
+            niri_ipc::Action::FocusWorkspace { reference } => {
+                Self::FocusWorkspace(WorkspaceReference::from(reference))
+            }
             niri_ipc::Action::FocusWorkspacePrevious => Self::FocusWorkspacePrevious,
             niri_ipc::Action::MoveWindowToWorkspaceDown => Self::MoveWindowToWorkspaceDown,
             niri_ipc::Action::MoveWindowToWorkspaceUp => Self::MoveWindowToWorkspaceUp,
-            niri_ipc::Action::MoveWindowToWorkspace { index } => Self::MoveWindowToWorkspace(index),
+            niri_ipc::Action::MoveWindowToWorkspace { reference } => {
+                Self::MoveWindowToWorkspace(WorkspaceReference::from(reference))
+            }
             niri_ipc::Action::MoveColumnToWorkspaceDown => Self::MoveColumnToWorkspaceDown,
             niri_ipc::Action::MoveColumnToWorkspaceUp => Self::MoveColumnToWorkspaceUp,
-            niri_ipc::Action::MoveColumnToWorkspace { index } => Self::MoveColumnToWorkspace(index),
+            niri_ipc::Action::MoveColumnToWorkspace { reference } => {
+                Self::MoveColumnToWorkspace(WorkspaceReference::from(reference))
+            }
             niri_ipc::Action::MoveWorkspaceDown => Self::MoveWorkspaceDown,
             niri_ipc::Action::MoveWorkspaceUp => Self::MoveWorkspaceUp,
             niri_ipc::Action::FocusMonitorLeft => Self::FocusMonitorLeft,
@@ -998,6 +1019,59 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleDebugTint => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage => Self::DebugToggleDamage,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum WorkspaceReference {
+    Index(u8),
+    Name(String),
+}
+
+impl From<WorkspaceReferenceArg> for WorkspaceReference {
+    fn from(reference: WorkspaceReferenceArg) -> WorkspaceReference {
+        match reference {
+            WorkspaceReferenceArg::Index(i) => Self::Index(i),
+            WorkspaceReferenceArg::Name(n) => Self::Name(n),
+        }
+    }
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceReference {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<WorkspaceReference, DecodeError<S>> {
+        match &**val {
+            knuffel::ast::Literal::String(ref s) => Ok(WorkspaceReference::Name(s.clone().into())),
+            knuffel::ast::Literal::Int(ref value) => match value.try_into() {
+                Ok(v) => Ok(WorkspaceReference::Index(v)),
+                Err(e) => {
+                    ctx.emit_error(DecodeError::conversion(val, e));
+                    Ok(WorkspaceReference::Index(0))
+                }
+            },
+            _ => {
+                ctx.emit_error(DecodeError::unsupported(
+                    val,
+                    "Unsupported value, only numbers and strings are recognized",
+                ));
+                Ok(WorkspaceReference::Index(0))
+            }
         }
     }
 }
@@ -1406,6 +1480,54 @@ where
         Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
             Ok(false)
         })?))
+    }
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<WorkspaceName, DecodeError<S>> {
+        #[derive(Debug)]
+        struct WorkspaceNameSet(HashSet<String>);
+        match &**val {
+            knuffel::ast::Literal::String(ref s) => {
+                let mut name_set: HashSet<String> = match ctx.get::<WorkspaceNameSet>() {
+                    Some(h) => h.0.clone(),
+                    None => HashSet::new(),
+                };
+                if !name_set.insert(s.clone().to_string()) {
+                    ctx.emit_error(DecodeError::unexpected(
+                        val,
+                        "named workspace",
+                        format!("duplicate named workspace: {}", s),
+                    ));
+                    return Ok(Self(String::new()));
+                }
+                ctx.set(WorkspaceNameSet(name_set));
+                Ok(Self(s.clone().into()))
+            }
+            _ => {
+                ctx.emit_error(DecodeError::unsupported(
+                    val,
+                    "workspace names must be strings",
+                ));
+                Ok(Self(String::new()))
+            }
+        }
     }
 }
 
@@ -2278,6 +2400,7 @@ mod tests {
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
+                Mod+Shift+1 { focus-workspace "workspace-1"; }
                 Mod+Shift+E { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
             }
@@ -2285,6 +2408,12 @@ mod tests {
             debug {
                 render-drm-device "/dev/dri/renderD129"
             }
+
+            workspace "workspace-1" {
+                open-on-output "eDP-1"
+            }
+            workspace "workspace-2"
+            workspace "workspace-3"
             "##,
             Config {
                 input: Input {
@@ -2489,6 +2618,20 @@ mod tests {
                     },
                     ..Default::default()
                 }],
+                workspaces: vec![
+                    Workspace {
+                        name: WorkspaceName("workspace-1".to_string()),
+                        open_on_output: Some("eDP-1".to_string()),
+                    },
+                    Workspace {
+                        name: WorkspaceName("workspace-2".to_string()),
+                        open_on_output: None,
+                    },
+                    Workspace {
+                        name: WorkspaceName("workspace-3".to_string()),
+                        open_on_output: None,
+                    },
+                ],
                 binds: Binds(vec![
                     Bind {
                         key: Key {
@@ -2540,7 +2683,18 @@ mod tests {
                             trigger: Trigger::Keysym(Keysym::_1),
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        action: Action::FocusWorkspace(1),
+                        action: Action::FocusWorkspace(WorkspaceReference::Index(1)),
+                        cooldown: None,
+                        allow_when_locked: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Trigger::Keysym(Keysym::_1),
+                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                        },
+                        action: Action::FocusWorkspace(WorkspaceReference::Name(
+                            "workspace-1".to_string(),
+                        )),
                         cooldown: None,
                         allow_when_locked: false,
                     },

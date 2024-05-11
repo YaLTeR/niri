@@ -11,7 +11,7 @@ use std::{env, mem, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
-use niri_config::{Config, Key, Modifiers, PreviewRender, TrackLayout};
+use niri_config::{Config, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
@@ -857,7 +857,23 @@ impl State {
 
         self.niri.config_error_notification.hide();
 
+        // Find & orphan removed named workspaces.
+        let mut removed_workspaces: Vec<String> = vec![];
+        for ws in &self.niri.config.borrow().workspaces {
+            if !config.workspaces.iter().any(|w| w.name == ws.name) {
+                removed_workspaces.push(ws.name.0.clone());
+            }
+        }
+        for name in removed_workspaces {
+            self.niri.layout.unname_workspace(&name);
+        }
+
         self.niri.layout.update_config(&config);
+
+        // Create new named workspaces.
+        for ws_config in &config.workspaces {
+            self.niri.layout.ensure_named_workspace(ws_config);
+        }
 
         let slowdown = if config.animations.off {
             0.
@@ -2095,6 +2111,38 @@ impl Niri {
             .min_by_key(|(_, geo)| center(active_geo).y - center(*geo).y)
             .map(|(output, _)| output)
             .cloned()
+    }
+
+    pub fn output_by_name(&self, name: &str) -> Option<Output> {
+        self.global_space
+            .outputs()
+            .find(|output| output.name().eq_ignore_ascii_case(name))
+            .cloned()
+    }
+
+    pub fn find_output_and_workspace_index(
+        &self,
+        workspace_reference: WorkspaceReference,
+    ) -> Option<(Option<Output>, usize)> {
+        let workspace_name = match workspace_reference {
+            WorkspaceReference::Index(index) => {
+                return Some((None, index.saturating_sub(1) as usize));
+            }
+            WorkspaceReference::Name(name) => name,
+        };
+
+        let (target_workspace_index, target_workspace) =
+            self.layout.find_workspace_by_name(&workspace_name)?;
+
+        // FIXME: when we do fixes for no connected outputs, this will need fixing too.
+        let active_workspace = self.layout.active_workspace()?;
+
+        if target_workspace.current_output() == active_workspace.current_output() {
+            return Some((None, target_workspace_index));
+        }
+        let target_output = target_workspace.current_output()?;
+
+        Some((Some(target_output.clone()), target_workspace_index))
     }
 
     pub fn output_down(&self) -> Option<Output> {

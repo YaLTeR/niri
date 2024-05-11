@@ -587,12 +587,22 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowToWorkspace(idx) => {
-                let idx = idx.saturating_sub(1) as usize;
-                self.niri.layout.move_to_workspace(idx);
-                self.maybe_warp_cursor_to_focus();
-                // FIXME: granular
-                self.niri.queue_redraw_all();
+            Action::MoveWindowToWorkspace(reference) => {
+                if let Some((output, index)) = self.niri.find_output_and_workspace_index(reference)
+                {
+                    if let Some(output) = output {
+                        self.niri.layout.move_to_workspace_on_output(&output, index);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
+                    } else {
+                        self.niri.layout.move_to_workspace(index);
+                        self.maybe_warp_cursor_to_focus();
+                    }
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::MoveColumnToWorkspaceDown => {
                 self.niri.layout.move_column_to_workspace_down();
@@ -606,12 +616,24 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveColumnToWorkspace(idx) => {
-                let idx = idx.saturating_sub(1) as usize;
-                self.niri.layout.move_column_to_workspace(idx);
-                self.maybe_warp_cursor_to_focus();
-                // FIXME: granular
-                self.niri.queue_redraw_all();
+            Action::MoveColumnToWorkspace(reference) => {
+                if let Some((output, index)) = self.niri.find_output_and_workspace_index(reference)
+                {
+                    if let Some(output) = output {
+                        self.niri
+                            .layout
+                            .move_column_to_workspace_on_output(&output, index);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
+                    } else {
+                        self.niri.layout.move_column_to_workspace(index);
+                        self.maybe_warp_cursor_to_focus();
+                    }
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::FocusWorkspaceDown => {
                 self.niri.layout.switch_workspace_down();
@@ -625,19 +647,28 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWorkspace(idx) => {
-                let idx = idx.saturating_sub(1) as usize;
+            Action::FocusWorkspace(reference) => {
+                if let Some((output, index)) = self.niri.find_output_and_workspace_index(reference)
+                {
+                    if let Some(output) = output {
+                        self.niri.layout.focus_output(&output);
+                        self.niri.layout.switch_workspace(index);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
+                    } else {
+                        let config = &self.niri.config;
+                        if config.borrow().input.workspace_auto_back_and_forth {
+                            self.niri.layout.switch_workspace_auto_back_and_forth(index);
+                        } else {
+                            self.niri.layout.switch_workspace(index);
+                        }
+                        self.maybe_warp_cursor_to_focus();
+                    }
 
-                let config = &self.niri.config;
-                if config.borrow().input.workspace_auto_back_and_forth {
-                    self.niri.layout.switch_workspace_auto_back_and_forth(idx);
-                } else {
-                    self.niri.layout.switch_workspace(idx);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
                 }
-
-                self.maybe_warp_cursor_to_focus();
-                // FIXME: granular
-                self.niri.queue_redraw_all();
             }
             Action::FocusWorkspacePrevious => {
                 self.niri.layout.switch_workspace_previous();

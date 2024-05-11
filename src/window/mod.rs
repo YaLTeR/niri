@@ -33,6 +33,9 @@ pub struct ResolvedWindowRules {
     /// Output to open this window on.
     pub open_on_output: Option<String>,
 
+    /// Workspace to open this window on.
+    pub open_on_workspace: Option<String>,
+
     /// Whether the window should open full-width.
     pub open_maximized: Option<bool>,
 
@@ -99,6 +102,7 @@ impl ResolvedWindowRules {
         Self {
             default_width: None,
             open_on_output: None,
+            open_on_workspace: None,
             open_maximized: None,
             open_fullscreen: None,
             min_width: None,
@@ -151,6 +155,7 @@ impl ResolvedWindowRules {
             }
 
             let mut open_on_output = None;
+            let mut open_on_workspace = None;
 
             for rule in rules {
                 let matches = |m| window_matches(window, &role, m);
@@ -173,6 +178,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_on_output.as_deref() {
                     open_on_output = Some(x);
+                }
+
+                if let Some(x) = rule.open_on_workspace.as_deref() {
+                    open_on_workspace = Some(x);
                 }
 
                 if let Some(x) = rule.open_maximized {
@@ -217,6 +226,7 @@ impl ResolvedWindowRules {
             }
 
             resolved.open_on_output = open_on_output.map(|x| x.to_owned());
+            resolved.open_on_workspace = open_on_workspace.map(|x| x.to_owned());
         });
 
         resolved

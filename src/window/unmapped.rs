@@ -11,6 +11,7 @@ pub struct Unmapped {
     pub state: InitialConfigureState,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum InitialConfigureState {
     /// The window has not been initially configured yet.
@@ -42,6 +43,9 @@ pub enum InitialConfigureState {
         /// - This is a dialog with a parent, and there was no explicit output set, so this dialog
         ///   should fetch the parent's current output again upon mapping.
         output: Option<Output>,
+
+        /// Workspace to open this window on.
+        workspace_name: Option<String>,
     },
 }
 

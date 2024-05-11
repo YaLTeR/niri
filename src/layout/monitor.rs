@@ -103,6 +103,18 @@ impl<W: LayoutElement> Monitor<W> {
         &self.workspaces[self.active_workspace_idx]
     }
 
+    pub fn find_named_workspace(&self, workspace_name: &str) -> Option<&Workspace<W>> {
+        self.workspaces
+            .iter()
+            .find(|w| w.name.as_deref() == Some(workspace_name))
+    }
+
+    pub fn find_named_workspace_index(&self, workspace_name: &str) -> Option<usize> {
+        self.workspaces
+            .iter()
+            .position(|w| w.name.as_deref() == Some(workspace_name))
+    }
+
     pub fn active_workspace(&mut self) -> &mut Workspace<W> {
         &mut self.workspaces[self.active_workspace_idx]
     }
@@ -204,13 +216,23 @@ impl<W: LayoutElement> Monitor<W> {
                 continue;
             }
 
-            if !self.workspaces[idx].has_windows() {
+            if !self.workspaces[idx].has_windows() && self.workspaces[idx].name.is_none() {
                 self.workspaces.remove(idx);
                 if self.active_workspace_idx > idx {
                     self.active_workspace_idx -= 1;
                 }
             }
         }
+    }
+
+    pub fn unname_workspace(&mut self, workspace_name: &str) -> bool {
+        for ws in &mut self.workspaces {
+            if ws.name.as_deref() == Some(workspace_name) {
+                ws.unname();
+                return true;
+            }
+        }
+        false
     }
 
     pub fn move_left(&mut self) {
