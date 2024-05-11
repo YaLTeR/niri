@@ -1104,6 +1104,9 @@ impl State {
                             last_cell.set(Some((time, edges)));
                             if let Some((last_time, last_edges)) = last {
                                 if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
+                                    // Allow quick resize after a triple click.
+                                    last_cell.set(None);
+
                                     let intersection = edges.intersection(last_edges);
                                     if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
                                         // FIXME: don't activate once we can pass specific windows
