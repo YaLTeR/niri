@@ -119,22 +119,27 @@ impl CompositorHandler for State {
 
                     let toplevel = window.toplevel().expect("no X11 support");
 
-                    let (rules, width, is_full_width, output) =
+                    let (rules, width, is_full_width, output, workspace_name) =
                         if let InitialConfigureState::Configured {
                             rules,
                             width,
                             is_full_width,
                             output,
+                            workspace_name,
                         } = state
                         {
                             // Check that the output is still connected.
                             let output =
                                 output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
 
-                            (rules, width, is_full_width, output)
+                            // Chech that the workspace still exists.
+                            let workspace_name = workspace_name
+                                .filter(|n| self.niri.layout.find_workspace_by_name(n).is_some());
+
+                            (rules, width, is_full_width, output, workspace_name)
                         } else {
                             error!("window map must happen after initial configure");
-                            (ResolvedWindowRules::empty(), None, false, None)
+                            (ResolvedWindowRules::empty(), None, false, None, None)
                         };
 
                     let parent = toplevel
@@ -160,6 +165,13 @@ impl CompositorHandler for State {
                         self.niri
                             .layout
                             .add_window_right_of(&p, mapped, width, is_full_width)
+                    } else if let Some(workspace_name) = &workspace_name {
+                        self.niri.layout.add_window_to_named_workspace(
+                            workspace_name,
+                            mapped,
+                            width,
+                            is_full_width,
+                        )
                     } else if let Some(output) = &output {
                         self.niri
                             .layout

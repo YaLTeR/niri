@@ -34,7 +34,7 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, Config, Struts};
+use niri_config::{CenterFocusedColumn, Config, Struts, Workspace as WorkspaceConfig};
 use niri_ipc::SizeChange;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -279,13 +279,28 @@ impl Options {
 
 impl<W: LayoutElement> Layout<W> {
     pub fn new(config: &Config) -> Self {
-        Self::with_options(Options::from_config(config))
+        Self::with_options_and_workspaces(config, Options::from_config(config))
     }
 
     pub fn with_options(options: Options) -> Self {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
             options: Rc::new(options),
+        }
+    }
+
+    fn with_options_and_workspaces(config: &Config, options: Options) -> Self {
+        let opts = Rc::new(options);
+
+        let workspaces = config
+            .workspaces
+            .iter()
+            .map(|ws| Workspace::new_with_config_no_outputs(Some(ws.clone()), opts.clone()))
+            .collect();
+
+        Self {
+            monitor_set: MonitorSet::NoOutputs { workspaces },
+            options: opts,
         }
     }
 
@@ -318,7 +333,7 @@ impl<W: LayoutElement> Layout<W> {
                         // The user could've closed a window while remaining on this workspace, on
                         // another monitor. However, we will add an empty workspace in the end
                         // instead.
-                        if ws.has_windows() {
+                        if ws.has_windows() || ws.name.is_some() {
                             workspaces.push(ws);
                         }
 
@@ -460,6 +475,67 @@ impl<W: LayoutElement> Layout<W> {
 
         if activate {
             *active_monitor_idx = monitor_idx;
+        }
+    }
+
+    /// Adds a new window to the layout on a specific workspace.
+    pub fn add_window_to_named_workspace(
+        &mut self,
+        workspace_name: &str,
+        window: W,
+        width: Option<ColumnWidth>,
+        is_full_width: bool,
+    ) -> Option<&Output> {
+        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        if let ColumnWidth::Fixed(w) = &mut width {
+            let rules = window.rules();
+            let border_config = rules.border.resolve_against(self.options.border);
+            if !border_config.off {
+                *w += border_config.width as i32 * 2;
+            }
+        }
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal {
+                monitors,
+                active_monitor_idx,
+                ..
+            } => {
+                let (mon_idx, mon, ws_idx) = monitors
+                    .iter_mut()
+                    .enumerate()
+                    .find_map(|(mon_idx, mon)| {
+                        mon.find_named_workspace_index(workspace_name)
+                            .map(move |ws_idx| (mon_idx, mon, ws_idx))
+                    })
+                    .unwrap();
+
+                // Don't steal focus from an active fullscreen window.
+                let mut activate = true;
+                let ws = &mon.workspaces[ws_idx];
+                if mon_idx == *active_monitor_idx
+                    && !ws.columns.is_empty()
+                    && ws.columns[ws.active_column_idx].is_fullscreen
+                {
+                    activate = false;
+                }
+
+                // Don't activate if on a different workspace.
+                if mon.active_workspace_idx != ws_idx {
+                    activate = false;
+                }
+
+                mon.add_window(ws_idx, window, activate, width, is_full_width);
+                Some(&mon.output)
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                let ws = workspaces
+                    .iter_mut()
+                    .find(|ws| ws.name.as_deref() == Some(workspace_name))
+                    .unwrap();
+                ws.add_window(window, true, width, is_full_width);
+                None
+            }
         }
     }
 
@@ -649,6 +725,7 @@ impl<W: LayoutElement> Layout<W> {
                                 && idx != mon.active_workspace_idx
                                 && idx != mon.workspaces.len() - 1
                                 && mon.workspace_switch.is_none()
+                                && mon.workspaces[idx].name.is_none()
                             {
                                 mon.workspaces.remove(idx);
 
@@ -668,7 +745,7 @@ impl<W: LayoutElement> Layout<W> {
                         rv = Some(ws.remove_window(window));
 
                         // Clean up empty workspaces.
-                        if !ws.has_windows() {
+                        if !ws.has_windows() && workspaces[idx].name.is_none() {
                             workspaces.remove(idx);
                         }
 
@@ -716,6 +793,63 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         None
+    }
+
+    pub fn find_workspace_by_name(&self, workspace_name: &str) -> Option<(usize, &Workspace<W>)> {
+        match &self.monitor_set {
+            MonitorSet::Normal { ref monitors, .. } => {
+                for mon in monitors {
+                    if let Some((index, workspace)) = mon
+                        .workspaces
+                        .iter()
+                        .enumerate()
+                        .find(|(_, w)| w.name.as_deref() == Some(workspace_name))
+                    {
+                        return Some((index, workspace));
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                if let Some((index, workspace)) = workspaces
+                    .iter()
+                    .enumerate()
+                    .find(|(_, w)| w.name.as_deref() == Some(workspace_name))
+                {
+                    return Some((index, workspace));
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn unname_workspace(&mut self, workspace_name: &str) {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    if mon.unname_workspace(workspace_name) {
+                        if mon.workspace_switch.is_none() {
+                            mon.clean_up_workspaces();
+                        }
+                        return;
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for (idx, ws) in workspaces.iter_mut().enumerate() {
+                    if ws.name.as_deref() == Some(workspace_name) {
+                        ws.unname();
+
+                        // Clean up empty workspaces.
+                        if !ws.has_windows() {
+                            workspaces.remove(idx);
+                        }
+
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     pub fn find_window_and_output_mut(
@@ -970,6 +1104,19 @@ impl<W: LayoutElement> Layout<W> {
         monitors.iter().find(|monitor| &monitor.output == output)
     }
 
+    pub fn monitor_for_workspace(&self, workspace_name: &str) -> Option<&Monitor<W>> {
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return None;
+        };
+
+        monitors.iter().find(|monitor| {
+            monitor
+                .workspaces
+                .iter()
+                .any(|ws| ws.name.as_deref() == Some(workspace_name))
+        })
+    }
+
     pub fn outputs(&self) -> impl Iterator<Item = &Output> + '_ {
         let monitors = if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
             &monitors[..]
@@ -1127,6 +1274,12 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace(idx);
     }
 
+    pub fn move_to_workspace_on_output(&mut self, output: &Output, idx: usize) {
+        self.move_to_output(output);
+        self.focus_output(output);
+        self.move_to_workspace(idx);
+    }
+
     pub fn move_column_to_workspace_up(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1146,6 +1299,12 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.move_column_to_workspace(idx);
+    }
+
+    pub fn move_column_to_workspace_on_output(&mut self, output: &Output, idx: usize) {
+        self.move_to_output(output);
+        self.focus_output(output);
+        self.move_column_to_workspace(idx);
     }
 
     pub fn switch_workspace_up(&mut self) {
@@ -1257,6 +1416,7 @@ impl<W: LayoutElement> Layout<W> {
         use crate::layout::monitor::WorkspaceSwitch;
 
         let mut seen_workspace_id = HashSet::new();
+        let mut seen_workspace_name = HashSet::new();
 
         let (monitors, &primary_idx, &active_monitor_idx) = match &self.monitor_set {
             MonitorSet::Normal {
@@ -1267,8 +1427,8 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces } => {
                 for workspace in workspaces {
                     assert!(
-                        workspace.has_windows(),
-                        "with no outputs there cannot be empty workspaces"
+                        workspace.has_windows() || workspace.name.is_some(),
+                        "with no outputs there cannot be empty unnamed workspaces"
                     );
 
                     assert_eq!(
@@ -1280,6 +1440,13 @@ impl<W: LayoutElement> Layout<W> {
                         seen_workspace_id.insert(workspace.id()),
                         "workspace id must be unique"
                     );
+
+                    if let Some(name) = &workspace.name {
+                        assert!(
+                            seen_workspace_name.insert(name),
+                            "workspace name must be unique"
+                        );
+                    }
 
                     workspace.verify_invariants();
                 }
@@ -1343,14 +1510,19 @@ impl<W: LayoutElement> Layout<W> {
                 "monitor must have an empty workspace in the end"
             );
 
+            assert!(
+                monitor.workspaces.last().unwrap().name.is_none(),
+                "monitor must have an unnamed workspace in the end"
+            );
+
             // If there's no workspace switch in progress, there can't be any non-last non-active
             // empty workspaces.
             if monitor.workspace_switch.is_none() {
                 for (idx, ws) in monitor.workspaces.iter().enumerate().rev().skip(1) {
                     if idx != monitor.active_workspace_idx {
                         assert!(
-                            !ws.columns.is_empty(),
-                            "non-active workspace can't be empty except the last one"
+                            !ws.columns.is_empty() || ws.name.is_some(),
+                            "non-active workspace can't be empty and unnamed except the last one"
                         );
                     }
                 }
@@ -1369,6 +1541,13 @@ impl<W: LayoutElement> Layout<W> {
                     seen_workspace_id.insert(workspace.id()),
                     "workspace id must be unique"
                 );
+
+                if let Some(name) = &workspace.name {
+                    assert!(
+                        seen_workspace_name.insert(name),
+                        "workspace name must be unique"
+                    );
+                }
 
                 workspace.verify_invariants();
             }
@@ -1444,6 +1623,48 @@ impl<W: LayoutElement> Layout<W> {
                 for ws in workspaces {
                     ws.update_shaders();
                 }
+            }
+        }
+    }
+
+    pub fn ensure_named_workspace(&mut self, ws_config: &WorkspaceConfig) {
+        if self.find_workspace_by_name(&ws_config.name.0).is_some() {
+            return;
+        }
+
+        let options = self.options.clone();
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal {
+                monitors,
+                primary_idx,
+                active_monitor_idx,
+            } => {
+                let mon_idx = ws_config
+                    .open_on_output
+                    .as_deref()
+                    .map(|name| {
+                        monitors
+                            .iter_mut()
+                            .position(|monitor| monitor.output.name().eq_ignore_ascii_case(name))
+                            .unwrap_or(*primary_idx)
+                    })
+                    .unwrap_or(*active_monitor_idx);
+                let mon = &mut monitors[mon_idx];
+
+                let ws = Workspace::new_with_config(
+                    mon.output.clone(),
+                    Some(ws_config.clone()),
+                    options,
+                );
+                mon.workspaces.insert(0, ws);
+                mon.active_workspace_idx += 1;
+                mon.workspace_switch = None;
+                mon.clean_up_workspaces();
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                let ws = Workspace::new_with_config_no_outputs(Some(ws_config.clone()), options);
+                workspaces.insert(0, ws);
             }
         }
     }
@@ -2053,6 +2274,7 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
 mod tests {
     use std::cell::Cell;
 
+    use niri_config::WorkspaceName;
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use smithay::output::{Mode, PhysicalProperties, Subpixel};
@@ -2284,6 +2506,16 @@ mod tests {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
         RemoveOutput(#[proptest(strategy = "1..=5usize")] usize),
         FocusOutput(#[proptest(strategy = "1..=5usize")] usize),
+        AddNamedWorkspace {
+            #[proptest(strategy = "1..=5usize")]
+            ws_name: usize,
+            #[proptest(strategy = "prop::option::of(1..=5usize)")]
+            output_name: Option<usize>,
+        },
+        UnnameWorkspace {
+            #[proptest(strategy = "1..=5usize")]
+            ws_name: usize,
+        },
         AddWindow {
             #[proptest(strategy = "1..=5usize")]
             id: usize,
@@ -2297,6 +2529,16 @@ mod tests {
             id: usize,
             #[proptest(strategy = "1..=5usize")]
             right_of_id: usize,
+            #[proptest(strategy = "arbitrary_bbox()")]
+            bbox: Rectangle<i32, Logical>,
+            #[proptest(strategy = "arbitrary_min_max_size()")]
+            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
+        },
+        AddWindowToNamedWorkspace {
+            #[proptest(strategy = "1..=5usize")]
+            id: usize,
+            #[proptest(strategy = "1..=5usize")]
+            ws_name: usize,
             #[proptest(strategy = "arbitrary_bbox()")]
             bbox: Rectangle<i32, Logical>,
             #[proptest(strategy = "arbitrary_min_max_size()")]
@@ -2438,6 +2680,18 @@ mod tests {
 
                     layout.focus_output(&output);
                 }
+                Op::AddNamedWorkspace {
+                    ws_name,
+                    output_name,
+                } => {
+                    layout.ensure_named_workspace(&WorkspaceConfig {
+                        name: WorkspaceName(format!("ws{ws_name}")),
+                        open_on_output: output_name.map(|name| format!("output{name}")),
+                    });
+                }
+                Op::UnnameWorkspace { ws_name } => {
+                    layout.unname_workspace(&format!("ws{ws_name}"));
+                }
                 Op::AddWindow {
                     id,
                     bbox,
@@ -2514,6 +2768,53 @@ mod tests {
 
                     let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
                     layout.add_window_right_of(&right_of_id, win, None, false);
+                }
+                Op::AddWindowToNamedWorkspace {
+                    id,
+                    ws_name,
+                    bbox,
+                    min_max_size,
+                } => {
+                    let ws_name = format!("ws{ws_name}");
+                    let mut found_workspace = false;
+
+                    match &mut layout.monitor_set {
+                        MonitorSet::Normal { monitors, .. } => {
+                            for mon in monitors {
+                                for ws in &mut mon.workspaces {
+                                    for win in ws.windows() {
+                                        if win.0.id == id {
+                                            return;
+                                        }
+                                    }
+
+                                    if ws.name.as_deref() == Some(&ws_name) {
+                                        found_workspace = true;
+                                    }
+                                }
+                            }
+                        }
+                        MonitorSet::NoOutputs { workspaces, .. } => {
+                            for ws in workspaces {
+                                for win in ws.windows() {
+                                    if win.0.id == id {
+                                        return;
+                                    }
+                                }
+
+                                if ws.name.as_deref() == Some(&ws_name) {
+                                    found_workspace = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if !found_workspace {
+                        return;
+                    }
+
+                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
+                    layout.add_window_to_named_workspace(&ws_name, win, None, false);
                 }
                 Op::CloseWindow(id) => {
                     layout.remove_window(&id);
@@ -2702,6 +3003,11 @@ mod tests {
             Op::FocusOutput(0),
             Op::FocusOutput(1),
             Op::FocusOutput(2),
+            Op::AddNamedWorkspace {
+                ws_name: 1,
+                output_name: Some(1),
+            },
+            Op::UnnameWorkspace { ws_name: 1 },
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
@@ -2712,20 +3018,15 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::AddWindow {
+            Op::AddWindowRightOf {
                 id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
-            },
-            Op::AddWindowRightOf {
-                id: 3,
-                right_of_id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
-            },
-            Op::AddWindowRightOf {
-                id: 4,
                 right_of_id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindowToNamedWorkspace {
+                id: 3,
+                ws_name: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
@@ -2750,17 +3051,14 @@ mod tests {
             Op::FocusWorkspaceUp,
             Op::FocusWorkspace(1),
             Op::FocusWorkspace(2),
-            Op::FocusWorkspace(3),
             Op::MoveWindowToWorkspaceDown,
             Op::MoveWindowToWorkspaceUp,
             Op::MoveWindowToWorkspace(1),
             Op::MoveWindowToWorkspace(2),
-            Op::MoveWindowToWorkspace(3),
             Op::MoveColumnToWorkspaceDown,
             Op::MoveColumnToWorkspaceUp,
             Op::MoveColumnToWorkspace(1),
             Op::MoveColumnToWorkspace(2),
-            Op::MoveColumnToWorkspace(3),
             Op::MoveWindowDown,
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
@@ -2847,6 +3145,11 @@ mod tests {
             Op::FocusOutput(0),
             Op::FocusOutput(1),
             Op::FocusOutput(2),
+            Op::AddNamedWorkspace {
+                ws_name: 1,
+                output_name: Some(1),
+            },
+            Op::UnnameWorkspace { ws_name: 1 },
             Op::AddWindow {
                 id: 0,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
@@ -2871,6 +3174,12 @@ mod tests {
             Op::AddWindowRightOf {
                 id: 7,
                 right_of_id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindowToNamedWorkspace {
+                id: 5,
+                ws_name: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },

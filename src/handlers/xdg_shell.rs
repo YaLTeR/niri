@@ -369,38 +369,52 @@ impl XdgShellHandler for State {
                     width,
                     is_full_width,
                     output,
+                    workspace_name,
                 } => {
                     // Figure out the monitor following a similar logic to initial configure.
                     // FIXME: deduplicate.
-                    let mon = output
-                        .as_ref()
-                        .and_then(|o| self.niri.layout.monitor_for_output(o))
-                        .map(|mon| (mon, false))
-                        // If not, check if we have a parent with a monitor.
-                        .or_else(|| {
-                            toplevel
-                                .parent()
-                                .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
-                                .map(|(_win, output)| output)
-                                .and_then(|o| self.niri.layout.monitor_for_output(o))
-                                .map(|mon| (mon, true))
-                        })
-                        // If not, fall back to the active monitor.
-                        .or_else(|| {
-                            self.niri
-                                .layout
-                                .active_monitor_ref()
-                                .map(|mon| (mon, false))
-                        });
+                    let mon = workspace_name
+                        .as_deref()
+                        .and_then(|name| self.niri.layout.monitor_for_workspace(name))
+                        .map(|mon| (mon, false));
+
+                    let mon = mon.or_else(|| {
+                        output
+                            .as_ref()
+                            .and_then(|o| self.niri.layout.monitor_for_output(o))
+                            .map(|mon| (mon, false))
+                            // If not, check if we have a parent with a monitor.
+                            .or_else(|| {
+                                toplevel
+                                    .parent()
+                                    .and_then(|parent| {
+                                        self.niri.layout.find_window_and_output(&parent)
+                                    })
+                                    .map(|(_win, output)| output)
+                                    .and_then(|o| self.niri.layout.monitor_for_output(o))
+                                    .map(|mon| (mon, true))
+                            })
+                            // If not, fall back to the active monitor.
+                            .or_else(|| {
+                                self.niri
+                                    .layout
+                                    .active_monitor_ref()
+                                    .map(|mon| (mon, false))
+                            })
+                    });
 
                     *output = mon
                         .filter(|(_, parent)| !parent)
                         .map(|(mon, _)| mon.output.clone());
                     let mon = mon.map(|(mon, _)| mon);
 
-                    let ws = mon
-                        .map(|mon| mon.active_workspace_ref())
-                        .or_else(|| self.niri.layout.active_workspace());
+                    let ws = workspace_name
+                        .as_deref()
+                        .and_then(|name| mon.map(|mon| mon.find_named_workspace(name)))
+                        .unwrap_or_else(|| {
+                            mon.map(|mon| mon.active_workspace_ref())
+                                .or_else(|| self.niri.layout.active_workspace())
+                        });
 
                     if let Some(ws) = ws {
                         toplevel.with_pending_state(|state| {
@@ -577,12 +591,20 @@ impl State {
             return;
         };
 
-        // Pick the target monitor. First, check if we had an output set in the window rules.
+        // Pick the target monitor. First, check if we had a workspace set in the window rules.
         let mon = rules
-            .open_on_output
+            .open_on_workspace
             .as_deref()
-            .and_then(|name| self.niri.output_by_name.get(name))
-            .and_then(|o| self.niri.layout.monitor_for_output(o));
+            .and_then(|name| self.niri.layout.monitor_for_workspace(name));
+
+        // If not, check if we had an output set in the window rules.
+        let mon = mon.or_else(|| {
+            rules
+                .open_on_output
+                .as_deref()
+                .and_then(|name| self.niri.output_by_name.get(name))
+                .and_then(|o| self.niri.layout.monitor_for_output(o))
+        });
 
         // If not, check if the window requested one for fullscreen.
         let mon = mon.or_else(|| {
@@ -622,9 +644,14 @@ impl State {
         let is_full_width = rules.open_maximized.unwrap_or(false);
 
         // Tell the surface the preferred size and bounds for its likely output.
-        let ws = mon
-            .map(|mon| mon.active_workspace_ref())
-            .or_else(|| self.niri.layout.active_workspace());
+        let ws = rules
+            .open_on_workspace
+            .as_deref()
+            .and_then(|name| mon.map(|mon| mon.find_named_workspace(name)))
+            .unwrap_or_else(|| {
+                mon.map(|mon| mon.active_workspace_ref())
+                    .or_else(|| self.niri.layout.active_workspace())
+            });
 
         if let Some(ws) = ws {
             // Set a fullscreen state based on window request and window rule.
@@ -663,6 +690,7 @@ impl State {
             width,
             is_full_width,
             output,
+            workspace_name: ws.and_then(|w| w.name.clone()),
         };
 
         toplevel.send_configure();

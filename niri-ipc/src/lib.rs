@@ -146,11 +146,11 @@ pub enum Action {
     FocusWorkspaceDown,
     /// Focus the workspace above.
     FocusWorkspaceUp,
-    /// Focus a workspace by index.
+    /// Focus a workspace by reference (index or name).
     FocusWorkspace {
-        /// Index of the workspace to focus.
+        /// Reference (index or name) of the workspace to focus.
         #[cfg_attr(feature = "clap", arg())]
-        index: u8,
+        reference: WorkspaceReferenceArg,
     },
     /// Focus the previous workspace.
     FocusWorkspacePrevious,
@@ -158,21 +158,21 @@ pub enum Action {
     MoveWindowToWorkspaceDown,
     /// Move the focused window to the workspace above.
     MoveWindowToWorkspaceUp,
-    /// Move the focused window to a workspace by index.
+    /// Move the focused window to a workspace by reference (index or name).
     MoveWindowToWorkspace {
-        /// Index of the target workspace.
+        /// Reference (index or name) of the workspace to move the window to.
         #[cfg_attr(feature = "clap", arg())]
-        index: u8,
+        reference: WorkspaceReferenceArg,
     },
     /// Move the focused column to the workspace below.
     MoveColumnToWorkspaceDown,
     /// Move the focused column to the workspace above.
     MoveColumnToWorkspaceUp,
-    /// Move the focused column to a workspace by index.
+    /// Move the focused column to a workspace by reference (index or name).
     MoveColumnToWorkspace {
-        /// Index of the target workspace.
+        /// Reference (index or name) of the workspace to move the column to.
         #[cfg_attr(feature = "clap", arg())]
-        index: u8,
+        reference: WorkspaceReferenceArg,
     },
     /// Move the focused workspace down.
     MoveWorkspaceDown,
@@ -255,6 +255,15 @@ pub enum SizeChange {
     AdjustFixed(i32),
     /// Add or subtract to the current size as a proportion of the working area.
     AdjustProportion(f64),
+}
+
+/// Workspace reference (index or name) to operate on.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceReferenceArg {
+    /// Index of the workspace.
+    Index(u8),
+    /// Name of the workspace.
+    Name(String),
 }
 
 /// Layout to switch to.
@@ -473,6 +482,24 @@ pub enum OutputConfigChanged {
     Applied,
     /// The target output was not found, the change will be applied when it is connected.
     OutputWasMissing,
+}
+
+impl FromStr for WorkspaceReferenceArg {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let reference = if let Ok(index) = s.parse::<i32>() {
+            if let Ok(idx) = u8::try_from(index) {
+                Self::Index(idx)
+            } else {
+                return Err("workspace indexes must be between 0 and 255");
+            }
+        } else {
+            Self::Name(s.to_string())
+        };
+
+        Ok(reference)
+    }
 }
 
 impl FromStr for SizeChange {
