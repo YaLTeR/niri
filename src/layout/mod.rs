@@ -1732,7 +1732,7 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn view_offset_gesture_begin(&mut self, output: &Output) {
+    pub fn view_offset_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => unreachable!(),
@@ -1742,11 +1742,11 @@ impl<W: LayoutElement> Layout<W> {
             for (idx, ws) in monitor.workspaces.iter_mut().enumerate() {
                 // Cancel the gesture on other workspaces.
                 if &monitor.output != output || idx != monitor.active_workspace_idx {
-                    ws.view_offset_gesture_end(true);
+                    ws.view_offset_gesture_end(true, None);
                     continue;
                 }
 
-                ws.view_offset_gesture_begin();
+                ws.view_offset_gesture_begin(is_touchpad);
             }
         }
     }
@@ -1755,6 +1755,7 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         delta_x: f64,
         timestamp: Duration,
+        is_touchpad: bool,
     ) -> Option<Option<Output>> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
@@ -1763,7 +1764,9 @@ impl<W: LayoutElement> Layout<W> {
 
         for monitor in monitors {
             for ws in &mut monitor.workspaces {
-                if let Some(refresh) = ws.view_offset_gesture_update(delta_x, timestamp) {
+                if let Some(refresh) =
+                    ws.view_offset_gesture_update(delta_x, timestamp, is_touchpad)
+                {
                     if refresh {
                         return Some(Some(monitor.output.clone()));
                     } else {
@@ -1776,7 +1779,11 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn view_offset_gesture_end(&mut self, cancelled: bool) -> Option<Output> {
+    pub fn view_offset_gesture_end(
+        &mut self,
+        cancelled: bool,
+        is_touchpad: Option<bool>,
+    ) -> Option<Output> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => return None,
@@ -1784,7 +1791,7 @@ impl<W: LayoutElement> Layout<W> {
 
         for monitor in monitors {
             for ws in &mut monitor.workspaces {
-                if ws.view_offset_gesture_end(cancelled) {
+                if ws.view_offset_gesture_end(cancelled, is_touchpad) {
                     return Some(monitor.output.clone());
                 }
             }
@@ -2029,7 +2036,7 @@ impl<W: LayoutElement> Layout<W> {
 
                         // Cancel the view offset gesture after workspace switches, moves, etc.
                         if ws_idx != mon.active_workspace_idx {
-                            ws.view_offset_gesture_end(false);
+                            ws.view_offset_gesture_end(false, None);
                         }
                     }
                 }
@@ -2037,7 +2044,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     ws.refresh(false);
-                    ws.view_offset_gesture_end(false);
+                    ws.view_offset_gesture_end(false, None);
                 }
             }
         }
@@ -2351,13 +2358,17 @@ mod tests {
         ViewOffsetGestureBegin {
             #[proptest(strategy = "1..=5usize")]
             output_idx: usize,
+            is_touchpad: bool,
         },
         ViewOffsetGestureUpdate {
             #[proptest(strategy = "arbitrary_view_offset_gesture_delta()")]
             delta: f64,
             timestamp: Duration,
+            is_touchpad: bool,
         },
-        ViewOffsetGestureEnd,
+        ViewOffsetGestureEnd {
+            is_touchpad: Option<bool>,
+        },
         WorkspaceSwitchGestureBegin {
             #[proptest(strategy = "1..=5usize")]
             output_idx: usize,
@@ -2619,20 +2630,27 @@ mod tests {
 
                     layout.move_workspace_to_output(&output);
                 }
-                Op::ViewOffsetGestureBegin { output_idx: id } => {
+                Op::ViewOffsetGestureBegin {
+                    output_idx: id,
+                    is_touchpad: normalize,
+                } => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    layout.view_offset_gesture_begin(&output);
+                    layout.view_offset_gesture_begin(&output, normalize);
                 }
-                Op::ViewOffsetGestureUpdate { delta, timestamp } => {
-                    layout.view_offset_gesture_update(delta, timestamp);
+                Op::ViewOffsetGestureUpdate {
+                    delta,
+                    timestamp,
+                    is_touchpad,
+                } => {
+                    layout.view_offset_gesture_update(delta, timestamp, is_touchpad);
                 }
-                Op::ViewOffsetGestureEnd => {
+                Op::ViewOffsetGestureEnd { is_touchpad } => {
                     // We don't handle cancels in this gesture.
-                    layout.view_offset_gesture_end(false);
+                    layout.view_offset_gesture_end(false, is_touchpad);
                 }
                 Op::WorkspaceSwitchGestureBegin { output_idx: id } => {
                     let name = format!("output{id}");
@@ -3377,8 +3395,13 @@ mod tests {
                 min_max_size: Default::default(),
             },
             Op::FullscreenWindow(1),
-            Op::ViewOffsetGestureBegin { output_idx: 1 },
-            Op::ViewOffsetGestureEnd,
+            Op::ViewOffsetGestureBegin {
+                output_idx: 1,
+                is_touchpad: true,
+            },
+            Op::ViewOffsetGestureEnd {
+                is_touchpad: Some(true),
+            },
         ];
 
         check_ops(&ops);

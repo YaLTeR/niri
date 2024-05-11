@@ -1,4 +1,5 @@
-use smithay::desktop::Window;
+use std::time::Duration;
+
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
@@ -6,22 +7,32 @@ use smithay::input::pointer::{
     MotionEvent, PointerGrab, PointerInnerHandle, RelativeMotionEvent,
 };
 use smithay::input::SeatHandler;
-use smithay::utils::{IsAlive, Logical, Point};
+use smithay::utils::{Logical, Point};
 
 use crate::niri::State;
 
-pub struct ResizeGrab {
+pub struct ViewOffsetGrab {
     start_data: PointerGrabStartData<State>,
-    window: Window,
+    last_location: Point<f64, Logical>,
 }
 
-impl ResizeGrab {
-    pub fn new(start_data: PointerGrabStartData<State>, window: Window) -> Self {
-        Self { start_data, window }
+impl ViewOffsetGrab {
+    pub fn new(start_data: PointerGrabStartData<State>) -> Self {
+        Self {
+            last_location: start_data.location,
+            start_data,
+        }
     }
 
     fn on_ungrab(&mut self, state: &mut State) {
-        state.niri.layout.interactive_resize_end(&self.window);
+        let res = state
+            .niri
+            .layout
+            .view_offset_gesture_end(false, Some(false));
+        if let Some(output) = res {
+            state.niri.queue_redraw(&output);
+        }
+
         state.niri.pointer_grab_ongoing = false;
         state
             .niri
@@ -30,7 +41,7 @@ impl ResizeGrab {
     }
 }
 
-impl PointerGrab<State> for ResizeGrab {
+impl PointerGrab<State> for ViewOffsetGrab {
     fn motion(
         &mut self,
         data: &mut State,
@@ -41,19 +52,22 @@ impl PointerGrab<State> for ResizeGrab {
         // While the grab is active, no client has pointer focus.
         handle.motion(data, None, event);
 
-        if self.window.alive() {
-            let delta = event.location - self.start_data.location;
-            let ongoing = data
-                .niri
-                .layout
-                .interactive_resize_update(&self.window, delta);
-            if ongoing {
-                return;
-            }
-        }
+        let timestamp = Duration::from_millis(u64::from(event.time));
+        let delta = event.location - self.last_location;
+        self.last_location = event.location;
 
-        // The resize is no longer ongoing.
-        handle.unset_grab(self, data, event.serial, event.time, true);
+        let res = data
+            .niri
+            .layout
+            .view_offset_gesture_update(-delta.x, timestamp, false);
+        if let Some(output) = res {
+            if let Some(output) = output {
+                data.niri.queue_redraw(&output);
+            }
+        } else {
+            // The resize is no longer ongoing.
+            handle.unset_grab(self, data, event.serial, event.time, true);
+        }
     }
 
     fn relative_motion(

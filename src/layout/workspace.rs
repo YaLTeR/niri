@@ -129,6 +129,8 @@ struct ViewGesture {
     delta_from_tracker: f64,
     // The view offset we'll use if needed for activate_prev_column_on_removal.
     static_view_offset: i32,
+    /// Whether the gesture is controlled by the touchpad.
+    is_touchpad: bool,
 }
 
 #[derive(Debug)]
@@ -2131,7 +2133,7 @@ impl<W: LayoutElement> Workspace<W> {
         rv
     }
 
-    pub fn view_offset_gesture_begin(&mut self) {
+    pub fn view_offset_gesture_begin(&mut self, is_touchpad: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -2141,6 +2143,7 @@ impl<W: LayoutElement> Workspace<W> {
             tracker: SwipeTracker::new(),
             delta_from_tracker: self.view_offset as f64,
             static_view_offset: self.static_view_offset(),
+            is_touchpad,
         };
         self.view_offset_adj = Some(ViewOffsetAdjustment::Gesture(gesture));
     }
@@ -2149,14 +2152,23 @@ impl<W: LayoutElement> Workspace<W> {
         &mut self,
         delta_x: f64,
         timestamp: Duration,
+        is_touchpad: bool,
     ) -> Option<bool> {
         let Some(ViewOffsetAdjustment::Gesture(gesture)) = &mut self.view_offset_adj else {
             return None;
         };
 
+        if gesture.is_touchpad != is_touchpad {
+            return None;
+        }
+
         gesture.tracker.push(delta_x, timestamp);
 
-        let norm_factor = self.working_area.size.w as f64 / VIEW_GESTURE_WORKING_AREA_MOVEMENT;
+        let norm_factor = if gesture.is_touchpad {
+            self.working_area.size.w as f64 / VIEW_GESTURE_WORKING_AREA_MOVEMENT
+        } else {
+            1.
+        };
         let pos = gesture.tracker.pos() * norm_factor;
         let view_offset = pos + gesture.delta_from_tracker;
         gesture.current_view_offset = view_offset;
@@ -2164,17 +2176,25 @@ impl<W: LayoutElement> Workspace<W> {
         Some(true)
     }
 
-    pub fn view_offset_gesture_end(&mut self, _cancelled: bool) -> bool {
+    pub fn view_offset_gesture_end(&mut self, _cancelled: bool, is_touchpad: Option<bool>) -> bool {
         let Some(ViewOffsetAdjustment::Gesture(gesture)) = &self.view_offset_adj else {
             return false;
         };
+
+        if is_touchpad.map_or(false, |x| gesture.is_touchpad != x) {
+            return false;
+        }
 
         // We do not handle cancelling, just like GNOME Shell doesn't. For this gesture, proper
         // cancelling would require keeping track of the original active column, and then updating
         // it in all the right places (adding columns, removing columns, etc.) -- quite a bit of
         // effort and bug potential.
 
-        let norm_factor = self.working_area.size.w as f64 / VIEW_GESTURE_WORKING_AREA_MOVEMENT;
+        let norm_factor = if gesture.is_touchpad {
+            self.working_area.size.w as f64 / VIEW_GESTURE_WORKING_AREA_MOVEMENT
+        } else {
+            1.
+        };
         let velocity = gesture.tracker.velocity() * norm_factor;
         let pos = gesture.tracker.pos() * norm_factor;
         let current_view_offset = pos + gesture.delta_from_tracker;

@@ -17,10 +17,10 @@ use smithay::backend::input::{
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{
-    AxisFrame, ButtonEvent, CursorImageStatus, Focus, GestureHoldBeginEvent, GestureHoldEndEvent,
-    GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
-    GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData,
-    MotionEvent, RelativeMotionEvent,
+    AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
+    GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
+    GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+    GrabStartData as PointerGrabStartData, MotionEvent, RelativeMotionEvent,
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
@@ -28,6 +28,7 @@ use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerCons
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use self::resize_grab::ResizeGrab;
+use self::view_offset_grab::ViewOffsetGrab;
 use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
@@ -36,6 +37,7 @@ use crate::utils::{center, get_monotonic_time, ResizeEdge};
 pub mod resize_grab;
 pub mod scroll_tracker;
 pub mod swipe_tracker;
+pub mod view_offset_grab;
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
@@ -1144,7 +1146,7 @@ impl State {
                                 };
                                 let grab = ResizeGrab::new(start_data, window.clone());
                                 pointer.set_grab(self, grab, serial, Focus::Clear);
-                                self.niri.interactive_resize_ongoing = true;
+                                self.niri.pointer_grab_ongoing = true;
                                 self.niri.cursor_manager.set_cursor_image(
                                     CursorImageStatus::Named(edges.cursor_icon()),
                                 );
@@ -1162,6 +1164,32 @@ impl State {
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
+            }
+
+            if event.button() == Some(MouseButton::Middle) && !pointer.is_grabbed() {
+                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                let mod_down = match self.backend.mod_key() {
+                    CompositorMod::Super => mods.logo,
+                    CompositorMod::Alt => mods.alt,
+                };
+                if mod_down {
+                    if let Some(output) = self.niri.output_under_cursor() {
+                        self.niri.layout.view_offset_gesture_begin(&output, false);
+
+                        let location = pointer.current_location();
+                        let start_data = PointerGrabStartData {
+                            focus: None,
+                            button: event.button_code(),
+                            location,
+                        };
+                        let grab = ViewOffsetGrab::new(start_data);
+                        pointer.set_grab(self, grab, serial, Focus::Clear);
+                        self.niri.pointer_grab_ongoing = true;
+                        self.niri
+                            .cursor_manager
+                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
+                    }
+                }
             }
         };
 
@@ -1593,7 +1621,7 @@ impl State {
 
                 if let Some(output) = self.niri.output_under_cursor() {
                     if cx.abs() > cy.abs() {
-                        self.niri.layout.view_offset_gesture_begin(&output);
+                        self.niri.layout.view_offset_gesture_begin(&output, true);
                     } else {
                         self.niri.layout.workspace_switch_gesture_begin(&output);
                     }
@@ -1618,7 +1646,7 @@ impl State {
         let res = self
             .niri
             .layout
-            .view_offset_gesture_update(delta_x, timestamp);
+            .view_offset_gesture_update(delta_x, timestamp, true);
         if let Some(output) = res {
             if let Some(output) = output {
                 self.niri.queue_redraw(&output);
@@ -1659,7 +1687,10 @@ impl State {
             handled = true;
         }
 
-        let res = self.niri.layout.view_offset_gesture_end(event.cancelled());
+        let res = self
+            .niri
+            .layout
+            .view_offset_gesture_end(event.cancelled(), Some(true));
         if let Some(output) = res {
             self.niri.queue_redraw(&output);
             handled = true;

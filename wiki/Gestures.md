@@ -24,6 +24,12 @@ If you double-click on a left or right window resize edge, the column will expan
 
 This works with both window-initiated resizes (when using client-side decorations), and niri-initiated <kbd>Mod</kbd> + right click resizes.
 
+#### Horizontal View Movement
+
+<sup>Since: 0.1.6</sup>
+
+Move the view horizontally by holding <kbd>Mod</kbd> and the middle mouse button (or the wheel).
+
 ### Touchpad
 
 #### Workspace Switch
