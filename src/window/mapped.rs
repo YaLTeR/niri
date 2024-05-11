@@ -1,5 +1,6 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::cmp::{max, min};
+use std::time::Duration;
 
 use niri_config::WindowRule;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
@@ -27,6 +28,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
+use crate::utils::ResizeEdge;
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -61,6 +63,11 @@ pub struct Mapped {
 
     /// State of an ongoing interactive resize.
     interactive_resize: Option<InteractiveResize>,
+
+    /// Last time interactive resize was started.
+    ///
+    /// Used for double-resize-click tracking.
+    last_interactive_resize_start: Cell<Option<(Duration, ResizeEdge)>>,
 }
 
 /// Interactive resize state.
@@ -100,6 +107,7 @@ impl Mapped {
             animate_serials: Vec::new(),
             animation_snapshot: None,
             interactive_resize: None,
+            last_interactive_resize_start: Cell::new(None),
         }
     }
 
@@ -198,6 +206,10 @@ impl Mapped {
 
     pub fn store_animation_snapshot(&mut self, renderer: &mut GlesRenderer) {
         self.animation_snapshot = Some(self.render_snapshot(renderer));
+    }
+
+    pub fn last_interactive_resize_start(&self) -> &Cell<Option<(Duration, ResizeEdge)>> {
+        &self.last_interactive_resize_start
     }
 }
 

@@ -7,7 +7,7 @@ use smithay::input::pointer::Focus;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::ConstraintAdjustment;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self};
 use smithay::reexports::wayland_server::protocol::wl_output;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -30,9 +30,11 @@ use smithay::{
     delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_foreign, delegate_xdg_shell,
 };
 
+use crate::input::DOUBLE_CLICK_TIME;
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::resize_grab::ResizeGrab;
+use crate::utils::{get_monotonic_time, ResizeEdge};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
 impl XdgShellHandler for State {
@@ -65,7 +67,7 @@ impl XdgShellHandler for State {
         surface: ToplevelSurface,
         _seat: WlSeat,
         serial: Serial,
-        edges: ResizeEdge,
+        edges: xdg_toplevel::ResizeEdge,
     ) {
         let pointer = self.niri.seat.get_pointer().unwrap();
         if !pointer.has_grab(serial) {
@@ -89,16 +91,37 @@ impl XdgShellHandler for State {
             return;
         };
 
+        let edges = ResizeEdge::from(edges);
         let window = mapped.window.clone();
-        if !self
-            .niri
-            .layout
-            .interactive_resize_begin(window.clone(), edges.into())
-        {
+
+        // See if we got a double resize-click gesture.
+        let time = get_monotonic_time();
+        let last_cell = mapped.last_interactive_resize_start();
+        let last = last_cell.get();
+        last_cell.set(Some((time, edges)));
+        if let Some((last_time, last_edges)) = last {
+            if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
+                let intersection = edges.intersection(last_edges);
+                if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
+                    // FIXME: don't activate once we can pass specific windows to actions.
+                    self.niri.layout.activate_window(&window);
+                    self.niri.layout.toggle_full_width();
+                }
+                if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
+                    // FIXME: don't activate once we can pass specific windows to actions.
+                    self.niri.layout.activate_window(&window);
+                    self.niri.layout.reset_window_height();
+                }
+                return;
+            }
+        }
+
+        let grab = ResizeGrab::new(start_data, window.clone());
+
+        if !self.niri.layout.interactive_resize_begin(window, edges) {
             return;
         }
 
-        let grab = ResizeGrab::new(start_data, window);
         pointer.set_grab(self, grab, serial, Focus::Clear);
         self.niri.interactive_resize_ongoing = true;
     }

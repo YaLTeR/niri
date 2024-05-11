@@ -31,7 +31,9 @@ use crate::niri::State;
 use crate::resize_grab::ResizeGrab;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
-use crate::utils::{center, get_monotonic_time};
+use crate::utils::{center, get_monotonic_time, ResizeEdge};
+
+pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompositorMod {
@@ -1076,7 +1078,6 @@ impl State {
         if ButtonState::Pressed == button_state {
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();
-                self.niri.layout.activate_window(&window);
 
                 // Check if we need to start an interactive resize.
                 if event.button() == Some(MouseButton::Right) && !pointer.is_grabbed() {
@@ -1093,22 +1094,54 @@ impl State {
                             .layout
                             .resize_edges_under(output, pos_within_output)
                             .unwrap();
-                        if self
-                            .niri
-                            .layout
-                            .interactive_resize_begin(window.clone(), edges)
+
+                        // See if we got a double resize-click gesture.
+                        // FIXME: deduplicate with resize_request in xdg-shell somehow.
+                        let time = get_monotonic_time();
+                        let last_cell = mapped.last_interactive_resize_start();
+                        let last = last_cell.get();
+                        last_cell.set(Some((time, edges)));
+                        let mut did_gesture = false;
+                        if let Some((last_time, last_edges)) = last {
+                            if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
+                                let intersection = edges.intersection(last_edges);
+                                if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
+                                    // FIXME: don't activate once we can pass specific windows to
+                                    // actions.
+                                    self.niri.layout.activate_window(&window);
+                                    self.niri.layout.toggle_full_width();
+                                }
+                                if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
+                                    // FIXME: don't activate once we can pass specific windows to
+                                    // actions.
+                                    self.niri.layout.activate_window(&window);
+                                    self.niri.layout.reset_window_height();
+                                }
+                                did_gesture = true;
+                            }
+                        }
+
+                        self.niri.layout.activate_window(&window);
+
+                        if !did_gesture
+                            && self
+                                .niri
+                                .layout
+                                .interactive_resize_begin(window.clone(), edges)
                         {
                             let start_data = PointerGrabStartData {
                                 focus: None,
                                 button: event.button_code(),
                                 location,
                             };
-                            let grab = ResizeGrab::new(start_data, window);
+                            let grab = ResizeGrab::new(start_data, window.clone());
                             pointer.set_grab(self, grab, serial, Focus::Clear);
                             self.niri.interactive_resize_ongoing = true;
                         }
                     }
                 }
+
+                self.niri.layout.activate_window(&window);
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
