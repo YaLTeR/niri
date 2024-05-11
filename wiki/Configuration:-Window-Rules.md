@@ -32,6 +32,7 @@ window-rule {
     match app-id="Alacritty"
     match is-active=true
     match is-focused=false
+    match is-active-in-column=true
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
@@ -175,6 +176,8 @@ window-rule {
 ```
 
 #### `is-active-in-column`
+
+<sup>Since: 0.1.6</sup>
 
 Can be `true` or `false`.
 Matches the window that is the "active" window in its column.
