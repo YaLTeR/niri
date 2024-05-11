@@ -1270,6 +1270,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         let mut view_rect_ws = Rectangle::from_loc_and_size((self.view_pos(), 0), self.view_size);
         for col in &mut self.columns {
+            let col_width = col.width();
+
             let mut view_rect = view_rect_ws;
             view_rect.loc -= col.render_offset();
             if !col.is_fullscreen {
@@ -1278,6 +1280,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             for tile in &mut col.tiles {
                 if tile.window().id() == window {
+                    view_rect.loc -= Column::render_offset_for_tile(tile, col_width, &self.options);
                     tile.update(false, view_rect);
                     tile.store_unmap_snapshot_if_empty(renderer, output_scale);
                     return;
@@ -1286,7 +1289,7 @@ impl<W: LayoutElement> Workspace<W> {
                 view_rect.loc.y -= tile.tile_size().h + self.options.gaps;
             }
 
-            view_rect_ws.loc.x -= col.width() + self.options.gaps;
+            view_rect_ws.loc.x -= col_width + self.options.gaps;
         }
     }
 
@@ -1802,9 +1805,11 @@ impl<W: LayoutElement> Workspace<W> {
 
         // Start with the active window since it's drawn on top.
         let col = &self.columns[self.active_column_idx];
+        let col_width = col.width();
         let tile = &col.tiles[col.active_tile_idx];
         let tile_pos = Point::from((-self.view_offset, col.tile_y(col.active_tile_idx)))
             + col.render_offset()
+            + Column::render_offset_for_tile(tile, col_width, &self.options)
             + tile.render_offset();
         let first = iter::once((tile, tile_pos));
 
@@ -1821,6 +1826,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                     let tile_pos = Point::from((-self.view_offset, y))
                         + col.render_offset()
+                        + Column::render_offset_for_tile(tile, col_width, &self.options)
                         + tile.render_offset();
                     Some((tile, tile_pos))
                 });
@@ -1832,21 +1838,25 @@ impl<W: LayoutElement> Workspace<W> {
             .enumerate()
             // Keep track of column X position.
             .map(move |(col_idx, col)| {
-                let rv = (col_idx, col, x);
-                x += col.width() + self.options.gaps;
+                let col_width = col.width();
+                let rv = (col_idx, col, col_width, x);
+                x += col_width + self.options.gaps;
                 rv
             })
-            .filter_map(|(col_idx, col, x)| {
+            .filter_map(|(col_idx, col, col_width, x)| {
                 if col_idx == self.active_column_idx {
                     // Active column comes before.
                     return None;
                 }
 
-                Some((col, x))
+                Some((col, col_width, x))
             })
-            .flat_map(move |(col, x)| {
+            .flat_map(move |(col, col_width, x)| {
                 zip(&col.tiles, col.tile_ys()).map(move |(tile, y)| {
-                    let tile_pos = Point::from((x, y)) + col.render_offset() + tile.render_offset();
+                    let tile_pos = Point::from((x, y))
+                        + col.render_offset()
+                        + Column::render_offset_for_tile(tile, col_width, &self.options)
+                        + tile.render_offset();
                     (tile, tile_pos)
                 })
             });
@@ -2595,9 +2605,15 @@ impl<W: LayoutElement> Column<W> {
             view_rect.loc.y -= self.working_area.loc.y + self.options.gaps;
         }
 
+        let col_width = self.width();
+
         for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
             let is_active = is_active && tile_idx == self.active_tile_idx;
-            tile.update(is_active, view_rect);
+
+            let mut tile_view_rect = view_rect;
+            tile_view_rect.loc -= Self::render_offset_for_tile(tile, col_width, &self.options);
+            tile.update(is_active, tile_view_rect);
+
             view_rect.loc.y -= tile.tile_size().h + self.options.gaps;
         }
     }
@@ -2610,6 +2626,29 @@ impl<W: LayoutElement> Column<W> {
         }
 
         offset.to_i32_round()
+    }
+
+    // HACK: this should really be a &self method, but I need to use it while also iterating over
+    // &mut self.tiles...
+    // FIXME: this does not get applied for animations.
+    pub fn render_offset_for_tile(
+        tile: &Tile<W>,
+        col_width: i32,
+        options: &Options,
+    ) -> Point<i32, Logical> {
+        let tile_width = tile.tile_size().w;
+
+        if options.center_focused_column == CenterFocusedColumn::Always {
+            return Point::from(((col_width - tile_width) / 2, 0));
+        }
+
+        if let Some(resize) = tile.window().interactive_resize_data() {
+            if resize.edges.contains(ResizeEdge::LEFT) {
+                return Point::from((col_width - tile_width, 0));
+            }
+        }
+
+        Point::from((0, 0))
     }
 
     pub fn animate_move_from(&mut self, from_x_offset: i32) {
