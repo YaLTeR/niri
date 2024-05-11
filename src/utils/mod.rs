@@ -11,6 +11,7 @@ use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
 use niri_config::Config;
+use smithay::input::pointer::CursorIcon;
 use smithay::output::Output;
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -46,6 +47,22 @@ impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
     #[inline]
     fn from(x: xdg_toplevel::ResizeEdge) -> Self {
         Self::from_bits(x as u32).unwrap()
+    }
+}
+
+impl ResizeEdge {
+    pub fn cursor_icon(self) -> CursorIcon {
+        match self {
+            Self::LEFT => CursorIcon::WResize,
+            Self::RIGHT => CursorIcon::EResize,
+            Self::TOP => CursorIcon::NResize,
+            Self::BOTTOM => CursorIcon::SResize,
+            Self::TOP_LEFT => CursorIcon::NwResize,
+            Self::TOP_RIGHT => CursorIcon::NeResize,
+            Self::BOTTOM_RIGHT => CursorIcon::SeResize,
+            Self::BOTTOM_LEFT => CursorIcon::SwResize,
+            _ => CursorIcon::Default,
+        }
     }
 }
 

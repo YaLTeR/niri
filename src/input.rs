@@ -1137,6 +1137,9 @@ impl State {
                             let grab = ResizeGrab::new(start_data, window.clone());
                             pointer.set_grab(self, grab, serial, Focus::Clear);
                             self.niri.interactive_resize_ongoing = true;
+                            self.niri
+                                .cursor_manager
+                                .set_cursor_image(CursorImageStatus::Named(edges.cursor_icon()));
                         }
                     }
                 }
