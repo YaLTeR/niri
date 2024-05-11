@@ -1184,21 +1184,21 @@ impl<W: LayoutElement> Workspace<W> {
             }
         }
 
+        let col = &mut self.columns[col_idx];
+        let tile = &mut col.tiles[tile_idx];
+        let window = tile.window_mut();
+
+        let resize = window.interactive_resize_data();
+
+        if let Some(serial) = serial {
+            window.update_interactive_resize(serial);
+        }
+
+        // If this was the last resize commit, this function will now return None. This way we can
+        // animate the window into view after the last resize commit.
+        let resize_still_ongoing = window.interactive_resize_data().is_some();
+
         if col_idx == self.active_column_idx {
-            let col = &mut self.columns[col_idx];
-            let tile = &mut col.tiles[tile_idx];
-            let window = tile.window_mut();
-
-            let resize = window.interactive_resize_data();
-
-            if let Some(serial) = serial {
-                window.update_interactive_resize(serial);
-            }
-
-            // If this was the last resize commit, this function will now return None. This way we
-            // can animate the window into view after the last resize commit.
-            let resize_still_ongoing = window.interactive_resize_data().is_some();
-
             if let Some(resize) = resize {
                 // If this is an interactive resize commit of an active window, then we need to
                 // either preserve the view offset or adjust it accordingly.
