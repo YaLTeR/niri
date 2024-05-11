@@ -27,11 +27,15 @@ use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
+use self::resize_grab::ResizeGrab;
 use crate::niri::State;
-use crate::resize_grab::ResizeGrab;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
+
+pub mod resize_grab;
+pub mod scroll_tracker;
+pub mod swipe_tracker;
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 

@@ -15,10 +15,10 @@ use super::workspace::{
 };
 use super::{LayoutElement, Options};
 use crate::animation::Animation;
+use crate::input::swipe_tracker::SwipeTracker;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
-use crate::swipe_tracker::SwipeTracker;
 use crate::utils::{output_size, ResizeEdge};
 
 /// Amount of touchpad movement to scroll the height of one workspace.

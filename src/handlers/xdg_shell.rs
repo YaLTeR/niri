@@ -30,10 +30,10 @@ use smithay::{
     delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_foreign, delegate_xdg_shell,
 };
 
+use crate::input::resize_grab::ResizeGrab;
 use crate::input::DOUBLE_CLICK_TIME;
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
-use crate::resize_grab::ResizeGrab;
 use crate::utils::{get_monotonic_time, ResizeEdge};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
