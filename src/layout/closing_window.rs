@@ -3,12 +3,13 @@ use std::time::Duration;
 use anyhow::Context as _;
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
+use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::{Kind, RenderElement};
+use smithay::backend::renderer::element::{Id, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::Renderer as _;
 use smithay::utils::{Logical, Point, Scale, Transform};
 
 use crate::animation::Animation;
@@ -20,10 +21,16 @@ use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
 #[derive(Debug)]
 pub struct ClosingWindow {
     /// Contents of the window.
-    buffer: TextureBuffer<GlesTexture>,
+    texture: GlesTexture,
 
     /// Blocked-out contents of the window.
-    blocked_out_buffer: TextureBuffer<GlesTexture>,
+    blocked_out_texture: GlesTexture,
+
+    /// Scale that the textures was rendered with.
+    texture_scale: Scale<f64>,
+
+    /// ID of the textures' renderer.
+    texture_renderer_id: usize,
 
     /// Where the window should be blocked out from.
     block_out_from: Option<BlockOutFrom>,
@@ -34,11 +41,11 @@ pub struct ClosingWindow {
     /// Position in the workspace.
     pos: Point<i32, Logical>,
 
-    /// How much the buffer should be offset.
-    buffer_offset: Point<i32, Logical>,
+    /// How much the texture should be offset.
+    texture_offset: Point<f64, Logical>,
 
-    /// How much the blocked-out buffer should be offset.
-    blocked_out_buffer_offset: Point<i32, Logical>,
+    /// How much the blocked-out texture should be offset.
+    blocked_out_texture_offset: Point<f64, Logical>,
 
     /// The closing animation.
     anim: Animation,
@@ -61,7 +68,7 @@ impl ClosingWindow {
     pub fn new<E: RenderElement<GlesRenderer>>(
         renderer: &mut GlesRenderer,
         snapshot: RenderSnapshot<E, E>,
-        scale: i32,
+        scale: Scale<f64>,
         center: Point<i32, Logical>,
         pos: Point<i32, Logical>,
         anim: Animation,
@@ -70,37 +77,37 @@ impl ClosingWindow {
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("ClosingWindow::new");
 
-        let mut render_to_buffer = |elements: Vec<E>| -> anyhow::Result<_> {
+        let mut render_to_texture = |elements: Vec<E>| -> anyhow::Result<_> {
             let (texture, _sync_point, geo) = render_to_encompassing_texture(
                 renderer,
-                Scale::from(scale as f64),
+                scale,
                 Transform::Normal,
                 Fourcc::Abgr8888,
                 &elements,
             )
             .context("error rendering to texture")?;
 
-            let buffer =
-                TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, None);
-            let offset = geo.loc.to_logical(scale);
+            let offset = geo.loc.to_f64().to_logical(scale);
 
-            Ok((buffer, offset))
+            Ok((texture, offset))
         };
 
-        let (buffer, buffer_offset) =
-            render_to_buffer(snapshot.contents).context("error rendering contents")?;
-        let (blocked_out_buffer, blocked_out_buffer_offset) =
-            render_to_buffer(snapshot.blocked_out_contents)
+        let (texture, texture_offset) =
+            render_to_texture(snapshot.contents).context("error rendering contents")?;
+        let (blocked_out_texture, blocked_out_texture_offset) =
+            render_to_texture(snapshot.blocked_out_contents)
                 .context("error rendering blocked-out contents")?;
 
         Ok(Self {
-            buffer,
-            blocked_out_buffer,
+            texture,
+            blocked_out_texture,
+            texture_scale: scale,
+            texture_renderer_id: renderer.id(),
             block_out_from: snapshot.block_out_from,
             center,
             pos,
-            buffer_offset,
-            blocked_out_buffer_offset,
+            texture_offset,
+            blocked_out_texture_offset,
             anim,
             starting_alpha,
             starting_scale,
@@ -123,16 +130,21 @@ impl ClosingWindow {
     ) -> ClosingWindowRenderElement {
         let val = self.anim.clamped_value();
 
-        let (buffer, offset) = if target.should_block_out(self.block_out_from) {
-            (&self.blocked_out_buffer, self.blocked_out_buffer_offset)
+        let (texture, offset) = if target.should_block_out(self.block_out_from) {
+            (&self.blocked_out_texture, self.blocked_out_texture_offset)
         } else {
-            (&self.buffer, self.buffer_offset)
+            (&self.texture, self.texture_offset)
         };
 
-        let elem = TextureRenderElement::from_texture_buffer(
+        let elem = TextureRenderElement::from_static_texture(
+            Id::new(),
+            self.texture_renderer_id,
             Point::from((0., 0.)),
-            buffer,
+            texture.clone(),
+            self.texture_scale.x as i32,
+            Transform::Normal,
             Some(val.clamp(0., 1.) as f32 * self.starting_alpha),
+            None,
             None,
             None,
             Kind::Unspecified,
@@ -142,12 +154,12 @@ impl ClosingWindow {
 
         let elem = RescaleRenderElement::from_element(
             elem,
-            (self.center - offset).to_physical_precise_round(scale),
+            (self.center.to_f64() - offset).to_physical_precise_round(scale),
             ((val / 5. + 0.8) * self.starting_scale).max(0.),
         );
 
-        let mut location = self.pos + offset;
-        location.x -= view_pos;
+        let mut location = self.pos.to_f64() + offset;
+        location.x -= view_pos as f64;
         let elem = RelocateRenderElement::from_element(
             elem,
             location.to_physical_precise_round(scale),

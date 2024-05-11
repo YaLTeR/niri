@@ -1363,7 +1363,7 @@ impl<W: LayoutElement> Workspace<W> {
         let res = ClosingWindow::new(
             renderer,
             snapshot,
-            output_scale.x as i32,
+            output_scale,
             center,
             tile_pos,
             anim,
