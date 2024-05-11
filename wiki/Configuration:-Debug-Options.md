@@ -22,6 +22,12 @@ debug {
     emulate-zero-presentation-time
     enable-color-transformations-capability
 }
+
+binds {
+    Mod+Shift+Ctrl+T { toggle-debug-tint; }
+    Mod+Shift+Ctrl+O { debug-toggle-opaque-regions; }
+    Mod+Shift+Ctrl+D { debug-toggle-damage; }
+}
 ```
 
 ### `preview-render`
