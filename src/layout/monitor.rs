@@ -614,6 +614,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().set_window_height(change);
     }
 
+    pub fn reset_window_height(&mut self) {
+        self.active_workspace().reset_window_height();
+    }
+
     pub fn move_workspace_down(&mut self) {
         let new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
         if new_idx == self.active_workspace_idx {

@@ -1988,6 +1988,17 @@ impl<W: LayoutElement> Workspace<W> {
         cancel_resize_if_this_column(&mut self.interactive_resize, col);
     }
 
+    pub fn reset_window_height(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        col.reset_window_height(None, true);
+
+        cancel_resize_if_this_column(&mut self.interactive_resize, col);
+    }
+
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
         let (mut col_idx, tile_idx) = self
             .columns
@@ -3088,6 +3099,12 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.heights[tile_idx] = WindowHeight::Fixed(window_height.clamp(1, MAX_PX));
+        self.update_tile_sizes(animate);
+    }
+
+    fn reset_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
+        let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
+        self.heights[tile_idx] = WindowHeight::Auto;
         self.update_tile_sizes(animate);
     }
 

@@ -1477,6 +1477,13 @@ impl<W: LayoutElement> Layout<W> {
         monitor.set_window_height(change);
     }
 
+    pub fn reset_window_height(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.reset_window_height();
+    }
+
     pub fn focus_output(&mut self, output: &Output) {
         if let MonitorSet::Normal {
             monitors,
@@ -2335,6 +2342,7 @@ mod tests {
         MaximizeColumn,
         SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
         SetWindowHeight(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
+        ResetWindowHeight,
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
         MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
         ViewOffsetGestureBegin {
@@ -2563,6 +2571,7 @@ mod tests {
                 Op::MaximizeColumn => layout.toggle_full_width(),
                 Op::SetColumnWidth(change) => layout.set_column_width(change),
                 Op::SetWindowHeight(change) => layout.set_window_height(change),
+                Op::ResetWindowHeight => layout.reset_window_height(),
                 Op::Communicate(id) => {
                     let mut update = false;
                     match &mut layout.monitor_set {

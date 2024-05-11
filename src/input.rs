@@ -780,6 +780,9 @@ impl State {
             Action::SetWindowHeight(change) => {
                 self.niri.layout.set_window_height(change);
             }
+            Action::ResetWindowHeight => {
+                self.niri.layout.reset_window_height();
+            }
             Action::ShowHotkeyOverlay => {
                 if self.niri.hotkey_overlay.show() {
                     self.niri.queue_redraw_all();

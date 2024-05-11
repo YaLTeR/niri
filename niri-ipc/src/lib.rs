@@ -208,6 +208,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         change: SizeChange,
     },
+    /// Reset the height of the focused window back to automatic.
+    ResetWindowHeight,
     /// Switch between preset column widths.
     SwitchPresetColumnWidth,
     /// Toggle the maximized state of the focused column.
