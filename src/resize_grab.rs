@@ -22,6 +22,7 @@ impl ResizeGrab {
 
     fn on_ungrab(&mut self, state: &mut State) {
         state.niri.layout.interactive_resize_end(&self.window);
+        state.niri.interactive_resize_ongoing = false;
     }
 }
 

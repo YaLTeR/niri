@@ -100,6 +100,7 @@ impl XdgShellHandler for State {
 
         let grab = ResizeGrab::new(start_data, window);
         pointer.set_grab(self, grab, serial, Focus::Clear);
+        self.niri.interactive_resize_ongoing = true;
     }
 
     fn reposition_request(

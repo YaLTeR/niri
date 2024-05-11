@@ -232,6 +232,8 @@ pub struct Niri {
     /// When this happens, the pointer also loses any focus. This is so that touch can prevent
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
+    // FIXME: this should be able to be removed once PointerFocus takes grabs into accound.
+    pub interactive_resize_ongoing: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -1502,6 +1504,7 @@ impl Niri {
             dnd_icon: None,
             pointer_focus: PointerFocus::default(),
             pointer_hidden: false,
+            interactive_resize_ongoing: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -3664,9 +3667,13 @@ impl Niri {
         let Some((surface, surface_loc)) = &new_under.surface else {
             return;
         };
+        if self.interactive_resize_ongoing {
+            return;
+        }
         let pointer = &self.seat.get_pointer().unwrap();
         with_pointer_constraint(surface, pointer, |constraint| {
             let Some(constraint) = constraint else { return };
+
             if constraint.is_active() {
                 return;
             }
