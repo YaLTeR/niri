@@ -77,6 +77,16 @@ enum InteractiveResize {
     },
 }
 
+impl InteractiveResize {
+    fn data(&self) -> InteractiveResizeData {
+        match self {
+            InteractiveResize::Ongoing(data) => *data,
+            InteractiveResize::WaitingForLastConfigure(data) => *data,
+            InteractiveResize::WaitingForLastCommit { data, .. } => *data,
+        }
+    }
+}
+
 impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
         Self {
@@ -520,19 +530,17 @@ impl LayoutElement for Mapped {
         self.interactive_resize = None;
     }
 
-    fn interactive_resize_data(&mut self, commit_serial: Serial) -> Option<InteractiveResizeData> {
-        let resize = self.interactive_resize.as_ref()?;
-        match resize {
-            InteractiveResize::Ongoing(data) | InteractiveResize::WaitingForLastConfigure(data) => {
-                Some(*data)
-            }
-            InteractiveResize::WaitingForLastCommit { data, serial } => {
-                let rv = Some(*data);
-                if commit_serial.is_no_older_than(serial) {
-                    self.interactive_resize = None;
-                }
-                rv
+    fn update_interactive_resize(&mut self, commit_serial: Serial) {
+        if let Some(InteractiveResize::WaitingForLastCommit { serial, .. }) =
+            &self.interactive_resize
+        {
+            if commit_serial.is_no_older_than(serial) {
+                self.interactive_resize = None;
             }
         }
+    }
+
+    fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
+        Some(self.interactive_resize.as_ref()?.data())
     }
 }

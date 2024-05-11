@@ -244,7 +244,9 @@ impl LayoutElement for TestWindow {
 
     fn cancel_interactive_resize(&mut self) {}
 
-    fn interactive_resize_data(&mut self, _serial: Serial) -> Option<InteractiveResizeData> {
+    fn update_interactive_resize(&mut self, _serial: Serial) {}
+
+    fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
         None
     }
 }
