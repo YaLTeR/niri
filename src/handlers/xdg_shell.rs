@@ -112,6 +112,8 @@ impl XdgShellHandler for State {
                     self.niri.layout.activate_window(&window);
                     self.niri.layout.reset_window_height();
                 }
+                // FIXME: granular.
+                self.niri.queue_redraw_all();
                 return;
             }
         }

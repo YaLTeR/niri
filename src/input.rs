@@ -1102,7 +1102,6 @@ impl State {
                             let last_cell = mapped.last_interactive_resize_start();
                             let last = last_cell.get();
                             last_cell.set(Some((time, edges)));
-                            let mut did_gesture = false;
                             if let Some((last_time, last_edges)) = last {
                                 if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
                                     let intersection = edges.intersection(last_edges);
@@ -1118,17 +1117,18 @@ impl State {
                                         self.niri.layout.activate_window(&window);
                                         self.niri.layout.reset_window_height();
                                     }
-                                    did_gesture = true;
+                                    // FIXME: granular.
+                                    self.niri.queue_redraw_all();
+                                    return;
                                 }
                             }
 
                             self.niri.layout.activate_window(&window);
 
-                            if !did_gesture
-                                && self
-                                    .niri
-                                    .layout
-                                    .interactive_resize_begin(window.clone(), edges)
+                            if self
+                                .niri
+                                .layout
+                                .interactive_resize_begin(window.clone(), edges)
                             {
                                 let start_data = PointerGrabStartData {
                                     focus: None,
