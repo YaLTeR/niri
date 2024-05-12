@@ -71,11 +71,12 @@ animations {
 }
 ```
 
-Currently, niri only supports three curves:
+Currently, niri only supports four curves:
 
 - `ease-out-quad` <sup>Since: 0.1.5</sup>
 - `ease-out-cubic`
 - `ease-out-expo`
+- `linear` <sup>Since: 0.1.6</sup>
 
 You can get a feel for them on pages like [easings.net](https://easings.net/).
 

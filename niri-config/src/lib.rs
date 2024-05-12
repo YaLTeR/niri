@@ -657,6 +657,7 @@ pub struct EasingParams {
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
 pub enum AnimationCurve {
+    Linear,
     EaseOutQuad,
     EaseOutCubic,
     EaseOutExpo,
