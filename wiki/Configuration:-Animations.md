@@ -188,9 +188,7 @@ Example: close will fill the current geometry with a solid gradient that gradual
 
 ```
 animations {
-    window-resize {
-        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
-
+    window-close {
         custom-shader r"
             vec4 close_color(vec3 coords_geo, vec3 size_geo) {
                 vec4 color = vec4(0.0);
@@ -286,8 +284,6 @@ Example: resize will show the next (after resize) window texture right away, str
 ```
 animations {
     window-resize {
-        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
-
         custom-shader r"
             vec4 resize_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
                 vec3 coords_tex_next = niri_geo_to_tex_next * coords_curr_geo;
