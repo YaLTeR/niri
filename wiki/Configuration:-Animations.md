@@ -169,6 +169,47 @@ animations {
 }
 ```
 
+##### `custom-shader`
+
+<sup>Since: 0.1.6, experimental</sup>
+
+You can write a custom shader for drawing the window during a close animation.
+
+See [this example shader](./examples/close-custom-shader.frag) for a full documentation with several animations to experiment with.
+
+If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
+
+> [!WARNING]
+> 
+> Custom shaders do not have a backwards compatibility guarantee.
+> I may need to change their interface as I'm developing new features.
+
+Example: close will fill the current geometry with a solid gradient that gradually fades away.
+
+```
+animations {
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+
+        custom-shader r"
+            vec4 close_color(vec3 coords_geo, vec3 size_geo) {
+                vec4 color = vec4(0.0);
+
+                if (0.0 <= coords_geo.x && coords_geo.x <= 1.0
+                        && 0.0 <= coords_geo.y && coords_geo.y <= 1.0)
+                {
+                    vec4 from = vec4(1.0, 0.0, 0.0, 1.0);
+                    vec4 to = vec4(0.0, 1.0, 0.0, 1.0);
+                    color = mix(from, to, coords_geo.y);
+                }
+
+                return color * (1.0 - niri_clamped_progress);
+            }
+        "
+    }
+}
+```
+
 #### `horizontal-view-movement`
 
 All horizontal camera view movement animations, such as:

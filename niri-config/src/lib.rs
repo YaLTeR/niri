@@ -552,18 +552,24 @@ impl Default for WindowOpenAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WindowCloseAnim(pub Animation);
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowCloseAnim {
+    pub anim: Animation,
+    pub custom_shader: Option<String>,
+}
 
 impl Default for WindowCloseAnim {
     fn default() -> Self {
-        Self(Animation {
-            off: false,
-            kind: AnimationKind::Easing(EasingParams {
-                duration_ms: 150,
-                curve: AnimationCurve::EaseOutQuad,
-            }),
-        })
+        Self {
+            anim: Animation {
+                off: false,
+                kind: AnimationKind::Easing(EasingParams {
+                    duration_ms: 150,
+                    curve: AnimationCurve::EaseOutQuad,
+                }),
+            },
+            custom_shader: None,
+        }
     }
 }
 
@@ -1420,10 +1426,21 @@ where
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
-        let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
-            Ok(false)
-        })?))
+        let default = Self::default().anim;
+        let mut custom_shader = None;
+        let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
+            if &**child.node_name == "custom-shader" {
+                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+
+        Ok(Self {
+            anim,
+            custom_shader,
+        })
     }
 }
 

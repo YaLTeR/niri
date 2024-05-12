@@ -14,12 +14,14 @@ pub struct Shaders {
     pub clipped_surface: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
+    pub custom_close: RefCell<Option<ShaderProgram>>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProgramType {
     Border,
     Resize,
+    Close,
 }
 
 impl Shaders {
@@ -72,6 +74,7 @@ impl Shaders {
             clipped_surface,
             resize,
             custom_resize: RefCell::new(None),
+            custom_close: RefCell::new(None),
         }
     }
 
@@ -95,6 +98,13 @@ impl Shaders {
         self.custom_resize.replace(program)
     }
 
+    pub fn replace_custom_close_program(
+        &self,
+        program: Option<ShaderProgram>,
+    ) -> Option<ShaderProgram> {
+        self.custom_close.replace(program)
+    }
+
     pub fn program(&self, program: ProgramType) -> Option<ShaderProgram> {
         match program {
             ProgramType::Border => self.border.clone(),
@@ -103,6 +113,7 @@ impl Shaders {
                 .borrow()
                 .clone()
                 .or_else(|| self.resize.clone()),
+            ProgramType::Close => self.custom_close.borrow().clone(),
         }
     }
 }
@@ -158,6 +169,49 @@ pub fn set_custom_resize_program(renderer: &mut GlesRenderer, src: Option<&str>)
     if let Some(prev) = Shaders::get(renderer).replace_custom_resize_program(program) {
         if let Err(err) = prev.destroy(renderer) {
             warn!("error destroying previous custom resize shader: {err:?}");
+        }
+    }
+}
+
+fn compile_close_program(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Result<ShaderProgram, GlesError> {
+    let mut program = include_str!("close_prelude.frag").to_string();
+    program.push_str(src);
+    program.push_str(include_str!("close_epilogue.frag"));
+
+    ShaderProgram::compile(
+        renderer,
+        &program,
+        &[
+            UniformName::new("niri_input_to_geo", UniformType::Matrix3x3),
+            UniformName::new("niri_geo_size", UniformType::_2f),
+            UniformName::new("niri_geo_to_tex", UniformType::Matrix3x3),
+            UniformName::new("niri_progress", UniformType::_1f),
+            UniformName::new("niri_clamped_progress", UniformType::_1f),
+            UniformName::new("niri_random_seed", UniformType::_1f),
+        ],
+        &["niri_tex"],
+    )
+}
+
+pub fn set_custom_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
+    let program = if let Some(src) = src {
+        match compile_close_program(renderer, src) {
+            Ok(program) => Some(program),
+            Err(err) => {
+                warn!("error compiling custom close shader: {err:?}");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(prev) = Shaders::get(renderer).replace_custom_close_program(program) {
+        if let Err(err) = prev.destroy(renderer) {
+            warn!("error destroying previous custom close shader: {err:?}");
         }
     }
 }

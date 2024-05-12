@@ -37,6 +37,9 @@ vec4 resize_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
 // final opacity from window rules).
 
 // Now let's go over the uniforms that niri defines.
+//
+// You should only rely on the uniforms documented here. Any other uniforms can
+// change or be removed without notice.
 
 // Previous (before resize) window texture.
 uniform sampler2D niri_tex_prev;
@@ -65,12 +68,12 @@ uniform mat3 niri_curr_geo_to_prev_geo;
 uniform mat3 niri_curr_geo_to_next_geo;
 
 
-// Unclamped progress of the resize.
+// Unclamped progress of the animation.
 //
 // Goes from 0 to 1 but may overshoot and oscillate.
 uniform float niri_progress;
 
-// Clamped progress of the resize.
+// Clamped progress of the animation.
 //
 // Goes from 0 to 1, but will stop at 1 as soon as it first reaches 1. Will not
 // overshoot or oscillate.
