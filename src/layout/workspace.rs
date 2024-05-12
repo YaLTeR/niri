@@ -1338,10 +1338,6 @@ impl<W: LayoutElement> Workspace<W> {
         let removing_last = col.tiles.len() == 1;
         let offset = self.column_x(col_idx + 1) - self.column_x(col_idx);
 
-        let mut center = Point::from((0, 0));
-        center.x += tile.tile_size().w / 2;
-        center.y += tile.tile_size().h / 2;
-
         tile_pos.x += self.view_pos();
 
         if col_idx < self.active_column_idx && removing_last {
@@ -1354,7 +1350,7 @@ impl<W: LayoutElement> Workspace<W> {
             renderer,
             snapshot,
             output_scale,
-            center,
+            tile.tile_size(),
             tile_pos,
             anim,
         );
@@ -2097,9 +2093,10 @@ impl<W: LayoutElement> Workspace<W> {
         let mut rv = vec![];
 
         // Draw the closing windows on top.
-        let view_pos = self.view_pos();
+        let view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0), self.view_size);
         for closing in &self.closing_windows {
-            rv.push(closing.render(view_pos, output_scale, target).into());
+            let elem = closing.render(view_rect, output_scale, target);
+            rv.push(elem.into());
         }
 
         if self.columns.is_empty() {

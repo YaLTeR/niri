@@ -10,7 +10,7 @@ use smithay::backend::renderer::element::utils::{
 use smithay::backend::renderer::element::{Id, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::Renderer as _;
-use smithay::utils::{Logical, Point, Scale, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::animation::Animation;
 use crate::niri_render_elements;
@@ -35,8 +35,8 @@ pub struct ClosingWindow {
     /// Where the window should be blocked out from.
     block_out_from: Option<BlockOutFrom>,
 
-    /// Center of the window geometry.
-    center: Point<i32, Logical>,
+    /// Size of the window geometry.
+    geo_size: Size<i32, Logical>,
 
     /// Position in the workspace.
     pos: Point<i32, Logical>,
@@ -62,7 +62,7 @@ impl ClosingWindow {
         renderer: &mut GlesRenderer,
         snapshot: RenderSnapshot<E, E>,
         scale: Scale<f64>,
-        center: Point<i32, Logical>,
+        geo_size: Size<i32, Logical>,
         pos: Point<i32, Logical>,
         anim: Animation,
     ) -> anyhow::Result<Self> {
@@ -95,7 +95,7 @@ impl ClosingWindow {
             texture_scale: scale,
             texture_renderer_id: renderer.id(),
             block_out_from: snapshot.block_out_from,
-            center,
+            geo_size,
             pos,
             texture_offset,
             blocked_out_texture_offset,
@@ -113,7 +113,7 @@ impl ClosingWindow {
 
     pub fn render(
         &self,
-        view_pos: i32,
+        view_rect: Rectangle<i32, Logical>,
         scale: Scale<f64>,
         target: RenderTarget,
     ) -> ClosingWindowRenderElement {
@@ -141,14 +141,15 @@ impl ClosingWindow {
 
         let elem = PrimaryGpuTextureRenderElement(elem);
 
+        let center = self.geo_size.to_point().to_f64().downscale(2.);
         let elem = RescaleRenderElement::from_element(
             elem,
-            (self.center.to_f64() - offset).to_physical_precise_round(scale),
+            (center - offset).to_physical_precise_round(scale),
             (val / 5. + 0.8).max(0.),
         );
 
         let mut location = self.pos.to_f64() + offset;
-        location.x -= view_pos as f64;
+        location.x -= view_rect.loc.x as f64;
         let elem = RelocateRenderElement::from_element(
             elem,
             location.to_physical_precise_round(scale),
