@@ -175,7 +175,7 @@ animations {
 
 You can write a custom shader for drawing the window during a close animation.
 
-See [this example shader](./examples/close-custom-shader.frag) for a full documentation with several animations to experiment with.
+See [this example shader](./examples/close_custom_shader.frag) for a full documentation with several animations to experiment with.
 
 If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
 
@@ -272,7 +272,7 @@ animations {
 
 You can write a custom shader for drawing the window during a resize animation.
 
-See [this example shader](./examples/resize-custom-shader.frag) for a full documentation with several animations to experiment with.
+See [this example shader](./examples/resize_custom_shader.frag) for a full documentation with several animations to experiment with.
 
 If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
 
