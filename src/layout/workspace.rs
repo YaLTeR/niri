@@ -1348,16 +1348,6 @@ impl<W: LayoutElement> Workspace<W> {
             tile_pos.x -= offset;
         }
 
-        // FIXME: this is a bit cursed since it's relying on Tile's internal details.
-        let (starting_alpha, starting_scale) = if let Some(anim) = tile.open_animation() {
-            (
-                anim.clamped_value().clamp(0., 1.) as f32,
-                (anim.value() / 2. + 0.5).max(0.),
-            )
-        } else {
-            (1., 1.)
-        };
-
         let anim = Animation::new(1., 0., 0., self.options.animations.window_close.0);
 
         let res = ClosingWindow::new(
@@ -1367,8 +1357,6 @@ impl<W: LayoutElement> Workspace<W> {
             center,
             tile_pos,
             anim,
-            starting_alpha,
-            starting_scale,
         );
         match res {
             Ok(closing) => {

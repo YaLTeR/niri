@@ -49,12 +49,6 @@ pub struct ClosingWindow {
 
     /// The closing animation.
     anim: Animation,
-
-    /// Alpha the animation should start from.
-    starting_alpha: f32,
-
-    /// Scale the animation should start from.
-    starting_scale: f64,
 }
 
 niri_render_elements! {
@@ -64,7 +58,6 @@ niri_render_elements! {
 }
 
 impl ClosingWindow {
-    #[allow(clippy::too_many_arguments)]
     pub fn new<E: RenderElement<GlesRenderer>>(
         renderer: &mut GlesRenderer,
         snapshot: RenderSnapshot<E, E>,
@@ -72,8 +65,6 @@ impl ClosingWindow {
         center: Point<i32, Logical>,
         pos: Point<i32, Logical>,
         anim: Animation,
-        starting_alpha: f32,
-        starting_scale: f64,
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("ClosingWindow::new");
 
@@ -109,8 +100,6 @@ impl ClosingWindow {
             texture_offset,
             blocked_out_texture_offset,
             anim,
-            starting_alpha,
-            starting_scale,
         })
     }
 
@@ -143,7 +132,7 @@ impl ClosingWindow {
             texture.clone(),
             self.texture_scale.x as i32,
             Transform::Normal,
-            Some(val.clamp(0., 1.) as f32 * self.starting_alpha),
+            Some(val.clamp(0., 1.) as f32),
             None,
             None,
             None,
@@ -155,7 +144,7 @@ impl ClosingWindow {
         let elem = RescaleRenderElement::from_element(
             elem,
             (self.center.to_f64() - offset).to_physical_precise_round(scale),
-            ((val / 5. + 0.8) * self.starting_scale).max(0.),
+            (val / 5. + 0.8).max(0.),
         );
 
         let mut location = self.pos.to_f64() + offset;

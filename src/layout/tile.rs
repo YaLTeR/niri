@@ -854,7 +854,7 @@ impl<W: LayoutElement> Tile<W> {
     ) -> TileRenderSnapshot {
         let _span = tracy_client::span!("Tile::render_snapshot");
 
-        let contents = self.render_inner(
+        let contents = self.render(
             renderer,
             Point::from((0, 0)),
             scale,
@@ -863,7 +863,7 @@ impl<W: LayoutElement> Tile<W> {
         );
 
         // A bit of a hack to render blocked out as for screencast, but I think it's fine here.
-        let blocked_out_contents = self.render_inner(
+        let blocked_out_contents = self.render(
             renderer,
             Point::from((0, 0)),
             scale,
