@@ -745,14 +745,14 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn window_y(&self, window: &W::Id) -> Option<i32> {
+    pub fn window_loc(&self, window: &W::Id) -> Option<Point<i32, Logical>> {
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mon.workspaces {
                         for col in &ws.columns {
                             if let Some(idx) = col.position(window) {
-                                return Some(col.window_y(idx));
+                                return Some(col.window_loc(idx));
                             }
                         }
                     }
@@ -762,7 +762,7 @@ impl<W: LayoutElement> Layout<W> {
                 for ws in workspaces {
                     for col in &ws.columns {
                         if let Some(idx) = col.position(window) {
-                            return Some(col.window_y(idx));
+                            return Some(col.window_loc(idx));
                         }
                     }
                 }
@@ -1988,31 +1988,6 @@ impl<W: LayoutElement> Layout<W> {
                 for ws in workspaces {
                     if ws.has_window(window) {
                         ws.start_close_animation_for_window(renderer, window);
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn prepare_for_resize_animation(&mut self, window: &W::Id) {
-        let _span = tracy_client::span!("Layout::prepare_for_resize_animation");
-
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        if ws.has_window(window) {
-                            ws.prepare_for_resize_animation(window);
-                            return;
-                        }
-                    }
-                }
-            }
-            MonitorSet::NoOutputs { workspaces, .. } => {
-                for ws in workspaces {
-                    if ws.has_window(window) {
-                        ws.prepare_for_resize_animation(window);
                         return;
                     }
                 }

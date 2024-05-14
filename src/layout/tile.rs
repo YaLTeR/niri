@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
@@ -67,7 +66,7 @@ pub struct Tile<W: LayoutElement> {
     move_y_animation: Option<MoveAnimation>,
 
     /// Snapshot of the last render for use in the close animation.
-    unmap_snapshot: RefCell<Option<TileRenderSnapshot>>,
+    unmap_snapshot: Option<TileRenderSnapshot>,
 
     /// Extra damage for clipped surface corner radius changes.
     rounded_corner_damage: RoundedCornerDamage,
@@ -122,7 +121,7 @@ impl<W: LayoutElement> Tile<W> {
             resize_animation: None,
             move_x_animation: None,
             move_y_animation: None,
-            unmap_snapshot: RefCell::new(None),
+            unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
             options,
         }
@@ -237,9 +236,7 @@ impl<W: LayoutElement> Tile<W> {
             || self.move_y_animation.is_some()
     }
 
-    pub fn update(&mut self, is_active: bool, mut view_rect: Rectangle<i32, Logical>) {
-        view_rect.loc -= self.render_offset();
-
+    pub fn update(&mut self, is_active: bool, view_rect: Rectangle<i32, Logical>) {
         let rules = self.window.rules();
 
         let draw_border_with_background = rules
@@ -840,11 +837,11 @@ impl<W: LayoutElement> Tile<W> {
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
     ) {
-        if self.unmap_snapshot.get_mut().is_some() {
+        if self.unmap_snapshot.is_some() {
             return;
         }
 
-        *self.unmap_snapshot.get_mut() = Some(self.render_snapshot(renderer, scale));
+        self.unmap_snapshot = Some(self.render_snapshot(renderer, scale));
     }
 
     fn render_snapshot(
@@ -881,7 +878,7 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    pub fn take_unmap_snapshot(&self) -> Option<TileRenderSnapshot> {
+    pub fn take_unmap_snapshot(&mut self) -> Option<TileRenderSnapshot> {
         self.unmap_snapshot.take()
     }
 }

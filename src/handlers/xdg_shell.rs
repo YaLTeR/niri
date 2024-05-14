@@ -759,7 +759,7 @@ impl State {
         // height.
         let mut target =
             Rectangle::from_loc_and_size((0, 0), (window_geo.size.w, output_geo.size.h));
-        target.loc.y -= self.niri.layout.window_y(window).unwrap();
+        target.loc -= self.niri.layout.window_loc(window).unwrap();
         target.loc -= get_popup_toplevel_coords(popup);
 
         self.position_popup_within_rect(popup, target);
@@ -953,8 +953,6 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 state.backend.with_primary_renderer(|renderer| {
                     mapped.store_animation_snapshot(renderer);
                 });
-
-                state.niri.layout.prepare_for_resize_animation(&window);
             }
 
             // The toplevel remains mapped; clear any stored unmap snapshot.
