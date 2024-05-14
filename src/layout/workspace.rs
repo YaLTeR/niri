@@ -1255,35 +1255,34 @@ impl<W: LayoutElement> Workspace<W> {
             }
         }
 
-        let col = &mut self.columns[col_idx];
-        let tile = &mut col.tiles[tile_idx];
-        let window = tile.window_mut();
-
-        // If this was the last resize commit, this function will now return None. This way we can
-        // animate the window into view after the last resize commit.
-        let resize_still_ongoing = window.interactive_resize_data().is_some();
-
         if col_idx == self.active_column_idx {
             if let Some(resize) = resize {
                 // If this is an interactive resize commit of an active window, then we need to
                 // either preserve the view offset or adjust it accordingly.
                 let centered = self.options.center_focused_column == CenterFocusedColumn::Always;
 
-                let width = col.width();
-                if centered {
-                    self.view_offset =
+                let width = self.data[col_idx].width;
+                let offset = if centered {
+                    // FIXME: when view_offset becomes fractional, this can be made additive too.
+                    let new_offset =
                         -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+                    new_offset - self.view_offset
                 } else if resize.edges.contains(ResizeEdge::LEFT) {
-                    self.view_offset =
-                        resize.original_view_offset + width - resize.original_column_width;
-                }
+                    -offset
+                } else {
+                    0
+                };
 
-                // We *could* compute the right offsets here to preserve the gesture but it's
-                // pretty edge-case-y so it's fine to just cancel it.
-                self.view_offset_adj = None;
+                self.view_offset += offset;
+                if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
+                    anim.offset(offset as f64);
+                } else {
+                    // Don't bother with the gesture.
+                    self.view_offset_adj = None;
+                }
             }
 
-            if !resize_still_ongoing
+            if self.interactive_resize.is_none()
                 && !matches!(self.view_offset_adj, Some(ViewOffsetAdjustment::Gesture(_)))
             {
                 // We might need to move the view to ensure the resized window is still visible.
@@ -2216,6 +2215,10 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        if self.interactive_resize.is_some() {
+            return;
+        }
+
         let gesture = ViewGesture {
             current_view_offset: self.view_offset as f64,
             tracker: SwipeTracker::new(),
@@ -2459,11 +2462,7 @@ impl<W: LayoutElement> Workspace<W> {
         let resize = InteractiveResize {
             window,
             original_window_size,
-            data: InteractiveResizeData {
-                edges,
-                original_view_offset: self.view_offset,
-                original_column_width: col.width(),
-            },
+            data: InteractiveResizeData { edges },
         };
         self.interactive_resize = Some(resize);
 
@@ -2540,6 +2539,11 @@ impl<W: LayoutElement> Workspace<W> {
         if let Some(window) = window {
             if window != &resize.window {
                 return;
+            }
+
+            // Animate the active window into view right away.
+            if self.columns[self.active_column_idx].contains(window) {
+                self.animate_view_offset_to_column(self.view_pos(), self.active_column_idx, None);
             }
         }
 

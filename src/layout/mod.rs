@@ -77,8 +77,6 @@ pub type LayoutElementRenderSnapshot =
 #[derive(Debug, Clone, Copy)]
 pub struct InteractiveResizeData {
     pub edges: ResizeEdge,
-    pub original_view_offset: i32,
-    pub original_column_width: i32,
 }
 
 pub trait LayoutElement {
