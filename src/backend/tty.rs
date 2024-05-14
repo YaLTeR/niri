@@ -480,8 +480,13 @@ impl Tty {
             .add_node(render_node, gbm.clone())
             .context("error adding render node to GPU manager")?;
 
-        if node == self.primary_node {
-            debug!("this is the primary node");
+        if node == self.primary_node || render_node == self.primary_render_node {
+            if node == self.primary_node {
+                debug!("this is the primary node");
+            }
+            if render_node == self.primary_render_node {
+                debug!("this is the primary render node");
+            }
 
             let mut renderer = self
                 .gpu_manager
