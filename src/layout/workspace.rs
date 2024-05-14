@@ -1519,7 +1519,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let mut column = self.columns.remove(self.active_column_idx);
         let data = self.data.remove(self.active_column_idx);
-        cancel_resize_if_this_column(&mut self.interactive_resize, &mut column);
+        cancel_resize_for_column(&mut self.interactive_resize, &mut column);
         self.columns.insert(new_idx, column);
         self.data.insert(new_idx, data);
 
@@ -1833,7 +1833,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         if !self.columns.is_empty() {
             let col = &mut self.columns[self.active_column_idx];
-            cancel_resize_if_this_column(&mut self.interactive_resize, col);
+            cancel_resize_for_column(&mut self.interactive_resize, col);
         }
     }
 
@@ -2031,7 +2031,7 @@ impl<W: LayoutElement> Workspace<W> {
         let col = &mut self.columns[self.active_column_idx];
         col.toggle_width();
 
-        cancel_resize_if_this_column(&mut self.interactive_resize, col);
+        cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
     pub fn toggle_full_width(&mut self) {
@@ -2042,7 +2042,7 @@ impl<W: LayoutElement> Workspace<W> {
         let col = &mut self.columns[self.active_column_idx];
         col.toggle_full_width();
 
-        cancel_resize_if_this_column(&mut self.interactive_resize, col);
+        cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
     pub fn set_column_width(&mut self, change: SizeChange) {
@@ -2053,7 +2053,7 @@ impl<W: LayoutElement> Workspace<W> {
         let col = &mut self.columns[self.active_column_idx];
         col.set_column_width(change, None, true);
 
-        cancel_resize_if_this_column(&mut self.interactive_resize, col);
+        cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
     pub fn set_window_height(&mut self, change: SizeChange) {
@@ -2064,7 +2064,7 @@ impl<W: LayoutElement> Workspace<W> {
         let col = &mut self.columns[self.active_column_idx];
         col.set_window_height(change, None, true);
 
-        cancel_resize_if_this_column(&mut self.interactive_resize, col);
+        cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
     pub fn reset_window_height(&mut self) {
@@ -2075,7 +2075,7 @@ impl<W: LayoutElement> Workspace<W> {
         let col = &mut self.columns[self.active_column_idx];
         col.reset_window_height(None, true);
 
-        cancel_resize_if_this_column(&mut self.interactive_resize, col);
+        cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
@@ -2095,7 +2095,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let mut col = &mut self.columns[col_idx];
 
-        cancel_resize_if_this_column(&mut self.interactive_resize, col);
+        cancel_resize_for_column(&mut self.interactive_resize, col);
 
         if is_fullscreen && col.tiles.len() > 1 {
             // This wasn't the only window in its column; extract it into a separate column.
@@ -3353,17 +3353,17 @@ fn compute_toplevel_bounds(
     ))
 }
 
-fn cancel_resize_if_this_column<W: LayoutElement>(
+fn cancel_resize_for_column<W: LayoutElement>(
     interactive_resize: &mut Option<InteractiveResize<W>>,
     column: &mut Column<W>,
 ) {
     if let Some(resize) = interactive_resize {
         if column.contains(&resize.window) {
             *interactive_resize = None;
-
-            for tile in &mut column.tiles {
-                tile.window_mut().cancel_interactive_resize();
-            }
         }
+    }
+
+    for tile in &mut column.tiles {
+        tile.window_mut().cancel_interactive_resize();
     }
 }
