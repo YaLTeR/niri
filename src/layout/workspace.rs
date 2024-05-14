@@ -1256,6 +1256,10 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         if col_idx == self.active_column_idx {
+            // If offset == 0, then don't mess with the view or the gesture. Some clients (Firefox,
+            // Chromium, Electron) currently don't commit after the ack of a configure that drops
+            // the Resizing state, which can trigger this code path for a while.
+            let resize = if offset != 0 { resize } else { None };
             if let Some(resize) = resize {
                 // If this is an interactive resize commit of an active window, then we need to
                 // either preserve the view offset or adjust it accordingly.
