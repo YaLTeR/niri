@@ -29,6 +29,35 @@ You can try the following:
 1. Update NVIDIA drivers. You need a GPU and drivers recent enough to support GBM.
 2. Make sure kernel modesetting is enabled. This usually involves adding `nvidia-drm.modeset=1` to the kernel command line. Find and follow a guide for your distribution. Guides from other Wayland compositors can help.
 
+### Asahi, ARM, and other kmsro devices
+
+On some of these systems, niri fails to correctly detect the primary render device.
+If you're getting a black screen when starting niri on a TTY, you can try to set the device manually.
+
+First, find which devices you have:
+
+```
+$ ls -l /dev/dri/
+drwxr-xr-x@       - root 14 мая 07:07 by-path
+crw-rw----@   226,0 root 14 мая 07:07 card0
+crw-rw----@   226,1 root 14 мая 07:07 card1
+crw-rw-rw-@ 226,128 root 14 мая 07:07 renderD128
+crw-rw-rw-@ 226,129 root 14 мая 07:07 renderD129
+```
+
+You will likely have one `render` device and two `card` devices.
+
+Open the niri config file at `~/.config/niri/config.kdl` and put your `render` device path like this:
+
+```
+debug {
+    render-drm-device "/dev/dri/renderD128"
+}
+```
+
+Save, then try to start niri again.
+If you still get a black screen, try using each of the `card` devices.
+
 ### Nix/NixOS
 
 There's a common problem of mesa drivers going out of sync with niri, so make sure your system mesa version matches the niri mesa version.
