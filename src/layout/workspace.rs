@@ -2094,7 +2094,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         // Draw the closing windows on top.
         let view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0), self.view_size);
-        for closing in &self.closing_windows {
+        for closing in self.closing_windows.iter().rev() {
             let elem = closing.render(renderer.as_gles_renderer(), view_rect, output_scale, target);
             rv.push(elem.into());
         }
