@@ -5,12 +5,12 @@ use std::time::Duration;
 use niri_config::CornerRadius;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
+use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::{
     LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
     RESIZE_ANIMATION_THRESHOLD,
@@ -20,7 +20,6 @@ use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
-use crate::render_helpers::offscreen::OffscreenRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
@@ -54,7 +53,7 @@ pub struct Tile<W: LayoutElement> {
     fullscreen_size: Size<i32, Logical>,
 
     /// The animation upon opening a window.
-    open_animation: Option<Animation>,
+    open_animation: Option<OpenAnimation>,
 
     /// The animation of the window resizing.
     resize_animation: Option<ResizeAnimation>,
@@ -80,7 +79,7 @@ niri_render_elements! {
         LayoutElement = LayoutElementRenderElement<R>,
         FocusRing = FocusRingRenderElement,
         SolidColor = SolidColorRenderElement,
-        Offscreen = RescaleRenderElement<OffscreenRenderElement>,
+        Opening = OpeningWindowRenderElement,
         Resize = ResizeRenderElement,
         Border = BorderRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
@@ -201,9 +200,9 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn advance_animations(&mut self, current_time: Duration) {
-        if let Some(anim) = &mut self.open_animation {
-            anim.set_current_time(current_time);
-            if anim.is_done() {
+        if let Some(open) = &mut self.open_animation {
+            open.advance_animations(current_time);
+            if open.is_done() {
                 self.open_animation = None;
             }
         }
@@ -299,16 +298,12 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn start_open_animation(&mut self) {
-        self.open_animation = Some(Animation::new(
+        self.open_animation = Some(OpenAnimation::new(Animation::new(
             0.,
             1.,
             0.,
-            self.options.animations.window_open.0,
-        ));
-    }
-
-    pub fn open_animation(&self) -> &Option<Animation> {
-        &self.open_animation
+            self.options.animations.window_open.anim,
+        )));
     }
 
     pub fn resize_animation(&self) -> Option<&Animation> {
@@ -797,39 +792,34 @@ impl<W: LayoutElement> Tile<W> {
     ) -> impl Iterator<Item = TileRenderElement<R>> {
         let _span = tracy_client::span!("Tile::render");
 
-        if let Some(anim) = &self.open_animation {
+        let mut open_anim_elem = None;
+        let mut window_elems = None;
+
+        if let Some(open) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
-            let elements = self.render_inner(renderer, location, scale, focus_ring, target);
+            let elements =
+                self.render_inner(renderer, Point::from((0, 0)), scale, focus_ring, target);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
-
-            let elem = OffscreenRenderElement::new(
-                renderer,
-                scale.x as i32,
-                &elements,
-                anim.clamped_value().clamp(0., 1.) as f32,
-            );
-            self.window()
-                .set_offscreen_element_id(Some(elem.id().clone()));
-
-            let mut center = location;
-            center.x += self.tile_size().w / 2;
-            center.y += self.tile_size().h / 2;
-
-            Some(TileRenderElement::Offscreen(
-                RescaleRenderElement::from_element(
-                    elem,
-                    center.to_physical_precise_round(scale),
-                    (anim.value() / 2. + 0.5).max(0.),
-                ),
-            ))
-            .into_iter()
-            .chain(None.into_iter().flatten())
-        } else {
-            self.window().set_offscreen_element_id(None);
-
-            let elements = self.render_inner(renderer, location, scale, focus_ring, target);
-            None.into_iter().chain(Some(elements).into_iter().flatten())
+            match open.render(renderer, &elements, self.tile_size(), location, scale) {
+                Ok(elem) => {
+                    self.window()
+                        .set_offscreen_element_id(Some(elem.id().clone()));
+                    open_anim_elem = Some(elem.into());
+                }
+                Err(err) => {
+                    warn!("error rendering window opening animation: {err:?}");
+                }
+            }
         }
+
+        if open_anim_elem.is_none() {
+            self.window().set_offscreen_element_id(None);
+            window_elems = Some(self.render_inner(renderer, location, scale, focus_ring, target));
+        }
+
+        open_anim_elem
+            .into_iter()
+            .chain(window_elems.into_iter().flatten())
     }
 
     pub fn store_unmap_snapshot_if_empty(

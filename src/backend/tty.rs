@@ -508,6 +508,9 @@ impl Tty {
             if let Some(src) = config.animations.window_close.custom_shader.as_deref() {
                 shaders::set_custom_close_program(gles_renderer, Some(src));
             }
+            if let Some(src) = config.animations.window_open.custom_shader.as_deref() {
+                shaders::set_custom_open_program(gles_renderer, Some(src));
+            }
             drop(config);
 
             niri.layout.update_shaders();

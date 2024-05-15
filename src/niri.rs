@@ -951,6 +951,16 @@ impl State {
             shaders_changed = true;
         }
 
+        if config.animations.window_open.custom_shader
+            != old_config.animations.window_open.custom_shader
+        {
+            let src = config.animations.window_open.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
         if config.debug != old_config.debug {
             debug_config_changed = true;
         }

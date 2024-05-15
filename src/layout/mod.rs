@@ -58,6 +58,7 @@ use crate::window::ResolvedWindowRules;
 pub mod closing_window;
 pub mod focus_ring;
 pub mod monitor;
+pub mod opening_window;
 pub mod tile;
 pub mod workspace;
 

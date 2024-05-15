@@ -152,6 +152,48 @@ animations {
 }
 ```
 
+##### `custom-shader`
+
+<sup>Since: 0.1.6, experimental</sup>
+
+You can write a custom shader for drawing the window during an open animation.
+
+See [this example shader](./examples/open_custom_shader.frag) for a full documentation with several animations to experiment with.
+
+If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
+
+> [!WARNING]
+> 
+> Custom shaders do not have a backwards compatibility guarantee.
+> I may need to change their interface as I'm developing new features.
+
+Example: open will fill the current geometry with a solid gradient that gradually fades in.
+
+```
+animations {
+    window-open {
+        duration-ms 250
+        curve "linear"
+
+        custom-shader r"
+            vec4 open_color(vec3 coords_geo, vec3 size_geo) {
+                vec4 color = vec4(0.0);
+
+                if (0.0 <= coords_geo.x && coords_geo.x <= 1.0
+                        && 0.0 <= coords_geo.y && coords_geo.y <= 1.0)
+                {
+                    vec4 from = vec4(1.0, 0.0, 0.0, 1.0);
+                    vec4 to = vec4(0.0, 1.0, 0.0, 1.0);
+                    color = mix(from, to, coords_geo.y);
+                }
+
+                return color * niri_clamped_progress;
+            }
+        "
+    }
+}
+```
+
 #### `window-close`
 
 <sup>Since: 0.1.5</sup>

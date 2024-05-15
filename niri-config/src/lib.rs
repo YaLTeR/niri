@@ -537,18 +537,24 @@ impl Default for WorkspaceSwitchAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WindowOpenAnim(pub Animation);
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowOpenAnim {
+    pub anim: Animation,
+    pub custom_shader: Option<String>,
+}
 
 impl Default for WindowOpenAnim {
     fn default() -> Self {
-        Self(Animation {
-            off: false,
-            kind: AnimationKind::Easing(EasingParams {
-                duration_ms: 150,
-                curve: AnimationCurve::EaseOutExpo,
-            }),
-        })
+        Self {
+            anim: Animation {
+                off: false,
+                kind: AnimationKind::Easing(EasingParams {
+                    duration_ms: 150,
+                    curve: AnimationCurve::EaseOutExpo,
+                }),
+            },
+            custom_shader: None,
+        }
     }
 }
 
@@ -1411,10 +1417,21 @@ where
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
-        let default = Self::default().0;
-        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
-            Ok(false)
-        })?))
+        let default = Self::default().anim;
+        let mut custom_shader = None;
+        let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
+            if &**child.node_name == "custom-shader" {
+                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+
+        Ok(Self {
+            anim,
+            custom_shader,
+        })
     }
 }
 
@@ -2414,10 +2431,13 @@ mod tests {
                             curve: AnimationCurve::EaseOutExpo,
                         }),
                     }),
-                    window_open: WindowOpenAnim(Animation {
-                        off: true,
-                        ..WindowOpenAnim::default().0
-                    }),
+                    window_open: WindowOpenAnim {
+                        anim: Animation {
+                            off: true,
+                            ..WindowOpenAnim::default().anim
+                        },
+                        custom_shader: None,
+                    },
                     ..Default::default()
                 },
                 environment: Environment(vec![
