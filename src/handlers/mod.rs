@@ -15,6 +15,7 @@ use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
+use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -188,6 +189,10 @@ impl SelectionHandler for State {
 
         let buf = user_data.clone();
         thread::spawn(move || {
+            // Clear O_NONBLOCK, otherwise io::copy() will stop halfway.
+            if let Err(err) = fcntl_setfl(&fd, OFlags::empty()) {
+                warn!("error clearing flags on selection target fd: {err:?}");
+            }
             if let Err(err) = File::from(fd).write_all(&buf) {
                 warn!("error writing selection: {err:?}");
             }
