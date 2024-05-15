@@ -644,7 +644,7 @@ impl Tty {
             lease_state.disable_global::<State>();
         }
 
-        if node == self.primary_node {
+        if node == self.primary_node || device.render_node == self.primary_render_node {
             match self.gpu_manager.single_renderer(&device.render_node) {
                 Ok(mut renderer) => renderer.unbind_wl_display(),
                 Err(err) => {
@@ -653,27 +653,30 @@ impl Tty {
             }
 
             // Disable and destroy the dmabuf global.
-            let global = self.dmabuf_global.take().unwrap();
-            niri.dmabuf_state
-                .disable_global::<State>(&niri.display_handle, &global);
-            niri.event_loop
-                .insert_source(
-                    Timer::from_duration(Duration::from_secs(10)),
-                    move |_, _, state| {
-                        state
-                            .niri
-                            .dmabuf_state
-                            .destroy_global::<State>(&state.niri.display_handle, global);
-                        TimeoutAction::Drop
-                    },
-                )
-                .unwrap();
+            if let Some(global) = self.dmabuf_global.take() {
+                niri.dmabuf_state
+                    .disable_global::<State>(&niri.display_handle, &global);
+                niri.event_loop
+                    .insert_source(
+                        Timer::from_duration(Duration::from_secs(10)),
+                        move |_, _, state| {
+                            state
+                                .niri
+                                .dmabuf_state
+                                .destroy_global::<State>(&state.niri.display_handle, global);
+                            TimeoutAction::Drop
+                        },
+                    )
+                    .unwrap();
 
-            // Clear the dmabuf feedbacks for all surfaces.
-            for device in self.devices.values_mut() {
-                for surface in device.surfaces.values_mut() {
-                    surface.dmabuf_feedback = None;
+                // Clear the dmabuf feedbacks for all surfaces.
+                for device in self.devices.values_mut() {
+                    for surface in device.surfaces.values_mut() {
+                        surface.dmabuf_feedback = None;
+                    }
                 }
+            } else {
+                error!("dmabuf global was already missing");
             }
         }
 
