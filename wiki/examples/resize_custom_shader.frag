@@ -28,7 +28,7 @@ vec4 resize_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
 // expect and handle coordinates outside the [0, 1] range. The area will be
 // large enough to accomodate a crossfade effect.
 //
-// * size_curr_geo: size of the current window geometry in physical pixels.
+// * size_curr_geo: size of the current window geometry in logical pixels.
 //
 // It is homogeneous (the Z component is equal to 1).
 //

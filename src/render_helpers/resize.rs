@@ -78,10 +78,7 @@ impl ResizeRenderElement {
         let geo_to_tex_next = Mat3::from_translation(-tex_next_geo_loc / tex_next_geo_size)
             * Mat3::from_scale(size_next / tex_next_geo_size * scale);
 
-        let curr_geo_size = curr_geo_size * scale;
-        let corner_radius = corner_radius
-            .scaled_by(scale.x)
-            .fit_to(curr_geo_size.x, curr_geo_size.y);
+        let corner_radius = corner_radius.fit_to(curr_geo_size.x, curr_geo_size.y);
         let clip_to_geometry = if clip_to_geometry { 1. } else { 0. };
 
         // Create the shader.
