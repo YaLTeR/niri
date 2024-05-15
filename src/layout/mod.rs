@@ -1413,6 +1413,24 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn update_render_elements_all(&mut self) {
+        let _span = tracy_client::span!("Layout::update_render_elements_all");
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            error!("update_render_elements_all called with no monitors");
+            return;
+        };
+
+        for (idx, mon) in monitors.iter_mut().enumerate() {
+            mon.update_render_elements(idx == *active_monitor_idx);
+        }
+    }
+
     pub fn update_shaders(&mut self) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {

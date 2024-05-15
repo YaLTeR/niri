@@ -3268,6 +3268,8 @@ impl Niri {
         let output = screencopy.output().clone();
         ensure!(self.output_state.contains_key(&output), "output is missing");
 
+        self.layout.update_render_elements(&output);
+
         backend
             .with_primary_renderer(move |renderer| {
                 let elements = self
@@ -3359,6 +3361,8 @@ impl Niri {
             return;
         };
 
+        self.layout.update_render_elements_all();
+
         let screenshots = self
             .global_space
             .outputs()
@@ -3410,8 +3414,14 @@ impl Niri {
         self.queue_redraw_all();
     }
 
-    pub fn screenshot(&self, renderer: &mut GlesRenderer, output: &Output) -> anyhow::Result<()> {
+    pub fn screenshot(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+    ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
+
+        self.layout.update_render_elements(output);
 
         let size = output.current_mode().unwrap().size;
         let transform = output.current_transform();
@@ -3555,12 +3565,14 @@ impl Niri {
 
     #[cfg(feature = "dbus")]
     pub fn screenshot_all_outputs(
-        &self,
+        &mut self,
         renderer: &mut GlesRenderer,
         include_pointer: bool,
         on_done: impl FnOnce(PathBuf) + Send + 'static,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_all_outputs");
+
+        self.layout.update_render_elements_all();
 
         let outputs: Vec<_> = self.global_space.outputs().cloned().collect();
 
@@ -3772,6 +3784,8 @@ impl Niri {
 
     pub fn do_screen_transition(&mut self, renderer: &mut GlesRenderer, delay_ms: Option<u16>) {
         let _span = tracy_client::span!("Niri::do_screen_transition");
+
+        self.layout.update_render_elements_all();
 
         let textures: Vec<_> = self
             .output_state
