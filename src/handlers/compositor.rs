@@ -316,7 +316,12 @@ impl CompositorHandler for State {
         // Clients may destroy their subsurfaces before the main surface. Ensure we have a snapshot
         // when that happens, so that the closing animation includes all these subsurfaces.
         //
-        // Test client: alacritty with CSD.
+        // Test client: alacritty with CSD <= 0.13 (it was fixed in winit afterwards:
+        // https://github.com/rust-windowing/winit/pull/3625).
+        //
+        // This is still not perfect, as this function is called already after the (first)
+        // subsurface is destroyed; in the case of alacritty, this is the top CSD shadow. But, it
+        // gets most of the job done.
         if let Some(root) = self.niri.root_surface.get(surface) {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
                 let window = mapped.window.clone();
