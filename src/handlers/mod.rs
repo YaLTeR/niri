@@ -189,7 +189,7 @@ impl SelectionHandler for State {
 
         let buf = user_data.clone();
         thread::spawn(move || {
-            // Clear O_NONBLOCK, otherwise io::copy() will stop halfway.
+            // Clear O_NONBLOCK, otherwise File::write_all() will stop halfway.
             if let Err(err) = fcntl_setfl(&fd, OFlags::empty()) {
                 warn!("error clearing flags on selection target fd: {err:?}");
             }
