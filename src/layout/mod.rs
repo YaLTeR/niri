@@ -531,7 +531,11 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces } => {
                 let ws = workspaces
                     .iter_mut()
-                    .find(|ws| ws.name.as_deref() == Some(workspace_name))
+                    .find(|ws| {
+                        ws.name
+                            .as_ref()
+                            .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                    })
                     .unwrap();
                 ws.add_window(window, true, width, is_full_width);
                 None
@@ -799,22 +803,23 @@ impl<W: LayoutElement> Layout<W> {
         match &self.monitor_set {
             MonitorSet::Normal { ref monitors, .. } => {
                 for mon in monitors {
-                    if let Some((index, workspace)) = mon
-                        .workspaces
-                        .iter()
-                        .enumerate()
-                        .find(|(_, w)| w.name.as_deref() == Some(workspace_name))
+                    if let Some((index, workspace)) =
+                        mon.workspaces.iter().enumerate().find(|(_, w)| {
+                            w.name
+                                .as_ref()
+                                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                        })
                     {
                         return Some((index, workspace));
                     }
                 }
             }
             MonitorSet::NoOutputs { workspaces } => {
-                if let Some((index, workspace)) = workspaces
-                    .iter()
-                    .enumerate()
-                    .find(|(_, w)| w.name.as_deref() == Some(workspace_name))
-                {
+                if let Some((index, workspace)) = workspaces.iter().enumerate().find(|(_, w)| {
+                    w.name
+                        .as_ref()
+                        .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                }) {
                     return Some((index, workspace));
                 }
             }
@@ -837,7 +842,11 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { workspaces } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
-                    if ws.name.as_deref() == Some(workspace_name) {
+                    if ws
+                        .name
+                        .as_ref()
+                        .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                    {
                         ws.unname();
 
                         // Clean up empty workspaces.
@@ -1110,10 +1119,11 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         monitors.iter().find(|monitor| {
-            monitor
-                .workspaces
-                .iter()
-                .any(|ws| ws.name.as_deref() == Some(workspace_name))
+            monitor.workspaces.iter().any(|ws| {
+                ws.name
+                    .as_ref()
+                    .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+            })
         })
     }
 
@@ -1416,7 +1426,7 @@ impl<W: LayoutElement> Layout<W> {
         use crate::layout::monitor::WorkspaceSwitch;
 
         let mut seen_workspace_id = HashSet::new();
-        let mut seen_workspace_name = HashSet::new();
+        let mut seen_workspace_name = Vec::<String>::new();
 
         let (monitors, &primary_idx, &active_monitor_idx) = match &self.monitor_set {
             MonitorSet::Normal {
@@ -1443,9 +1453,12 @@ impl<W: LayoutElement> Layout<W> {
 
                     if let Some(name) = &workspace.name {
                         assert!(
-                            seen_workspace_name.insert(name),
+                            !seen_workspace_name
+                                .iter()
+                                .any(|n| n.eq_ignore_ascii_case(name)),
                             "workspace name must be unique"
                         );
+                        seen_workspace_name.push(name.clone());
                     }
 
                     workspace.verify_invariants();
@@ -1544,9 +1557,12 @@ impl<W: LayoutElement> Layout<W> {
 
                 if let Some(name) = &workspace.name {
                     assert!(
-                        seen_workspace_name.insert(name),
+                        !seen_workspace_name
+                            .iter()
+                            .any(|n| n.eq_ignore_ascii_case(name)),
                         "workspace name must be unique"
                     );
+                    seen_workspace_name.push(name.clone());
                 }
 
                 workspace.verify_invariants();
@@ -2788,7 +2804,11 @@ mod tests {
                                         }
                                     }
 
-                                    if ws.name.as_deref() == Some(&ws_name) {
+                                    if ws
+                                        .name
+                                        .as_ref()
+                                        .map_or(false, |name| name.eq_ignore_ascii_case(&ws_name))
+                                    {
                                         found_workspace = true;
                                     }
                                 }
@@ -2802,7 +2822,11 @@ mod tests {
                                     }
                                 }
 
-                                if ws.name.as_deref() == Some(&ws_name) {
+                                if ws
+                                    .name
+                                    .as_ref()
+                                    .map_or(false, |name| name.eq_ignore_ascii_case(&ws_name))
+                                {
                                     found_workspace = true;
                                 }
                             }

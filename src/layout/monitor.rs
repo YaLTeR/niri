@@ -104,15 +104,19 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn find_named_workspace(&self, workspace_name: &str) -> Option<&Workspace<W>> {
-        self.workspaces
-            .iter()
-            .find(|w| w.name.as_deref() == Some(workspace_name))
+        self.workspaces.iter().find(|ws| {
+            ws.name
+                .as_ref()
+                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+        })
     }
 
     pub fn find_named_workspace_index(&self, workspace_name: &str) -> Option<usize> {
-        self.workspaces
-            .iter()
-            .position(|w| w.name.as_deref() == Some(workspace_name))
+        self.workspaces.iter().position(|ws| {
+            ws.name
+                .as_ref()
+                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+        })
     }
 
     pub fn active_workspace(&mut self) -> &mut Workspace<W> {
@@ -227,7 +231,11 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn unname_workspace(&mut self, workspace_name: &str) -> bool {
         for ws in &mut self.workspaces {
-            if ws.name.as_deref() == Some(workspace_name) {
+            if ws
+                .name
+                .as_ref()
+                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+            {
                 ws.unname();
                 return true;
             }
