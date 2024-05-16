@@ -33,6 +33,7 @@ window-rule {
     match is-active=true
     match is-focused=false
     match is-active-in-column=true
+    match at-startup=true
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
@@ -189,6 +190,23 @@ It is the window that was last focused in the column, i.e. the one that will gai
 ```
 window-rule {
     match is-active-in-column=true
+}
+```
+
+#### `at-startup`
+
+<sup>Since: 0.1.6</sup>
+
+Can be `true` or `false`.
+Matches during the first 60 seconds after starting niri.
+
+This is useful for properties like `open-on-output` which you may want to apply only right after starting niri.
+
+```
+// Open windows on the HDMI-A-1 monitor at niri startup, but not afterwards.
+window-rule {
+    match at-startup=true
+    open-on-output "HDMI-A-1"
 }
 ```
 

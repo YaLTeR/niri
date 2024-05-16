@@ -120,10 +120,10 @@ impl Mapped {
     }
 
     /// Recomputes the resolved window rules and returns whether they changed.
-    pub fn recompute_window_rules(&mut self, rules: &[WindowRule]) -> bool {
+    pub fn recompute_window_rules(&mut self, rules: &[WindowRule], is_at_startup: bool) -> bool {
         self.need_to_recompute_rules = false;
 
-        let new_rules = ResolvedWindowRules::compute(rules, WindowRef::Mapped(self));
+        let new_rules = ResolvedWindowRules::compute(rules, WindowRef::Mapped(self), is_at_startup);
         if new_rules == self.rules {
             return false;
         }
@@ -132,12 +132,16 @@ impl Mapped {
         true
     }
 
-    pub fn recompute_window_rules_if_needed(&mut self, rules: &[WindowRule]) -> bool {
+    pub fn recompute_window_rules_if_needed(
+        &mut self,
+        rules: &[WindowRule],
+        is_at_startup: bool,
+    ) -> bool {
         if !self.need_to_recompute_rules {
             return false;
         }
 
-        self.recompute_window_rules(rules)
+        self.recompute_window_rules(rules, is_at_startup)
     }
 
     pub fn is_focused(&self) -> bool {

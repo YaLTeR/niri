@@ -135,7 +135,7 @@ impl ResolvedWindowRules {
         }
     }
 
-    pub fn compute(rules: &[WindowRule], window: WindowRef) -> Self {
+    pub fn compute(rules: &[WindowRule], window: WindowRef, is_at_startup: bool) -> Self {
         let _span = tracy_client::span!("ResolvedWindowRules::compute");
 
         let mut resolved = ResolvedWindowRules::empty();
@@ -158,7 +158,15 @@ impl ResolvedWindowRules {
             let mut open_on_workspace = None;
 
             for rule in rules {
-                let matches = |m| window_matches(window, &role, m);
+                let matches = |m: &Match| {
+                    if let Some(at_startup) = m.at_startup {
+                        if at_startup != is_at_startup {
+                            return false;
+                        }
+                    }
+
+                    window_matches(window, &role, m)
+                };
 
                 if !(rule.matches.is_empty() || rule.matches.iter().any(matches)) {
                     continue;

@@ -156,6 +156,9 @@ pub struct Niri {
 
     pub start_time: Instant,
 
+    /// Whether the at-startup=true window rules are active.
+    pub is_at_startup: bool,
+
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
     // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
     pub layout: Layout<Mapped>,
@@ -1014,27 +1017,7 @@ impl State {
         }
 
         if window_rules_changed {
-            let _span = tracy_client::span!("recompute window rules");
-
-            let window_rules = &self.niri.config.borrow().window_rules;
-
-            for unmapped in self.niri.unmapped_windows.values_mut() {
-                let new_rules =
-                    ResolvedWindowRules::compute(window_rules, WindowRef::Unmapped(unmapped));
-                if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
-                    *rules = new_rules;
-                }
-            }
-
-            let mut windows = vec![];
-            self.niri.layout.with_windows_mut(|mapped, _| {
-                if mapped.recompute_window_rules(window_rules) {
-                    windows.push(mapped.window.clone());
-                }
-            });
-            for win in windows {
-                self.niri.layout.update_window(&win, None);
-            }
+            self.niri.recompute_window_rules();
         }
 
         if shaders_changed {
@@ -1472,6 +1455,18 @@ impl Niri {
             })
             .unwrap();
 
+        event_loop
+            .insert_source(
+                Timer::from_duration(Duration::from_secs(60)),
+                |_, _, state| {
+                    let _span = tracy_client::span!("startup timeout");
+                    state.niri.is_at_startup = false;
+                    state.niri.recompute_window_rules();
+                    TimeoutAction::Drop
+                },
+            )
+            .unwrap();
+
         drop(config_);
         Self {
             config,
@@ -1483,6 +1478,7 @@ impl Niri {
             socket_name,
             display_handle,
             start_time: Instant::now(),
+            is_at_startup: true,
 
             layout,
             global_space: Space::default(),
@@ -2474,7 +2470,7 @@ impl Niri {
         let mut windows = vec![];
         let mut outputs = HashSet::new();
         self.layout.with_windows_mut(|mapped, output| {
-            if mapped.recompute_window_rules_if_needed(window_rules) {
+            if mapped.recompute_window_rules_if_needed(window_rules, self.is_at_startup) {
                 windows.push(mapped.window.clone());
 
                 if let Some(output) = output {
@@ -3900,6 +3896,42 @@ impl Niri {
 
         // We don't actually need to queue a redraw because the point is to freeze the screen for a
         // bit, and even if the delay was zero, we're drawing the same contents anyway.
+    }
+
+    pub fn recompute_window_rules(&mut self) {
+        let _span = tracy_client::span!("Niri::recompute_window_rules");
+
+        let changed = {
+            let window_rules = &self.config.borrow().window_rules;
+
+            for unmapped in self.unmapped_windows.values_mut() {
+                let new_rules = ResolvedWindowRules::compute(
+                    window_rules,
+                    WindowRef::Unmapped(unmapped),
+                    self.is_at_startup,
+                );
+                if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
+                    *rules = new_rules;
+                }
+            }
+
+            let mut windows = vec![];
+            self.layout.with_windows_mut(|mapped, _| {
+                if mapped.recompute_window_rules(window_rules, self.is_at_startup) {
+                    windows.push(mapped.window.clone());
+                }
+            });
+            let changed = !windows.is_empty();
+            for win in windows {
+                self.layout.update_window(&win, None);
+            }
+            changed
+        };
+
+        if changed {
+            // FIXME: granular.
+            self.queue_redraw_all();
+        }
     }
 }
 
