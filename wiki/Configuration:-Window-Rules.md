@@ -37,6 +37,7 @@ window-rule {
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
     open-on-output "eDP-1"
+    open-on-workspace "chat"
     open-maximized true
     open-fullscreen true
 
@@ -231,6 +232,23 @@ window-rule {
     exclude app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
 
     open-on-output "HDMI-A-1"
+}
+```
+
+#### `open-on-workspace`
+
+Make the window open on a specific [named workspace](./Configuration:-Named-Workspaces.md).
+
+If such a workspace does not exist, the window will open on the currently focused workspace as usual.
+
+If the window opens on an output that is not currently focused, the window will not be automatically focused.
+
+```
+// Open Telegram on the "chat" workspace.
+window-rule {
+    match app-id=r#"^org\.telegram\.desktop$"#
+
+    open-on-workspace "chat"
 }
 ```
 
