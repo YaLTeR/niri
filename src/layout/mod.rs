@@ -2278,6 +2278,41 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
     }
+
+    pub fn ipc_workspaces(&self) -> Vec<niri_ipc::Workspace> {
+        match &self.monitor_set {
+            MonitorSet::Normal {
+                monitors,
+                primary_idx: _,
+                active_monitor_idx: _,
+            } => {
+                let mut workspaces = Vec::new();
+
+                for monitor in monitors {
+                    for (idx, workspace) in monitor.workspaces.iter().enumerate() {
+                        workspaces.push(niri_ipc::Workspace {
+                            idx: u8::try_from(idx + 1).unwrap_or(u8::MAX),
+                            name: workspace.name.clone(),
+                            output: Some(monitor.output.name()),
+                            is_active: monitor.active_workspace_idx == idx,
+                        })
+                    }
+                }
+
+                workspaces
+            }
+            MonitorSet::NoOutputs { workspaces } => workspaces
+                .iter()
+                .enumerate()
+                .map(|(idx, ws)| niri_ipc::Workspace {
+                    idx: u8::try_from(idx + 1).unwrap_or(u8::MAX),
+                    name: ws.name.clone(),
+                    output: None,
+                    is_active: false,
+                })
+                .collect(),
+        }
+    }
 }
 
 impl<W: LayoutElement> Default for MonitorSet<W> {

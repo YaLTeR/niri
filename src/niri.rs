@@ -12,6 +12,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{Config, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference};
+use niri_ipc::Workspace;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
@@ -3933,6 +3934,10 @@ impl Niri {
             // FIXME: granular.
             self.queue_redraw_all();
         }
+    }
+
+    pub fn ipc_workspaces(&self) -> Vec<Workspace> {
+        self.layout.ipc_workspaces()
     }
 }
 
