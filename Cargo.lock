@@ -909,18 +909,8 @@ checksum = "98888c4bbd601524c11a7ed63f814b8825f420514f78e96f752c437ae9cbb5d1"
 dependencies = [
  "bitflags 2.5.0",
  "bytemuck",
- "drm-ffi 0.8.0",
+ "drm-ffi",
  "drm-fourcc",
- "rustix 0.38.34",
-]
-
-[[package]]
-name = "drm-ffi"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41334f8405792483e32ad05fbb9c5680ff4e84491883d2947a4757dc54cb2ac6"
-dependencies = [
- "drm-sys 0.6.1",
  "rustix 0.38.34",
 ]
 
@@ -930,7 +920,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97c98727e48b7ccb4f4aea8cfe881e5b07f702d17b7875991881b41af7278d53"
 dependencies = [
- "drm-sys 0.7.0",
+ "drm-sys",
  "rustix 0.38.34",
 ]
 
@@ -939,16 +929,6 @@ name = "drm-fourcc"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0aafbcdb8afc29c1a7ee5fbe53b5d62f4565b35a042a662ca9fecd0b54dae6f4"
-
-[[package]]
-name = "drm-sys"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d09ff881f92f118b11105ba5e34ff8f4adf27b30dae8f12e28c193af1c83176"
-dependencies = [
- "libc",
- "linux-raw-sys 0.6.4",
-]
 
 [[package]]
 name = "drm-sys"
@@ -2204,7 +2184,7 @@ dependencies = [
  "calloop 0.13.0",
  "clap",
  "directories",
- "drm-ffi 0.7.1",
+ "drm-ffi",
  "fastrand 2.1.0",
  "futures-util",
  "git-version",
@@ -3183,7 +3163,7 @@ dependencies = [
  "cursor-icon",
  "downcast-rs",
  "drm",
- "drm-ffi 0.8.0",
+ "drm-ffi",
  "drm-fourcc",
  "errno",
  "gbm",

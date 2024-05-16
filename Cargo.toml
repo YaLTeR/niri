@@ -10,11 +10,11 @@ edition = "2021"
 repository = "https://github.com/YaLTeR/niri"
 
 [workspace.dependencies]
-anyhow = "1.0.81"
+anyhow = "1.0.83"
 bitflags = "2.5.0"
 clap = { version = "~4.4.18", features = ["derive"] }
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.115"
+serde = { version = "1.0.202", features = ["derive"] }
+serde_json = "1.0.117"
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracy-client = { version = "0.17.0", default-features = false }
@@ -43,25 +43,25 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 [dependencies]
 anyhow.workspace = true
 arrayvec = "0.7.4"
-async-channel = "2.2.0"
+async-channel = "2.3.1"
 async-io = { version = "1.13.0", optional = true }
 bitflags.workspace = true
-bytemuck = { version = "1.15.0", features = ["derive"] }
+bytemuck = { version = "1.16.0", features = ["derive"] }
 calloop = { version = "0.13.0", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
 directories = "5.0.1"
-drm-ffi = "0.7.1"
+drm-ffi = "0.8.0"
 fastrand = "2.1.0"
 futures-util = { version = "0.3.30", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
 glam = "0.27.0"
 input = { version = "0.9.0", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.153"
+libc = "0.2.154"
 log = { version = "0.4.21", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "0.1.5", path = "niri-config" }
 niri-ipc = { version = "0.1.5", path = "niri-ipc", features = ["clap"] }
-notify-rust = { version = "4.10.0", optional = true }
+notify-rust = { version = "~4.10.0", optional = true }
 pangocairo = "0.19.2"
 pipewire = { version = "0.8.0", optional = true }
 png = "0.17.13"
@@ -100,7 +100,7 @@ features = [
 k9 = "0.12.0"
 proptest = "1.4.0"
 proptest-derive = "0.4.0"
-xshell = "0.2.5"
+xshell = "0.2.6"
 
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
