@@ -1,5 +1,7 @@
 ### Overview
 
+<sup>Since: 0.1.6</sup>
+
 You can declare named workspaces at the top level of the config:
 
 ```

@@ -255,6 +255,8 @@ window-rule {
 
 #### `open-on-workspace`
 
+<sup>Since: 0.1.6</sup>
+
 Make the window open on a specific [named workspace](./Configuration:-Named-Workspaces.md).
 
 If such a workspace does not exist, the window will open on the currently focused workspace as usual.
