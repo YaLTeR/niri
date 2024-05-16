@@ -4,7 +4,7 @@ use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderE
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer};
-use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
+use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 
 use super::primary_gpu_texture::PrimaryGpuTextureRenderElement;
@@ -138,7 +138,7 @@ impl Element for OffscreenRenderElement {
         }
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         if let Some(texture) = &self.texture {
             texture.opaque_regions(scale)
         } else {

@@ -5,7 +5,7 @@ use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, Unde
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform,
 };
-use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
+use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
 use super::damage::ExtraDamage;
@@ -45,10 +45,10 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
         let geo_loc = Vec2::new(geo.loc.x, geo.loc.y);
         let geo_size = Vec2::new(geo.size.w, geo.size.h);
 
-        let buf_size = elem.buffer_size().unwrap();
+        let buf_size = elem.buffer_size();
         let buf_size = Vec2::new(buf_size.w as f32, buf_size.h as f32);
 
-        let view = elem.view().unwrap();
+        let view = elem.view();
         let src_loc = Vec2::new(view.src.loc.x as f32, view.src.loc.y as f32);
         let src_size = Vec2::new(view.src.size.w as f32, view.src.size.h as f32);
 
@@ -172,7 +172,7 @@ impl<R: NiriRenderer> Element for ClippedSurfaceRenderElement<R> {
             .collect()
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         let regions = self.inner.opaque_regions(scale);
 
         // Intersect with geometry, since we're clipping by it.
@@ -195,7 +195,7 @@ impl<R: NiriRenderer> Element for ClippedSurfaceRenderElement<R> {
                 rect
             });
 
-            Rectangle::subtract_rects_many(regions, corners)
+            OpaqueRegions::from_slice(&Rectangle::subtract_rects_many(regions, corners))
         }
     }
 

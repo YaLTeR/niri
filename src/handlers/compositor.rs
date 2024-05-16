@@ -54,7 +54,7 @@ impl CompositorHandler for State {
                     .buffer
                     .as_ref()
                     .and_then(|assignment| match assignment {
-                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).ok(),
+                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
                         _ => None,
                     })
             });

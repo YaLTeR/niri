@@ -24,7 +24,7 @@ use pipewire::spa::utils::{
 };
 use pipewire::stream::{Stream, StreamFlags, StreamListener, StreamState};
 use smithay::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
-use smithay::backend::allocator::gbm::{GbmBufferFlags, GbmDevice};
+use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::output::Output;
@@ -292,7 +292,8 @@ impl PipeWire {
                                 return;
                             }
                         };
-                        let dmabuf = match bo.export() {
+                        let buffer = GbmBuffer::from_bo(bo, true);
+                        let dmabuf = match buffer.export() {
                             Ok(dmabuf) => dmabuf,
                             Err(err) => {
                                 warn!("error exporting GBM buffer object as dmabuf: {err:?}");

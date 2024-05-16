@@ -8,7 +8,7 @@ use smithay::backend::renderer::gles::{
     ffi, link_program, Capability, GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform,
     UniformDesc, UniformName,
 };
-use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
 use smithay::backend::renderer::DebugFlags;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size};
 
@@ -274,7 +274,7 @@ impl Element for ShaderRenderElement {
         self.area.to_physical_precise_round(scale)
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.opaque_regions
             .iter()
             .map(|region| region.to_physical_precise_round(scale))

@@ -4,7 +4,7 @@ use glam::{Mat3, Vec2};
 use niri_config::CornerRadius;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
-use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
+use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
 use super::renderer::{AsGlesFrame, NiriRenderer};
@@ -146,7 +146,7 @@ impl Element for ResizeRenderElement {
         self.0.damage_since(scale, commit)
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.0.opaque_regions(scale)
     }
 

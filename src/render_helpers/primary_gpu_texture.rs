@@ -1,7 +1,7 @@
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture};
-use smithay::backend::renderer::utils::{CommitCounter, DamageSet};
+use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 
 use super::renderer::AsGlesFrame;
@@ -40,7 +40,7 @@ impl Element for PrimaryGpuTextureRenderElement {
         self.0.damage_since(scale, commit)
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.0.opaque_regions(scale)
     }
 

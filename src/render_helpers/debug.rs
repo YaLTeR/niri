@@ -24,7 +24,7 @@ pub fn draw_opaque_regions<R: NiriRenderer>(
         }
 
         let geo = elem.geometry(scale);
-        let mut opaque = elem.opaque_regions(scale);
+        let mut opaque = elem.opaque_regions(scale).to_vec();
 
         for rect in &mut opaque {
             rect.loc += geo.loc;

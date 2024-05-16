@@ -491,6 +491,7 @@ impl State {
         self.niri.cursor_manager.check_cursor_image_surface_alive();
         self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
+        self.niri.global_space.refresh();
         self.niri.refresh_idle_inhibit();
         self.refresh_popup_grab();
         self.update_keyboard_focus();

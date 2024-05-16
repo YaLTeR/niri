@@ -75,7 +75,7 @@ macro_rules! niri_render_elements {
                 }
             }
 
-            fn opaque_regions(&self, scale: smithay::utils::Scale<f64>) -> Vec<smithay::utils::Rectangle<i32, smithay::utils::Physical>> {
+            fn opaque_regions(&self, scale: smithay::utils::Scale<f64>) -> smithay::backend::renderer::utils::OpaqueRegions<i32, smithay::utils::Physical> {
                 match self {
                     $($name::$variant(elem) => elem.opaque_regions(scale)),+
                 }
