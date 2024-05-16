@@ -15,6 +15,7 @@
 * [Outputs](./Configuration:-Outputs.md)
 * [Key Bindings](./Configuration:-Key-Bindings.md)
 * [Layout](./Configuration:-Layout.md)
+* [Named Workspaces](./Configuration:-Named-Workspaces.md)
 * [Miscellaneous](./Configuration:-Miscellaneous.md)
 * [Window Rules](./Configuration:-Window-Rules.md)
 * [Animations](./Configuration:-Animations.md)
