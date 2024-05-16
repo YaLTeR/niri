@@ -78,6 +78,8 @@ pub enum Msg {
         #[command(subcommand)]
         action: OutputAction,
     },
+    /// List workspaces.
+    Workspaces,
     /// Request an error from the running niri instance.
     RequestError,
 }

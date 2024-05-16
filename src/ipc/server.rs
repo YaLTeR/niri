@@ -198,6 +198,16 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
 
             Response::OutputConfigChanged(response)
         }
+        Request::Workspaces => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let workspaces = state.niri.layout.ipc_workspaces();
+                let _ = tx.send_blocking(workspaces);
+            });
+            let result = rx.recv().await;
+            let workspaces = result.map_err(|_| String::from("error getting workspace info"))?;
+            Response::Workspaces(workspaces)
+        }
     };
 
     Ok(response)

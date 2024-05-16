@@ -31,6 +31,8 @@ pub enum Request {
         /// Configuration to apply.
         action: OutputAction,
     },
+    /// Request information about workspaces.
+    Workspaces,
     /// Respond with an error (for testing error handling).
     ReturnError,
 }
@@ -60,6 +62,8 @@ pub enum Response {
     FocusedWindow(Option<Window>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+    /// Information about workspaces.
+    Workspaces(Vec<Workspace>),
 }
 
 /// Actions that niri can perform.
@@ -482,6 +486,23 @@ pub enum OutputConfigChanged {
     Applied,
     /// The target output was not found, the change will be applied when it is connected.
     OutputWasMissing,
+}
+
+/// A workspace.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Workspace {
+    /// Index of the workspace on its monitor.
+    ///
+    /// This is the same index you can use for requests like `niri msg action focus-workspace`.
+    pub idx: u8,
+    /// Optional name of the workspace.
+    pub name: Option<String>,
+    /// Name of the output that the workspace is on.
+    ///
+    /// Can be `None` if no outputs are currently connected.
+    pub output: Option<String>,
+    /// Whether the workspace is currently active on its output.
+    pub is_active: bool,
 }
 
 impl FromStr for WorkspaceReferenceArg {
