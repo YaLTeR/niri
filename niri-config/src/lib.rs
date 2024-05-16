@@ -770,6 +770,7 @@ impl PartialEq for Match {
     fn eq(&self, other: &Self) -> bool {
         self.is_active == other.is_active
             && self.is_focused == other.is_focused
+            && self.is_active_in_column == other.is_active_in_column
             && self.app_id.as_ref().map(Regex::as_str) == other.app_id.as_ref().map(Regex::as_str)
             && self.title.as_ref().map(Regex::as_str) == other.title.as_ref().map(Regex::as_str)
     }
