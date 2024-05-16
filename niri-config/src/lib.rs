@@ -1502,14 +1502,15 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<WorkspaceName, DecodeError<S>> {
         #[derive(Debug)]
-        struct WorkspaceNameSet(HashSet<String>);
+        struct WorkspaceNameSet(Vec<String>);
         match &**val {
             knuffel::ast::Literal::String(ref s) => {
-                let mut name_set: HashSet<String> = match ctx.get::<WorkspaceNameSet>() {
+                let mut name_set: Vec<String> = match ctx.get::<WorkspaceNameSet>() {
                     Some(h) => h.0.clone(),
-                    None => HashSet::new(),
+                    None => Vec::new(),
                 };
-                if !name_set.insert(s.clone().to_string()) {
+
+                if name_set.iter().any(|name| name.eq_ignore_ascii_case(s)) {
                     ctx.emit_error(DecodeError::unexpected(
                         val,
                         "named workspace",
@@ -1517,6 +1518,8 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
                     ));
                     return Ok(Self(String::new()));
                 }
+
+                name_set.push(s.to_string());
                 ctx.set(WorkspaceNameSet(name_set));
                 Ok(Self(s.clone().into()))
             }
