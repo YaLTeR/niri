@@ -32,12 +32,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Sub {
-    /// Validate the config file.
-    Validate {
-        /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
-        #[arg(short, long)]
-        config: Option<PathBuf>,
-    },
     /// Communicate with the running niri instance.
     Msg {
         #[command(subcommand)]
@@ -46,16 +40,22 @@ pub enum Sub {
         #[arg(short, long)]
         json: bool,
     },
+    /// Validate the config file.
+    Validate {
+        /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+    },
     /// Cause a panic to check if the backtraces are good.
     Panic,
 }
 
 #[derive(Subcommand)]
 pub enum Msg {
-    /// Print the version of the running niri instance.
-    Version,
     /// List connected outputs.
     Outputs,
+    /// List workspaces.
+    Workspaces,
     /// Print information about the focused window.
     FocusedWindow,
     /// Perform an action.
@@ -78,8 +78,8 @@ pub enum Msg {
         #[command(subcommand)]
         action: OutputAction,
     },
-    /// List workspaces.
-    Workspaces,
+    /// Print the version of the running niri instance.
+    Version,
     /// Request an error from the running niri instance.
     RequestError,
 }
