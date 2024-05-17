@@ -315,7 +315,7 @@ impl CompositorHandler for State {
         if self.niri.is_locked() {
             for (output, state) in &self.niri.output_state {
                 if let Some(lock_surface) = &state.lock_surface {
-                    if lock_surface.wl_surface() == surface {
+                    if lock_surface.wl_surface() == &root_surface {
                         self.niri.queue_redraw(&output.clone());
                         break;
                     }
