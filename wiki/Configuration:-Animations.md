@@ -205,7 +205,7 @@ This one uses an easing type by default.
 
 ```
 animations {
-    window-open {
+    window-close {
         duration-ms 150
         curve "ease-out-quad"
     }
