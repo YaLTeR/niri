@@ -6,6 +6,8 @@ There are several gestures in niri.
 
 #### Interactive Resize
 
+<sup>Since: 0.1.6</sup>
+
 You can resize windows by holding <kbd>Mod</kbd> and the right mouse button.
 
 #### Reset Window Height
