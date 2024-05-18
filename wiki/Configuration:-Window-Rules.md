@@ -264,9 +264,9 @@ If such a workspace does not exist, the window will open on the currently focuse
 If the window opens on an output that is not currently focused, the window will not be automatically focused.
 
 ```
-// Open Telegram on the "chat" workspace.
+// Open Fractal on the "chat" workspace.
 window-rule {
-    match app-id=r#"^org\.telegram\.desktop$"#
+    match app-id=r#"^org\.gnome\.Fractal$"#
 
     open-on-workspace "chat"
 }

@@ -24,9 +24,9 @@ workspace "chat" {
     open-on-output "DP-2"
 }
 
-// Open Telegram on the "chat" workspace at niri startup.
+// Open Fractal on the "chat" workspace at niri startup.
 window-rule {
-    match at-startup=true app-id=r#"^org\.telegram\.desktop$"#
+    match at-startup=true app-id=r#"^org\.gnome\.Fractal$"#
     open-on-workspace "chat"
 }
 ```
