@@ -10,7 +10,7 @@
     <a href="https://github.com/YaLTeR/niri/wiki/Getting-Started">Getting Started</a> | <a href="https://github.com/YaLTeR/niri/wiki/Configuration:-Overview">Configuration</a>
 </p>
 
-![](https://github.com/YaLTeR/niri/assets/1794388/2b246c2c-7cf3-4a11-96eb-ad0c7f2f4ed6)
+![](https://github.com/YaLTeR/niri/assets/1794388/52c799a1-77ec-455f-b4aa-f3236a144964)
 
 ## About
 
@@ -33,9 +33,9 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 - Built-in screenshot UI
 - Monitor screencasting through xdg-desktop-portal-gnome
     - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts
-- [Touchpad gestures](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515)
+- [Touchpad](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515) and [mouse](https://github.com/YaLTeR/niri/assets/1794388/8464e65d-4bf2-44fa-8c8e-5883355bd000) gestures
 - Configurable layout: gaps, borders, struts, window sizes
-- [Animations](https://github.com/YaLTeR/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e)
+- [Animations](https://github.com/YaLTeR/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e) with support for [custom shaders](https://github.com/YaLTeR/niri/assets/1794388/27a238d6-0a22-4692-b794-30dc7a626fad)
 - Live-reloading config
 
 ## Video Demo
