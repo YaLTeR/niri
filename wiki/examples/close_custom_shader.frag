@@ -105,7 +105,7 @@ vec4 default_close(vec3 coords_geo, vec3 size_geo) {
     return color;
 }
 
-// Example: make the window "fall down" with slight rotation.
+// Example: make the window 'fall down' with slight rotation.
 vec4 fall_and_rotate(vec3 coords_geo, vec3 size_geo) {
     // For this shader, set animation curve to linear for best results.
 
@@ -142,6 +142,6 @@ vec4 fall_and_rotate(vec3 coords_geo, vec3 size_geo) {
 // This is the function that you must define.
 vec4 close_color(vec3 coords_geo, vec3 size_geo) {
     // You can pick one of the example functions or write your own.
-    return rotate_and_fall_down(coords_geo, size_geo);
+    return fall_and_rotate(coords_geo, size_geo);
 }
 
