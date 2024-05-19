@@ -81,17 +81,28 @@ pub struct Input {
     pub workspace_auto_back_and_forth: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
 pub struct Keyboard {
     #[knuffel(child, default)]
     pub xkb: Xkb,
     // The defaults were chosen to match wlroots and sway.
-    #[knuffel(child, unwrap(argument), default = 600)]
+    #[knuffel(child, unwrap(argument), default = Self::default().repeat_delay)]
     pub repeat_delay: u16,
-    #[knuffel(child, unwrap(argument), default = 25)]
+    #[knuffel(child, unwrap(argument), default = Self::default().repeat_rate)]
     pub repeat_rate: u8,
     #[knuffel(child, unwrap(argument), default)]
     pub track_layout: TrackLayout,
+}
+
+impl Default for Keyboard {
+    fn default() -> Self {
+        Self {
+            xkb: Default::default(),
+            repeat_delay: 600,
+            repeat_rate: 25,
+            track_layout: Default::default(),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Eq, Clone)]
@@ -2813,5 +2824,12 @@ mod tests {
                 modifiers: Modifiers::ISO_LEVEL3_SHIFT
             },
         );
+    }
+
+    #[test]
+    fn default_repeat_params() {
+        let config = Config::parse("config.kdl", "").unwrap();
+        assert_eq!(config.input.keyboard.repeat_delay, 600);
+        assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 }
