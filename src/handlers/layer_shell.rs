@@ -24,11 +24,17 @@ impl WlrLayerShellHandler for State {
         _layer: Layer,
         namespace: String,
     ) {
-        let output = wl_output
-            .as_ref()
-            .and_then(Output::from_resource)
-            .or_else(|| self.niri.layout.active_output().cloned())
-            .unwrap();
+        let output = if let Some(wl_output) = &wl_output {
+            Output::from_resource(wl_output)
+        } else {
+            self.niri.layout.active_output().cloned()
+        };
+        let Some(output) = output else {
+            warn!("no output for new layer surface, closing");
+            surface.send_close();
+            return;
+        };
+
         let mut map = layer_map_for_output(&output);
         map.map_layer(&LayerSurface::new(surface, namespace))
             .unwrap();

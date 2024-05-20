@@ -94,7 +94,13 @@ where
                 overlay_cursor,
                 output,
             } => {
-                let output = Output::from_resource(&output).unwrap();
+                let Some(output) = Output::from_resource(&output) else {
+                    trace!("screencopy client requested non-existent output");
+                    let frame = data_init.init(frame, ScreencopyFrameState::Failed);
+                    frame.failed();
+                    return;
+                };
+
                 let buffer_size = output.current_mode().unwrap().size;
                 let region_loc = Point::from((0, 0));
 
@@ -116,7 +122,13 @@ where
                     return;
                 }
 
-                let output = Output::from_resource(&output).unwrap();
+                let Some(output) = Output::from_resource(&output) else {
+                    trace!("screencopy client requested non-existent output");
+                    let frame = data_init.init(frame, ScreencopyFrameState::Failed);
+                    frame.failed();
+                    return;
+                };
+
                 let output_transform = output.current_transform();
                 let output_physical_size =
                     output_transform.transform_size(output.current_mode().unwrap().size);

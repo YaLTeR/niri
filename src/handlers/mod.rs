@@ -288,7 +288,7 @@ impl SessionLockHandler for State {
 
     fn new_surface(&mut self, surface: LockSurface, output: WlOutput) {
         let Some(output) = Output::from_resource(&output) else {
-            error!("no Output matching WlOutput");
+            warn!("no Output matching WlOutput");
             return;
         };
 
