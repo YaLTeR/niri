@@ -114,6 +114,7 @@ use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
+use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
@@ -202,6 +203,7 @@ pub struct Niri {
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
     pub screencopy_state: ScreencopyManagerState,
+    pub output_management_state: OutputManagementManagerState,
     pub viewporter_state: ViewporterState,
     pub xdg_foreign_state: XdgForeignState,
     pub shm_state: ShmState,
@@ -1051,7 +1053,7 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    fn reload_output_config(&mut self) {
+    pub fn reload_output_config(&mut self) {
         let mut resized_outputs = vec![];
         for output in self.niri.global_space.outputs() {
             let name = output.name();
@@ -1103,6 +1105,9 @@ impl State {
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.cancel(self);
         }
+
+        let config = self.niri.config.borrow().outputs.clone();
+        self.niri.output_management_state.on_config_changed(config);
     }
 
     pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
@@ -1178,6 +1183,9 @@ impl State {
 
         #[cfg(feature = "dbus")]
         self.niri.on_ipc_outputs_changed();
+
+        let new_config = self.backend.ipc_outputs().lock().unwrap().clone();
+        self.niri.output_management_state.notify_changes(new_config);
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -1482,6 +1490,11 @@ impl Niri {
             ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
+        let mut output_management_state =
+            OutputManagementManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
+        output_management_state.on_config_changed(config_.outputs.clone());
         let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
             !client.get_data::<ClientState>().unwrap().restricted
         });
@@ -1626,6 +1639,7 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            output_management_state,
             screencopy_state,
             viewporter_state,
             xdg_foreign_state,
