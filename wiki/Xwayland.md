@@ -81,3 +81,18 @@ gamescope -W 2560 -H 1440 -w 2560 -h 1440 -f  -- flatpak run com.valvesoftware.S
 > [!NOTE]
 > If Steam terminates abnormally while running in gamescope, it seems that subsequent gamescope invocations will sometimes fail to start it properly.
 > If this happens, run Steam inside a rootful Xwayland as described above, then exit it normally, and then you will be able to use gamescope again.
+
+## Using xwayland-satellite
+
+[xwayland-satellite] is an experimental new project that essentially implements rootless Xwayland in a separate application, without the host compositor's involvement.
+
+Build it according to instructions from its README, then run the `xwayland-satellite` binary.
+Now you can start X11 applications on the X11 DISPLAY that it provides:
+
+```
+env DISPLAY=:0 flatpak run com.valvesoftware.Steam
+```
+
+They will appear as normal windows.
+
+[xwayland-satellite]: https://github.com/Supreeeme/xwayland-satellite
