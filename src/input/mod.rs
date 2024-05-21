@@ -2200,6 +2200,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_dwtp_set_enabled(c.dwtp);
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_left_handed_set(c.left_handed);
 
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
@@ -2243,6 +2244,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let c = &config.mouse;
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_left_handed_set(c.left_handed);
 
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
@@ -2261,6 +2263,12 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else if let Some(default) = device.config_accel_default_profile() {
             let _ = device.config_accel_set_profile(default);
         }
+    }
+
+    let is_tablet = device.has_capability(input::DeviceCapability::TabletTool);
+    if is_tablet {
+        let c = &config.tablet;
+        let _ = device.config_left_handed_set(c.left_handed);
     }
 }
 

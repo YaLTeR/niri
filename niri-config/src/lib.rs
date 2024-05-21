@@ -171,6 +171,8 @@ pub struct Touchpad {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
+    #[knuffel(child)]
+    pub left_handed: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -181,6 +183,8 @@ pub struct Mouse {
     pub accel_speed: f64,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub left_handed: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -242,6 +246,8 @@ impl From<TapButtonMap> for input::TapButtonMap {
 pub struct Tablet {
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
+    #[knuffel(child)]
+    pub left_handed: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -2454,11 +2460,13 @@ mod tests {
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),
                         tap_button_map: Some(TapButtonMap::LeftMiddleRight),
+                        left_handed: false,
                     },
                     mouse: Mouse {
                         natural_scroll: true,
                         accel_speed: 0.4,
                         accel_profile: Some(AccelProfile::Flat),
+                        left_handed: false,
                     },
                     trackpoint: Trackpoint {
                         natural_scroll: true,
@@ -2467,6 +2475,7 @@ mod tests {
                     },
                     tablet: Tablet {
                         map_to_output: Some("eDP-1".to_owned()),
+                        left_handed: false,
                     },
                     touch: Touch {
                         map_to_output: Some("eDP-1".to_owned()),
