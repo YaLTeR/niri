@@ -33,12 +33,14 @@ input {
         // accel-profile "flat"
         // tap-button-map "left-middle-right"
         // click-method "clickfinger"
+        // left-handed
     }
 
     mouse {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // left-handed
     }
 
     trackpoint {
@@ -49,6 +51,7 @@ input {
 
     tablet {
         map-to-output "eDP-1"
+        // left-handed
     }
 
     touch {
@@ -129,6 +132,10 @@ Settings specific to `touchpad`s:
 - `dwtp`: disable-when-trackpointing.
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
+
+Settings specific to `touchpad`, `mouse` and `tablet`:
+
+- `left-handed`: if set, changes the device to left-handed mode.
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
