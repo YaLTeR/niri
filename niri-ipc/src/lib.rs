@@ -433,7 +433,7 @@ pub struct Output {
 }
 
 /// Output mode.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub struct Mode {
     /// Width in physical pixels.
     pub width: u16,
@@ -446,7 +446,7 @@ pub struct Mode {
 }
 
 /// Logical output in the compositor's coordinate space.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub struct LogicalOutput {
     /// Logical X position.
     pub x: i32,

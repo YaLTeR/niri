@@ -68,9 +68,13 @@ use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
+use crate::protocols::output_management::OutputManagementHandler;
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
-use crate::utils::{output_size, send_scale_transform};
-use crate::{delegate_foreign_toplevel, delegate_gamma_control, delegate_screencopy};
+use crate::utils::{logical_output, output_size, send_scale_transform};
+use crate::{
+    delegate_foreign_toplevel, delegate_gamma_control, delegate_output_management,
+    delegate_screencopy,
+};
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -545,3 +549,25 @@ delegate_xdg_activation!(State);
 
 impl FractionalScaleHandler for State {}
 delegate_fractional_scale!(State);
+
+impl OutputManagementHandler for State {
+    fn output_management_state(
+        &mut self,
+    ) -> &mut crate::protocols::output_management::OutputManagementManagerState {
+        &mut self.niri.output_management_state
+    }
+
+    fn get_logical(&self, name: &str) -> Option<niri_ipc::LogicalOutput> {
+        self.niri
+            .global_space
+            .outputs()
+            .find(|output| output.name() == *name)
+            .map(logical_output)
+    }
+
+    fn apply_new_conf(&mut self, conf: Vec<niri_config::Output>) {
+        self.niri.config.borrow_mut().outputs = conf;
+        self.backend.on_output_config_changed(&mut self.niri);
+    }
+}
+delegate_output_management!(State);
