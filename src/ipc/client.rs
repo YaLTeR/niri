@@ -127,9 +127,12 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     vrr_supported,
                     vrr_enabled,
                     logical,
+                    is_active,
                 } = output;
 
-                println!(r#"Output "{connector}" ({make} - {model} - {name})"#);
+                let active = if is_active { "*" } else { " " };
+
+                println!(r#"{active} Output "{connector}" ({make} - {model} - {name})"#);
 
                 if let Some(current) = current_mode {
                     let mode = *modes

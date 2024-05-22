@@ -119,6 +119,12 @@ impl Backend {
         }
     }
 
+    pub fn refresh_ipc_outputs(&self, niri: &mut Niri) {
+        if let Backend::Tty(tty) = self {
+            tty.refresh_ipc_outputs(niri)
+        }
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn gbm_device(
         &self,

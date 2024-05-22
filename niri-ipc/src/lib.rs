@@ -410,6 +410,8 @@ pub struct Output {
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
     pub logical: Option<LogicalOutput>,
+    /// Whether the output is currently active.
+    pub is_active: bool,
 }
 
 /// Output mode.
