@@ -120,6 +120,14 @@ pub enum Action {
     FocusWindowDown,
     /// Focus the window above.
     FocusWindowUp,
+    /// Focus the window below or the column to the left.
+    FocusWindowDownOrColumnLeft,
+    /// Focus the window below or the column to the right.
+    FocusWindowDownOrColumnRight,
+    /// Focus the window above or the column to the left.
+    FocusWindowUpOrColumnLeft,
+    /// Focus the window above or the column to the right.
+    FocusWindowUpOrColumnRight,
     /// Focus the window or the workspace above.
     FocusWindowOrWorkspaceDown,
     /// Focus the window or the workspace above.
