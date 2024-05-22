@@ -12,6 +12,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
+        Msg::FocusedOutput => Request::FocusedOutput,
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
@@ -117,96 +118,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             outputs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
             for (connector, output) in outputs.into_iter() {
-                let Output {
-                    name,
-                    make,
-                    model,
-                    physical_size,
-                    modes,
-                    current_mode,
-                    vrr_supported,
-                    vrr_enabled,
-                    logical,
-                } = output;
-
-                println!(r#"Output "{connector}" ({make} - {model} - {name})"#);
-
-                if let Some(current) = current_mode {
-                    let mode = *modes
-                        .get(current)
-                        .context("invalid response: current mode does not exist")?;
-                    let Mode {
-                        width,
-                        height,
-                        refresh_rate,
-                        is_preferred,
-                    } = mode;
-                    let refresh = refresh_rate as f64 / 1000.;
-                    let preferred = if is_preferred { " (preferred)" } else { "" };
-                    println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
-                } else {
-                    println!("  Disabled");
-                }
-
-                if vrr_supported {
-                    let enabled = if vrr_enabled { "enabled" } else { "disabled" };
-                    println!("  Variable refresh rate: supported, {enabled}");
-                } else {
-                    println!("  Variable refresh rate: not supported");
-                }
-
-                if let Some((width, height)) = physical_size {
-                    println!("  Physical size: {width}x{height} mm");
-                } else {
-                    println!("  Physical size: unknown");
-                }
-
-                if let Some(logical) = logical {
-                    let LogicalOutput {
-                        x,
-                        y,
-                        width,
-                        height,
-                        scale,
-                        transform,
-                    } = logical;
-                    println!("  Logical position: {x}, {y}");
-                    println!("  Logical size: {width}x{height}");
-                    println!("  Scale: {scale}");
-
-                    let transform = match transform {
-                        Transform::Normal => "normal",
-                        Transform::_90 => "90° counter-clockwise",
-                        Transform::_180 => "180°",
-                        Transform::_270 => "270° counter-clockwise",
-                        Transform::Flipped => "flipped horizontally",
-                        Transform::Flipped90 => "90° counter-clockwise, flipped horizontally",
-                        Transform::Flipped180 => "flipped vertically",
-                        Transform::Flipped270 => "270° counter-clockwise, flipped horizontally",
-                    };
-                    println!("  Transform: {transform}");
-                }
-
-                println!("  Available modes:");
-                for (idx, mode) in modes.into_iter().enumerate() {
-                    let Mode {
-                        width,
-                        height,
-                        refresh_rate,
-                        is_preferred,
-                    } = mode;
-                    let refresh = refresh_rate as f64 / 1000.;
-
-                    let is_current = Some(idx) == current_mode;
-                    let qualifier = match (is_current, is_preferred) {
-                        (true, true) => " (current, preferred)",
-                        (true, false) => " (current)",
-                        (false, true) => " (preferred)",
-                        (false, false) => "",
-                    };
-
-                    println!("    {width}x{height}@{refresh:.3}{qualifier}");
-                }
+                print_output(connector, output)?;
                 println!();
             }
         }
@@ -237,6 +149,23 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 }
             } else {
                 println!("No window is focused.");
+            }
+        }
+        Msg::FocusedOutput => {
+            let Response::FocusedOutput(output) = response else {
+                bail!("unexpected response: expected FocusedOutput, got {response:?}");
+            };
+
+            if json {
+                let output = serde_json::to_string(&output).context("error formatting response")?;
+                println!("{output}");
+                return Ok(());
+            }
+
+            if let Some(output) = output {
+                print_output(output.name.clone(), output)?;
+            } else {
+                println!("No output is focused.");
             }
         }
         Msg::Action { .. } => {
@@ -311,5 +240,99 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn print_output(connector: String, output: Output) -> anyhow::Result<()> {
+    let Output {
+        name,
+        make,
+        model,
+        physical_size,
+        modes,
+        current_mode,
+        vrr_supported,
+        vrr_enabled,
+        logical,
+    } = output;
+
+    println!(r#"Output "{connector}" ({make} - {model} - {name})"#);
+
+    if let Some(current) = current_mode {
+        let mode = *modes
+            .get(current)
+            .context("invalid response: current mode does not exist")?;
+        let Mode {
+            width,
+            height,
+            refresh_rate,
+            is_preferred,
+        } = mode;
+        let refresh = refresh_rate as f64 / 1000.;
+        let preferred = if is_preferred { " (preferred)" } else { "" };
+        println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
+    } else {
+        println!("  Disabled");
+    }
+
+    if vrr_supported {
+        let enabled = if vrr_enabled { "enabled" } else { "disabled" };
+        println!("  Variable refresh rate: supported, {enabled}");
+    } else {
+        println!("  Variable refresh rate: not supported");
+    }
+
+    if let Some((width, height)) = physical_size {
+        println!("  Physical size: {width}x{height} mm");
+    } else {
+        println!("  Physical size: unknown");
+    }
+
+    if let Some(logical) = logical {
+        let LogicalOutput {
+            x,
+            y,
+            width,
+            height,
+            scale,
+            transform,
+        } = logical;
+        println!("  Logical position: {x}, {y}");
+        println!("  Logical size: {width}x{height}");
+        println!("  Scale: {scale}");
+
+        let transform = match transform {
+            Transform::Normal => "normal",
+            Transform::_90 => "90° counter-clockwise",
+            Transform::_180 => "180°",
+            Transform::_270 => "270° counter-clockwise",
+            Transform::Flipped => "flipped horizontally",
+            Transform::Flipped90 => "90° counter-clockwise, flipped horizontally",
+            Transform::Flipped180 => "flipped vertically",
+            Transform::Flipped270 => "270° counter-clockwise, flipped horizontally",
+        };
+        println!("  Transform: {transform}");
+    }
+
+    println!("  Available modes:");
+    for (idx, mode) in modes.into_iter().enumerate() {
+        let Mode {
+            width,
+            height,
+            refresh_rate,
+            is_preferred,
+        } = mode;
+        let refresh = refresh_rate as f64 / 1000.;
+
+        let is_current = Some(idx) == current_mode;
+        let qualifier = match (is_current, is_preferred) {
+            (true, true) => " (current, preferred)",
+            (true, false) => " (current)",
+            (false, true) => " (preferred)",
+            (false, false) => "",
+        };
+
+        println!("    {width}x{height}@{refresh:.3}{qualifier}");
+    }
     Ok(())
 }

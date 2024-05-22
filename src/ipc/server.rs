@@ -208,6 +208,31 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let workspaces = result.map_err(|_| String::from("error getting workspace info"))?;
             Response::Workspaces(workspaces)
         }
+        Request::FocusedOutput => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let active_output = state
+                    .niri
+                    .layout
+                    .active_output()
+                    .map(|output| output.name());
+
+                let output = active_output.and_then(|active_output| {
+                    state
+                        .backend
+                        .ipc_outputs()
+                        .lock()
+                        .unwrap()
+                        .get(&active_output)
+                        .cloned()
+                });
+
+                let _ = tx.send_blocking(output);
+            });
+            let result = rx.recv().await;
+            let output = result.map_err(|_| String::from("error getting active output info"))?;
+            Response::FocusedOutput(output)
+        }
     };
 
     Ok(response)

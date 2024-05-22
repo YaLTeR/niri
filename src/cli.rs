@@ -58,6 +58,8 @@ pub enum Msg {
     Workspaces,
     /// Print information about the focused window.
     FocusedWindow,
+    /// Print information about the focused output.
+    FocusedOutput,
     /// Perform an action.
     Action {
         #[command(subcommand)]

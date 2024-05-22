@@ -33,6 +33,8 @@ pub enum Request {
     },
     /// Request information about workspaces.
     Workspaces,
+    /// Request information about the focused output.
+    FocusedOutput,
     /// Respond with an error (for testing error handling).
     ReturnError,
 }
@@ -64,6 +66,8 @@ pub enum Response {
     OutputConfigChanged(OutputConfigChanged),
     /// Information about workspaces.
     Workspaces(Vec<Workspace>),
+    /// Information about the focused output.
+    FocusedOutput(Option<Output>),
 }
 
 /// Actions that niri can perform.
