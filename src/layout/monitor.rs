@@ -328,6 +328,62 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().focus_up();
     }
 
+    pub fn focus_down_or_left(&mut self) {
+        let workspace = self.active_workspace();
+        if !workspace.columns.is_empty() {
+            let column = &workspace.columns[workspace.active_column_idx];
+            let curr_idx = column.active_tile_idx;
+            let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
+            if curr_idx == new_idx {
+                self.focus_left();
+            } else {
+                workspace.focus_down();
+            }
+        }
+    }
+
+    pub fn focus_down_or_right(&mut self) {
+        let workspace = self.active_workspace();
+        if !workspace.columns.is_empty() {
+            let column = &workspace.columns[workspace.active_column_idx];
+            let curr_idx = column.active_tile_idx;
+            let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
+            if curr_idx == new_idx {
+                self.focus_right();
+            } else {
+                workspace.focus_down();
+            }
+        }
+    }
+
+    pub fn focus_up_or_left(&mut self) {
+        let workspace = self.active_workspace();
+        if !workspace.columns.is_empty() {
+            let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
+            let new_idx = curr_idx.saturating_sub(1);
+            if curr_idx == new_idx {
+                self.focus_left();
+            } else {
+                workspace.focus_up();
+            }
+        }
+    }
+
+    pub fn focus_up_or_right(&mut self) {
+        let workspace = self.active_workspace();
+        if workspace.columns.is_empty() {
+            self.switch_workspace_up();
+        } else {
+            let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
+            let new_idx = curr_idx.saturating_sub(1);
+            if curr_idx == new_idx {
+                self.focus_left();
+            } else {
+                workspace.focus_up();
+            }
+        }
+    }
+
     pub fn focus_window_or_workspace_down(&mut self) {
         let workspace = self.active_workspace();
         if workspace.columns.is_empty() {

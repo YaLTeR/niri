@@ -1249,6 +1249,34 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_up();
     }
 
+    pub fn focus_down_or_left(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_down_or_left();
+    }
+
+    pub fn focus_down_or_right(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_down_or_right();
+    }
+
+    pub fn focus_up_or_left(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_up_or_left();
+    }
+
+    pub fn focus_up_or_right(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_up_or_right();
+    }
+
     pub fn focus_window_or_workspace_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -2603,6 +2631,10 @@ mod tests {
         FocusColumnLast,
         FocusWindowDown,
         FocusWindowUp,
+        FocusWindowDownOrColumnLeft,
+        FocusWindowDownOrColumnRight,
+        FocusWindowUpOrColumnLeft,
+        FocusWindowUpOrColumnRight,
         FocusWindowOrWorkspaceDown,
         FocusWindowOrWorkspaceUp,
         MoveColumnLeft,
@@ -2887,6 +2919,10 @@ mod tests {
                 Op::FocusColumnLast => layout.focus_column_last(),
                 Op::FocusWindowDown => layout.focus_down(),
                 Op::FocusWindowUp => layout.focus_up(),
+                Op::FocusWindowDownOrColumnLeft => layout.focus_down_or_left(),
+                Op::FocusWindowDownOrColumnRight => layout.focus_down_or_right(),
+                Op::FocusWindowUpOrColumnLeft => layout.focus_up_or_left(),
+                Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
                 Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
                 Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
                 Op::MoveColumnLeft => layout.move_left(),
@@ -3098,8 +3134,12 @@ mod tests {
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
             Op::FocusWindowUp,
+            Op::FocusWindowUpOrColumnLeft,
+            Op::FocusWindowUpOrColumnRight,
             Op::FocusWindowOrWorkspaceUp,
             Op::FocusWindowDown,
+            Op::FocusWindowDownOrColumnLeft,
+            Op::FocusWindowDownOrColumnRight,
             Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
@@ -3251,8 +3291,12 @@ mod tests {
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
             Op::FocusWindowUp,
+            Op::FocusWindowUpOrColumnLeft,
+            Op::FocusWindowUpOrColumnRight,
             Op::FocusWindowOrWorkspaceUp,
             Op::FocusWindowDown,
+            Op::FocusWindowDownOrColumnLeft,
+            Op::FocusWindowDownOrColumnRight,
             Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,

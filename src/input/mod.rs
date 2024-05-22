@@ -563,6 +563,30 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusWindowDownOrColumnLeft => {
+                self.niri.layout.focus_down_or_left();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowDownOrColumnRight => {
+                self.niri.layout.focus_down_or_right();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowUpOrColumnLeft => {
+                self.niri.layout.focus_up_or_left();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowUpOrColumnRight => {
+                self.niri.layout.focus_up_or_right();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWindowOrWorkspaceDown => {
                 self.niri.layout.focus_window_or_workspace_down();
                 self.maybe_warp_cursor_to_focus();
