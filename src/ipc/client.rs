@@ -12,6 +12,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
+        Msg::FocusedOutput => Request::FocusedOutput,
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
@@ -237,6 +238,24 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 }
             } else {
                 println!("No window is focused.");
+            }
+        }
+        Msg::FocusedOutput => {
+            let Response::FocusedOutput(output) = response else {
+                bail!("unexpected response: expected FocusedOutput, got {response:?}");
+            };
+
+            if json {
+                let output = serde_json::to_string(&output).context("error formatting response")?;
+                println!("{output}");
+                return Ok(());
+            }
+
+            if let Some(output) = output {
+                println!("Focused Output:");
+                println!("  Name: \"{output}\"");
+            } else {
+                println!("No output is focused.");
             }
         }
         Msg::Action { .. } => {
