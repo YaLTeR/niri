@@ -25,6 +25,7 @@ input {
     }
 
     touchpad {
+        // off
         tap
         // dwt
         // dwtp
@@ -35,9 +36,11 @@ input {
         // tap-button-map "left-middle-right"
         // click-method "clickfinger"
         // left-handed
+        // disabled-on-external-mouse
     }
 
     mouse {
+        // off
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
@@ -46,6 +49,7 @@ input {
     }
 
     trackpoint {
+        // off
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
@@ -53,6 +57,7 @@ input {
     }
 
     tablet {
+        // off
         map-to-output "eDP-1"
         // left-handed
     }
@@ -122,6 +127,10 @@ Most settings for the pointing devices are passed directly to libinput.
 Other Wayland compositors also use libinput, so it's likely you will find the same settings there.
 For flags like `tap`, omit them or comment them out to disable the setting.
 
+A few settings are common between input devices:
+
+- `off`: if set, no events will be sent from this device.
+
 A few settings are common between `touchpad`, `mouse` and `trackpoint`:
 
 - `natural-scroll`: if set, inverts the scrolling direction.
@@ -137,6 +146,7 @@ Settings specific to `touchpad`s:
 - `dwtp`: disable-when-trackpointing.
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
+- `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
 
 Settings specific to `touchpad`, `mouse` and `tablet`:
 
