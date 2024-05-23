@@ -77,7 +77,6 @@ impl Winit {
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
-                is_active: false,
             },
         )])));
 

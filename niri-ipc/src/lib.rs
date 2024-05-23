@@ -33,6 +33,8 @@ pub enum Request {
     },
     /// Request information about workspaces.
     Workspaces,
+    /// Request information about the focused output.
+    FocusedOutput,
     /// Respond with an error (for testing error handling).
     ReturnError,
 }
@@ -64,6 +66,8 @@ pub enum Response {
     OutputConfigChanged(OutputConfigChanged),
     /// Information about workspaces.
     Workspaces(Vec<Workspace>),
+    /// Information about the focused output.
+    FocusedOutput(Option<String>),
 }
 
 /// Actions that niri can perform.
@@ -410,8 +414,6 @@ pub struct Output {
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
     pub logical: Option<LogicalOutput>,
-    /// Whether the output is currently active.
-    pub is_active: bool,
 }
 
 /// Output mode.

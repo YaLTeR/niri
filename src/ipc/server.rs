@@ -89,7 +89,7 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
         }
     };
 
-    state.backend.refresh_ipc_outputs(&mut state.niri);
+    // state.backend.refresh_ipc_outputs(&mut state.niri);
 
     let ctx = ClientCtx {
         event_loop: state.niri.event_loop.clone(),
@@ -210,6 +210,20 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let result = rx.recv().await;
             let workspaces = result.map_err(|_| String::from("error getting workspace info"))?;
             Response::Workspaces(workspaces)
+        }
+        Request::FocusedOutput => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let active_output = state
+                    .niri
+                    .layout
+                    .active_output()
+                    .map(|output| output.name());
+                let _ = tx.send_blocking(active_output);
+            });
+            let result = rx.recv().await;
+            let name = result.map_err(|_| String::from("error getting active output info"))?;
+            Response::FocusedOutput(name)
         }
     };
 

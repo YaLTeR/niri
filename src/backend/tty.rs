@@ -1450,8 +1450,6 @@ impl Tty {
     pub fn refresh_ipc_outputs(&self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::refresh_ipc_outputs");
 
-        let active_output = niri.layout.active_output().map(|output| output.name());
-
         let mut ipc_outputs = HashMap::new();
 
         for (node, device) in &self.devices {
@@ -1518,11 +1516,6 @@ impl Tty {
                     })
                     .map(logical_output);
 
-                let is_active = active_output
-                    .as_ref()
-                    .map(|active| active == &connector_name)
-                    .unwrap_or(false);
-
                 let ipc_output = niri_ipc::Output {
                     name: connector_name.clone(),
                     make,
@@ -1533,7 +1526,6 @@ impl Tty {
                     vrr_supported,
                     vrr_enabled,
                     logical,
-                    is_active,
                 };
 
                 ipc_outputs.insert(connector_name, ipc_output);
