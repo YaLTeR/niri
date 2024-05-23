@@ -2,10 +2,11 @@ use std::ffi::OsStr;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::{io, thread};
 
+use libc::{getrlimit, rlimit, setrlimit, RLIMIT_NOFILE};
 use niri_config::Environment;
 
 use crate::utils::expand_home;
@@ -13,6 +14,50 @@ use crate::utils::expand_home;
 pub static REMOVE_ENV_RUST_BACKTRACE: AtomicBool = AtomicBool::new(false);
 pub static REMOVE_ENV_RUST_LIB_BACKTRACE: AtomicBool = AtomicBool::new(false);
 pub static CHILD_ENV: RwLock<Environment> = RwLock::new(Environment(Vec::new()));
+
+static ORIGINAL_NOFILE_RLIMIT_CUR: AtomicU64 = AtomicU64::new(0);
+static ORIGINAL_NOFILE_RLIMIT_MAX: AtomicU64 = AtomicU64::new(0);
+
+/// Increases the nofile rlimit to the maximum and stores the original value.
+pub fn store_and_increase_nofile_rlimit() {
+    let mut rlim = rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    if unsafe { getrlimit(RLIMIT_NOFILE, &mut rlim) } != 0 {
+        let err = io::Error::last_os_error();
+        warn!("error getting nofile rlimit: {err:?}");
+        return;
+    }
+
+    ORIGINAL_NOFILE_RLIMIT_CUR.store(rlim.rlim_cur, Ordering::SeqCst);
+    ORIGINAL_NOFILE_RLIMIT_MAX.store(rlim.rlim_max, Ordering::SeqCst);
+
+    trace!(
+        "changing nofile rlimit from {} to {}",
+        rlim.rlim_cur,
+        rlim.rlim_max
+    );
+    rlim.rlim_cur = rlim.rlim_max;
+
+    if unsafe { setrlimit(RLIMIT_NOFILE, &rlim) } != 0 {
+        let err = io::Error::last_os_error();
+        warn!("error setting nofile rlimit: {err:?}");
+    }
+}
+
+/// Restores the original nofile rlimit.
+pub fn restore_nofile_rlimit() {
+    let rlim_cur = ORIGINAL_NOFILE_RLIMIT_CUR.load(Ordering::SeqCst);
+    let rlim_max = ORIGINAL_NOFILE_RLIMIT_MAX.load(Ordering::SeqCst);
+
+    if rlim_cur == 0 {
+        return;
+    }
+
+    let rlim = rlimit { rlim_cur, rlim_max };
+    unsafe { setrlimit(RLIMIT_NOFILE, &rlim) };
+}
 
 /// Spawns the command to run independently of the compositor.
 pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>) {
@@ -102,6 +147,8 @@ fn do_spawn(command: &OsStr, mut process: Command) -> Option<Child> {
                 0 => (),
                 _ => libc::_exit(0),
             }
+
+            restore_nofile_rlimit();
 
             Ok(())
         });
@@ -213,6 +260,8 @@ mod systemd {
                         libc::_exit(0)
                     }
                 }
+
+                restore_nofile_rlimit();
 
                 Ok(())
             });
