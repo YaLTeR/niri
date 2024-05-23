@@ -21,6 +21,7 @@ input {
     // Next sections include libinput settings.
     // Omitting settings disables them, or leaves them at their default values.
     touchpad {
+        // off
         tap
         // dwt
         // dwtp
@@ -28,9 +29,11 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-method "two-finger"
+        // disabled-on-external-mouse
     }
 
     mouse {
+        // off
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"

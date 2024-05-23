@@ -2219,6 +2219,13 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
     let is_touchpad = device.config_tap_finger_count() > 0;
     if is_touchpad {
         let c = &config.touchpad;
+        let _ = device.config_send_events_set_mode(if c.off {
+            input::SendEventsMode::DISABLED
+        } else if c.disabled_on_external_mouse {
+            input::SendEventsMode::DISABLED_ON_EXTERNAL_MOUSE
+        } else {
+            input::SendEventsMode::ENABLED
+        });
         let _ = device.config_tap_set_enabled(c.tap);
         let _ = device.config_dwt_set_enabled(c.dwt);
         let _ = device.config_dwtp_set_enabled(c.dwtp);
@@ -2272,6 +2279,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         && !is_trackpoint;
     if is_mouse {
         let c = &config.mouse;
+        let _ = device.config_send_events_set_mode(if c.off {
+            input::SendEventsMode::DISABLED
+        } else {
+            input::SendEventsMode::ENABLED
+        });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
         let _ = device.config_left_handed_set(c.left_handed);
@@ -2291,6 +2303,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
     if is_trackpoint {
         let c = &config.trackpoint;
+        let _ = device.config_send_events_set_mode(if c.off {
+            input::SendEventsMode::DISABLED
+        } else {
+            input::SendEventsMode::ENABLED
+        });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
 
@@ -2310,6 +2327,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
     let is_tablet = device.has_capability(input::DeviceCapability::TabletTool);
     if is_tablet {
         let c = &config.tablet;
+        let _ = device.config_send_events_set_mode(if c.off {
+            input::SendEventsMode::DISABLED
+        } else {
+            input::SendEventsMode::ENABLED
+        });
         let _ = device.config_left_handed_set(c.left_handed);
     }
 }

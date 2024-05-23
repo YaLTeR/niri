@@ -156,6 +156,8 @@ pub enum TrackLayout {
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Touchpad {
     #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
     pub tap: bool,
     #[knuffel(child)]
     pub dwt: bool,
@@ -175,10 +177,14 @@ pub struct Touchpad {
     pub tap_button_map: Option<TapButtonMap>,
     #[knuffel(child)]
     pub left_handed: bool,
+    #[knuffel(child)]
+    pub disabled_on_external_mouse: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Mouse {
+    #[knuffel(child)]
+    pub off: bool,
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
@@ -193,6 +199,8 @@ pub struct Mouse {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Trackpoint {
+    #[knuffel(child)]
+    pub off: bool,
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
@@ -269,6 +277,8 @@ impl From<TapButtonMap> for input::TapButtonMap {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Tablet {
+    #[knuffel(child)]
+    pub off: bool,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
     #[knuffel(child)]
@@ -2342,6 +2352,7 @@ mod tests {
                     accel-profile "flat"
                     scroll-method "two-finger"
                     tap-button-map "left-middle-right"
+                    disabled-on-external-mouse
                 }
 
                 mouse {
@@ -2352,6 +2363,7 @@ mod tests {
                 }
 
                 trackpoint {
+                    off
                     natural-scroll
                     accel-speed 0.0
                     accel-profile "flat"
@@ -2504,6 +2516,7 @@ mod tests {
                         track_layout: TrackLayout::Window,
                     },
                     touchpad: Touchpad {
+                        off: false,
                         tap: true,
                         dwt: true,
                         dwtp: true,
@@ -2514,8 +2527,10 @@ mod tests {
                         scroll_method: Some(ScrollMethod::TwoFinger),
                         tap_button_map: Some(TapButtonMap::LeftMiddleRight),
                         left_handed: false,
+                        disabled_on_external_mouse: true,
                     },
                     mouse: Mouse {
+                        off: false,
                         natural_scroll: true,
                         accel_speed: 0.4,
                         accel_profile: Some(AccelProfile::Flat),
@@ -2523,12 +2538,14 @@ mod tests {
                         left_handed: false,
                     },
                     trackpoint: Trackpoint {
+                        off: true,
                         natural_scroll: true,
                         accel_speed: 0.0,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::OnButtonDown),
                     },
                     tablet: Tablet {
+                        off: false,
                         map_to_output: Some("eDP-1".to_owned()),
                         left_handed: false,
                     },
