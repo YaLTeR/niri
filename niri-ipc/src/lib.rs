@@ -67,7 +67,7 @@ pub enum Response {
     /// Information about workspaces.
     Workspaces(Vec<Workspace>),
     /// Information about the focused output.
-    FocusedOutput(Option<String>),
+    FocusedOutput(Option<Output>),
 }
 
 /// Actions that niri can perform.

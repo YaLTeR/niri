@@ -220,7 +220,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             });
             let result = rx.recv().await;
             let name = result.map_err(|_| String::from("error getting active output info"))?;
-            Response::FocusedOutput(name)
+            let output = name.and_then(|name| ctx.ipc_outputs.lock().unwrap().get(&name).cloned());
+            Response::FocusedOutput(output)
         }
     };
 
