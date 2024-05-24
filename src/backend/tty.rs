@@ -1447,7 +1447,7 @@ impl Tty {
         }
     }
 
-    pub fn refresh_ipc_outputs(&self, niri: &mut Niri) {
+    fn refresh_ipc_outputs(&self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::refresh_ipc_outputs");
 
         let mut ipc_outputs = HashMap::new();

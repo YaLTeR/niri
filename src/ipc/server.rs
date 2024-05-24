@@ -89,8 +89,6 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
         }
     };
 
-    // state.backend.refresh_ipc_outputs(&mut state.niri);
-
     let ctx = ClientCtx {
         event_loop: state.niri.event_loop.clone(),
         ipc_outputs: state.backend.ipc_outputs(),
@@ -145,7 +143,6 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         Request::Version => Response::Version(version()),
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
-
             Response::Outputs(ipc_outputs)
         }
         Request::FocusedWindow => {
