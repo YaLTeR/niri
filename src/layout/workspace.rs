@@ -1536,6 +1536,15 @@ impl<W: LayoutElement> Workspace<W> {
         self.activate_column(self.columns.len() - 1);
     }
 
+    pub fn focus_column_right_or_first(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let column_idx = (self.active_column_idx + 1) % self.columns.len();
+        self.activate_column(column_idx);
+    }
+
     pub fn focus_down(&mut self) {
         if self.columns.is_empty() {
             return;

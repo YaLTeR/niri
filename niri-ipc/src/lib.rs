@@ -116,6 +116,8 @@ pub enum Action {
     FocusColumnFirst,
     /// Focus the last column.
     FocusColumnLast,
+    /// Focus the next column to the right, looping if at end.
+    FocusColumnRightOrFirst,
     /// Focus the window below.
     FocusWindowDown,
     /// Focus the window above.
