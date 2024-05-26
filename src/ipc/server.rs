@@ -217,7 +217,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                     .active_output()
                     .map(|output| output.name());
 
-                let output = active_output.clone().and_then(|active_output| {
+                let output = active_output.and_then(|active_output| {
                     state
                         .backend
                         .ipc_outputs()
