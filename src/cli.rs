@@ -13,6 +13,9 @@ use crate::utils::version;
 #[command(subcommand_help_heading = "Subcommands")]
 pub struct Cli {
     /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
+    ///
+    /// This can also be set with the `NIRI_CONFIG` environment variable. If both are set, the
+    /// command line argument takes precedence.
     #[arg(short, long)]
     pub config: Option<PathBuf>,
     /// Import environment globally to systemd and D-Bus, run D-Bus services.
@@ -43,6 +46,9 @@ pub enum Sub {
     /// Validate the config file.
     Validate {
         /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
+        ///
+        /// This can also be set with the `NIRI_CONFIG` environment variable. If both are set, the
+        /// command line argument takes precedence.
         #[arg(short, long)]
         config: Option<PathBuf>,
     },
