@@ -91,6 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tracy_client::Client::start();
 
                 let path = config
+                    .or_else(env_config_path)
                     .or_else(default_config_path)
                     .expect("error getting config path");
                 Config::load(&path)?;
@@ -113,7 +114,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the config.
     let mut config_created = false;
-    let path = cli.config.or_else(|| {
+    let path = cli.config.or_else(env_config_path);
+    env::remove_var("NIRI_CONFIG");
+    let path = path.or_else(|| {
         let default_path = default_config_path()?;
         let default_parent = default_path.parent().unwrap();
 
@@ -313,6 +316,12 @@ fn import_environment() {
             warn!("error spawning shell to import environment: {err:?}");
         }
     }
+}
+
+fn env_config_path() -> Option<PathBuf> {
+    env::var_os("NIRI_CONFIG")
+        .filter(|x| !x.is_empty())
+        .map(PathBuf::from)
 }
 
 fn default_config_path() -> Option<PathBuf> {

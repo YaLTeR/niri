@@ -25,6 +25,11 @@ You can run `niri validate` to parse the config and see any errors.
 
 To use a different config file path, pass it in the `--config` or `-c` argument to `niri`.
 
+You can also set `$NIRI_CONFIG` to the path of the config file.
+`--config` always takes precedence.
+If `--config` or `$NIRI_CONFIG` doesn't point to a real file, the config will not be loaded.
+If `$NIRI_CONFIG` is set to an empty string, it is ignored and the default config location is used instead.
+
 ### Syntax
 
 The config is written in [KDL].
