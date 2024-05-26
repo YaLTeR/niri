@@ -2232,6 +2232,12 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             let _ = device.config_accel_set_profile(default);
         }
 
+        if let Some(method) = c.scroll_method {
+            let _ = device.config_scroll_set_method(method.into());
+        } else if let Some(default) = device.config_scroll_default_method() {
+            let _ = device.config_scroll_set_method(default);
+        }
+
         if let Some(tap_button_map) = c.tap_button_map {
             let _ = device.config_tap_set_button_map(tap_button_map.into());
         } else if let Some(default) = device.config_tap_default_button_map() {
@@ -2275,6 +2281,12 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else if let Some(default) = device.config_accel_default_profile() {
             let _ = device.config_accel_set_profile(default);
         }
+
+        if let Some(method) = c.scroll_method {
+            let _ = device.config_scroll_set_method(method.into());
+        } else if let Some(default) = device.config_scroll_default_method() {
+            let _ = device.config_scroll_set_method(default);
+        }
     }
 
     if is_trackpoint {
@@ -2286,6 +2298,12 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             let _ = device.config_accel_set_profile(accel_profile.into());
         } else if let Some(default) = device.config_accel_default_profile() {
             let _ = device.config_accel_set_profile(default);
+        }
+
+        if let Some(method) = c.scroll_method {
+            let _ = device.config_scroll_set_method(method.into());
+        } else if let Some(default) = device.config_scroll_default_method() {
+            let _ = device.config_scroll_set_method(default);
         }
     }
 

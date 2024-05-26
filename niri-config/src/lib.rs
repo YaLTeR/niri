@@ -170,6 +170,8 @@ pub struct Touchpad {
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
+    pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
     #[knuffel(child)]
     pub left_handed: bool,
@@ -183,6 +185,8 @@ pub struct Mouse {
     pub accel_speed: f64,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child)]
     pub left_handed: bool,
 }
@@ -195,6 +199,8 @@ pub struct Trackpoint {
     pub accel_speed: f64,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub scroll_method: Option<ScrollMethod>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,6 +229,25 @@ impl From<AccelProfile> for input::AccelProfile {
         match value {
             AccelProfile::Adaptive => Self::Adaptive,
             AccelProfile::Flat => Self::Flat,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollMethod {
+    NoScroll,
+    TwoFinger,
+    Edge,
+    OnButtonDown,
+}
+
+impl From<ScrollMethod> for input::ScrollMethod {
+    fn from(value: ScrollMethod) -> Self {
+        match value {
+            ScrollMethod::NoScroll => Self::NoScroll,
+            ScrollMethod::TwoFinger => Self::TwoFinger,
+            ScrollMethod::Edge => Self::Edge,
+            ScrollMethod::OnButtonDown => Self::OnButtonDown,
         }
     }
 }
@@ -2245,6 +2270,22 @@ impl FromStr for AccelProfile {
     }
 }
 
+impl FromStr for ScrollMethod {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "no-scroll" => Ok(Self::NoScroll),
+            "two-finger" => Ok(Self::TwoFinger),
+            "edge" => Ok(Self::Edge),
+            "on-button-down" => Ok(Self::OnButtonDown),
+            _ => Err(miette!(
+                r#"invalid scroll method, can be "no-scroll" or "two-finger", "edge", or "on-button-down""#
+            )),
+        }
+    }
+}
+
 impl FromStr for TapButtonMap {
     type Err = miette::Error;
 
@@ -2299,6 +2340,7 @@ mod tests {
                     click-method "clickfinger"
                     accel-speed 0.2
                     accel-profile "flat"
+                    scroll-method "two-finger"
                     tap-button-map "left-middle-right"
                 }
 
@@ -2306,12 +2348,14 @@ mod tests {
                     natural-scroll
                     accel-speed 0.4
                     accel-profile "flat"
+                    scroll-method "no-scroll"
                 }
 
                 trackpoint {
                     natural-scroll
                     accel-speed 0.0
                     accel-profile "flat"
+                    scroll-method "on-button-down"
                 }
 
                 tablet {
@@ -2467,6 +2511,7 @@ mod tests {
                         natural_scroll: false,
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),
+                        scroll_method: Some(ScrollMethod::TwoFinger),
                         tap_button_map: Some(TapButtonMap::LeftMiddleRight),
                         left_handed: false,
                     },
@@ -2474,12 +2519,14 @@ mod tests {
                         natural_scroll: true,
                         accel_speed: 0.4,
                         accel_profile: Some(AccelProfile::Flat),
+                        scroll_method: Some(ScrollMethod::NoScroll),
                         left_handed: false,
                     },
                     trackpoint: Trackpoint {
                         natural_scroll: true,
                         accel_speed: 0.0,
                         accel_profile: Some(AccelProfile::Flat),
+                        scroll_method: Some(ScrollMethod::OnButtonDown),
                     },
                     tablet: Tablet {
                         map_to_output: Some("eDP-1".to_owned()),
