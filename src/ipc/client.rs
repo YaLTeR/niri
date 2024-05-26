@@ -119,6 +119,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
 
             for (connector, output) in outputs.into_iter() {
                 print_output(connector, output)?;
+                println!();
             }
         }
         Msg::FocusedWindow => {
@@ -333,6 +334,5 @@ fn print_output(connector: String, output: Output) -> anyhow::Result<()> {
 
         println!("    {width}x{height}@{refresh:.3}{qualifier}");
     }
-    println!();
     Ok(())
 }

@@ -216,11 +216,21 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                     .layout
                     .active_output()
                     .map(|output| output.name());
-                let _ = tx.send_blocking(active_output);
+
+                let output = active_output.clone().and_then(|active_output| {
+                    state
+                        .backend
+                        .ipc_outputs()
+                        .lock()
+                        .unwrap()
+                        .get(&active_output)
+                        .cloned()
+                });
+
+                let _ = tx.send_blocking(output);
             });
             let result = rx.recv().await;
-            let name = result.map_err(|_| String::from("error getting active output info"))?;
-            let output = name.and_then(|name| ctx.ipc_outputs.lock().unwrap().get(&name).cloned());
+            let output = result.map_err(|_| String::from("error getting active output info"))?;
             Response::FocusedOutput(output)
         }
     };
