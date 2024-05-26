@@ -27,12 +27,14 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-method "two-finger"
     }
 
     mouse {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-method "no-scroll"
     }
 
     // Uncomment this to make the mouse warp to the center of newly focused windows.
