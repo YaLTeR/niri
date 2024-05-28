@@ -2280,7 +2280,7 @@ impl FromStr for ScrollMethod {
             "edge" => Ok(Self::Edge),
             "on-button-down" => Ok(Self::OnButtonDown),
             _ => Err(miette!(
-                r#"invalid scroll method, can be "no-scroll" or "two-finger", "edge", or "on-button-down""#
+                r#"invalid scroll method, can be "no-scroll", "two-finger", "edge", or "on-button-down""#
             )),
         }
     }
