@@ -68,9 +68,9 @@ output "eDP-1" {
 
 Set the scale of the monitor.
 
-This is a floating-point number to enable fractional scaling in the future, but at the moment only integer scale values will work.
-
 <sup>Since: 0.1.6</sup> If scale is unset, niri will guess an appropriate scale based on the physical dimensions and the resolution of the monitor.
+
+<sup>Since: 0.1.7</sup> You can use fractional scale values, for example `scale 1.5` for 150% scale.
 
 ```
 output "eDP-1" {

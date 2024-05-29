@@ -65,7 +65,7 @@ input {
     // Run `niri msg outputs` while inside a niri instance to list all outputs and their modes.
     mode "1920x1080@120.030"
 
-    // Scale is a floating-point number, but at the moment only integer values work.
+    // You can use integer or fractional scale, for example use 1.5 for 150% scale.
     scale 2.0
 
     // Transform allows to rotate the output counter-clockwise, valid values are:
