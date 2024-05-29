@@ -41,7 +41,7 @@ use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::output::Output;
+use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
 
@@ -146,7 +146,7 @@ pub trait LayoutElement {
     fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
     fn has_ssd(&self) -> bool;
-    fn set_preferred_scale_transform(&self, scale: i32, transform: Transform);
+    fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform);
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
     fn set_offscreen_element_id(&self, id: Option<Id>);
@@ -2487,7 +2487,7 @@ mod tests {
             false
         }
 
-        fn set_preferred_scale_transform(&self, _scale: i32, _transform: Transform) {}
+        fn set_preferred_scale_transform(&self, _scale: output::Scale, _transform: Transform) {}
 
         fn has_ssd(&self) -> bool {
             false

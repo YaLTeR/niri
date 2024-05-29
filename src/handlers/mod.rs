@@ -22,7 +22,7 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle, Size};
-use smithay::wayland::compositor::{send_surface_state, with_states};
+use smithay::wayland::compositor::with_states;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -67,7 +67,7 @@ use crate::protocols::foreign_toplevel::{
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
-use crate::utils::output_size;
+use crate::utils::{output_size, send_scale_transform};
 use crate::{delegate_foreign_toplevel, delegate_gamma_control, delegate_screencopy};
 
 impl SeatHandler for State {
@@ -140,11 +140,11 @@ impl InputMethodHandler for State {
     fn new_popup(&mut self, surface: PopupSurface) {
         let popup = PopupKind::InputMethod(surface);
         if let Some(output) = self.output_for_popup(&popup) {
-            let scale = output.current_scale().integer_scale();
+            let scale = output.current_scale();
             let transform = output.current_transform();
             let wl_surface = popup.wl_surface();
             with_states(wl_surface, |data| {
-                send_surface_state(wl_surface, data, scale, transform);
+                send_scale_transform(wl_surface, data, scale, transform);
             });
         }
 
@@ -307,11 +307,11 @@ pub fn configure_lock_surface(surface: &LockSurface, output: &Output) {
         let size = output_size(output);
         states.size = Some(Size::from((size.w as u32, size.h as u32)));
     });
-    let scale = output.current_scale().integer_scale();
+    let scale = output.current_scale();
     let transform = output.current_transform();
     let wl_surface = surface.wl_surface();
     with_states(wl_surface, |data| {
-        send_surface_state(wl_surface, data, scale, transform);
+        send_scale_transform(wl_surface, data, scale, transform);
     });
     surface.send_configure();
 }

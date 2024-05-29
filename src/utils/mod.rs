@@ -12,10 +12,13 @@ use directories::UserDirs;
 use git_version::git_version;
 use niri_config::Config;
 use smithay::input::pointer::CursorIcon;
-use smithay::output::Output;
+use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
+use smithay::wayland::compositor::{send_surface_state, SurfaceData};
+use smithay::wayland::fractional_scale::with_fractional_scale;
 
 pub mod id;
 pub mod scale;
@@ -131,6 +134,18 @@ pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
         niri_ipc::Transform::Flipped180 => Transform::Flipped180,
         niri_ipc::Transform::Flipped270 => Transform::Flipped270,
     }
+}
+
+pub fn send_scale_transform(
+    surface: &WlSurface,
+    data: &SurfaceData,
+    scale: output::Scale,
+    transform: Transform,
+) {
+    send_surface_state(surface, data, scale.integer_scale(), transform);
+    with_fractional_scale(data, |fractional| {
+        fractional.set_preferred_scale(scale.fractional_scale());
+    });
 }
 
 pub fn expand_home(path: &Path) -> anyhow::Result<Option<PathBuf>> {

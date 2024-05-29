@@ -14,8 +14,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::compositor::{
-    add_pre_commit_hook, send_surface_state, with_states, BufferAssignment, HookId,
-    SurfaceAttributes,
+    add_pre_commit_hook, with_states, BufferAssignment, HookId, SurfaceAttributes,
 };
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
@@ -34,7 +33,7 @@ use crate::input::resize_grab::ResizeGrab;
 use crate::input::DOUBLE_CLICK_TIME;
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
-use crate::utils::{get_monotonic_time, ResizeEdge};
+use crate::utils::{get_monotonic_time, send_scale_transform, ResizeEdge};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
 impl XdgShellHandler for State {
@@ -734,10 +733,10 @@ impl State {
                     if !initial_configure_sent {
                         if let Some(output) = self.output_for_popup(&PopupKind::Xdg(popup.clone()))
                         {
-                            let scale = output.current_scale().integer_scale();
+                            let scale = output.current_scale();
                             let transform = output.current_transform();
                             with_states(surface, |data| {
-                                send_surface_state(surface, data, scale, transform);
+                                send_scale_transform(surface, data, scale, transform);
                             });
                         }
                         popup.send_configure().expect("initial configure failed");

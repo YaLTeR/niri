@@ -9,14 +9,12 @@ use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
 use smithay::desktop::{PopupManager, Window};
-use smithay::output::Output;
+use smithay::output::{self, Output};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
-use smithay::wayland::compositor::{
-    remove_pre_commit_hook, send_surface_state, with_states, HookId,
-};
+use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
@@ -28,7 +26,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
-use crate::utils::ResizeEdge;
+use crate::utils::{send_scale_transform, ResizeEdge};
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -427,9 +425,9 @@ impl LayoutElement for Mapped {
         self.toplevel().wl_surface() == wl_surface
     }
 
-    fn set_preferred_scale_transform(&self, scale: i32, transform: Transform) {
+    fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform) {
         self.window.with_surfaces(|surface, data| {
-            send_surface_state(surface, data, scale, transform);
+            send_scale_transform(surface, data, scale, transform);
         });
     }
 

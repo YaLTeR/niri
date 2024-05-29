@@ -62,8 +62,8 @@ use smithay::utils::{
     SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
-    send_surface_state, with_states, with_surface_tree_downward, CompositorClientState,
-    CompositorState, SurfaceData, TraversalAction,
+    with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
+    TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
@@ -127,7 +127,7 @@ use crate::utils::scale::guess_monitor_scale;
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
-    make_screenshot_path, output_size, write_png_rgba8,
+    make_screenshot_path, output_size, send_scale_transform, write_png_rgba8,
 };
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
@@ -2359,9 +2359,9 @@ impl Niri {
 
                 // FIXME we basically need to pick the largest scale factor across the overlapping
                 // outputs, this is how it's usually done in clients as well.
-                let mut cursor_scale = 1;
+                let mut cursor_scale = 1.;
                 let mut cursor_transform = Transform::Normal;
-                let mut dnd_scale = 1;
+                let mut dnd_scale = 1.;
                 let mut dnd_transform = Transform::Normal;
                 for output in self.global_space.outputs() {
                     let geo = self.global_space.output_geometry(output).unwrap();
@@ -2369,7 +2369,8 @@ impl Niri {
                     // Compute pointer surface overlap.
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlap.loc -= surface_pos;
-                        cursor_scale = cursor_scale.max(output.current_scale().integer_scale());
+                        cursor_scale =
+                            f64::max(cursor_scale, output.current_scale().fractional_scale());
                         // FIXME: using the largest overlapping or "primary" output transform would
                         // make more sense here.
                         cursor_transform = output.current_transform();
@@ -2382,7 +2383,8 @@ impl Niri {
                     if let Some((surface, bbox)) = dnd {
                         if let Some(mut overlap) = geo.intersection(bbox) {
                             overlap.loc -= surface_pos;
-                            dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
+                            dnd_scale =
+                                f64::max(dnd_scale, output.current_scale().fractional_scale());
                             // FIXME: using the largest overlapping or "primary" output transform
                             // would make more sense here.
                             dnd_transform = output.current_transform();
@@ -2394,11 +2396,21 @@ impl Niri {
                 }
 
                 with_states(surface, |data| {
-                    send_surface_state(surface, data, cursor_scale, cursor_transform);
+                    send_scale_transform(
+                        surface,
+                        data,
+                        output::Scale::Fractional(cursor_scale),
+                        cursor_transform,
+                    )
                 });
                 if let Some((surface, _)) = dnd {
                     with_states(surface, |data| {
-                        send_surface_state(surface, data, dnd_scale, dnd_transform);
+                        send_scale_transform(
+                            surface,
+                            data,
+                            output::Scale::Fractional(dnd_scale),
+                            dnd_transform,
+                        );
                     });
                 }
             }
@@ -2414,7 +2426,7 @@ impl Niri {
                     Default::default()
                 };
 
-                let mut dnd_scale = 1;
+                let mut dnd_scale = 1.;
                 let mut dnd_transform = Transform::Normal;
                 for output in self.global_space.outputs() {
                     let geo = self.global_space.output_geometry(output).unwrap();
@@ -2436,7 +2448,7 @@ impl Niri {
 
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlap.loc -= surface_pos;
-                        dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
+                        dnd_scale = f64::max(dnd_scale, output.current_scale().fractional_scale());
                         // FIXME: using the largest overlapping or "primary" output transform would
                         // make more sense here.
                         dnd_transform = output.current_transform();
@@ -2447,7 +2459,12 @@ impl Niri {
                 }
 
                 with_states(surface, |data| {
-                    send_surface_state(surface, data, dnd_scale, dnd_transform);
+                    send_scale_transform(
+                        surface,
+                        data,
+                        output::Scale::Fractional(dnd_scale),
+                        dnd_transform,
+                    );
                 });
             }
         }

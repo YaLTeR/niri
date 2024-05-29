@@ -11,7 +11,6 @@ use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
-use smithay::wayland::compositor::send_surface_state;
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::tile::{Tile, TileRenderElement};
@@ -22,7 +21,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
-use crate::utils::{output_size, ResizeEdge};
+use crate::utils::{output_size, send_scale_transform, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
 /// Amount of touchpad movement to scroll the view for the width of one working area.
@@ -587,10 +586,10 @@ impl<W: LayoutElement> Workspace<W> {
         rules: &ResolvedWindowRules,
     ) {
         if let Some(output) = self.output.as_ref() {
-            let scale = output.current_scale().integer_scale();
+            let scale = output.current_scale();
             let transform = output.current_transform();
             window.with_surfaces(|surface, data| {
-                send_surface_state(surface, data, scale, transform);
+                send_scale_transform(surface, data, scale, transform);
             });
         }
 
@@ -3389,7 +3388,7 @@ fn compute_new_view_offset(
 
 fn set_preferred_scale_transform(window: &impl LayoutElement, output: &Output) {
     // FIXME: cache this on the workspace.
-    let scale = output.current_scale().integer_scale();
+    let scale = output.current_scale();
     let transform = output.current_transform();
     window.set_preferred_scale_transform(scale, transform);
 }
