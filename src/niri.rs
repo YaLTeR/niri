@@ -808,7 +808,15 @@ impl State {
                 }
             }
 
-            if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
+            if self
+                .niri
+                .config
+                .borrow()
+                .input
+                .default_keyboard()
+                .track_layout
+                == TrackLayout::Window
+            {
                 let current_layout =
                     keyboard.with_xkb_state(self, |context| context.active_layout());
 
@@ -908,19 +916,23 @@ impl State {
             self.niri.cursor_texture_cache.clear();
         }
 
+        let default_keyboard = config.input.default_keyboard();
+
+        let old_keyboard = old_config.input.default_keyboard();
+
         // We need &mut self to reload the xkb config, so just store it here.
-        if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
-            reload_xkb = Some(config.input.keyboard.xkb.clone());
+        if default_keyboard.xkb != old_keyboard.xkb {
+            reload_xkb = Some(default_keyboard.xkb.clone());
         }
 
         // Reload the repeat info.
-        if config.input.keyboard.repeat_rate != old_config.input.keyboard.repeat_rate
-            || config.input.keyboard.repeat_delay != old_config.input.keyboard.repeat_delay
+        if default_keyboard.repeat_rate != old_keyboard.repeat_rate
+            || default_keyboard.repeat_delay != old_keyboard.repeat_delay
         {
             let keyboard = self.niri.seat.get_keyboard().unwrap();
             keyboard.change_repeat_info(
-                config.input.keyboard.repeat_rate.into(),
-                config.input.keyboard.repeat_delay.into(),
+                default_keyboard.repeat_rate.into(),
+                default_keyboard.repeat_delay.into(),
             );
         }
 
@@ -1375,9 +1387,9 @@ impl Niri {
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
-            config_.input.keyboard.xkb.to_xkb_config(),
-            config_.input.keyboard.repeat_delay.into(),
-            config_.input.keyboard.repeat_rate.into(),
+            config_.input.default_keyboard().xkb.to_xkb_config(),
+            config_.input.default_keyboard().repeat_delay.into(),
+            config_.input.default_keyboard().repeat_rate.into(),
         )
         .unwrap();
         seat.add_pointer();

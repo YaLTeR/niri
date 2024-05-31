@@ -269,6 +269,23 @@ impl State {
     }
 
     fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
+        {
+            let device = event.device();
+            let xkb = self
+                .niri
+                .config
+                .borrow()
+                .input
+                .keyboard_named(device.name())
+                .xkb;
+
+            let keyboard = self.niri.seat.get_keyboard().unwrap();
+
+            if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
+                warn!("error updating xkb config: {err:?}");
+            }
+        }
+
         let comp_mod = self.backend.mod_key();
 
         let serial = SERIAL_COUNTER.next_serial();

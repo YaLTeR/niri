@@ -59,8 +59,8 @@ pub struct Config {
 // FIXME: Add other devices.
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Input {
-    #[knuffel(child, default)]
-    pub keyboard: Keyboard,
+    #[knuffel(children(name = "keyboard"), default)]
+    pub keyboards: Vec<Keyboard>,
     #[knuffel(child, default)]
     pub touchpad: Touchpad,
     #[knuffel(child, default)]
@@ -81,8 +81,28 @@ pub struct Input {
     pub workspace_auto_back_and_forth: bool,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+impl Input {
+    pub fn default_keyboard(&self) -> Keyboard {
+        self.keyboards
+            .iter()
+            .find(|keyboard| keyboard.name.is_none())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn keyboard_named<K: AsRef<str>>(&self, name: K) -> Keyboard {
+        self.keyboards
+            .iter()
+            .find(|keyboard| keyboard.name.as_deref() == Some(name.as_ref()))
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone)]
 pub struct Keyboard {
+    #[knuffel(argument, unwrap(argument))]
+    pub name: Option<String>,
     #[knuffel(child, default)]
     pub xkb: Xkb,
     // The defaults were chosen to match wlroots and sway.
@@ -97,6 +117,7 @@ pub struct Keyboard {
 impl Default for Keyboard {
     fn default() -> Self {
         Self {
+            name: None,
             xkb: Default::default(),
             repeat_delay: 600,
             repeat_rate: 25,
@@ -143,7 +164,7 @@ pub enum CenterFocusedColumn {
     OnOverflow,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone)]
 pub enum TrackLayout {
     /// The layout change is global.
     #[default]
@@ -2509,7 +2530,7 @@ mod tests {
             "##,
             Config {
                 input: Input {
-                    keyboard: Keyboard {
+                    keyboards: Keyboard {
                         xkb: Xkb {
                             layout: "us,ru".to_owned(),
                             options: Some("grp:win_space_toggle".to_owned()),
@@ -2518,6 +2539,7 @@ mod tests {
                         repeat_delay: 600,
                         repeat_rate: 25,
                         track_layout: TrackLayout::Window,
+                        ..Default::default()
                     },
                     touchpad: Touchpad {
                         off: false,
