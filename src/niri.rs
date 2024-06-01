@@ -271,6 +271,8 @@ pub struct Niri {
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
     pub pipewire: Option<PipeWire>,
+
+    pub current_keyboard: niri_config::Keyboard,
 }
 
 pub struct OutputState {
@@ -1587,6 +1589,8 @@ impl Niri {
 
             pipewire,
             casts: vec![],
+
+            current_keyboard: Default::default(),
         }
     }
 
