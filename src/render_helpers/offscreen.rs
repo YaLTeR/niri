@@ -1,6 +1,5 @@
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer};
@@ -10,6 +9,7 @@ use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 use super::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use super::render_to_texture;
 use super::renderer::AsGlesFrame;
+use super::texture::{TextureBuffer, TextureRenderElement};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 /// Renders elements into an off-screen buffer.
@@ -59,12 +59,17 @@ impl OffscreenRenderElement {
             elements,
         ) {
             Ok((texture, _sync_point)) => {
-                let buffer =
-                    TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, None);
+                let buffer = TextureBuffer::from_texture(
+                    renderer,
+                    texture,
+                    scale as f64,
+                    Transform::Normal,
+                    Vec::new(),
+                );
                 let element = TextureRenderElement::from_texture_buffer(
-                    geo.loc.to_f64(),
-                    &buffer,
-                    Some(result_alpha),
+                    buffer,
+                    geo.loc.to_f64().to_logical(scale as f64),
+                    result_alpha,
                     None,
                     None,
                     Kind::Unspecified,

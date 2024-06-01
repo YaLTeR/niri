@@ -20,7 +20,6 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
@@ -115,6 +114,7 @@ use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
     render_to_shm, render_to_texture, render_to_vec, shaders, RenderTarget,
 };
@@ -1870,7 +1870,7 @@ impl Niri {
             let transform = output.current_transform();
             let output_mode = output.current_mode().unwrap();
             let size = transform.transform_size(output_mode.size);
-            let scale = output.current_scale().integer_scale();
+            let scale = output.current_scale().fractional_scale();
             // FIXME: scale changes and transform flips shouldn't matter but they currently do since
             // I haven't quite figured out how to draw the screenshot textures in
             // physical coordinates.
@@ -3898,9 +3898,9 @@ impl Niri {
                     TextureBuffer::from_texture(
                         renderer,
                         texture,
-                        output.current_scale().integer_scale(),
+                        output.current_scale().fractional_scale(),
                         Transform::Normal,
-                        None, // We want windows below to get frame callbacks.
+                        Vec::new(), // We want windows below to get frame callbacks.
                     )
                 });
 

@@ -4,13 +4,12 @@ use std::time::Duration;
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::{Id, Kind, RenderElement};
+use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, Uniform};
-use smithay::backend::renderer::{Renderer as _, Texture};
+use smithay::backend::renderer::Texture;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::animation::Animation;
@@ -19,6 +18,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::render_to_encompassing_texture;
 use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 
 #[derive(Debug)]
 pub struct OpenAnimation {
@@ -122,15 +122,12 @@ impl OpenAnimation {
             .into());
         }
 
-        let elem = TextureRenderElement::from_static_texture(
-            Id::new(),
-            renderer.id(),
+        let buffer =
+            TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, Vec::new());
+        let elem = TextureRenderElement::from_texture_buffer(
+            buffer,
             Point::from((0., 0.)),
-            texture.clone(),
-            scale.x as i32,
-            Transform::Normal,
-            Some(clamped_progress as f32),
-            None,
+            clamped_progress as f32,
             None,
             None,
             Kind::Unspecified,

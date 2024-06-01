@@ -1,10 +1,10 @@
-use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 
 use super::renderer::AsGlesFrame;
+use super::texture::TextureRenderElement;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 /// Wrapper for a texture from the primary GPU for rendering with the primary GPU.

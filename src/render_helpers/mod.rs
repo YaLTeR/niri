@@ -4,7 +4,6 @@ use anyhow::{ensure, Context};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
@@ -16,6 +15,7 @@ use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform
 use smithay::wayland::shm;
 
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use self::texture::{TextureBuffer, TextureRenderElement};
 
 pub mod border;
 pub mod clipped_surface;
@@ -31,6 +31,7 @@ pub mod shader_element;
 pub mod shaders;
 pub mod snapshot;
 pub mod surface;
+pub mod texture;
 
 /// What we're rendering for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,16 +118,16 @@ impl ToRenderElement for BakedBuffer<TextureBuffer<GlesTexture>> {
     fn to_render_element(
         &self,
         location: Point<i32, Logical>,
-        scale: Scale<f64>,
+        _scale: Scale<f64>,
         alpha: f32,
         kind: Kind,
     ) -> Self::RenderElement {
         let elem = TextureRenderElement::from_texture_buffer(
-            (location + self.location).to_physical_precise_round(scale),
-            &self.buffer,
-            Some(alpha),
+            self.buffer.clone(),
+            (location + self.location).to_f64(),
+            alpha,
             self.src,
-            self.dst,
+            self.dst.map(|dst| dst.to_f64()),
             kind,
         );
         PrimaryGpuTextureRenderElement(elem)

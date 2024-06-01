@@ -9,7 +9,6 @@ use niri_config::Action;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{ButtonState, MouseButton};
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::ExportMem;
@@ -19,6 +18,7 @@ use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
 
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::RenderTarget;
 
 const BORDER: i32 = 2;
@@ -41,7 +41,7 @@ pub enum ScreenshotUi {
 
 pub struct OutputData {
     size: Size<i32, Physical>,
-    scale: i32,
+    scale: f64,
     transform: Transform,
     // Output, screencast, screen capture.
     texture: [GlesTexture; 3],
@@ -112,9 +112,15 @@ impl ScreenshotUi {
                 let transform = output.current_transform();
                 let output_mode = output.current_mode().unwrap();
                 let size = transform.transform_size(output_mode.size);
-                let scale = output.current_scale().integer_scale();
+                let scale = output.current_scale().fractional_scale();
                 let texture_buffer = texture.clone().map(|texture| {
-                    TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, None)
+                    TextureBuffer::from_texture(
+                        renderer,
+                        texture,
+                        scale,
+                        Transform::Normal,
+                        Vec::new(),
+                    )
                 });
                 let buffers = [
                     SolidColorBuffer::new((0, 0), [1., 1., 1., 1.]),
@@ -279,9 +285,9 @@ impl ScreenshotUi {
         };
         elements.push(
             PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                output_data.texture_buffer[index].clone(),
                 (0., 0.),
-                &output_data.texture_buffer[index],
-                None,
+                1.,
                 None,
                 None,
                 Kind::Unspecified,
@@ -344,7 +350,7 @@ impl ScreenshotUi {
         }
     }
 
-    pub fn output_size(&self, output: &Output) -> Option<(Size<i32, Physical>, i32, Transform)> {
+    pub fn output_size(&self, output: &Output) -> Option<(Size<i32, Physical>, f64, Transform)> {
         if let Self::Open { output_data, .. } = self {
             let data = output_data.get(output)?;
             Some((data.size, data.scale, data.transform))

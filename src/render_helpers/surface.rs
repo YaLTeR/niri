@@ -1,4 +1,3 @@
-use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::{import_surface, RendererSurfaceStateUserData};
 use smithay::backend::renderer::Renderer as _;
@@ -6,6 +5,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{with_surface_tree_downward, TraversalAction};
 
+use super::texture::TextureBuffer;
 use super::BakedBuffer;
 
 /// Renders elements from a surface tree as textures into `storage`.
@@ -62,9 +62,9 @@ pub fn render_snapshot_from_surface_tree(
                 let buffer = TextureBuffer::from_texture(
                     renderer,
                     texture.clone(),
-                    data.buffer_scale(),
+                    f64::from(data.buffer_scale()),
                     data.buffer_transform(),
-                    None,
+                    Vec::new(),
                 );
 
                 let baked = BakedBuffer {

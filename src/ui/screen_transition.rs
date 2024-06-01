@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesTexture;
 
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::RenderTarget;
 
 pub const DELAY: Duration = Duration::from_millis(250);
@@ -51,9 +51,9 @@ impl ScreenTransition {
         };
 
         PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+            self.from_texture[idx].clone(),
             (0., 0.),
-            &self.from_texture[idx],
-            Some(self.alpha),
+            self.alpha,
             None,
             None,
             Kind::Unspecified,

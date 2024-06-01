@@ -5,13 +5,12 @@ use anyhow::Context as _;
 use glam::{Mat3, Vec2};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::{Id, Kind, RenderElement};
+use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture, Uniform};
-use smithay::backend::renderer::{Renderer as _, Texture};
+use smithay::backend::renderer::Texture;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::animation::Animation;
@@ -20,21 +19,16 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
 
 #[derive(Debug)]
 pub struct ClosingWindow {
     /// Contents of the window.
-    texture: GlesTexture,
+    buffer: TextureBuffer<GlesTexture>,
 
     /// Blocked-out contents of the window.
-    blocked_out_texture: GlesTexture,
-
-    /// Scale that the textures was rendered with.
-    texture_scale: Scale<f64>,
-
-    /// ID of the textures' renderer.
-    texture_renderer_id: usize,
+    blocked_out_buffer: TextureBuffer<GlesTexture>,
 
     /// Where the window should be blocked out from.
     block_out_from: Option<BlockOutFrom>,
@@ -46,10 +40,10 @@ pub struct ClosingWindow {
     pos: Point<i32, Logical>,
 
     /// How much the texture should be offset.
-    texture_offset: Point<f64, Logical>,
+    buffer_offset: Point<f64, Logical>,
 
     /// How much the blocked-out texture should be offset.
-    blocked_out_texture_offset: Point<f64, Logical>,
+    blocked_out_buffer_offset: Point<f64, Logical>,
 
     /// The closing animation.
     anim: Animation,
@@ -86,27 +80,33 @@ impl ClosingWindow {
             )
             .context("error rendering to texture")?;
 
+            let buffer = TextureBuffer::from_texture(
+                renderer,
+                texture,
+                scale,
+                Transform::Normal,
+                Vec::new(),
+            );
+
             let offset = geo.loc.to_f64().to_logical(scale);
 
-            Ok((texture, offset))
+            Ok((buffer, offset))
         };
 
-        let (texture, texture_offset) =
+        let (buffer, buffer_offset) =
             render_to_texture(snapshot.contents).context("error rendering contents")?;
-        let (blocked_out_texture, blocked_out_texture_offset) =
+        let (blocked_out_buffer, blocked_out_buffer_offset) =
             render_to_texture(snapshot.blocked_out_contents)
                 .context("error rendering blocked-out contents")?;
 
         Ok(Self {
-            texture,
-            blocked_out_texture,
-            texture_scale: scale,
-            texture_renderer_id: renderer.id(),
+            buffer,
+            blocked_out_buffer,
             block_out_from: snapshot.block_out_from,
             geo_size,
             pos,
-            texture_offset,
-            blocked_out_texture_offset,
+            buffer_offset,
+            blocked_out_buffer_offset,
             anim,
             random_seed: fastrand::f32(),
         })
@@ -130,10 +130,10 @@ impl ClosingWindow {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
-        let (texture, offset) = if target.should_block_out(self.block_out_from) {
-            (&self.blocked_out_texture, self.blocked_out_texture_offset)
+        let (buffer, offset) = if target.should_block_out(self.block_out_from) {
+            (&self.blocked_out_buffer, self.blocked_out_buffer_offset)
         } else {
-            (&self.texture, self.texture_offset)
+            (&self.buffer, self.buffer_offset)
         };
 
         if Shaders::get(renderer).program(ProgramType::Close).is_some() {
@@ -146,9 +146,11 @@ impl ClosingWindow {
             let input_to_geo = Mat3::from_scale(area_size / geo_size)
                 * Mat3::from_translation((area_loc - geo_loc) / area_size);
 
-            let tex_scale = Vec2::new(self.texture_scale.x as f32, self.texture_scale.y as f32);
+            let tex_scale = self.buffer.texture_scale();
+            let tex_scale = Vec2::new(tex_scale.x as f32, tex_scale.y as f32);
             let tex_loc = Vec2::new(offset.x as f32, offset.y as f32);
-            let tex_size = Vec2::new(texture.width() as f32, texture.height() as f32) / tex_scale;
+            let tex_size = self.buffer.texture().size();
+            let tex_size = Vec2::new(tex_size.w as f32, tex_size.h as f32) / tex_scale;
 
             let geo_to_tex =
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
@@ -166,22 +168,17 @@ impl ClosingWindow {
                     Uniform::new("niri_clamped_progress", clamped_progress as f32),
                     Uniform::new("niri_random_seed", self.random_seed),
                 ],
-                HashMap::from([(String::from("niri_tex"), texture.clone())]),
+                HashMap::from([(String::from("niri_tex"), buffer.texture().clone())]),
                 Kind::Unspecified,
             )
             .with_location(Point::from((0, 0)))
             .into();
         }
 
-        let elem = TextureRenderElement::from_static_texture(
-            Id::new(),
-            self.texture_renderer_id,
+        let elem = TextureRenderElement::from_texture_buffer(
+            buffer.clone(),
             Point::from((0., 0.)),
-            texture.clone(),
-            self.texture_scale.x as i32,
-            Transform::Normal,
-            Some(1. - clamped_progress as f32),
-            None,
+            1. - clamped_progress as f32,
             None,
             None,
             Kind::Unspecified,

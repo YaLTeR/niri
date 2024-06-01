@@ -38,7 +38,6 @@ use niri_config::{CenterFocusedColumn, Config, Struts, Workspace as WorkspaceCon
 use niri_ipc::SizeChange;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
@@ -51,6 +50,7 @@ use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Works
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::{output_size, ResizeEdge};
 use crate::window::ResolvedWindowRules;
