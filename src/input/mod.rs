@@ -271,19 +271,24 @@ impl State {
     fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
         {
             let device = event.device();
-            let xkb = self
+
+            let keyboard_config = self
                 .niri
                 .config
                 .borrow()
                 .input
-                .keyboard_named(device.name())
-                .xkb;
+                .keyboard_named(device.name());
 
             let keyboard = self.niri.seat.get_keyboard().unwrap();
 
-            if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
+            if let Err(err) = keyboard.set_xkb_config(self, keyboard_config.xkb.to_xkb_config()) {
                 warn!("error updating xkb config: {err:?}");
             }
+
+            keyboard.change_repeat_info(
+                keyboard_config.repeat_rate.into(),
+                keyboard_config.repeat_delay.into(),
+            );
         }
 
         let comp_mod = self.backend.mod_key();
