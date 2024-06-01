@@ -2368,6 +2368,16 @@ mod tests {
                     }
                 }
 
+                keyboard "test_keyboard" {
+                    repeat-delay 500
+                    repeat-rate 30
+                    track-layout "window"
+                    xkb {
+                        layout "us,ru"
+                        options "grp:win_space_toggle"
+                    }
+                }
+
                 touchpad {
                     tap
                     dwt
@@ -2530,17 +2540,30 @@ mod tests {
             "##,
             Config {
                 input: Input {
-                    keyboards: Keyboard {
-                        xkb: Xkb {
-                            layout: "us,ru".to_owned(),
-                            options: Some("grp:win_space_toggle".to_owned()),
+                    keyboards: vec![
+                        Keyboard {
+                            xkb: Xkb {
+                                layout: "us,ru".to_owned(),
+                                options: Some("grp:win_space_toggle".to_owned()),
+                                ..Default::default()
+                            },
+                            repeat_delay: 600,
+                            repeat_rate: 25,
+                            track_layout: TrackLayout::Window,
                             ..Default::default()
                         },
-                        repeat_delay: 600,
-                        repeat_rate: 25,
-                        track_layout: TrackLayout::Window,
-                        ..Default::default()
-                    },
+                        Keyboard {
+                            xkb: Xkb {
+                                layout: "us,ru".to_owned(),
+                                options: Some("grp:win_space_toggle".to_owned()),
+                                ..Default::default()
+                            },
+                            repeat_delay: 500,
+                            repeat_rate: 30,
+                            track_layout: TrackLayout::Window,
+                            name: Some("test_keyboard".to_owned()),
+                        },
+                    ],
                     touchpad: Touchpad {
                         off: false,
                         tap: true,
@@ -2936,7 +2959,7 @@ mod tests {
     #[test]
     fn default_repeat_params() {
         let config = Config::parse("config.kdl", "").unwrap();
-        assert_eq!(config.input.keyboard.repeat_delay, 600);
-        assert_eq!(config.input.keyboard.repeat_rate, 25);
+        assert_eq!(config.input.default_keyboard().repeat_delay, 600);
+        assert_eq!(config.input.default_keyboard().repeat_rate, 25);
     }
 }
