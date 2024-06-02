@@ -403,7 +403,7 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 // Get rid of empty workspaces.
-                workspaces.retain(|ws| ws.has_windows());
+                workspaces.retain(|ws| ws.has_windows() || ws.name.is_some());
 
                 if monitors.is_empty() {
                     // Removed the last monitor.
@@ -3809,6 +3809,33 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn removing_all_outputs_preserves_empty_named_workspaces() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddNamedWorkspace {
+                ws_name: 1,
+                output_name: None,
+            },
+            Op::AddNamedWorkspace {
+                ws_name: 2,
+                output_name: None,
+            },
+            Op::RemoveOutput(1),
+        ];
+
+        let mut layout = Layout::default();
+        for op in ops {
+            op.apply(&mut layout);
+        }
+
+        let MonitorSet::NoOutputs { workspaces } = layout.monitor_set else {
+            unreachable!()
+        };
+
+        assert_eq!(workspaces.len(), 2);
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = u16> {
