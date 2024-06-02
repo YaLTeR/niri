@@ -82,7 +82,7 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn default_keyboard(&self) -> Keyboard {
+    pub fn fallback_keyboard(&self) -> Keyboard {
         self.keyboards
             .iter()
             .find(|keyboard| keyboard.name.is_none())
@@ -95,7 +95,7 @@ impl Input {
             .iter()
             .find(|keyboard| keyboard.name.as_deref() == Some(name.as_ref()))
             .cloned()
-            .unwrap_or_default()
+            .unwrap_or_else(|| self.fallback_keyboard())
     }
 }
 
@@ -2959,7 +2959,7 @@ mod tests {
     #[test]
     fn default_repeat_params() {
         let config = Config::parse("config.kdl", "").unwrap();
-        assert_eq!(config.input.default_keyboard().repeat_delay, 600);
-        assert_eq!(config.input.default_keyboard().repeat_rate, 25);
+        assert_eq!(config.input.fallback_keyboard().repeat_delay, 600);
+        assert_eq!(config.input.fallback_keyboard().repeat_rate, 25);
     }
 }

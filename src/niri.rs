@@ -182,6 +182,7 @@ pub struct Niri {
     // When false, we're idling with monitors powered off.
     pub monitors_active: bool,
 
+    pub current_keyboard: niri_config::Keyboard,
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
@@ -271,8 +272,6 @@ pub struct Niri {
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
     pub pipewire: Option<PipeWire>,
-
-    pub current_keyboard: niri_config::Keyboard,
 }
 
 pub struct OutputState {
@@ -815,7 +814,7 @@ impl State {
                 .config
                 .borrow()
                 .input
-                .default_keyboard()
+                .fallback_keyboard()
                 .track_layout
                 == TrackLayout::Window
             {
@@ -918,9 +917,9 @@ impl State {
             self.niri.cursor_texture_cache.clear();
         }
 
-        let default_keyboard = config.input.default_keyboard();
+        let default_keyboard = config.input.fallback_keyboard();
 
-        let old_keyboard = old_config.input.default_keyboard();
+        let old_keyboard = old_config.input.fallback_keyboard();
 
         // We need &mut self to reload the xkb config, so just store it here.
         if default_keyboard.xkb != old_keyboard.xkb {
@@ -1389,9 +1388,9 @@ impl Niri {
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
-            config_.input.default_keyboard().xkb.to_xkb_config(),
-            config_.input.default_keyboard().repeat_delay.into(),
-            config_.input.default_keyboard().repeat_rate.into(),
+            config_.input.fallback_keyboard().xkb.to_xkb_config(),
+            config_.input.fallback_keyboard().repeat_delay.into(),
+            config_.input.fallback_keyboard().repeat_rate.into(),
         )
         .unwrap();
         seat.add_pointer();
