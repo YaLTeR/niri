@@ -184,6 +184,7 @@ pub struct Niri {
 
     pub current_keyboard: niri_config::Keyboard,
     pub devices: HashSet<input::Device>,
+    pub keyboard_device_cache: HashMap<input::Device, niri_config::Keyboard>,
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
 
@@ -1506,7 +1507,9 @@ impl Niri {
             root_surface: HashMap::new(),
             monitors_active: true,
 
+            current_keyboard: Default::default(),
             devices: HashSet::new(),
+            keyboard_device_cache: HashMap::new(),
             tablets: HashMap::new(),
             touch: HashSet::new(),
 
@@ -1588,8 +1591,6 @@ impl Niri {
 
             pipewire,
             casts: vec![],
-
-            current_keyboard: Default::default(),
         }
     }
 

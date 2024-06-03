@@ -268,7 +268,10 @@ impl State {
         Some(pos + output_geo.loc.to_f64())
     }
 
-    fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
+    fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent)
+    where
+        I::Device: 'static,
+    {
         self.apply_keyboard_config::<I>(&event);
 
         let comp_mod = self.backend.mod_key();
@@ -321,27 +324,52 @@ impl State {
         self.handle_bind(bind);
     }
 
-    fn apply_keyboard_config<I: InputBackend>(&mut self, event: &I::KeyboardKeyEvent) {
+    fn apply_keyboard_config<I: InputBackend>(&mut self, event: &I::KeyboardKeyEvent)
+    where
+        I::Device: 'static,
+    {
         let device = event.device();
 
-        let keyboard_config = self
-            .niri
-            .config
-            .borrow()
-            .input
-            .keyboard_named(device.name());
+        let keyboard_config =
+            if let Some(input_device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
+                if let Some(cached) = self.niri.keyboard_device_cache.get(input_device).cloned() {
+                    cached
+                } else {
+                    let keyboard_config = self
+                        .niri
+                        .config
+                        .borrow()
+                        .input
+                        .keyboard_named(device.name());
+
+                    self.niri
+                        .keyboard_device_cache
+                        .insert(input_device.clone(), keyboard_config.clone());
+
+                    keyboard_config
+                }
+            } else {
+                self.niri.config.borrow().input.fallback_keyboard()
+            };
 
         if keyboard_config != self.niri.current_keyboard {
             let keyboard = self.niri.seat.get_keyboard().unwrap();
 
-            if let Err(err) = keyboard.set_xkb_config(self, keyboard_config.xkb.to_xkb_config()) {
-                warn!("error updating xkb config: {err:?}");
+            if keyboard_config.xkb != self.niri.current_keyboard.xkb {
+                if let Err(err) = keyboard.set_xkb_config(self, keyboard_config.xkb.to_xkb_config())
+                {
+                    warn!("error updating xkb config: {err:?}");
+                }
             }
 
-            keyboard.change_repeat_info(
-                keyboard_config.repeat_rate.into(),
-                keyboard_config.repeat_delay.into(),
-            );
+            if keyboard_config.repeat_rate != self.niri.current_keyboard.repeat_rate
+                || keyboard_config.repeat_delay != self.niri.current_keyboard.repeat_delay
+            {
+                keyboard.change_repeat_info(
+                    keyboard_config.repeat_rate.into(),
+                    keyboard_config.repeat_delay.into(),
+                );
+            }
 
             self.niri.current_keyboard = keyboard_config;
         }
