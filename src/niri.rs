@@ -810,15 +810,7 @@ impl State {
                 }
             }
 
-            if self
-                .niri
-                .config
-                .borrow()
-                .input
-                .fallback_keyboard()
-                .track_layout
-                == TrackLayout::Window
-            {
+            if self.niri.current_keyboard.track_layout == TrackLayout::Window {
                 let current_layout =
                     keyboard.with_xkb_state(self, |context| context.active_layout());
 
@@ -920,16 +912,16 @@ impl State {
 
         let default_keyboard = config.input.fallback_keyboard();
 
-        let old_keyboard = old_config.input.fallback_keyboard();
+        let current_keyboard = self.niri.current_keyboard.clone();
 
         // We need &mut self to reload the xkb config, so just store it here.
-        if default_keyboard.xkb != old_keyboard.xkb {
+        if default_keyboard.xkb != current_keyboard.xkb {
             reload_xkb = Some(default_keyboard.xkb.clone());
         }
 
         // Reload the repeat info.
-        if default_keyboard.repeat_rate != old_keyboard.repeat_rate
-            || default_keyboard.repeat_delay != old_keyboard.repeat_delay
+        if default_keyboard.repeat_rate != current_keyboard.repeat_rate
+            || default_keyboard.repeat_delay != current_keyboard.repeat_delay
         {
             let keyboard = self.niri.seat.get_keyboard().unwrap();
             keyboard.change_repeat_info(
