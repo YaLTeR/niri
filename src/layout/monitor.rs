@@ -324,6 +324,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().focus_column_right_or_first();
     }
 
+    pub fn focus_column_left_or_last(&mut self) {
+        self.active_workspace().focus_column_left_or_last();
+    }
+
     pub fn focus_down(&mut self) {
         self.active_workspace().focus_down();
     }

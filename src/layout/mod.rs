@@ -1242,6 +1242,13 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_column_right_or_first();
     }
 
+    pub fn focus_column_left_or_last(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_column_left_or_last();
+    }
+
     pub fn focus_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -2637,6 +2644,7 @@ mod tests {
         FocusColumnFirst,
         FocusColumnLast,
         FocusColumnRightOrFirst,
+        FocusColumnLeftOrLast,
         FocusWindowDown,
         FocusWindowUp,
         FocusWindowDownOrColumnLeft,
@@ -2926,6 +2934,7 @@ mod tests {
                 Op::FocusColumnFirst => layout.focus_column_first(),
                 Op::FocusColumnLast => layout.focus_column_last(),
                 Op::FocusColumnRightOrFirst => layout.focus_column_right_or_first(),
+                Op::FocusColumnLeftOrLast => layout.focus_column_left_or_last(),
                 Op::FocusWindowDown => layout.focus_down(),
                 Op::FocusWindowUp => layout.focus_up(),
                 Op::FocusWindowDownOrColumnLeft => layout.focus_down_or_left(),
@@ -3143,6 +3152,7 @@ mod tests {
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
             Op::FocusColumnRightOrFirst,
+            Op::FocusColumnLeftOrLast,
             Op::FocusWindowUp,
             Op::FocusWindowUpOrColumnLeft,
             Op::FocusWindowUpOrColumnRight,
@@ -3301,6 +3311,7 @@ mod tests {
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
             Op::FocusColumnRightOrFirst,
+            Op::FocusColumnLeftOrLast,
             Op::FocusWindowUp,
             Op::FocusWindowUpOrColumnLeft,
             Op::FocusWindowUpOrColumnRight,
