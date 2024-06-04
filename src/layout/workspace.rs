@@ -2129,6 +2129,10 @@ impl<W: LayoutElement> Workspace<W> {
             .find_map(|(col_idx, col)| col.position(window).map(|tile_idx| (col_idx, tile_idx)))
             .unwrap();
 
+        if is_fullscreen == self.columns[col_idx].is_fullscreen {
+            return;
+        }
+
         if is_fullscreen
             && col_idx == self.active_column_idx
             && self.columns[col_idx].tiles.len() == 1
@@ -3221,6 +3225,10 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn set_fullscreen(&mut self, is_fullscreen: bool) {
+        if self.is_fullscreen == is_fullscreen {
+            return;
+        }
+
         assert_eq!(self.tiles.len(), 1);
         self.is_fullscreen = is_fullscreen;
         self.update_tile_sizes(false);
