@@ -119,6 +119,7 @@ Let's look at the matchers in more detail.
 #### `title` and `app-id`
 
 These are regular expressions that should match anywhere in the window title and app ID respectively.
+You can read about the supported regular expression syntax [here](https://docs.rs/regex/latest/regex/#syntax).
 
 ```
 // Match windows with title containing "Mozilla Firefox",
