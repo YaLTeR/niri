@@ -23,7 +23,7 @@ use smithay::input::pointer::{
     GrabStartData as PointerGrabStartData, MotionEvent, RelativeMotionEvent,
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
-use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
@@ -212,6 +212,20 @@ impl State {
         if device.has_capability(DeviceCapability::Touch) && self.niri.touch.is_empty() {
             self.niri.seat.remove_touch();
         }
+    }
+
+    /// Computes the rectangle that covers all outputs in global space.
+    fn global_bounding_rectangle(&self) -> Rectangle<i32, Logical> {
+        self.niri
+            .global_space
+            .outputs()
+            .fold(None, |acc: Option<Rectangle<i32, Logical>>, output| {
+                self.niri
+                    .global_space
+                    .output_geometry(output)
+                    .map(|geo| acc.map(|acc| acc.merge(geo)).unwrap_or(geo))
+            })
+            .unwrap_or_else(Default::default)
     }
 
     /// Computes the cursor position for the tablet event.
@@ -1070,11 +1084,7 @@ impl State {
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
-        let Some(output) = self.niri.global_space.outputs().next() else {
-            return;
-        };
-
-        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+        let output_geo = self.global_bounding_rectangle();
 
         let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
