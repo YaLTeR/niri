@@ -26,7 +26,7 @@ vec4 resize_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
 //
 // The shader runs over an area of unspecified size and location, so you must
 // expect and handle coordinates outside the [0, 1] range. The area will be
-// large enough to accomodate a crossfade effect.
+// large enough to accommodate a crossfade effect.
 //
 // * size_curr_geo: size of the current window geometry in logical pixels.
 //

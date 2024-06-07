@@ -3355,7 +3355,7 @@ fn compute_new_view_offset(
         return -(new_col_x - cur_x);
     }
 
-    // Otherwise, prefer the aligment that results in less motion from the current position.
+    // Otherwise, prefer the alignment that results in less motion from the current position.
     let dist_to_left = cur_x.abs_diff(new_x);
     let dist_to_right = (cur_x + view_width).abs_diff(new_right_x);
     if dist_to_left <= dist_to_right {

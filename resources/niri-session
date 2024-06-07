@@ -34,7 +34,7 @@ fi
 # Start niri and wait for it to terminate.
 systemctl --user --wait start niri.service
 
-# Force stop of grahical-session.target.
+# Force stop of graphical-session.target.
 systemctl --user start --job-mode=replace-irreversibly niri-shutdown.target
 
 # Unset environment that we've set.
