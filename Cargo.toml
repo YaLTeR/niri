@@ -63,6 +63,7 @@ log = { version = "0.4.21", features = ["max_level_trace", "release_max_level_de
 niri-config = { version = "0.1.6", path = "niri-config" }
 niri-ipc = { version = "0.1.6", path = "niri-ipc", features = ["clap"] }
 notify-rust = { version = "~4.10.0", optional = true }
+ordered-float = "4.2.0"
 pangocairo = "0.19.2"
 pipewire = { version = "0.8.0", optional = true }
 png = "0.17.13"
