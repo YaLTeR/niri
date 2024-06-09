@@ -8,7 +8,6 @@ use arrayvec::ArrayVec;
 use niri_config::Action;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{ButtonState, MouseButton};
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::ExportMem;
@@ -18,8 +17,10 @@ use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
 
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::RenderTarget;
+use crate::utils::apply_scale;
 
 const BORDER: i32 = 2;
 
@@ -123,14 +124,14 @@ impl ScreenshotUi {
                     )
                 });
                 let buffers = [
-                    SolidColorBuffer::new((0, 0), [1., 1., 1., 1.]),
-                    SolidColorBuffer::new((0, 0), [1., 1., 1., 1.]),
-                    SolidColorBuffer::new((0, 0), [1., 1., 1., 1.]),
-                    SolidColorBuffer::new((0, 0), [1., 1., 1., 1.]),
-                    SolidColorBuffer::new((0, 0), [0., 0., 0., 0.5]),
-                    SolidColorBuffer::new((0, 0), [0., 0., 0., 0.5]),
-                    SolidColorBuffer::new((0, 0), [0., 0., 0., 0.5]),
-                    SolidColorBuffer::new((0, 0), [0., 0., 0., 0.5]),
+                    SolidColorBuffer::new((0., 0.), [1., 1., 1., 1.]),
+                    SolidColorBuffer::new((0., 0.), [1., 1., 1., 1.]),
+                    SolidColorBuffer::new((0., 0.), [1., 1., 1., 1.]),
+                    SolidColorBuffer::new((0., 0.), [1., 1., 1., 1.]),
+                    SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.5]),
+                    SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.5]),
+                    SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.5]),
+                    SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.5]),
                 ];
                 let locations = [Default::default(); 8];
                 let data = OutputData {
@@ -167,10 +168,9 @@ impl ScreenshotUi {
             }
         };
 
-        let scale = selection.0.current_scale().integer_scale();
         let last_selection = Some((
             selection.0.downgrade(),
-            rect_from_corner_points(selection.1, selection.2, scale),
+            rect_from_corner_points(selection.1, selection.2),
         ));
 
         *self = Self::Closed { last_selection };
@@ -193,17 +193,15 @@ impl ScreenshotUi {
         };
 
         let (selection_output, a, b) = selection;
-        let scale = selection_output.current_scale().integer_scale();
-        let mut rect = rect_from_corner_points(*a, *b, scale);
+        let mut rect = rect_from_corner_points(*a, *b);
 
         for (output, data) in output_data {
             let buffers = &mut data.buffers;
             let locations = &mut data.locations;
             let size = data.size;
+            let scale = data.scale;
 
             if output == selection_output {
-                let scale = output.current_scale().integer_scale();
-
                 // Check if the selection is still valid. If not, reset it back to default.
                 if !Rectangle::from_loc_and_size((0, 0), size).contains_rect(rect) {
                     rect = Rectangle::from_loc_and_size(
@@ -211,20 +209,29 @@ impl ScreenshotUi {
                         (size.w / 2, size.h / 2),
                     );
                     *a = rect.loc;
-                    *b = rect.loc + rect.size - Size::from((scale, scale));
+                    *b = rect.loc + rect.size - Size::from((1, 1));
                 }
 
-                let border = BORDER * scale;
+                let border = apply_scale(scale, BORDER);
 
-                buffers[0].resize((rect.size.w + border * 2, border));
-                buffers[1].resize((rect.size.w + border * 2, border));
-                buffers[2].resize((border, rect.size.h));
-                buffers[3].resize((border, rect.size.h));
+                let resize = move |buffer: &mut SolidColorBuffer, w: i32, h: i32| {
+                    let size = Size::<_, Physical>::from((w, h));
+                    buffer.resize(size.to_f64().to_logical(scale));
+                };
 
-                buffers[4].resize((size.w, rect.loc.y));
-                buffers[5].resize((size.w, size.h - rect.loc.y - rect.size.h));
-                buffers[6].resize((rect.loc.x, rect.size.h));
-                buffers[7].resize((size.w - rect.loc.x - rect.size.w, rect.size.h));
+                resize(&mut buffers[0], rect.size.w + border * 2, border);
+                resize(&mut buffers[1], rect.size.w + border * 2, border);
+                resize(&mut buffers[2], border, rect.size.h);
+                resize(&mut buffers[3], border, rect.size.h);
+
+                resize(&mut buffers[4], size.w, rect.loc.y);
+                resize(&mut buffers[5], size.w, size.h - rect.loc.y - rect.size.h);
+                resize(&mut buffers[6], rect.loc.x, rect.size.h);
+                resize(
+                    &mut buffers[7],
+                    size.w - rect.loc.x - rect.size.w,
+                    rect.size.h,
+                );
 
                 locations[0] = Point::from((rect.loc.x - border, rect.loc.y - border));
                 locations[1] = Point::from((rect.loc.x - border, rect.loc.y + rect.size.h));
@@ -235,15 +242,15 @@ impl ScreenshotUi {
                 locations[6] = Point::from((0, rect.loc.y));
                 locations[7] = Point::from((rect.loc.x + rect.size.w, rect.loc.y));
             } else {
-                buffers[0].resize((0, 0));
-                buffers[1].resize((0, 0));
-                buffers[2].resize((0, 0));
-                buffers[3].resize((0, 0));
+                buffers[0].resize((0., 0.));
+                buffers[1].resize((0., 0.));
+                buffers[2].resize((0., 0.));
+                buffers[3].resize((0., 0.));
 
-                buffers[4].resize(size.to_logical(1));
-                buffers[5].resize((0, 0));
-                buffers[6].resize((0, 0));
-                buffers[7].resize((0, 0));
+                buffers[4].resize(size.to_f64().to_logical(data.scale));
+                buffers[5].resize((0., 0.));
+                buffers[6].resize((0., 0.));
+                buffers[7].resize((0., 0.));
             }
         }
     }
@@ -269,8 +276,7 @@ impl ScreenshotUi {
         elements.extend(buf_loc.map(|(buffer, loc)| {
             SolidColorRenderElement::from_buffer(
                 buffer,
-                *loc,
-                1., // We treat these as physical coordinates.
+                loc.to_f64().to_logical(output_data.scale),
                 1.,
                 Kind::Unspecified,
             )
@@ -314,8 +320,7 @@ impl ScreenshotUi {
         };
 
         let data = &output_data[&selection.0];
-        let scale = selection.0.current_scale().integer_scale();
-        let rect = rect_from_corner_points(selection.1, selection.2, scale);
+        let rect = rect_from_corner_points(selection.1, selection.2);
         let buf_rect = rect
             .to_logical(1)
             .to_buffer(1, Transform::Normal, &data.size.to_logical(1));
@@ -411,16 +416,14 @@ impl ScreenshotUi {
             // Check if the resulting selection is zero-sized, and try to come up with a small
             // default rectangle.
             let (output, a, b) = selection;
-            let scale = output.current_scale().integer_scale();
-            let mut rect = rect_from_corner_points(*a, *b, scale);
-            if rect.size.is_empty() || rect.size == Size::from((scale, scale)) {
+            let mut rect = rect_from_corner_points(*a, *b);
+            if rect.size.is_empty() || rect.size == Size::from((1, 1)) {
                 let data = &output_data[output];
                 rect = Rectangle::from_loc_and_size((rect.loc.x - 16, rect.loc.y - 16), (32, 32))
                     .intersection(Rectangle::from_loc_and_size((0, 0), data.size))
                     .unwrap_or_default();
-                let scale = output.current_scale().integer_scale();
                 *a = rect.loc;
-                *b = rect.loc + rect.size - Size::from((scale, scale));
+                *b = rect.loc + rect.size - Size::from((1, 1));
             }
         }
 
@@ -457,11 +460,12 @@ fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
 pub fn rect_from_corner_points(
     a: Point<i32, Physical>,
     b: Point<i32, Physical>,
-    scale: i32,
 ) -> Rectangle<i32, Physical> {
     let x1 = min(a.x, b.x);
     let y1 = min(a.y, b.y);
     let x2 = max(a.x, b.x);
     let y2 = max(a.y, b.y);
-    Rectangle::from_extemities((x1, y1), (x2 + scale, y2 + scale))
+    // We're adding + 1 because the pointer is clamped to output size - 1, so to get the full
+    // screen worth of selection we must add back that + 1.
+    Rectangle::from_extemities((x1, y1), (x2 + 1, y2 + 1))
 }
