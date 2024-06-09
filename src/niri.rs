@@ -161,7 +161,7 @@ pub struct Niri {
     pub is_at_startup: bool,
 
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
-    // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
+    // however it may have none (when there are no outputs connected) or multiple (when mirroring).
     pub layout: Layout<Mapped>,
 
     // This space does not actually contain any windows, but all outputs are mapped into it
@@ -236,7 +236,7 @@ pub struct Niri {
     /// When this happens, the pointer also loses any focus. This is so that touch can prevent
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
-    // FIXME: this should be able to be removed once PointerFocus takes grabs into accound.
+    // FIXME: this should be able to be removed once PointerFocus takes grabs into account.
     pub pointer_grab_ongoing: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
@@ -377,7 +377,7 @@ struct SurfaceFrameThrottlingState {
 }
 
 pub enum CenterCoords {
-    Seperately,
+    Separately,
     Both,
 }
 
@@ -535,7 +535,7 @@ impl State {
         let y_in_bound = cur_loc.y >= rect.loc.y && cur_loc.y <= rect.loc.y + rect.size.h;
 
         let p = match mode {
-            CenterCoords::Seperately => {
+            CenterCoords::Separately => {
                 if x_in_bound && y_in_bound {
                     return false;
                 } else if y_in_bound {
@@ -596,7 +596,7 @@ impl State {
             return false;
         }
 
-        self.move_cursor_to_focused_tile(CenterCoords::Seperately)
+        self.move_cursor_to_focused_tile(CenterCoords::Separately)
     }
 
     pub fn maybe_warp_cursor_to_focus_centered(&mut self) -> bool {
