@@ -4,6 +4,8 @@ use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
 use smithay::backend::renderer::{Frame as _, ImportMem, Renderer, Texture};
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
+use super::memory::MemoryBuffer;
+
 /// Smithay's texture buffer, but with fractional scale.
 #[derive(Debug, Clone)]
 pub struct TextureBuffer<T> {
@@ -65,6 +67,22 @@ impl<T> TextureBuffer<T> {
             transform,
             opaque_regions,
         ))
+    }
+
+    pub fn from_memory_buffer<R: Renderer<TextureId = T> + ImportMem>(
+        renderer: &mut R,
+        buffer: &MemoryBuffer,
+    ) -> Result<Self, <R as Renderer>::Error> {
+        Self::from_memory(
+            renderer,
+            buffer.data(),
+            buffer.format(),
+            buffer.size(),
+            false,
+            buffer.scale(),
+            buffer.transform(),
+            Vec::new(),
+        )
     }
 
     pub fn texture(&self) -> &T {

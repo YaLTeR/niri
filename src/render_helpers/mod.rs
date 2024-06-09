@@ -21,6 +21,7 @@ pub mod border;
 pub mod clipped_surface;
 pub mod damage;
 pub mod debug;
+pub mod memory;
 pub mod offscreen;
 pub mod primary_gpu_texture;
 pub mod render_elements;
