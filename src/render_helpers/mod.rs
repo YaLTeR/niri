@@ -31,6 +31,7 @@ pub mod resources;
 pub mod shader_element;
 pub mod shaders;
 pub mod snapshot;
+pub mod solid_color;
 pub mod surface;
 pub mod texture;
 
