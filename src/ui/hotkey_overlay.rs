@@ -7,21 +7,21 @@ use std::rc::Rc;
 use niri_config::{Action, Config, Key, Modifiers, Trigger};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
-use smithay::backend::renderer::element::memory::{
-    MemoryRenderBuffer, MemoryRenderBufferRenderElement,
-};
-use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::input::keyboard::xkb::keysym_get_name;
 use smithay::output::{Output, WeakOutput};
 use smithay::reexports::gbm::Format as Fourcc;
-use smithay::utils::{Physical, Size, Transform};
+use smithay::utils::{Scale, Transform};
 
 use crate::input::CompositorMod;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
+use crate::utils::output_size;
 
 const PADDING: i32 = 8;
-const MARGIN: i32 = PADDING * 2;
+// const MARGIN: i32 = PADDING * 2;
 const FONT: &str = "sans 14px";
 const BORDER: i32 = 4;
 const LINE_INTERVAL: i32 = 2;
@@ -35,12 +35,8 @@ pub struct HotkeyOverlay {
 }
 
 pub struct RenderedOverlay {
-    buffer: Option<MemoryRenderBuffer>,
-    size: Size<i32, Physical>,
-    scale: i32,
+    buffer: Option<TextureBuffer<GlesTexture>>,
 }
-
-pub type HotkeyOverlayRenderElement<R> = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>;
 
 impl HotkeyOverlay {
     pub fn new(config: Rc<RefCell<Config>>, comp_mod: CompositorMod) -> Self {
@@ -82,17 +78,13 @@ impl HotkeyOverlay {
         &self,
         renderer: &mut R,
         output: &Output,
-    ) -> Option<HotkeyOverlayRenderElement<R>> {
+    ) -> Option<PrimaryGpuTextureRenderElement> {
         if !self.is_open {
             return None;
         }
 
-        let scale = output.current_scale().integer_scale();
-        let margin = MARGIN * scale;
-
-        let output_transform = output.current_transform();
-        let output_mode = output.current_mode().unwrap();
-        let output_size = output_transform.transform_size(output_mode.size);
+        let scale = output.current_scale().fractional_scale();
+        let output_size = output_size(output);
 
         let mut buffers = self.buffers.borrow_mut();
         buffers.retain(|output, _| output.upgrade().is_some());
@@ -100,51 +92,52 @@ impl HotkeyOverlay {
         // FIXME: should probably use the working area rather than view size.
         let weak = output.downgrade();
         if let Some(rendered) = buffers.get(&weak) {
-            if rendered.scale != scale {
-                buffers.remove(&weak);
+            if let Some(buffer) = &rendered.buffer {
+                if buffer.texture_scale() != Scale::from(scale) {
+                    buffers.remove(&weak);
+                }
             }
         }
 
         let rendered = buffers.entry(weak).or_insert_with(|| {
-            render(&self.config.borrow(), self.comp_mod, scale).unwrap_or_else(|_| {
-                // This can go negative but whatever, as long as there's no rerender loop.
-                let mut size = output_size;
-                size.w -= margin * 2;
-                size.h -= margin * 2;
-                RenderedOverlay {
-                    buffer: None,
-                    size,
-                    scale,
-                }
-            })
+            let renderer = renderer.as_gles_renderer();
+            render(renderer, &self.config.borrow(), self.comp_mod, scale)
+                .unwrap_or_else(|_| RenderedOverlay { buffer: None })
         });
         let buffer = rendered.buffer.as_ref()?;
 
-        let elem = MemoryRenderBufferRenderElement::from_buffer(
-            renderer,
-            (0., 0.),
-            buffer,
-            Some(0.9),
+        let size = buffer.logical_size();
+        let location = (output_size.to_f64().to_point() - size.to_point()).downscale(2.);
+        let mut location = location.to_physical_precise_round(scale).to_logical(scale);
+        location.x = f64::max(0., location.x);
+        location.y = f64::max(0., location.y);
+
+        let elem = TextureRenderElement::from_texture_buffer(
+            buffer.clone(),
+            location,
+            0.9,
             None,
             None,
             Kind::Unspecified,
-        )
-        .ok()?;
+        );
 
-        let x = (output_size.w / 2 - rendered.size.w / 2).max(0);
-        let y = (output_size.h / 2 - rendered.size.h / 2).max(0);
-        let elem = RelocateRenderElement::from_element(elem, (x, y), Relocate::Absolute);
-
-        Some(elem)
+        Some(PrimaryGpuTextureRenderElement(elem))
     }
 }
 
-fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Result<RenderedOverlay> {
+fn render(
+    renderer: &mut GlesRenderer,
+    config: &Config,
+    comp_mod: CompositorMod,
+    scale: f64,
+) -> anyhow::Result<RenderedOverlay> {
     let _span = tracy_client::span!("hotkey_overlay::render");
 
+    let apply_scale = |val: i32| (f64::from(val) * scale).round() as i32;
+
     // let margin = MARGIN * scale;
-    let padding = PADDING * scale;
-    let line_interval = LINE_INTERVAL * scale;
+    let padding = apply_scale(PADDING);
+    let line_interval = apply_scale(LINE_INTERVAL);
 
     // FIXME: if it doesn't fit, try splitting in two columns or something.
     // let mut target_size = output_size;
@@ -254,7 +247,7 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
         .collect::<Vec<_>>();
 
     let mut font = FontDescription::from_string(FONT);
-    font.set_absolute_size((font.size() * scale).into());
+    font.set_absolute_size(apply_scale(font.size()).into());
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
@@ -303,10 +296,6 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     width += padding * 2;
     height += padding * 2;
 
-    // FIXME: fix bug in Smithay that rounds pixel sizes down to scale.
-    width = (width + scale - 1) / scale * scale;
-    height = (height + scale - 1) / scale * scale;
-
     let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
     let cr = cairo::Context::new(&surface)?;
     cr.set_source_rgb(0.1, 0.1, 0.1);
@@ -348,24 +337,25 @@ fn render(config: &Config, comp_mod: CompositorMod, scale: i32) -> anyhow::Resul
     cr.line_to(0., height.into());
     cr.line_to(0., 0.);
     cr.set_source_rgb(0.5, 0.8, 1.0);
-    cr.set_line_width((BORDER * scale).into());
+    // Keep the border width even to avoid blurry edges.
+    cr.set_line_width((f64::from(BORDER) / 2. * scale).round() * 2.);
     cr.stroke()?;
     drop(cr);
 
     let data = surface.take_data().unwrap();
-    let buffer = MemoryRenderBuffer::from_slice(
+    let buffer = TextureBuffer::from_memory(
+        renderer,
         &data,
         Fourcc::Argb8888,
         (width, height),
+        false,
         scale,
         Transform::Normal,
-        None,
-    );
+        Vec::new(),
+    )?;
 
     Ok(RenderedOverlay {
         buffer: Some(buffer),
-        size: Size::from((width, height)),
-        scale,
     })
 }
 
