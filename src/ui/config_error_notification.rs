@@ -18,7 +18,7 @@ use crate::animation::Animation;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::utils::{apply_scale, output_size};
+use crate::utils::{output_size, to_physical_precise_round};
 
 const TEXT: &str = "Failed to parse the config file. \
                     Please run <span face='monospace' bgcolor='#000000'>niri validate</span> \
@@ -173,7 +173,7 @@ fn render(
 ) -> anyhow::Result<TextureBuffer<GlesTexture>> {
     let _span = tracy_client::span!("config_error_notification::render");
 
-    let padding = apply_scale(scale, PADDING);
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
 
     let mut text = String::from(TEXT);
     let mut border_color = (1., 0.3, 0.3);
@@ -187,7 +187,7 @@ fn render(
     };
 
     let mut font = FontDescription::from_string(FONT);
-    font.set_absolute_size(apply_scale(scale, font.size()).into());
+    font.set_absolute_size(to_physical_precise_round(scale, font.size()));
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;

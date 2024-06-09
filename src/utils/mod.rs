@@ -16,7 +16,7 @@ use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
+use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, SurfaceData};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 
@@ -91,8 +91,8 @@ pub fn center_f64(rect: Rectangle<f64, Logical>) -> Point<f64, Logical> {
 }
 
 /// Convert logical pixels to physical, rounding to physical pixels.
-pub fn apply_scale(scale: f64, val: i32) -> i32 {
-    (f64::from(val) * scale).round() as i32
+pub fn to_physical_precise_round<N: Coordinate>(scale: f64, logical: impl Coordinate) -> N {
+    N::from_f64((logical.to_f64() * scale).round())
 }
 
 pub fn output_size(output: &Output) -> Size<i32, Logical> {

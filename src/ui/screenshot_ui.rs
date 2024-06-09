@@ -20,7 +20,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::RenderTarget;
-use crate::utils::apply_scale;
+use crate::utils::to_physical_precise_round;
 
 const BORDER: i32 = 2;
 
@@ -212,7 +212,7 @@ impl ScreenshotUi {
                     *b = rect.loc + rect.size - Size::from((1, 1));
                 }
 
-                let border = apply_scale(scale, BORDER);
+                let border = to_physical_precise_round(scale, BORDER);
 
                 let resize = move |buffer: &mut SolidColorBuffer, w: i32, h: i32| {
                     let size = Size::<_, Physical>::from((w, h));
