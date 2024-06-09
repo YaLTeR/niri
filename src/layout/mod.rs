@@ -2639,6 +2639,11 @@ mod tests {
         },
         CloseWindow(#[proptest(strategy = "1..=5usize")] usize),
         FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
+        SetFullscreenWindow {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
+            is_fullscreen: bool,
+        },
         FocusColumnLeft,
         FocusColumnRight,
         FocusColumnFirst,
@@ -2928,6 +2933,12 @@ mod tests {
                 }
                 Op::FullscreenWindow(id) => {
                     layout.toggle_fullscreen(&id);
+                }
+                Op::SetFullscreenWindow {
+                    window,
+                    is_fullscreen,
+                } => {
+                    layout.set_fullscreen(&window, is_fullscreen);
                 }
                 Op::FocusColumnLeft => layout.focus_left(),
                 Op::FocusColumnRight => layout.focus_right(),
@@ -3308,6 +3319,22 @@ mod tests {
             Op::FullscreenWindow(1),
             Op::FullscreenWindow(2),
             Op::FullscreenWindow(3),
+            Op::SetFullscreenWindow {
+                window: 1,
+                is_fullscreen: false,
+            },
+            Op::SetFullscreenWindow {
+                window: 1,
+                is_fullscreen: true,
+            },
+            Op::SetFullscreenWindow {
+                window: 2,
+                is_fullscreen: false,
+            },
+            Op::SetFullscreenWindow {
+                window: 2,
+                is_fullscreen: true,
+            },
             Op::FocusColumnLeft,
             Op::FocusColumnRight,
             Op::FocusColumnRightOrFirst,
@@ -3679,6 +3706,30 @@ mod tests {
                 min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
             },
             Op::FullscreenWindow(1),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn unfullscreen_window_in_column() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::SetFullscreenWindow {
+                window: 2,
+                is_fullscreen: false,
+            },
         ];
 
         check_ops(&ops);

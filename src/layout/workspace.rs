@@ -2151,6 +2151,10 @@ impl<W: LayoutElement> Workspace<W> {
             .find_map(|(col_idx, col)| col.position(window).map(|tile_idx| (col_idx, tile_idx)))
             .unwrap();
 
+        if is_fullscreen == self.columns[col_idx].is_fullscreen {
+            return;
+        }
+
         if is_fullscreen
             && col_idx == self.active_column_idx
             && self.columns[col_idx].tiles.len() == 1
@@ -3243,6 +3247,10 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn set_fullscreen(&mut self, is_fullscreen: bool) {
+        if self.is_fullscreen == is_fullscreen {
+            return;
+        }
+
         assert_eq!(self.tiles.len(), 1);
         self.is_fullscreen = is_fullscreen;
         self.update_tile_sizes(false);
@@ -3369,7 +3377,7 @@ fn compute_new_view_offset(
         return -(new_col_x - cur_x);
     }
 
-    // Otherwise, prefer the aligment that results in less motion from the current position.
+    // Otherwise, prefer the alignment that results in less motion from the current position.
     let dist_to_left = cur_x.abs_diff(new_x);
     let dist_to_right = (cur_x + view_width).abs_diff(new_right_x);
     if dist_to_left <= dist_to_right {

@@ -132,7 +132,7 @@ impl CompositorHandler for State {
                             let output =
                                 output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
 
-                            // Chech that the workspace still exists.
+                            // Check that the workspace still exists.
                             let workspace_name = workspace_name
                                 .filter(|n| self.niri.layout.find_workspace_by_name(n).is_some());
 

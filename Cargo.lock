@@ -325,6 +325,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d818003e740b63afc82337e3160717f4f63078720a810b7b903e70a5d1d2994"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2179,6 +2188,7 @@ dependencies = [
  "arrayvec",
  "async-channel",
  "async-io 1.13.0",
+ "atomic",
  "bitflags 2.5.0",
  "bytemuck",
  "calloop 0.13.0",
