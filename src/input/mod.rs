@@ -565,6 +565,18 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusColumnRightOrFirst => {
+                self.niri.layout.focus_column_right_or_first();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusColumnLeftOrLast => {
+                self.niri.layout.focus_column_left_or_last();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWindowDown => {
                 self.niri.layout.focus_down();
                 self.maybe_warp_cursor_to_focus();
