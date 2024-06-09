@@ -18,7 +18,7 @@ use crate::input::CompositorMod;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::utils::output_size;
+use crate::utils::{apply_scale, output_size};
 
 const PADDING: i32 = 8;
 // const MARGIN: i32 = PADDING * 2;
@@ -133,11 +133,9 @@ fn render(
 ) -> anyhow::Result<RenderedOverlay> {
     let _span = tracy_client::span!("hotkey_overlay::render");
 
-    let apply_scale = |val: i32| (f64::from(val) * scale).round() as i32;
-
     // let margin = MARGIN * scale;
-    let padding = apply_scale(PADDING);
-    let line_interval = apply_scale(LINE_INTERVAL);
+    let padding = apply_scale(scale, PADDING);
+    let line_interval = apply_scale(scale, LINE_INTERVAL);
 
     // FIXME: if it doesn't fit, try splitting in two columns or something.
     // let mut target_size = output_size;
@@ -247,7 +245,7 @@ fn render(
         .collect::<Vec<_>>();
 
     let mut font = FontDescription::from_string(FONT);
-    font.set_absolute_size(apply_scale(font.size()).into());
+    font.set_absolute_size(apply_scale(scale, font.size()).into());
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;

@@ -18,7 +18,7 @@ use crate::render_helpers::memory::MemoryBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::utils::output_size;
+use crate::utils::{apply_scale, output_size};
 
 const TEXT: &str = "Failed to parse the config file. \
                     Please run <span face='monospace' bgcolor='#000000'>niri validate</span> \
@@ -171,9 +171,7 @@ impl ConfigErrorNotification {
 fn render(scale: f64, created_path: Option<&Path>) -> anyhow::Result<MemoryBuffer> {
     let _span = tracy_client::span!("config_error_notification::render");
 
-    let apply_scale = |val: i32| (f64::from(val) * scale).round() as i32;
-
-    let padding = apply_scale(PADDING);
+    let padding = apply_scale(scale, PADDING);
 
     let mut text = String::from(TEXT);
     let mut border_color = (1., 0.3, 0.3);
@@ -187,7 +185,7 @@ fn render(scale: f64, created_path: Option<&Path>) -> anyhow::Result<MemoryBuffe
     };
 
     let mut font = FontDescription::from_string(FONT);
-    font.set_absolute_size(apply_scale(font.size()).into());
+    font.set_absolute_size(apply_scale(scale, font.size()).into());
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;

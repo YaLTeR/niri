@@ -13,7 +13,7 @@ use crate::render_helpers::memory::MemoryBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::utils::output_size;
+use crate::utils::{apply_scale, output_size};
 
 const TEXT: &str = "Are you sure you want to exit niri?\n\n\
                     Press <span face='mono' bgcolor='#2C2C2C'> Enter </span> to confirm.";
@@ -101,12 +101,10 @@ impl ExitConfirmDialog {
 fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     let _span = tracy_client::span!("exit_confirm_dialog::render");
 
-    let apply_scale = |val: i32| (f64::from(val) * scale).round() as i32;
-
-    let padding = apply_scale(PADDING);
+    let padding = apply_scale(scale, PADDING);
 
     let mut font = FontDescription::from_string(FONT);
-    font.set_absolute_size(apply_scale(font.size()).into());
+    font.set_absolute_size(apply_scale(scale, font.size()).into());
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
