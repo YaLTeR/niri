@@ -9,12 +9,12 @@ use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::FontDescription;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Point, Transform};
 
 use crate::animation::Animation;
-use crate::render_helpers::memory::MemoryBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
@@ -29,7 +29,7 @@ const BORDER: i32 = 4;
 
 pub struct ConfigErrorNotification {
     state: State,
-    buffers: RefCell<HashMap<NotNan<f64>, Option<MemoryBuffer>>>,
+    buffers: RefCell<HashMap<NotNan<f64>, Option<TextureBuffer<GlesTexture>>>>,
 
     // If set, this is a "Created config at {path}" notification. If unset, this is a config error
     // notification.
@@ -138,12 +138,10 @@ impl ConfigErrorNotification {
         let mut buffers = self.buffers.borrow_mut();
         let buffer = buffers
             .entry(NotNan::new(scale).unwrap())
-            .or_insert_with(move || render(scale, path).ok());
-        let buffer = buffer.as_ref()?;
+            .or_insert_with(move || render(renderer.as_gles_renderer(), scale, path).ok());
+        let buffer = buffer.clone()?;
 
         let size = buffer.logical_size();
-        let buffer = TextureBuffer::from_memory_buffer(renderer.as_gles_renderer(), buffer).ok()?;
-
         let y_range = size.h + f64::from(PADDING) * 2.;
 
         let x = (f64::from(output_size.w) - size.w).max(0.) / 2.;
@@ -168,7 +166,11 @@ impl ConfigErrorNotification {
     }
 }
 
-fn render(scale: f64, created_path: Option<&Path>) -> anyhow::Result<MemoryBuffer> {
+fn render(
+    renderer: &mut GlesRenderer,
+    scale: f64,
+    created_path: Option<&Path>,
+) -> anyhow::Result<TextureBuffer<GlesTexture>> {
     let _span = tracy_client::span!("config_error_notification::render");
 
     let padding = apply_scale(scale, PADDING);
@@ -222,13 +224,16 @@ fn render(scale: f64, created_path: Option<&Path>) -> anyhow::Result<MemoryBuffe
     drop(cr);
 
     let data = surface.take_data().unwrap();
-    let buffer = MemoryBuffer::new(
-        data.to_vec(),
+    let buffer = TextureBuffer::from_memory(
+        renderer,
+        &data,
         Fourcc::Argb8888,
         (width, height),
+        false,
         scale,
         Transform::Normal,
-    );
+        Vec::new(),
+    )?;
 
     Ok(buffer)
 }
