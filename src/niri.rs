@@ -90,6 +90,7 @@ use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 
 use crate::backend::tty::SurfaceDmabufFeedback;
@@ -217,6 +218,7 @@ pub struct Niri {
     pub presentation_state: PresentationState,
     pub security_context_state: SecurityContextState,
     pub gamma_control_manager_state: GammaControlManagerState,
+    pub activation_state: XdgActivationState,
 
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
@@ -1369,6 +1371,7 @@ impl Niri {
             GammaControlManagerState::new::<State, _>(&display_handle, move |client| {
                 is_tty && !client.get_data::<ClientState>().unwrap().restricted
             });
+        let activation_state = XdgActivationState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -1527,6 +1530,7 @@ impl Niri {
             presentation_state,
             security_context_state,
             gamma_control_manager_state,
+            activation_state,
 
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
