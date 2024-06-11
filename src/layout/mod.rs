@@ -923,12 +923,13 @@ impl<W: LayoutElement> Layout<W> {
 
         for mon in monitors {
             if &mon.output == output {
+                let scale = output.current_scale();
+                let transform = output.current_transform();
                 let view_size = output_size(output);
                 let working_area = compute_working_area(output, self.options.struts);
 
                 for ws in &mut mon.workspaces {
-                    ws.set_view_size(view_size, working_area);
-                    ws.update_output_scale_transform();
+                    ws.set_view_size(scale, transform, view_size, working_area);
                 }
 
                 break;

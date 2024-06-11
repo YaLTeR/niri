@@ -10,7 +10,7 @@ use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::tile::{Tile, TileRenderElement};
@@ -37,6 +37,18 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Current output of this workspace.
     output: Option<Output>,
+
+    /// Latest known output scale for this workspace.
+    ///
+    /// This should be set from the current workspace output, or, if all outputs have been
+    /// disconnected, preserved until a new output is connected.
+    scale: smithay::output::Scale,
+
+    /// Latest known output transform for this workspace.
+    ///
+    /// This should be set from the current workspace output, or, if all outputs have been
+    /// disconnected, preserved until a new output is connected.
+    transform: Transform,
 
     /// Latest known view size for this workspace.
     ///
@@ -332,6 +344,8 @@ impl<W: LayoutElement> Workspace<W> {
         let working_area = compute_working_area(&output, options.struts);
         Self {
             original_output,
+            scale: output.current_scale(),
+            transform: output.current_transform(),
             view_size: output_size(&output),
             working_area,
             output: Some(output),
@@ -362,6 +376,8 @@ impl<W: LayoutElement> Workspace<W> {
         );
         Self {
             output: None,
+            scale: smithay::output::Scale::Integer(1),
+            transform: Transform::Normal,
             original_output,
             view_size: Size::from((1280, 720)),
             working_area: Rectangle::from_loc_and_size((0, 0), (1280, 720)),
@@ -488,8 +504,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.output = output;
 
         if let Some(output) = &self.output {
+            let scale = output.current_scale();
+            let transform = output.current_transform();
             let working_area = compute_working_area(output, self.options.struts);
-            self.set_view_size(output_size(output), working_area);
+            self.set_view_size(scale, transform, output_size(output), working_area);
 
             for win in self.windows() {
                 self.enter_output_for_window(win);
@@ -499,39 +517,43 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn enter_output_for_window(&self, window: &W) {
         if let Some(output) = &self.output {
-            set_preferred_scale_transform(window, output);
+            window.set_preferred_scale_transform(self.scale, self.transform);
             window.output_enter(output);
         }
     }
 
     pub fn set_view_size(
         &mut self,
+        scale: smithay::output::Scale,
+        transform: Transform,
         size: Size<i32, Logical>,
         working_area: Rectangle<i32, Logical>,
     ) {
-        if self.view_size == size && self.working_area == working_area {
+        let scale_transform_changed = self.transform != transform
+            || self.scale.integer_scale() != scale.integer_scale()
+            || self.scale.fractional_scale() != scale.fractional_scale();
+        if !scale_transform_changed && self.view_size == size && self.working_area == working_area {
             return;
         }
 
+        self.scale = scale;
+        self.transform = transform;
         self.view_size = size;
         self.working_area = working_area;
 
         for col in &mut self.columns {
             col.set_view_size(self.view_size, self.working_area);
         }
+
+        if scale_transform_changed {
+            for window in self.windows() {
+                window.set_preferred_scale_transform(self.scale, self.transform);
+            }
+        }
     }
 
     pub fn view_size(&self) -> Size<i32, Logical> {
         self.view_size
-    }
-
-    pub fn update_output_scale_transform(&mut self) {
-        let Some(output) = self.output.as_ref() else {
-            return;
-        };
-        for window in self.windows() {
-            set_preferred_scale_transform(window, output);
-        }
     }
 
     fn toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
@@ -585,13 +607,9 @@ impl<W: LayoutElement> Workspace<W> {
         width: Option<ColumnWidth>,
         rules: &ResolvedWindowRules,
     ) {
-        if let Some(output) = self.output.as_ref() {
-            let scale = output.current_scale();
-            let transform = output.current_transform();
-            window.with_surfaces(|surface, data| {
-                send_scale_transform(surface, data, scale, transform);
-            });
-        }
+        window.with_surfaces(|surface, data| {
+            send_scale_transform(surface, data, self.scale, self.transform);
+        });
 
         window
             .toplevel()
@@ -1367,14 +1385,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
-        // FIXME: workspaces should probably cache their last used scale so they can be correctly
-        // rendered even with no outputs connected.
-        let output_scale = self
-            .output
-            .as_ref()
-            .map(|o| Scale::from(o.current_scale().fractional_scale()))
-            .unwrap_or(Scale::from(1.));
-
+        let output_scale = Scale::from(self.scale.fractional_scale());
         let view_size = self.view_size();
         for (tile, tile_pos) in self.tiles_with_render_positions_mut() {
             if tile.window().id() == window {
@@ -1403,13 +1414,7 @@ impl<W: LayoutElement> Workspace<W> {
         renderer: &mut GlesRenderer,
         window: &W::Id,
     ) {
-        // FIXME: workspaces should probably cache their last used scale so they can be correctly
-        // rendered even with no outputs connected.
-        let output_scale = self
-            .output
-            .as_ref()
-            .map(|o| Scale::from(o.current_scale().fractional_scale()))
-            .unwrap_or(Scale::from(1.));
+        let output_scale = Scale::from(self.scale.fractional_scale());
 
         let (tile, mut tile_pos) = self
             .tiles_with_render_positions_mut()
@@ -1472,6 +1477,8 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn verify_invariants(&self) {
         assert!(self.view_size.w > 0);
         assert!(self.view_size.h > 0);
+        assert!(self.scale.fractional_scale() > 0.);
+        assert!(self.scale.fractional_scale().is_finite());
         assert_eq!(self.columns.len(), self.data.len());
 
         if !self.columns.is_empty() {
@@ -2243,13 +2250,7 @@ impl<W: LayoutElement> Workspace<W> {
         renderer: &mut R,
         target: RenderTarget,
     ) -> Vec<WorkspaceRenderElement<R>> {
-        // FIXME: workspaces should probably cache their last used scale so they can be correctly
-        // rendered even with no outputs connected.
-        let output_scale = self
-            .output
-            .as_ref()
-            .map(|o| Scale::from(o.current_scale().fractional_scale()))
-            .unwrap_or(Scale::from(1.));
+        let output_scale = Scale::from(self.scale.fractional_scale());
 
         let mut rv = vec![];
 
@@ -3384,13 +3385,6 @@ fn compute_new_view_offset(
     } else {
         -(view_width - padding - new_col_width)
     }
-}
-
-fn set_preferred_scale_transform(window: &impl LayoutElement, output: &Output) {
-    // FIXME: cache this on the workspace.
-    let scale = output.current_scale();
-    let transform = output.current_transform();
-    window.set_preferred_scale_transform(scale, transform);
 }
 
 pub fn compute_working_area(output: &Output, struts: Struts) -> Rectangle<i32, Logical> {

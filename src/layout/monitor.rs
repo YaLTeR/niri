@@ -681,11 +681,13 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if self.options.struts != options.struts {
+            let scale = self.output.current_scale();
+            let transform = self.output.current_transform();
             let view_size = output_size(&self.output);
             let working_area = compute_working_area(&self.output, options.struts);
 
             for ws in &mut self.workspaces {
-                ws.set_view_size(view_size, working_area);
+                ws.set_view_size(scale, transform, view_size, working_area);
             }
         }
 
