@@ -2320,6 +2320,8 @@ pub fn set_miette_hook() -> Result<(), miette::InstallError> {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[track_caller]

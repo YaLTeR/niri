@@ -17,3 +17,6 @@ regex = "1.10.5"
 smithay = { workspace = true, features = ["backend_libinput"] }
 tracing.workspace = true
 tracy-client.workspace = true
+
+[dev-dependencies]
+pretty_assertions = "1.4.0"
