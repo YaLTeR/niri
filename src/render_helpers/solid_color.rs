@@ -157,6 +157,7 @@ impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
         frame.draw_solid(dst, damage, self.color)
     }

@@ -175,12 +175,27 @@ impl RenderElement<GlesRenderer> for OffscreenRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         let gles_frame = frame.as_gles_frame();
         if let Some(texture) = &self.texture {
-            RenderElement::<GlesRenderer>::draw(texture, gles_frame, src, dst, damage)?;
+            RenderElement::<GlesRenderer>::draw(
+                texture,
+                gles_frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+            )?;
         } else {
-            RenderElement::<GlesRenderer>::draw(&self.fallback, gles_frame, src, dst, damage)?;
+            RenderElement::<GlesRenderer>::draw(
+                &self.fallback,
+                gles_frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+            )?;
         }
         Ok(())
     }
@@ -201,12 +216,27 @@ impl<'render> RenderElement<TtyRenderer<'render>> for OffscreenRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
         if let Some(texture) = &self.texture {
-            RenderElement::<GlesRenderer>::draw(texture, gles_frame, src, dst, damage)?;
+            RenderElement::<GlesRenderer>::draw(
+                texture,
+                gles_frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+            )?;
         } else {
-            RenderElement::<GlesRenderer>::draw(&self.fallback, gles_frame, src, dst, damage)?;
+            RenderElement::<GlesRenderer>::draw(
+                &self.fallback,
+                gles_frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+            )?;
         }
         Ok(())
     }

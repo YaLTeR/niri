@@ -203,6 +203,7 @@ where
         src: Rectangle<f64, Buffer>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
         if frame.id() != self.buffer.renderer_id {
             warn!("trying to render texture from different renderer");
@@ -214,6 +215,7 @@ where
             src,
             dest,
             damage,
+            opaque_regions,
             self.buffer.transform,
             self.alpha,
         )

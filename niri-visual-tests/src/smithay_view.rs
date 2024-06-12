@@ -157,7 +157,7 @@ mod imp {
                 if let Some(mut damage) = rect.intersection(dst) {
                     damage.loc -= dst.loc;
                     element
-                        .draw(&mut frame, src, dst, &[damage])
+                        .draw(&mut frame, src, dst, &[damage], &[])
                         .context("error drawing element")?;
                 }
             }

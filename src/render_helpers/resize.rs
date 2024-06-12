@@ -166,8 +166,9 @@ impl RenderElement<GlesRenderer> for ResizeRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(&self.0, frame, src, dst, damage)?;
+        RenderElement::<GlesRenderer>::draw(&self.0, frame, src, dst, damage, opaque_regions)?;
         Ok(())
     }
 
@@ -183,9 +184,10 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ResizeRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
-        RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage)?;
+        RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage, opaque_regions)?;
         Ok(())
     }
 

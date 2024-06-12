@@ -297,6 +297,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         src: Rectangle<f64, Buffer>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         let frame = frame.as_gles_frame();
 
@@ -526,10 +527,11 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ShaderRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
         let frame = frame.as_gles_frame();
 
-        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage)?;
+        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions)?;
 
         Ok(())
     }

@@ -215,6 +215,7 @@ impl RenderElement<GlesRenderer> for ClippedSurfaceRenderElement<GlesRenderer> {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         frame.override_default_tex_program(
             self.program.clone(),
@@ -227,7 +228,7 @@ impl RenderElement<GlesRenderer> for ClippedSurfaceRenderElement<GlesRenderer> {
                 mat3_uniform("input_to_geo", self.input_to_geo),
             ],
         );
-        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage)?;
+        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
         frame.clear_tex_program_override();
         Ok(())
     }
@@ -248,6 +249,7 @@ impl<'render> RenderElement<TtyRenderer<'render>>
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
         frame.as_gles_frame().override_default_tex_program(
             self.program.clone(),
@@ -260,7 +262,7 @@ impl<'render> RenderElement<TtyRenderer<'render>>
                 mat3_uniform("input_to_geo", self.input_to_geo),
             ],
         );
-        RenderElement::draw(&self.inner, frame, src, dst, damage)?;
+        RenderElement::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
         frame.as_gles_frame().clear_tex_program_override();
         Ok(())
     }
