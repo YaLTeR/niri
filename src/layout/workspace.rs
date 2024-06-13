@@ -457,8 +457,9 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
-        for column in &mut self.columns {
+        for (column, data) in zip(&mut self.columns, &mut self.data) {
             column.update_config(options.clone());
+            data.update(column);
         }
 
         self.options = options;
@@ -2741,8 +2742,9 @@ impl<W: LayoutElement> Column<W> {
             update_sizes = true;
         }
 
-        for tile in &mut self.tiles {
+        for (tile, data) in zip(&mut self.tiles, &mut self.data) {
             tile.update_config(options.clone());
+            data.update(tile);
         }
 
         self.options = options;

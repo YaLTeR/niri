@@ -3912,6 +3912,27 @@ mod tests {
         assert_eq!(workspaces.len(), 2);
     }
 
+    #[test]
+    fn config_change_updates_cached_sizes() {
+        let mut config = Config::default();
+        config.layout.border.off = false;
+        config.layout.border.width = 2;
+
+        let mut layout = Layout::new(&config);
+
+        Op::AddWindow {
+            id: 1,
+            bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
+            min_max_size: Default::default(),
+        }
+        .apply(&mut layout);
+
+        config.layout.border.width = 4;
+        layout.update_config(&config);
+
+        layout.verify_invariants();
+    }
+
     fn arbitrary_spacing() -> impl Strategy<Value = u16> {
         // Give equal weight to:
         // - 0: the element is disabled
