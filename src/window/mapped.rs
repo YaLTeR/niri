@@ -17,6 +17,7 @@ use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
+use crate::handlers::KdeDecorationsModeState;
 use crate::layout::{
     InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
 };
@@ -422,8 +423,21 @@ impl LayoutElement for Mapped {
     }
 
     fn has_ssd(&self) -> bool {
-        self.toplevel().current_state().decoration_mode
-            == Some(zxdg_toplevel_decoration_v1::Mode::ServerSide)
+        let toplevel = self.toplevel();
+        let mode = toplevel.current_state().decoration_mode;
+
+        match mode {
+            Some(zxdg_toplevel_decoration_v1::Mode::ServerSide) => true,
+            // Check KDE decorations when XDG are not in use.
+            None => with_states(toplevel.wl_surface(), |states| {
+                states
+                    .data_map
+                    .get::<KdeDecorationsModeState>()
+                    .map(KdeDecorationsModeState::is_server)
+                    == Some(true)
+            }),
+            _ => false,
+        }
     }
 
     fn output_enter(&self, output: &Output) {
