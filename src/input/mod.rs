@@ -935,7 +935,7 @@ impl State {
         // Check if we have an active pointer constraint.
         let mut pointer_confined = None;
         if let Some(focus) = &self.niri.pointer_focus.surface {
-            let pos_within_surface = pos.to_i32_round() - focus.1;
+            let pos_within_surface = pos - focus.1;
 
             let mut pointer_locked = false;
             with_pointer_constraint(&focus.0, &pointer, |constraint| {
@@ -946,7 +946,7 @@ impl State {
 
                 // Constraint does not apply if not within region.
                 if let Some(region) = constraint.region() {
-                    if !region.contains(pos_within_surface) {
+                    if !region.contains(pos_within_surface.to_i32_round()) {
                         return;
                     }
                 }
@@ -1036,8 +1036,8 @@ impl State {
 
             // Prevent the pointer from leaving the confine region, if any.
             if let Some(region) = region {
-                let new_pos_within_surface = new_pos.to_i32_round() - focus_surface.1;
-                if !region.contains(new_pos_within_surface) {
+                let new_pos_within_surface = new_pos - focus_surface.1;
+                if !region.contains(new_pos_within_surface.to_i32_round()) {
                     prevent = true;
                 }
             }

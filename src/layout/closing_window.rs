@@ -34,10 +34,10 @@ pub struct ClosingWindow {
     block_out_from: Option<BlockOutFrom>,
 
     /// Size of the window geometry.
-    geo_size: Size<i32, Logical>,
+    geo_size: Size<f64, Logical>,
 
     /// Position in the workspace.
-    pos: Point<i32, Logical>,
+    pos: Point<f64, Logical>,
 
     /// How much the texture should be offset.
     buffer_offset: Point<f64, Logical>,
@@ -64,8 +64,8 @@ impl ClosingWindow {
         renderer: &mut GlesRenderer,
         snapshot: RenderSnapshot<E, E>,
         scale: Scale<f64>,
-        geo_size: Size<i32, Logical>,
-        pos: Point<i32, Logical>,
+        geo_size: Size<f64, Logical>,
+        pos: Point<f64, Logical>,
         anim: Animation,
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("ClosingWindow::new");
@@ -123,7 +123,7 @@ impl ClosingWindow {
     pub fn render(
         &self,
         renderer: &mut GlesRenderer,
-        view_rect: Rectangle<i32, Logical>,
+        view_rect: Rectangle<f64, Logical>,
         scale: Scale<f64>,
         target: RenderTarget,
     ) -> ClosingWindowRenderElement {
@@ -140,7 +140,12 @@ impl ClosingWindow {
             let area_loc = Vec2::new(view_rect.loc.x as f32, view_rect.loc.y as f32);
             let area_size = Vec2::new(view_rect.size.w as f32, view_rect.size.h as f32);
 
-            let geo_loc = Vec2::new(self.pos.x as f32, self.pos.y as f32);
+            // Round to physical pixels relative to the view position. This is similar to what
+            // happens when rendering normal windows.
+            let relative = self.pos - view_rect.loc;
+            let pos = view_rect.loc + relative.to_physical_precise_round(scale).to_logical(scale);
+
+            let geo_loc = Vec2::new(pos.x as f32, pos.y as f32);
             let geo_size = Vec2::new(self.geo_size.w as f32, self.geo_size.h as f32);
 
             let input_to_geo = Mat3::from_scale(area_size / geo_size)
@@ -171,7 +176,7 @@ impl ClosingWindow {
                 HashMap::from([(String::from("niri_tex"), buffer.texture().clone())]),
                 Kind::Unspecified,
             )
-            .with_location(Point::from((0, 0)))
+            .with_location(Point::from((0., 0.)))
             .into();
         }
 
@@ -186,15 +191,15 @@ impl ClosingWindow {
 
         let elem = PrimaryGpuTextureRenderElement(elem);
 
-        let center = self.geo_size.to_point().to_f64().downscale(2.);
+        let center = self.geo_size.to_point().downscale(2.);
         let elem = RescaleRenderElement::from_element(
             elem,
             (center - offset).to_physical_precise_round(scale),
             ((1. - clamped_progress) / 5. + 0.8).max(0.),
         );
 
-        let mut location = self.pos.to_f64() + offset;
-        location.x -= view_rect.loc.x as f64;
+        let mut location = self.pos + offset;
+        location.x -= view_rect.loc.x;
         let elem = RelocateRenderElement::from_element(
             elem,
             location.to_physical_precise_round(scale),

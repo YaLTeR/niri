@@ -144,7 +144,7 @@ impl ConfigErrorNotification {
         let size = buffer.logical_size();
         let y_range = size.h + f64::from(PADDING) * 2.;
 
-        let x = (f64::from(output_size.w) - size.w).max(0.) / 2.;
+        let x = (output_size.w - size.w).max(0.) / 2.;
         let y = match &self.state {
             State::Hidden => unreachable!(),
             State::Showing(anim) | State::Hiding(anim) => -size.h + anim.value() * y_range,

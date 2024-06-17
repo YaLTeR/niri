@@ -18,7 +18,7 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     inner: WaylandSurfaceRenderElement<R>,
     program: GlesTexProgram,
     corner_radius: CornerRadius,
-    geometry: Rectangle<i32, Logical>,
+    geometry: Rectangle<f64, Logical>,
     input_to_geo: Mat3,
 }
 
@@ -32,7 +32,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
     pub fn new(
         elem: WaylandSurfaceRenderElement<R>,
         scale: Scale<f64>,
-        geometry: Rectangle<i32, Logical>,
+        geometry: Rectangle<f64, Logical>,
         program: GlesTexProgram,
         corner_radius: CornerRadius,
     ) -> Self {
@@ -86,7 +86,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
     pub fn will_clip(
         elem: &WaylandSurfaceRenderElement<R>,
         scale: Scale<f64>,
-        geometry: Rectangle<i32, Logical>,
+        geometry: Rectangle<f64, Logical>,
         corner_radius: CornerRadius,
     ) -> bool {
         let elem_geo = elem.geometry(scale);
@@ -95,10 +95,10 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
         if corner_radius == CornerRadius::default() {
             !geo.contains_rect(elem_geo)
         } else {
-            let corners = Self::rounded_corners(geometry.to_f64(), corner_radius);
+            let corners = Self::rounded_corners(geometry, corner_radius);
             let corners = corners
                 .into_iter()
-                .map(|rect| rect.to_physical_precise_round(scale));
+                .map(|rect| rect.to_physical_precise_up(scale));
             let geo = Rectangle::subtract_rects_many([geo], corners);
             !Rectangle::subtract_rects_many([elem_geo], geo).is_empty()
         }
@@ -186,11 +186,11 @@ impl<R: NiriRenderer> Element for ClippedSurfaceRenderElement<R> {
         if self.corner_radius == CornerRadius::default() {
             regions.collect()
         } else {
-            let corners = Self::rounded_corners(self.geometry.to_f64(), self.corner_radius);
+            let corners = Self::rounded_corners(self.geometry, self.corner_radius);
 
             let elem_loc = self.geometry(scale).loc;
             let corners = corners.into_iter().map(|rect| {
-                let mut rect = rect.to_physical_precise_round(scale);
+                let mut rect = rect.to_physical_precise_up(scale);
                 rect.loc -= elem_loc;
                 rect
             });
@@ -278,7 +278,7 @@ impl<'render> RenderElement<TtyRenderer<'render>>
 }
 
 impl RoundedCornerDamage {
-    pub fn set_size(&mut self, size: Size<i32, Logical>) {
+    pub fn set_size(&mut self, size: Size<f64, Logical>) {
         self.damage.set_size(size);
     }
 

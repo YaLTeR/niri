@@ -331,6 +331,10 @@ pub struct Position {
     pub y: i32,
 }
 
+// MIN and MAX generics are only used during parsing to check the value.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct FloatOrInt<const MIN: i32, const MAX: i32>(pub f64);
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Layout {
     #[knuffel(child, default)]
@@ -344,7 +348,7 @@ pub struct Layout {
     #[knuffel(child, unwrap(argument), default)]
     pub center_focused_column: CenterFocusedColumn,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
-    pub gaps: u16,
+    pub gaps: FloatOrInt<0, 65535>,
     #[knuffel(child, default)]
     pub struts: Struts,
 }
@@ -357,7 +361,7 @@ impl Default for Layout {
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
             center_focused_column: Default::default(),
-            gaps: 16,
+            gaps: FloatOrInt(16.),
             struts: Default::default(),
         }
     }
@@ -374,7 +378,7 @@ pub struct FocusRing {
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(argument), default = Self::default().width)]
-    pub width: u16,
+    pub width: FloatOrInt<0, 65535>,
     #[knuffel(child, default = Self::default().active_color)]
     pub active_color: Color,
     #[knuffel(child, default = Self::default().inactive_color)]
@@ -389,7 +393,7 @@ impl Default for FocusRing {
     fn default() -> Self {
         Self {
             off: false,
-            width: 4,
+            width: FloatOrInt(4.),
             active_color: Color::new(127, 200, 255, 255),
             inactive_color: Color::new(80, 80, 80, 255),
             active_gradient: None,
@@ -422,7 +426,7 @@ pub struct Border {
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(argument), default = Self::default().width)]
-    pub width: u16,
+    pub width: FloatOrInt<0, 65535>,
     #[knuffel(child, default = Self::default().active_color)]
     pub active_color: Color,
     #[knuffel(child, default = Self::default().inactive_color)]
@@ -437,7 +441,7 @@ impl Default for Border {
     fn default() -> Self {
         Self {
             off: true,
-            width: 4,
+            width: FloatOrInt(4.),
             active_color: Color::new(255, 200, 127, 255),
             inactive_color: Color::new(80, 80, 80, 255),
             active_gradient: None,
@@ -519,16 +523,16 @@ pub enum PresetWidth {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DefaultColumnWidth(pub Option<PresetWidth>);
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Struts {
     #[knuffel(child, unwrap(argument), default)]
-    pub left: u16,
+    pub left: FloatOrInt<0, 65535>,
     #[knuffel(child, unwrap(argument), default)]
-    pub right: u16,
+    pub right: FloatOrInt<0, 65535>,
     #[knuffel(child, unwrap(argument), default)]
-    pub top: u16,
+    pub top: FloatOrInt<0, 65535>,
     #[knuffel(child, unwrap(argument), default)]
-    pub bottom: u16,
+    pub bottom: FloatOrInt<0, 65535>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -863,7 +867,7 @@ pub struct BorderRule {
     #[knuffel(child)]
     pub on: bool,
     #[knuffel(child, unwrap(argument))]
-    pub width: Option<u16>,
+    pub width: Option<FloatOrInt<0, 65535>>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -1139,6 +1143,72 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceRefere
                     "Unsupported value, only numbers and strings are recognized",
                 ));
                 Ok(WorkspaceReference::Index(0))
+            }
+        }
+    }
+}
+
+impl<S: knuffel::traits::ErrorSpan, const MIN: i32, const MAX: i32> knuffel::DecodeScalar<S>
+    for FloatOrInt<MIN, MAX>
+{
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        match &**val {
+            knuffel::ast::Literal::Int(ref value) => match value.try_into() {
+                Ok(v) => {
+                    if (MIN..=MAX).contains(&v) {
+                        Ok(FloatOrInt(f64::from(v)))
+                    } else {
+                        ctx.emit_error(DecodeError::conversion(
+                            val,
+                            format!("value must be between {MIN} and {MAX}"),
+                        ));
+                        Ok(FloatOrInt::default())
+                    }
+                }
+                Err(e) => {
+                    ctx.emit_error(DecodeError::conversion(val, e));
+                    Ok(FloatOrInt::default())
+                }
+            },
+            knuffel::ast::Literal::Decimal(ref value) => match value.try_into() {
+                Ok(v) => {
+                    if (f64::from(MIN)..=f64::from(MAX)).contains(&v) {
+                        Ok(FloatOrInt(v))
+                    } else {
+                        ctx.emit_error(DecodeError::conversion(
+                            val,
+                            format!("value must be between {MIN} and {MAX}"),
+                        ));
+                        Ok(FloatOrInt::default())
+                    }
+                }
+                Err(e) => {
+                    ctx.emit_error(DecodeError::conversion(val, e));
+                    Ok(FloatOrInt::default())
+                }
+            },
+            _ => {
+                ctx.emit_error(DecodeError::unsupported(
+                    val,
+                    "Unsupported value, only numbers are recognized",
+                ));
+                Ok(FloatOrInt::default())
             }
         }
     }
@@ -2483,7 +2553,7 @@ mod tests {
 
                 border {
                     on
-                    width 8
+                    width 8.5
                 }
             }
 
@@ -2579,7 +2649,7 @@ mod tests {
                 layout: Layout {
                     focus_ring: FocusRing {
                         off: false,
-                        width: 5,
+                        width: FloatOrInt(5.),
                         active_color: Color {
                             r: 0,
                             g: 100,
@@ -2602,7 +2672,7 @@ mod tests {
                     },
                     border: Border {
                         off: false,
-                        width: 3,
+                        width: FloatOrInt(3.),
                         active_color: Color {
                             r: 255,
                             g: 200,
@@ -2627,12 +2697,12 @@ mod tests {
                     default_column_width: Some(DefaultColumnWidth(Some(PresetWidth::Proportion(
                         0.25,
                     )))),
-                    gaps: 8,
+                    gaps: FloatOrInt(8.),
                     struts: Struts {
-                        left: 1,
-                        right: 2,
-                        top: 3,
-                        bottom: 0,
+                        left: FloatOrInt(1.),
+                        right: FloatOrInt(2.),
+                        top: FloatOrInt(3.),
+                        bottom: FloatOrInt(0.),
                     },
                     center_focused_column: CenterFocusedColumn::OnOverflow,
                 },
@@ -2716,12 +2786,12 @@ mod tests {
                     open_fullscreen: Some(false),
                     focus_ring: BorderRule {
                         off: true,
-                        width: Some(3),
+                        width: Some(FloatOrInt(3.)),
                         ..Default::default()
                     },
                     border: BorderRule {
                         on: true,
-                        width: Some(8),
+                        width: Some(FloatOrInt(8.5)),
                         ..Default::default()
                     },
                     ..Default::default()

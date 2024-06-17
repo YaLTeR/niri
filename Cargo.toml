@@ -99,6 +99,7 @@ features = [
 ]
 
 [dev-dependencies]
+approx = "0.5.1"
 k9 = "0.12.0"
 proptest = "1.4.0"
 proptest-derive = "0.4.0"

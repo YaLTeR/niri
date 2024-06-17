@@ -346,12 +346,12 @@ pub enum KeyboardFocus {
     ScreenshotUi,
 }
 
-#[derive(Default, Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq)]
 pub struct PointerFocus {
     // Output under pointer.
     pub output: Option<Output>,
     // Surface under pointer and its location in global coordinate space.
-    pub surface: Option<(WlSurface, Point<i32, Logical>)>,
+    pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
     pub window: Option<Window>,
 }
@@ -588,8 +588,8 @@ impl State {
         if let Some(rect) = rect {
             let output_geo = self.niri.global_space.output_geometry(&output).unwrap();
             let mut rect = rect;
-            rect.loc += output_geo.loc;
-            rv = self.move_cursor_to_rect(rect.to_f64(), mode);
+            rect.loc += output_geo.loc.to_f64();
+            rv = self.move_cursor_to_rect(rect, mode);
         }
 
         rv
@@ -1659,7 +1659,7 @@ impl Niri {
                 config,
             } = data;
 
-            let size = output_size(&output);
+            let size = output_size(&output).to_i32_round();
 
             let new_position = config
                 .map(|pos| Point::from((pos.x, pos.y)))
@@ -1763,7 +1763,7 @@ impl Niri {
             LockRenderState::Unlocked
         };
 
-        let size = output_size(&output);
+        let size = output_size(&output).to_i32_round();
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
@@ -1853,7 +1853,7 @@ impl Niri {
     }
 
     pub fn output_resized(&mut self, output: &Output) {
-        let output_size = output_size(output);
+        let output_size = output_size(output).to_i32_round();
         let is_locked = self.is_locked();
 
         layer_map_for_output(output).arrange();
@@ -1990,7 +1990,10 @@ impl Niri {
                 WindowSurfaceType::ALL,
             )
             .map(|(surface, pos_within_output)| {
-                (surface, pos_within_output + output_pos_in_global_space)
+                (
+                    surface,
+                    (pos_within_output + output_pos_in_global_space).to_f64(),
+                )
             });
 
             return rv;
@@ -2005,14 +2008,15 @@ impl Niri {
             layers
                 .layer_under(layer, pos_within_output)
                 .and_then(|layer| {
-                    let layer_pos_within_output = layers.layer_geometry(layer).unwrap().loc;
+                    let layer_pos_within_output =
+                        layers.layer_geometry(layer).unwrap().loc.to_f64();
                     layer
                         .surface_under(
-                            pos_within_output - layer_pos_within_output.to_f64(),
+                            pos_within_output - layer_pos_within_output,
                             WindowSurfaceType::ALL,
                         )
                         .map(|(surface, pos_within_layer)| {
-                            (surface, pos_within_layer + layer_pos_within_output)
+                            (surface, pos_within_layer.to_f64() + layer_pos_within_output)
                         })
                 })
                 .map(|s| (s, None))
@@ -2026,11 +2030,11 @@ impl Niri {
                     let window = &mapped.window;
                     window
                         .surface_under(
-                            pos_within_output - win_pos_within_output.to_f64(),
+                            pos_within_output - win_pos_within_output,
                             WindowSurfaceType::ALL,
                         )
                         .map(|(s, pos_within_window)| {
-                            (s, pos_within_window + win_pos_within_output)
+                            (s, pos_within_window.to_f64() + win_pos_within_output)
                         })
                         .map(|s| (s, Some(window.clone())))
                 })
@@ -2057,7 +2061,8 @@ impl Niri {
             return rv;
         };
 
-        let surface_loc_in_global_space = surface_pos_within_output + output_pos_in_global_space;
+        let surface_loc_in_global_space =
+            surface_pos_within_output + output_pos_in_global_space.to_f64();
 
         rv.surface = Some((surface, surface_loc_in_global_space));
         rv.window = window;
@@ -3533,7 +3538,7 @@ impl Niri {
         // FIXME: pointer.
         let elements = mapped.render(
             renderer,
-            mapped.window.geometry().loc,
+            mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
             RenderTarget::ScreenCapture,
@@ -3784,8 +3789,8 @@ impl Niri {
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
-                let new_pos_within_surface = new_pos.to_i32_round() - *surface_loc;
-                if !region.contains(new_pos_within_surface) {
+                let new_pos_within_surface = new_pos - *surface_loc;
+                if !region.contains(new_pos_within_surface.to_i32_round()) {
                     return;
                 }
             }

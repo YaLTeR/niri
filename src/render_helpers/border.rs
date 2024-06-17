@@ -26,12 +26,12 @@ pub struct BorderRenderElement {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Parameters {
-    size: Size<i32, Logical>,
-    gradient_area: Rectangle<i32, Logical>,
+    size: Size<f64, Logical>,
+    gradient_area: Rectangle<f64, Logical>,
     color_from: [f32; 4],
     color_to: [f32; 4],
     angle: f32,
-    geometry: Rectangle<i32, Logical>,
+    geometry: Rectangle<f64, Logical>,
     border_width: f32,
     corner_radius: CornerRadius,
 }
@@ -39,12 +39,12 @@ struct Parameters {
 impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        size: Size<i32, Logical>,
-        gradient_area: Rectangle<i32, Logical>,
+        size: Size<f64, Logical>,
+        gradient_area: Rectangle<f64, Logical>,
         color_from: [f32; 4],
         color_to: [f32; 4],
         angle: f32,
-        geometry: Rectangle<i32, Logical>,
+        geometry: Rectangle<f64, Logical>,
         border_width: f32,
         corner_radius: CornerRadius,
     ) -> Self {
@@ -90,12 +90,12 @@ impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        size: Size<i32, Logical>,
-        gradient_area: Rectangle<i32, Logical>,
+        size: Size<f64, Logical>,
+        gradient_area: Rectangle<f64, Logical>,
         color_from: [f32; 4],
         color_to: [f32; 4],
         angle: f32,
-        geometry: Rectangle<i32, Logical>,
+        geometry: Rectangle<f64, Logical>,
         border_width: f32,
         corner_radius: CornerRadius,
     ) {
@@ -172,7 +172,7 @@ impl BorderRenderElement {
         );
     }
 
-    pub fn with_location(mut self, location: Point<i32, Logical>) -> Self {
+    pub fn with_location(mut self, location: Point<f64, Logical>) -> Self {
         self.inner = self.inner.with_location(location);
         self
     }

@@ -95,16 +95,24 @@ pub fn to_physical_precise_round<N: Coordinate>(scale: f64, logical: impl Coordi
     N::from_f64((logical.to_f64() * scale).round())
 }
 
-pub fn output_size(output: &Output) -> Size<i32, Logical> {
+pub fn round_logical_in_physical(scale: f64, logical: f64) -> f64 {
+    (logical * scale).round() / scale
+}
+
+pub fn round_logical_in_physical_max1(scale: f64, logical: f64) -> f64 {
+    if logical == 0. {
+        return 0.;
+    }
+
+    (logical * scale).max(1.).round() / scale
+}
+
+pub fn output_size(output: &Output) -> Size<f64, Logical> {
     let output_scale = output.current_scale().fractional_scale();
     let output_transform = output.current_transform();
     let output_mode = output.current_mode().unwrap();
-
-    // Like in LayerMap::arrange().
-    //
-    // FIXME: return fractional logical size.
     let logical_size = output_mode.size.to_f64().to_logical(output_scale);
-    output_transform.transform_size(logical_size.to_i32_round())
+    output_transform.transform_size(logical_size)
 }
 
 pub fn logical_output(output: &Output) -> niri_ipc::LogicalOutput {

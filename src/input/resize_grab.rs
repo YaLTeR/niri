@@ -35,7 +35,7 @@ impl PointerGrab<State> for ResizeGrab {
         &mut self,
         data: &mut State,
         handle: &mut PointerInnerHandle<'_, State>,
-        _focus: Option<(<State as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        _focus: Option<(<State as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus.
@@ -60,7 +60,7 @@ impl PointerGrab<State> for ResizeGrab {
         &mut self,
         data: &mut State,
         handle: &mut PointerInnerHandle<'_, State>,
-        _focus: Option<(<State as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        _focus: Option<(<State as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         // While the grab is active, no client has pointer focus.

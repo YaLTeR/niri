@@ -12,7 +12,7 @@ use super::BakedBuffer;
 pub fn render_snapshot_from_surface_tree(
     renderer: &mut GlesRenderer,
     surface: &WlSurface,
-    location: Point<i32, Logical>,
+    location: Point<f64, Logical>,
     storage: &mut Vec<BakedBuffer<TextureBuffer<GlesTexture>>>,
 ) {
     let _span = tracy_client::span!("render_snapshot_from_surface_tree");
@@ -28,7 +28,7 @@ pub fn render_snapshot_from_surface_tree(
                 let data = &*data.borrow();
 
                 if let Some(view) = data.view() {
-                    location += view.offset;
+                    location += view.offset.to_f64();
                     TraversalAction::DoChildren(location)
                 } else {
                     TraversalAction::SkipChildren
@@ -43,7 +43,7 @@ pub fn render_snapshot_from_surface_tree(
 
             if let Some(data) = data {
                 if let Some(view) = data.borrow().view() {
-                    location += view.offset;
+                    location += view.offset.to_f64();
                 } else {
                     return;
                 }

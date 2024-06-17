@@ -18,12 +18,12 @@ pub struct ResizeRenderElement(ShaderRenderElement);
 impl ResizeRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        area: Rectangle<i32, Logical>,
+        area: Rectangle<f64, Logical>,
         scale: Scale<f64>,
         texture_prev: (GlesTexture, Rectangle<i32, Physical>),
-        size_prev: Size<i32, Logical>,
+        size_prev: Size<f64, Logical>,
         texture_next: (GlesTexture, Rectangle<i32, Physical>),
-        size_next: Size<i32, Logical>,
+        size_next: Size<f64, Logical>,
         progress: f32,
         clamped_progress: f32,
         corner_radius: CornerRadius,
@@ -35,17 +35,17 @@ impl ResizeRenderElement {
         let (texture_prev, tex_prev_geo) = texture_prev;
         let (texture_next, tex_next_geo) = texture_next;
 
-        let scale_prev = area.size.to_f64() / size_prev.to_f64();
-        let scale_next = area.size.to_f64() / size_next.to_f64();
+        let scale_prev = area.size / size_prev;
+        let scale_next = area.size / size_next;
 
         // Compute the area necessary to fit a crossfade.
         let tex_prev_geo_scaled = tex_prev_geo.to_f64().upscale(scale_prev);
         let tex_next_geo_scaled = tex_next_geo.to_f64().upscale(scale_next);
-        let combined_geo = tex_prev_geo_scaled.merge(tex_next_geo_scaled);
+        let combined_geo = tex_prev_geo_scaled.merge(tex_next_geo_scaled).to_i32_up();
 
         let area = Rectangle::from_loc_and_size(
-            area.loc + combined_geo.loc.to_logical(scale).to_i32_round(),
-            combined_geo.size.to_logical(scale).to_i32_round(),
+            area.loc + combined_geo.loc.to_logical(scale),
+            combined_geo.size.to_logical(scale),
         );
 
         // Convert Smithay types into glam types.

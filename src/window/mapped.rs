@@ -3,7 +3,6 @@ use std::cmp::{max, min};
 use std::time::Duration;
 
 use niri_config::WindowRule;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -24,6 +23,7 @@ use crate::layout::{
 use crate::niri::WindowOffscreenId;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::{send_scale_transform, ResizeEdge};
@@ -104,7 +104,7 @@ impl Mapped {
             need_to_recompute_rules: false,
             is_focused: false,
             is_active_in_column: false,
-            block_out_buffer: RefCell::new(SolidColorBuffer::new((0, 0), [0., 0., 0., 1.])),
+            block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
@@ -158,18 +158,18 @@ impl Mapped {
     fn render_snapshot(&self, renderer: &mut GlesRenderer) -> LayoutElementRenderSnapshot {
         let _span = tracy_client::span!("Mapped::render_snapshot");
 
-        let size = self.size();
+        let size = self.size().to_f64();
 
         let mut buffer = self.block_out_buffer.borrow_mut();
         buffer.resize(size);
         let blocked_out_contents = vec![BakedBuffer {
             buffer: buffer.clone(),
-            location: Point::from((0, 0)),
+            location: Point::from((0., 0.)),
             src: None,
             dst: None,
         }];
 
-        let buf_pos = self.window.geometry().loc.upscale(-1);
+        let buf_pos = self.window.geometry().loc.upscale(-1).to_f64();
 
         let mut contents = vec![];
 
@@ -180,7 +180,7 @@ impl Mapped {
             render_snapshot_from_surface_tree(
                 renderer,
                 popup.wl_surface(),
-                buf_pos + offset,
+                buf_pos + offset.to_f64(),
                 &mut contents,
             );
         }
@@ -248,7 +248,7 @@ impl LayoutElement for Mapped {
     fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        location: Point<i32, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
@@ -257,17 +257,12 @@ impl LayoutElement for Mapped {
 
         if target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
-            buffer.resize(self.window.geometry().size);
-            let elem = SolidColorRenderElement::from_buffer(
-                &buffer,
-                location.to_physical_precise_round(scale),
-                scale,
-                alpha,
-                Kind::Unspecified,
-            );
+            buffer.resize(self.window.geometry().size.to_f64());
+            let elem =
+                SolidColorRenderElement::from_buffer(&buffer, location, alpha, Kind::Unspecified);
             rv.normal.push(elem.into());
         } else {
-            let buf_pos = location - self.window.geometry().loc;
+            let buf_pos = location - self.window.geometry().loc.to_f64();
 
             let surface = self.toplevel().wl_surface();
             for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
@@ -276,7 +271,7 @@ impl LayoutElement for Mapped {
                 rv.popups.extend(render_elements_from_surface_tree(
                     renderer,
                     popup.wl_surface(),
-                    (buf_pos + offset).to_physical_precise_round(scale),
+                    (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                     scale,
                     alpha,
                     Kind::Unspecified,
@@ -299,24 +294,19 @@ impl LayoutElement for Mapped {
     fn render_normal<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        location: Point<i32, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>> {
         if target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
-            buffer.resize(self.window.geometry().size);
-            let elem = SolidColorRenderElement::from_buffer(
-                &buffer,
-                location.to_physical_precise_round(scale),
-                scale,
-                alpha,
-                Kind::Unspecified,
-            );
+            buffer.resize(self.window.geometry().size.to_f64());
+            let elem =
+                SolidColorRenderElement::from_buffer(&buffer, location, alpha, Kind::Unspecified);
             vec![elem.into()]
         } else {
-            let buf_pos = location - self.window.geometry().loc;
+            let buf_pos = location - self.window.geometry().loc.to_f64();
             let surface = self.toplevel().wl_surface();
             render_elements_from_surface_tree(
                 renderer,
@@ -332,7 +322,7 @@ impl LayoutElement for Mapped {
     fn render_popups<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        location: Point<i32, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
@@ -342,7 +332,7 @@ impl LayoutElement for Mapped {
         } else {
             let mut rv = vec![];
 
-            let buf_pos = location - self.window.geometry().loc;
+            let buf_pos = location - self.window.geometry().loc.to_f64();
             let surface = self.toplevel().wl_surface();
             for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
                 let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
@@ -350,7 +340,7 @@ impl LayoutElement for Mapped {
                 rv.extend(render_elements_from_surface_tree(
                     renderer,
                     popup.wl_surface(),
-                    (buf_pos + offset).to_physical_precise_round(scale),
+                    (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                     scale,
                     alpha,
                     Kind::Unspecified,

@@ -5,10 +5,10 @@ use std::time::Duration;
 use niri::animation::ANIMATION_SLOWDOWN;
 use niri::layout::focus_ring::FocusRing;
 use niri::render_helpers::border::BorderRenderElement;
-use niri_config::{Color, CornerRadius};
+use niri_config::{Color, CornerRadius, FloatOrInt};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
 use super::TestCase;
 
@@ -22,7 +22,7 @@ impl GradientArea {
     pub fn new(_size: Size<i32, Logical>) -> Self {
         let border = FocusRing::new(niri_config::FocusRing {
             off: false,
-            width: 1,
+            width: FloatOrInt(1.),
             active_color: Color::new(255, 255, 255, 128),
             inactive_color: Color::default(),
             active_gradient: None,
@@ -75,13 +75,14 @@ impl TestCase for GradientArea {
 
         let (a, b) = (size.w / 4, size.h / 4);
         let rect_size = (size.w - a * 2, size.h - b * 2);
-        let area = Rectangle::from_loc_and_size((a, b), rect_size);
+        let area = Rectangle::from_loc_and_size((a, b), rect_size).to_f64();
 
         let g_size = Size::from((
             (size.w as f32 / 8. + size.w as f32 / 8. * 7. * f).round() as i32,
             (size.h as f32 / 8. + size.h as f32 / 8. * 7. * f).round() as i32,
         ));
-        let g_loc = ((size.w - g_size.w) / 2, (size.h - g_size.h) / 2);
+        let g_loc = Point::from(((size.w - g_size.w) / 2, (size.h - g_size.h) / 2)).to_f64();
+        let g_size = g_size.to_f64();
         let mut g_area = Rectangle::from_loc_and_size(g_loc, g_size);
         g_area.loc -= area.loc;
 
@@ -91,10 +92,11 @@ impl TestCase for GradientArea {
             true,
             Rectangle::default(),
             CornerRadius::default(),
+            1.,
         );
         rv.extend(
             self.border
-                .render(renderer, Point::from(g_loc), Scale::from(1.))
+                .render(renderer, g_loc)
                 .map(|elem| Box::new(elem) as _),
         );
 
@@ -105,7 +107,7 @@ impl TestCase for GradientArea {
                 [1., 0., 0., 1.],
                 [0., 1., 0., 1.],
                 FRAC_PI_4,
-                Rectangle::from_loc_and_size((0, 0), rect_size),
+                Rectangle::from_loc_and_size((0, 0), rect_size).to_f64(),
                 0.,
                 CornerRadius::default(),
             )

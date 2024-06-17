@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetWidth, Struts, Workspace as WorkspaceConfig};
 use niri_ipc::SizeChange;
+use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -54,13 +55,13 @@ pub struct Workspace<W: LayoutElement> {
     ///
     /// This should be computed from the current workspace output size, or, if all outputs have
     /// been disconnected, preserved until a new output is connected.
-    view_size: Size<i32, Logical>,
+    view_size: Size<f64, Logical>,
 
     /// Latest known working area for this workspace.
     ///
     /// This is similar to view size, but takes into account things like layer shell exclusive
     /// zones.
-    working_area: Rectangle<i32, Logical>,
+    working_area: Rectangle<f64, Logical>,
 
     /// Columns of windows on this workspace.
     pub columns: Vec<Column<W>>,
@@ -79,7 +80,7 @@ pub struct Workspace<W: LayoutElement> {
     /// Any gaps, including left padding from work area left exclusive zone, is handled
     /// with this view offset (rather than added as a constant elsewhere in the code). This allows
     /// for natural handling of fullscreen windows, which must ignore work area padding.
-    view_offset: i32,
+    view_offset: f64,
 
     /// Adjustment of the view offset, if one is currently ongoing.
     view_offset_adj: Option<ViewOffsetAdjustment>,
@@ -94,15 +95,18 @@ pub struct Workspace<W: LayoutElement> {
     /// index of the previous column to activate.
     ///
     /// The value is the view offset that the previous column had before, to restore it.
-    activate_prev_column_on_removal: Option<i32>,
+    activate_prev_column_on_removal: Option<f64>,
 
     /// View offset to restore after unfullscreening.
-    view_offset_before_fullscreen: Option<i32>,
+    view_offset_before_fullscreen: Option<f64>,
 
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
 
-    /// Configurable properties of the layout.
+    /// Configurable properties of the layout as received from the parent monitor.
+    pub base_options: Rc<Options>,
+
+    /// Configurable properties of the layout with logical sizes adjusted for the current `scale`.
     pub options: Rc<Options>,
 
     /// Optional name of this workspace.
@@ -137,7 +141,7 @@ niri_render_elements! {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ColumnData {
     /// Cached actual column width.
-    width: i32,
+    width: f64,
 }
 
 #[derive(Debug)]
@@ -152,7 +156,7 @@ struct ViewGesture {
     tracker: SwipeTracker,
     delta_from_tracker: f64,
     // The view offset we'll use if needed for activate_prev_column_on_removal.
-    static_view_offset: i32,
+    static_view_offset: f64,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
 }
@@ -160,7 +164,7 @@ struct ViewGesture {
 #[derive(Debug)]
 struct InteractiveResize<W: LayoutElement> {
     window: W::Id,
-    original_window_size: Size<i32, Logical>,
+    original_window_size: Size<f64, Logical>,
     data: InteractiveResizeData,
 }
 
@@ -175,7 +179,7 @@ pub enum ColumnWidth {
     /// proportions.
     Preset(usize),
     /// Fixed width in logical pixels.
-    Fixed(i32),
+    Fixed(f64),
 }
 
 /// Height of a window in a column.
@@ -190,12 +194,12 @@ pub enum ColumnWidth {
 /// This does not preclude the usual set of binds to set or resize a window proportionally. Just,
 /// they are converted to, and stored as fixed height right away, so that once you resize a window
 /// to fit the desired content, it can never become smaller than that when moving between monitors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WindowHeight {
     /// Automatically computed height, evenly distributed across the column.
     Auto,
     /// Fixed height in logical pixels.
-    Fixed(i32),
+    Fixed(f64),
 }
 
 #[derive(Debug)]
@@ -229,10 +233,13 @@ pub struct Column<W: LayoutElement> {
     move_animation: Option<Animation>,
 
     /// Latest known view size for this column's workspace.
-    view_size: Size<i32, Logical>,
+    view_size: Size<f64, Logical>,
 
     /// Latest known working area for this column's workspace.
-    working_area: Rectangle<i32, Logical>,
+    working_area: Rectangle<f64, Logical>,
+
+    /// Scale of the output the column is on (and rounds its sizes to).
+    scale: f64,
 
     /// Configurable properties of the layout.
     options: Rc<Options>,
@@ -247,7 +254,7 @@ struct TileData {
     height: WindowHeight,
 
     /// Cached actual size of the tile.
-    size: Size<i32, Logical>,
+    size: Size<f64, Logical>,
 
     /// Cached whether the tile is being interactively resized by its left edge.
     interactively_resizing_by_left_edge: bool,
@@ -274,7 +281,7 @@ impl ViewOffsetAdjustment {
 
 impl ColumnData {
     pub fn new<W: LayoutElement>(column: &Column<W>) -> Self {
-        let mut rv = Self { width: 0 };
+        let mut rv = Self { width: 0. };
         rv.update(column);
         rv
     }
@@ -285,10 +292,10 @@ impl ColumnData {
 }
 
 impl ColumnWidth {
-    fn resolve(self, options: &Options, view_width: i32) -> i32 {
+    fn resolve(self, options: &Options, view_width: f64) -> f64 {
         match self {
             ColumnWidth::Proportion(proportion) => {
-                ((view_width - options.gaps) as f64 * proportion).floor() as i32 - options.gaps
+                (view_width - options.gaps) * proportion - options.gaps
             }
             ColumnWidth::Preset(idx) => options.preset_widths[idx].resolve(options, view_width),
             ColumnWidth::Fixed(width) => width,
@@ -300,7 +307,7 @@ impl From<PresetWidth> for ColumnWidth {
     fn from(value: PresetWidth) -> Self {
         match value {
             PresetWidth::Proportion(p) => Self::Proportion(p.clamp(0., 10000.)),
-            PresetWidth::Fixed(f) => Self::Fixed(f.clamp(1, 100000)),
+            PresetWidth::Fixed(f) => Self::Fixed(f64::from(f.clamp(1, 100000))),
         }
     }
 }
@@ -333,7 +340,7 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn new_with_config(
         output: Output,
         config: Option<WorkspaceConfig>,
-        options: Rc<Options>,
+        base_options: Rc<Options>,
     ) -> Self {
         let original_output = config
             .as_ref()
@@ -341,10 +348,15 @@ impl<W: LayoutElement> Workspace<W> {
             .map(OutputId)
             .unwrap_or(OutputId::new(&output));
 
+        let scale = output.current_scale();
+        let options =
+            Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
+
         let working_area = compute_working_area(&output, options.struts);
+
         Self {
             original_output,
-            scale: output.current_scale(),
+            scale,
             transform: output.current_transform(),
             view_size: output_size(&output),
             working_area,
@@ -353,11 +365,12 @@ impl<W: LayoutElement> Workspace<W> {
             data: vec![],
             active_column_idx: 0,
             interactive_resize: None,
-            view_offset: 0,
+            view_offset: 0.,
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
+            base_options,
             options,
             name: config.map(|c| c.name.0),
             id: WorkspaceId::next(),
@@ -366,7 +379,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn new_with_config_no_outputs(
         config: Option<WorkspaceConfig>,
-        options: Rc<Options>,
+        base_options: Rc<Options>,
     ) -> Self {
         let original_output = OutputId(
             config
@@ -374,22 +387,28 @@ impl<W: LayoutElement> Workspace<W> {
                 .and_then(|c| c.open_on_output)
                 .unwrap_or_default(),
         );
+
+        let scale = smithay::output::Scale::Integer(1);
+        let options =
+            Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
+
         Self {
             output: None,
-            scale: smithay::output::Scale::Integer(1),
+            scale,
             transform: Transform::Normal,
             original_output,
-            view_size: Size::from((1280, 720)),
-            working_area: Rectangle::from_loc_and_size((0, 0), (1280, 720)),
+            view_size: Size::from((1280., 720.)),
+            working_area: Rectangle::from_loc_and_size((0., 0.), (1280., 720.)),
             columns: vec![],
             data: vec![],
             active_column_idx: 0,
             interactive_resize: None,
-            view_offset: 0,
+            view_offset: 0.,
             view_offset_adj: None,
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
+            base_options,
             options,
             name: config.map(|c| c.name.0),
             id: WorkspaceId::next(),
@@ -408,15 +427,19 @@ impl<W: LayoutElement> Workspace<W> {
         self.name = None;
     }
 
+    pub fn scale(&self) -> smithay::output::Scale {
+        self.scale
+    }
+
     pub fn advance_animations(&mut self, current_time: Duration) {
         if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
             anim.set_current_time(current_time);
-            self.view_offset = anim.value().round() as i32;
+            self.view_offset = anim.value();
             if anim.is_done() {
                 self.view_offset_adj = None;
             }
         } else if let Some(ViewOffsetAdjustment::Gesture(gesture)) = &self.view_offset_adj {
-            self.view_offset = gesture.current_view_offset.round() as i32;
+            self.view_offset = gesture.current_view_offset;
         }
 
         for col in &mut self.columns {
@@ -444,24 +467,28 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
-        let view_pos = Point::from((self.view_pos(), 0));
+        let view_pos = Point::from((self.view_pos(), 0.));
         let view_size = self.view_size();
         let active_idx = self.active_column_idx;
         for (col_idx, (col, col_x)) in self.columns_mut().enumerate() {
             let is_active = is_active && col_idx == active_idx;
-            let col_off = Point::from((col_x, 0));
+            let col_off = Point::from((col_x, 0.));
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::from_loc_and_size(col_pos, view_size);
             col.update_render_elements(is_active, view_rect);
         }
     }
 
-    pub fn update_config(&mut self, options: Rc<Options>) {
+    pub fn update_config(&mut self, base_options: Rc<Options>) {
+        let scale = self.scale.fractional_scale();
+        let options = Rc::new(Options::clone(&base_options).adjusted_for_scale(scale));
+
         for (column, data) in zip(&mut self.columns, &mut self.data) {
-            column.update_config(options.clone());
+            column.update_config(scale, options.clone());
             data.update(column);
         }
 
+        self.base_options = base_options;
         self.options = options;
     }
 
@@ -527,8 +554,8 @@ impl<W: LayoutElement> Workspace<W> {
         &mut self,
         scale: smithay::output::Scale,
         transform: Transform,
-        size: Size<i32, Logical>,
-        working_area: Rectangle<i32, Logical>,
+        size: Size<f64, Logical>,
+        working_area: Rectangle<f64, Logical>,
     ) {
         let scale_transform_changed = self.transform != transform
             || self.scale.integer_scale() != scale.integer_scale()
@@ -537,10 +564,17 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        let fractional_scale_changed = self.scale.fractional_scale() != scale.fractional_scale();
+
         self.scale = scale;
         self.transform = transform;
         self.view_size = size;
         self.working_area = working_area;
+
+        if fractional_scale_changed {
+            // Options need to be recomputed for the new scale.
+            self.update_config(self.base_options.clone());
+        }
 
         for col in &mut self.columns {
             col.set_view_size(self.view_size, self.working_area);
@@ -553,7 +587,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn view_size(&self) -> Size<i32, Logical> {
+    pub fn view_size(&self) -> Size<f64, Logical> {
         self.view_size
     }
 
@@ -586,20 +620,20 @@ impl<W: LayoutElement> Workspace<W> {
             let mut width = width.resolve(&self.options, self.working_area.size.w);
 
             if !is_fixed && !border.off {
-                width -= border.width as i32 * 2;
+                width -= border.width.0 * 2.;
             }
 
-            max(1, width)
+            max(1, width.floor() as i32)
         } else {
             0
         };
 
-        let mut height = self.working_area.size.h - self.options.gaps * 2;
+        let mut height = self.working_area.size.h - self.options.gaps * 2.;
         if !border.off {
-            height -= border.width as i32 * 2;
+            height -= border.width.0 * 2.;
         }
 
-        Size::from((width, max(height, 1)))
+        Size::from((width, max(height.floor() as i32, 1)))
     }
 
     pub fn configure_new_window(
@@ -617,7 +651,7 @@ impl<W: LayoutElement> Workspace<W> {
             .expect("no x11 support")
             .with_pending_state(|state| {
                 if state.states.contains(xdg_toplevel::State::Fullscreen) {
-                    state.size = Some(self.view_size);
+                    state.size = Some(self.view_size.to_i32_round());
                 } else {
                     state.size = Some(self.new_window_size(width, rules));
                 }
@@ -626,15 +660,15 @@ impl<W: LayoutElement> Workspace<W> {
             });
     }
 
-    fn compute_new_view_offset_for_column(&self, current_x: i32, idx: usize) -> i32 {
+    fn compute_new_view_offset_for_column(&self, current_x: f64, idx: usize) -> f64 {
         if self.columns[idx].is_fullscreen {
-            return 0;
+            return 0.;
         }
 
         let new_col_x = self.column_x(idx);
 
         let final_x = if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
-            current_x - self.view_offset + anim.to().round() as i32
+            current_x - self.view_offset + anim.to()
         } else {
             current_x
         };
@@ -651,7 +685,7 @@ impl<W: LayoutElement> Workspace<W> {
         new_offset - self.working_area.loc.x
     }
 
-    fn animate_view_offset(&mut self, current_x: i32, idx: usize, new_view_offset: i32) {
+    fn animate_view_offset(&mut self, current_x: f64, idx: usize, new_view_offset: f64) {
         self.animate_view_offset_with_config(
             current_x,
             idx,
@@ -662,9 +696,9 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn animate_view_offset_with_config(
         &mut self,
-        current_x: i32,
+        current_x: f64,
         idx: usize,
-        new_view_offset: i32,
+        new_view_offset: f64,
         config: niri_config::Animation,
     ) {
         let new_col_x = self.column_x(idx);
@@ -673,9 +707,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         // If we're already animating towards that, don't restart it.
         if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
-            if anim.value().round() as i32 == self.view_offset
-                && anim.to().round() as i32 == new_view_offset
-            {
+            let pixel = 1. / self.scale.fractional_scale();
+            if (anim.value() - self.view_offset).abs() < pixel && anim.to() == new_view_offset {
                 return;
             }
         }
@@ -688,8 +721,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         // FIXME: also compute and use current velocity.
         self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
-            self.view_offset as f64,
-            new_view_offset as f64,
+            self.view_offset,
+            new_view_offset,
             0.,
             config,
         )));
@@ -697,7 +730,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn animate_view_offset_to_column_fit(
         &mut self,
-        current_x: i32,
+        current_x: f64,
         idx: usize,
         config: niri_config::Animation,
     ) {
@@ -707,7 +740,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn animate_view_offset_to_column_centered(
         &mut self,
-        current_x: i32,
+        current_x: f64,
         idx: usize,
         config: niri_config::Animation,
     ) {
@@ -731,14 +764,14 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let new_view_offset = -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+        let new_view_offset = -(self.working_area.size.w - width) / 2. - self.working_area.loc.x;
 
         self.animate_view_offset_with_config(current_x, idx, new_view_offset, config);
     }
 
     fn animate_view_offset_to_column(
         &mut self,
-        current_x: i32,
+        current_x: f64,
         idx: usize,
         prev_idx: Option<usize>,
     ) {
@@ -752,7 +785,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn animate_view_offset_to_column_with_config(
         &mut self,
-        current_x: i32,
+        current_x: f64,
         idx: usize,
         prev_idx: Option<usize>,
         config: niri_config::Animation,
@@ -786,7 +819,7 @@ impl<W: LayoutElement> Workspace<W> {
                 } else {
                     // Source is right from target.
                     source_x - target_x + source_width
-                } + self.options.gaps * 2;
+                } + self.options.gaps * 2.;
 
                 // If it fits together, do a normal animation, otherwise center the new column.
                 if total_width <= self.working_area.size.w {
@@ -853,7 +886,7 @@ impl<W: LayoutElement> Workspace<W> {
         width: ColumnWidth,
         is_full_width: bool,
     ) {
-        let tile = Tile::new(window, self.options.clone());
+        let tile = Tile::new(window, self.scale.fractional_scale(), self.options.clone());
         self.add_tile_at(col_idx, tile, activate, width, is_full_width, None);
     }
 
@@ -874,6 +907,7 @@ impl<W: LayoutElement> Workspace<W> {
             tile,
             self.view_size,
             self.working_area,
+            self.scale.fractional_scale(),
             self.options.clone(),
             width,
             is_full_width,
@@ -889,7 +923,7 @@ impl<W: LayoutElement> Workspace<W> {
             if was_empty {
                 if self.options.center_focused_column == CenterFocusedColumn::Always {
                     self.view_offset =
-                        -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+                        -(self.working_area.size.w - width) / 2. - self.working_area.loc.x;
                 } else {
                     // Try to make the code produce a left-aligned offset, even in presence of left
                     // exclusive zones.
@@ -974,6 +1008,7 @@ impl<W: LayoutElement> Workspace<W> {
             window,
             self.view_size,
             self.working_area,
+            self.scale.fractional_scale(),
             self.options.clone(),
             width,
             is_full_width,
@@ -1017,6 +1052,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.active_column_idx + 1
         };
 
+        column.update_config(self.scale.fractional_scale(), self.options.clone());
         column.set_view_size(self.view_size, self.working_area);
         let width = column.width();
         self.data.insert(idx, ColumnData::new(&column));
@@ -1028,7 +1064,7 @@ impl<W: LayoutElement> Workspace<W> {
             if was_empty {
                 if self.options.center_focused_column == CenterFocusedColumn::Always {
                     self.view_offset =
-                        -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+                        -(self.working_area.size.w - width) / 2. - self.working_area.loc.x;
                 } else {
                     // Try to make the code produce a left-aligned offset, even in presence of left
                     // exclusive zones.
@@ -1294,7 +1330,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         // Move other columns in tandem with resizing.
         let started_resize_anim =
-            column.tiles[tile_idx].resize_animation().is_some() && offset != 0;
+            column.tiles[tile_idx].resize_animation().is_some() && offset != 0.;
         if started_resize_anim {
             if self.active_column_idx <= col_idx {
                 for col in &mut self.columns[col_idx + 1..] {
@@ -1317,7 +1353,7 @@ impl<W: LayoutElement> Workspace<W> {
             // If offset == 0, then don't mess with the view or the gesture. Some clients (Firefox,
             // Chromium, Electron) currently don't commit after the ack of a configure that drops
             // the Resizing state, which can trigger this code path for a while.
-            let resize = if offset != 0 { resize } else { None };
+            let resize = if offset != 0. { resize } else { None };
             if let Some(resize) = resize {
                 // If this is an interactive resize commit of an active window, then we need to
                 // either preserve the view offset or adjust it accordingly.
@@ -1327,17 +1363,17 @@ impl<W: LayoutElement> Workspace<W> {
                 let offset = if centered {
                     // FIXME: when view_offset becomes fractional, this can be made additive too.
                     let new_offset =
-                        -(self.working_area.size.w - width) / 2 - self.working_area.loc.x;
+                        -(self.working_area.size.w - width) / 2. - self.working_area.loc.x;
                     new_offset - self.view_offset
                 } else if resize.edges.contains(ResizeEdge::LEFT) {
                     -offset
                 } else {
-                    0
+                    0.
                 };
 
                 self.view_offset += offset;
                 if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
-                    anim.offset(offset as f64);
+                    anim.offset(offset);
                 } else {
                     // Don't bother with the gesture.
                     self.view_offset_adj = None;
@@ -1388,7 +1424,7 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
         let output_scale = Scale::from(self.scale.fractional_scale());
         let view_size = self.view_size();
-        for (tile, tile_pos) in self.tiles_with_render_positions_mut() {
+        for (tile, tile_pos) in self.tiles_with_render_positions_mut(false) {
             if tile.window().id() == window {
                 let view_pos = Point::from((-tile_pos.x, -tile_pos.y));
                 let view_rect = Rectangle::from_loc_and_size(view_pos, view_size);
@@ -1418,7 +1454,7 @@ impl<W: LayoutElement> Workspace<W> {
         let output_scale = Scale::from(self.scale.fractional_scale());
 
         let (tile, mut tile_pos) = self
-            .tiles_with_render_positions_mut()
+            .tiles_with_render_positions_mut(false)
             .find(|(tile, _)| tile.window().id() == window)
             .unwrap();
 
@@ -1454,8 +1490,11 @@ impl<W: LayoutElement> Workspace<W> {
                         .data
                         .iter()
                         .enumerate()
-                        .filter_map(|(idx, data)| (idx != tile_idx).then_some(data.size.w))
+                        .filter_map(|(idx, data)| {
+                            (idx != tile_idx).then_some(NotNan::new(data.size.w).unwrap())
+                        })
                         .max()
+                        .map(NotNan::into_inner)
                         .unwrap()
             };
             tile_pos.x -= offset;
@@ -1476,10 +1515,13 @@ impl<W: LayoutElement> Workspace<W> {
 
     #[cfg(test)]
     pub fn verify_invariants(&self) {
-        assert!(self.view_size.w > 0);
-        assert!(self.view_size.h > 0);
-        assert!(self.scale.fractional_scale() > 0.);
-        assert!(self.scale.fractional_scale().is_finite());
+        use approx::assert_abs_diff_eq;
+
+        let scale = self.scale.fractional_scale();
+        assert!(self.view_size.w > 0.);
+        assert!(self.view_size.h > 0.);
+        assert!(scale > 0.);
+        assert!(scale.is_finite());
         assert_eq!(self.columns.len(), self.data.len());
 
         if !self.columns.is_empty() {
@@ -1487,6 +1529,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             for (column, data) in zip(&self.columns, &self.data) {
                 assert!(Rc::ptr_eq(&self.options, &column.options));
+                assert_eq!(self.scale.fractional_scale(), column.scale);
                 column.verify_invariants();
 
                 let mut data2 = *data;
@@ -1505,6 +1548,14 @@ impl<W: LayoutElement> Workspace<W> {
                             tile.is_fullscreen() || tile.window().is_pending_fullscreen()
                         })
                 );
+            }
+
+            for (_, tile_pos) in self.tiles_with_render_positions() {
+                let rounded_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
+
+                // Tile positions must be rounded to physical pixels.
+                assert_abs_diff_eq!(tile_pos.x, rounded_pos.x, epsilon = 1e-5);
+                assert_abs_diff_eq!(tile_pos.y, rounded_pos.y, epsilon = 1e-5);
             }
         }
 
@@ -1599,7 +1650,7 @@ impl<W: LayoutElement> Workspace<W> {
         let view_offset_delta = -self.column_x(self.active_column_idx) + current_col_x;
         self.view_offset += view_offset_delta;
         if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
-            anim.offset(view_offset_delta as f64);
+            anim.offset(view_offset_delta);
         }
 
         // The column we just moved is offset by the difference between its new and old position.
@@ -1679,7 +1730,7 @@ impl<W: LayoutElement> Workspace<W> {
             }
 
             let offset = self.column_x(source_col_idx) - self.column_x(source_col_idx - 1);
-            let mut offset = Point::from((offset, 0));
+            let mut offset = Point::from((offset, 0.));
 
             // Move into adjacent column.
             let target_column_idx = source_col_idx - 1;
@@ -1720,7 +1771,7 @@ impl<W: LayoutElement> Workspace<W> {
             let width = source_column.width;
             let is_full_width = source_column.is_full_width;
 
-            let mut offset = Point::from((source_column.render_offset().x, 0));
+            let mut offset = Point::from((source_column.render_offset().x, 0.));
 
             let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx, None);
 
@@ -1749,7 +1800,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let source_col_idx = self.active_column_idx;
         let offset = self.column_x(source_col_idx) - self.column_x(source_col_idx + 1);
-        let mut offset = Point::from((offset, 0));
+        let mut offset = Point::from((offset, 0.));
 
         let source_column = &self.columns[source_col_idx];
         offset.x += source_column.render_offset().x;
@@ -1827,7 +1878,7 @@ impl<W: LayoutElement> Workspace<W> {
         let offset = self.column_x(source_column_idx)
             + self.columns[source_column_idx].render_offset().x
             - self.column_x(self.active_column_idx);
-        let mut offset = Point::from((offset, 0));
+        let mut offset = Point::from((offset, 0.));
         let prev_off = self.columns[source_column_idx].tile_offset(0);
 
         let tile = self.remove_tile_by_idx(source_column_idx, 0, None);
@@ -1867,7 +1918,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let offset =
             self.column_x(self.active_column_idx) - self.column_x(self.active_column_idx + 1);
-        let mut offset = Point::from((offset, 0));
+        let mut offset = Point::from((offset, 0.));
 
         let source_column = &self.columns[self.active_column_idx];
         if source_column.tiles.len() == 1 {
@@ -1909,17 +1960,17 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    fn view_pos(&self) -> i32 {
+    fn view_pos(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset
     }
 
     /// Returns a view offset value suitable for saving and later restoration.
     ///
     /// This means that it shouldn't return an in-progress animation or gesture value.
-    fn static_view_offset(&self) -> i32 {
+    fn static_view_offset(&self) -> f64 {
         match &self.view_offset_adj {
             // For animations we can return the final value.
-            Some(ViewOffsetAdjustment::Animation(anim)) => anim.to().round() as i32,
+            Some(ViewOffsetAdjustment::Animation(anim)) => anim.to(),
             Some(ViewOffsetAdjustment::Gesture(gesture)) => gesture.static_view_offset,
             _ => self.view_offset,
         }
@@ -1927,12 +1978,12 @@ impl<W: LayoutElement> Workspace<W> {
 
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
-    fn column_xs(&self, data: impl Iterator<Item = ColumnData>) -> impl Iterator<Item = i32> {
+    fn column_xs(&self, data: impl Iterator<Item = ColumnData>) -> impl Iterator<Item = f64> {
         let gaps = self.options.gaps;
-        let mut x = 0;
+        let mut x = 0.;
 
         // Chain with a dummy value to be able to get one past all columns' X.
-        let dummy = ColumnData { width: 0 };
+        let dummy = ColumnData { width: 0. };
         let data = data.chain(iter::once(dummy));
 
         data.map(move |data| {
@@ -1942,7 +1993,7 @@ impl<W: LayoutElement> Workspace<W> {
         })
     }
 
-    fn column_x(&self, column_idx: usize) -> i32 {
+    fn column_x(&self, column_idx: usize) -> f64 {
         self.column_xs(self.data.iter().copied())
             .nth(column_idx)
             .unwrap()
@@ -1951,7 +2002,7 @@ impl<W: LayoutElement> Workspace<W> {
     fn column_xs_in_render_order(
         &self,
         data: impl Iterator<Item = ColumnData>,
-    ) -> impl Iterator<Item = i32> {
+    ) -> impl Iterator<Item = f64> {
         let active_idx = self.active_column_idx;
         let active_pos = self.column_x(active_idx);
         let offsets = self
@@ -1961,12 +2012,12 @@ impl<W: LayoutElement> Workspace<W> {
         iter::once(active_pos).chain(offsets)
     }
 
-    fn columns_mut(&mut self) -> impl Iterator<Item = (&mut Column<W>, i32)> + '_ {
+    fn columns_mut(&mut self) -> impl Iterator<Item = (&mut Column<W>, f64)> + '_ {
         let offsets = self.column_xs(self.data.iter().copied());
         zip(&mut self.columns, offsets)
     }
 
-    fn columns_in_render_order(&self) -> impl Iterator<Item = (&Column<W>, i32)> + '_ {
+    fn columns_in_render_order(&self) -> impl Iterator<Item = (&Column<W>, f64)> + '_ {
         let offsets = self.column_xs_in_render_order(self.data.iter().copied());
 
         let (first, rest) = self.columns.split_at(self.active_column_idx);
@@ -1976,7 +2027,7 @@ impl<W: LayoutElement> Workspace<W> {
         zip(tiles, offsets)
     }
 
-    fn columns_in_render_order_mut(&mut self) -> impl Iterator<Item = (&mut Column<W>, i32)> + '_ {
+    fn columns_in_render_order_mut(&mut self) -> impl Iterator<Item = (&mut Column<W>, f64)> + '_ {
         let offsets = self.column_xs_in_render_order(self.data.iter().copied());
 
         let (first, rest) = self.columns.split_at_mut(self.active_column_idx);
@@ -1986,14 +2037,17 @@ impl<W: LayoutElement> Workspace<W> {
         zip(tiles, offsets)
     }
 
-    fn tiles_with_render_positions(&self) -> impl Iterator<Item = (&Tile<W>, Point<i32, Logical>)> {
-        let view_off = Point::from((-self.view_pos(), 0));
+    fn tiles_with_render_positions(&self) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> {
+        let scale = self.scale.fractional_scale();
+        let view_off = Point::from((-self.view_pos(), 0.));
         self.columns_in_render_order()
             .flat_map(move |(col, col_x)| {
-                let col_off = Point::from((col_x, 0));
+                let col_off = Point::from((col_x, 0.));
                 let col_render_off = col.render_offset();
                 col.tiles_in_render_order().map(move |(tile, tile_off)| {
                     let pos = view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                    // Round to physical pixels.
+                    let pos = pos.to_physical_precise_round(scale).to_logical(scale);
                     (tile, pos)
                 })
             })
@@ -2001,16 +2055,22 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn tiles_with_render_positions_mut(
         &mut self,
-    ) -> impl Iterator<Item = (&mut Tile<W>, Point<i32, Logical>)> {
-        let view_off = Point::from((-self.view_pos(), 0));
+        round: bool,
+    ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> {
+        let scale = self.scale.fractional_scale();
+        let view_off = Point::from((-self.view_pos(), 0.));
         self.columns_in_render_order_mut()
             .flat_map(move |(col, col_x)| {
-                let col_off = Point::from((col_x, 0));
+                let col_off = Point::from((col_x, 0.));
                 let col_render_off = col.render_offset();
                 col.tiles_in_render_order_mut()
                     .map(move |(tile, tile_off)| {
-                        let pos =
+                        let mut pos =
                             view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                        // Round to physical pixels.
+                        if round {
+                            pos = pos.to_physical_precise_round(scale).to_logical(scale);
+                        }
                         (tile, pos)
                     })
             })
@@ -2019,14 +2079,14 @@ impl<W: LayoutElement> Workspace<W> {
     /// Returns the geometry of the active tile relative to and clamped to the view.
     ///
     /// During animations, assumes the final view position.
-    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<i32, Logical>> {
+    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
         let col = self.columns.get(self.active_column_idx)?;
 
         let final_view_offset = self
             .view_offset_adj
             .as_ref()
-            .map_or(self.view_offset, |adj| adj.target_view_offset() as i32);
-        let view_off = Point::from((-final_view_offset, 0));
+            .map_or(self.view_offset, |adj| adj.target_view_offset());
+        let view_off = Point::from((-final_view_offset, 0.));
 
         let (tile, tile_off) = col.tiles().nth(col.active_tile_idx).unwrap();
 
@@ -2034,21 +2094,21 @@ impl<W: LayoutElement> Workspace<W> {
         let tile_size = tile.tile_size();
         let tile_rect = Rectangle::from_loc_and_size(tile_pos, tile_size);
 
-        let view = Rectangle::from_loc_and_size((0, 0), self.view_size);
+        let view = Rectangle::from_loc_and_size((0., 0.), self.view_size);
         view.intersection(tile_rect)
     }
 
     pub fn window_under(
         &self,
         pos: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<i32, Logical>>)> {
+    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
         if self.columns.is_empty() {
             return None;
         }
 
         self.tiles_with_render_positions()
             .find_map(|(tile, tile_pos)| {
-                let pos_within_tile = pos - tile_pos.to_f64();
+                let pos_within_tile = pos - tile_pos;
 
                 if tile.is_in_input_region(pos_within_tile) {
                     let pos_within_surface = tile_pos + tile.buf_loc();
@@ -2068,7 +2128,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.tiles_with_render_positions()
             .find_map(|(tile, tile_pos)| {
-                let pos_within_tile = pos - tile_pos.to_f64();
+                let pos_within_tile = pos - tile_pos;
 
                 // This logic should be consistent with window_under() in when it returns Some vs.
                 // None.
@@ -2190,6 +2250,7 @@ impl<W: LayoutElement> Workspace<W> {
                 window,
                 self.view_size,
                 self.working_area,
+                self.scale.fractional_scale(),
                 self.options.clone(),
                 width,
                 is_full_width,
@@ -2256,7 +2317,7 @@ impl<W: LayoutElement> Workspace<W> {
         let mut rv = vec![];
 
         // Draw the closing windows on top.
-        let view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0), self.view_size);
+        let view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0.), self.view_size);
         for closing in self.closing_windows.iter().rev() {
             let elem = closing.render(renderer.as_gles_renderer(), view_rect, output_scale, target);
             rv.push(elem.into());
@@ -2291,9 +2352,9 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let gesture = ViewGesture {
-            current_view_offset: self.view_offset as f64,
+            current_view_offset: self.view_offset,
             tracker: SwipeTracker::new(),
-            delta_from_tracker: self.view_offset as f64,
+            delta_from_tracker: self.view_offset,
             static_view_offset: self.static_view_offset(),
             is_touchpad,
         };
@@ -2317,7 +2378,7 @@ impl<W: LayoutElement> Workspace<W> {
         gesture.tracker.push(delta_x, timestamp);
 
         let norm_factor = if gesture.is_touchpad {
-            self.working_area.size.w as f64 / VIEW_GESTURE_WORKING_AREA_MOVEMENT
+            self.working_area.size.w / VIEW_GESTURE_WORKING_AREA_MOVEMENT
         } else {
             1.
         };
@@ -2343,7 +2404,7 @@ impl<W: LayoutElement> Workspace<W> {
         // effort and bug potential.
 
         let norm_factor = if gesture.is_touchpad {
-            self.working_area.size.w as f64 / VIEW_GESTURE_WORKING_AREA_MOVEMENT
+            self.working_area.size.w / VIEW_GESTURE_WORKING_AREA_MOVEMENT
         } else {
             1.
         };
@@ -2352,7 +2413,7 @@ impl<W: LayoutElement> Workspace<W> {
         let current_view_offset = pos + gesture.delta_from_tracker;
 
         if self.columns.is_empty() {
-            self.view_offset = current_view_offset.round() as i32;
+            self.view_offset = current_view_offset;
             self.view_offset_adj = None;
             return true;
         }
@@ -2365,7 +2426,7 @@ impl<W: LayoutElement> Workspace<W> {
         // either side.
         struct Snap {
             // View position relative to x = 0 (the first column).
-            view_pos: i32,
+            view_pos: f64,
             // Column to activate for this snapping point.
             col_idx: usize,
         }
@@ -2376,7 +2437,7 @@ impl<W: LayoutElement> Workspace<W> {
         let right_strut = self.view_size.w - self.working_area.size.w - self.working_area.loc.x;
 
         if self.options.center_focused_column == CenterFocusedColumn::Always {
-            let mut col_x = 0;
+            let mut col_x = 0.;
             for (col_idx, col) in self.columns.iter().enumerate() {
                 let col_w = col.width();
 
@@ -2385,7 +2446,7 @@ impl<W: LayoutElement> Workspace<W> {
                 } else if self.working_area.size.w <= col_w {
                     col_x - left_strut
                 } else {
-                    col_x - (self.working_area.size.w - col_w) / 2 - left_strut
+                    col_x - (self.working_area.size.w - col_w) / 2. - left_strut
                 };
                 snapping_points.push(Snap { view_pos, col_idx });
 
@@ -2404,7 +2465,7 @@ impl<W: LayoutElement> Workspace<W> {
                 });
             };
 
-            let mut col_x = 0;
+            let mut col_x = 0.;
             for (col_idx, col) in self.columns.iter().enumerate() {
                 let col_w = col.width();
 
@@ -2417,7 +2478,7 @@ impl<W: LayoutElement> Workspace<W> {
                 } else {
                     // Logic from compute_new_view_offset.
                     let padding =
-                        ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
+                        ((self.working_area.size.w - col_w) / 2.).clamp(0., self.options.gaps);
                     let left = col_x - padding - left_strut;
                     let right = col_x + col_w + padding + right_strut;
                     push(col_idx, left, right);
@@ -2428,13 +2489,13 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         // Find the closest snapping point.
-        snapping_points.sort_by_key(|snap| snap.view_pos);
+        snapping_points.sort_by_key(|snap| NotNan::new(snap.view_pos).unwrap());
 
         let active_col_x = self.column_x(self.active_column_idx);
-        let target_view_pos = (active_col_x as f64 + target_view_offset).round() as i32;
+        let target_view_pos = active_col_x + target_view_offset;
         let target_snap = snapping_points
             .iter()
-            .min_by_key(|snap| snap.view_pos.abs_diff(target_view_pos))
+            .min_by_key(|snap| NotNan::new((snap.view_pos - target_view_pos).abs()).unwrap())
             .unwrap();
 
         let mut new_col_idx = target_snap.col_idx;
@@ -2453,7 +2514,7 @@ impl<W: LayoutElement> Workspace<W> {
                         }
                     } else {
                         let padding =
-                            ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
+                            ((self.working_area.size.w - col_w) / 2.).clamp(0., self.options.gaps);
                         if target_snap.view_pos + left_strut + self.working_area.size.w
                             < col_x + col_w + padding
                         {
@@ -2475,7 +2536,7 @@ impl<W: LayoutElement> Workspace<W> {
                         }
                     } else {
                         let padding =
-                            ((self.working_area.size.w - col_w) / 2).clamp(0, self.options.gaps);
+                            ((self.working_area.size.w - col_w) / 2.).clamp(0., self.options.gaps);
                         if col_x - padding < target_snap.view_pos + left_strut {
                             break;
                         }
@@ -2487,8 +2548,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let new_col_x = self.column_x(new_col_idx);
-        let delta = (active_col_x - new_col_x) as f64;
-        self.view_offset = (current_view_offset + delta).round() as i32;
+        let delta = active_col_x - new_col_x;
+        self.view_offset = current_view_offset + delta;
 
         if self.active_column_idx != new_col_idx {
             self.view_offset_before_fullscreen = None;
@@ -2500,7 +2561,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
             current_view_offset + delta,
-            target_view_offset as f64,
+            target_view_offset,
             velocity,
             self.options.animations.horizontal_view_movement.0,
         )));
@@ -2578,7 +2639,7 @@ impl<W: LayoutElement> Workspace<W> {
                 dx *= 2.;
             }
 
-            let window_width = (f64::from(resize.original_window_size.w) + dx).round() as i32;
+            let window_width = (resize.original_window_size.w + dx).round() as i32;
             col.set_column_width(SizeChange::SetFixed(window_width), Some(tile_idx), false);
         }
 
@@ -2594,7 +2655,7 @@ impl<W: LayoutElement> Workspace<W> {
                 // FIXME: some smarter height distribution would be nice here so that vertical
                 // resizes work as expected in more cases.
 
-                let window_height = (f64::from(resize.original_window_size.h) + dy).round() as i32;
+                let window_height = (resize.original_window_size.h + dy).round() as i32;
                 col.set_window_height(SizeChange::SetFixed(window_height), Some(tile_idx), false);
             }
         }
@@ -2657,20 +2718,23 @@ impl<W: LayoutElement> Workspace<W> {
 }
 
 impl<W: LayoutElement> Column<W> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         window: W,
-        view_size: Size<i32, Logical>,
-        working_area: Rectangle<i32, Logical>,
+        view_size: Size<f64, Logical>,
+        working_area: Rectangle<f64, Logical>,
+        scale: f64,
         options: Rc<Options>,
         width: ColumnWidth,
         is_full_width: bool,
         animate_resize: bool,
     ) -> Self {
-        let tile = Tile::new(window, options.clone());
+        let tile = Tile::new(window, scale, options.clone());
         Self::new_with_tile(
             tile,
             view_size,
             working_area,
+            scale,
             options,
             width,
             is_full_width,
@@ -2678,10 +2742,12 @@ impl<W: LayoutElement> Column<W> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new_with_tile(
         tile: Tile<W>,
-        view_size: Size<i32, Logical>,
-        working_area: Rectangle<i32, Logical>,
+        view_size: Size<f64, Logical>,
+        working_area: Rectangle<f64, Logical>,
+        scale: f64,
         options: Rc<Options>,
         width: ColumnWidth,
         is_full_width: bool,
@@ -2697,6 +2763,7 @@ impl<W: LayoutElement> Column<W> {
             move_animation: None,
             view_size,
             working_area,
+            scale,
             options,
         };
 
@@ -2711,7 +2778,7 @@ impl<W: LayoutElement> Column<W> {
         rv
     }
 
-    fn set_view_size(&mut self, size: Size<i32, Logical>, working_area: Rectangle<i32, Logical>) {
+    fn set_view_size(&mut self, size: Size<f64, Logical>, working_area: Rectangle<f64, Logical>) {
         if self.view_size == size && self.working_area == working_area {
             return;
         }
@@ -2722,7 +2789,7 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(false);
     }
 
-    fn update_config(&mut self, options: Rc<Options>) {
+    fn update_config(&mut self, scale: f64, options: Rc<Options>) {
         let mut update_sizes = false;
 
         // If preset widths changed, make our width non-preset.
@@ -2743,10 +2810,11 @@ impl<W: LayoutElement> Column<W> {
         }
 
         for (tile, data) in zip(&mut self.tiles, &mut self.data) {
-            tile.update_config(options.clone());
+            tile.update_config(scale, options.clone());
             data.update(tile);
         }
 
+        self.scale = scale;
         self.options = options;
 
         if update_sizes {
@@ -2780,7 +2848,7 @@ impl<W: LayoutElement> Column<W> {
         self.move_animation.is_some() || self.tiles.iter().any(Tile::are_animations_ongoing)
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<i32, Logical>) {
+    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let active_idx = self.active_tile_idx;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
             let is_active = is_active && tile_idx == active_idx;
@@ -2791,17 +2859,17 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
-    pub fn render_offset(&self) -> Point<i32, Logical> {
+    pub fn render_offset(&self) -> Point<f64, Logical> {
         let mut offset = Point::from((0., 0.));
 
         if let Some(anim) = &self.move_animation {
             offset.x += anim.value();
         }
 
-        offset.to_i32_round()
+        offset
     }
 
-    pub fn animate_move_from(&mut self, from_x_offset: i32) {
+    pub fn animate_move_from(&mut self, from_x_offset: f64) {
         self.animate_move_from_with_config(
             from_x_offset,
             self.options.animations.window_movement.0,
@@ -2810,13 +2878,13 @@ impl<W: LayoutElement> Column<W> {
 
     pub fn animate_move_from_with_config(
         &mut self,
-        from_x_offset: i32,
+        from_x_offset: f64,
         config: niri_config::Animation,
     ) {
         let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
 
         self.move_animation = Some(Animation::new(
-            f64::from(from_x_offset) + current_offset,
+            from_x_offset + current_offset,
             0.,
             0.,
             config,
@@ -2857,17 +2925,17 @@ impl<W: LayoutElement> Column<W> {
             .find(|(_, tile)| tile.window().id() == window)
             .unwrap();
 
-        let height = tile.window().size().h;
+        let height = f64::from(tile.window().size().h);
         let offset = tile
             .window()
             .animation_snapshot()
-            .map_or(0, |from| from.size.h - height);
+            .map_or(0., |from| from.size.h - height);
 
         tile.update_window();
         self.data[tile_idx].update(tile);
 
         // Move windows below in tandem with resizing.
-        if tile.resize_animation().is_some() && offset != 0 {
+        if tile.resize_animation().is_some() && offset != 0. {
             for tile in &mut self.tiles[tile_idx + 1..] {
                 tile.animate_move_y_from_with_config(
                     offset,
@@ -2891,27 +2959,29 @@ impl<W: LayoutElement> Column<W> {
             .iter()
             .filter_map(|size| {
                 let w = size.w;
-                if w == 0 {
+                if w == 0. {
                     None
                 } else {
-                    Some(w)
+                    Some(NotNan::new(w).unwrap())
                 }
             })
             .max()
-            .unwrap_or(1);
+            .map(NotNan::into_inner)
+            .unwrap_or(1.);
         let max_width = max_size
             .iter()
             .filter_map(|size| {
                 let w = size.w;
-                if w == 0 {
+                if w == 0. {
                     None
                 } else {
-                    Some(w)
+                    Some(NotNan::new(w).unwrap())
                 }
             })
             .min()
-            .unwrap_or(i32::MAX);
-        let max_width = max(max_width, min_width);
+            .map(NotNan::into_inner)
+            .unwrap_or(f64::from(i32::MAX));
+        let max_width = f64::max(max_width, min_width);
 
         let width = if self.is_full_width {
             ColumnWidth::Proportion(1.)
@@ -2920,7 +2990,7 @@ impl<W: LayoutElement> Column<W> {
         };
 
         let width = width.resolve(&self.options, self.working_area.size.w);
-        let width = max(min(width, max_width), min_width);
+        let width = f64::max(f64::min(width, max_width), min_width);
 
         // Compute the tile heights. Start by converting window heights to tile heights.
         let mut heights = zip(&self.tiles, &self.data)
@@ -2937,18 +3007,18 @@ impl<W: LayoutElement> Column<W> {
         // Subtract all fixed-height tiles.
         for (h, (min_size, max_size)) in zip(&mut heights, zip(&min_size, &max_size)) {
             // Check if the tile has an exact height constraint.
-            if min_size.h > 0 && min_size.h == max_size.h {
+            if min_size.h > 0. && min_size.h == max_size.h {
                 *h = WindowHeight::Fixed(min_size.h);
             }
 
             if let WindowHeight::Fixed(h) = h {
-                if max_size.h > 0 {
-                    *h = min(*h, max_size.h);
+                if max_size.h > 0. {
+                    *h = f64::min(*h, max_size.h);
                 }
-                if min_size.h > 0 {
-                    *h = max(*h, min_size.h);
+                if min_size.h > 0. {
+                    *h = f64::max(*h, min_size.h);
                 }
-                *h = max(*h, 1);
+                *h = f64::max(*h, 1.);
 
                 height_left -= *h + self.options.gaps;
                 auto_tiles_left -= 1;
@@ -2968,13 +3038,15 @@ impl<W: LayoutElement> Column<W> {
         // This case is separately handled above.
         while auto_tiles_left > 0 {
             // Compute the current auto height.
-            let auto_height = height_left / auto_tiles_left as i32 - self.options.gaps;
-            let auto_height = max(auto_height, 1);
+            let auto_height = height_left / auto_tiles_left as f64 - self.options.gaps;
+            let auto_height = f64::max(auto_height, 1.);
 
             // Integer division above can result in imperfect height distribution. We will make some
             // tiles 1 px taller to account for this.
-            let mut ones_left = height_left
-                .saturating_sub((auto_height + self.options.gaps) * auto_tiles_left as i32);
+            let mut ones_left = f64::max(
+                0.,
+                height_left - (auto_height + self.options.gaps) * auto_tiles_left as f64,
+            ) as i32;
 
             let mut unsatisfied_min = false;
             let mut ones_left_2 = ones_left;
@@ -2985,12 +3057,12 @@ impl<W: LayoutElement> Column<W> {
 
                 let mut auto = auto_height;
                 if ones_left_2 > 0 {
-                    auto += 1;
+                    auto += 1.;
                     ones_left_2 -= 1;
                 }
 
                 // Check if the auto height satisfies the min height.
-                if min_size.h > 0 && min_size.h > auto {
+                if min_size.h > 0. && min_size.h > auto {
                     *h = WindowHeight::Fixed(min_size.h);
                     height_left -= min_size.h + self.options.gaps;
                     auto_tiles_left -= 1;
@@ -3013,7 +3085,7 @@ impl<W: LayoutElement> Column<W> {
 
                 let mut auto = auto_height;
                 if ones_left > 0 {
-                    auto += 1;
+                    auto += 1.;
                     ones_left -= 1;
                 }
 
@@ -3034,8 +3106,13 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
-    fn width(&self) -> i32 {
-        self.data.iter().map(|data| data.size.w).max().unwrap()
+    fn width(&self) -> f64 {
+        self.data
+            .iter()
+            .map(|data| NotNan::new(data.size.w).unwrap())
+            .max()
+            .map(NotNan::into_inner)
+            .unwrap()
     }
 
     fn focus_up(&mut self) {
@@ -3094,6 +3171,8 @@ impl<W: LayoutElement> Column<W> {
 
     #[cfg(test)]
     fn verify_invariants(&self) {
+        use approx::assert_abs_diff_eq;
+
         assert!(!self.tiles.is_empty(), "columns can't be empty");
         assert!(self.active_tile_idx < self.tiles.len());
         assert_eq!(self.tiles.len(), self.data.len());
@@ -3104,11 +3183,18 @@ impl<W: LayoutElement> Column<W> {
 
         for (tile, data) in zip(&self.tiles, &self.data) {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
+            assert_eq!(self.scale, tile.scale());
             assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
 
             let mut data2 = *data;
             data2.update(tile);
             assert_eq!(data, &data2, "tile data must be up to date");
+
+            let scale = tile.scale();
+            let size = tile.tile_size();
+            let rounded = size.to_physical_precise_round(scale).to_logical(scale);
+            assert_abs_diff_eq!(size.w, rounded.w, epsilon = 1e-5);
+            assert_abs_diff_eq!(size.h, rounded.h, epsilon = 1e-5);
         }
     }
 
@@ -3127,7 +3213,9 @@ impl<W: LayoutElement> Column<W> {
                     .preset_widths
                     .iter()
                     .position(|prop| {
-                        prop.resolve(&self.options, self.working_area.size.w) > current
+                        let resolved = prop.resolve(&self.options, self.working_area.size.w);
+                        // Some allowance for fractional scaling purposes.
+                        current + 1. < resolved
                     })
                     .unwrap_or(0)
             }
@@ -3156,7 +3244,7 @@ impl<W: LayoutElement> Column<W> {
         };
 
         // FIXME: fix overflows then remove limits.
-        const MAX_PX: i32 = 100000;
+        const MAX_PX: f64 = 100000.;
         const MAX_F: f64 = 10000.;
 
         let width = match (current, change) {
@@ -3166,13 +3254,16 @@ impl<W: LayoutElement> Column<W> {
                 // intention behind the ability to set a fixed size.
                 let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
                 let tile = &self.tiles[tile_idx];
-                ColumnWidth::Fixed(tile.tile_width_for_window_width(fixed).clamp(1, MAX_PX))
+                ColumnWidth::Fixed(
+                    tile.tile_width_for_window_width(f64::from(fixed))
+                        .clamp(1., MAX_PX),
+                )
             }
             (_, SizeChange::SetProportion(proportion)) => {
                 ColumnWidth::Proportion((proportion / 100.).clamp(0., MAX_F))
             }
             (_, SizeChange::AdjustFixed(delta)) => {
-                let width = current_px.saturating_add(delta).clamp(1, MAX_PX);
+                let width = (current_px + f64::from(delta)).clamp(1., MAX_PX);
                 ColumnWidth::Fixed(width)
             }
             (ColumnWidth::Proportion(current), SizeChange::AdjustProportion(delta)) => {
@@ -3180,8 +3271,12 @@ impl<W: LayoutElement> Column<W> {
                 ColumnWidth::Proportion(proportion)
             }
             (ColumnWidth::Fixed(_), SizeChange::AdjustProportion(delta)) => {
-                let current = (current_px + self.options.gaps) as f64
-                    / (self.working_area.size.w - self.options.gaps) as f64;
+                let full = self.working_area.size.w - self.options.gaps;
+                let current = if full == 0. {
+                    1.
+                } else {
+                    (current_px + self.options.gaps) / full
+                };
                 let proportion = (current + delta / 100.).clamp(0., MAX_F);
                 ColumnWidth::Proportion(proportion)
             }
@@ -3200,28 +3295,29 @@ impl<W: LayoutElement> Column<W> {
             WindowHeight::Fixed(height) => height,
         };
         let current_tile_px = tile.tile_height_for_window_height(current_window_px);
-        let current_prop = (current_tile_px + self.options.gaps) as f64
-            / (self.working_area.size.h - self.options.gaps) as f64;
+
+        let full = self.working_area.size.h - self.options.gaps;
+        let current_prop = if full == 0. {
+            1.
+        } else {
+            (current_tile_px + self.options.gaps) / (full)
+        };
 
         // FIXME: fix overflows then remove limits.
-        const MAX_PX: i32 = 100000;
+        const MAX_PX: f64 = 100000.;
 
         let mut window_height = match change {
-            SizeChange::SetFixed(fixed) => fixed,
+            SizeChange::SetFixed(fixed) => f64::from(fixed),
             SizeChange::SetProportion(proportion) => {
-                let tile_height = ((self.working_area.size.h - self.options.gaps) as f64
-                    * proportion
-                    - self.options.gaps as f64)
-                    .round() as i32;
+                let tile_height =
+                    (self.working_area.size.h - self.options.gaps) * proportion - self.options.gaps;
                 tile.window_height_for_tile_height(tile_height)
             }
-            SizeChange::AdjustFixed(delta) => current_window_px.saturating_add(delta),
+            SizeChange::AdjustFixed(delta) => current_window_px + f64::from(delta),
             SizeChange::AdjustProportion(delta) => {
                 let proportion = current_prop + delta / 100.;
-                let tile_height = ((self.working_area.size.h - self.options.gaps) as f64
-                    * proportion
-                    - self.options.gaps as f64)
-                    .round() as i32;
+                let tile_height =
+                    (self.working_area.size.h - self.options.gaps) * proportion - self.options.gaps;
                 tile.window_height_for_tile_height(tile_height)
             }
         };
@@ -3232,13 +3328,13 @@ impl<W: LayoutElement> Column<W> {
         let max_h = win.max_size().h;
 
         if max_h > 0 {
-            window_height = window_height.min(max_h);
+            window_height = f64::min(window_height, f64::from(max_h));
         }
         if min_h > 0 {
-            window_height = window_height.max(min_h);
+            window_height = f64::max(window_height, f64::from(min_h));
         }
 
-        self.data[tile_idx].height = WindowHeight::Fixed(window_height.clamp(1, MAX_PX));
+        self.data[tile_idx].height = WindowHeight::Fixed(window_height.clamp(1., MAX_PX));
         self.update_tile_sizes(animate);
     }
 
@@ -3259,7 +3355,7 @@ impl<W: LayoutElement> Column<W> {
     }
 
     /// Returns the static window location, not taking the render offset into account.
-    pub fn window_loc(&self, tile_idx: usize) -> Point<i32, Logical> {
+    pub fn window_loc(&self, tile_idx: usize) -> Point<f64, Logical> {
         let (tile, pos) = self.tiles().nth(tile_idx).unwrap();
         pos + tile.window_loc()
     }
@@ -3269,11 +3365,11 @@ impl<W: LayoutElement> Column<W> {
     fn tile_offsets_iter(
         &self,
         data: impl Iterator<Item = TileData>,
-    ) -> impl Iterator<Item = Point<i32, Logical>> {
+    ) -> impl Iterator<Item = Point<f64, Logical>> {
         let center = self.options.center_focused_column == CenterFocusedColumn::Always;
         let gaps = self.options.gaps;
         let col_width = self.width();
-        let mut y = 0;
+        let mut y = 0.;
 
         if !self.is_fullscreen {
             y = self.working_area.loc.y + self.options.gaps;
@@ -3288,10 +3384,10 @@ impl<W: LayoutElement> Column<W> {
         let data = data.chain(iter::once(dummy));
 
         data.map(move |data| {
-            let mut pos = Point::from((0, y));
+            let mut pos = Point::from((0., y));
 
             if center {
-                pos.x = (col_width - data.size.w) / 2;
+                pos.x = (col_width - data.size.w) / 2.;
             } else if data.interactively_resizing_by_left_edge {
                 pos.x = col_width - data.size.w;
             }
@@ -3301,18 +3397,18 @@ impl<W: LayoutElement> Column<W> {
         })
     }
 
-    fn tile_offsets(&self) -> impl Iterator<Item = Point<i32, Logical>> + '_ {
+    fn tile_offsets(&self) -> impl Iterator<Item = Point<f64, Logical>> + '_ {
         self.tile_offsets_iter(self.data.iter().copied())
     }
 
-    fn tile_offset(&self, tile_idx: usize) -> Point<i32, Logical> {
+    fn tile_offset(&self, tile_idx: usize) -> Point<f64, Logical> {
         self.tile_offsets().nth(tile_idx).unwrap()
     }
 
     fn tile_offsets_in_render_order(
         &self,
         data: impl Iterator<Item = TileData>,
-    ) -> impl Iterator<Item = Point<i32, Logical>> {
+    ) -> impl Iterator<Item = Point<f64, Logical>> {
         let active_idx = self.active_tile_idx;
         let active_pos = self.tile_offset(active_idx);
         let offsets = self
@@ -3322,17 +3418,17 @@ impl<W: LayoutElement> Column<W> {
         iter::once(active_pos).chain(offsets)
     }
 
-    fn tiles(&self) -> impl Iterator<Item = (&Tile<W>, Point<i32, Logical>)> + '_ {
+    fn tiles(&self) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> + '_ {
         let offsets = self.tile_offsets_iter(self.data.iter().copied());
         zip(&self.tiles, offsets)
     }
 
-    fn tiles_mut(&mut self) -> impl Iterator<Item = (&mut Tile<W>, Point<i32, Logical>)> + '_ {
+    fn tiles_mut(&mut self) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> + '_ {
         let offsets = self.tile_offsets_iter(self.data.iter().copied());
         zip(&mut self.tiles, offsets)
     }
 
-    fn tiles_in_render_order(&self) -> impl Iterator<Item = (&Tile<W>, Point<i32, Logical>)> + '_ {
+    fn tiles_in_render_order(&self) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> + '_ {
         let offsets = self.tile_offsets_in_render_order(self.data.iter().copied());
 
         let (first, rest) = self.tiles.split_at(self.active_tile_idx);
@@ -3344,7 +3440,7 @@ impl<W: LayoutElement> Column<W> {
 
     fn tiles_in_render_order_mut(
         &mut self,
-    ) -> impl Iterator<Item = (&mut Tile<W>, Point<i32, Logical>)> + '_ {
+    ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> + '_ {
         let offsets = self.tile_offsets_in_render_order(self.data.iter().copied());
 
         let (first, rest) = self.tiles.split_at_mut(self.active_tile_idx);
@@ -3356,19 +3452,19 @@ impl<W: LayoutElement> Column<W> {
 }
 
 fn compute_new_view_offset(
-    cur_x: i32,
-    view_width: i32,
-    new_col_x: i32,
-    new_col_width: i32,
-    gaps: i32,
-) -> i32 {
+    cur_x: f64,
+    view_width: f64,
+    new_col_x: f64,
+    new_col_width: f64,
+    gaps: f64,
+) -> f64 {
     // If the column is wider than the view, always left-align it.
     if view_width <= new_col_width {
-        return 0;
+        return 0.;
     }
 
     // Compute the padding in case it needs to be smaller due to large tile width.
-    let padding = ((view_width - new_col_width) / 2).clamp(0, gaps);
+    let padding = ((view_width - new_col_width) / 2.).clamp(0., gaps);
 
     // Compute the desired new X with padding.
     let new_x = new_col_x - padding;
@@ -3380,8 +3476,8 @@ fn compute_new_view_offset(
     }
 
     // Otherwise, prefer the alignment that results in less motion from the current position.
-    let dist_to_left = cur_x.abs_diff(new_x);
-    let dist_to_right = (cur_x + view_width).abs_diff(new_right_x);
+    let dist_to_left = (cur_x - new_x).abs();
+    let dist_to_right = ((cur_x + view_width) - new_right_x).abs();
     if dist_to_left <= dist_to_right {
         -padding
     } else {
@@ -3389,41 +3485,49 @@ fn compute_new_view_offset(
     }
 }
 
-pub fn compute_working_area(output: &Output, struts: Struts) -> Rectangle<i32, Logical> {
+pub fn compute_working_area(output: &Output, struts: Struts) -> Rectangle<f64, Logical> {
     // Start with the layer-shell non-exclusive zone.
-    let mut working_area = layer_map_for_output(output).non_exclusive_zone();
+    let mut working_area = layer_map_for_output(output).non_exclusive_zone().to_f64();
 
     // Add struts.
-    let w = working_area.size.w;
-    let h = working_area.size.h;
+    working_area.size.w = f64::max(0., working_area.size.w - struts.left.0 - struts.right.0);
+    working_area.loc.x += struts.left.0;
 
-    working_area.size.w = w
-        .saturating_sub(struts.left.into())
-        .saturating_sub(struts.right.into());
-    working_area.loc.x += struts.left as i32;
+    working_area.size.h = f64::max(0., working_area.size.h - struts.top.0 - struts.bottom.0);
+    working_area.loc.y += struts.top.0;
 
-    working_area.size.h = h
-        .saturating_sub(struts.top.into())
-        .saturating_sub(struts.bottom.into());
-    working_area.loc.y += struts.top as i32;
+    // Round location to start at a physical pixel.
+    let scale = output.current_scale().fractional_scale();
+    let loc = working_area
+        .loc
+        .to_physical_precise_ceil(scale)
+        .to_logical(scale);
+
+    let mut size_diff = (loc - working_area.loc).to_size();
+    size_diff.w = f64::min(working_area.size.w, size_diff.w);
+    size_diff.h = f64::min(working_area.size.h, size_diff.h);
+
+    working_area.size -= size_diff;
+    working_area.loc = loc;
 
     working_area
 }
 
 fn compute_toplevel_bounds(
     border_config: niri_config::Border,
-    working_area_size: Size<i32, Logical>,
-    gaps: i32,
+    working_area_size: Size<f64, Logical>,
+    gaps: f64,
 ) -> Size<i32, Logical> {
-    let mut border = 0;
+    let mut border = 0.;
     if !border_config.off {
-        border = border_config.width as i32 * 2;
+        border = border_config.width.0 * 2.;
     }
 
     Size::from((
-        max(working_area_size.w - gaps * 2 - border, 1),
-        max(working_area_size.h - gaps * 2 - border, 1),
+        f64::max(working_area_size.w - gaps * 2. - border, 1.),
+        f64::max(working_area_size.h - gaps * 2. - border, 1.),
     ))
+    .to_i32_floor()
 }
 
 fn cancel_resize_for_column<W: LayoutElement>(

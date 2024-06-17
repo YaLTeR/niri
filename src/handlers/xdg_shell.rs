@@ -788,9 +788,9 @@ impl State {
         // window can be scrolled to both edges of the screen), but within the whole monitor's
         // height.
         let mut target =
-            Rectangle::from_loc_and_size((0, 0), (window_geo.size.w, output_geo.size.h));
+            Rectangle::from_loc_and_size((0, 0), (window_geo.size.w, output_geo.size.h)).to_f64();
         target.loc -= self.niri.layout.window_loc(window).unwrap();
-        target.loc -= get_popup_toplevel_coords(popup);
+        target.loc -= get_popup_toplevel_coords(popup).to_f64();
 
         self.position_popup_within_rect(popup, target);
     }
@@ -813,10 +813,10 @@ impl State {
         target.loc -= layer_geo.loc;
         target.loc -= get_popup_toplevel_coords(popup);
 
-        self.position_popup_within_rect(popup, target);
+        self.position_popup_within_rect(popup, target.to_f64());
     }
 
-    fn position_popup_within_rect(&self, popup: &PopupKind, target: Rectangle<i32, Logical>) {
+    fn position_popup_within_rect(&self, popup: &PopupKind, target: Rectangle<f64, Logical>) {
         match popup {
             PopupKind::Xdg(popup) => {
                 popup.with_pending_state(|state| {
@@ -826,28 +826,29 @@ impl State {
             PopupKind::InputMethod(popup) => {
                 let text_input_rectangle = popup.text_input_rectangle();
                 let mut bbox =
-                    utils::bbox_from_surface_tree(popup.wl_surface(), text_input_rectangle.loc);
+                    utils::bbox_from_surface_tree(popup.wl_surface(), text_input_rectangle.loc)
+                        .to_f64();
 
                 // Position bbox horizontally first.
                 let overflow_x = (bbox.loc.x + bbox.size.w) - (target.loc.x + target.size.w);
-                if overflow_x > 0 {
+                if overflow_x > 0. {
                     bbox.loc.x -= overflow_x;
                 }
 
                 // Ensure that the popup starts within the window.
-                bbox.loc.x = bbox.loc.x.max(target.loc.x);
+                bbox.loc.x = f64::max(bbox.loc.x, target.loc.x);
 
                 // Try to position IME popup below the text input rectangle.
                 let mut below = bbox;
-                below.loc.y += text_input_rectangle.size.h;
+                below.loc.y += f64::from(text_input_rectangle.size.h);
 
                 let mut above = bbox;
                 above.loc.y -= bbox.size.h;
 
                 if target.loc.y + target.size.h >= below.loc.y + below.size.h {
-                    popup.set_location(below.loc);
+                    popup.set_location(below.loc.to_i32_round());
                 } else {
-                    popup.set_location(above.loc);
+                    popup.set_location(above.loc.to_i32_round());
                 }
             }
         }
@@ -907,25 +908,25 @@ impl State {
 
 fn unconstrain_with_padding(
     positioner: PositionerState,
-    target: Rectangle<i32, Logical>,
+    target: Rectangle<f64, Logical>,
 ) -> Rectangle<i32, Logical> {
     // Try unconstraining with a small padding first which looks nicer, then if it doesn't fit try
     // unconstraining without padding.
-    const PADDING: i32 = 8;
+    const PADDING: f64 = 8.;
 
     let mut padded = target;
-    if PADDING * 2 < padded.size.w {
+    if PADDING * 2. < padded.size.w {
         padded.loc.x += PADDING;
-        padded.size.w -= PADDING * 2;
+        padded.size.w -= PADDING * 2.;
     }
-    if PADDING * 2 < padded.size.h {
+    if PADDING * 2. < padded.size.h {
         padded.loc.y += PADDING;
-        padded.size.h -= PADDING * 2;
+        padded.size.h -= PADDING * 2.;
     }
 
     // No padding, so just unconstrain with the original target.
     if padded == target {
-        return positioner.get_unconstrained_geometry(target);
+        return positioner.get_unconstrained_geometry(target.to_i32_round());
     }
 
     // Do not try to resize to fit the padded target rectangle.
@@ -937,13 +938,13 @@ fn unconstrain_with_padding(
         .constraint_adjustment
         .remove(ConstraintAdjustment::ResizeY);
 
-    let geo = no_resize.get_unconstrained_geometry(padded);
-    if padded.contains_rect(geo) {
+    let geo = no_resize.get_unconstrained_geometry(padded.to_i32_round());
+    if padded.contains_rect(geo.to_f64()) {
         return geo;
     }
 
     // Could not unconstrain into the padded target, so resort to the regular one.
-    positioner.get_unconstrained_geometry(target)
+    positioner.get_unconstrained_geometry(target.to_i32_round())
 }
 
 pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId {

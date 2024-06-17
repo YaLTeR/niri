@@ -144,6 +144,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "approx"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -604,7 +613,7 @@ version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a98d30140e3296250832bbaaff83b27dcd6fa3cc70fb6f1f3e5c9c0023b5317"
 dependencies = [
- "approx",
+ "approx 0.4.0",
  "num-traits",
 ]
 
@@ -2163,6 +2172,7 @@ name = "niri"
 version = "0.1.6"
 dependencies = [
  "anyhow",
+ "approx 0.5.1",
  "arrayvec",
  "async-channel",
  "async-io 1.13.0",
@@ -3162,7 +3172,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay.git#6169b213fb663d85d2e139d3bbe44dfae1ec9328"
+source = "git+https://github.com/Smithay/smithay.git#b4f8120be0fb9b7f038d041efa7f6549e26cd2bc"
 dependencies = [
  "appendlist",
  "bitflags 2.5.0",
@@ -3234,7 +3244,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#6169b213fb663d85d2e139d3bbe44dfae1ec9328"
+source = "git+https://github.com/Smithay/smithay.git#b4f8120be0fb9b7f038d041efa7f6549e26cd2bc"
 dependencies = [
  "drm",
  "edid-rs",

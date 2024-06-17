@@ -3,7 +3,6 @@ use std::ptr;
 use anyhow::{ensure, Context};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
@@ -13,6 +12,7 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::shm;
+use solid_color::{SolidColorBuffer, SolidColorRenderElement};
 
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use self::texture::{TextureBuffer, TextureRenderElement};
@@ -50,7 +50,7 @@ pub enum RenderTarget {
 #[derive(Debug)]
 pub struct BakedBuffer<B> {
     pub buffer: B,
-    pub location: Point<i32, Logical>,
+    pub location: Point<f64, Logical>,
     pub src: Option<Rectangle<f64, Logical>>,
     pub dst: Option<Size<i32, Logical>>,
 }
@@ -67,7 +67,7 @@ pub trait ToRenderElement {
 
     fn to_render_element(
         &self,
-        location: Point<i32, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
         kind: Kind,
@@ -119,14 +119,14 @@ impl ToRenderElement for BakedBuffer<TextureBuffer<GlesTexture>> {
 
     fn to_render_element(
         &self,
-        location: Point<i32, Logical>,
+        location: Point<f64, Logical>,
         _scale: Scale<f64>,
         alpha: f32,
         kind: Kind,
     ) -> Self::RenderElement {
         let elem = TextureRenderElement::from_texture_buffer(
             self.buffer.clone(),
-            (location + self.location).to_f64(),
+            location + self.location,
             alpha,
             self.src,
             self.dst.map(|dst| dst.to_f64()),
@@ -141,20 +141,12 @@ impl ToRenderElement for BakedBuffer<SolidColorBuffer> {
 
     fn to_render_element(
         &self,
-        location: Point<i32, Logical>,
-        scale: Scale<f64>,
+        location: Point<f64, Logical>,
+        _scale: Scale<f64>,
         alpha: f32,
         kind: Kind,
     ) -> Self::RenderElement {
-        SolidColorRenderElement::from_buffer(
-            &self.buffer,
-            (location + self.location)
-                .to_physical_precise_round(scale)
-                .to_i32_round(),
-            scale,
-            alpha,
-            kind,
-        )
+        SolidColorRenderElement::from_buffer(&self.buffer, location + self.location, alpha, kind)
     }
 }
 

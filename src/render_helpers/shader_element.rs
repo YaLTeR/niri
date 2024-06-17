@@ -23,8 +23,8 @@ pub struct ShaderRenderElement {
     program: ProgramType,
     id: Id,
     commit_counter: CommitCounter,
-    area: Rectangle<i32, Logical>,
-    opaque_regions: Vec<Rectangle<i32, Logical>>,
+    area: Rectangle<f64, Logical>,
+    opaque_regions: Vec<Rectangle<f64, Logical>>,
     alpha: f32,
     additional_uniforms: Vec<Uniform<'static>>,
     textures: HashMap<String, GlesTexture>,
@@ -198,8 +198,8 @@ impl ShaderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         program: ProgramType,
-        size: Size<i32, Logical>,
-        opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
+        size: Size<f64, Logical>,
+        opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
         alpha: f32,
         uniforms: Vec<Uniform<'_>>,
         textures: HashMap<String, GlesTexture>,
@@ -209,7 +209,7 @@ impl ShaderRenderElement {
             program,
             id: Id::new(),
             commit_counter: CommitCounter::default(),
-            area: Rectangle::from_loc_and_size((0, 0), size),
+            area: Rectangle::from_loc_and_size((0., 0.), size),
             opaque_regions: opaque_regions.unwrap_or_default(),
             alpha,
             additional_uniforms: uniforms.into_iter().map(|u| u.into_owned()).collect(),
@@ -238,8 +238,8 @@ impl ShaderRenderElement {
 
     pub fn update(
         &mut self,
-        size: Size<i32, Logical>,
-        opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
+        size: Size<f64, Logical>,
+        opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
         uniforms: Vec<Uniform<'_>>,
         textures: HashMap<String, GlesTexture>,
     ) {
@@ -251,7 +251,7 @@ impl ShaderRenderElement {
         self.commit_counter.increment();
     }
 
-    pub fn with_location(mut self, location: Point<i32, Logical>) -> Self {
+    pub fn with_location(mut self, location: Point<f64, Logical>) -> Self {
         self.area.loc = location;
         self
     }
@@ -277,7 +277,7 @@ impl Element for ShaderRenderElement {
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.opaque_regions
             .iter()
-            .map(|region| region.to_physical_precise_round(scale))
+            .map(|region| region.to_physical_precise_down(scale))
             .collect()
     }
 
