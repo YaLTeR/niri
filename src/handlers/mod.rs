@@ -519,10 +519,10 @@ impl XdgActivationHandler for State {
         };
 
         let keyboard = seat.get_keyboard().unwrap();
-        return keyboard
+        keyboard
             .last_enter()
             .map(|last_enter| serial.is_no_older_than(&last_enter))
-            .unwrap_or(false);
+            .unwrap_or(false)
     }
 
     fn request_activation(
