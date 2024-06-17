@@ -51,6 +51,13 @@ fn is_valid_for_resolution(resolution: Size<i32, Physical>, scale: i32) -> bool 
     logical.w * logical.h >= MIN_LOGICAL_AREA
 }
 
+/// Adjusts the scale to the closest exactly-representable value.
+pub fn closest_representable_scale(scale: f64) -> f64 {
+    // Current fractional-scale Wayland protocol can only represent N / 120 scales.
+    const FRACTIONAL_SCALE_DENOM: f64 = 120.;
+
+    (scale * FRACTIONAL_SCALE_DENOM).round() / FRACTIONAL_SCALE_DENOM
+}
 #[cfg(test)]
 mod tests {
     use k9::snapshot;
@@ -100,5 +107,15 @@ mod tests {
     #[test]
     fn guess_monitor_scale_unknown_size() {
         assert_eq!(check((0, 0), (1920, 1080)), 1.);
+    }
+
+    #[test]
+    fn test_round_scale() {
+        snapshot!(closest_representable_scale(1.3), "1.3");
+        snapshot!(closest_representable_scale(1.31), "1.3083333333333333");
+        snapshot!(closest_representable_scale(1.32), "1.3166666666666667");
+        snapshot!(closest_representable_scale(1.33), "1.3333333333333333");
+        snapshot!(closest_representable_scale(1.34), "1.3416666666666666");
+        snapshot!(closest_representable_scale(1.35), "1.35");
     }
 }

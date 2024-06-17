@@ -124,7 +124,7 @@ use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
-use crate::utils::scale::guess_monitor_scale;
+use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
@@ -1053,7 +1053,7 @@ impl State {
                 let resolution = output.current_mode().unwrap().size;
                 guess_monitor_scale(size_mm, resolution)
             });
-            let scale = scale.clamp(1., 10.);
+            let scale = closest_representable_scale(scale.clamp(1., 10.));
 
             let mut transform = config
                 .map(|c| ipc_transform_to_smithay(c.transform))
@@ -1736,7 +1736,8 @@ impl Niri {
             let resolution = output.current_mode().unwrap().size;
             guess_monitor_scale(size_mm, resolution)
         });
-        let scale = scale.clamp(1., 10.);
+        let scale = closest_representable_scale(scale.clamp(1., 10.));
+
         let mut transform = c
             .map(|c| ipc_transform_to_smithay(c.transform))
             .unwrap_or(Transform::Normal);
