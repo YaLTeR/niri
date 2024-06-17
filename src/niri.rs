@@ -1053,7 +1053,7 @@ impl State {
                 let resolution = output.current_mode().unwrap().size;
                 guess_monitor_scale(size_mm, resolution)
             });
-            let scale = closest_representable_scale(scale.clamp(1., 10.));
+            let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
             let mut transform = config
                 .map(|c| ipc_transform_to_smithay(c.transform))
@@ -1736,7 +1736,7 @@ impl Niri {
             let resolution = output.current_mode().unwrap().size;
             guess_monitor_scale(size_mm, resolution)
         });
-        let scale = closest_representable_scale(scale.clamp(1., 10.));
+        let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
         let mut transform = c
             .map(|c| ipc_transform_to_smithay(c.transform))
