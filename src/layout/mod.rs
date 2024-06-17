@@ -43,8 +43,8 @@ use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
 
-use self::monitor::Monitor;
 pub use self::monitor::MonitorRenderElement;
+use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -963,9 +963,13 @@ impl<W: LayoutElement> Layout<W> {
                     *active_monitor_idx = monitor_idx;
                     ws.activate_window(window);
 
-                    // Switch to that workspace if not already during a transition.
-                    if mon.workspace_switch.is_none() {
-                        mon.switch_workspace(workspace_idx);
+                    // If currently in the middle of a vertical swipe between the target workspace
+                    // and some other, don't switch the workspace.
+                    match &mon.workspace_switch {
+                        Some(WorkspaceSwitch::Gesture(gesture))
+                            if gesture.current_idx.floor() == workspace_idx as f64
+                                || gesture.current_idx.ceil() == workspace_idx as f64 => {}
+                        _ => mon.switch_workspace(workspace_idx, true),
                     }
 
                     break;
@@ -1388,7 +1392,7 @@ impl<W: LayoutElement> Layout<W> {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace(idx);
+        monitor.switch_workspace(idx, false);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
