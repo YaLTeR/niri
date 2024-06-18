@@ -56,7 +56,6 @@ pub struct Config {
     pub workspaces: Vec<Workspace>,
 }
 
-// FIXME: Add other devices.
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Input {
     #[knuffel(child, default)]
@@ -152,7 +151,6 @@ pub enum TrackLayout {
     Window,
 }
 
-// FIXME: Add the rest of the settings.
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Touchpad {
     #[knuffel(child)]
