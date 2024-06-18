@@ -644,6 +644,32 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusWindowOrMonitorLeft => {
+                if let Some(output) = self.niri.output_left() {
+                    self.niri.layout.focus_window_or_monitor_left(&output);
+                    // TODO: handle output without window
+                    self.maybe_warp_cursor_to_focus();
+                } else {
+                    self.niri.layout.focus_left();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowOrMonitorRight => {
+                if let Some(output) = self.niri.output_right() {
+                    self.niri.layout.focus_window_or_monitor_right(&output);
+                    // TODO: handle output without window
+                    self.maybe_warp_cursor_to_focus();
+                } else {
+                    self.niri.layout.focus_right();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::MoveWindowToWorkspaceDown => {
                 self.niri.layout.move_to_workspace_down();
                 self.maybe_warp_cursor_to_focus();
