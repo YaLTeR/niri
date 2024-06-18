@@ -24,3 +24,4 @@
 ## Development
 * [Design Principles](./Design-Principles.md)
 * [Developing niri](./Developing-niri.md)
+* [Fractional Layout](./Fractional-Layout.md)

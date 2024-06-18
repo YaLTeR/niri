@@ -1,10 +1,10 @@
-use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
 
 use super::renderer::AsGlesFrame;
+use super::texture::TextureRenderElement;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 /// Wrapper for a texture from the primary GPU for rendering with the primary GPU.
@@ -60,9 +60,10 @@ impl RenderElement<GlesRenderer> for PrimaryGpuTextureRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         let gles_frame = frame.as_gles_frame();
-        RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage)?;
+        RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage, opaque_regions)?;
         Ok(())
     }
 
@@ -80,9 +81,10 @@ impl<'render> RenderElement<TtyRenderer<'render>> for PrimaryGpuTextureRenderEle
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
-        RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage)?;
+        RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage, opaque_regions)?;
         Ok(())
     }
 

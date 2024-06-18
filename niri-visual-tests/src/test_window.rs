@@ -6,11 +6,11 @@ use niri::layout::{
     InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
 };
 use niri::render_helpers::renderer::NiriRenderer;
+use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use niri::render_helpers::{RenderTarget, SplitElements};
 use niri::window::ResolvedWindowRules;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::{Id, Kind};
-use smithay::output::Output;
+use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
 
@@ -37,7 +37,7 @@ impl TestWindow {
         let size = Size::from((100, 200));
         let min_size = Size::from((0, 0));
         let max_size = Size::from((0, 0));
-        let buffer = SolidColorBuffer::new(size, [0.15, 0.64, 0.41, 1.]);
+        let buffer = SolidColorBuffer::new(size.to_f64(), [0.15, 0.64, 0.41, 1.]);
 
         Self {
             id,
@@ -49,7 +49,7 @@ impl TestWindow {
                 buffer,
                 pending_fullscreen: false,
                 csd_shadow_width: 0,
-                csd_shadow_buffer: SolidColorBuffer::new((0, 0), [0., 0., 0., 0.3]),
+                csd_shadow_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.3]),
             })),
         }
     }
@@ -112,14 +112,14 @@ impl TestWindow {
 
         if inner.size != new_size {
             inner.size = new_size;
-            inner.buffer.resize(new_size);
+            inner.buffer.resize(new_size.to_f64());
             rv = true;
         }
 
         let mut csd_shadow_size = new_size;
         csd_shadow_size.w += inner.csd_shadow_width * 2;
         csd_shadow_size.h += inner.csd_shadow_width * 2;
-        inner.csd_shadow_buffer.resize(csd_shadow_size);
+        inner.csd_shadow_buffer.resize(csd_shadow_size.to_f64());
 
         rv
     }
@@ -147,8 +147,8 @@ impl LayoutElement for TestWindow {
     fn render<R: NiriRenderer>(
         &self,
         _renderer: &mut R,
-        location: Point<i32, Logical>,
-        scale: Scale<f64>,
+        location: Point<f64, Logical>,
+        _scale: Scale<f64>,
         alpha: f32,
         _target: RenderTarget,
     ) -> SplitElements<LayoutElementRenderElement<R>> {
@@ -158,17 +158,15 @@ impl LayoutElement for TestWindow {
             normal: vec![
                 SolidColorRenderElement::from_buffer(
                     &inner.buffer,
-                    location.to_physical_precise_round(scale),
-                    scale,
+                    location,
                     alpha,
                     Kind::Unspecified,
                 )
                 .into(),
                 SolidColorRenderElement::from_buffer(
                     &inner.csd_shadow_buffer,
-                    (location - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)))
-                        .to_physical_precise_round(scale),
-                    scale,
+                    location
+                        - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)).to_f64(),
                     alpha,
                     Kind::Unspecified,
                 )
@@ -199,7 +197,7 @@ impl LayoutElement for TestWindow {
         false
     }
 
-    fn set_preferred_scale_transform(&self, _scale: i32, _transform: Transform) {}
+    fn set_preferred_scale_transform(&self, _scale: output::Scale, _transform: Transform) {}
 
     fn has_ssd(&self) -> bool {
         false

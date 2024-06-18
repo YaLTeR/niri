@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use niri::layout::Options;
 use niri::render_helpers::RenderTarget;
-use niri_config::Color;
+use niri_config::{Color, FloatOrInt};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
@@ -20,7 +20,7 @@ impl Tile {
     pub fn freeform(size: Size<i32, Logical>) -> Self {
         let window = TestWindow::freeform(0);
         let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size, false);
+        rv.tile.request_tile_size(size.to_f64(), false);
         rv.window.communicate();
         rv
     }
@@ -28,7 +28,7 @@ impl Tile {
     pub fn fixed_size(size: Size<i32, Logical>) -> Self {
         let window = TestWindow::fixed_size(0);
         let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size, false);
+        rv.tile.request_tile_size(size.to_f64(), false);
         rv.window.communicate();
         rv
     }
@@ -37,7 +37,7 @@ impl Tile {
         let window = TestWindow::fixed_size(0);
         window.set_csd_shadow_width(64);
         let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size, false);
+        rv.tile.request_tile_size(size.to_f64(), false);
         rv.window.communicate();
         rv
     }
@@ -71,13 +71,13 @@ impl Tile {
             },
             border: niri_config::Border {
                 off: false,
-                width: 32,
+                width: FloatOrInt(32.),
                 active_color: Color::new(255, 163, 72, 255),
                 ..Default::default()
             },
             ..Default::default()
         };
-        let tile = niri::layout::tile::Tile::new(window.clone(), Rc::new(options));
+        let tile = niri::layout::tile::Tile::new(window.clone(), 1., Rc::new(options));
         Self { window, tile }
     }
 }
@@ -85,7 +85,7 @@ impl Tile {
 impl TestCase for Tile {
     fn resize(&mut self, width: i32, height: i32) {
         self.tile
-            .request_tile_size(Size::from((width, height)), false);
+            .request_tile_size(Size::from((width, height)).to_f64(), false);
         self.window.communicate();
     }
 
@@ -102,12 +102,13 @@ impl TestCase for Tile {
         renderer: &mut GlesRenderer,
         size: Size<i32, Physical>,
     ) -> Vec<Box<dyn RenderElement<GlesRenderer>>> {
-        let tile_size = self.tile.tile_size().to_physical(1);
-        let location = Point::from(((size.w - tile_size.w) / 2, (size.h - tile_size.h) / 2));
+        let size = size.to_f64();
+        let tile_size = self.tile.tile_size().to_physical(1.);
+        let location = Point::from((size.w - tile_size.w, size.h - tile_size.h)).downscale(2.);
 
         self.tile.update(
             true,
-            Rectangle::from_loc_and_size((-location.x, -location.y), size.to_logical(1)),
+            Rectangle::from_loc_and_size((-location.x, -location.y), size.to_logical(1.)),
         );
         self.tile
             .render(

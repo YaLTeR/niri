@@ -5,19 +5,20 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::Config;
+use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::FontDescription;
-use smithay::backend::renderer::element::memory::{
-    MemoryRenderBuffer, MemoryRenderBufferRenderElement,
-};
-use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::{Element, Kind};
+use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
-use smithay::utils::Transform;
+use smithay::utils::{Point, Transform};
 
 use crate::animation::Animation;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
+use crate::utils::{output_size, to_physical_precise_round};
 
 const TEXT: &str = "Failed to parse the config file. \
                     Please run <span face='monospace' bgcolor='#000000'>niri validate</span> \
@@ -28,7 +29,7 @@ const BORDER: i32 = 4;
 
 pub struct ConfigErrorNotification {
     state: State,
-    buffers: RefCell<HashMap<i32, Option<MemoryRenderBuffer>>>,
+    buffers: RefCell<HashMap<NotNan<f64>, Option<TextureBuffer<GlesTexture>>>>,
 
     // If set, this is a "Created config at {path}" notification. If unset, this is a config error
     // notification.
@@ -43,9 +44,6 @@ enum State {
     Shown(Duration),
     Hiding(Animation),
 }
-
-pub type ConfigErrorNotificationRenderElement<R> =
-    RelocateRenderElement<MemoryRenderBufferRenderElement<R>>;
 
 impl ConfigErrorNotification {
     pub fn new(config: Rc<RefCell<Config>>) -> Self {
@@ -128,59 +126,54 @@ impl ConfigErrorNotification {
         &self,
         renderer: &mut R,
         output: &Output,
-    ) -> Option<ConfigErrorNotificationRenderElement<R>> {
+    ) -> Option<PrimaryGpuTextureRenderElement> {
         if matches!(self.state, State::Hidden) {
             return None;
         }
 
-        let scale = output.current_scale().integer_scale();
+        let scale = output.current_scale().fractional_scale();
+        let output_size = output_size(output);
         let path = self.created_path.as_deref();
 
         let mut buffers = self.buffers.borrow_mut();
         let buffer = buffers
-            .entry(scale)
-            .or_insert_with_key(move |&scale| render(scale, path).ok());
-        let buffer = buffer.as_ref()?;
+            .entry(NotNan::new(scale).unwrap())
+            .or_insert_with(move || render(renderer.as_gles_renderer(), scale, path).ok());
+        let buffer = buffer.clone()?;
 
-        let elem = MemoryRenderBufferRenderElement::from_buffer(
-            renderer,
-            (0., 0.),
+        let size = buffer.logical_size();
+        let y_range = size.h + f64::from(PADDING) * 2.;
+
+        let x = (output_size.w - size.w).max(0.) / 2.;
+        let y = match &self.state {
+            State::Hidden => unreachable!(),
+            State::Showing(anim) | State::Hiding(anim) => -size.h + anim.value() * y_range,
+            State::Shown(_) => f64::from(PADDING) * 2.,
+        };
+
+        let location = Point::from((x, y));
+        let location = location.to_physical_precise_round(scale).to_logical(scale);
+
+        let elem = TextureRenderElement::from_texture_buffer(
             buffer,
-            Some(0.9),
+            location,
+            1.,
             None,
             None,
             Kind::Unspecified,
-        )
-        .ok()?;
-
-        let output_transform = output.current_transform();
-        let output_mode = output.current_mode().unwrap();
-        let output_size = output_transform.transform_size(output_mode.size);
-
-        let buffer_size = elem
-            .geometry(output.current_scale().fractional_scale().into())
-            .size;
-
-        let y_range = buffer_size.h + PADDING * 2 * scale;
-
-        let x = (output_size.w / 2 - buffer_size.w / 2).max(0);
-        let y = match &self.state {
-            State::Hidden => unreachable!(),
-            State::Showing(anim) | State::Hiding(anim) => {
-                (-buffer_size.h as f64 + anim.value() * y_range as f64).round() as i32
-            }
-            State::Shown(_) => PADDING * 2 * scale,
-        };
-        let elem = RelocateRenderElement::from_element(elem, (x, y), Relocate::Absolute);
-
-        Some(elem)
+        );
+        Some(PrimaryGpuTextureRenderElement(elem))
     }
 }
 
-fn render(scale: i32, created_path: Option<&Path>) -> anyhow::Result<MemoryRenderBuffer> {
+fn render(
+    renderer: &mut GlesRenderer,
+    scale: f64,
+    created_path: Option<&Path>,
+) -> anyhow::Result<TextureBuffer<GlesTexture>> {
     let _span = tracy_client::span!("config_error_notification::render");
 
-    let padding = PADDING * scale;
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
 
     let mut text = String::from(TEXT);
     let mut border_color = (1., 0.3, 0.3);
@@ -194,7 +187,7 @@ fn render(scale: i32, created_path: Option<&Path>) -> anyhow::Result<MemoryRende
     };
 
     let mut font = FontDescription::from_string(FONT);
-    font.set_absolute_size((font.size() * scale).into());
+    font.set_absolute_size(to_physical_precise_round(scale, font.size()));
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
@@ -205,10 +198,6 @@ fn render(scale: i32, created_path: Option<&Path>) -> anyhow::Result<MemoryRende
     let (mut width, mut height) = layout.pixel_size();
     width += padding * 2;
     height += padding * 2;
-
-    // FIXME: fix bug in Smithay that rounds pixel sizes down to scale.
-    width = (width + scale - 1) / scale * scale;
-    height = (height + scale - 1) / scale * scale;
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
     let cr = cairo::Context::new(&surface)?;
@@ -229,19 +218,22 @@ fn render(scale: i32, created_path: Option<&Path>) -> anyhow::Result<MemoryRende
     cr.line_to(0., height.into());
     cr.line_to(0., 0.);
     cr.set_source_rgb(border_color.0, border_color.1, border_color.2);
-    cr.set_line_width((BORDER * scale).into());
+    // Keep the border width even to avoid blurry edges.
+    cr.set_line_width((f64::from(BORDER) / 2. * scale).round() * 2.);
     cr.stroke()?;
     drop(cr);
 
     let data = surface.take_data().unwrap();
-    let buffer = MemoryRenderBuffer::from_slice(
+    let buffer = TextureBuffer::from_memory(
+        renderer,
         &data,
         Fourcc::Argb8888,
         (width, height),
+        false,
         scale,
         Transform::Normal,
-        None,
-    );
+        Vec::new(),
+    )?;
 
     Ok(buffer)
 }

@@ -25,7 +25,7 @@ pub struct RenderSnapshot<C, B> {
     pub block_out_from: Option<BlockOutFrom>,
 
     /// Visual size of the element at the point of the snapshot.
-    pub size: Size<i32, Logical>,
+    pub size: Size<f64, Logical>,
 
     /// Contents rendered into a texture (lazily).
     pub texture: OnceCell<Option<(GlesTexture, Rectangle<i32, Physical>)>>,
@@ -55,7 +55,7 @@ where
                     .blocked_out_contents
                     .iter()
                     .map(|baked| {
-                        baked.to_render_element(Point::from((0, 0)), scale, 1., Kind::Unspecified)
+                        baked.to_render_element(Point::from((0., 0.)), scale, 1., Kind::Unspecified)
                     })
                     .collect();
 
@@ -81,7 +81,7 @@ where
                     .contents
                     .iter()
                     .map(|baked| {
-                        baked.to_render_element(Point::from((0, 0)), scale, 1., Kind::Unspecified)
+                        baked.to_render_element(Point::from((0., 0.)), scale, 1., Kind::Unspecified)
                     })
                     .collect();
 

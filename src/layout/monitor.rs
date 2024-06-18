@@ -7,7 +7,7 @@ use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Scale};
+use smithay::utils::{Logical, Point, Rectangle};
 
 use super::workspace::{
     compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceId,
@@ -19,7 +19,7 @@ use crate::input::swipe_tracker::SwipeTracker;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
-use crate::utils::{output_size, ResizeEdge};
+use crate::utils::{output_size, to_physical_precise_round, ResizeEdge};
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
@@ -569,12 +569,13 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspaces.iter().position(|w| w.id() == id)
     }
 
-    pub fn switch_workspace(&mut self, idx: usize) {
+    pub fn switch_workspace(&mut self, idx: usize, animate: bool) {
         self.activate_workspace(min(idx, self.workspaces.len() - 1));
-        // Don't animate this action.
-        self.workspace_switch = None;
 
-        self.clean_up_workspaces();
+        if !animate {
+            self.workspace_switch = None;
+            self.clean_up_workspaces();
+        }
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
@@ -582,16 +583,16 @@ impl<W: LayoutElement> Monitor<W> {
 
         if idx == self.active_workspace_idx {
             if let Some(prev_idx) = self.previous_workspace_idx() {
-                self.switch_workspace(prev_idx);
+                self.switch_workspace(prev_idx, false);
             }
         } else {
-            self.switch_workspace(idx);
+            self.switch_workspace(idx, false);
         }
     }
 
     pub fn switch_workspace_previous(&mut self) {
         if let Some(idx) = self.previous_workspace_idx() {
-            self.switch_workspace(idx);
+            self.switch_workspace(idx, false);
         }
     }
 
@@ -681,11 +682,13 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if self.options.struts != options.struts {
+            let scale = self.output.current_scale();
+            let transform = self.output.current_transform();
             let view_size = output_size(&self.output);
             let working_area = compute_working_area(&self.output, options.struts);
 
             for ws in &mut self.workspaces {
-                ws.set_view_size(view_size, working_area);
+                ws.set_view_size(scale, transform, view_size, working_area);
             }
         }
 
@@ -759,16 +762,16 @@ impl<W: LayoutElement> Monitor<W> {
     /// Returns the geometry of the active tile relative to and clamped to the output.
     ///
     /// During animations, assumes the final view position.
-    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<i32, Logical>> {
+    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
         let mut rect = self.active_workspace_ref().active_tile_visual_rectangle()?;
 
         if let Some(switch) = &self.workspace_switch {
-            let size = output_size(&self.output);
+            let size = output_size(&self.output).to_f64();
 
             let offset = switch.target_idx() - self.active_workspace_idx as f64;
-            let offset = (offset * size.h as f64).round() as i32;
+            let offset = offset * size.h;
 
-            let clip_rect = Rectangle::from_loc_and_size((0, -offset), size);
+            let clip_rect = Rectangle::from_loc_and_size((0., -offset), size);
             rect = rect.intersection(clip_rect)?;
         }
 
@@ -778,16 +781,16 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn window_under(
         &self,
         pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<i32, Logical>>)> {
+    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
         match &self.workspace_switch {
             Some(switch) => {
-                let size = output_size(&self.output);
+                let size = output_size(&self.output).to_f64();
 
                 let render_idx = switch.current_idx();
                 let before_idx = render_idx.floor();
                 let after_idx = render_idx.ceil();
 
-                let offset = ((render_idx - before_idx) * size.h as f64).round() as i32;
+                let offset = (render_idx - before_idx) * size.h;
 
                 if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
                     return None;
@@ -795,22 +798,22 @@ impl<W: LayoutElement> Monitor<W> {
 
                 let after_idx = after_idx as usize;
 
-                let (idx, ws_offset) = if pos_within_output.y < (size.h - offset) as f64 {
+                let (idx, ws_offset) = if pos_within_output.y < size.h - offset {
                     if before_idx < 0. {
                         return None;
                     }
 
-                    (before_idx as usize, Point::from((0, offset)))
+                    (before_idx as usize, Point::from((0., offset)))
                 } else {
                     if after_idx >= self.workspaces.len() {
                         return None;
                     }
 
-                    (after_idx, Point::from((0, -size.h + offset)))
+                    (after_idx, Point::from((0., -size.h + offset)))
                 };
 
                 let ws = &self.workspaces[idx];
-                let (win, win_pos) = ws.window_under(pos_within_output + ws_offset.to_f64())?;
+                let (win, win_pos) = ws.window_under(pos_within_output + ws_offset)?;
                 Some((win, win_pos.map(|p| p - ws_offset)))
             }
             None => {
@@ -829,7 +832,7 @@ impl<W: LayoutElement> Monitor<W> {
                 let before_idx = render_idx.floor();
                 let after_idx = render_idx.ceil();
 
-                let offset = ((render_idx - before_idx) * size.h as f64).round() as i32;
+                let offset = (render_idx - before_idx) * size.h;
 
                 if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
                     return None;
@@ -837,22 +840,22 @@ impl<W: LayoutElement> Monitor<W> {
 
                 let after_idx = after_idx as usize;
 
-                let (idx, ws_offset) = if pos_within_output.y < (size.h - offset) as f64 {
+                let (idx, ws_offset) = if pos_within_output.y < size.h - offset {
                     if before_idx < 0. {
                         return None;
                     }
 
-                    (before_idx as usize, Point::from((0, offset)))
+                    (before_idx as usize, Point::from((0., offset)))
                 } else {
                     if after_idx >= self.workspaces.len() {
                         return None;
                     }
 
-                    (after_idx, Point::from((0, -size.h + offset)))
+                    (after_idx, Point::from((0., -size.h + offset)))
                 };
 
                 let ws = &self.workspaces[idx];
-                ws.resize_edges_under(pos_within_output + ws_offset.to_f64())
+                ws.resize_edges_under(pos_within_output + ws_offset)
             }
             None => {
                 let ws = &self.workspaces[self.active_workspace_idx];
@@ -878,10 +881,8 @@ impl<W: LayoutElement> Monitor<W> {
     ) -> Vec<MonitorRenderElement<R>> {
         let _span = tracy_client::span!("Monitor::render_elements");
 
-        let output_scale = Scale::from(self.output.current_scale().fractional_scale());
-        let output_transform = self.output.current_transform();
-        let output_mode = self.output.current_mode().unwrap();
-        let size = output_transform.transform_size(output_mode.size);
+        let scale = self.output.current_scale().fractional_scale();
+        let size = output_size(&self.output);
 
         match &self.workspace_switch {
             Some(switch) => {
@@ -889,7 +890,7 @@ impl<W: LayoutElement> Monitor<W> {
                 let before_idx = render_idx.floor();
                 let after_idx = render_idx.ceil();
 
-                let offset = ((render_idx - before_idx) * size.h as f64).round() as i32;
+                let offset = (render_idx - before_idx) * size.h;
 
                 if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
                     return vec![];
@@ -902,7 +903,7 @@ impl<W: LayoutElement> Monitor<W> {
                         Some(RelocateRenderElement::from_element(
                             CropRenderElement::from_element(
                                 elem,
-                                output_scale,
+                                scale,
                                 // HACK: crop to infinite bounds for all sides except the side
                                 // where the workspaces join,
                                 // otherwise it will cut pixel shaders and mess up
@@ -912,7 +913,7 @@ impl<W: LayoutElement> Monitor<W> {
                                     (i32::MAX / 2, i32::MAX / 2),
                                 ),
                             )?,
-                            (0, -offset + size.h),
+                            Point::from((0., -offset + size.h)).to_physical_precise_round(scale),
                             Relocate::Relative,
                         ))
                     });
@@ -932,13 +933,13 @@ impl<W: LayoutElement> Monitor<W> {
                     Some(RelocateRenderElement::from_element(
                         CropRenderElement::from_element(
                             elem,
-                            output_scale,
+                            scale,
                             Rectangle::from_extemities(
                                 (-i32::MAX / 2, -i32::MAX / 2),
-                                (i32::MAX / 2, size.h),
+                                (i32::MAX / 2, to_physical_precise_round(scale, size.h)),
                             ),
                         )?,
-                        (0, -offset),
+                        Point::from((0., -offset)).to_physical_precise_round(scale),
                         Relocate::Relative,
                     ))
                 });
@@ -953,7 +954,7 @@ impl<W: LayoutElement> Monitor<W> {
                         Some(RelocateRenderElement::from_element(
                             CropRenderElement::from_element(
                                 elem,
-                                output_scale,
+                                scale,
                                 // HACK: set infinite crop bounds due to a damage tracking bug
                                 // which causes glitched rendering for maximized GTK windows.
                                 // FIXME: use proper bounds after fixing the Crop element.

@@ -23,8 +23,10 @@ pub struct ShaderRenderElement {
     program: ProgramType,
     id: Id,
     commit_counter: CommitCounter,
-    area: Rectangle<i32, Logical>,
-    opaque_regions: Vec<Rectangle<i32, Logical>>,
+    area: Rectangle<f64, Logical>,
+    opaque_regions: Vec<Rectangle<f64, Logical>>,
+    // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
+    scale: f32,
     alpha: f32,
     additional_uniforms: Vec<Uniform<'static>>,
     textures: HashMap<String, GlesTexture>,
@@ -47,6 +49,7 @@ struct ShaderProgramInternal {
     uniform_tex_matrix: ffi::types::GLint,
     uniform_matrix: ffi::types::GLint,
     uniform_size: ffi::types::GLint,
+    uniform_scale: ffi::types::GLint,
     uniform_alpha: ffi::types::GLint,
     attrib_vert: ffi::types::GLint,
     attrib_vert_position: ffi::types::GLint,
@@ -78,6 +81,7 @@ unsafe fn compile_program(
     let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
     let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
     let size = CStr::from_bytes_with_nul(b"niri_size\0").expect("NULL terminated");
+    let scale = CStr::from_bytes_with_nul(b"niri_scale\0").expect("NULL terminated");
     let alpha = CStr::from_bytes_with_nul(b"niri_alpha\0").expect("NULL terminated");
     let tint = CStr::from_bytes_with_nul(b"niri_tint\0").expect("NULL terminated");
 
@@ -90,6 +94,8 @@ unsafe fn compile_program(
                 .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
             uniform_size: gl
                 .GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
+            uniform_scale: gl
+                .GetUniformLocation(program, scale.as_ptr() as *const ffi::types::GLchar),
             uniform_alpha: gl
                 .GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
             attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
@@ -131,6 +137,8 @@ unsafe fn compile_program(
             ),
             uniform_size: gl
                 .GetUniformLocation(debug_program, size.as_ptr() as *const ffi::types::GLchar),
+            uniform_scale: gl
+                .GetUniformLocation(debug_program, scale.as_ptr() as *const ffi::types::GLchar),
             uniform_alpha: gl
                 .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
             attrib_vert: gl
@@ -198,8 +206,10 @@ impl ShaderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         program: ProgramType,
-        size: Size<i32, Logical>,
-        opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
+        size: Size<f64, Logical>,
+        opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
+        // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
+        scale: f32,
         alpha: f32,
         uniforms: Vec<Uniform<'_>>,
         textures: HashMap<String, GlesTexture>,
@@ -209,8 +219,9 @@ impl ShaderRenderElement {
             program,
             id: Id::new(),
             commit_counter: CommitCounter::default(),
-            area: Rectangle::from_loc_and_size((0, 0), size),
+            area: Rectangle::from_loc_and_size((0., 0.), size),
             opaque_regions: opaque_regions.unwrap_or_default(),
+            scale,
             alpha,
             additional_uniforms: uniforms.into_iter().map(|u| u.into_owned()).collect(),
             textures,
@@ -225,6 +236,7 @@ impl ShaderRenderElement {
             commit_counter: CommitCounter::default(),
             area: Rectangle::default(),
             opaque_regions: vec![],
+            scale: 1.,
             alpha: 1.,
             additional_uniforms: vec![],
             textures: HashMap::new(),
@@ -238,20 +250,22 @@ impl ShaderRenderElement {
 
     pub fn update(
         &mut self,
-        size: Size<i32, Logical>,
-        opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
+        size: Size<f64, Logical>,
+        opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
+        scale: f32,
         uniforms: Vec<Uniform<'_>>,
         textures: HashMap<String, GlesTexture>,
     ) {
         self.area.size = size;
         self.opaque_regions = opaque_regions.unwrap_or_default();
+        self.scale = scale;
         self.additional_uniforms = uniforms.into_iter().map(|u| u.into_owned()).collect();
         self.textures = textures;
 
         self.commit_counter.increment();
     }
 
-    pub fn with_location(mut self, location: Point<i32, Logical>) -> Self {
+    pub fn with_location(mut self, location: Point<f64, Logical>) -> Self {
         self.area.loc = location;
         self
     }
@@ -277,7 +291,7 @@ impl Element for ShaderRenderElement {
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.opaque_regions
             .iter()
-            .map(|region| region.to_physical_precise_round(scale))
+            .map(|region| region.to_physical_precise_down(scale))
             .collect()
     }
 
@@ -297,6 +311,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         src: Rectangle<f64, Buffer>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         let frame = frame.as_gles_frame();
 
@@ -421,6 +436,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
                     tex_matrix.as_ref().as_ptr(),
                 );
                 gl.Uniform2f(program.uniform_size, dest.size.w as f32, dest.size.h as f32);
+                gl.Uniform1f(program.uniform_scale, self.scale);
                 gl.Uniform1f(program.uniform_alpha, self.alpha);
 
                 let tint = if has_tint { 1.0f32 } else { 0.0f32 };
@@ -526,10 +542,11 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ShaderRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
         let frame = frame.as_gles_frame();
 
-        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage)?;
+        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions)?;
 
         Ok(())
     }

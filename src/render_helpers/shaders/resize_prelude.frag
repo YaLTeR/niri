@@ -25,6 +25,7 @@ uniform vec4 niri_corner_radius;
 uniform float niri_clip_to_geometry;
 
 uniform float niri_alpha;
+uniform float niri_scale;
 
 float niri_rounding_alpha(vec2 coords, vec2 size) {
     vec2 center;
@@ -47,5 +48,6 @@ float niri_rounding_alpha(vec2 coords, vec2 size) {
     }
 
     float dist = distance(coords, center);
-    return 1.0 - smoothstep(radius - 0.5, radius + 0.5, dist);
+    float half_px = 0.5 / niri_scale;
+    return 1.0 - smoothstep(radius - half_px, radius + half_px, dist);
 }

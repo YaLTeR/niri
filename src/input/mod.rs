@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -990,7 +991,7 @@ impl State {
         // Check if we have an active pointer constraint.
         let mut pointer_confined = None;
         if let Some(focus) = &self.niri.pointer_focus.surface {
-            let pos_within_surface = pos.to_i32_round() - focus.1;
+            let pos_within_surface = pos - focus.1;
 
             let mut pointer_locked = false;
             with_pointer_constraint(&focus.0, &pointer, |constraint| {
@@ -1001,7 +1002,7 @@ impl State {
 
                 // Constraint does not apply if not within region.
                 if let Some(region) = constraint.region() {
-                    if !region.contains(pos_within_surface) {
+                    if !region.contains(pos_within_surface.to_i32_round()) {
                         return;
                     }
                 }
@@ -1065,16 +1066,16 @@ impl State {
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
-            let mut point = new_pos;
-            point.x = point
-                .x
-                .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
-            point.y = point
-                .y
-                .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
-            let point = (point - geom.loc.to_f64())
+            let mut point = (new_pos - geom.loc.to_f64())
                 .to_physical(output.current_scale().fractional_scale())
                 .to_i32_round();
+
+            let size = output.current_mode().unwrap().size;
+            let transform = output.current_transform();
+            let size = transform.transform_size(size);
+            point.x = min(size.w - 1, point.x);
+            point.y = min(size.h - 1, point.y);
+
             self.niri.screenshot_ui.pointer_motion(point);
         }
 
@@ -1091,8 +1092,8 @@ impl State {
 
             // Prevent the pointer from leaving the confine region, if any.
             if let Some(region) = region {
-                let new_pos_within_surface = new_pos.to_i32_round() - focus_surface.1;
-                if !region.contains(new_pos_within_surface) {
+                let new_pos_within_surface = new_pos - focus_surface.1;
+                if !region.contains(new_pos_within_surface.to_i32_round()) {
                     prevent = true;
                 }
             }
@@ -1162,16 +1163,16 @@ impl State {
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
-            let mut point = pos;
-            point.x = point
-                .x
-                .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
-            point.y = point
-                .y
-                .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
-            let point = (point - geom.loc.to_f64())
+            let mut point = (pos - geom.loc.to_f64())
                 .to_physical(output.current_scale().fractional_scale())
                 .to_i32_round();
+
+            let size = output.current_mode().unwrap().size;
+            let transform = output.current_transform();
+            let size = transform.transform_size(size);
+            point.x = min(size.w - 1, point.x);
+            point.y = min(size.h - 1, point.y);
+
             self.niri.screenshot_ui.pointer_motion(point);
         }
 
@@ -1333,18 +1334,16 @@ impl State {
             if let Some((output, _)) = self.niri.output_under(pos) {
                 let output = output.clone();
                 let geom = self.niri.global_space.output_geometry(&output).unwrap();
-                let mut point = pos;
-                // Re-clamp as pointer can be within 0.5 from the limit which will round up
-                // to a wrong value.
-                point.x = point
-                    .x
-                    .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
-                point.y = point
-                    .y
-                    .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
-                let point = (point - geom.loc.to_f64())
+                let mut point = (pos - geom.loc.to_f64())
                     .to_physical(output.current_scale().fractional_scale())
                     .to_i32_round();
+
+                let size = output.current_mode().unwrap().size;
+                let transform = output.current_transform();
+                let size = transform.transform_size(size);
+                point.x = min(size.w - 1, point.x);
+                point.y = min(size.h - 1, point.y);
+
                 if self
                     .niri
                     .screenshot_ui

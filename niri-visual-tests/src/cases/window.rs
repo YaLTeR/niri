@@ -47,7 +47,9 @@ impl TestCase for Window {
         size: Size<i32, Physical>,
     ) -> Vec<Box<dyn RenderElement<GlesRenderer>>> {
         let win_size = self.window.size().to_physical(1);
-        let location = Point::from(((size.w - win_size.w) / 2, (size.h - win_size.h) / 2));
+        let location = Point::from((size.w - win_size.w, size.h - win_size.h))
+            .to_f64()
+            .downscale(2.);
 
         self.window
             .render(

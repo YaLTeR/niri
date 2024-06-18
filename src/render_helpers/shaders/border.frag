@@ -5,6 +5,7 @@ uniform float niri_tint;
 #endif
 
 uniform float niri_alpha;
+uniform float niri_scale;
 
 uniform vec2 niri_size;
 varying vec2 niri_v_coords;
@@ -56,7 +57,8 @@ float rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius) {
     }
 
     float dist = distance(coords, center);
-    return 1.0 - smoothstep(radius - 0.5, radius + 0.5, dist);
+    float half_px = 0.5 / niri_scale;
+    return 1.0 - smoothstep(radius - half_px, radius + half_px, dist);
 }
 
 void main() {

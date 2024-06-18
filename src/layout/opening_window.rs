@@ -4,13 +4,12 @@ use std::time::Duration;
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::{Id, Kind, RenderElement};
+use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, Uniform};
-use smithay::backend::renderer::{Renderer as _, Texture};
+use smithay::backend::renderer::Texture;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::animation::Animation;
@@ -19,6 +18,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::render_to_encompassing_texture;
 use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 
 #[derive(Debug)]
 pub struct OpenAnimation {
@@ -55,8 +55,8 @@ impl OpenAnimation {
         &self,
         renderer: &mut GlesRenderer,
         elements: &[impl RenderElement<GlesRenderer>],
-        geo_size: Size<i32, Logical>,
-        location: Point<i32, Logical>,
+        geo_size: Size<f64, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
     ) -> anyhow::Result<OpeningWindowRenderElement> {
         let progress = self.anim.value();
@@ -75,17 +75,17 @@ impl OpenAnimation {
         let texture_size = geo.size.to_f64().to_logical(scale);
 
         if Shaders::get(renderer).program(ProgramType::Open).is_some() {
-            let mut area = Rectangle::from_loc_and_size(location.to_f64() + offset, texture_size);
+            let mut area = Rectangle::from_loc_and_size(location + offset, texture_size);
 
             // Expand the area a bit to allow for more varied effects.
             let mut target_size = area.size.upscale(1.5);
             target_size.w = f64::max(area.size.w + 1000., target_size.w);
             target_size.h = f64::max(area.size.h + 1000., target_size.h);
-            let diff = target_size.to_point() - area.size.to_point();
-            area.loc -= diff.downscale(2.);
-            area.size += diff.to_size();
+            let diff = (target_size.to_point() - area.size.to_point()).downscale(2.);
+            let diff = diff.to_physical_precise_round(scale).to_logical(scale);
+            area.loc -= diff;
+            area.size += diff.upscale(2.).to_size();
 
-            let area = area.to_i32_up();
             let area_loc = Vec2::new(area.loc.x as f32, area.loc.y as f32);
             let area_size = Vec2::new(area.size.w as f32, area.size.h as f32);
 
@@ -106,6 +106,7 @@ impl OpenAnimation {
                 ProgramType::Open,
                 area.size,
                 None,
+                scale.x as f32,
                 1.,
                 vec![
                     mat3_uniform("niri_input_to_geo", input_to_geo),
@@ -122,15 +123,12 @@ impl OpenAnimation {
             .into());
         }
 
-        let elem = TextureRenderElement::from_static_texture(
-            Id::new(),
-            renderer.id(),
+        let buffer =
+            TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, Vec::new());
+        let elem = TextureRenderElement::from_texture_buffer(
+            buffer,
             Point::from((0., 0.)),
-            texture.clone(),
-            scale.x as i32,
-            Transform::Normal,
-            Some(clamped_progress as f32),
-            None,
+            clamped_progress as f32,
             None,
             None,
             Kind::Unspecified,
@@ -138,7 +136,7 @@ impl OpenAnimation {
 
         let elem = PrimaryGpuTextureRenderElement(elem);
 
-        let center = geo_size.to_point().to_f64().downscale(2.);
+        let center = geo_size.to_point().downscale(2.);
         let elem = RescaleRenderElement::from_element(
             elem,
             (center - offset).to_physical_precise_round(scale),
@@ -147,7 +145,7 @@ impl OpenAnimation {
 
         let elem = RelocateRenderElement::from_element(
             elem,
-            (location.to_f64() + offset).to_physical_precise_round(scale),
+            (location + offset).to_physical_precise_round(scale),
             Relocate::Relative,
         );
 

@@ -1,18 +1,19 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{Alignment, FontDescription};
-use smithay::backend::renderer::element::memory::{
-    MemoryRenderBuffer, MemoryRenderBufferRenderElement,
-};
-use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::{Element, Kind};
+use smithay::backend::renderer::element::Kind;
 use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::Transform;
 
+use crate::render_helpers::memory::MemoryBuffer;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
+use crate::utils::{output_size, to_physical_precise_round};
 
 const TEXT: &str = "Are you sure you want to exit niri?\n\n\
                     Press <span face='mono' bgcolor='#2C2C2C'> Enter </span> to confirm.";
@@ -22,17 +23,17 @@ const BORDER: i32 = 8;
 
 pub struct ExitConfirmDialog {
     is_open: bool,
-    buffers: RefCell<HashMap<i32, Option<MemoryRenderBuffer>>>,
+    buffers: RefCell<HashMap<NotNan<f64>, Option<MemoryBuffer>>>,
 }
-
-pub type ExitConfirmDialogRenderElement<R> =
-    RelocateRenderElement<MemoryRenderBufferRenderElement<R>>;
 
 impl ExitConfirmDialog {
     pub fn new() -> anyhow::Result<Self> {
         Ok(Self {
             is_open: false,
-            buffers: RefCell::new(HashMap::from([(1, Some(render(1)?))])),
+            buffers: RefCell::new(HashMap::from([(
+                NotNan::new(1.).unwrap(),
+                Some(render(1.)?),
+            )])),
         })
     }
 
@@ -62,52 +63,48 @@ impl ExitConfirmDialog {
         &self,
         renderer: &mut R,
         output: &Output,
-    ) -> Option<ExitConfirmDialogRenderElement<R>> {
+    ) -> Option<PrimaryGpuTextureRenderElement> {
         if !self.is_open {
             return None;
         }
 
-        let scale = output.current_scale().integer_scale();
+        let scale = output.current_scale().fractional_scale();
+        let output_size = output_size(output);
 
         let mut buffers = self.buffers.borrow_mut();
-        let fallback = buffers[&1].clone().unwrap();
-        let buffer = buffers.entry(scale).or_insert_with(|| render(scale).ok());
+        let fallback = buffers[&NotNan::new(1.).unwrap()].clone().unwrap();
+        let buffer = buffers
+            .entry(NotNan::new(scale).unwrap())
+            .or_insert_with(|| render(scale).ok());
         let buffer = buffer.as_ref().unwrap_or(&fallback);
 
-        let elem = MemoryRenderBufferRenderElement::from_buffer(
-            renderer,
-            (0., 0.),
+        let size = buffer.logical_size();
+        let buffer = TextureBuffer::from_memory_buffer(renderer.as_gles_renderer(), buffer).ok()?;
+
+        let location = (output_size.to_f64().to_point() - size.to_point()).downscale(2.);
+        let mut location = location.to_physical_precise_round(scale).to_logical(scale);
+        location.x = f64::max(0., location.x);
+        location.y = f64::max(0., location.y);
+
+        let elem = TextureRenderElement::from_texture_buffer(
             buffer,
-            None,
+            location,
+            1.,
             None,
             None,
             Kind::Unspecified,
-        )
-        .ok()?;
-
-        let output_transform = output.current_transform();
-        let output_mode = output.current_mode().unwrap();
-        let output_size = output_transform.transform_size(output_mode.size);
-
-        let buffer_size = elem
-            .geometry(output.current_scale().fractional_scale().into())
-            .size;
-
-        let x = (output_size.w / 2 - buffer_size.w / 2).max(0);
-        let y = (output_size.h / 2 - buffer_size.h / 2).max(0);
-        let elem = RelocateRenderElement::from_element(elem, (x, y), Relocate::Absolute);
-
-        Some(elem)
+        );
+        Some(PrimaryGpuTextureRenderElement(elem))
     }
 }
 
-fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
+fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     let _span = tracy_client::span!("exit_confirm_dialog::render");
 
-    let padding = PADDING * scale;
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
 
     let mut font = FontDescription::from_string(FONT);
-    font.set_absolute_size((font.size() * scale).into());
+    font.set_absolute_size(to_physical_precise_round(scale, font.size()));
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
@@ -119,10 +116,6 @@ fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
     let (mut width, mut height) = layout.pixel_size();
     width += padding * 2;
     height += padding * 2;
-
-    // FIXME: fix bug in Smithay that rounds pixel sizes down to scale.
-    width = (width + scale - 1) / scale * scale;
-    height = (height + scale - 1) / scale * scale;
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
     let cr = cairo::Context::new(&surface)?;
@@ -144,18 +137,18 @@ fn render(scale: i32) -> anyhow::Result<MemoryRenderBuffer> {
     cr.line_to(0., height.into());
     cr.line_to(0., 0.);
     cr.set_source_rgb(1., 0.3, 0.3);
-    cr.set_line_width((BORDER * scale).into());
+    // Keep the border width even to avoid blurry edges.
+    cr.set_line_width((f64::from(BORDER) / 2. * scale).round() * 2.);
     cr.stroke()?;
     drop(cr);
 
     let data = surface.take_data().unwrap();
-    let buffer = MemoryRenderBuffer::from_slice(
-        &data,
+    let buffer = MemoryBuffer::new(
+        data.to_vec(),
         Fourcc::Argb8888,
         (width, height),
         scale,
         Transform::Normal,
-        None,
     );
 
     Ok(buffer)

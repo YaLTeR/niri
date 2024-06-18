@@ -34,25 +34,25 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, Config, Struts, Workspace as WorkspaceConfig};
+use niri_config::{CenterFocusedColumn, Config, FloatOrInt, Struts, Workspace as WorkspaceConfig};
 use niri_ipc::SizeChange;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::output::Output;
+use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
 
-use self::monitor::Monitor;
 pub use self::monitor::MonitorRenderElement;
+use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
+use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
-use crate::utils::{output_size, ResizeEdge};
+use crate::utils::{output_size, round_logical_in_physical_max1, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
@@ -63,7 +63,7 @@ pub mod tile;
 pub mod workspace;
 
 /// Size changes up to this many pixels don't animate.
-pub const RESIZE_ANIMATION_THRESHOLD: i32 = 10;
+pub const RESIZE_ANIMATION_THRESHOLD: f64 = 10.;
 
 niri_render_elements! {
     LayoutElementRenderElement<R> => {
@@ -110,7 +110,7 @@ pub trait LayoutElement {
     fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        location: Point<i32, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
@@ -120,7 +120,7 @@ pub trait LayoutElement {
     fn render_normal<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        location: Point<i32, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
@@ -132,7 +132,7 @@ pub trait LayoutElement {
     fn render_popups<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        location: Point<i32, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
@@ -146,7 +146,7 @@ pub trait LayoutElement {
     fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
     fn has_ssd(&self) -> bool;
-    fn set_preferred_scale_transform(&self, scale: i32, transform: Transform);
+    fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform);
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
     fn set_offscreen_element_id(&self, id: Option<Id>);
@@ -206,10 +206,10 @@ enum MonitorSet<W: LayoutElement> {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Options {
     /// Padding around windows in logical pixels.
-    pub gaps: i32,
+    pub gaps: f64,
     /// Extra padding around the working area in logical pixels.
     pub struts: Struts,
     pub focus_ring: niri_config::FocusRing,
@@ -225,7 +225,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            gaps: 16,
+            gaps: 16.,
             struts: Default::default(),
             focus_ring: Default::default(),
             border: Default::default(),
@@ -265,7 +265,7 @@ impl Options {
             .unwrap_or(Some(ColumnWidth::Proportion(0.5)));
 
         Self {
-            gaps: layout.gaps.into(),
+            gaps: layout.gaps.0,
             struts: layout.struts,
             focus_ring: layout.focus_ring,
             border: layout.border,
@@ -274,6 +274,16 @@ impl Options {
             default_width,
             animations: config.animations.clone(),
         }
+    }
+
+    fn adjusted_for_scale(mut self, scale: f64) -> Self {
+        let round = |logical: f64| round_logical_in_physical_max1(scale, logical);
+
+        self.gaps = round(self.gaps);
+        self.focus_ring.width = FloatOrInt(round(self.focus_ring.width.0));
+        self.border.width = FloatOrInt(round(self.border.width.0));
+
+        self
     }
 }
 
@@ -486,12 +496,12 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
         if let ColumnWidth::Fixed(w) = &mut width {
             let rules = window.rules();
             let border_config = rules.border.resolve_against(self.options.border);
             if !border_config.off {
-                *w += border_config.width as i32 * 2;
+                *w += border_config.width.0 * 2.;
             }
         }
 
@@ -575,12 +585,12 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
         if let ColumnWidth::Fixed(w) = &mut width {
             let rules = window.rules();
             let border_config = rules.border.resolve_against(self.options.border);
             if !border_config.off {
-                *w += border_config.width as i32 * 2;
+                *w += border_config.width.0 * 2.;
             }
         }
 
@@ -633,12 +643,12 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
         if let ColumnWidth::Fixed(w) = &mut width {
             let rules = window.rules();
             let border_config = rules.border.resolve_against(self.options.border);
             if !border_config.off {
-                *w += border_config.width as i32 * 2;
+                *w += border_config.width.0 * 2.;
             }
         }
 
@@ -671,12 +681,12 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(window.size().w));
+        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
         if let ColumnWidth::Fixed(w) = &mut width {
             let rules = window.rules();
             let border_config = rules.border.resolve_against(self.options.border);
             if !border_config.off {
-                *w += border_config.width as i32 * 2;
+                *w += border_config.width.0 * 2.;
             }
         }
 
@@ -887,7 +897,7 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn window_loc(&self, window: &W::Id) -> Option<Point<i32, Logical>> {
+    pub fn window_loc(&self, window: &W::Id) -> Option<Point<f64, Logical>> {
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -923,12 +933,13 @@ impl<W: LayoutElement> Layout<W> {
 
         for mon in monitors {
             if &mon.output == output {
+                let scale = output.current_scale();
+                let transform = output.current_transform();
                 let view_size = output_size(output);
                 let working_area = compute_working_area(output, self.options.struts);
 
                 for ws in &mut mon.workspaces {
-                    ws.set_view_size(view_size, working_area);
-                    ws.update_output_scale_transform();
+                    ws.set_view_size(scale, transform, view_size, working_area);
                 }
 
                 break;
@@ -952,9 +963,13 @@ impl<W: LayoutElement> Layout<W> {
                     *active_monitor_idx = monitor_idx;
                     ws.activate_window(window);
 
-                    // Switch to that workspace if not already during a transition.
-                    if mon.workspace_switch.is_none() {
-                        mon.switch_workspace(workspace_idx);
+                    // If currently in the middle of a vertical swipe between the target workspace
+                    // and some other, don't switch the workspace.
+                    match &mon.workspace_switch {
+                        Some(WorkspaceSwitch::Gesture(gesture))
+                            if gesture.current_idx.floor() == workspace_idx as f64
+                                || gesture.current_idx.ceil() == workspace_idx as f64 => {}
+                        _ => mon.switch_workspace(workspace_idx, true),
                     }
 
                     break;
@@ -1377,7 +1392,7 @@ impl<W: LayoutElement> Layout<W> {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace(idx);
+        monitor.switch_workspace(idx, false);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
@@ -1439,7 +1454,7 @@ impl<W: LayoutElement> Layout<W> {
         &self,
         output: &Output,
         pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<i32, Logical>>)> {
+    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
         };
@@ -1484,8 +1499,15 @@ impl<W: LayoutElement> Layout<W> {
                     );
 
                     assert_eq!(
-                        workspace.options, self.options,
-                        "workspace options must be synchronized with layout"
+                        workspace.base_options, self.options,
+                        "workspace base options must be synchronized with layout"
+                    );
+
+                    let options = Options::clone(&workspace.base_options)
+                        .adjusted_for_scale(workspace.scale().fractional_scale());
+                    assert_eq!(
+                        &*workspace.options, &options,
+                        "workspace options must be base options adjusted for workspace scale"
                     );
 
                     assert!(
@@ -1588,8 +1610,15 @@ impl<W: LayoutElement> Layout<W> {
 
             for workspace in &monitor.workspaces {
                 assert_eq!(
-                    workspace.options, self.options,
+                    workspace.base_options, self.options,
                     "workspace options must be synchronized with layout"
+                );
+
+                let options = Options::clone(&workspace.base_options)
+                    .adjusted_for_scale(workspace.scale().fractional_scale());
+                assert_eq!(
+                    &*workspace.options, &options,
+                    "workspace options must be base options adjusted for workspace scale"
                 );
 
                 assert!(
@@ -2367,13 +2396,14 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
 mod tests {
     use std::cell::Cell;
 
-    use niri_config::WorkspaceName;
+    use niri_config::{FloatOrInt, WorkspaceName};
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use smithay::output::{Mode, PhysicalProperties, Subpixel};
     use smithay::utils::Rectangle;
 
     use super::*;
+    use crate::utils::round_logical_in_physical;
 
     impl<W: LayoutElement> Default for Layout<W> {
         fn default() -> Self {
@@ -2458,7 +2488,7 @@ mod tests {
         fn render<R: NiriRenderer>(
             &self,
             _renderer: &mut R,
-            _location: Point<i32, Logical>,
+            _location: Point<f64, Logical>,
             _scale: Scale<f64>,
             _alpha: f32,
             _target: RenderTarget,
@@ -2487,7 +2517,7 @@ mod tests {
             false
         }
 
-        fn set_preferred_scale_transform(&self, _scale: i32, _transform: Transform) {}
+        fn set_preferred_scale_transform(&self, _scale: output::Scale, _transform: Transform) {}
 
         fn has_ssd(&self) -> bool {
             false
@@ -2594,9 +2624,19 @@ mod tests {
         ]
     }
 
+    fn arbitrary_scale() -> impl Strategy<Value = f64> {
+        prop_oneof![Just(1.), Just(1.5), Just(2.),]
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
+        AddScaledOutput {
+            #[proptest(strategy = "1..=5usize")]
+            id: usize,
+            #[proptest(strategy = "arbitrary_scale()")]
+            scale: f64,
+        },
         RemoveOutput(#[proptest(strategy = "1..=5usize")] usize),
         FocusOutput(#[proptest(strategy = "1..=5usize")] usize),
         AddNamedWorkspace {
@@ -2764,6 +2804,32 @@ mod tests {
                         }),
                         None,
                         None,
+                        None,
+                    );
+                    layout.add_output(output.clone());
+                }
+                Op::AddScaledOutput { id, scale } => {
+                    let name = format!("output{id}");
+                    if layout.outputs().any(|o| o.name() == name) {
+                        return;
+                    }
+
+                    let output = Output::new(
+                        name,
+                        PhysicalProperties {
+                            size: Size::from((1280, 720)),
+                            subpixel: Subpixel::Unknown,
+                            make: String::new(),
+                            model: String::new(),
+                        },
+                    );
+                    output.change_current_state(
+                        Some(Mode {
+                            size: Size::from((1280, 720)),
+                            refresh: 60000,
+                        }),
+                        None,
+                        Some(smithay::output::Scale::Fractional(scale)),
                         None,
                     );
                     layout.add_output(output.clone());
@@ -3559,7 +3625,7 @@ mod tests {
 
         let mut options = Options::default();
         options.border.off = false;
-        options.border.width = 1;
+        options.border.width = FloatOrInt(1.);
 
         check_ops_with_options(options, &ops);
     }
@@ -3577,7 +3643,7 @@ mod tests {
 
         let mut options = Options::default();
         options.border.off = false;
-        options.border.width = 1;
+        options.border.width = FloatOrInt(1.);
 
         check_ops_with_options(options, &ops);
     }
@@ -3911,12 +3977,98 @@ mod tests {
         assert_eq!(workspaces.len(), 2);
     }
 
-    fn arbitrary_spacing() -> impl Strategy<Value = u16> {
+    #[test]
+    fn config_change_updates_cached_sizes() {
+        let mut config = Config::default();
+        config.layout.border.off = false;
+        config.layout.border.width = FloatOrInt(2.);
+
+        let mut layout = Layout::new(&config);
+
+        Op::AddWindow {
+            id: 1,
+            bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
+            min_max_size: Default::default(),
+        }
+        .apply(&mut layout);
+
+        config.layout.border.width = FloatOrInt(4.);
+        layout.update_config(&config);
+
+        layout.verify_invariants();
+    }
+
+    #[test]
+    fn working_area_starts_at_physical_pixel() {
+        let struts = Struts {
+            left: FloatOrInt(0.5),
+            right: FloatOrInt(1.),
+            top: FloatOrInt(0.75),
+            bottom: FloatOrInt(1.),
+        };
+
+        let output = Output::new(
+            String::from("output"),
+            PhysicalProperties {
+                size: Size::from((1280, 720)),
+                subpixel: Subpixel::Unknown,
+                make: String::new(),
+                model: String::new(),
+            },
+        );
+        output.change_current_state(
+            Some(Mode {
+                size: Size::from((1280, 720)),
+                refresh: 60000,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        let area = compute_working_area(&output, struts);
+
+        assert_eq!(round_logical_in_physical(1., area.loc.x), area.loc.x);
+        assert_eq!(round_logical_in_physical(1., area.loc.y), area.loc.y);
+    }
+
+    #[test]
+    fn large_fractional_strut() {
+        let struts = Struts {
+            left: FloatOrInt(0.),
+            right: FloatOrInt(0.),
+            top: FloatOrInt(50000.5),
+            bottom: FloatOrInt(0.),
+        };
+
+        let output = Output::new(
+            String::from("output"),
+            PhysicalProperties {
+                size: Size::from((1280, 720)),
+                subpixel: Subpixel::Unknown,
+                make: String::new(),
+                model: String::new(),
+            },
+        );
+        output.change_current_state(
+            Some(Mode {
+                size: Size::from((1280, 720)),
+                refresh: 60000,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        compute_working_area(&output, struts);
+    }
+
+    fn arbitrary_spacing() -> impl Strategy<Value = f64> {
         // Give equal weight to:
         // - 0: the element is disabled
         // - 4: some reasonable value
         // - random value, likely unreasonably big
-        prop_oneof![Just(0), Just(4), (1..=u16::MAX)]
+        prop_oneof![Just(0.), Just(4.), ((1.)..=65535.)]
     }
 
     fn arbitrary_struts() -> impl Strategy<Value = Struts> {
@@ -3927,10 +4079,10 @@ mod tests {
             arbitrary_spacing(),
         )
             .prop_map(|(left, right, top, bottom)| Struts {
-                left,
-                right,
-                top,
-                bottom,
+                left: FloatOrInt(left),
+                right: FloatOrInt(right),
+                top: FloatOrInt(top),
+                bottom: FloatOrInt(bottom),
             })
     }
 
@@ -3949,7 +4101,7 @@ mod tests {
         ) -> niri_config::FocusRing {
             niri_config::FocusRing {
                 off,
-                width,
+                width: FloatOrInt(width),
                 ..Default::default()
             }
         }
@@ -3962,7 +4114,7 @@ mod tests {
         ) -> niri_config::Border {
             niri_config::Border {
                 off,
-                width,
+                width: FloatOrInt(width),
                 ..Default::default()
             }
         }
@@ -3977,7 +4129,7 @@ mod tests {
             center_focused_column in arbitrary_center_focused_column(),
         ) -> Options {
             Options {
-                gaps: gaps.into(),
+                gaps,
                 struts,
                 center_focused_column,
                 focus_ring,
