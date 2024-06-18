@@ -72,6 +72,10 @@ Set the scale of the monitor.
 
 <sup>Since: 0.1.7</sup> You can use fractional scale values, for example `scale 1.5` for 150% scale.
 
+<sup>Since: 0.1.7</sup> Dot is no longer needed for integer scale, for example you can write `scale 2` instead of `scale 2.0`.
+
+<sup>Since: 0.1.7</sup> Scale below 0 and above 10 will now fail during config parsing. Scale was previously clamped to these values anyway.
+
 ```
 output "eDP-1" {
     scale 2.0

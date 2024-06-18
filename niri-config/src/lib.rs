@@ -298,7 +298,7 @@ pub struct Output {
     #[knuffel(argument)]
     pub name: String,
     #[knuffel(child, unwrap(argument))]
-    pub scale: Option<f64>,
+    pub scale: Option<FloatOrInt<0, 10>>,
     #[knuffel(child, unwrap(argument, str), default = Transform::Normal)]
     pub transform: Transform,
     #[knuffel(child)]
@@ -2462,7 +2462,7 @@ mod tests {
             }
 
             output "eDP-1" {
-                scale 2.0
+                scale 2
                 transform "flipped-90"
                 position x=10 y=20
                 mode "1920x1080@144"
@@ -2636,7 +2636,7 @@ mod tests {
                 outputs: vec![Output {
                     off: false,
                     name: "eDP-1".to_owned(),
-                    scale: Some(2.),
+                    scale: Some(FloatOrInt(2.)),
                     transform: Transform::Flipped90,
                     position: Some(Position { x: 10, y: 20 }),
                     mode: Some(ConfiguredMode {

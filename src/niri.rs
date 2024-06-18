@@ -11,7 +11,9 @@ use std::{env, mem, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
-use niri_config::{Config, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference};
+use niri_config::{
+    Config, FloatOrInt, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference,
+};
 use niri_ipc::Workspace;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -1048,11 +1050,14 @@ impl State {
                 .iter()
                 .find(|o| o.name.eq_ignore_ascii_case(&name));
 
-            let scale = config.and_then(|c| c.scale).unwrap_or_else(|| {
-                let size_mm = output.physical_properties().size;
-                let resolution = output.current_mode().unwrap().size;
-                guess_monitor_scale(size_mm, resolution)
-            });
+            let scale = config
+                .and_then(|c| c.scale)
+                .map(|s| s.0)
+                .unwrap_or_else(|| {
+                    let size_mm = output.physical_properties().size;
+                    let resolution = output.current_mode().unwrap().size;
+                    guess_monitor_scale(size_mm, resolution)
+                });
             let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
             let mut transform = config
@@ -1118,7 +1123,7 @@ impl State {
                 niri_ipc::OutputAction::Scale { scale } => {
                     config.scale = match scale {
                         niri_ipc::ScaleToSet::Automatic => None,
-                        niri_ipc::ScaleToSet::Specific(scale) => Some(scale),
+                        niri_ipc::ScaleToSet::Specific(scale) => Some(FloatOrInt(scale)),
                     }
                 }
                 niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
@@ -1731,7 +1736,7 @@ impl Niri {
             .outputs
             .iter()
             .find(|o| o.name.eq_ignore_ascii_case(&name));
-        let scale = c.and_then(|c| c.scale).unwrap_or_else(|| {
+        let scale = c.and_then(|c| c.scale).map(|s| s.0).unwrap_or_else(|| {
             let size_mm = output.physical_properties().size;
             let resolution = output.current_mode().unwrap().size;
             guess_monitor_scale(size_mm, resolution)
