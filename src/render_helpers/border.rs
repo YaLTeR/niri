@@ -34,6 +34,8 @@ struct Parameters {
     geometry: Rectangle<f64, Logical>,
     border_width: f32,
     corner_radius: CornerRadius,
+    // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
+    scale: f32,
 }
 
 impl BorderRenderElement {
@@ -47,6 +49,7 @@ impl BorderRenderElement {
         geometry: Rectangle<f64, Logical>,
         border_width: f32,
         corner_radius: CornerRadius,
+        scale: f32,
     ) -> Self {
         let inner = ShaderRenderElement::empty(ProgramType::Border, Kind::Unspecified);
         let mut rv = Self {
@@ -60,6 +63,7 @@ impl BorderRenderElement {
                 geometry,
                 border_width,
                 corner_radius,
+                scale,
             },
         };
         rv.update_inner();
@@ -79,6 +83,7 @@ impl BorderRenderElement {
                 geometry: Default::default(),
                 border_width: 0.,
                 corner_radius: Default::default(),
+                scale: 1.,
             },
         }
     }
@@ -98,6 +103,7 @@ impl BorderRenderElement {
         geometry: Rectangle<f64, Logical>,
         border_width: f32,
         corner_radius: CornerRadius,
+        scale: f32,
     ) {
         let params = Parameters {
             size,
@@ -108,6 +114,7 @@ impl BorderRenderElement {
             geometry,
             border_width,
             corner_radius,
+            scale,
         };
         if self.params == params {
             return;
@@ -127,6 +134,7 @@ impl BorderRenderElement {
             geometry,
             border_width,
             corner_radius,
+            scale,
         } = self.params;
 
         let grad_offset = geometry.loc - gradient_area.loc;
@@ -157,6 +165,7 @@ impl BorderRenderElement {
         self.inner.update(
             size,
             None,
+            scale,
             vec![
                 Uniform::new("color_from", color_from),
                 Uniform::new("color_to", color_to),

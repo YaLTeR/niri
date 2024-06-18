@@ -55,6 +55,7 @@ impl Shaders {
             .compile_custom_texture_shader(
                 include_str!("clipped_surface.frag"),
                 &[
+                    UniformName::new("niri_scale", UniformType::_1f),
                     UniformName::new("geo_size", UniformType::_2f),
                     UniformName::new("corner_radius", UniformType::_4f),
                     UniformName::new("input_to_geo", UniformType::Matrix3x3),

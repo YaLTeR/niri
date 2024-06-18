@@ -20,6 +20,8 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     corner_radius: CornerRadius,
     geometry: Rectangle<f64, Logical>,
     input_to_geo: Mat3,
+    // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
+    scale: f32,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -76,6 +78,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             corner_radius,
             geometry,
             input_to_geo,
+            scale: scale.x as f32,
         }
     }
 
@@ -220,6 +223,7 @@ impl RenderElement<GlesRenderer> for ClippedSurfaceRenderElement<GlesRenderer> {
         frame.override_default_tex_program(
             self.program.clone(),
             vec![
+                Uniform::new("niri_scale", self.scale),
                 Uniform::new(
                     "geo_size",
                     (self.geometry.size.w as f32, self.geometry.size.h as f32),

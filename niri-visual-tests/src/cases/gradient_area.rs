@@ -110,6 +110,7 @@ impl TestCase for GradientArea {
                 Rectangle::from_loc_and_size((0, 0), rect_size).to_f64(),
                 0.,
                 CornerRadius::default(),
+                1.,
             )
             .with_location(area.loc)]
             .into_iter()

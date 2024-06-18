@@ -87,6 +87,7 @@ impl ResizeRenderElement {
                 ProgramType::Resize,
                 area.size,
                 None,
+                scale.x,
                 result_alpha,
                 vec![
                     mat3_uniform("niri_input_to_curr_geo", input_to_curr_geo),

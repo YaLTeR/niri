@@ -184,6 +184,7 @@ impl FocusRing {
                     Rectangle::from_loc_and_size(full_rect.loc - loc, full_rect.size),
                     rounded_corner_border_width,
                     radius,
+                    scale as f32,
                 );
             }
         } else {
@@ -203,6 +204,7 @@ impl FocusRing {
                 Rectangle::from_loc_and_size(full_rect.loc - self.locations[0], full_rect.size),
                 rounded_corner_border_width,
                 radius,
+                scale as f32,
             );
         }
 

@@ -25,6 +25,8 @@ pub struct ShaderRenderElement {
     commit_counter: CommitCounter,
     area: Rectangle<f64, Logical>,
     opaque_regions: Vec<Rectangle<f64, Logical>>,
+    // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
+    scale: f32,
     alpha: f32,
     additional_uniforms: Vec<Uniform<'static>>,
     textures: HashMap<String, GlesTexture>,
@@ -47,6 +49,7 @@ struct ShaderProgramInternal {
     uniform_tex_matrix: ffi::types::GLint,
     uniform_matrix: ffi::types::GLint,
     uniform_size: ffi::types::GLint,
+    uniform_scale: ffi::types::GLint,
     uniform_alpha: ffi::types::GLint,
     attrib_vert: ffi::types::GLint,
     attrib_vert_position: ffi::types::GLint,
@@ -78,6 +81,7 @@ unsafe fn compile_program(
     let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
     let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
     let size = CStr::from_bytes_with_nul(b"niri_size\0").expect("NULL terminated");
+    let scale = CStr::from_bytes_with_nul(b"niri_scale\0").expect("NULL terminated");
     let alpha = CStr::from_bytes_with_nul(b"niri_alpha\0").expect("NULL terminated");
     let tint = CStr::from_bytes_with_nul(b"niri_tint\0").expect("NULL terminated");
 
@@ -90,6 +94,8 @@ unsafe fn compile_program(
                 .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
             uniform_size: gl
                 .GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
+            uniform_scale: gl
+                .GetUniformLocation(program, scale.as_ptr() as *const ffi::types::GLchar),
             uniform_alpha: gl
                 .GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
             attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
@@ -131,6 +137,8 @@ unsafe fn compile_program(
             ),
             uniform_size: gl
                 .GetUniformLocation(debug_program, size.as_ptr() as *const ffi::types::GLchar),
+            uniform_scale: gl
+                .GetUniformLocation(debug_program, scale.as_ptr() as *const ffi::types::GLchar),
             uniform_alpha: gl
                 .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
             attrib_vert: gl
@@ -200,6 +208,8 @@ impl ShaderRenderElement {
         program: ProgramType,
         size: Size<f64, Logical>,
         opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
+        // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
+        scale: f32,
         alpha: f32,
         uniforms: Vec<Uniform<'_>>,
         textures: HashMap<String, GlesTexture>,
@@ -211,6 +221,7 @@ impl ShaderRenderElement {
             commit_counter: CommitCounter::default(),
             area: Rectangle::from_loc_and_size((0., 0.), size),
             opaque_regions: opaque_regions.unwrap_or_default(),
+            scale,
             alpha,
             additional_uniforms: uniforms.into_iter().map(|u| u.into_owned()).collect(),
             textures,
@@ -225,6 +236,7 @@ impl ShaderRenderElement {
             commit_counter: CommitCounter::default(),
             area: Rectangle::default(),
             opaque_regions: vec![],
+            scale: 1.,
             alpha: 1.,
             additional_uniforms: vec![],
             textures: HashMap::new(),
@@ -240,11 +252,13 @@ impl ShaderRenderElement {
         &mut self,
         size: Size<f64, Logical>,
         opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
+        scale: f32,
         uniforms: Vec<Uniform<'_>>,
         textures: HashMap<String, GlesTexture>,
     ) {
         self.area.size = size;
         self.opaque_regions = opaque_regions.unwrap_or_default();
+        self.scale = scale;
         self.additional_uniforms = uniforms.into_iter().map(|u| u.into_owned()).collect();
         self.textures = textures;
 
@@ -422,6 +436,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
                     tex_matrix.as_ref().as_ptr(),
                 );
                 gl.Uniform2f(program.uniform_size, dest.size.w as f32, dest.size.h as f32);
+                gl.Uniform1f(program.uniform_scale, self.scale);
                 gl.Uniform1f(program.uniform_alpha, self.alpha);
 
                 let tint = if has_tint { 1.0f32 } else { 0.0f32 };

@@ -164,6 +164,7 @@ impl ClosingWindow {
                 ProgramType::Close,
                 view_rect.size,
                 None,
+                scale.x as f32,
                 1.,
                 vec![
                     mat3_uniform("niri_input_to_geo", input_to_geo),

@@ -763,6 +763,7 @@ impl<W: LayoutElement> Tile<W> {
                             Rectangle::from_loc_and_size((0., 0.), geo.size),
                             0.,
                             radius,
+                            scale.x as f32,
                         )
                         .with_location(geo.loc)
                         .into();

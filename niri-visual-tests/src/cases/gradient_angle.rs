@@ -70,6 +70,7 @@ impl TestCase for GradientAngle {
             Rectangle::from_loc_and_size((0., 0.), area.size),
             0.,
             CornerRadius::default(),
+            1.,
         )
         .with_location(area.loc)]
         .into_iter()
