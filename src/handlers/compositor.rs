@@ -8,9 +8,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
-    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, send_surface_state,
-    with_states, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
-    SurfaceAttributes,
+    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
+    BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
@@ -19,6 +18,7 @@ use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::niri::{ClientState, State};
+use crate::utils::send_scale_transform;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
 impl CompositorHandler for State {
@@ -37,10 +37,10 @@ impl CompositorHandler for State {
         }
 
         if let Some(output) = self.niri.output_for_root(&root) {
-            let scale = output.current_scale().integer_scale();
+            let scale = output.current_scale();
             let transform = output.current_transform();
             with_states(surface, |data| {
-                send_surface_state(surface, data, scale, transform);
+                send_scale_transform(surface, data, scale, transform);
             });
         }
     }
@@ -132,7 +132,7 @@ impl CompositorHandler for State {
                             let output =
                                 output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
 
-                            // Chech that the workspace still exists.
+                            // Check that the workspace still exists.
                             let workspace_name = workspace_name
                                 .filter(|n| self.niri.layout.find_workspace_by_name(n).is_some());
 

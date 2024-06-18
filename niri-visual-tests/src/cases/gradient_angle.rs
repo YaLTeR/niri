@@ -59,17 +59,18 @@ impl TestCase for GradientAngle {
     ) -> Vec<Box<dyn RenderElement<GlesRenderer>>> {
         let (a, b) = (size.w / 4, size.h / 4);
         let size = (size.w - a * 2, size.h - b * 2);
-        let area = Rectangle::from_loc_and_size((a, b), size);
+        let area = Rectangle::from_loc_and_size((a, b), size).to_f64();
 
         [BorderRenderElement::new(
             area.size,
-            Rectangle::from_loc_and_size((0, 0), area.size),
+            Rectangle::from_loc_and_size((0., 0.), area.size),
             [1., 0., 0., 1.],
             [0., 1., 0., 1.],
             self.angle - FRAC_PI_2,
-            Rectangle::from_loc_and_size((0, 0), area.size),
+            Rectangle::from_loc_and_size((0., 0.), area.size),
             0.,
             CornerRadius::default(),
+            1.,
         )
         .with_location(area.loc)]
         .into_iter()

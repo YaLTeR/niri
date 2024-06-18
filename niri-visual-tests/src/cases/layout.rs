@@ -5,7 +5,7 @@ use niri::layout::workspace::ColumnWidth;
 use niri::layout::{LayoutElement as _, Options};
 use niri::render_helpers::RenderTarget;
 use niri::utils::get_monotonic_time;
-use niri_config::Color;
+use niri_config::{Color, FloatOrInt};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::layer_map_for_output;
@@ -49,7 +49,7 @@ impl Layout {
             },
             border: niri_config::Border {
                 off: false,
-                width: 4,
+                width: FloatOrInt(4.),
                 active_color: Color::new(255, 163, 72, 255),
                 inactive_color: Color::new(50, 50, 50, 255),
                 active_gradient: None,

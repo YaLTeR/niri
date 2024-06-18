@@ -116,6 +116,10 @@ pub enum Action {
     FocusColumnFirst,
     /// Focus the last column.
     FocusColumnLast,
+    /// Focus the next column to the right, looping if at end.
+    FocusColumnRightOrFirst,
+    /// Focus the next column to the left, looping if at start.
+    FocusColumnLeftOrLast,
     /// Focus the window below.
     FocusWindowDown,
     /// Focus the window above.
@@ -307,7 +311,7 @@ pub enum OutputAction {
     Mode {
         /// Mode to set, or "auto" for automatic selection.
         ///
-        /// Run `niri msg outputs` to see the avaliable modes.
+        /// Run `niri msg outputs` to see the available modes.
         #[cfg_attr(feature = "clap", arg())]
         mode: ModeToSet,
     },

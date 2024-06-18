@@ -11,7 +11,9 @@ use std::{env, mem, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
-use niri_config::{Config, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference};
+use niri_config::{
+    Config, FloatOrInt, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference,
+};
 use niri_ipc::Workspace;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -20,7 +22,6 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::texture::TextureBuffer;
 use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
@@ -62,11 +63,12 @@ use smithay::utils::{
     SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
-    send_surface_state, with_states, with_surface_tree_downward, CompositorClientState,
-    CompositorState, SurfaceData, TraversalAction,
+    with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
+    TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::input_method::{InputMethodManagerState, InputMethodSeat};
@@ -90,6 +92,7 @@ use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 
 use crate::backend::tty::SurfaceDmabufFeedback;
@@ -114,6 +117,7 @@ use crate::pw_utils::{Cast, PipeWire};
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
     render_to_shm, render_to_texture, render_to_vec, shaders, RenderTarget,
 };
@@ -122,11 +126,11 @@ use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
-use crate::utils::scale::guess_monitor_scale;
+use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
-    make_screenshot_path, output_size, write_png_rgba8,
+    make_screenshot_path, output_size, send_scale_transform, write_png_rgba8,
 };
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
@@ -161,7 +165,7 @@ pub struct Niri {
     pub is_at_startup: bool,
 
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
-    // however it may have none (when there are no outputs connected) or mutiple (when mirroring).
+    // however it may have none (when there are no outputs connected) or multiple (when mirroring).
     pub layout: Layout<Mapped>,
 
     // This space does not actually contain any windows, but all outputs are mapped into it
@@ -199,6 +203,7 @@ pub struct Niri {
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
+    pub fractional_scale_manager_state: FractionalScaleManagerState,
     pub seat_state: SeatState<State>,
     pub tablet_state: TabletManagerState,
     pub text_input_state: TextInputManagerState,
@@ -217,6 +222,7 @@ pub struct Niri {
     pub presentation_state: PresentationState,
     pub security_context_state: SecurityContextState,
     pub gamma_control_manager_state: GammaControlManagerState,
+    pub activation_state: XdgActivationState,
 
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
@@ -236,7 +242,7 @@ pub struct Niri {
     /// When this happens, the pointer also loses any focus. This is so that touch can prevent
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
-    // FIXME: this should be able to be removed once PointerFocus takes grabs into accound.
+    // FIXME: this should be able to be removed once PointerFocus takes grabs into account.
     pub pointer_grab_ongoing: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
@@ -342,12 +348,12 @@ pub enum KeyboardFocus {
     ScreenshotUi,
 }
 
-#[derive(Default, Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq)]
 pub struct PointerFocus {
     // Output under pointer.
     pub output: Option<Output>,
     // Surface under pointer and its location in global coordinate space.
-    pub surface: Option<(WlSurface, Point<i32, Logical>)>,
+    pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
     pub window: Option<Window>,
 }
@@ -377,7 +383,7 @@ struct SurfaceFrameThrottlingState {
 }
 
 pub enum CenterCoords {
-    Seperately,
+    Separately,
     Both,
 }
 
@@ -535,7 +541,7 @@ impl State {
         let y_in_bound = cur_loc.y >= rect.loc.y && cur_loc.y <= rect.loc.y + rect.size.h;
 
         let p = match mode {
-            CenterCoords::Seperately => {
+            CenterCoords::Separately => {
                 if x_in_bound && y_in_bound {
                     return false;
                 } else if y_in_bound {
@@ -584,8 +590,8 @@ impl State {
         if let Some(rect) = rect {
             let output_geo = self.niri.global_space.output_geometry(&output).unwrap();
             let mut rect = rect;
-            rect.loc += output_geo.loc;
-            rv = self.move_cursor_to_rect(rect.to_f64(), mode);
+            rect.loc += output_geo.loc.to_f64();
+            rv = self.move_cursor_to_rect(rect, mode);
         }
 
         rv
@@ -596,7 +602,7 @@ impl State {
             return false;
         }
 
-        self.move_cursor_to_focused_tile(CenterCoords::Seperately)
+        self.move_cursor_to_focused_tile(CenterCoords::Separately)
     }
 
     pub fn maybe_warp_cursor_to_focus_centered(&mut self) -> bool {
@@ -1044,12 +1050,15 @@ impl State {
                 .iter()
                 .find(|o| o.name.eq_ignore_ascii_case(&name));
 
-            let scale = config.and_then(|c| c.scale).unwrap_or_else(|| {
-                let size_mm = output.physical_properties().size;
-                let resolution = output.current_mode().unwrap().size;
-                guess_monitor_scale(size_mm, resolution)
-            });
-            let scale = scale.clamp(1., 10.).ceil() as i32;
+            let scale = config
+                .and_then(|c| c.scale)
+                .map(|s| s.0)
+                .unwrap_or_else(|| {
+                    let size_mm = output.physical_properties().size;
+                    let resolution = output.current_mode().unwrap().size;
+                    guess_monitor_scale(size_mm, resolution)
+                });
+            let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
             let mut transform = config
                 .map(|c| ipc_transform_to_smithay(c.transform))
@@ -1059,13 +1068,13 @@ impl State {
                 transform = Transform::Flipped180;
             }
 
-            if output.current_scale().integer_scale() != scale
+            if output.current_scale().fractional_scale() != scale
                 || output.current_transform() != transform
             {
                 output.change_current_state(
                     None,
                     Some(transform),
-                    Some(output::Scale::Integer(scale)),
+                    Some(output::Scale::Fractional(scale)),
                     None,
                 );
                 self.niri.ipc_outputs_changed = true;
@@ -1114,7 +1123,7 @@ impl State {
                 niri_ipc::OutputAction::Scale { scale } => {
                     config.scale = match scale {
                         niri_ipc::ScaleToSet::Automatic => None,
-                        niri_ipc::ScaleToSet::Specific(scale) => Some(scale),
+                        niri_ipc::ScaleToSet::Specific(scale) => Some(FloatOrInt(scale)),
                     }
                 }
                 niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
@@ -1323,6 +1332,8 @@ impl Niri {
         let output_manager_state =
             OutputManagerState::new_with_xdg_output::<State>(&display_handle);
         let dmabuf_state = DmabufState::new();
+        let fractional_scale_manager_state =
+            FractionalScaleManagerState::new::<State>(&display_handle);
         let mut seat_state = SeatState::new();
         let tablet_state = TabletManagerState::new::<State>(&display_handle);
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
@@ -1369,6 +1380,7 @@ impl Niri {
             GammaControlManagerState::new::<State, _>(&display_handle, move |client| {
                 is_tty && !client.get_data::<ClientState>().unwrap().restricted
             });
+        let activation_state = XdgActivationState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -1510,6 +1522,7 @@ impl Niri {
             shm_state,
             output_manager_state,
             dmabuf_state,
+            fractional_scale_manager_state,
             seat_state,
             tablet_state,
             pointer_gestures_state,
@@ -1527,6 +1540,7 @@ impl Niri {
             presentation_state,
             security_context_state,
             gamma_control_manager_state,
+            activation_state,
 
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
@@ -1650,7 +1664,7 @@ impl Niri {
                 config,
             } = data;
 
-            let size = output_size(&output);
+            let size = output_size(&output).to_i32_round();
 
             let new_position = config
                 .map(|pos| Point::from((pos.x, pos.y)))
@@ -1722,12 +1736,13 @@ impl Niri {
             .outputs
             .iter()
             .find(|o| o.name.eq_ignore_ascii_case(&name));
-        let scale = c.and_then(|c| c.scale).unwrap_or_else(|| {
+        let scale = c.and_then(|c| c.scale).map(|s| s.0).unwrap_or_else(|| {
             let size_mm = output.physical_properties().size;
             let resolution = output.current_mode().unwrap().size;
             guess_monitor_scale(size_mm, resolution)
         });
-        let scale = scale.clamp(1., 10.).ceil() as i32;
+        let scale = closest_representable_scale(scale.clamp(0.1, 10.));
+
         let mut transform = c
             .map(|c| ipc_transform_to_smithay(c.transform))
             .unwrap_or(Transform::Normal);
@@ -1741,7 +1756,7 @@ impl Niri {
         output.change_current_state(
             None,
             Some(transform),
-            Some(output::Scale::Integer(scale)),
+            Some(output::Scale::Fractional(scale)),
             None,
         );
 
@@ -1754,7 +1769,7 @@ impl Niri {
             LockRenderState::Unlocked
         };
 
-        let size = output_size(&output);
+        let size = output_size(&output).to_i32_round();
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
@@ -1844,7 +1859,7 @@ impl Niri {
     }
 
     pub fn output_resized(&mut self, output: &Output) {
-        let output_size = output_size(output);
+        let output_size = output_size(output).to_i32_round();
         let is_locked = self.is_locked();
 
         layer_map_for_output(output).arrange();
@@ -1866,7 +1881,7 @@ impl Niri {
             let transform = output.current_transform();
             let output_mode = output.current_mode().unwrap();
             let size = transform.transform_size(output_mode.size);
-            let scale = output.current_scale().integer_scale();
+            let scale = output.current_scale().fractional_scale();
             // FIXME: scale changes and transform flips shouldn't matter but they currently do since
             // I haven't quite figured out how to draw the screenshot textures in
             // physical coordinates.
@@ -1981,7 +1996,10 @@ impl Niri {
                 WindowSurfaceType::ALL,
             )
             .map(|(surface, pos_within_output)| {
-                (surface, pos_within_output + output_pos_in_global_space)
+                (
+                    surface,
+                    (pos_within_output + output_pos_in_global_space).to_f64(),
+                )
             });
 
             return rv;
@@ -1996,14 +2014,15 @@ impl Niri {
             layers
                 .layer_under(layer, pos_within_output)
                 .and_then(|layer| {
-                    let layer_pos_within_output = layers.layer_geometry(layer).unwrap().loc;
+                    let layer_pos_within_output =
+                        layers.layer_geometry(layer).unwrap().loc.to_f64();
                     layer
                         .surface_under(
-                            pos_within_output - layer_pos_within_output.to_f64(),
+                            pos_within_output - layer_pos_within_output,
                             WindowSurfaceType::ALL,
                         )
                         .map(|(surface, pos_within_layer)| {
-                            (surface, pos_within_layer + layer_pos_within_output)
+                            (surface, pos_within_layer.to_f64() + layer_pos_within_output)
                         })
                 })
                 .map(|s| (s, None))
@@ -2017,11 +2036,11 @@ impl Niri {
                     let window = &mapped.window;
                     window
                         .surface_under(
-                            pos_within_output - win_pos_within_output.to_f64(),
+                            pos_within_output - win_pos_within_output,
                             WindowSurfaceType::ALL,
                         )
                         .map(|(s, pos_within_window)| {
-                            (s, pos_within_window + win_pos_within_output)
+                            (s, pos_within_window.to_f64() + win_pos_within_output)
                         })
                         .map(|s| (s, Some(window.clone())))
                 })
@@ -2048,7 +2067,8 @@ impl Niri {
             return rv;
         };
 
-        let surface_loc_in_global_space = surface_pos_within_output + output_pos_in_global_space;
+        let surface_loc_in_global_space =
+            surface_pos_within_output + output_pos_in_global_space.to_f64();
 
         rv.surface = Some((surface, surface_loc_in_global_space));
         rv.window = window;
@@ -2355,9 +2375,9 @@ impl Niri {
 
                 // FIXME we basically need to pick the largest scale factor across the overlapping
                 // outputs, this is how it's usually done in clients as well.
-                let mut cursor_scale = 1;
+                let mut cursor_scale = 1.;
                 let mut cursor_transform = Transform::Normal;
-                let mut dnd_scale = 1;
+                let mut dnd_scale = 1.;
                 let mut dnd_transform = Transform::Normal;
                 for output in self.global_space.outputs() {
                     let geo = self.global_space.output_geometry(output).unwrap();
@@ -2365,7 +2385,8 @@ impl Niri {
                     // Compute pointer surface overlap.
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlap.loc -= surface_pos;
-                        cursor_scale = cursor_scale.max(output.current_scale().integer_scale());
+                        cursor_scale =
+                            f64::max(cursor_scale, output.current_scale().fractional_scale());
                         // FIXME: using the largest overlapping or "primary" output transform would
                         // make more sense here.
                         cursor_transform = output.current_transform();
@@ -2378,7 +2399,8 @@ impl Niri {
                     if let Some((surface, bbox)) = dnd {
                         if let Some(mut overlap) = geo.intersection(bbox) {
                             overlap.loc -= surface_pos;
-                            dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
+                            dnd_scale =
+                                f64::max(dnd_scale, output.current_scale().fractional_scale());
                             // FIXME: using the largest overlapping or "primary" output transform
                             // would make more sense here.
                             dnd_transform = output.current_transform();
@@ -2390,11 +2412,21 @@ impl Niri {
                 }
 
                 with_states(surface, |data| {
-                    send_surface_state(surface, data, cursor_scale, cursor_transform);
+                    send_scale_transform(
+                        surface,
+                        data,
+                        output::Scale::Fractional(cursor_scale),
+                        cursor_transform,
+                    )
                 });
                 if let Some((surface, _)) = dnd {
                     with_states(surface, |data| {
-                        send_surface_state(surface, data, dnd_scale, dnd_transform);
+                        send_scale_transform(
+                            surface,
+                            data,
+                            output::Scale::Fractional(dnd_scale),
+                            dnd_transform,
+                        );
                     });
                 }
             }
@@ -2410,7 +2442,7 @@ impl Niri {
                     Default::default()
                 };
 
-                let mut dnd_scale = 1;
+                let mut dnd_scale = 1.;
                 let mut dnd_transform = Transform::Normal;
                 for output in self.global_space.outputs() {
                     let geo = self.global_space.output_geometry(output).unwrap();
@@ -2432,7 +2464,7 @@ impl Niri {
 
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlap.loc -= surface_pos;
-                        dnd_scale = dnd_scale.max(output.current_scale().integer_scale());
+                        dnd_scale = f64::max(dnd_scale, output.current_scale().fractional_scale());
                         // FIXME: using the largest overlapping or "primary" output transform would
                         // make more sense here.
                         dnd_transform = output.current_transform();
@@ -2443,7 +2475,12 @@ impl Niri {
                 }
 
                 with_states(surface, |data| {
-                    send_surface_state(surface, data, dnd_scale, dnd_transform);
+                    send_scale_transform(
+                        surface,
+                        data,
+                        output::Scale::Fractional(dnd_scale),
+                        dnd_transform,
+                    );
                 });
             }
         }
@@ -3507,7 +3544,7 @@ impl Niri {
         // FIXME: pointer.
         let elements = mapped.render(
             renderer,
-            mapped.window.geometry().loc,
+            mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
             RenderTarget::ScreenCapture,
@@ -3758,8 +3795,8 @@ impl Niri {
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
-                let new_pos_within_surface = new_pos.to_i32_round() - *surface_loc;
-                if !region.contains(new_pos_within_surface) {
+                let new_pos_within_surface = new_pos - *surface_loc;
+                if !region.contains(new_pos_within_surface.to_i32_round()) {
                     return;
                 }
             }
@@ -3877,9 +3914,9 @@ impl Niri {
                     TextureBuffer::from_texture(
                         renderer,
                         texture,
-                        output.current_scale().integer_scale(),
+                        output.current_scale().fractional_scale(),
                         Transform::Normal,
-                        None, // We want windows below to get frame callbacks.
+                        Vec::new(), // We want windows below to get frame callbacks.
                     )
                 });
 

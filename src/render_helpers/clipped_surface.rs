@@ -18,8 +18,10 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     inner: WaylandSurfaceRenderElement<R>,
     program: GlesTexProgram,
     corner_radius: CornerRadius,
-    geometry: Rectangle<i32, Logical>,
+    geometry: Rectangle<f64, Logical>,
     input_to_geo: Mat3,
+    // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
+    scale: f32,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -32,7 +34,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
     pub fn new(
         elem: WaylandSurfaceRenderElement<R>,
         scale: Scale<f64>,
-        geometry: Rectangle<i32, Logical>,
+        geometry: Rectangle<f64, Logical>,
         program: GlesTexProgram,
         corner_radius: CornerRadius,
     ) -> Self {
@@ -76,6 +78,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             corner_radius,
             geometry,
             input_to_geo,
+            scale: scale.x as f32,
         }
     }
 
@@ -86,7 +89,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
     pub fn will_clip(
         elem: &WaylandSurfaceRenderElement<R>,
         scale: Scale<f64>,
-        geometry: Rectangle<i32, Logical>,
+        geometry: Rectangle<f64, Logical>,
         corner_radius: CornerRadius,
     ) -> bool {
         let elem_geo = elem.geometry(scale);
@@ -95,10 +98,10 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
         if corner_radius == CornerRadius::default() {
             !geo.contains_rect(elem_geo)
         } else {
-            let corners = Self::rounded_corners(geometry.to_f64(), corner_radius);
+            let corners = Self::rounded_corners(geometry, corner_radius);
             let corners = corners
                 .into_iter()
-                .map(|rect| rect.to_physical_precise_round(scale));
+                .map(|rect| rect.to_physical_precise_up(scale));
             let geo = Rectangle::subtract_rects_many([geo], corners);
             !Rectangle::subtract_rects_many([elem_geo], geo).is_empty()
         }
@@ -186,11 +189,11 @@ impl<R: NiriRenderer> Element for ClippedSurfaceRenderElement<R> {
         if self.corner_radius == CornerRadius::default() {
             regions.collect()
         } else {
-            let corners = Self::rounded_corners(self.geometry.to_f64(), self.corner_radius);
+            let corners = Self::rounded_corners(self.geometry, self.corner_radius);
 
             let elem_loc = self.geometry(scale).loc;
             let corners = corners.into_iter().map(|rect| {
-                let mut rect = rect.to_physical_precise_round(scale);
+                let mut rect = rect.to_physical_precise_up(scale);
                 rect.loc -= elem_loc;
                 rect
             });
@@ -215,10 +218,12 @@ impl RenderElement<GlesRenderer> for ClippedSurfaceRenderElement<GlesRenderer> {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         frame.override_default_tex_program(
             self.program.clone(),
             vec![
+                Uniform::new("niri_scale", self.scale),
                 Uniform::new(
                     "geo_size",
                     (self.geometry.size.w as f32, self.geometry.size.h as f32),
@@ -227,7 +232,7 @@ impl RenderElement<GlesRenderer> for ClippedSurfaceRenderElement<GlesRenderer> {
                 mat3_uniform("input_to_geo", self.input_to_geo),
             ],
         );
-        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage)?;
+        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
         frame.clear_tex_program_override();
         Ok(())
     }
@@ -248,6 +253,7 @@ impl<'render> RenderElement<TtyRenderer<'render>>
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
         frame.as_gles_frame().override_default_tex_program(
             self.program.clone(),
@@ -260,7 +266,7 @@ impl<'render> RenderElement<TtyRenderer<'render>>
                 mat3_uniform("input_to_geo", self.input_to_geo),
             ],
         );
-        RenderElement::draw(&self.inner, frame, src, dst, damage)?;
+        RenderElement::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
         frame.as_gles_frame().clear_tex_program_override();
         Ok(())
     }
@@ -276,7 +282,7 @@ impl<'render> RenderElement<TtyRenderer<'render>>
 }
 
 impl RoundedCornerDamage {
-    pub fn set_size(&mut self, size: Size<i32, Logical>) {
+    pub fn set_size(&mut self, size: Size<f64, Logical>) {
         self.damage.set_size(size);
     }
 

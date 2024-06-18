@@ -12,10 +12,13 @@ use directories::UserDirs;
 use git_version::git_version;
 use niri_config::Config;
 use smithay::input::pointer::CursorIcon;
-use smithay::output::Output;
+use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
+use smithay::wayland::compositor::{send_surface_state, SurfaceData};
+use smithay::wayland::fractional_scale::with_fractional_scale;
 
 pub mod id;
 pub mod scale;
@@ -87,14 +90,29 @@ pub fn center_f64(rect: Rectangle<f64, Logical>) -> Point<f64, Logical> {
     rect.loc + rect.size.downscale(2.0).to_point()
 }
 
-pub fn output_size(output: &Output) -> Size<i32, Logical> {
-    let output_scale = output.current_scale().integer_scale();
+/// Convert logical pixels to physical, rounding to physical pixels.
+pub fn to_physical_precise_round<N: Coordinate>(scale: f64, logical: impl Coordinate) -> N {
+    N::from_f64((logical.to_f64() * scale).round())
+}
+
+pub fn round_logical_in_physical(scale: f64, logical: f64) -> f64 {
+    (logical * scale).round() / scale
+}
+
+pub fn round_logical_in_physical_max1(scale: f64, logical: f64) -> f64 {
+    if logical == 0. {
+        return 0.;
+    }
+
+    (logical * scale).max(1.).round() / scale
+}
+
+pub fn output_size(output: &Output) -> Size<f64, Logical> {
+    let output_scale = output.current_scale().fractional_scale();
     let output_transform = output.current_transform();
     let output_mode = output.current_mode().unwrap();
-
-    output_transform
-        .transform_size(output_mode.size)
-        .to_logical(output_scale)
+    let logical_size = output_mode.size.to_f64().to_logical(output_scale);
+    output_transform.transform_size(logical_size)
 }
 
 pub fn logical_output(output: &Output) -> niri_ipc::LogicalOutput {
@@ -131,6 +149,18 @@ pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
         niri_ipc::Transform::Flipped180 => Transform::Flipped180,
         niri_ipc::Transform::Flipped270 => Transform::Flipped270,
     }
+}
+
+pub fn send_scale_transform(
+    surface: &WlSurface,
+    data: &SurfaceData,
+    scale: output::Scale,
+    transform: Transform,
+) {
+    send_surface_state(surface, data, scale.integer_scale(), transform);
+    with_fractional_scale(data, |fractional| {
+        fractional.set_preferred_scale(scale.fractional_scale());
+    });
 }
 
 pub fn expand_home(path: &Path) -> anyhow::Result<Option<PathBuf>> {

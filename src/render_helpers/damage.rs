@@ -7,7 +7,7 @@ use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size};
 pub struct ExtraDamage {
     id: Id,
     commit: CommitCounter,
-    geometry: Rectangle<i32, Logical>,
+    geometry: Rectangle<f64, Logical>,
 }
 
 impl ExtraDamage {
@@ -19,7 +19,7 @@ impl ExtraDamage {
         }
     }
 
-    pub fn set_size(&mut self, size: Size<i32, Logical>) {
+    pub fn set_size(&mut self, size: Size<f64, Logical>) {
         if self.geometry.size == size {
             return;
         }
@@ -32,7 +32,7 @@ impl ExtraDamage {
         self.commit.increment();
     }
 
-    pub fn with_location(mut self, location: Point<i32, Logical>) -> Self {
+    pub fn with_location(mut self, location: Point<f64, Logical>) -> Self {
         self.geometry.loc = location;
         self
     }
@@ -58,7 +58,7 @@ impl Element for ExtraDamage {
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        self.geometry.to_physical_precise_round(scale)
+        self.geometry.to_physical_precise_up(scale)
     }
 }
 
@@ -69,6 +69,7 @@ impl<R: Renderer> RenderElement<R> for ExtraDamage {
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
+        _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
         Ok(())
     }

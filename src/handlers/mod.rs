@@ -22,11 +22,12 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Rectangle, Size};
-use smithay::wayland::compositor::{send_surface_state, with_states};
+use smithay::wayland::compositor::with_states;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
+use smithay::wayland::fractional_scale::FractionalScaleHandler;
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
@@ -48,13 +49,17 @@ use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
 };
 use smithay::wayland::tablet_manager::TabletSeatHandler;
+use smithay::wayland::xdg_activation::{
+    XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
+};
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
-    delegate_drm_lease, delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager,
-    delegate_output, delegate_pointer_constraints, delegate_pointer_gestures,
-    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
-    delegate_security_context, delegate_session_lock, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
+    delegate_drm_lease, delegate_fractional_scale, delegate_idle_inhibit, delegate_idle_notify,
+    delegate_input_method_manager, delegate_output, delegate_pointer_constraints,
+    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
+    delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
+    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_virtual_keyboard_manager, delegate_xdg_activation,
 };
 
 use crate::niri::{ClientState, State};
@@ -63,7 +68,7 @@ use crate::protocols::foreign_toplevel::{
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
-use crate::utils::output_size;
+use crate::utils::{output_size, send_scale_transform};
 use crate::{delegate_foreign_toplevel, delegate_gamma_control, delegate_screencopy};
 
 impl SeatHandler for State {
@@ -136,11 +141,11 @@ impl InputMethodHandler for State {
     fn new_popup(&mut self, surface: PopupSurface) {
         let popup = PopupKind::InputMethod(surface);
         if let Some(output) = self.output_for_popup(&popup) {
-            let scale = output.current_scale().integer_scale();
+            let scale = output.current_scale();
             let transform = output.current_transform();
             let wl_surface = popup.wl_surface();
             with_states(wl_surface, |data| {
-                send_surface_state(wl_surface, data, scale, transform);
+                send_scale_transform(wl_surface, data, scale, transform);
             });
         }
 
@@ -303,11 +308,11 @@ pub fn configure_lock_surface(surface: &LockSurface, output: &Output) {
         let size = output_size(output);
         states.size = Some(Size::from((size.w as u32, size.h as u32)));
     });
-    let scale = output.current_scale().integer_scale();
+    let scale = output.current_scale();
     let transform = output.current_transform();
     let wl_surface = surface.wl_surface();
     with_states(wl_surface, |data| {
-        send_surface_state(wl_surface, data, scale, transform);
+        send_scale_transform(wl_surface, data, scale, transform);
     });
     surface.send_configure();
 }
@@ -498,3 +503,44 @@ impl GammaControlHandler for State {
     }
 }
 delegate_gamma_control!(State);
+
+impl XdgActivationHandler for State {
+    fn activation_state(&mut self) -> &mut XdgActivationState {
+        &mut self.niri.activation_state
+    }
+
+    fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
+        // Only tokens that were created while the application has keyboard focus are valid.
+        let Some((serial, seat)) = data.serial else {
+            return false;
+        };
+        let Some(seat) = Seat::<State>::from_resource(&seat) else {
+            return false;
+        };
+
+        let keyboard = seat.get_keyboard().unwrap();
+        keyboard
+            .last_enter()
+            .map(|last_enter| serial.is_no_older_than(&last_enter))
+            .unwrap_or(false)
+    }
+
+    fn request_activation(
+        &mut self,
+        _token: XdgActivationToken,
+        token_data: XdgActivationTokenData,
+        surface: WlSurface,
+    ) {
+        if token_data.timestamp.elapsed().as_secs() < 10 {
+            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&surface) {
+                let window = mapped.window.clone();
+                self.niri.layout.activate_window(&window);
+                self.niri.queue_redraw_all();
+            }
+        }
+    }
+}
+delegate_xdg_activation!(State);
+
+impl FractionalScaleHandler for State {}
+delegate_fractional_scale!(State);

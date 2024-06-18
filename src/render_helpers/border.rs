@@ -26,27 +26,30 @@ pub struct BorderRenderElement {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Parameters {
-    size: Size<i32, Logical>,
-    gradient_area: Rectangle<i32, Logical>,
+    size: Size<f64, Logical>,
+    gradient_area: Rectangle<f64, Logical>,
     color_from: [f32; 4],
     color_to: [f32; 4],
     angle: f32,
-    geometry: Rectangle<i32, Logical>,
+    geometry: Rectangle<f64, Logical>,
     border_width: f32,
     corner_radius: CornerRadius,
+    // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
+    scale: f32,
 }
 
 impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        size: Size<i32, Logical>,
-        gradient_area: Rectangle<i32, Logical>,
+        size: Size<f64, Logical>,
+        gradient_area: Rectangle<f64, Logical>,
         color_from: [f32; 4],
         color_to: [f32; 4],
         angle: f32,
-        geometry: Rectangle<i32, Logical>,
+        geometry: Rectangle<f64, Logical>,
         border_width: f32,
         corner_radius: CornerRadius,
+        scale: f32,
     ) -> Self {
         let inner = ShaderRenderElement::empty(ProgramType::Border, Kind::Unspecified);
         let mut rv = Self {
@@ -60,6 +63,7 @@ impl BorderRenderElement {
                 geometry,
                 border_width,
                 corner_radius,
+                scale,
             },
         };
         rv.update_inner();
@@ -79,6 +83,7 @@ impl BorderRenderElement {
                 geometry: Default::default(),
                 border_width: 0.,
                 corner_radius: Default::default(),
+                scale: 1.,
             },
         }
     }
@@ -90,14 +95,15 @@ impl BorderRenderElement {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        size: Size<i32, Logical>,
-        gradient_area: Rectangle<i32, Logical>,
+        size: Size<f64, Logical>,
+        gradient_area: Rectangle<f64, Logical>,
         color_from: [f32; 4],
         color_to: [f32; 4],
         angle: f32,
-        geometry: Rectangle<i32, Logical>,
+        geometry: Rectangle<f64, Logical>,
         border_width: f32,
         corner_radius: CornerRadius,
+        scale: f32,
     ) {
         let params = Parameters {
             size,
@@ -108,6 +114,7 @@ impl BorderRenderElement {
             geometry,
             border_width,
             corner_radius,
+            scale,
         };
         if self.params == params {
             return;
@@ -127,6 +134,7 @@ impl BorderRenderElement {
             geometry,
             border_width,
             corner_radius,
+            scale,
         } = self.params;
 
         let grad_offset = geometry.loc - gradient_area.loc;
@@ -157,6 +165,7 @@ impl BorderRenderElement {
         self.inner.update(
             size,
             None,
+            scale,
             vec![
                 Uniform::new("color_from", color_from),
                 Uniform::new("color_to", color_to),
@@ -172,7 +181,7 @@ impl BorderRenderElement {
         );
     }
 
-    pub fn with_location(mut self, location: Point<i32, Logical>) -> Self {
+    pub fn with_location(mut self, location: Point<f64, Logical>) -> Self {
         self.inner = self.inner.with_location(location);
         self
     }
@@ -239,8 +248,9 @@ impl RenderElement<GlesRenderer> for BorderRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage)
+        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
@@ -255,8 +265,9 @@ impl<'render> RenderElement<TtyRenderer<'render>> for BorderRenderElement {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
-        RenderElement::<TtyRenderer<'_>>::draw(&self.inner, frame, src, dst, damage)
+        RenderElement::<TtyRenderer<'_>>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
     }
 
     fn underlying_storage(&self, renderer: &mut TtyRenderer<'render>) -> Option<UnderlyingStorage> {

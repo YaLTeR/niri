@@ -48,6 +48,10 @@ layout {
 
 Set gaps around (inside and outside) windows in logical pixels.
 
+<sup>Since: 0.1.7</sup> You can use fractional values.
+The value will be rounded to physical pixels according to the scale factor of every output.
+For example, `gaps 0.5` on an output with `scale 2` will result in one physical-pixel wide gaps.
+
 ```
 layout {
     gaps 16
@@ -170,6 +174,22 @@ layout {
 }
 ```
 
+#### Width
+
+Set the thickness of the border in logical pixels.
+
+<sup>Since: 0.1.7</sup> You can use fractional values.
+The value will be rounded to physical pixels according to the scale factor of every output.
+For example, `width 0.5` on an output with `scale 2` will result in one physical-pixel thick borders.
+
+```
+layout {
+    border {
+        width 2
+    }
+}
+```
+
 #### Colors
 
 Colors can be set in a variety of ways:
@@ -226,6 +246,10 @@ They are set in logical pixels.
 
 Left and right struts will cause the next window to the side to always peek out slightly.
 Top and bottom struts will simply add outer gaps in addition to the area occupied by layer-shell panels and regular gaps.
+
+<sup>Since: 0.1.7</sup> You can use fractional values.
+The value will be rounded to physical pixels according to the scale factor of every output.
+For example, `top 0.5` on an output with `scale 2` will result in one physical-pixel wide top strut.
 
 ```
 layout {

@@ -18,4 +18,5 @@ uniform float niri_clamped_progress;
 uniform float niri_random_seed;
 
 uniform float niri_alpha;
+uniform float niri_scale;
 

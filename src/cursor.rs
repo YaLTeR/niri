@@ -142,7 +142,7 @@ impl CursorManager {
             .unwrap()
     }
 
-    /// Currenly used cursor_image as a cursor provider.
+    /// Currently used cursor_image as a cursor provider.
     pub fn cursor_image(&self) -> &CursorImageStatus {
         &self.current_cursor
     }
