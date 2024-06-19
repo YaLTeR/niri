@@ -216,17 +216,16 @@ impl State {
     }
 
     /// Computes the rectangle that covers all outputs in global space.
-    fn global_bounding_rectangle(&self) -> Rectangle<i32, Logical> {
-        self.niri
-            .global_space
-            .outputs()
-            .fold(None, |acc: Option<Rectangle<i32, Logical>>, output| {
+    fn global_bounding_rectangle(&self) -> Option<Rectangle<i32, Logical>> {
+        self.niri.global_space.outputs().fold(
+            None,
+            |acc: Option<Rectangle<i32, Logical>>, output| {
                 self.niri
                     .global_space
                     .output_geometry(output)
                     .map(|geo| acc.map(|acc| acc.merge(geo)).unwrap_or(geo))
-            })
-            .unwrap_or_else(Default::default)
+            },
+        )
     }
 
     /// Computes the cursor position for the tablet event.
@@ -240,33 +239,52 @@ impl State {
     where
         I::Device: 'static,
     {
-        let output = self.niri.output_for_tablet()?;
-        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+        let (target_geo, keep_ratio, px) = if let Some(output) = self.niri.output_for_tablet() {
+            (
+                self.niri.global_space.output_geometry(output).unwrap(),
+                true,
+                1. / output.current_scale().fractional_scale(),
+            )
+        } else {
+            let geo = self.global_bounding_rectangle()?;
 
-        let mut pos = event.position_transformed(output_geo.size);
-        pos.x /= output_geo.size.w as f64;
-        pos.y /= output_geo.size.h as f64;
+            // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
+            // corresponding to the position on the right when clamping.
+            let output = self.niri.global_space.outputs().next().unwrap();
+            let scale = output.current_scale().fractional_scale();
 
-        let device = event.device();
-        if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
-            if let Some(data) = self.niri.tablets.get(device) {
-                // This code does the same thing as mutter with "keep aspect ratio" enabled.
-                let output_aspect_ratio = output_geo.size.w as f64 / output_geo.size.h as f64;
-                let ratio = data.aspect_ratio / output_aspect_ratio;
-
-                if ratio > 1. {
-                    pos.x *= ratio;
-                } else {
-                    pos.y /= ratio;
-                }
-            }
+            // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
+            (geo, false, 1. / scale)
         };
 
-        pos.x *= output_geo.size.w as f64;
-        pos.y *= output_geo.size.h as f64;
-        pos.x = pos.x.clamp(0.0, output_geo.size.w as f64 - 1.);
-        pos.y = pos.y.clamp(0.0, output_geo.size.h as f64 - 1.);
-        Some(pos + output_geo.loc.to_f64())
+        let mut pos = event.position_transformed(target_geo.size);
+
+        if keep_ratio {
+            pos.x /= target_geo.size.w as f64;
+            pos.y /= target_geo.size.h as f64;
+
+            let device = event.device();
+            if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
+                if let Some(data) = self.niri.tablets.get(device) {
+                    // This code does the same thing as mutter with "keep aspect ratio" enabled.
+                    let output_aspect_ratio = target_geo.size.w as f64 / target_geo.size.h as f64;
+                    let ratio = data.aspect_ratio / output_aspect_ratio;
+
+                    if ratio > 1. {
+                        pos.x *= ratio;
+                    } else {
+                        pos.y /= ratio;
+                    }
+                }
+            };
+
+            pos.x *= target_geo.size.w as f64;
+            pos.y *= target_geo.size.h as f64;
+        }
+
+        pos.x = pos.x.clamp(0.0, target_geo.size.w as f64 - px);
+        pos.y = pos.y.clamp(0.0, target_geo.size.h as f64 - px);
+        Some(pos + target_geo.loc.to_f64())
     }
 
     fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
@@ -1097,7 +1115,9 @@ impl State {
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
-        let output_geo = self.global_bounding_rectangle();
+        let Some(output_geo) = self.global_bounding_rectangle() else {
+            return;
+        };
 
         let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
