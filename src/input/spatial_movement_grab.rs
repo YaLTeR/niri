@@ -7,28 +7,45 @@ use smithay::input::pointer::{
     MotionEvent, PointerGrab, PointerInnerHandle, RelativeMotionEvent,
 };
 use smithay::input::SeatHandler;
+use smithay::output::Output;
 use smithay::utils::{Logical, Point};
 
 use crate::niri::State;
 
-pub struct ViewOffsetGrab {
+pub struct SpatialMovementGrab {
     start_data: PointerGrabStartData<State>,
     last_location: Point<f64, Logical>,
+    output: Output,
+    gesture: GestureState,
 }
 
-impl ViewOffsetGrab {
-    pub fn new(start_data: PointerGrabStartData<State>) -> Self {
+#[derive(Debug, Clone, Copy)]
+enum GestureState {
+    Recognizing,
+    ViewOffset,
+    WorkspaceSwitch,
+}
+
+impl SpatialMovementGrab {
+    pub fn new(start_data: PointerGrabStartData<State>, output: Output) -> Self {
         Self {
             last_location: start_data.location,
             start_data,
+            output,
+            gesture: GestureState::Recognizing,
         }
     }
 
     fn on_ungrab(&mut self, state: &mut State) {
-        let res = state
-            .niri
-            .layout
-            .view_offset_gesture_end(false, Some(false));
+        let layout = &mut state.niri.layout;
+        let res = match self.gesture {
+            GestureState::Recognizing => None,
+            GestureState::ViewOffset => layout.view_offset_gesture_end(false, Some(false)),
+            GestureState::WorkspaceSwitch => {
+                layout.workspace_switch_gesture_end(false, Some(false))
+            }
+        };
+
         if let Some(output) = res {
             state.niri.queue_redraw(&output);
         }
@@ -41,7 +58,7 @@ impl ViewOffsetGrab {
     }
 }
 
-impl PointerGrab<State> for ViewOffsetGrab {
+impl PointerGrab<State> for SpatialMovementGrab {
     fn motion(
         &mut self,
         data: &mut State,
@@ -56,10 +73,34 @@ impl PointerGrab<State> for ViewOffsetGrab {
         let delta = event.location - self.last_location;
         self.last_location = event.location;
 
-        let res = data
-            .niri
-            .layout
-            .view_offset_gesture_update(-delta.x, timestamp, false);
+        let layout = &mut data.niri.layout;
+        let res = match self.gesture {
+            GestureState::Recognizing => {
+                let c = event.location - self.start_data.location;
+
+                // Check if the gesture moved far enough to decide. Threshold copied from GTK 4.
+                if c.x * c.x + c.y * c.y >= 8. * 8. {
+                    if c.x.abs() > c.y.abs() {
+                        self.gesture = GestureState::ViewOffset;
+                        layout.view_offset_gesture_begin(&self.output, false);
+                        layout.view_offset_gesture_update(-c.x, timestamp, false)
+                    } else {
+                        self.gesture = GestureState::WorkspaceSwitch;
+                        layout.workspace_switch_gesture_begin(&self.output, false);
+                        layout.workspace_switch_gesture_update(-c.y, timestamp, false)
+                    }
+                } else {
+                    Some(None)
+                }
+            }
+            GestureState::ViewOffset => {
+                layout.view_offset_gesture_update(-delta.x, timestamp, false)
+            }
+            GestureState::WorkspaceSwitch => {
+                layout.workspace_switch_gesture_update(-delta.y, timestamp, false)
+            }
+        };
+
         if let Some(output) = res {
             if let Some(output) = output {
                 data.niri.queue_redraw(&output);

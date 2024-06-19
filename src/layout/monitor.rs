@@ -54,10 +54,12 @@ pub enum WorkspaceSwitch {
 #[derive(Debug)]
 pub struct WorkspaceSwitchGesture {
     /// Index of the workspace where the gesture was started.
-    pub center_idx: usize,
+    center_idx: usize,
     /// Current, fractional workspace index.
     pub current_idx: f64,
-    pub tracker: SwipeTracker,
+    tracker: SwipeTracker,
+    /// Whether the gesture is controlled by the touchpad.
+    is_touchpad: bool,
 }
 
 pub type MonitorRenderElement<R> =
@@ -973,7 +975,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn workspace_switch_gesture_begin(&mut self) {
+    pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {
         let center_idx = self.active_workspace_idx;
         let current_idx = self
             .workspace_switch
@@ -985,6 +987,7 @@ impl<W: LayoutElement> Monitor<W> {
             center_idx,
             current_idx,
             tracker: SwipeTracker::new(),
+            is_touchpad,
         };
         self.workspace_switch = Some(WorkspaceSwitch::Gesture(gesture));
     }
@@ -993,14 +996,24 @@ impl<W: LayoutElement> Monitor<W> {
         &mut self,
         delta_y: f64,
         timestamp: Duration,
+        is_touchpad: bool,
     ) -> Option<bool> {
         let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
             return None;
         };
 
+        if gesture.is_touchpad != is_touchpad {
+            return None;
+        }
+
         gesture.tracker.push(delta_y, timestamp);
 
-        let pos = gesture.tracker.pos() / WORKSPACE_GESTURE_MOVEMENT;
+        let total_height = if gesture.is_touchpad {
+            WORKSPACE_GESTURE_MOVEMENT
+        } else {
+            self.workspaces[0].view_size().h
+        };
+        let pos = gesture.tracker.pos() / total_height;
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
@@ -1015,10 +1028,18 @@ impl<W: LayoutElement> Monitor<W> {
         Some(true)
     }
 
-    pub fn workspace_switch_gesture_end(&mut self, cancelled: bool) -> bool {
+    pub fn workspace_switch_gesture_end(
+        &mut self,
+        cancelled: bool,
+        is_touchpad: Option<bool>,
+    ) -> bool {
         let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
             return false;
         };
+
+        if is_touchpad.map_or(false, |x| gesture.is_touchpad != x) {
+            return false;
+        }
 
         if cancelled {
             self.workspace_switch = None;
@@ -1026,9 +1047,15 @@ impl<W: LayoutElement> Monitor<W> {
             return true;
         }
 
-        let mut velocity = gesture.tracker.velocity() / WORKSPACE_GESTURE_MOVEMENT;
-        let current_pos = gesture.tracker.pos() / WORKSPACE_GESTURE_MOVEMENT;
-        let pos = gesture.tracker.projected_end_pos() / WORKSPACE_GESTURE_MOVEMENT;
+        let total_height = if gesture.is_touchpad {
+            WORKSPACE_GESTURE_MOVEMENT
+        } else {
+            self.workspaces[0].view_size().h
+        };
+
+        let mut velocity = gesture.tracker.velocity() / total_height;
+        let current_pos = gesture.tracker.pos() / total_height;
+        let pos = gesture.tracker.projected_end_pos() / total_height;
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;

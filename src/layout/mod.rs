@@ -2002,7 +2002,7 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn workspace_switch_gesture_begin(&mut self, output: &Output) {
+    pub fn workspace_switch_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => unreachable!(),
@@ -2011,11 +2011,11 @@ impl<W: LayoutElement> Layout<W> {
         for monitor in monitors {
             // Cancel the gesture on other outputs.
             if &monitor.output != output {
-                monitor.workspace_switch_gesture_end(true);
+                monitor.workspace_switch_gesture_end(true, None);
                 continue;
             }
 
-            monitor.workspace_switch_gesture_begin();
+            monitor.workspace_switch_gesture_begin(is_touchpad);
         }
     }
 
@@ -2023,6 +2023,7 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         delta_y: f64,
         timestamp: Duration,
+        is_touchpad: bool,
     ) -> Option<Option<Output>> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
@@ -2030,7 +2031,9 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         for monitor in monitors {
-            if let Some(refresh) = monitor.workspace_switch_gesture_update(delta_y, timestamp) {
+            if let Some(refresh) =
+                monitor.workspace_switch_gesture_update(delta_y, timestamp, is_touchpad)
+            {
                 if refresh {
                     return Some(Some(monitor.output.clone()));
                 } else {
@@ -2042,14 +2045,18 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn workspace_switch_gesture_end(&mut self, cancelled: bool) -> Option<Output> {
+    pub fn workspace_switch_gesture_end(
+        &mut self,
+        cancelled: bool,
+        is_touchpad: Option<bool>,
+    ) -> Option<Output> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => return None,
         };
 
         for monitor in monitors {
-            if monitor.workspace_switch_gesture_end(cancelled) {
+            if monitor.workspace_switch_gesture_end(cancelled, is_touchpad) {
                 return Some(monitor.output.clone());
             }
         }
@@ -2750,14 +2757,17 @@ mod tests {
         WorkspaceSwitchGestureBegin {
             #[proptest(strategy = "1..=5usize")]
             output_idx: usize,
+            is_touchpad: bool,
         },
         WorkspaceSwitchGestureUpdate {
             #[proptest(strategy = "-400f64..400f64")]
             delta: f64,
             timestamp: Duration,
+            is_touchpad: bool,
         },
         WorkspaceSwitchGestureEnd {
             cancelled: bool,
+            is_touchpad: Option<bool>,
         },
         InteractiveResizeBegin {
             #[proptest(strategy = "1..=5usize")]
@@ -3135,19 +3145,29 @@ mod tests {
                     // We don't handle cancels in this gesture.
                     layout.view_offset_gesture_end(false, is_touchpad);
                 }
-                Op::WorkspaceSwitchGestureBegin { output_idx: id } => {
+                Op::WorkspaceSwitchGestureBegin {
+                    output_idx: id,
+                    is_touchpad,
+                } => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    layout.workspace_switch_gesture_begin(&output);
+                    layout.workspace_switch_gesture_begin(&output, is_touchpad);
                 }
-                Op::WorkspaceSwitchGestureUpdate { delta, timestamp } => {
-                    layout.workspace_switch_gesture_update(delta, timestamp);
+                Op::WorkspaceSwitchGestureUpdate {
+                    delta,
+                    timestamp,
+                    is_touchpad,
+                } => {
+                    layout.workspace_switch_gesture_update(delta, timestamp, is_touchpad);
                 }
-                Op::WorkspaceSwitchGestureEnd { cancelled } => {
-                    layout.workspace_switch_gesture_end(cancelled);
+                Op::WorkspaceSwitchGestureEnd {
+                    cancelled,
+                    is_touchpad,
+                } => {
+                    layout.workspace_switch_gesture_end(cancelled, is_touchpad);
                 }
                 Op::InteractiveResizeBegin { window, edges } => {
                     layout.interactive_resize_begin(window, edges);

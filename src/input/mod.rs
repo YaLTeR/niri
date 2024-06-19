@@ -29,7 +29,7 @@ use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerCons
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use self::resize_grab::ResizeGrab;
-use self::view_offset_grab::ViewOffsetGrab;
+use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
@@ -37,8 +37,8 @@ use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
 pub mod resize_grab;
 pub mod scroll_tracker;
+pub mod spatial_movement_grab;
 pub mod swipe_tracker;
-pub mod view_offset_grab;
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
@@ -1252,15 +1252,13 @@ impl State {
                 };
                 if mod_down {
                     if let Some(output) = self.niri.output_under_cursor() {
-                        self.niri.layout.view_offset_gesture_begin(&output, false);
-
                         let location = pointer.current_location();
                         let start_data = PointerGrabStartData {
                             focus: None,
                             button: event.button_code(),
                             location,
                         };
-                        let grab = ViewOffsetGrab::new(start_data);
+                        let grab = SpatialMovementGrab::new(start_data, output);
                         pointer.set_grab(self, grab, serial, Focus::Clear);
                         self.niri.pointer_grab_ongoing = true;
                         self.niri
@@ -1699,7 +1697,9 @@ impl State {
                     if cx.abs() > cy.abs() {
                         self.niri.layout.view_offset_gesture_begin(&output, true);
                     } else {
-                        self.niri.layout.workspace_switch_gesture_begin(&output);
+                        self.niri
+                            .layout
+                            .workspace_switch_gesture_begin(&output, true);
                     }
                 }
             }
@@ -1711,7 +1711,7 @@ impl State {
         let res = self
             .niri
             .layout
-            .workspace_switch_gesture_update(delta_y, timestamp);
+            .workspace_switch_gesture_update(delta_y, timestamp, true);
         if let Some(output) = res {
             if let Some(output) = output {
                 self.niri.queue_redraw(&output);
@@ -1757,7 +1757,7 @@ impl State {
         let res = self
             .niri
             .layout
-            .workspace_switch_gesture_end(event.cancelled());
+            .workspace_switch_gesture_end(event.cancelled(), Some(true));
         if let Some(output) = res {
             self.niri.queue_redraw(&output);
             handled = true;
