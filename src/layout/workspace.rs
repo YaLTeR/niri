@@ -2997,7 +2997,7 @@ impl<W: LayoutElement> Column<W> {
             .map(|(tile, data)| match data.height {
                 WindowHeight::Auto => WindowHeight::Auto,
                 WindowHeight::Fixed(height) => {
-                    WindowHeight::Fixed(tile.tile_height_for_window_height(height))
+                    WindowHeight::Fixed(tile.tile_height_for_window_height(height.round().max(1.)))
                 }
             })
             .collect::<Vec<_>>();
@@ -3018,7 +3018,6 @@ impl<W: LayoutElement> Column<W> {
                 if min_size.h > 0. {
                     *h = f64::max(*h, min_size.h);
                 }
-                *h = f64::max(*h, 1.);
 
                 height_left -= *h + self.options.gaps;
                 auto_tiles_left -= 1;
@@ -3037,37 +3036,33 @@ impl<W: LayoutElement> Column<W> {
         // However, most max height uses are for fixed-size dialogs, where min height == max_height.
         // This case is separately handled above.
         while auto_tiles_left > 0 {
-            // Compute the current auto height.
-            let auto_height = height_left / auto_tiles_left as f64 - self.options.gaps;
-            let auto_height = f64::max(auto_height, 1.);
-
-            // Integer division above can result in imperfect height distribution. We will make some
-            // tiles 1 px taller to account for this.
-            let mut ones_left = f64::max(
-                0.,
-                height_left - (auto_height + self.options.gaps) * auto_tiles_left as f64,
-            ) as i32;
-
+            // Wayland requires us to round the requested size for a window to integer logical
+            // pixels, therefore we compute the remaining auto height dynamically.
+            let mut height_left_2 = height_left;
+            let mut auto_tiles_left_2 = auto_tiles_left;
             let mut unsatisfied_min = false;
-            let mut ones_left_2 = ones_left;
-            for (h, min_size) in zip(&mut heights, &min_size) {
+            for ((h, tile), min_size) in zip(zip(&mut heights, &self.tiles), &min_size) {
                 if matches!(h, WindowHeight::Fixed(_)) {
                     continue;
                 }
 
-                let mut auto = auto_height;
-                if ones_left_2 > 0 {
-                    auto += 1.;
-                    ones_left_2 -= 1;
-                }
+                // Compute the current auto height.
+                let auto = height_left_2 / auto_tiles_left_2 as f64 - self.options.gaps;
+                let mut auto = tile.tile_height_for_window_height(
+                    tile.window_height_for_tile_height(auto).round().max(1.),
+                );
 
                 // Check if the auto height satisfies the min height.
                 if min_size.h > 0. && min_size.h > auto {
-                    *h = WindowHeight::Fixed(min_size.h);
-                    height_left -= min_size.h + self.options.gaps;
+                    auto = min_size.h;
+                    *h = WindowHeight::Fixed(auto);
+                    height_left -= auto + self.options.gaps;
                     auto_tiles_left -= 1;
                     unsatisfied_min = true;
                 }
+
+                height_left_2 -= auto + self.options.gaps;
+                auto_tiles_left_2 -= 1;
             }
 
             // If some min height was unsatisfied, then we allocated the tile more than the auto
@@ -3078,18 +3073,19 @@ impl<W: LayoutElement> Column<W> {
             }
 
             // All min heights were satisfied, fill them in.
-            for h in &mut heights {
+            for (h, tile) in zip(&mut heights, &self.tiles) {
                 if matches!(h, WindowHeight::Fixed(_)) {
                     continue;
                 }
 
-                let mut auto = auto_height;
-                if ones_left > 0 {
-                    auto += 1.;
-                    ones_left -= 1;
-                }
+                // Compute the current auto height.
+                let auto = height_left / auto_tiles_left as f64 - self.options.gaps;
+                let auto = tile.tile_height_for_window_height(
+                    tile.window_height_for_tile_height(auto).round().max(1.),
+                );
 
                 *h = WindowHeight::Fixed(auto);
+                height_left -= auto + self.options.gaps;
                 auto_tiles_left -= 1;
             }
 
