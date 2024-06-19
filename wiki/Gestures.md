@@ -30,7 +30,13 @@ This works with both window-initiated resizes (when using client-side decoration
 
 <sup>Since: 0.1.6</sup>
 
-Move the view horizontally by holding <kbd>Mod</kbd> and the middle mouse button (or the wheel).
+Move the view horizontally by holding <kbd>Mod</kbd> and the middle mouse button (or the wheel) and dragging the mouse horizontally.
+
+#### Workspace Switch
+
+<sup>Since: 0.1.7</sup>
+
+Switch workspaces by holding <kbd>Mod</kbd> and the middle mouse button (or the wheel) and dragging the mouse vertically.
 
 ### Touchpad
 
