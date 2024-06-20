@@ -1,7 +1,7 @@
 //! Helper for blocking communication over the niri socket.
 
 use std::env;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -50,14 +50,16 @@ impl Socket {
     pub fn send(self, request: Request) -> io::Result<Reply> {
         let Self { mut stream } = self;
 
-        let mut buf = serde_json::to_vec(&request).unwrap();
-        stream.write_all(&buf)?;
+        let mut buf = serde_json::to_string(&request).unwrap();
+        stream.write_all(buf.as_bytes())?;
         stream.shutdown(Shutdown::Write)?;
 
-        buf.clear();
-        stream.read_to_end(&mut buf)?;
+        let mut reader = BufReader::new(stream);
 
-        let reply = serde_json::from_slice(&buf)?;
+        buf.clear();
+        reader.read_line(&mut buf)?;
+
+        let reply = serde_json::from_str(&buf)?;
         Ok(reply)
     }
 }

@@ -132,7 +132,8 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'_, UnixStream>) -> anyhow:
         }
     }
 
-    let buf = serde_json::to_vec(&reply).context("error formatting reply")?;
+    let mut buf = serde_json::to_vec(&reply).context("error formatting reply")?;
+    buf.push(b'\n');
     write.write_all(&buf).await.context("error writing reply")?;
 
     Ok(())
