@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 mod socket;
 pub use socket::{Socket, SOCKET_PATH_ENV};
 
+pub mod state;
+
 /// Request from client to niri.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -38,6 +40,11 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the keyboard layout.
     KeyboardLayouts,
+    /// Start continuously receiving events from the compositor.
+    ///
+    /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
+    /// [`Event`]s, one per line.
+    EventStream,
     /// Respond with an error (for testing error handling).
     ReturnError,
 }
@@ -536,10 +543,18 @@ pub enum Transform {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Window {
+    /// Unique id of this window.
+    pub id: u64,
     /// Title, if set.
     pub title: Option<String>,
     /// Application ID, if set.
     pub app_id: Option<String>,
+    /// Id of the workspace this window is on, if any.
+    pub workspace_id: Option<u64>,
+    /// Whether this window is currently focused.
+    ///
+    /// There can be either one focused window or zero (e.g. when a layer-shell surface has focus).
+    pub is_focused: bool,
 }
 
 /// Output configuration change result.
@@ -556,6 +571,10 @@ pub enum OutputConfigChanged {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Workspace {
+    /// Unique id of this workspace.
+    ///
+    /// This id remains constant regardless of the workspace moving around and across monitors.
+    pub id: u64,
     /// Index of the workspace on its monitor.
     ///
     /// This is the same index you can use for requests like `niri msg action focus-workspace`.
@@ -567,7 +586,15 @@ pub struct Workspace {
     /// Can be `None` if no outputs are currently connected.
     pub output: Option<String>,
     /// Whether the workspace is currently active on its output.
+    ///
+    /// Every output has one active workspace, the one that is currently visible on that output.
     pub is_active: bool,
+    /// Whether the workspace is currently focused.
+    ///
+    /// There's only one focused workspace across all outputs.
+    pub is_focused: bool,
+    /// Id of the active window on this workspace, if any.
+    pub active_window_id: Option<u64>,
 }
 
 /// Configured keyboard layouts.
@@ -578,6 +605,77 @@ pub struct KeyboardLayouts {
     pub names: Vec<String>,
     /// Index of the currently active layout in `names`.
     pub current_idx: u8,
+}
+
+/// A compositor event.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Event {
+    /// The workspace configuration has changed.
+    WorkspacesChanged {
+        /// The new workspace configuration.
+        ///
+        /// This configuration completely replaces the previous configuration. I.e. if any
+        /// workspaces are missing from here, then they were deleted.
+        workspaces: Vec<Workspace>,
+    },
+    /// A workspace was activated on an output.
+    ///
+    /// This doesn't always mean the workspace became focused, just that it's now the active
+    /// workspace on its output. All other workspaces on the same output become inactive.
+    WorkspaceActivated {
+        /// Id of the newly active workspace.
+        id: u64,
+        /// Whether this workspace also became focused.
+        ///
+        /// If `true`, this is now the single focused workspace. All other workspaces are no longer
+        /// focused, but they may remain active on their respective outputs.
+        focused: bool,
+    },
+    /// An active window changed on a workspace.
+    WorkspaceActiveWindowChanged {
+        /// Id of the workspace on which the active window changed.
+        workspace_id: u64,
+        /// Id of the new active window, if any.
+        active_window_id: Option<u64>,
+    },
+    /// The window configuration has changed.
+    WindowsChanged {
+        /// The new window configuration.
+        ///
+        /// This configuration completely replaces the previous configuration. I.e. if any windows
+        /// are missing from here, then they were closed.
+        windows: Vec<Window>,
+    },
+    /// A new toplevel window was opened, or an existing toplevel window changed.
+    WindowOpenedOrChanged {
+        /// The new or updated window.
+        ///
+        /// If the window is focused, all other windows are no longer focused.
+        window: Window,
+    },
+    /// A toplevel window was closed.
+    WindowClosed {
+        /// Id of the removed window.
+        id: u64,
+    },
+    /// Window focus changed.
+    ///
+    /// All other windows are no longer focused.
+    WindowFocusChanged {
+        /// Id of the newly focused window, or `None` if no window is now focused.
+        id: Option<u64>,
+    },
+    /// The configured keyboard layouts have changed.
+    KeyboardLayoutsChanged {
+        /// The new keyboard layout configuration.
+        keyboard_layouts: KeyboardLayouts,
+    },
+    /// The keyboard layout switched.
+    KeyboardLayoutSwitched {
+        /// Index of the newly active layout.
+        idx: u8,
+    },
 }
 
 impl FromStr for WorkspaceReferenceArg {

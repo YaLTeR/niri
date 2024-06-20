@@ -291,7 +291,6 @@ pub struct Niri {
 
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
-    pub ipc_focused_window: Arc<Mutex<Option<Window>>>,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
@@ -502,7 +501,12 @@ impl State {
         let mut niri = Niri::new(config.clone(), event_loop, stop_signal, display, &backend);
         backend.init(&mut niri);
 
-        Ok(Self { backend, niri })
+        let mut state = Self { backend, niri };
+
+        // Initialize some IPC server state.
+        state.ipc_keyboard_layouts_changed();
+
+        Ok(state)
     }
 
     pub fn refresh_and_flush_clients(&mut self) {
@@ -538,6 +542,7 @@ impl State {
         foreign_toplevel::refresh(self);
         self.niri.refresh_window_rules();
         self.refresh_ipc_outputs();
+        self.ipc_refresh_layout();
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_outputs();
@@ -839,8 +844,6 @@ impl State {
                 focus
             );
 
-            let mut newly_focused_window = None;
-
             // Tell the windows their new focus state for window rule purposes.
             if let KeyboardFocus::Layout {
                 surface: Some(surface),
@@ -856,11 +859,8 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
-                    newly_focused_window = Some(mapped.window.clone());
                 }
             }
-
-            *self.niri.ipc_focused_window.lock().unwrap() = newly_focused_window;
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
                 if Some(&grab.root) != focus.surface() {
@@ -911,6 +911,10 @@ impl State {
                     keyboard.with_xkb_state(self, |mut context| {
                         context.set_layout(new_layout);
                     });
+
+                    if let Some(server) = &self.niri.ipc_server {
+                        server.keyboard_layout_switched(new_layout.0 as u8);
+                    }
                 }
             }
 
@@ -1076,6 +1080,8 @@ impl State {
             if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
                 warn!("error updating xkb config: {err:?}");
             }
+
+            self.ipc_keyboard_layouts_changed();
         }
 
         if libinput_config_changed {
@@ -1372,7 +1378,7 @@ impl State {
                     }
                     StreamTargetId::Window { id } => {
                         let mut window = None;
-                        self.niri.layout.with_windows(|mapped, _| {
+                        self.niri.layout.with_windows(|mapped, _, _| {
                             if u64::from(mapped.id().get()) != id {
                                 return;
                             }
@@ -1489,7 +1495,7 @@ impl State {
 
         let mut windows = HashMap::new();
 
-        self.niri.layout.with_windows(|mapped, _| {
+        self.niri.layout.with_windows(|mapped, _, _| {
             let wl_surface = mapped
                 .window
                 .toplevel()
@@ -1843,7 +1849,6 @@ impl Niri {
 
             ipc_server,
             ipc_outputs_changed: false,
-            ipc_focused_window: Arc::new(Mutex::new(None)),
 
             pipewire,
             casts: vec![],
@@ -2811,7 +2816,7 @@ impl Niri {
         let mut seen = HashSet::new();
         let mut output_changed = vec![];
 
-        self.layout.with_windows(|mapped, output| {
+        self.layout.with_windows(|mapped, output, _| {
             seen.insert(mapped.window.clone());
 
             let Some(output) = output else {
@@ -3510,7 +3515,7 @@ impl Niri {
 
         let frame_callback_time = get_monotonic_time();
 
-        self.layout.with_windows(|mapped, _| {
+        self.layout.with_windows(|mapped, _, _| {
             mapped.window.send_frame(
                 output,
                 frame_callback_time,
@@ -3753,7 +3758,7 @@ impl Niri {
         let _span = tracy_client::span!("Niri::render_window_for_screen_cast");
 
         let mut window = None;
-        self.layout.with_windows(|mapped, _| {
+        self.layout.with_windows(|mapped, _, _| {
             if u64::from(mapped.id().get()) != window_id {
                 return;
             }

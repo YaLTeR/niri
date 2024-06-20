@@ -95,7 +95,7 @@ pub fn refresh(state: &mut State) {
     // Save the focused window for last, this way when the focus changes, we will first deactivate
     // the previous window and only then activate the newly focused window.
     let mut focused = None;
-    state.niri.layout.with_windows(|mapped, output| {
+    state.niri.layout.with_windows(|mapped, output, _| {
         let wl_surface = mapped.toplevel().wl_surface();
 
         with_states(wl_surface, |states| {
