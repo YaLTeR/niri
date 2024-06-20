@@ -88,6 +88,8 @@ pub enum Msg {
     },
     /// Get the configured keyboard layouts.
     KeyboardLayouts,
+    /// Start continuously receiving events from the compositor.
+    EventStream,
     /// Print the version of the running niri instance.
     Version,
     /// Request an error from the running niri instance.

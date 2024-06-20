@@ -123,7 +123,7 @@ pub struct OutputId(String);
 static WORKSPACE_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct WorkspaceId(u32);
+pub struct WorkspaceId(pub u32);
 
 impl WorkspaceId {
     fn next() -> WorkspaceId {
@@ -526,6 +526,15 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn current_output(&self) -> Option<&Output> {
         self.output.as_ref()
+    }
+
+    pub fn active_window(&self) -> Option<&W> {
+        if self.columns.is_empty() {
+            return None;
+        }
+
+        let col = &self.columns[self.active_column_idx];
+        Some(col.tiles[col.active_tile_idx].window())
     }
 
     pub fn set_output(&mut self, output: Option<Output>) {

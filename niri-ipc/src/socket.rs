@@ -6,7 +6,7 @@ use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use crate::{Reply, Request};
+use crate::{Event, Reply, Request};
 
 /// Name of the environment variable containing the niri IPC socket path.
 pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
@@ -47,7 +47,11 @@ impl Socket {
     /// * `Ok(Ok(response))`: successful [`Response`](crate::Response) from niri
     /// * `Ok(Err(message))`: error message from niri
     /// * `Err(error)`: error communicating with niri
-    pub fn send(self, request: Request) -> io::Result<Reply> {
+    ///
+    /// This method also returns a blocking function that you can call to keep reading [`Event`]s
+    /// after requesting an [`EventStream`][Request::EventStream]. This function is not useful
+    /// otherwise.
+    pub fn send(self, request: Request) -> io::Result<(Reply, impl FnMut() -> io::Result<Event>)> {
         let Self { mut stream } = self;
 
         let mut buf = serde_json::to_string(&request).unwrap();
@@ -60,6 +64,14 @@ impl Socket {
         reader.read_line(&mut buf)?;
 
         let reply = serde_json::from_str(&buf)?;
-        Ok(reply)
+
+        let events = move || {
+            buf.clear();
+            reader.read_line(&mut buf)?;
+            let event = serde_json::from_str(&buf)?;
+            Ok(event)
+        };
+
+        Ok((reply, events))
     }
 }

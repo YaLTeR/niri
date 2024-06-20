@@ -42,6 +42,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
+use workspace::WorkspaceId;
 
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
@@ -1094,13 +1095,13 @@ impl<W: LayoutElement> Layout<W> {
         mon.workspaces.iter().flat_map(|ws| ws.windows())
     }
 
-    pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>)) {
+    pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>, WorkspaceId)) {
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mon.workspaces {
                         for win in ws.windows() {
-                            f(win, Some(&mon.output));
+                            f(win, Some(&mon.output), ws.id());
                         }
                     }
                 }
@@ -1108,7 +1109,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
                     for win in ws.windows() {
-                        f(win, None);
+                        f(win, None, ws.id());
                     }
                 }
             }
@@ -2484,39 +2485,38 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn ipc_workspaces(&self) -> Vec<niri_ipc::Workspace> {
+    pub fn workspaces(
+        &self,
+    ) -> impl Iterator<Item = (Option<&Monitor<W>>, usize, &Workspace<W>)> + '_ {
+        let iter_normal;
+        let iter_no_outputs;
+
         match &self.monitor_set {
-            MonitorSet::Normal {
-                monitors,
-                primary_idx: _,
-                active_monitor_idx: _,
-            } => {
-                let mut workspaces = Vec::new();
+            MonitorSet::Normal { monitors, .. } => {
+                let it = monitors.iter().flat_map(|mon| {
+                    mon.workspaces
+                        .iter()
+                        .enumerate()
+                        .map(move |(idx, ws)| (Some(mon), idx, ws))
+                });
 
-                for monitor in monitors {
-                    for (idx, workspace) in monitor.workspaces.iter().enumerate() {
-                        workspaces.push(niri_ipc::Workspace {
-                            idx: u8::try_from(idx + 1).unwrap_or(u8::MAX),
-                            name: workspace.name.clone(),
-                            output: Some(monitor.output.name()),
-                            is_active: monitor.active_workspace_idx == idx,
-                        })
-                    }
-                }
-
-                workspaces
+                iter_normal = Some(it);
+                iter_no_outputs = None;
             }
-            MonitorSet::NoOutputs { workspaces } => workspaces
-                .iter()
-                .enumerate()
-                .map(|(idx, ws)| niri_ipc::Workspace {
-                    idx: u8::try_from(idx + 1).unwrap_or(u8::MAX),
-                    name: ws.name.clone(),
-                    output: None,
-                    is_active: false,
-                })
-                .collect(),
+            MonitorSet::NoOutputs { workspaces } => {
+                let it = workspaces
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, ws)| (None, idx, ws));
+
+                iter_normal = None;
+                iter_no_outputs = Some(it);
+            }
         }
+
+        let iter_normal = iter_normal.into_iter().flatten();
+        let iter_no_outputs = iter_no_outputs.into_iter().flatten();
+        iter_normal.chain(iter_no_outputs)
     }
 }
 

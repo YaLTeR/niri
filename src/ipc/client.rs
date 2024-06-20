@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Context};
 use niri_ipc::{
-    KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response, Socket,
-    Transform,
+    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
+    Socket, Transform,
 };
 use serde_json::json;
 
@@ -21,12 +21,13 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         },
         Msg::Workspaces => Request::Workspaces,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
+        Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
     };
 
     let socket = Socket::connect().context("error connecting to the niri socket")?;
 
-    let reply = socket
+    let (reply, mut read_event) = socket
         .send(request)
         .context("error communicating with niri")?;
 
@@ -37,6 +38,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             Socket::connect()
                 .and_then(|socket| socket.send(Request::Version))
                 .ok()
+                .map(|(reply, _read_event)| reply)
         }
         _ => None,
     };
@@ -259,6 +261,62 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             for (idx, name) in names.iter().enumerate() {
                 let is_active = if idx == current_idx { " * " } else { "   " };
                 println!("{is_active}{idx} {name}");
+            }
+        }
+        Msg::EventStream => {
+            let Response::Handled = response else {
+                bail!("unexpected response: expected Handled, got {response:?}");
+            };
+
+            if !json {
+                println!("Started reading events.");
+            }
+
+            loop {
+                let event = read_event().context("error reading event from niri")?;
+
+                if json {
+                    let event = serde_json::to_string(&event).context("error formatting event")?;
+                    println!("{event}");
+                    continue;
+                }
+
+                match event {
+                    Event::WorkspacesChanged { workspaces } => {
+                        println!("Workspaces changed: {workspaces:?}");
+                    }
+                    Event::WorkspaceActivated { id, focused } => {
+                        let word = if focused { "focused" } else { "activated" };
+                        println!("Workspace {word}: {id}");
+                    }
+                    Event::WorkspaceActiveWindowChanged {
+                        workspace_id,
+                        active_window_id,
+                    } => {
+                        println!(
+                            "Workspace {workspace_id}: \
+                             active window changed to {active_window_id:?}"
+                        );
+                    }
+                    Event::WindowsChanged { windows } => {
+                        println!("Windows changed: {windows:?}");
+                    }
+                    Event::WindowOpenedOrChanged { window } => {
+                        println!("Window opened or changed: {window:?}");
+                    }
+                    Event::WindowClosed { id } => {
+                        println!("Window closed: {id}");
+                    }
+                    Event::WindowFocusChanged { id } => {
+                        println!("Window focus changed: {id:?}");
+                    }
+                    Event::KeyboardLayoutsChanged { keyboard_layouts } => {
+                        println!("Keyboard layouts changed: {keyboard_layouts:?}");
+                    }
+                    Event::KeyboardLayoutSwitched { idx } => {
+                        println!("Keyboard layout switched: {idx}");
+                    }
+                }
             }
         }
     }

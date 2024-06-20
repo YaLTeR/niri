@@ -11,6 +11,26 @@ The communication over the IPC socket happens in JSON.
 > If you're getting parsing errors from `niri msg` after upgrading niri, make sure that you've restarted niri itself.
 > You might be trying to run a newer `niri msg` against an older `niri` compositor.
 
+### Event Stream
+
+<sup>Since: 0.1.9</sup>
+
+While most niri IPC requests return a single response, the event stream request will make niri continuously stream events into the IPC connection until it is closed.
+This is useful for implementing various bars and indicators that update as soon as something happens, without continuous polling.
+
+The event stream IPC is designed to give you the complete current state up-front, then follow up with updates to that state.
+This way, your state can never "desync" from niri, and you don't need to make any other IPC information requests.
+
+Where reasonable, event stream state updates are atomic, though this is not always the case.
+For example, a window may end up with a workspace id for a workspace that had already been removed.
+This can happen if the corresponding workspaces-changed event arrives before the corresponding window-changed event.
+
+To get a taste of the events, run `niri msg event-stream`.
+Though, this is more of a debug function than anything.
+You can get raw events from `niri msg --json event-stream`, or by connecting to the niri socket and requesting an event stream manually.
+
+You can find the full list of events along with documentation in the [niri-ipc sub-crate](./niri-ipc/).
+
 ### Backwards Compatibility
 
 The JSON output *should* remain stable, as in:
