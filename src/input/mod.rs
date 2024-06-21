@@ -646,7 +646,7 @@ impl State {
             }
             Action::FocusWindowOrMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
-                    if self.niri.layout.maybe_focus_window_left(&output) {
+                    if self.niri.layout.maybe_focus_window_or_monitor_left(&output) {
                         self.maybe_warp_cursor_to_focus();
                     } else if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -661,7 +661,11 @@ impl State {
             }
             Action::FocusWindowOrMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
-                    if self.niri.layout.maybe_focus_window_right(&output) {
+                    if self
+                        .niri
+                        .layout
+                        .maybe_focus_window_or_monitor_right(&output)
+                    {
                         self.maybe_warp_cursor_to_focus();
                     } else if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);

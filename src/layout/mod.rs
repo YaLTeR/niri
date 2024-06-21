@@ -1320,7 +1320,7 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_window_or_workspace_up();
     }
 
-    pub fn maybe_focus_window_left(&mut self, output: &Output) -> bool {
+    pub fn maybe_focus_window_or_monitor_left(&mut self, output: &Output) -> bool {
         let Some(monitor) = self.active_monitor() else {
             return false;
         };
@@ -1337,7 +1337,7 @@ impl<W: LayoutElement> Layout<W> {
         false
     }
 
-    pub fn maybe_focus_window_right(&mut self, output: &Output) -> bool {
+    pub fn maybe_focus_window_or_monitor_right(&mut self, output: &Output) -> bool {
         let Some(monitor) = self.active_monitor() else {
             return false;
         };
@@ -3073,7 +3073,7 @@ mod tests {
                         return;
                     };
 
-                    layout.maybe_focus_window_left(&output);
+                    layout.maybe_focus_window_or_monitor_left(&output);
                 }
                 Op::FocusWindowOrMonitorRight(id) => {
                     let name = format!("output{id}");
@@ -3081,7 +3081,7 @@ mod tests {
                         return;
                     };
 
-                    layout.maybe_focus_window_right(&output);
+                    layout.maybe_focus_window_or_monitor_right(&output);
                 }
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
