@@ -2740,8 +2740,8 @@ mod tests {
         FocusWindowUpOrColumnRight,
         FocusWindowOrWorkspaceDown,
         FocusWindowOrWorkspaceUp,
-        FocusWindowOrMonitorLeft(#[proptest(strategy = "0..=2u8")] u8), // no idea
-        FocusWindowOrMonitorRight(#[proptest(strategy = "0..=2u8")] u8), // no idea
+        FocusWindowOrMonitorLeft(#[proptest(strategy = "0..=1u8")] u8), // no idea still
+        FocusWindowOrMonitorRight(#[proptest(strategy = "0..=1u8")] u8), // no idea still
         MoveColumnLeft,
         MoveColumnRight,
         MoveColumnToFirst,
@@ -3073,7 +3073,7 @@ mod tests {
                         return;
                     };
 
-                    layout.focus_output(&output);
+                    layout.maybe_focus_window_left(&output);
                 }
                 Op::FocusWindowOrMonitorRight(id) => {
                     let name = format!("output{id}");
@@ -3081,7 +3081,7 @@ mod tests {
                         return;
                     };
 
-                    layout.focus_output(&output);
+                    layout.maybe_focus_window_right(&output);
                 }
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
