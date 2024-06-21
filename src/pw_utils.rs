@@ -48,7 +48,9 @@ pub struct Cast {
     _listener: StreamListener<()>,
     pub is_active: Rc<Cell<bool>>,
     pub output: Output,
-    pub size: Size<i32, Physical>,
+    pub size: Rc<Cell<Size<i32, Physical>>>,
+    pub pending_size: Rc<Cell<Size<i32, Physical>>>,
+    pub refresh: u32,
     pub cursor_mode: CursorMode,
     pub last_frame_time: Duration,
     pub min_time_between_frames: Rc<Cell<Duration>>,
@@ -115,12 +117,13 @@ impl PipeWire {
                 }
             }
         };
+        let redraw_ = redraw.clone();
 
         let mode = output.current_mode().unwrap();
         let size = mode.size;
         let transform = output.current_transform();
         let size = transform.transform_size(size);
-        let refresh = mode.refresh;
+        let refresh = mode.refresh as u32;
 
         let stream = Stream::new(&self.core, "niri-screen-cast-src", Properties::new())
             .context("error creating Stream")?;
@@ -130,6 +133,8 @@ impl PipeWire {
         let is_active = Rc::new(Cell::new(false));
         let min_time_between_frames = Rc::new(Cell::new(Duration::ZERO));
         let dmabufs = Rc::new(RefCell::new(HashMap::new()));
+        let pending_size = Rc::new(Cell::new(size));
+        let size = Rc::new(Cell::new(Size::from((0, 0))));
 
         let listener = stream
             .add_local_listener_with_user_data(())
@@ -180,6 +185,8 @@ impl PipeWire {
             })
             .param_changed({
                 let min_time_between_frames = min_time_between_frames.clone();
+                let size = size.clone();
+                let pending_size = pending_size.clone();
                 move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
                     trace!(?id, "pw stream: param_changed");
@@ -205,6 +212,10 @@ impl PipeWire {
                     let mut format = VideoInfoRaw::new();
                     format.parse(pod).unwrap();
                     trace!("pw stream: got format = {format:?}");
+
+                    assert_eq!(pending_size.get().w as u32, format.size().width);
+                    assert_eq!(pending_size.get().h as u32, format.size().height);
+                    size.set(pending_size.get());
 
                     let max_frame_rate = format.max_framerate();
                     // Subtract 0.5 ms to improve edge cases when equal to refresh rate.
@@ -270,7 +281,8 @@ impl PipeWire {
             .add_buffer({
                 let dmabufs = dmabufs.clone();
                 let stop_cast = stop_cast.clone();
-                move |_stream, (), buffer| {
+                let size = size.clone();
+                move |stream, (), buffer| {
                     trace!("pw stream: add_buffer");
 
                     unsafe {
@@ -278,6 +290,8 @@ impl PipeWire {
                         let spa_data = (*spa_buffer).datas;
                         assert!((*spa_buffer).n_datas > 0);
                         assert!((*spa_data).type_ & (1 << DataType::DmaBuf.as_raw()) > 0);
+
+                        let size = size.get();
 
                         let bo = match gbm.create_buffer_object::<()>(
                             size.w as u32,
@@ -311,6 +325,12 @@ impl PipeWire {
 
                         assert!(dmabufs.borrow_mut().insert(fd, dmabuf).is_none());
                     }
+
+                    // During size re-negotiation, the stream sometimes just keeps running, in
+                    // which case we may need to force a redraw once we got a newly sized buffer.
+                    if dmabufs.borrow().len() == 1 && stream.state() == StreamState::Streaming {
+                        redraw_();
+                    }
                 }
             })
             .remove_buffer({
@@ -331,47 +351,7 @@ impl PipeWire {
             .register()
             .unwrap();
 
-        let object = pod::object!(
-            SpaTypes::ObjectParamFormat,
-            ParamType::EnumFormat,
-            pod::property!(FormatProperties::MediaType, Id, MediaType::Video),
-            pod::property!(FormatProperties::MediaSubtype, Id, MediaSubtype::Raw),
-            pod::property!(FormatProperties::VideoFormat, Id, VideoFormat::BGRx),
-            Property {
-                key: FormatProperties::VideoModifier.as_raw(),
-                value: pod::Value::Long(u64::from(Modifier::Invalid) as i64),
-                flags: PropertyFlags::MANDATORY,
-            },
-            pod::property!(
-                FormatProperties::VideoSize,
-                Rectangle,
-                Rectangle {
-                    width: size.w as u32,
-                    height: size.h as u32,
-                }
-            ),
-            pod::property!(
-                FormatProperties::VideoFramerate,
-                Fraction,
-                Fraction { num: 0, denom: 1 }
-            ),
-            pod::property!(
-                FormatProperties::VideoMaxFramerate,
-                Choice,
-                Range,
-                Fraction,
-                Fraction {
-                    num: refresh as u32,
-                    denom: 1000
-                },
-                Fraction { num: 1, denom: 1 },
-                Fraction {
-                    num: refresh as u32,
-                    denom: 1000
-                }
-            ),
-        );
-
+        let object = make_video_params(pending_size.get(), refresh);
         let mut buffer = vec![];
         let mut params = [make_pod(&mut buffer, object)];
         stream
@@ -390,6 +370,8 @@ impl PipeWire {
             is_active,
             output,
             size,
+            pending_size,
+            refresh,
             cursor_mode,
             last_frame_time: Duration::ZERO,
             min_time_between_frames,
@@ -397,6 +379,69 @@ impl PipeWire {
         };
         Ok(cast)
     }
+}
+
+impl Cast {
+    pub fn set_size(&self, size: Size<i32, Physical>) -> anyhow::Result<()> {
+        if self.pending_size.get() == size {
+            return Ok(());
+        }
+
+        let _span = tracy_client::span!("Cast::set_size");
+
+        self.size.set(Size::from((0, 0)));
+        self.pending_size.set(size);
+
+        let object = make_video_params(size, self.refresh);
+        let mut buffer = vec![];
+        let mut params = [make_pod(&mut buffer, object)];
+        self.stream
+            .update_params(&mut params)
+            .context("error updating stream params")
+    }
+}
+
+fn make_video_params(size: Size<i32, Physical>, refresh: u32) -> pod::Object {
+    pod::object!(
+        SpaTypes::ObjectParamFormat,
+        ParamType::EnumFormat,
+        pod::property!(FormatProperties::MediaType, Id, MediaType::Video),
+        pod::property!(FormatProperties::MediaSubtype, Id, MediaSubtype::Raw),
+        pod::property!(FormatProperties::VideoFormat, Id, VideoFormat::BGRx),
+        Property {
+            key: FormatProperties::VideoModifier.as_raw(),
+            value: pod::Value::Long(u64::from(Modifier::Invalid) as i64),
+            flags: PropertyFlags::MANDATORY,
+        },
+        pod::property!(
+            FormatProperties::VideoSize,
+            Rectangle,
+            Rectangle {
+                width: size.w as u32,
+                height: size.h as u32,
+            }
+        ),
+        pod::property!(
+            FormatProperties::VideoFramerate,
+            Fraction,
+            Fraction { num: 0, denom: 1 }
+        ),
+        pod::property!(
+            FormatProperties::VideoMaxFramerate,
+            Choice,
+            Range,
+            Fraction,
+            Fraction {
+                num: refresh,
+                denom: 1000
+            },
+            Fraction { num: 1, denom: 1 },
+            Fraction {
+                num: refresh,
+                denom: 1000
+            }
+        ),
+    )
 }
 
 fn make_pod(buffer: &mut Vec<u8>, object: pod::Object) -> &Pod {

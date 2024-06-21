@@ -3271,9 +3271,18 @@ impl Niri {
                 continue;
             }
 
-            if cast.size != size {
-                debug!("stopping screencast due to output size change");
-                casts_to_stop.push(cast.session_id);
+            if cast.size.get() != size {
+                if cast.pending_size.get() != size {
+                    debug!("output size changed, updating stream size");
+                    if let Err(err) = cast.set_size(size) {
+                        warn!("error updating stream size, stopping screencast: {err:?}");
+                        casts_to_stop.push(cast.session_id);
+                    }
+                } else {
+                    debug!("stream size still hasn't changed, skipping frame");
+                }
+
+                // Even in the successful case, we'll need to wait till the size actually changes.
                 continue;
             }
 
