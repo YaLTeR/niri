@@ -15,7 +15,7 @@ use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::winit::dpi::LogicalSize;
-use smithay::reexports::winit::window::WindowBuilder;
+use smithay::reexports::winit::window::Window;
 
 use super::{IpcOutputMap, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
@@ -36,11 +36,11 @@ impl Winit {
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<State>,
     ) -> Result<Self, winit::Error> {
-        let builder = WindowBuilder::new()
+        let builder = Window::default_attributes()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
             .with_title("niri");
-        let (backend, winit) = winit::init_from_builder(builder)?;
+        let (backend, winit) = winit::init_from_attributes(builder)?;
 
         let output = Output::new(
             "winit".to_string(),

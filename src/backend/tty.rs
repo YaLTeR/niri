@@ -16,8 +16,9 @@ use bytemuck::cast_slice_mut;
 use libc::dev_t;
 use niri_config::Config;
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
-use smithay::backend::allocator::{Format, Fourcc};
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
 use smithay::backend::drm::{
     DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
@@ -516,7 +517,7 @@ impl Tty {
             niri.layout.update_shaders();
 
             // Create the dmabuf global.
-            let primary_formats = renderer.dmabuf_formats().collect::<HashSet<_>>();
+            let primary_formats = renderer.dmabuf_formats();
             let default_feedback =
                 DmabufFeedbackBuilder::new(render_node.dev_id(), primary_formats.clone())
                     .build()
@@ -880,11 +881,13 @@ impl Tty {
 
         // Filter out the CCS modifiers as they have increased bandwidth, causing some monitor
         // configurations to stop working.
-        let mut render_formats = render_formats.clone();
-        render_formats.retain(|format| {
-            !matches!(
-                format.modifier,
-                Modifier::I915_y_tiled_ccs
+        let render_formats = render_formats
+            .iter()
+            .copied()
+            .filter(|format| {
+                !matches!(
+                    format.modifier,
+                    Modifier::I915_y_tiled_ccs
                     // I915_FORMAT_MOD_Yf_TILED_CCS
                     | Modifier::Unrecognized(0x100000000000005)
                     | Modifier::I915_y_tiled_gen12_rc_ccs
@@ -897,8 +900,9 @@ impl Tty {
                     | Modifier::Unrecognized(0x10000000000000b)
                     // I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC
                     | Modifier::Unrecognized(0x10000000000000c)
-            )
-        });
+                )
+            })
+            .collect::<FormatSet>();
 
         // Create the compositor.
         let mut compositor = DrmCompositor::new(
@@ -921,7 +925,7 @@ impl Tty {
 
         let mut dmabuf_feedback = None;
         if let Ok(primary_renderer) = self.gpu_manager.single_renderer(&self.primary_render_node) {
-            let primary_formats = primary_renderer.dmabuf_formats().collect::<HashSet<_>>();
+            let primary_formats = primary_renderer.dmabuf_formats();
 
             match surface_dmabuf_feedback(
                 &compositor,
@@ -1945,7 +1949,7 @@ fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
 
 fn surface_dmabuf_feedback(
     compositor: &GbmDrmCompositor,
-    primary_formats: HashSet<Format>,
+    primary_formats: FormatSet,
     primary_render_node: DrmNode,
     surface_render_node: DrmNode,
 ) -> Result<SurfaceDmabufFeedback, io::Error> {
@@ -1958,7 +1962,7 @@ fn surface_dmabuf_feedback(
         .iter()
         .chain(planes.overlay.iter().flat_map(|p| p.formats.iter()))
         .copied()
-        .collect::<HashSet<_>>();
+        .collect::<FormatSet>();
 
     // We limit the scan-out trache to formats we can also render from so that there is always a
     // fallback render path available in case the supplied buffer can not be scanned out directly.
