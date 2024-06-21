@@ -1320,41 +1320,74 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_window_or_workspace_up();
     }
 
-    pub fn focus_window_or_monitor_left(&mut self, output: &Output) {
+    pub fn should_focus_window_left(&mut self) -> bool {
         let Some(monitor) = self.active_monitor() else {
-            return;
+            return false;
         };
 
         let workspace = monitor.active_workspace();
-        if workspace.columns.is_empty() {
-            self.focus_output(output);
-        } else {
-            let curr_idx = workspace.active_column_idx;
-            if curr_idx != 0 {
-                monitor.focus_left();
-            } else {
-                self.focus_output(output);
-            }
+        let curr_idx = workspace.active_column_idx;
+
+        if !workspace.columns.is_empty() && curr_idx != 0 {
+            monitor.focus_left();
+
+            return true;
         }
+
+        false
     }
 
-    pub fn focus_window_or_monitor_right(&mut self, output: &Output) {
+    pub fn should_focus_monitor_left(&mut self, output: &Output) -> bool {
         let Some(monitor) = self.active_monitor() else {
-            return;
+            return false;
         };
 
         let workspace = monitor.active_workspace();
-        if workspace.columns.is_empty() {
+        let curr_idx = workspace.active_column_idx;
+
+        if workspace.columns.is_empty() || curr_idx == 0 {
             self.focus_output(output);
-        } else {
-            let curr_idx = workspace.active_column_idx;
-            let columns = &workspace.columns;
-            if curr_idx != columns.len() - 1 {
-                monitor.focus_right();
-            } else {
-                self.focus_output(output);
-            }
+
+            return true;
         }
+
+        false
+    }
+
+    pub fn should_focus_window_right(&mut self) -> bool {
+        let Some(monitor) = self.active_monitor() else {
+            return false;
+        };
+
+        let workspace = monitor.active_workspace();
+        let curr_idx = workspace.active_column_idx;
+        let columns = &workspace.columns;
+
+        if !workspace.columns.is_empty() && curr_idx != columns.len() - 1 {
+            monitor.focus_right();
+
+            return true;
+        }
+
+        false
+    }
+
+    pub fn should_focus_monitor_right(&mut self, output: &Output) -> bool {
+        let Some(monitor) = self.active_monitor() else {
+            return false;
+        };
+
+        let workspace = monitor.active_workspace();
+        let curr_idx = workspace.active_column_idx;
+        let columns = &workspace.columns;
+
+        if workspace.columns.is_empty() || curr_idx == columns.len() - 1 {
+            self.focus_output(output);
+
+            return true;
+        }
+
+        false
     }
 
     pub fn move_to_workspace_up(&mut self) {
