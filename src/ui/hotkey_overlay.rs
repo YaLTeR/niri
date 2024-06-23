@@ -403,6 +403,9 @@ fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
     if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT) {
         name.push_str("ISO_Level3_Shift + ");
     }
+    if key.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT) {
+        name.push_str("ISO_Level5_Shift + ");
+    }
     if key.modifiers.contains(Modifiers::SHIFT) {
         name.push_str("Shift + ");
     }

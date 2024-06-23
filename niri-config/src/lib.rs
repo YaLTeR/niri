@@ -1004,11 +1004,12 @@ bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Modifiers : u8 {
         const CTRL = 1;
-        const SHIFT = 2;
-        const ALT = 4;
-        const SUPER = 8;
-        const ISO_LEVEL3_SHIFT = 16;
-        const COMPOSITOR = 32;
+        const SHIFT = 1 << 1;
+        const ALT = 1 << 2;
+        const SUPER = 1 << 3;
+        const ISO_LEVEL3_SHIFT = 1 << 4;
+        const ISO_LEVEL5_SHIFT = 1 << 5;
+        const COMPOSITOR = 1 << 6;
     }
 }
 
@@ -2509,6 +2510,10 @@ impl FromStr for Key {
                 || part.eq_ignore_ascii_case("mod5")
             {
                 modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
+            } else if part.eq_ignore_ascii_case("iso_level5_shift")
+                || part.eq_ignore_ascii_case("mod3")
+            {
+                modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
             } else {
                 return Err(miette!("invalid modifier: {part}"));
             }
@@ -3275,7 +3280,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_iso_level3_shift() {
+    fn parse_iso_level_shifts() {
         assert_eq!(
             "ISO_Level3_Shift+A".parse::<Key>().unwrap(),
             Key {
@@ -3288,6 +3293,21 @@ mod tests {
             Key {
                 trigger: Trigger::Keysym(Keysym::a),
                 modifiers: Modifiers::ISO_LEVEL3_SHIFT
+            },
+        );
+
+        assert_eq!(
+            "ISO_Level5_Shift+A".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::a),
+                modifiers: Modifiers::ISO_LEVEL5_SHIFT
+            },
+        );
+        assert_eq!(
+            "Mod3+A".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::a),
+                modifiers: Modifiers::ISO_LEVEL5_SHIFT
             },
         );
     }
