@@ -4,6 +4,7 @@ use zbus::Interface;
 use crate::niri::State;
 
 pub mod freedesktop_screensaver;
+pub mod gnome_shell_introspect;
 pub mod gnome_shell_screenshot;
 pub mod mutter_display_config;
 pub mod mutter_service_channel;
@@ -14,6 +15,7 @@ pub mod mutter_screen_cast;
 use mutter_screen_cast::ScreenCast;
 
 use self::freedesktop_screensaver::ScreenSaver;
+use self::gnome_shell_introspect::Introspect;
 use self::mutter_display_config::DisplayConfig;
 use self::mutter_service_channel::ServiceChannel;
 
@@ -27,6 +29,7 @@ pub struct DBusServers {
     pub conn_display_config: Option<Connection>,
     pub conn_screen_saver: Option<Connection>,
     pub conn_screen_shot: Option<Connection>,
+    pub conn_introspect: Option<Connection>,
     #[cfg(feature = "xdp-gnome-screencast")]
     pub conn_screen_cast: Option<Connection>,
 }
@@ -65,6 +68,19 @@ impl DBusServers {
                 .unwrap();
             let screenshot = gnome_shell_screenshot::Screenshot::new(to_niri, from_niri);
             dbus.conn_screen_shot = try_start(screenshot);
+
+            let (to_niri, from_introspect) = calloop::channel::channel();
+            let (to_introspect, from_niri) = async_channel::unbounded();
+            niri.event_loop
+                .insert_source(from_introspect, move |event, _, state| match event {
+                    calloop::channel::Event::Msg(msg) => {
+                        state.on_introspect_msg(&to_introspect, msg)
+                    }
+                    calloop::channel::Event::Closed => (),
+                })
+                .unwrap();
+            let introspect = Introspect::new(to_niri, from_niri);
+            dbus.conn_introspect = try_start(introspect);
 
             #[cfg(feature = "xdp-gnome-screencast")]
             if niri.pipewire.is_some() {

@@ -99,6 +99,8 @@ use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
+use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
@@ -1271,6 +1273,50 @@ impl State {
             if let Err(err) = to_screenshot.send_blocking(msg) {
                 warn!("error sending None to screenshot: {err:?}");
             }
+        }
+    }
+
+    #[cfg(feature = "dbus")]
+    pub fn on_introspect_msg(
+        &mut self,
+        to_introspect: &async_channel::Sender<NiriToIntrospect>,
+        msg: IntrospectToNiri,
+    ) {
+        use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+
+        let IntrospectToNiri::GetWindows = msg;
+        let _span = tracy_client::span!("GetWindows");
+
+        let mut windows = HashMap::new();
+
+        self.niri.layout.with_windows(|mapped, _| {
+            let wl_surface = mapped
+                .window
+                .toplevel()
+                .expect("no X11 support")
+                .wl_surface();
+
+            let id = u64::from(mapped.id().get());
+            let props = with_states(wl_surface, |states| {
+                let role = states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+
+                gnome_shell_introspect::WindowProperties {
+                    title: role.title.clone().unwrap_or_default(),
+                    app_id: role.app_id.clone().unwrap_or_default(),
+                }
+            });
+
+            windows.insert(id, props);
+        });
+
+        let msg = NiriToIntrospect::Windows(windows);
+        if let Err(err) = to_introspect.send_blocking(msg) {
+            warn!("error sending windows to introspect: {err:?}");
         }
     }
 }
