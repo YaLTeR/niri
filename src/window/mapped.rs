@@ -49,7 +49,7 @@ pub struct Mapped {
     is_focused: bool,
 
     /// Whether this window is the active window in its column.
-    pub is_active_in_column: bool,
+    is_active_in_column: bool,
 
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
@@ -145,6 +145,10 @@ impl Mapped {
 
     pub fn is_focused(&self) -> bool {
         self.is_focused
+    }
+
+    pub fn is_active_in_column(&self) -> bool {
+        self.is_active_in_column
     }
 
     pub fn set_is_focused(&mut self, is_focused: bool) {
