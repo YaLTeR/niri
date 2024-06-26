@@ -27,11 +27,15 @@ use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
+use crate::utils::id::IdCounter;
 use crate::utils::{send_scale_transform, ResizeEdge};
 
 #[derive(Debug)]
 pub struct Mapped {
     pub window: Window,
+
+    /// Unique ID of this `Mapped`.
+    id: MappedId,
 
     /// Pre-commit hook that we have on all mapped toplevel surfaces.
     pre_commit_hook: HookId,
@@ -72,6 +76,21 @@ pub struct Mapped {
     last_interactive_resize_start: Cell<Option<(Duration, ResizeEdge)>>,
 }
 
+static MAPPED_ID_COUNTER: IdCounter = IdCounter::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MappedId(u32);
+
+impl MappedId {
+    fn next() -> MappedId {
+        MappedId(MAPPED_ID_COUNTER.next())
+    }
+
+    pub fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Interactive resize state.
 #[derive(Debug)]
 enum InteractiveResize {
@@ -100,6 +119,7 @@ impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
         Self {
             window,
+            id: MappedId::next(),
             pre_commit_hook: hook,
             rules,
             need_to_recompute_rules: false,
@@ -141,6 +161,10 @@ impl Mapped {
         }
 
         self.recompute_window_rules(rules, is_at_startup)
+    }
+
+    pub fn id(&self) -> MappedId {
+        self.id
     }
 
     pub fn is_focused(&self) -> bool {
