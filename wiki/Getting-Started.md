@@ -29,6 +29,14 @@ You can try the following:
 1. Update NVIDIA drivers. You need a GPU and drivers recent enough to support GBM.
 2. Make sure kernel modesetting is enabled. This usually involves adding `nvidia-drm.modeset=1` to the kernel command line. Find and follow a guide for your distribution. Guides from other Wayland compositors can help.
 
+If niri runs but the screen flickers, try adding this into your niri config:
+
+```
+debug {
+    wait-for-frame-completion-before-queueing
+}
+```
+
 ### Asahi, ARM, and other kmsro devices
 
 On some of these systems, niri fails to correctly detect the primary render device.
