@@ -87,11 +87,8 @@ impl DBusServers {
                 let (to_niri, from_screen_cast) = calloop::channel::channel();
                 niri.event_loop
                     .insert_source(from_screen_cast, {
-                        let to_niri = to_niri.clone();
                         move |event, _, state| match event {
-                            calloop::channel::Event::Msg(msg) => {
-                                state.on_screen_cast_msg(&to_niri, msg)
-                            }
+                            calloop::channel::Event::Msg(msg) => state.on_screen_cast_msg(msg),
                             calloop::channel::Event::Closed => (),
                         }
                     })

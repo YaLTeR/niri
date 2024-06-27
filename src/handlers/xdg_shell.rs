@@ -466,6 +466,12 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.clone();
 
+        #[cfg(feature = "xdp-gnome-screencast")]
+        self.niri
+            .stop_casts_for_target(crate::pw_utils::CastTarget::Window {
+                id: u64::from(mapped.id().get()),
+            });
+
         self.backend.with_primary_renderer(|renderer| {
             self.niri.layout.store_unmap_snapshot(renderer, &window);
         });

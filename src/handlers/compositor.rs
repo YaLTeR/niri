@@ -209,6 +209,9 @@ impl CompositorHandler for State {
                 let window = mapped.window.clone();
                 let output = output.clone();
 
+                #[cfg(feature = "xdp-gnome-screencast")]
+                let id = mapped.id();
+
                 // This is a commit of a previously-mapped toplevel.
                 let is_mapped =
                     with_renderer_surface_state(surface, |state| state.buffer().is_some())
@@ -234,6 +237,12 @@ impl CompositorHandler for State {
                     // Test client: wleird-unmap.
                     let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
                     let was_active = active_window == Some(&window);
+
+                    #[cfg(feature = "xdp-gnome-screencast")]
+                    self.niri
+                        .stop_casts_for_target(crate::pw_utils::CastTarget::Window {
+                            id: u64::from(id.get()),
+                        });
 
                     self.niri.layout.remove_window(&window);
 

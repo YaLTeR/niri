@@ -27,19 +27,28 @@ use smithay::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::DrmDeviceFd;
-use smithay::output::Output;
+use smithay::backend::renderer::element::RenderElement;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::output::WeakOutput;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
-use smithay::utils::{Physical, Size};
+use smithay::utils::{Physical, Scale, Size, Transform};
 use zbus::SignalContext;
 
-use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri};
+use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::State;
+use crate::render_helpers::render_to_dmabuf;
 
 pub struct PipeWire {
     _context: Context,
     pub core: Core,
+    to_niri: calloop::channel::Sender<PwToNiri>,
+}
+
+pub enum PwToNiri {
+    StopCast { session_id: usize },
+    Redraw(CastTarget),
 }
 
 pub struct Cast {
@@ -47,14 +56,35 @@ pub struct Cast {
     pub stream: Stream,
     _listener: StreamListener<()>,
     pub is_active: Rc<Cell<bool>>,
-    pub output: Output,
-    pub size: Rc<Cell<Size<i32, Physical>>>,
-    pub pending_size: Rc<Cell<Size<i32, Physical>>>,
+    pub target: CastTarget,
+    pub size: Rc<Cell<CastSize>>,
     pub refresh: u32,
     pub cursor_mode: CursorMode,
     pub last_frame_time: Duration,
     pub min_time_between_frames: Rc<Cell<Duration>>,
     pub dmabufs: Rc<RefCell<HashMap<i32, Dmabuf>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastSize {
+    InitialPending(Size<i32, Physical>),
+    Ready(Size<i32, Physical>),
+    ChangePending {
+        last_negotiated: Size<i32, Physical>,
+        pending: Size<i32, Physical>,
+    },
+}
+
+#[derive(PartialEq, Eq)]
+pub enum CastSizeChange {
+    Ready,
+    Pending,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum CastTarget {
+    Output(WeakOutput),
+    Window { id: u64 },
 }
 
 impl PipeWire {
@@ -86,44 +116,48 @@ impl PipeWire {
             })
             .unwrap();
 
+        let (to_niri, from_pipewire) = calloop::channel::channel();
+        event_loop
+            .insert_source(from_pipewire, move |event, _, state| match event {
+                calloop::channel::Event::Msg(msg) => state.on_pw_msg(msg),
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+
         Ok(Self {
             _context: context,
             core,
+            to_niri,
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn start_cast(
         &self,
-        to_niri: calloop::channel::Sender<ScreenCastToNiri>,
         gbm: GbmDevice<DrmDeviceFd>,
         session_id: usize,
-        output: Output,
+        target: CastTarget,
+        size: Size<i32, Physical>,
+        refresh: u32,
         cursor_mode: CursorMode,
         signal_ctx: SignalContext<'static>,
     ) -> anyhow::Result<Cast> {
         let _span = tracy_client::span!("PipeWire::start_cast");
 
-        let to_niri_ = to_niri.clone();
+        let to_niri_ = self.to_niri.clone();
         let stop_cast = move || {
-            if let Err(err) = to_niri_.send(ScreenCastToNiri::StopCast { session_id }) {
+            if let Err(err) = to_niri_.send(PwToNiri::StopCast { session_id }) {
                 warn!("error sending StopCast to niri: {err:?}");
             }
         };
-        let weak = output.downgrade();
+        let target_ = target.clone();
+        let to_niri_ = self.to_niri.clone();
         let redraw = move || {
-            if let Some(output) = weak.upgrade() {
-                if let Err(err) = to_niri.send(ScreenCastToNiri::Redraw(output)) {
-                    warn!("error sending Redraw to niri: {err:?}");
-                }
+            if let Err(err) = to_niri_.send(PwToNiri::Redraw(target_.clone())) {
+                warn!("error sending Redraw to niri: {err:?}");
             }
         };
         let redraw_ = redraw.clone();
-
-        let mode = output.current_mode().unwrap();
-        let size = mode.size;
-        let transform = output.current_transform();
-        let size = transform.transform_size(size);
-        let refresh = mode.refresh as u32;
 
         let stream = Stream::new(&self.core, "niri-screen-cast-src", Properties::new())
             .context("error creating Stream")?;
@@ -133,8 +167,9 @@ impl PipeWire {
         let is_active = Rc::new(Cell::new(false));
         let min_time_between_frames = Rc::new(Cell::new(Duration::ZERO));
         let dmabufs = Rc::new(RefCell::new(HashMap::new()));
-        let pending_size = Rc::new(Cell::new(size));
-        let size = Rc::new(Cell::new(Size::from((0, 0))));
+
+        let pending_size = size;
+        let size = Rc::new(Cell::new(CastSize::InitialPending(size)));
 
         let listener = stream
             .add_local_listener_with_user_data(())
@@ -186,7 +221,6 @@ impl PipeWire {
             .param_changed({
                 let min_time_between_frames = min_time_between_frames.clone();
                 let size = size.clone();
-                let pending_size = pending_size.clone();
                 move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
                     trace!(?id, "pw stream: param_changed");
@@ -213,9 +247,18 @@ impl PipeWire {
                     format.parse(pod).unwrap();
                     trace!("pw stream: got format = {format:?}");
 
-                    assert_eq!(pending_size.get().w as u32, format.size().width);
-                    assert_eq!(pending_size.get().h as u32, format.size().height);
-                    size.set(pending_size.get());
+                    let expected_size = size.get().expected_format_size();
+                    let format_size =
+                        Size::from((format.size().width as i32, format.size().height as i32));
+
+                    if format_size == expected_size {
+                        size.set(CastSize::Ready(expected_size));
+                    } else {
+                        size.set(CastSize::ChangePending {
+                            last_negotiated: format_size,
+                            pending: expected_size,
+                        });
+                    }
 
                     let max_frame_rate = format.max_framerate();
                     // Subtract 0.5 ms to improve edge cases when equal to refresh rate.
@@ -283,15 +326,15 @@ impl PipeWire {
                 let stop_cast = stop_cast.clone();
                 let size = size.clone();
                 move |stream, (), buffer| {
-                    trace!("pw stream: add_buffer");
+                    let size = size.get().negotiated_size();
+                    trace!("pw stream: add_buffer, size={:?}", size);
+                    let size = size.expect("size must be negotiated to allocate buffers");
 
                     unsafe {
                         let spa_buffer = (*buffer).buffer;
                         let spa_data = (*spa_buffer).datas;
                         assert!((*spa_buffer).n_datas > 0);
                         assert!((*spa_data).type_ & (1 << DataType::DmaBuf.as_raw()) > 0);
-
-                        let size = size.get();
 
                         let bo = match gbm.create_buffer_object::<()>(
                             size.w as u32,
@@ -351,7 +394,9 @@ impl PipeWire {
             .register()
             .unwrap();
 
-        let object = make_video_params(pending_size.get(), refresh);
+        trace!("starting pw stream with size={pending_size:?}, refresh={refresh}");
+
+        let object = make_video_params(pending_size, refresh);
         let mut buffer = vec![];
         let mut params = [make_pod(&mut buffer, object)];
         stream
@@ -368,9 +413,8 @@ impl PipeWire {
             stream,
             _listener: listener,
             is_active,
-            output,
+            target,
             size,
-            pending_size,
             refresh,
             cursor_mode,
             last_frame_time: Duration::ZERO,
@@ -382,22 +426,160 @@ impl PipeWire {
 }
 
 impl Cast {
-    pub fn set_size(&self, size: Size<i32, Physical>) -> anyhow::Result<()> {
-        if self.pending_size.get() == size {
-            return Ok(());
+    pub fn ensure_size(&self, size: Size<i32, Physical>) -> anyhow::Result<CastSizeChange> {
+        let current_size = self.size.get();
+        if current_size == CastSize::Ready(size) {
+            return Ok(CastSizeChange::Ready);
         }
 
-        let _span = tracy_client::span!("Cast::set_size");
+        if current_size.pending_size() == Some(size) {
+            debug!("stream size still hasn't changed, skipping frame");
+            return Ok(CastSizeChange::Pending);
+        }
 
-        self.size.set(Size::from((0, 0)));
-        self.pending_size.set(size);
+        let _span = tracy_client::span!("Cast::ensure_size");
+        debug!("cast size changed, updating stream size");
+
+        self.size.set(current_size.with_pending(size));
 
         let object = make_video_params(size, self.refresh);
         let mut buffer = vec![];
         let mut params = [make_pod(&mut buffer, object)];
         self.stream
             .update_params(&mut params)
-            .context("error updating stream params")
+            .context("error updating stream params")?;
+
+        Ok(CastSizeChange::Pending)
+    }
+
+    pub fn set_refresh(&mut self, refresh: u32) -> anyhow::Result<()> {
+        if self.refresh == refresh {
+            return Ok(());
+        }
+
+        let _span = tracy_client::span!("Cast::set_refresh");
+        debug!("cast FPS changed, updating stream FPS");
+        self.refresh = refresh;
+
+        let size = self.size.get().expected_format_size();
+        let object = make_video_params(size, self.refresh);
+        let mut buffer = vec![];
+        let mut params = [make_pod(&mut buffer, object)];
+        self.stream
+            .update_params(&mut params)
+            .context("error updating stream params")?;
+
+        Ok(())
+    }
+
+    pub fn should_skip_frame(&self, target_frame_time: Duration) -> bool {
+        let last = self.last_frame_time;
+        let min = self.min_time_between_frames.get();
+
+        if last.is_zero() {
+            trace!(?target_frame_time, ?last, "last is zero, recording");
+            return false;
+        }
+
+        if target_frame_time < last {
+            // Record frame with a warning; in case it was an overflow this will fix it.
+            warn!(
+                ?target_frame_time,
+                ?last,
+                "target frame time is below last, did it overflow or did we mispredict?"
+            );
+            return false;
+        }
+
+        let diff = target_frame_time - last;
+        if diff < min {
+            trace!(
+                ?target_frame_time,
+                ?last,
+                "skipping frame because it is too soon: diff={diff:?} < min={min:?}",
+            );
+            return true;
+        }
+
+        false
+    }
+
+    pub fn dequeue_buffer_and_render(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+        size: Size<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> bool {
+        let mut buffer = match self.stream.dequeue_buffer() {
+            Some(buffer) => buffer,
+            None => {
+                warn!("no available buffer in pw stream, skipping frame");
+                return false;
+            }
+        };
+
+        let data = &mut buffer.datas_mut()[0];
+        let fd = data.as_raw().fd as i32;
+        let dmabuf = self.dmabufs.borrow()[&fd].clone();
+
+        if let Err(err) =
+            render_to_dmabuf(renderer, dmabuf, size, scale, Transform::Normal, elements)
+        {
+            warn!("error rendering to dmabuf: {err:?}");
+            return false;
+        }
+
+        let maxsize = data.as_raw().maxsize;
+        let chunk = data.chunk_mut();
+        *chunk.size_mut() = maxsize;
+        *chunk.stride_mut() = maxsize as i32 / size.h;
+
+        true
+    }
+}
+
+impl CastSize {
+    fn pending_size(self) -> Option<Size<i32, Physical>> {
+        match self {
+            CastSize::InitialPending(pending) => Some(pending),
+            CastSize::Ready(_) => None,
+            CastSize::ChangePending { pending, .. } => Some(pending),
+        }
+    }
+
+    fn negotiated_size(self) -> Option<Size<i32, Physical>> {
+        match self {
+            CastSize::InitialPending(_) => None,
+            CastSize::Ready(size) => Some(size),
+            CastSize::ChangePending {
+                last_negotiated, ..
+            } => Some(last_negotiated),
+        }
+    }
+
+    fn expected_format_size(self) -> Size<i32, Physical> {
+        match self {
+            CastSize::InitialPending(pending) => pending,
+            CastSize::Ready(size) => size,
+            CastSize::ChangePending { pending, .. } => pending,
+        }
+    }
+
+    fn with_pending(self, pending: Size<i32, Physical>) -> Self {
+        match self {
+            CastSize::InitialPending(_) => CastSize::InitialPending(pending),
+            CastSize::Ready(size) => CastSize::ChangePending {
+                last_negotiated: size,
+                pending,
+            },
+            CastSize::ChangePending {
+                last_negotiated, ..
+            } => CastSize::ChangePending {
+                last_negotiated,
+                pending,
+            },
+        }
     }
 }
 
