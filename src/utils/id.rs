@@ -11,7 +11,9 @@ pub struct IdCounter {
 impl IdCounter {
     pub const fn new() -> Self {
         Self {
-            value: AtomicU32::new(0),
+            // Start from 1 to reduce the possibility that some other code that uses these IDs will
+            // get confused.
+            value: AtomicU32::new(1),
         }
     }
 
