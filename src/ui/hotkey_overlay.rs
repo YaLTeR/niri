@@ -398,6 +398,9 @@ fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
     if key.modifiers.contains(Modifiers::ALT) || (has_comp_mod && comp_mod == CompositorMod::Alt) {
         name.push_str("Alt + ");
     }
+    if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT) {
+        name.push_str("ISO_Level3_Shift + ");
+    }
     if key.modifiers.contains(Modifiers::SHIFT) {
         name.push_str("Shift + ");
     }
