@@ -59,6 +59,7 @@ pub struct Cast {
     pub target: CastTarget,
     pub size: Rc<Cell<CastSize>>,
     pub refresh: u32,
+    offer_alpha: bool,
     pub cursor_mode: CursorMode,
     pub last_frame_time: Duration,
     pub min_time_between_frames: Rc<Cell<Duration>>,
@@ -85,6 +86,20 @@ pub enum CastSizeChange {
 pub enum CastTarget {
     Output(WeakOutput),
     Window { id: u64 },
+}
+
+macro_rules! make_params {
+    ($size:expr, $refresh:expr, $alpha:expr, $b1:expr, $b2:expr) => {{
+        let o1 = make_video_params($size, $refresh, false);
+        let pod1 = make_pod($b1, o1);
+
+        if $alpha {
+            let o2 = make_video_params($size, $refresh, true);
+            &mut [pod1, make_pod($b2, o2)][..]
+        } else {
+            &mut [pod1][..]
+        }
+    }};
 }
 
 impl PipeWire {
@@ -139,6 +154,7 @@ impl PipeWire {
         target: CastTarget,
         size: Size<i32, Physical>,
         refresh: u32,
+        alpha: bool,
         cursor_mode: CursorMode,
         signal_ctx: SignalContext<'static>,
     ) -> anyhow::Result<Cast> {
@@ -167,6 +183,7 @@ impl PipeWire {
         let is_active = Rc::new(Cell::new(false));
         let min_time_between_frames = Rc::new(Cell::new(Duration::ZERO));
         let dmabufs = Rc::new(RefCell::new(HashMap::new()));
+        let negotiated_alpha = Rc::new(Cell::new(false));
 
         let pending_size = size;
         let size = Rc::new(Cell::new(CastSize::InitialPending(size)));
@@ -221,6 +238,7 @@ impl PipeWire {
             .param_changed({
                 let min_time_between_frames = min_time_between_frames.clone();
                 let size = size.clone();
+                let negotiated_alpha = negotiated_alpha.clone();
                 move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
                     trace!(?id, "pw stream: param_changed");
@@ -259,6 +277,8 @@ impl PipeWire {
                             pending: expected_size,
                         });
                     }
+
+                    negotiated_alpha.set(format.format() == VideoFormat::BGRA);
 
                     let max_frame_rate = format.max_framerate();
                     // Subtract 0.5 ms to improve edge cases when equal to refresh rate.
@@ -325,9 +345,11 @@ impl PipeWire {
                 let dmabufs = dmabufs.clone();
                 let stop_cast = stop_cast.clone();
                 let size = size.clone();
+                let negotiated_alpha = negotiated_alpha.clone();
                 move |stream, (), buffer| {
                     let size = size.get().negotiated_size();
-                    trace!("pw stream: add_buffer, size={:?}", size);
+                    let alpha = negotiated_alpha.get();
+                    trace!("pw stream: add_buffer, size={:?}, alpha={alpha}", size);
                     let size = size.expect("size must be negotiated to allocate buffers");
 
                     unsafe {
@@ -336,10 +358,16 @@ impl PipeWire {
                         assert!((*spa_buffer).n_datas > 0);
                         assert!((*spa_data).type_ & (1 << DataType::DmaBuf.as_raw()) > 0);
 
+                        let fourcc = if alpha {
+                            Fourcc::Argb8888
+                        } else {
+                            Fourcc::Xrgb8888
+                        };
+
                         let bo = match gbm.create_buffer_object::<()>(
                             size.w as u32,
                             size.h as u32,
-                            Fourcc::Xrgb8888,
+                            fourcc,
                             GbmBufferFlags::RENDERING | GbmBufferFlags::LINEAR,
                         ) {
                             Ok(bo) => bo,
@@ -396,15 +424,15 @@ impl PipeWire {
 
         trace!("starting pw stream with size={pending_size:?}, refresh={refresh}");
 
-        let object = make_video_params(pending_size, refresh);
-        let mut buffer = vec![];
-        let mut params = [make_pod(&mut buffer, object)];
+        let mut b1 = Vec::new();
+        let mut b2 = Vec::new();
+        let params = make_params!(pending_size, refresh, alpha, &mut b1, &mut b2);
         stream
             .connect(
                 Direction::Output,
                 None,
                 StreamFlags::DRIVER | StreamFlags::ALLOC_BUFFERS,
-                &mut params,
+                params,
             )
             .context("error connecting stream")?;
 
@@ -416,6 +444,7 @@ impl PipeWire {
             target,
             size,
             refresh,
+            offer_alpha: alpha,
             cursor_mode,
             last_frame_time: Duration::ZERO,
             min_time_between_frames,
@@ -442,11 +471,11 @@ impl Cast {
 
         self.size.set(current_size.with_pending(size));
 
-        let object = make_video_params(size, self.refresh);
-        let mut buffer = vec![];
-        let mut params = [make_pod(&mut buffer, object)];
+        let mut b1 = Vec::new();
+        let mut b2 = Vec::new();
+        let params = make_params!(size, self.refresh, self.offer_alpha, &mut b1, &mut b2);
         self.stream
-            .update_params(&mut params)
+            .update_params(params)
             .context("error updating stream params")?;
 
         Ok(CastSizeChange::Pending)
@@ -462,11 +491,11 @@ impl Cast {
         self.refresh = refresh;
 
         let size = self.size.get().expected_format_size();
-        let object = make_video_params(size, self.refresh);
-        let mut buffer = vec![];
-        let mut params = [make_pod(&mut buffer, object)];
+        let mut b1 = Vec::new();
+        let mut b2 = Vec::new();
+        let params = make_params!(size, self.refresh, self.offer_alpha, &mut b1, &mut b2);
         self.stream
-            .update_params(&mut params)
+            .update_params(params)
             .context("error updating stream params")?;
 
         Ok(())
@@ -583,13 +612,19 @@ impl CastSize {
     }
 }
 
-fn make_video_params(size: Size<i32, Physical>, refresh: u32) -> pod::Object {
+fn make_video_params(size: Size<i32, Physical>, refresh: u32, alpha: bool) -> pod::Object {
+    let format = if alpha {
+        VideoFormat::BGRA
+    } else {
+        VideoFormat::BGRx
+    };
+
     pod::object!(
         SpaTypes::ObjectParamFormat,
         ParamType::EnumFormat,
         pod::property!(FormatProperties::MediaType, Id, MediaType::Video),
         pod::property!(FormatProperties::MediaSubtype, Id, MediaSubtype::Raw),
-        pod::property!(FormatProperties::VideoFormat, Id, VideoFormat::BGRx),
+        pod::property!(FormatProperties::VideoFormat, Id, format),
         Property {
             key: FormatProperties::VideoModifier.as_raw(),
             value: pod::Value::Long(u64::from(Modifier::Invalid) as i64),

@@ -1229,7 +1229,7 @@ impl State {
                     return;
                 };
 
-                let (target, size, refresh) = match target {
+                let (target, size, refresh, alpha) = match target {
                     StreamTargetId::Output { name } => {
                         let global_space = &self.niri.global_space;
                         let output = global_space.outputs().find(|out| out.name() == name);
@@ -1243,7 +1243,7 @@ impl State {
                         let transform = output.current_transform();
                         let size = transform.transform_size(mode.size);
                         let refresh = mode.refresh as u32;
-                        (CastTarget::Output(output.downgrade()), size, refresh)
+                        (CastTarget::Output(output.downgrade()), size, refresh, false)
                     }
                     StreamTargetId::Window { id } => {
                         let mut window = None;
@@ -1274,7 +1274,7 @@ impl State {
                         let size = bbox.size.to_physical_precise_ceil(scale);
                         let refresh = output.current_mode().unwrap().refresh as u32;
 
-                        (CastTarget::Window { id }, size, refresh)
+                        (CastTarget::Window { id }, size, refresh, true)
                     }
                 };
 
@@ -1284,6 +1284,7 @@ impl State {
                     target,
                     size,
                     refresh,
+                    alpha,
                     cursor_mode,
                     signal_ctx,
                 );
