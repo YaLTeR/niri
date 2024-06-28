@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::cmp::{max, min};
 use std::time::Duration;
 
-use niri_config::WindowRule;
+use niri_config::{CornerRadius, WindowRule};
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -22,6 +22,8 @@ use crate::layout::{
     InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
 };
 use crate::niri::WindowOffscreenId;
+use crate::niri_render_elements;
+use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -74,6 +76,14 @@ pub struct Mapped {
     ///
     /// Used for double-resize-click tracking.
     last_interactive_resize_start: Cell<Option<(Duration, ResizeEdge)>>,
+}
+
+niri_render_elements! {
+    WindowCastRenderElements<R> => {
+        Layout = LayoutElementRenderElement<R>,
+        // Blocked-out window with rounded corners.
+        Border = BorderRenderElement,
+    }
 }
 
 static MAPPED_ID_COUNTER: IdCounter = IdCounter::new();
@@ -245,6 +255,55 @@ impl Mapped {
 
     pub fn last_interactive_resize_start(&self) -> &Cell<Option<(Duration, ResizeEdge)>> {
         &self.last_interactive_resize_start
+    }
+
+    pub fn render_for_screen_cast<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        scale: Scale<f64>,
+    ) -> impl DoubleEndedIterator<Item = WindowCastRenderElements<R>> {
+        let bbox = self.window.bbox_with_popups().to_physical_precise_up(scale);
+
+        let has_border_shader = BorderRenderElement::has_shader(renderer);
+        let rules = self.rules();
+        let radius = rules.geometry_corner_radius.unwrap_or_default();
+        let window_size = self
+            .size()
+            .to_f64()
+            .to_physical_precise_round(scale)
+            .to_logical(scale);
+        let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
+
+        let location = self.window.geometry().loc.to_f64() - bbox.loc.to_logical(scale);
+        let elements = self.render(renderer, location, scale, 1., RenderTarget::Screencast);
+
+        elements.into_iter().map(move |elem| {
+            if let LayoutElementRenderElement::SolidColor(elem) = &elem {
+                // In this branch we're rendering a blocked-out window with a solid color. We need
+                // to render it with a rounded corner shader even if clip_to_geometry is false,
+                // because in this case we're assuming that the unclipped window CSD already has
+                // corners rounded to the user-provided radius, so our blocked-out rendering should
+                // match that radius.
+                if radius != CornerRadius::default() && has_border_shader {
+                    let geo = elem.geo();
+                    return BorderRenderElement::new(
+                        geo.size,
+                        Rectangle::from_loc_and_size((0., 0.), geo.size),
+                        elem.color(),
+                        elem.color(),
+                        0.,
+                        Rectangle::from_loc_and_size((0., 0.), geo.size),
+                        0.,
+                        radius,
+                        scale.x as f32,
+                    )
+                    .with_location(geo.loc)
+                    .into();
+                }
+            }
+
+            WindowCastRenderElements::from(elem)
+        })
     }
 }
 

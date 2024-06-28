@@ -1270,11 +1270,10 @@ impl State {
                         };
 
                         let scale = Scale::from(output.current_scale().fractional_scale());
-                        let bbox = window.bbox_with_popups();
-                        let size = bbox.size.to_physical_precise_ceil(scale);
+                        let bbox = window.bbox_with_popups().to_physical_precise_up(scale);
                         let refresh = output.current_mode().unwrap().refresh as u32;
 
-                        (CastTarget::Window { id }, size, refresh, true)
+                        (CastTarget::Window { id }, bbox.size, refresh, true)
                     }
                 };
 
@@ -3502,10 +3501,12 @@ impl Niri {
                 continue;
             };
 
-            let bbox = mapped.window.bbox_with_popups();
-            let size = bbox.size.to_physical_precise_ceil(scale);
+            let bbox = mapped
+                .window
+                .bbox_with_popups()
+                .to_physical_precise_up(scale);
 
-            match cast.ensure_size(size) {
+            match cast.ensure_size(bbox.size) {
                 Ok(CastSizeChange::Ready) => (),
                 Ok(CastSizeChange::Pending) => continue,
                 Err(err) => {
@@ -3519,23 +3520,9 @@ impl Niri {
             }
 
             // FIXME: pointer.
-            let elements = mapped.render(
-                renderer,
-                mapped.window.geometry().loc.to_f64(),
-                scale,
-                1.,
-                RenderTarget::Screencast,
-            );
-            let geo = elements
-                .iter()
-                .map(|ele| ele.geometry(scale))
-                .reduce(|a, b| a.merge(b))
-                .unwrap_or_default();
-            let elements = elements.iter().rev().map(|elem| {
-                RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
-            });
+            let elements = mapped.render_for_screen_cast(renderer, scale).rev();
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, bbox.size, scale) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -3580,8 +3567,10 @@ impl Niri {
             .unwrap();
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let bbox = mapped.window.bbox_with_popups();
-        let size = bbox.size.to_physical_precise_ceil(scale);
+        let bbox = mapped
+            .window
+            .bbox_with_popups()
+            .to_physical_precise_up(scale);
 
         let mut elements = None;
         let mut casts_to_stop = vec![];
@@ -3596,7 +3585,7 @@ impl Niri {
                 continue;
             }
 
-            match cast.ensure_size(size) {
+            match cast.ensure_size(bbox.size) {
                 Ok(CastSizeChange::Ready) => (),
                 Ok(CastSizeChange::Pending) => continue,
                 Err(err) => {
@@ -3609,27 +3598,16 @@ impl Niri {
                 continue;
             }
 
-            let (elements, geo) = elements.get_or_insert_with(|| {
+            let elements = elements.get_or_insert_with(|| {
                 // FIXME: pointer.
-                let elements = mapped.render(
-                    renderer,
-                    mapped.window.geometry().loc.to_f64(),
-                    scale,
-                    1.,
-                    RenderTarget::Screencast,
-                );
-                let geo = elements
-                    .iter()
-                    .map(|ele| ele.geometry(scale))
-                    .reduce(|a, b| a.merge(b))
-                    .unwrap_or_default();
-                (elements, geo)
+                mapped
+                    .render_for_screen_cast(renderer, scale)
+                    .rev()
+                    .collect::<Vec<_>>()
             });
-            let elements = elements.iter().rev().map(|elem| {
-                RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
-            });
+            let elements = elements.iter();
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, bbox.size, scale) {
                 cast.last_frame_time = target_presentation_time;
             }
         }

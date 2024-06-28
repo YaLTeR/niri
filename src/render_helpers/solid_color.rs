@@ -112,6 +112,10 @@ impl SolidColorRenderElement {
     pub fn color(&self) -> [f32; 4] {
         self.color
     }
+
+    pub fn geo(&self) -> Rectangle<f64, Logical> {
+        self.geometry
+    }
 }
 
 impl Element for SolidColorRenderElement {
