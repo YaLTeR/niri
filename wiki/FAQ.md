@@ -1,3 +1,10 @@
+### How to disable Client-Side Decorations?
+
+See below.
+
+(Note that this will disable resizing windows using mouse.)
+
+
 ### Why is the border/focus ring showing up through semitransparent windows?
 
 Uncomment the `prefer-no-csd` setting at the [top level](./Configuration:-Miscellaneous.md) of the config.

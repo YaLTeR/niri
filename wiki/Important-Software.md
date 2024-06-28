@@ -8,13 +8,13 @@ Many apps need one. For example, [mako](https://github.com/emersion/mako) works 
 
 These provide a cross-desktop API for apps to use for various things like file pickers or UI settings. Flatpak apps in particular require working portals.
 
-Portals **require** [running niri as a session](https://github.com/YaLTeR/niri#session), which means through the `niri-session` script or from a display manager. You will want the following portals installed:
+Portals **require** [running niri as a session](./Getting-Started.md#installation), which means through the `niri-session` script or from a display manager. You will want the following portals installed:
 
 * `xdg-desktop-portal-gtk`: implements most of the basic functionality, this is the "default fallback portal".
 * `xdg-desktop-portal-gnome`: required for screencasting support.
 * `gnome-keyring`: implements the Secret portal, required for certain apps to work.
 
-Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](https://github.com/YaLTeR/niri#installation) in the correct location.
+Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](./Getting-Started.md#installation) in the correct location.
 
 Since we're using `xdg-desktop-portal-gnome`, Flatpak apps will read the GNOME UI settings. For example, to enable the dark style, run:
 
