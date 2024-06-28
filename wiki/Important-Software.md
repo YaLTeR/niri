@@ -8,7 +8,7 @@ Many apps need one. For example, [mako](https://github.com/emersion/mako) works 
 
 These provide a cross-desktop API for apps to use for various things like file pickers or UI settings. Flatpak apps in particular require working portals.
 
-Portals **require** [running niri as a session](./Getting-Started.md#installation), which means through the `niri-session` script or from a display manager. You will want the following portals installed:
+Portals **require** [running niri as a session](./Getting-Started.md), which means through the `niri-session` script or from a display manager. You will want the following portals installed:
 
 * `xdg-desktop-portal-gtk`: implements most of the basic functionality, this is the "default fallback portal".
 * `xdg-desktop-portal-gnome`: required for screencasting support.
