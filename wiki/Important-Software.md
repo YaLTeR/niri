@@ -14,7 +14,7 @@ Portals **require** [running niri as a session](./Getting-Started.md), which mea
 * `xdg-desktop-portal-gnome`: required for screencasting support.
 * `gnome-keyring`: implements the Secret portal, required for certain apps to work.
 
-Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](./Getting-Started.md#installation) in the correct location.
+Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](https://github.com/YaLTeR/niri/wiki/Getting-Started#installation) in the correct location.
 
 Since we're using `xdg-desktop-portal-gnome`, Flatpak apps will read the GNOME UI settings. For example, to enable the dark style, run:
 
