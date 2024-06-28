@@ -1264,6 +1264,37 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_column_left_or_last();
     }
 
+    pub fn focus_column_left_or_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+            let curr_idx = workspace.active_column_idx;
+
+            if !workspace.columns.is_empty() && curr_idx != 0 {
+                monitor.focus_left();
+                return false;
+            }
+        }
+
+        self.focus_output(output);
+        true
+    }
+
+    pub fn focus_column_right_or_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+            let curr_idx = workspace.active_column_idx;
+            let columns = &workspace.columns;
+
+            if !workspace.columns.is_empty() && curr_idx != columns.len() - 1 {
+                monitor.focus_right();
+                return false;
+            }
+        }
+
+        self.focus_output(output);
+        true
+    }
+
     pub fn focus_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -2697,6 +2728,8 @@ mod tests {
         FocusColumnLast,
         FocusColumnRightOrFirst,
         FocusColumnLeftOrLast,
+        FocusColumnOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
+        FocusColumnOrMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
         FocusWindowDown,
         FocusWindowUp,
         FocusWindowDownOrColumnLeft,
@@ -3022,6 +3055,22 @@ mod tests {
                 Op::FocusColumnLast => layout.focus_column_last(),
                 Op::FocusColumnRightOrFirst => layout.focus_column_right_or_first(),
                 Op::FocusColumnLeftOrLast => layout.focus_column_left_or_last(),
+                Op::FocusColumnOrMonitorLeft(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+
+                    layout.focus_column_left_or_output(&output);
+                }
+                Op::FocusColumnOrMonitorRight(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+
+                    layout.focus_column_right_or_output(&output);
+                }
                 Op::FocusWindowDown => layout.focus_down(),
                 Op::FocusWindowUp => layout.focus_up(),
                 Op::FocusWindowDownOrColumnLeft => layout.focus_down_or_left(),
@@ -3250,6 +3299,8 @@ mod tests {
             Op::FocusColumnRight,
             Op::FocusColumnRightOrFirst,
             Op::FocusColumnLeftOrLast,
+            Op::FocusColumnOrMonitorLeft(0),
+            Op::FocusColumnOrMonitorRight(1),
             Op::FocusWindowUp,
             Op::FocusWindowUpOrColumnLeft,
             Op::FocusWindowUpOrColumnRight,
@@ -3425,6 +3476,8 @@ mod tests {
             Op::FocusColumnRight,
             Op::FocusColumnRightOrFirst,
             Op::FocusColumnLeftOrLast,
+            Op::FocusColumnOrMonitorLeft(0),
+            Op::FocusColumnOrMonitorRight(1),
             Op::FocusWindowUp,
             Op::FocusWindowUpOrColumnLeft,
             Op::FocusWindowUpOrColumnRight,
