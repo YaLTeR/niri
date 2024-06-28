@@ -2736,8 +2736,8 @@ mod tests {
         FocusWindowUpOrColumnRight,
         FocusWindowOrWorkspaceDown,
         FocusWindowOrWorkspaceUp,
-        FocusWindowOrMonitorLeft(#[proptest(strategy = "0..=1u8")] u8), // no idea still
-        FocusWindowOrMonitorRight(#[proptest(strategy = "0..=1u8")] u8), // no idea still
+        FocusWindowOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
+        FocusWindowOrMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
         MoveColumnLeft,
         MoveColumnRight,
         MoveColumnToFirst,
