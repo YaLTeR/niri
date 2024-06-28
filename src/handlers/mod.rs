@@ -2,6 +2,7 @@ mod compositor;
 mod layer_shell;
 mod xdg_shell;
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::os::fd::OwnedFd;
@@ -68,7 +69,7 @@ use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
-use crate::protocols::output_management::OutputManagementHandler;
+use crate::protocols::output_management::{OutputManagementHandler, OutputsConf};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
 use crate::utils::{logical_output, output_size, send_scale_transform};
 use crate::{
@@ -568,6 +569,20 @@ impl OutputManagementHandler for State {
     fn apply_new_conf(&mut self, conf: Vec<niri_config::Output>) {
         self.niri.config.borrow_mut().outputs = conf;
         self.backend.on_output_config_changed(&mut self.niri);
+    }
+
+    fn get_current_outputs(&self) -> OutputsConf {
+        let ipc_outputs = self.backend.ipc_outputs();
+        let ipc_outputs = ipc_outputs.lock().unwrap();
+        let mut res = HashMap::new();
+        for (name, output) in &self.niri.output_by_name {
+            if let Some(conf) = ipc_outputs.get(name) {
+                res.insert(output.downgrade(), conf.clone());
+            } else {
+                error!("get_current: missing output for {}", name);
+            }
+        }
+        res
     }
 }
 delegate_output_management!(State);

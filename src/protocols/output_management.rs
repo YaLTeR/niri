@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use crate::backend::IpcOutputMap;
 use crate::niri::State;
 use crate::utils::ipc_transform_to_smithay;
 use niri_ipc::{LogicalOutput, Transform};
+use smithay::output::WeakOutput;
 use smithay::reexports::wayland_server::{
     protocol::wl_output::Transform as WlTransform, Client, DataInit, Dispatch, DisplayHandle,
     GlobalDispatch, New, Resource, WEnum,
@@ -22,24 +22,19 @@ use smithay::reexports::{
 
 const VERSION: u32 = 4;
 
-/*
-    <clientId<
-        <confID , IpcOutputMap>
-        <headId, String /* output name */>
-    >>
-*/
+pub type OutputsConf = HashMap<WeakOutput, niri_ipc::Output>;
 
 #[derive(Debug)]
 pub struct OutputConfigurationDataInner {
     serial: u32,
-    new_out: IpcOutputMap,
+    new_out: OutputsConf,
 }
 
 pub type OutputConfigurationData = Mutex<OutputConfigurationDataInner>;
 
 #[derive(Debug)]
 struct ClientData {
-    heads: HashMap<String, (ZwlrOutputHeadV1, Vec<ZwlrOutputModeV1>)>,
+    heads: HashMap<WeakOutput, (ZwlrOutputHeadV1, Vec<ZwlrOutputModeV1>)>,
     confs: HashSet<ZwlrOutputConfigurationV1>,
     manager: ZwlrOutputManagerV1,
 }
@@ -48,7 +43,7 @@ pub struct OutputManagementManagerState {
     display: DisplayHandle,
     serial: u32,
     clients: HashMap<ClientId, ClientData>,
-    current_out: IpcOutputMap,
+    current_out: OutputsConf,
 }
 
 pub struct OutputManagementManagerGlobalData {
@@ -56,11 +51,11 @@ pub struct OutputManagementManagerGlobalData {
 }
 
 impl OutputManagementManagerState {
-    pub fn new<D, F>(display: &DisplayHandle, filter: F, outputs: IpcOutputMap) -> Self
+    pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
         D: Dispatch<ZwlrOutputManagerV1, ()>,
-        D: Dispatch<ZwlrOutputHeadV1, String>,
+        D: Dispatch<ZwlrOutputHeadV1, WeakOutput>,
         D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
         D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
         D: Dispatch<ZwlrOutputModeV1, ()>,
@@ -77,7 +72,7 @@ impl OutputManagementManagerState {
             display: display.clone(),
             clients: HashMap::new(),
             serial: 0,
-            current_out: outputs,
+            current_out: HashMap::new(),
         }
     }
 }
@@ -87,7 +82,7 @@ impl<D> GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData, D
 where
     D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
     D: Dispatch<ZwlrOutputManagerV1, ()>,
-    D: Dispatch<ZwlrOutputHeadV1, String>,
+    D: Dispatch<ZwlrOutputHeadV1, WeakOutput>,
     D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
     D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
     D: Dispatch<ZwlrOutputModeV1, ()>,
@@ -109,8 +104,8 @@ where
             confs: HashSet::new(),
             manager: manager.clone(),
         };
-        for (_, head) in &g_state.current_out {
-            send_new_head::<D>(display, client, &mut client_data, &head);
+        for (output, conf) in &g_state.current_out {
+            send_new_head::<D>(display, client, &mut client_data, output.clone(), conf);
         }
         g_state.clients.insert(client.id(), client_data);
         manager.done(g_state.serial);
@@ -125,7 +120,7 @@ impl<D> Dispatch<ZwlrOutputManagerV1, (), D> for OutputManagementManagerState
 where
     D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
     D: Dispatch<ZwlrOutputManagerV1, ()>,
-    D: Dispatch<ZwlrOutputHeadV1, String>,
+    D: Dispatch<ZwlrOutputHeadV1, WeakOutput>,
     D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
     D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
     D: Dispatch<ZwlrOutputModeV1, ()>,
@@ -143,8 +138,8 @@ where
     ) {
         match request {
             zwlr_output_manager_v1::Request::CreateConfiguration { id, serial } => {
-                let new_out = state.output_management_state().current_out.clone();
                 let g_state = state.output_management_state();
+                let new_out = g_state.current_out.clone();
                 let conf = data_init.init(
                     id,
                     Mutex::new(OutputConfigurationDataInner { serial, new_out }),
@@ -159,12 +154,17 @@ where
                 }
             }
             zwlr_output_manager_v1::Request::Stop => {
-                let clients = &mut state.output_management_state().clients;
-                clients.get(&client.id()).map(|c| c.manager.finished());
-                clients.remove(&client.id());
+                state
+                    .output_management_state()
+                    .clients
+                    .remove(&client.id())
+                    .map(|c| c.manager.finished());
             }
             _ => unreachable!(),
         }
+    }
+    fn destroyed(state: &mut D, client: ClientId, _resource: &ZwlrOutputManagerV1, _data: &()) {
+        state.output_management_state().clients.remove(&client);
     }
 }
 
@@ -173,7 +173,7 @@ impl<D> Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData, D>
 where
     D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
     D: Dispatch<ZwlrOutputManagerV1, ()>,
-    D: Dispatch<ZwlrOutputHeadV1, String>,
+    D: Dispatch<ZwlrOutputHeadV1, WeakOutput>,
     D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
     D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
     D: Dispatch<ZwlrOutputModeV1, ()>,
@@ -191,41 +191,45 @@ where
     ) {
         let g_state = state.output_management_state();
         let outdated = conf_data.lock().unwrap().serial != g_state.serial;
+        if outdated {
+            debug!("OutputConfiguration: request from an outdated configuration");
+        }
         match request {
             zwlr_output_configuration_v1::Request::EnableHead { id, head } => {
-                let Some(head_name) = head.data::<String>() else {
-                    error!("EnableHead: Missing attached output head name");
+                let Some(output) = head.data::<WeakOutput>() else {
+                    error!("EnableHead: Missing attached output");
                     let _fail = data_init.init(id, OutputConfigurationHeadState::Cancelled);
                     return;
                 };
                 if outdated {
-                    info!("EnableHead: request from an outdated configuration");
                     let _fail = data_init.init(id, OutputConfigurationHeadState::Cancelled);
                     return;
                 }
                 let mut conf_data = conf_data.lock().unwrap();
-                let Some(output) = conf_data.new_out.get_mut(head_name) else {
-                    error!("EnableHead: output configuration missing requested new head",);
+                let Some(output_conf) = conf_data.new_out.get_mut(output) else {
+                    debug!("EnableHead: output configuration missing requested new head",);
                     let _fail = data_init.init(id, OutputConfigurationHeadState::Cancelled);
                     return;
                 };
-                if output.current_mode.is_none() {
-                    output.current_mode = output.modes.iter().position(|a| a.is_preferred);
+                if output_conf.current_mode.is_none() {
+                    output_conf.current_mode =
+                        output_conf.modes.iter().position(|a| a.is_preferred);
                 }
-                let Some(current_mode) = output.current_mode else {
-                    error!("EnableHead: missing output prefered mode");
+                let Some(current_mode) = output_conf.current_mode else {
+                    error!("EnableHead: missing output preferred mode");
                     let _fail = data_init.init(id, OutputConfigurationHeadState::Cancelled);
                     return;
                 };
-                let mode = output.modes[current_mode];
+                let mode = output_conf.modes[current_mode];
                 data_init.init(
                     id,
-                    OutputConfigurationHeadState::Ok(head_name.clone(), conf.clone()),
+                    OutputConfigurationHeadState::Ok(output.clone(), conf.clone()),
                 );
-                let logical = output
+                let logical = output_conf
                     .logical
-                    .or_else(|| state.get_logical(&head_name))
+                    .or_else(|| state.get_logical(&output_conf.name))
                     .unwrap_or(LogicalOutput {
+                        // FIXME: implement a default scale/position logic
                         x: 0,
                         y: 0,
                         scale: 1.,
@@ -233,16 +237,16 @@ where
                         width: mode.width as u32,
                         height: mode.height as u32,
                     });
-                output.logical = Some(logical);
+                output_conf.logical = Some(logical);
             }
             zwlr_output_configuration_v1::Request::DisableHead { head } => {
                 if outdated {
                     return;
                 }
-                if let Some(head_name) = head.data::<String>() {
-                    if let Some(output) = conf_data.lock().unwrap().new_out.get_mut(head_name) {
-                        output.current_mode = None;
-                        output.logical = None;
+                if let Some(output) = head.data::<WeakOutput>() {
+                    if let Some(conf) = conf_data.lock().unwrap().new_out.get_mut(output) {
+                        conf.current_mode = None;
+                        conf.logical = None;
                     }
                 } else {
                     error!("DisableHead: missing attached output head name");
@@ -254,28 +258,22 @@ where
                     conf.cancelled();
                     return;
                 }
+                let conf_data = conf_data.lock().unwrap();
                 let enabled_head = conf_data
-                    .lock()
-                    .unwrap()
                     .new_out
                     .iter()
                     .find(|(_, c)| c.current_mode.is_some() && c.logical.is_some())
                     .is_some();
 
                 if !enabled_head {
-                    conf.cancelled();
-                    return;
-                }
-                let conf_data = conf_data.lock().unwrap();
-                if conf_data.serial != g_state.serial {
-                    conf.cancelled();
+                    conf.failed();
                     return;
                 }
                 let mut new_conf = Vec::with_capacity(conf_data.new_out.len());
                 for (_, out) in conf_data.new_out.iter() {
                     new_conf.push(match (out.current_mode, out.logical) {
                         (Some(current_mode), Some(logical)) => niri_config::Output {
-                            off: !(out.current_mode.is_some() && out.logical.is_some()),
+                            off: false,
                             name: out.name.clone(),
                             scale: Some(niri_config::FloatOrInt(logical.scale)),
                             transform: logical.transform,
@@ -288,10 +286,10 @@ where
                                 height: logical.height as u16,
                                 refresh: Some(out.modes[current_mode].refresh_rate as f64 / 1000.),
                             }),
-                            variable_refresh_rate: false,
+                            variable_refresh_rate: out.vrr_enabled,
                         },
                         _ => niri_config::Output {
-                            off: !(out.current_mode.is_some() && out.logical.is_some()),
+                            off: true,
                             name: out.name.clone(),
                             scale: None,
                             transform: Transform::Normal,
@@ -319,7 +317,7 @@ where
                     .is_some();
 
                 if !enabled_head {
-                    conf.cancelled();
+                    conf.failed();
                     return;
                 }
                 conf.succeeded()
@@ -337,7 +335,7 @@ where
 
 pub enum OutputConfigurationHeadState {
     Cancelled,
-    Ok(String, ZwlrOutputConfigurationV1),
+    Ok(WeakOutput, ZwlrOutputConfigurationV1),
 }
 
 impl<D> Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState, D>
@@ -345,7 +343,7 @@ impl<D> Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState, D>
 where
     D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
     D: Dispatch<ZwlrOutputManagerV1, ()>,
-    D: Dispatch<ZwlrOutputHeadV1, String>,
+    D: Dispatch<ZwlrOutputHeadV1, WeakOutput>,
     D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
     D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
     D: Dispatch<ZwlrOutputModeV1, ()>,
@@ -477,45 +475,11 @@ where
     }
 }
 
-impl<D> Dispatch<ZwlrOutputHeadV1, String, D> for OutputManagementManagerState
+impl<D> Dispatch<ZwlrOutputHeadV1, WeakOutput, D> for OutputManagementManagerState
 where
     D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
     D: Dispatch<ZwlrOutputManagerV1, ()>,
-    D: Dispatch<ZwlrOutputHeadV1, String>,
-    D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
-    D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
-    D: Dispatch<ZwlrOutputModeV1, ()>,
-    D: OutputManagementHandler,
-    D: 'static,
-{
-    fn request(
-        state: &mut D,
-        client: &Client,
-        _output_head: &ZwlrOutputHeadV1,
-        request: zwlr_output_head_v1::Request,
-        data: &String,
-        _display: &DisplayHandle,
-        _data_init: &mut DataInit<'_, D>,
-    ) {
-        match request {
-            zwlr_output_head_v1::Request::Release => {
-                let g_state = state.output_management_state();
-                let Some(client_data) = g_state.clients.get_mut(&client.id()) else {
-                    error!("Release: missing client data");
-                    return;
-                };
-                client_data.heads.remove(data).map(|(h, _)| h.finished());
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl<D> Dispatch<ZwlrOutputModeV1, (), D> for OutputManagementManagerState
-where
-    D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
-    D: Dispatch<ZwlrOutputManagerV1, ()>,
-    D: Dispatch<ZwlrOutputHeadV1, String>,
+    D: Dispatch<ZwlrOutputHeadV1, WeakOutput>,
     D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
     D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
     D: Dispatch<ZwlrOutputModeV1, ()>,
@@ -525,14 +489,50 @@ where
     fn request(
         _state: &mut D,
         _client: &Client,
-        mode: &ZwlrOutputModeV1,
+        _output_head: &ZwlrOutputHeadV1,
+        request: zwlr_output_head_v1::Request,
+        _data: &WeakOutput,
+        _display: &DisplayHandle,
+        _data_init: &mut DataInit<'_, D>,
+    ) {
+        match request {
+            zwlr_output_head_v1::Request::Release => {}
+            _ => unreachable!(),
+        }
+    }
+    fn destroyed(state: &mut D, client: ClientId, _resource: &ZwlrOutputHeadV1, data: &WeakOutput) {
+        state
+            .output_management_state()
+            .clients
+            .get_mut(&client)
+            .map(|c| {
+                c.heads.remove(data);
+            });
+    }
+}
+
+impl<D> Dispatch<ZwlrOutputModeV1, (), D> for OutputManagementManagerState
+where
+    D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
+    D: Dispatch<ZwlrOutputManagerV1, ()>,
+    D: Dispatch<ZwlrOutputHeadV1, WeakOutput>,
+    D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
+    D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
+    D: Dispatch<ZwlrOutputModeV1, ()>,
+    D: OutputManagementHandler,
+    D: 'static,
+{
+    fn request(
+        _state: &mut D,
+        _client: &Client,
+        _mode: &ZwlrOutputModeV1,
         request: zwlr_output_mode_v1::Request,
         _data: &(),
         _display: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
-            zwlr_output_mode_v1::Request::Release => mode.finished(),
+            zwlr_output_mode_v1::Request::Release => {}
             _ => unreachable!(),
         }
     }
@@ -541,6 +541,7 @@ pub trait OutputManagementHandler {
     fn output_management_state(&mut self) -> &mut OutputManagementManagerState;
     fn get_logical(&self, name: &str) -> Option<LogicalOutput>;
     fn apply_new_conf(&mut self, conf: Vec<niri_config::Output>);
+    fn get_current_outputs(&self) -> OutputsConf;
 }
 
 #[macro_export]
@@ -556,7 +557,7 @@ macro_rules! delegate_output_management{
             smithay::reexports::wayland_protocols_wlr::output_management::v1::server::zwlr_output_configuration_v1::ZwlrOutputConfigurationV1: $crate::protocols::output_management::OutputConfigurationData
         ] => $crate::protocols::output_management::OutputManagementManagerState);
         smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols_wlr::output_management::v1::server::zwlr_output_head_v1::ZwlrOutputHeadV1: String
+            smithay::reexports::wayland_protocols_wlr::output_management::v1::server::zwlr_output_head_v1::ZwlrOutputHeadV1: smithay::output::WeakOutput
         ] => $crate::protocols::output_management::OutputManagementManagerState);
         smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             smithay::reexports::wayland_protocols_wlr::output_management::v1::server::zwlr_output_mode_v1::ZwlrOutputModeV1: ()
@@ -567,21 +568,25 @@ macro_rules! delegate_output_management{
     };
 }
 
-fn notify_removed_head(clients: &mut HashMap<ClientId, ClientData>, name: &str) {
+fn notify_removed_head(clients: &mut HashMap<ClientId, ClientData>, head: &WeakOutput) {
     for (_, data) in clients.iter_mut() {
-        data.heads.remove(name).map(|(head, mods)| {
+        data.heads.remove(head).map(|(head, mods)| {
             mods.iter().for_each(|m| m.finished());
             head.finished();
         });
     }
 }
 
-fn notify_new_head(state: &mut OutputManagementManagerState, output: &niri_ipc::Output) {
+fn notify_new_head(
+    state: &mut OutputManagementManagerState,
+    output: &WeakOutput,
+    conf: &niri_ipc::Output,
+) {
     let display = &state.display;
     let clients = &mut state.clients;
     for (_, data) in clients.iter_mut() {
         if let Some(client) = data.manager.client() {
-            send_new_head::<State>(&display, &client, data, output);
+            send_new_head::<State>(&display, &client, data, output.clone(), conf);
         }
     }
 }
@@ -590,17 +595,17 @@ fn send_new_head<D>(
     display: &DisplayHandle,
     client: &Client,
     client_data: &mut ClientData,
-    output: &niri_ipc::Output,
+    output: WeakOutput,
+    conf: &niri_ipc::Output,
 ) where
     D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementManagerGlobalData>,
     D: Dispatch<ZwlrOutputManagerV1, ()>,
-    D: Dispatch<ZwlrOutputHeadV1, String>,
     D: Dispatch<ZwlrOutputConfigurationV1, OutputConfigurationData>,
     D: Dispatch<ZwlrOutputConfigurationHeadV1, OutputConfigurationHeadState>,
     D: Dispatch<ZwlrOutputModeV1, ()>,
     D: OutputManagementHandler,
     D: 'static,
-    D: Dispatch<ZwlrOutputHeadV1, String>,
+    D: Dispatch<ZwlrOutputHeadV1, WeakOutput>,
     D: Dispatch<ZwlrOutputModeV1, ()>,
     D: 'static,
 {
@@ -608,20 +613,19 @@ fn send_new_head<D>(
         .create_resource::<ZwlrOutputHeadV1, _, D>(
             display,
             client_data.manager.version(),
-            output.name.clone(),
+            output.clone(),
         )
         .unwrap();
     client_data.manager.head(&new_head);
-    new_head.name(output.name.clone());
-    new_head.description(output.name.clone());
-    if let Some((width, height)) = output.physical_size {
+    new_head.name(conf.name.clone());
+    new_head.description(format!("{} - {} - {}", conf.make, conf.model, conf.name));
+    if let Some((width, height)) = conf.physical_size {
         if let (Ok(a), Ok(b)) = (width.try_into(), height.try_into()) {
             new_head.physical_size(a, b);
         }
     }
-    let mut index = 0;
-    let mut new_modes = Vec::with_capacity(output.modes.len());
-    for mode in &output.modes {
+    let mut new_modes = Vec::with_capacity(conf.modes.len());
+    for (index, mode) in conf.modes.iter().enumerate() {
         let new_mode = client
             .create_resource::<ZwlrOutputModeV1, _, D>(display, new_head.version(), ())
             .unwrap();
@@ -635,102 +639,104 @@ fn send_new_head<D>(
         if let Ok(refresh_rate) = mode.refresh_rate.try_into() {
             new_mode.refresh(refresh_rate);
         }
-        if Some(index) == output.current_mode {
+        if Some(index) == conf.current_mode {
             new_head.current_mode(&new_mode);
         }
         new_modes.push(new_mode);
-        index += 1;
     }
-    if let Some(logical) = output.logical {
+    if let Some(logical) = conf.logical {
         new_head.position(logical.x, logical.y);
         new_head.transform(ipc_transform_to_smithay(logical.transform).into());
         new_head.scale(logical.scale);
     }
-    new_head.enabled(output.current_mode.is_some() as i32);
-    new_head.make(output.make.clone());
-    new_head.model(output.model.clone());
+    new_head.enabled(conf.current_mode.is_some() as i32);
+    if new_head.version() >= zwlr_output_head_v1::EVT_MAKE_SINCE {
+        new_head.make(conf.make.clone());
+    }
+    if new_head.version() >= zwlr_output_head_v1::EVT_MODEL_SINCE {
+        new_head.model(conf.model.clone());
+    }
 
-    new_head.adaptive_sync(match output.vrr_enabled {
-        true => AdaptiveSyncState::Enabled,
-        false => AdaptiveSyncState::Disabled,
-    });
+    if new_head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE {
+        new_head.adaptive_sync(match conf.vrr_enabled {
+            true => AdaptiveSyncState::Enabled,
+            false => AdaptiveSyncState::Disabled,
+        });
+    }
     // new_head.serial_number(output.serial);
-    client_data
-        .heads
-        .insert(output.name.clone(), (new_head, new_modes));
+    client_data.heads.insert(output, (new_head, new_modes));
 }
 
-pub fn notify_changes(state: &mut OutputManagementManagerState, new_out: IpcOutputMap) {
+pub fn notify_changes(state: &mut impl OutputManagementHandler) {
     let mut changed = false; /* most likely to endup true */
-    for (name, new) in new_out.iter() {
-        if let Some(old) = state.current_out.get(name) {
-            if old.vrr_enabled != new.vrr_enabled {
+    let new_out = state.get_current_outputs();
+    let g_state = state.output_management_state();
+    for (output, conf) in new_out.iter() {
+        if let Some(old) = g_state.current_out.get(output) {
+            if old.vrr_enabled != conf.vrr_enabled {
                 changed = true;
-                for (_, client) in &state.clients {
-                    if let Some((head, _)) = client.heads.get(name) {
-                        head.adaptive_sync(match new.vrr_enabled {
-                            true => AdaptiveSyncState::Enabled,
-                            false => AdaptiveSyncState::Disabled,
-                        });
+                for (_, client) in &g_state.clients {
+                    if let Some((head, _)) = client.heads.get(output) {
+                        if head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE {
+                            head.adaptive_sync(match conf.vrr_enabled {
+                                true => AdaptiveSyncState::Enabled,
+                                false => AdaptiveSyncState::Disabled,
+                            });
+                        }
                     }
                 }
             }
-            match (old.current_mode, new.current_mode) {
+            match (old.current_mode, conf.current_mode) {
                 (Some(old_index), Some(new_index)) => {
-                    if old.modes.len() <= old_index
-                        || old.modes.len() <= new_index
-                        || new.modes.len() <= new_index
-                    {
-                        error!("notify_changes: out of bound mode");
-                    } else if old.modes[old_index] != new.modes[new_index] {
+                    if old.modes != conf.modes {
+                        error!("output's old modes dosnt match new modes");
+                    } else if old_index != new_index {
                         changed = true;
-                        if old.modes[new_index] == new.modes[new_index] {
-                            for (_, client) in &state.clients {
-                                if let Some((head, modes)) = client.heads.get(name) {
-                                    head.current_mode(&modes[new_index]);
+                        for (_, client) in &g_state.clients {
+                            if let Some((head, modes)) = client.heads.get(output) {
+                                if let Some(new_mode) = modes.get(new_index) {
+                                    head.current_mode(new_mode);
+                                } else {
+                                    error!("output new mode doesnt exist for the client's output");
                                 }
                             }
-                        } else {
-                            // The mod has not been registerd with the head :/
                         }
                     }
                 }
                 (Some(_), None) => {
                     changed = true;
-                    for (_, client) in &state.clients {
-                        if let Some((head, _)) = client.heads.get(name) {
+                    for (_, client) in &g_state.clients {
+                        if let Some((head, _)) = client.heads.get(output) {
                             head.enabled(0);
                         }
                     }
                 }
                 (None, Some(new_index)) => {
-                    changed = true;
-                    for (_, client) in &state.clients {
-                        if let Some((head, _)) = client.heads.get(name) {
-                            head.enabled(1);
-                            if old.modes.len() <= new_index || new.modes.len() <= new_index {
-                                error!("notify_changes: out of bound mode");
-                            } else if old.modes[new_index] == new.modes[new_index] {
-                                for (_, client) in &state.clients {
-                                    if let Some((head, modes)) = client.heads.get(name) {
-                                        head.current_mode(&modes[new_index]);
-                                    }
+                    if old.modes != conf.modes {
+                        error!("output's old modes dosnt match new modes");
+                    } else {
+                        changed = true;
+                        for (_, client) in &g_state.clients {
+                            if let Some((head, modes)) = client.heads.get(output) {
+                                head.enabled(1);
+                                if let Some(mode) = modes.get(new_index) {
+                                    head.current_mode(mode);
+                                } else {
+                                    error!("output new mode doesnt exist for the client's output");
                                 }
-                            } else {
-                                // The mod has not been registerd with the head :/
                             }
                         }
                     }
                 }
                 (None, None) => {}
             }
-            match (old.logical, new.logical) {
+            match (old.logical, conf.logical) {
                 (Some(old_logical), Some(new_logical)) => {
                     if old_logical != new_logical {
                         changed = true;
-                        for (_, client) in &state.clients {
-                            if let Some((head, _)) = client.heads.get(name) {
-                                if old_logical.x != new_logical.x || old_logical.y != old_logical.x
+                        for (_, client) in &g_state.clients {
+                            if let Some((head, _)) = client.heads.get(output) {
+                                if old_logical.x != new_logical.x || old_logical.y != new_logical.y
                                 {
                                     head.position(new_logical.x, new_logical.y);
                                 }
@@ -748,9 +754,9 @@ pub fn notify_changes(state: &mut OutputManagementManagerState, new_out: IpcOutp
                 }
                 (None, Some(new_logical)) => {
                     changed = true;
-                    for (_, client) in &state.clients {
-                        if let Some((head, _)) = client.heads.get(name) {
-                            head.enabled(0);
+                    for (_, client) in &g_state.clients {
+                        if let Some((head, _)) = client.heads.get(output) {
+                            // head enable in the mode diff check
                             head.position(new_logical.x, new_logical.y);
                             head.transform(ipc_transform_to_smithay(new_logical.transform).into());
                             head.scale(new_logical.scale);
@@ -758,31 +764,26 @@ pub fn notify_changes(state: &mut OutputManagementManagerState, new_out: IpcOutp
                     }
                 }
                 (Some(_), None) => {
-                    changed = true;
-                    for (_, client) in &state.clients {
-                        if let Some((head, _)) = client.heads.get(name) {
-                            head.enabled(0);
-                        }
-                    }
+                    // heads disabled in the mode diff check
                 }
                 (None, None) => {}
             }
         } else {
             changed = true;
-            notify_new_head(state, new);
+            notify_new_head(g_state, output, conf);
         }
     }
-    for (old, _) in state.current_out.iter() {
+    for (old, _) in g_state.current_out.iter() {
         if new_out.get(old).is_none() {
             changed = true;
-            notify_removed_head(&mut state.clients, old);
+            notify_removed_head(&mut g_state.clients, old);
         }
     }
     if changed {
-        state.current_out = new_out;
-        state.serial += 1;
-        for (_, data) in state.clients.iter() {
-            data.manager.done(state.serial);
+        g_state.current_out = new_out;
+        g_state.serial += 1;
+        for (_, data) in g_state.clients.iter() {
+            data.manager.done(g_state.serial);
             for conf in data.confs.iter() {
                 conf.cancelled();
             }
