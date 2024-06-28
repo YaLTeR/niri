@@ -23,3 +23,16 @@ Set `"layer": "top"` in your Waybar config.
 
 Niri currently draws pop-up menus on the same layer as their parent surface.
 By default, Waybar is on the `bottom` layer, which is behind windows, so Waybar pop-up menus also show behind windows.
+
+### How to enable rounded corners for all windows?
+
+Put this window rule in your config:
+
+```
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
+```
+
+For more information, check [this wiki section](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#geometry-corner-radius).
