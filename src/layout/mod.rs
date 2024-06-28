@@ -1320,39 +1320,35 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_window_or_workspace_up();
     }
 
-    pub fn maybe_focus_window_or_monitor_left(&mut self, output: &Output) -> bool {
-        let Some(monitor) = self.active_monitor() else {
-            return false;
-        };
+    pub fn focus_window_left_or_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+            let curr_idx = workspace.active_column_idx;
 
-        let workspace = monitor.active_workspace();
-        let curr_idx = workspace.active_column_idx;
-
-        if !workspace.columns.is_empty() && curr_idx != 0 {
-            monitor.focus_left();
-            return true;
+            if !workspace.columns.is_empty() && curr_idx != 0 {
+                monitor.focus_left();
+                return false;
+            }
         }
 
         self.focus_output(output);
-        false
+        true
     }
 
-    pub fn maybe_focus_window_or_monitor_right(&mut self, output: &Output) -> bool {
-        let Some(monitor) = self.active_monitor() else {
-            return false;
-        };
+    pub fn focus_window_right_or_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+            let curr_idx = workspace.active_column_idx;
+            let columns = &workspace.columns;
 
-        let workspace = monitor.active_workspace();
-        let curr_idx = workspace.active_column_idx;
-        let columns = &workspace.columns;
-
-        if !workspace.columns.is_empty() && curr_idx != columns.len() - 1 {
-            monitor.focus_right();
-            return true;
+            if !workspace.columns.is_empty() && curr_idx != columns.len() - 1 {
+                monitor.focus_right();
+                return false;
+            }
         }
 
         self.focus_output(output);
-        false
+        true
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -3073,7 +3069,7 @@ mod tests {
                         return;
                     };
 
-                    layout.maybe_focus_window_or_monitor_left(&output);
+                    layout.focus_window_left_or_output(&output);
                 }
                 Op::FocusWindowOrMonitorRight(id) => {
                     let name = format!("output{id}");
@@ -3081,7 +3077,7 @@ mod tests {
                         return;
                     };
 
-                    layout.maybe_focus_window_or_monitor_right(&output);
+                    layout.focus_window_right_or_output(&output);
                 }
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
