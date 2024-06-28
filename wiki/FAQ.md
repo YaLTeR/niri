@@ -1,9 +1,10 @@
-### How to disable Client-Side Decorations?
+### How to disable client-side decorations/make windows rectangular?
 
-See below.
+Uncomment the `prefer-no-csd` setting at the [top level](./Configuration:-Miscellaneous.md) of the config.
+Then niri will ask windows to omit client-side decorations, and also inform them that they are being tiled (which makes some windows rectangular, even if they cannot omit the decorations).
 
-(Note that this will disable resizing windows using mouse.)
-
+Note that currently this will prevent edge window resize handles from showing up.
+You can still resize windows by holding <kbd>Mod</kbd> and the right mouse button.
 
 ### Why is the border/focus ring showing up through semitransparent windows?
 
