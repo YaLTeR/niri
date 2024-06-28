@@ -644,9 +644,9 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowOrMonitorLeft => {
+            Action::FocusColumnOrMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
-                    if self.niri.layout.focus_window_left_or_output(&output)
+                    if self.niri.layout.focus_column_left_or_output(&output)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
                         self.move_cursor_to_output(&output);
@@ -661,9 +661,9 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowOrMonitorRight => {
+            Action::FocusColumnOrMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
-                    if self.niri.layout.focus_window_right_or_output(&output)
+                    if self.niri.layout.focus_column_right_or_output(&output)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
                         self.move_cursor_to_output(&output);

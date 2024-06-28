@@ -1320,7 +1320,7 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_window_or_workspace_up();
     }
 
-    pub fn focus_window_left_or_output(&mut self, output: &Output) -> bool {
+    pub fn focus_column_left_or_output(&mut self, output: &Output) -> bool {
         if let Some(monitor) = self.active_monitor() {
             let workspace = monitor.active_workspace();
             let curr_idx = workspace.active_column_idx;
@@ -1335,7 +1335,7 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn focus_window_right_or_output(&mut self, output: &Output) -> bool {
+    pub fn focus_column_right_or_output(&mut self, output: &Output) -> bool {
         if let Some(monitor) = self.active_monitor() {
             let workspace = monitor.active_workspace();
             let curr_idx = workspace.active_column_idx;
@@ -2736,8 +2736,8 @@ mod tests {
         FocusWindowUpOrColumnRight,
         FocusWindowOrWorkspaceDown,
         FocusWindowOrWorkspaceUp,
-        FocusWindowOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
-        FocusWindowOrMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
+        FocusColumnOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
+        FocusColumnOrMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
         MoveColumnLeft,
         MoveColumnRight,
         MoveColumnToFirst,
@@ -3063,21 +3063,21 @@ mod tests {
                 Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
                 Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
                 Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
-                Op::FocusWindowOrMonitorLeft(id) => {
+                Op::FocusColumnOrMonitorLeft(id) => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    layout.focus_window_left_or_output(&output);
+                    layout.focus_column_left_or_output(&output);
                 }
-                Op::FocusWindowOrMonitorRight(id) => {
+                Op::FocusColumnOrMonitorRight(id) => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    layout.focus_window_right_or_output(&output);
+                    layout.focus_column_right_or_output(&output);
                 }
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
@@ -3299,8 +3299,8 @@ mod tests {
             Op::FocusColumnRight,
             Op::FocusColumnRightOrFirst,
             Op::FocusColumnLeftOrLast,
-            Op::FocusWindowOrMonitorLeft(0),
-            Op::FocusWindowOrMonitorRight(1),
+            Op::FocusColumnOrMonitorLeft(0),
+            Op::FocusColumnOrMonitorRight(1),
             Op::FocusWindowUp,
             Op::FocusWindowUpOrColumnLeft,
             Op::FocusWindowUpOrColumnRight,
@@ -3393,8 +3393,8 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::FocusWindowOrMonitorLeft(0),
-            Op::FocusWindowOrMonitorRight(1),
+            Op::FocusColumnOrMonitorLeft(0),
+            Op::FocusColumnOrMonitorRight(1),
             Op::MoveWindowToOutput(2),
             Op::FocusOutput(1),
             Op::Communicate(1),

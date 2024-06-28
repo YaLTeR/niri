@@ -136,10 +136,10 @@ pub enum Action {
     FocusWindowOrWorkspaceDown,
     /// Focus the window or the workspace above.
     FocusWindowOrWorkspaceUp,
-    /// Focus the window or the monitor to the left.
-    FocusWindowOrMonitorLeft,
-    /// Focus the window or the monitor to the right.
-    FocusWindowOrMonitorRight,
+    /// Focus the column or the monitor to the left.
+    FocusColumnOrMonitorLeft,
+    /// Focus the column or the monitor to the right.
+    FocusColumnOrMonitorRight,
     /// Move the focused column to the left.
     MoveColumnLeft,
     /// Move the focused column to the right.
