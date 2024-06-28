@@ -37,6 +37,24 @@ binds {
 }
 ```
 
+## Using xwayland-run to run Xwayland
+
+[xwayland-run] is a helper utility to run an X11 client within a dedicated Xwayland rootful server.
+It takes care of starting Xwayland, setting the X11 DISPLAY environment variable, setting up xauth and running the specified X11 client using the newly started Xwayland instance.
+When the X11 client terminates, xwayland-run will automatically close the dedicated Xwayland server.
+
+It works like this:
+
+```
+xwayland-run <Xwayland arguments> -- your-x11-app <X11 app arguments>
+```
+
+For example:
+
+```
+xwayland-run -geometry 800x600 -fullscreen -- wine wingame.exe
+```
+
 ## Using the Cage Wayland compositor
 
 It is also possible to run the X11 application in [Cage](https://github.com/cage-kiosk/cage), which runs a nested Wayland session which also supports Xwayland, where the X11 application can run in.
@@ -95,4 +113,5 @@ env DISPLAY=:0 flatpak run com.valvesoftware.Steam
 
 They will appear as normal windows.
 
+[xwayland-run]: https://gitlab.freedesktop.org/ofourdan/xwayland-run
 [xwayland-satellite]: https://github.com/Supreeeme/xwayland-satellite
