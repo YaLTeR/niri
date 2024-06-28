@@ -89,17 +89,24 @@ pub enum CastTarget {
 }
 
 macro_rules! make_params {
-    ($size:expr, $refresh:expr, $alpha:expr, $b1:expr, $b2:expr) => {{
-        let o1 = make_video_params($size, $refresh, false);
-        let pod1 = make_pod($b1, o1);
+    ($params:ident, $size:expr, $refresh:expr, $alpha:expr) => {
+        let mut b1 = Vec::new();
+        let mut b2 = Vec::new();
 
-        if $alpha {
+        let o1 = make_video_params($size, $refresh, false);
+        let pod1 = make_pod(&mut b1, o1);
+
+        let mut p1;
+        let mut p2;
+        $params = if $alpha {
             let o2 = make_video_params($size, $refresh, true);
-            &mut [pod1, make_pod($b2, o2)][..]
+            p2 = [pod1, make_pod(&mut b2, o2)];
+            &mut p2[..]
         } else {
-            &mut [pod1][..]
-        }
-    }};
+            p1 = [pod1];
+            &mut p1[..]
+        };
+    };
 }
 
 impl PipeWire {
@@ -424,9 +431,8 @@ impl PipeWire {
 
         trace!("starting pw stream with size={pending_size:?}, refresh={refresh}");
 
-        let mut b1 = Vec::new();
-        let mut b2 = Vec::new();
-        let params = make_params!(pending_size, refresh, alpha, &mut b1, &mut b2);
+        let params;
+        make_params!(params, pending_size, refresh, alpha);
         stream
             .connect(
                 Direction::Output,
@@ -471,9 +477,8 @@ impl Cast {
 
         self.size.set(current_size.with_pending(size));
 
-        let mut b1 = Vec::new();
-        let mut b2 = Vec::new();
-        let params = make_params!(size, self.refresh, self.offer_alpha, &mut b1, &mut b2);
+        let params;
+        make_params!(params, size, self.refresh, self.offer_alpha);
         self.stream
             .update_params(params)
             .context("error updating stream params")?;
@@ -491,9 +496,8 @@ impl Cast {
         self.refresh = refresh;
 
         let size = self.size.get().expected_format_size();
-        let mut b1 = Vec::new();
-        let mut b2 = Vec::new();
-        let params = make_params!(size, self.refresh, self.offer_alpha, &mut b1, &mut b2);
+        let params;
+        make_params!(params, size, self.refresh, self.offer_alpha);
         self.stream
             .update_params(params)
             .context("error updating stream params")?;

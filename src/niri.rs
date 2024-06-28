@@ -3518,17 +3518,12 @@ impl Niri {
                 continue;
             }
 
-            let alpha = if mapped.is_fullscreen() {
-                1.
-            } else {
-                mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
-            };
             // FIXME: pointer.
             let elements = mapped.render(
                 renderer,
                 mapped.window.geometry().loc.to_f64(),
                 scale,
-                alpha,
+                1.,
                 RenderTarget::Screencast,
             );
             let geo = elements
@@ -3615,17 +3610,12 @@ impl Niri {
             }
 
             let (elements, geo) = elements.get_or_insert_with(|| {
-                let alpha = if mapped.is_fullscreen() {
-                    1.
-                } else {
-                    mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
-                };
                 // FIXME: pointer.
                 let elements = mapped.render(
                     renderer,
                     mapped.window.geometry().loc.to_f64(),
                     scale,
-                    alpha,
+                    1.,
                     RenderTarget::Screencast,
                 );
                 let geo = elements
