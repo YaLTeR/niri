@@ -596,6 +596,40 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusColumnOrMonitorLeft => {
+                if let Some(output) = self.niri.output_left() {
+                    if self.niri.layout.focus_column_left_or_output(&output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&output);
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+                } else {
+                    self.niri.layout.focus_left();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusColumnOrMonitorRight => {
+                if let Some(output) = self.niri.output_right() {
+                    if self.niri.layout.focus_column_right_or_output(&output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&output);
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+                } else {
+                    self.niri.layout.focus_right();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWindowDown => {
                 self.niri.layout.focus_down();
                 self.maybe_warp_cursor_to_focus();
@@ -641,40 +675,6 @@ impl State {
             Action::FocusWindowOrWorkspaceUp => {
                 self.niri.layout.focus_window_or_workspace_up();
                 self.maybe_warp_cursor_to_focus();
-                // FIXME: granular
-                self.niri.queue_redraw_all();
-            }
-            Action::FocusColumnOrMonitorLeft => {
-                if let Some(output) = self.niri.output_left() {
-                    if self.niri.layout.focus_column_left_or_output(&output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
-                    {
-                        self.move_cursor_to_output(&output);
-                    } else {
-                        self.maybe_warp_cursor_to_focus();
-                    }
-                } else {
-                    self.niri.layout.focus_left();
-                    self.maybe_warp_cursor_to_focus();
-                }
-
-                // FIXME: granular
-                self.niri.queue_redraw_all();
-            }
-            Action::FocusColumnOrMonitorRight => {
-                if let Some(output) = self.niri.output_right() {
-                    if self.niri.layout.focus_column_right_or_output(&output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
-                    {
-                        self.move_cursor_to_output(&output);
-                    } else {
-                        self.maybe_warp_cursor_to_focus();
-                    }
-                } else {
-                    self.niri.layout.focus_right();
-                    self.maybe_warp_cursor_to_focus();
-                }
-
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }

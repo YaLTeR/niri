@@ -1264,6 +1264,37 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_column_left_or_last();
     }
 
+    pub fn focus_column_left_or_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+            let curr_idx = workspace.active_column_idx;
+
+            if !workspace.columns.is_empty() && curr_idx != 0 {
+                monitor.focus_left();
+                return false;
+            }
+        }
+
+        self.focus_output(output);
+        true
+    }
+
+    pub fn focus_column_right_or_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+            let curr_idx = workspace.active_column_idx;
+            let columns = &workspace.columns;
+
+            if !workspace.columns.is_empty() && curr_idx != columns.len() - 1 {
+                monitor.focus_right();
+                return false;
+            }
+        }
+
+        self.focus_output(output);
+        true
+    }
+
     pub fn focus_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1318,37 +1349,6 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.focus_window_or_workspace_up();
-    }
-
-    pub fn focus_column_left_or_output(&mut self, output: &Output) -> bool {
-        if let Some(monitor) = self.active_monitor() {
-            let workspace = monitor.active_workspace();
-            let curr_idx = workspace.active_column_idx;
-
-            if !workspace.columns.is_empty() && curr_idx != 0 {
-                monitor.focus_left();
-                return false;
-            }
-        }
-
-        self.focus_output(output);
-        true
-    }
-
-    pub fn focus_column_right_or_output(&mut self, output: &Output) -> bool {
-        if let Some(monitor) = self.active_monitor() {
-            let workspace = monitor.active_workspace();
-            let curr_idx = workspace.active_column_idx;
-            let columns = &workspace.columns;
-
-            if !workspace.columns.is_empty() && curr_idx != columns.len() - 1 {
-                monitor.focus_right();
-                return false;
-            }
-        }
-
-        self.focus_output(output);
-        true
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -2728,6 +2728,8 @@ mod tests {
         FocusColumnLast,
         FocusColumnRightOrFirst,
         FocusColumnLeftOrLast,
+        FocusColumnOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
+        FocusColumnOrMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
         FocusWindowDown,
         FocusWindowUp,
         FocusWindowDownOrColumnLeft,
@@ -2736,8 +2738,6 @@ mod tests {
         FocusWindowUpOrColumnRight,
         FocusWindowOrWorkspaceDown,
         FocusWindowOrWorkspaceUp,
-        FocusColumnOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
-        FocusColumnOrMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
         MoveColumnLeft,
         MoveColumnRight,
         MoveColumnToFirst,
@@ -3055,14 +3055,6 @@ mod tests {
                 Op::FocusColumnLast => layout.focus_column_last(),
                 Op::FocusColumnRightOrFirst => layout.focus_column_right_or_first(),
                 Op::FocusColumnLeftOrLast => layout.focus_column_left_or_last(),
-                Op::FocusWindowDown => layout.focus_down(),
-                Op::FocusWindowUp => layout.focus_up(),
-                Op::FocusWindowDownOrColumnLeft => layout.focus_down_or_left(),
-                Op::FocusWindowDownOrColumnRight => layout.focus_down_or_right(),
-                Op::FocusWindowUpOrColumnLeft => layout.focus_up_or_left(),
-                Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
-                Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
-                Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
                 Op::FocusColumnOrMonitorLeft(id) => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
@@ -3079,6 +3071,14 @@ mod tests {
 
                     layout.focus_column_right_or_output(&output);
                 }
+                Op::FocusWindowDown => layout.focus_down(),
+                Op::FocusWindowUp => layout.focus_up(),
+                Op::FocusWindowDownOrColumnLeft => layout.focus_down_or_left(),
+                Op::FocusWindowDownOrColumnRight => layout.focus_down_or_right(),
+                Op::FocusWindowUpOrColumnLeft => layout.focus_up_or_left(),
+                Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
+                Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
+                Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
                 Op::MoveColumnToFirst => layout.move_column_to_first(),
@@ -3393,8 +3393,6 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::FocusColumnOrMonitorLeft(0),
-            Op::FocusColumnOrMonitorRight(1),
             Op::MoveWindowToOutput(2),
             Op::FocusOutput(1),
             Op::Communicate(1),
@@ -3478,6 +3476,8 @@ mod tests {
             Op::FocusColumnRight,
             Op::FocusColumnRightOrFirst,
             Op::FocusColumnLeftOrLast,
+            Op::FocusColumnOrMonitorLeft(0),
+            Op::FocusColumnOrMonitorRight(1),
             Op::FocusWindowUp,
             Op::FocusWindowUpOrColumnLeft,
             Op::FocusWindowUpOrColumnRight,
