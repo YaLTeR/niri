@@ -340,9 +340,12 @@ impl State {
             match self.niri.bind_repeat_timers.entry(bind.key) {
                 Entry::Vacant(entry) => {
                     fn repeat_handler(state: &mut State, config: Rc<RefCell<Config>>, bind: Bind) {
-                        let repeat_rate_timer = Timer::from_duration(Duration::from_millis(
-                            config.borrow().input.keyboard.repeat_rate as u64,
-                        ));
+                        let repeat_after_millis = std::cmp::max(
+                            1000 / config.borrow().input.keyboard.repeat_rate as u64,
+                            100,
+                        );
+                        let repeat_rate_timer =
+                            Timer::from_duration(Duration::from_millis(repeat_after_millis));
 
                         let bind_key = bind.key.clone();
 
