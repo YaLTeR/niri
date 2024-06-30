@@ -234,6 +234,7 @@ pub struct Niri {
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<u32>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
+    pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
@@ -1657,6 +1658,7 @@ impl Niri {
             popup_grab: None,
             suppressed_keys: HashSet::new(),
             bind_cooldown_timers: HashMap::new(),
+            bind_repeat_timer: Option::default(),
             presentation_state,
             security_context_state,
             gamma_control_manager_state,

@@ -886,6 +886,7 @@ pub struct Binds(pub Vec<Bind>);
 pub struct Bind {
     pub key: Key,
     pub action: Action,
+    pub repeat: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
 }
@@ -2217,11 +2218,15 @@ where
             .parse::<Key>()
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
+        let mut repeat = true;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         for (name, val) in &node.properties {
             match &***name {
+                "repeat" => {
+                    repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
                         knuffel::traits::DecodeScalar::decode(val, ctx)?,
@@ -2249,6 +2254,7 @@ where
         let dummy = Self {
             key,
             action: Action::Spawn(vec![]),
+            repeat: true,
             cooldown: None,
             allow_when_locked: false,
         };
@@ -2276,6 +2282,7 @@ where
                     Ok(Self {
                         key,
                         action,
+                        repeat,
                         cooldown,
                         allow_when_locked,
                     })
@@ -2844,6 +2851,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::Spawn(vec!["alacritty".to_owned()]),
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
                     },
@@ -2853,6 +2861,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::CloseWindow,
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2862,6 +2871,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         action: Action::FocusMonitorLeft,
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2871,6 +2881,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
                         },
                         action: Action::MoveWindowToMonitorRight,
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2880,6 +2891,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::ConsumeWindowIntoColumn,
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2889,6 +2901,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::FocusWorkspace(WorkspaceReference::Index(1)),
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2900,6 +2913,7 @@ mod tests {
                         action: Action::FocusWorkspace(WorkspaceReference::Name(
                             "workspace-1".to_string(),
                         )),
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2909,6 +2923,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         action: Action::Quit(true),
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2918,6 +2933,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::FocusWorkspaceDown,
+                        repeat: true,
                         cooldown: Some(Duration::from_millis(150)),
                         allow_when_locked: false,
                     },
