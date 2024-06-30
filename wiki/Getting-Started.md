@@ -169,14 +169,14 @@ nix run --impure github:guibou/nixGL -- ./results/bin/niri
 The recommended way to install and run niri is as a standalone desktop session.
 To do that, put files into the correct directories according to this table.
 
-| File | Destination |
-| ---- | ----------- |
-| `target/release/niri` | `/usr/bin/` |
-| `resources/niri-session` | `/usr/bin/` |
-| `resources/niri.desktop` | `/usr/share/wayland-sessions/` |
-| `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |
-| `resources/niri.service` | `/usr/lib/systemd/user/` |
-| `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
+| File | Package | Manual |
+| ---- | ----------- | ----------- |
+| `target/release/niri` | `/usr/bin/` | `/usr/local/bin/` |
+| `resources/niri-session` | `/usr/bin/` | `/usr/local/bin/` |
+| `resources/niri.desktop` | `/usr/share/wayland-sessions/` |`/usr/local/share/wayland-sessions/` |
+| `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |`/usr/local/share/xdg-desktop-portal/` |
+| `resources/niri.service` | `/usr/lib/systemd/user/` |`/etc/systemd/user/` |
+| `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |`/etc/systemd/user/` |
 
 Doing this will make niri appear in GDM and other display managers.
 
