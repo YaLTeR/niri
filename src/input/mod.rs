@@ -1,12 +1,14 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, Modifiers, Trigger};
+use niri_config::{Action, Bind, Binds, Config, Key, Modifiers, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -330,12 +332,60 @@ impl State {
             return;
         };
 
-        // Filter actions when the key is released or the session is locked.
-        if !pressed {
-            return;
-        }
+        let config = self.niri.config.clone();
 
-        self.handle_bind(bind);
+        if pressed {
+            self.handle_bind(bind.clone());
+
+            match self.niri.bind_repeat_timers.entry(bind.key) {
+                Entry::Vacant(entry) => {
+                    fn repeat_handler(state: &mut State, config: Rc<RefCell<Config>>, bind: Bind) {
+                        let repeat_rate_timer = Timer::from_duration(Duration::from_millis(
+                            config.borrow().input.keyboard.repeat_rate as u64,
+                        ));
+
+                        let bind_key = bind.key.clone();
+
+                        let token = state
+                            .niri
+                            .event_loop
+                            .insert_source(repeat_rate_timer, move |_, _, state| {
+                                state.handle_bind(bind.clone());
+                                repeat_handler(state, config.clone(), bind.clone());
+
+                                TimeoutAction::Drop
+                            })
+                            .unwrap();
+
+                        state.niri.bind_repeat_timers.insert(bind_key, token);
+                    }
+
+                    let repeat_delay_timer = Timer::from_duration(Duration::from_millis(
+                        config.borrow().input.keyboard.repeat_delay as u64,
+                    ));
+                    let token = self
+                        .niri
+                        .event_loop
+                        .insert_source(repeat_delay_timer, move |_, _, state| {
+                            state.handle_bind(bind.clone());
+                            repeat_handler(state, config.clone(), bind.clone());
+                            TimeoutAction::Drop
+                        })
+                        .unwrap();
+
+                    entry.insert(token);
+                }
+                Entry::Occupied(_) => {
+                    // already repeating, nothing to do
+                }
+            }
+        } else {
+            let value = self.niri.bind_repeat_timers.remove(&bind.key);
+
+            if value.is_some() {
+                self.niri.event_loop.remove(value.unwrap())
+            }
+        }
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
@@ -2108,6 +2158,10 @@ fn should_intercept_key(
     match (final_bind, pressed) {
         (Some(bind), true) => {
             suppressed_keys.insert(key_code);
+            FilterResult::Intercept(Some(bind))
+        }
+        (Some(bind), false) => {
+            suppressed_keys.remove(&key_code);
             FilterResult::Intercept(Some(bind))
         }
         (_, false) => {
