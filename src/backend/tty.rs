@@ -965,16 +965,30 @@ impl Tty {
             presentation_misprediction_plot_name,
             sequence_delta_plot_name,
         };
+
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
 
+        let surface = device
+            .surfaces
+            .get_mut(&crtc)
+            .expect("surface was just inserted");
+
         niri.add_output(output.clone(), Some(refresh_interval(mode)), vrr_enabled);
 
-        // Power on all monitors if necessary and queue a redraw on the new one.
-        niri.event_loop.insert_idle(move |state| {
-            state.niri.activate_monitors(&mut state.backend);
-            state.niri.queue_redraw(&output);
-        });
+        // Some buggy monitors replug upon powering off,
+        // so powering on here would prevent such monitors from powering off.
+        if niri.monitors_active {
+            // Power on all monitors if necessary and queue a redraw on the new one.
+            niri.event_loop.insert_idle(move |state| {
+                state.niri.queue_redraw(&output);
+            });
+        } else {
+            set_crtc_active(&device.drm, crtc, false);
+            if let Err(err) = surface.compositor.reset_state() {
+                warn!("error resetting surface state: {err:?}");
+            }
+        }
 
         Ok(())
     }
