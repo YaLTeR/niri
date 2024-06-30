@@ -294,6 +294,19 @@ impl State {
         let time = Event::time_msec(&event);
         let pressed = event.state() == KeyState::Pressed;
 
+        // Stop bind key repeat on any release. This won't work 100% correctly in cases like:
+        // 1. Press Mod
+        // 2. Press Left (repeat starts)
+        // 3. Press PgDown (new repeat starts)
+        // 4. Release Left (PgDown repeat stops)
+        // But it's good enough for now.
+        // FIXME: handle this properly.
+        if !pressed {
+            if let Some(token) = self.niri.bind_repeat_timer.take() {
+                self.niri.event_loop.remove(token);
+            }
+        }
+
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
             event.key_code(),
@@ -330,12 +343,44 @@ impl State {
             return;
         };
 
-        // Filter actions when the key is released or the session is locked.
         if !pressed {
             return;
         }
 
-        self.handle_bind(bind);
+        self.handle_bind(bind.clone());
+
+        // Start the key repeat timer if necessary.
+        if !bind.repeat {
+            return;
+        }
+
+        // Stop the previous key repeat if any.
+        if let Some(token) = self.niri.bind_repeat_timer.take() {
+            self.niri.event_loop.remove(token);
+        }
+
+        let config = self.niri.config.borrow();
+        let config = &config.input.keyboard;
+
+        let repeat_rate = config.repeat_rate;
+        if repeat_rate == 0 {
+            return;
+        }
+        let repeat_duration = Duration::from_secs_f64(1. / f64::from(repeat_rate));
+
+        let repeat_timer =
+            Timer::from_duration(Duration::from_millis(u64::from(config.repeat_delay)));
+
+        let token = self
+            .niri
+            .event_loop
+            .insert_source(repeat_timer, move |_, _, state| {
+                state.handle_bind(bind.clone());
+                TimeoutAction::ToDuration(repeat_duration)
+            })
+            .unwrap();
+
+        self.niri.bind_repeat_timer = Some(token);
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
@@ -2132,6 +2177,7 @@ fn should_intercept_key(
                         modifiers: Modifiers::empty(),
                     },
                     action,
+                    repeat: true,
                     cooldown: None,
                     allow_when_locked: false,
                 });
@@ -2181,6 +2227,7 @@ fn find_bind(
                 modifiers: Modifiers::empty(),
             },
             action,
+            repeat: true,
             cooldown: None,
             allow_when_locked: false,
         });
@@ -2512,6 +2559,7 @@ mod tests {
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
             },
             action: Action::CloseWindow,
+            repeat: true,
             cooldown: None,
             allow_when_locked: false,
         }]);
@@ -2645,6 +2693,7 @@ mod tests {
                     modifiers: Modifiers::COMPOSITOR,
                 },
                 action: Action::CloseWindow,
+                repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
@@ -2654,6 +2703,7 @@ mod tests {
                     modifiers: Modifiers::SUPER,
                 },
                 action: Action::FocusColumnLeft,
+                repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
@@ -2663,6 +2713,7 @@ mod tests {
                     modifiers: Modifiers::empty(),
                 },
                 action: Action::FocusWindowDown,
+                repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
@@ -2672,6 +2723,7 @@ mod tests {
                     modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
                 },
                 action: Action::FocusWindowUp,
+                repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
@@ -2681,6 +2733,7 @@ mod tests {
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
                 },
                 action: Action::FocusColumnRight,
+                repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
