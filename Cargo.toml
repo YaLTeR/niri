@@ -64,6 +64,7 @@ niri-config = { version = "0.1.7", path = "niri-config" }
 niri-ipc = { version = "0.1.7", path = "niri-ipc", features = ["clap"] }
 notify-rust = { version = "~4.10.0", optional = true }
 ordered-float = "4.2.0"
+pango = { version = "0.19.8", features = ["v1_44"] }
 pangocairo = "0.19.8"
 pipewire = { version = "0.8.0", optional = true }
 png = "0.17.13"
