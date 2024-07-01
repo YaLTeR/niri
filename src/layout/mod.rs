@@ -1264,7 +1264,7 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_column_left_or_last();
     }
 
-    pub fn focus_column_up_or_output(&mut self, output: &Output) -> bool {
+    pub fn focus_window_up_or_output(&mut self, output: &Output) -> bool {
         if let Some(monitor) = self.active_monitor() {
             let workspace = monitor.active_workspace();
 
@@ -1285,7 +1285,7 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn focus_column_down_or_output(&mut self, output: &Output) -> bool {
+    pub fn focus_window_down_or_output(&mut self, output: &Output) -> bool {
         if let Some(monitor) = self.active_monitor() {
             let workspace = monitor.active_workspace();
 

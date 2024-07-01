@@ -121,9 +121,9 @@ pub enum Action {
     /// Focus the next column to the left, looping if at start.
     FocusColumnLeftOrLast,
     /// Focus the column or the monitor above.
-    FocusColumnOrMonitorUp,
+    FocusWindowOrMonitorUp,
     /// Focus the column or the monitor below.
-    FocusColumnOrMonitorDown,
+    FocusWindowOrMonitorDown,
     /// Focus the column or the monitor to the left.
     FocusColumnOrMonitorLeft,
     /// Focus the column or the monitor to the right.
