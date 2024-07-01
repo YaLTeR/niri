@@ -1264,6 +1264,49 @@ impl<W: LayoutElement> Layout<W> {
         monitor.focus_column_left_or_last();
     }
 
+    pub fn focus_column_up_or_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+
+            if workspace.columns.is_empty() {
+                self.switch_workspace_down();
+            } else {
+                let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
+                let new_idx = curr_idx.saturating_sub(1);
+                if curr_idx == new_idx {
+                    self.focus_output(output);
+                } else {
+                    workspace.focus_down();
+                }
+            }
+        }
+
+        self.focus_output(output);
+        true
+    }
+
+    pub fn focus_column_down_or_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+
+            if workspace.columns.is_empty() {
+                self.switch_workspace_down();
+            } else {
+                let column = &workspace.columns[workspace.active_column_idx];
+                let curr_idx = column.active_tile_idx;
+                let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
+                if curr_idx == new_idx {
+                    self.focus_output(output);
+                } else {
+                    workspace.focus_down();
+                }
+            }
+        }
+
+        self.focus_output(output);
+        true
+    }
+
     pub fn focus_column_left_or_output(&mut self, output: &Output) -> bool {
         if let Some(monitor) = self.active_monitor() {
             let workspace = monitor.active_workspace();
