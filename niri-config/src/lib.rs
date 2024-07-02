@@ -428,6 +428,8 @@ pub struct Gradient {
     pub angle: i16,
     #[knuffel(property, default)]
     pub relative_to: GradientRelativeTo,
+    #[knuffel(property(name="in"), str, default)]
+    pub in_: GradientInterpolation,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -435,6 +437,30 @@ pub enum GradientRelativeTo {
     #[default]
     Window,
     WorkspaceView,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub struct GradientInterpolation {
+    pub color_space: GradientColorSpace,
+    pub hue_interpol: HueInterpolation
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum GradientColorSpace {
+    #[default]
+    Srgb,
+    SrgbLinear,
+    Oklab,
+    Oklch,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum HueInterpolation {
+    #[default]
+    Shorter,
+    Longer,
+    Increasing,
+    Decreasing,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -509,7 +535,7 @@ impl Color {
 impl From<Color> for [f32; 4] {
     fn from(c: Color) -> Self {
         let [r, g, b, a] = [c.r, c.g, c.b, c.a].map(|x| x as f32 / 255.);
-        [r * a, g * a, b * a, a]
+        [r, g, b, a]
     }
 }
 
@@ -1426,6 +1452,55 @@ impl CornerRadius {
             bottom_right: self.bottom_right * scale,
             bottom_left: self.bottom_left * scale,
         }
+    }
+}
+
+impl FromStr for GradientInterpolation {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut iter = s.split_whitespace();
+        let in_part1 = iter.next();
+        let in_part2 = iter.next();
+        let in_part3 = iter.next();
+
+        let color = if in_part1 != None {
+            let in_str = in_part1.unwrap();  
+            match in_str {
+                "srgb" => GradientColorSpace::Srgb,
+                "srgb-linear" => GradientColorSpace::SrgbLinear,
+                "oklab" => GradientColorSpace::Oklab,
+                "oklch" => GradientColorSpace::Oklch,
+                &_ => return Err(miette!("Invalid color-space: {in_str}"))
+            }
+        } else {
+            GradientColorSpace::Srgb
+        };
+
+        let interpolation = if in_part2 != None {
+            let in_str = in_part2.unwrap();
+            if color != GradientColorSpace::Oklch {
+                return Err(miette!("There's a value: {in_str}  after a non polar colorspace"))
+            }
+            if in_part3 == None || in_part3.unwrap() != "hue" {
+                return Err(miette!("Invalid hue-interpolation: {in_str}  you may be missing 'hue' at the end."))
+            } else if iter.next() == None {
+                match in_str {
+                    "shorter" => HueInterpolation::Shorter,
+                    "longer" => HueInterpolation::Longer,
+                    "increasing" => HueInterpolation::Increasing,
+                    "decreasing" => HueInterpolation::Decreasing,
+                    &_ => return Err(miette!("Invalid hue-interpolation: {in_str}"))
+                }
+            } else {
+                // this is a placeholder and should be changed if anything is added to in
+                return Err(miette!("Theres a missing indicator ’hue’ from ’in’ "))
+            }
+        } else {
+            HueInterpolation::Shorter
+        };
+
+        Ok( Self { color_space: color, hue_interpol: interpolation } )
     }
 }
 
@@ -2788,6 +2863,10 @@ mod tests {
                             to: Color::new(0, 128, 255, 255),
                             angle: 180,
                             relative_to: GradientRelativeTo::WorkspaceView,
+                            in_ : GradientInterpolation {
+                                color_space: GradientColorSpace::Srgb,
+                                hue_interpol: HueInterpolation::Shorter,
+                            }
                         }),
                         inactive_gradient: None,
                     },

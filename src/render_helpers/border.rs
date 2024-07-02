@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use glam::{Mat3, Vec2};
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, GradientInterpolation, GradientColorSpace, HueInterpolation};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
@@ -28,6 +28,7 @@ pub struct BorderRenderElement {
 struct Parameters {
     size: Size<f64, Logical>,
     gradient_area: Rectangle<f64, Logical>,
+    gradient_format: GradientInterpolation,
     color_from: [f32; 4],
     color_to: [f32; 4],
     angle: f32,
@@ -43,6 +44,7 @@ impl BorderRenderElement {
     pub fn new(
         size: Size<f64, Logical>,
         gradient_area: Rectangle<f64, Logical>,
+        gradient_format: GradientInterpolation,
         color_from: [f32; 4],
         color_to: [f32; 4],
         angle: f32,
@@ -57,6 +59,7 @@ impl BorderRenderElement {
             params: Parameters {
                 size,
                 gradient_area,
+                gradient_format,
                 color_from,
                 color_to,
                 angle,
@@ -77,6 +80,7 @@ impl BorderRenderElement {
             params: Parameters {
                 size: Default::default(),
                 gradient_area: Default::default(),
+                gradient_format: GradientInterpolation::default(),
                 color_from: Default::default(),
                 color_to: Default::default(),
                 angle: 0.,
@@ -97,6 +101,7 @@ impl BorderRenderElement {
         &mut self,
         size: Size<f64, Logical>,
         gradient_area: Rectangle<f64, Logical>,
+        gradient_format: GradientInterpolation,
         color_from: [f32; 4],
         color_to: [f32; 4],
         angle: f32,
@@ -108,6 +113,7 @@ impl BorderRenderElement {
         let params = Parameters {
             size,
             gradient_area,
+            gradient_format,
             color_from,
             color_to,
             angle,
@@ -128,6 +134,7 @@ impl BorderRenderElement {
         let Parameters {
             size,
             gradient_area,
+            gradient_format,
             color_from,
             color_to,
             angle,
@@ -162,11 +169,27 @@ impl BorderRenderElement {
         let input_to_geo =
             Mat3::from_scale(area_size) * Mat3::from_translation(-geo_loc / area_size);
 
+        let colorspace = match gradient_format.color_space {
+            GradientColorSpace::Srgb => 0.,
+            GradientColorSpace::SrgbLinear => 1.,
+            GradientColorSpace::Oklab => 2.,
+            GradientColorSpace::Oklch => 3.,
+        };
+
+        let hue_interpolation = match gradient_format.hue_interpol {
+            HueInterpolation::Shorter => 0.,
+            HueInterpolation::Longer => 1.,
+            HueInterpolation::Increasing => 2.,
+            HueInterpolation::Decreasing => 3.,
+        };
+
         self.inner.update(
             size,
             None,
             scale,
             vec![
+                Uniform::new("colorspace", colorspace),
+                Uniform::new("hue_interpolation", hue_interpolation),
                 Uniform::new("color_from", color_from),
                 Uniform::new("color_to", color_to),
                 Uniform::new("grad_offset", grad_offset.to_array()),

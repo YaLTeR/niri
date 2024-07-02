@@ -34,6 +34,8 @@ impl Shaders {
             renderer,
             include_str!("border.frag"),
             &[
+                UniformName::new("colorspace", UniformType::_1f),
+                UniformName::new("hue_interpolation", UniformType::_1f),
                 UniformName::new("color_from", UniformType::_4f),
                 UniformName::new("color_to", UniformType::_4f),
                 UniformName::new("grad_offset", UniformType::_2f),

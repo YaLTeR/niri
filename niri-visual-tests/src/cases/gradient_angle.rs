@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use niri::animation::ANIMATION_SLOWDOWN;
 use niri::render_helpers::border::BorderRenderElement;
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, GradientInterpolation};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Rectangle, Size};
@@ -64,6 +64,7 @@ impl TestCase for GradientAngle {
         [BorderRenderElement::new(
             area.size,
             Rectangle::from_loc_and_size((0., 0.), area.size),
+            GradientInterpolation::default(),
             [1., 0., 0., 1.],
             [0., 1., 0., 1.],
             self.angle - FRAC_PI_2,
