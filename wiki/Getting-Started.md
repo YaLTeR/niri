@@ -192,8 +192,8 @@ These may vary depending on your distribution.
 | `resources/niri-session` | `/usr/local/bin/` |
 | `resources/niri.desktop`  | `/usr/local/share/wayland-sessions/` |
 | `resources/niri-portals.conf` | `/usr/local/share/xdg-desktop-portal/` |
-| `resources/niri.service` | `/usr/lib/systemd/user/` |`/etc/systemd/user/` |
-| `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |`/etc/systemd/user/` |
+| `resources/niri.service` | `/etc/systemd/user/` |
+| `resources/niri-shutdown.target` | `/etc/systemd/user/` |
 
 
 
