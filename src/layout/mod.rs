@@ -1276,7 +1276,7 @@ impl<W: LayoutElement> Layout<W> {
                 if curr_idx == new_idx {
                     self.focus_output(output);
                 } else {
-                    workspace.focus_down();
+                    workspace.focus_up();
                 }
             }
         }

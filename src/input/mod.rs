@@ -606,7 +606,7 @@ impl State {
                         self.maybe_warp_cursor_to_focus();
                     }
                 } else {
-                    self.niri.layout.focus_left();
+                    self.niri.layout.focus_up();
                     self.maybe_warp_cursor_to_focus();
                 }
 
@@ -623,7 +623,7 @@ impl State {
                         self.maybe_warp_cursor_to_focus();
                     }
                 } else {
-                    self.niri.layout.focus_left();
+                    self.niri.layout.focus_down();
                     self.maybe_warp_cursor_to_focus();
                 }
 
