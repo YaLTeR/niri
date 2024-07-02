@@ -164,9 +164,9 @@ If you're not on NixOS, you may need [NixGL](https://github.com/nix-community/ni
 nix run --impure github:guibou/nixGL -- ./results/bin/niri
 ```
 
-### Installation
+### Packaging
 
-The recommended way to install and run niri is as a standalone desktop session.
+The recommended way to package niri is so that it runs as a standalone desktop session.
 To do that, put files into the correct directories according to this table.
 
 | File | Destination |
@@ -179,6 +179,21 @@ To do that, put files into the correct directories according to this table.
 | `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
 
 Doing this will make niri appear in GDM and other display managers.
+
+### Manual Installation
+
+If installing directly without a package, the recommended file destinations are slightly different.
+In this case, put the files in the directories indicated in the table below.
+These may vary depending on your distribution.
+
+| File | Destination |
+| ---- | ----------- |
+| `target/release/niri` | `/usr/local/bin/` |
+| `resources/niri-session` | `/usr/local/bin/` |
+| `resources/niri.desktop`  | `/usr/local/share/wayland-sessions/` |
+| `resources/niri-portals.conf` | `/usr/local/share/xdg-desktop-portal/` |
+| `resources/niri.service` | `/etc/systemd/user/` |
+| `resources/niri-shutdown.target` | `/etc/systemd/user/` |
 
 [Alacritty]: https://github.com/alacritty/alacritty
 [fuzzel]: https://codeberg.org/dnkl/fuzzel

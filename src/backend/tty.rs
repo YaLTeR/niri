@@ -965,16 +965,22 @@ impl Tty {
             presentation_misprediction_plot_name,
             sequence_delta_plot_name,
         };
+
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
 
         niri.add_output(output.clone(), Some(refresh_interval(mode)), vrr_enabled);
 
-        // Power on all monitors if necessary and queue a redraw on the new one.
-        niri.event_loop.insert_idle(move |state| {
-            state.niri.activate_monitors(&mut state.backend);
-            state.niri.queue_redraw(&output);
-        });
+        // Some buggy monitors replug upon powering off, so powering on here would prevent such
+        // monitors from powering off. Therefore, we avoid unconditionally powering on.
+        if niri.monitors_active {
+            // Redraw the new monitor.
+            niri.event_loop.insert_idle(move |state| {
+                state.niri.queue_redraw(&output);
+            });
+        } else {
+            set_crtc_active(&device.drm, crtc, false);
+        }
 
         Ok(())
     }
