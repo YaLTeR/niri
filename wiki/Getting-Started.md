@@ -182,9 +182,9 @@ Doing this will make niri appear in GDM and other display managers.
 
 ### Manual Installation
 
-If installing directly without a package, the recommended file destinations area
-slightly different. In this case, put the files in the directories indicated in 
-the table below.
+If installing directly without a package, the recommended file destinations are slightly different.
+In this case, put the files in the directories indicated in the table below.
+These may vary depending on your distribution.
 
 | File | Destination |
 | ---- | ----------- |
