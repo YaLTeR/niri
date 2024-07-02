@@ -146,7 +146,9 @@ impl OutputDevice {
             builder.add_connector(connector);
             builder.add_crtc(*crtc);
             let planes = self.drm.planes(crtc).map_err(LeaseRejected::with_cause)?;
-            builder.add_plane(planes.primary.handle);
+            for plane in &planes.primary {
+                builder.add_plane(plane.handle);
+            }
         }
         Ok(builder)
     }
@@ -1962,8 +1964,8 @@ fn surface_dmabuf_feedback(
     let surface = compositor.surface();
     let planes = surface.planes();
 
-    let plane_formats = planes
-        .primary
+    let plane_formats = surface
+        .plane_info()
         .formats
         .iter()
         .chain(planes.overlay.iter().flat_map(|p| p.formats.iter()))

@@ -1000,8 +1000,10 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
         };
 
         let (got_unmapped, commit_serial) = with_states(surface, |states| {
-            let attrs = states.cached_state.pending::<SurfaceAttributes>();
-            let got_unmapped = matches!(attrs.buffer, Some(BufferAssignment::Removed));
+            let got_unmapped = {
+                let mut guard = states.cached_state.get::<SurfaceAttributes>();
+                matches!(guard.pending().buffer, Some(BufferAssignment::Removed))
+            };
 
             let role = states
                 .data_map

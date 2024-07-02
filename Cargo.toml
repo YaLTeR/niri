@@ -21,11 +21,13 @@ tracy-client = { version = "0.17.0", default-features = false }
 
 [workspace.dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
+rev = "90f622fa9a4ff64d25944ae8a172e26a237dc9c8"
 # path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 git = "https://github.com/Smithay/smithay.git"
+rev = "90f622fa9a4ff64d25944ae8a172e26a237dc9c8"
 # path = "../smithay/smithay-drm-extras"
 
 [package]

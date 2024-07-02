@@ -48,9 +48,9 @@ impl CompositorHandler for State {
     fn new_surface(&mut self, surface: &WlSurface) {
         add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
             let maybe_dmabuf = with_states(surface, |surface_data| {
-                surface_data
-                    .cached_state
-                    .pending::<SurfaceAttributes>()
+                let mut guard = surface_data.cached_state.get::<SurfaceAttributes>();
+                guard
+                    .pending()
                     .buffer
                     .as_ref()
                     .and_then(|assignment| match assignment {
