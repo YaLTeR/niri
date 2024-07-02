@@ -1,6 +1,5 @@
 use std::any::Any;
-use std::cmp::max;
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -8,7 +7,6 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{Action, Bind, Binds, Key, Modifiers, Trigger};
-
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
