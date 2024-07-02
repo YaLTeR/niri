@@ -1,14 +1,14 @@
 use std::any::Any;
-use std::cell::RefCell;
+use std::cmp::max;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::rc::Rc;
 use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Config, Key, Modifiers, Trigger};
+use niri_config::{Action, Bind, Binds, Key, Modifiers, Trigger};
+
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -329,50 +329,29 @@ impl State {
                 )
             },
         ) else {
+            self.remove_all_bind_repeat_timers();
             return;
         };
-
-        let config = self.niri.config.clone();
 
         if pressed {
             self.handle_bind(bind.clone());
 
             match self.niri.bind_repeat_timers.entry(bind.key) {
                 Entry::Vacant(entry) => {
-                    fn repeat_handler(state: &mut State, config: Rc<RefCell<Config>>, bind: Bind) {
-                        let repeat_after_millis = std::cmp::max(
-                            1000 / config.borrow().input.keyboard.repeat_rate as u64,
-                            100,
-                        );
-                        let repeat_rate_timer =
-                            Timer::from_duration(Duration::from_millis(repeat_after_millis));
-
-                        let bind_key = bind.key.clone();
-
-                        let token = state
-                            .niri
-                            .event_loop
-                            .insert_source(repeat_rate_timer, move |_, _, state| {
-                                state.handle_bind(bind.clone());
-                                repeat_handler(state, config.clone(), bind.clone());
-
-                                TimeoutAction::Drop
-                            })
-                            .unwrap();
-
-                        state.niri.bind_repeat_timers.insert(bind_key, token);
-                    }
-
                     let repeat_delay_timer = Timer::from_duration(Duration::from_millis(
-                        config.borrow().input.keyboard.repeat_delay as u64,
+                        self.niri.config.borrow().input.keyboard.repeat_delay as u64,
                     ));
+
                     let token = self
                         .niri
                         .event_loop
                         .insert_source(repeat_delay_timer, move |_, _, state| {
                             state.handle_bind(bind.clone());
-                            repeat_handler(state, config.clone(), bind.clone());
-                            TimeoutAction::Drop
+
+                            TimeoutAction::ToDuration(Duration::from_millis(max(
+                                1000 / state.niri.config.borrow().input.keyboard.repeat_rate as u64,
+                                100,
+                            )))
                         })
                         .unwrap();
 
@@ -383,10 +362,16 @@ impl State {
                 }
             }
         } else {
-            let value = self.niri.bind_repeat_timers.remove(&bind.key);
+            self.remove_all_bind_repeat_timers();
+        }
+    }
 
-            if value.is_some() {
-                self.niri.event_loop.remove(value.unwrap())
+    fn remove_all_bind_repeat_timers(&mut self) {
+        let keys: Vec<Key> = self.niri.bind_repeat_timers.keys().cloned().collect();
+
+        for key in keys {
+            if let Some(value) = self.niri.bind_repeat_timers.remove(&key) {
+                self.niri.event_loop.remove(value)
             }
         }
     }
@@ -2159,19 +2144,19 @@ fn should_intercept_key(
     }
 
     match (final_bind, pressed) {
+        (None, true) => FilterResult::Forward,
+        (None, false) => {
+            suppressed_keys.remove(&key_code);
+            FilterResult::Forward
+        }
         (Some(bind), true) => {
             suppressed_keys.insert(key_code);
-            FilterResult::Intercept(Some(bind))
-        }
-        (Some(bind), false) => {
-            suppressed_keys.remove(&key_code);
             FilterResult::Intercept(Some(bind))
         }
         (_, false) => {
             suppressed_keys.remove(&key_code);
             FilterResult::Intercept(None)
         }
-        (None, true) => FilterResult::Forward,
     }
 }
 
@@ -2599,13 +2584,7 @@ mod tests {
         assert!(suppressed_keys.contains(&close_key_code));
 
         let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(
-            filter,
-            FilterResult::Intercept(Some(Bind {
-                action: Action::CloseWindow,
-                ..
-            }))
-        ));
+        assert!(matches!(filter, FilterResult::Intercept(None)));
         assert!(suppressed_keys.is_empty());
 
         // Remove mod to make it for a binding.
@@ -2641,13 +2620,7 @@ mod tests {
         assert!(matches!(filter, FilterResult::Forward));
 
         let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(
-            filter,
-            FilterResult::Intercept(Some(Bind {
-                action: Action::CloseWindow,
-                ..
-            }))
-        ));
+        assert!(matches!(filter, FilterResult::Intercept(None)));
 
         let filter = none_key_event(&mut suppressed_keys, mods, false);
         assert!(matches!(filter, FilterResult::Forward));
@@ -2665,7 +2638,7 @@ mod tests {
 
         mods = Default::default();
         let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, FilterResult::Intercept(None)));
+        assert!(matches!(filter, FilterResult::Forward));
 
         // Ensure that no keys are being suppressed.
         assert!(suppressed_keys.is_empty());
