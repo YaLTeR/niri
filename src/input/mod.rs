@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -327,15 +327,51 @@ impl State {
                 )
             },
         ) else {
+            self.remove_all_bind_repeat_timers();
             return;
         };
 
-        // Filter actions when the key is released or the session is locked.
-        if !pressed {
-            return;
-        }
+        if pressed {
+            self.handle_bind(bind.clone());
 
-        self.handle_bind(bind);
+            match self.niri.bind_repeat_timers.entry(bind.key) {
+                Entry::Vacant(entry) => {
+                    let repeat_delay_timer = Timer::from_duration(Duration::from_millis(
+                        self.niri.config.borrow().input.keyboard.repeat_delay as u64,
+                    ));
+
+                    let token = self
+                        .niri
+                        .event_loop
+                        .insert_source(repeat_delay_timer, move |_, _, state| {
+                            state.handle_bind(bind.clone());
+
+                            TimeoutAction::ToDuration(Duration::from_millis(max(
+                                1000 / state.niri.config.borrow().input.keyboard.repeat_rate as u64,
+                                100,
+                            )))
+                        })
+                        .unwrap();
+
+                    entry.insert(token);
+                }
+                Entry::Occupied(_) => {
+                    // already repeating, nothing to do
+                }
+            }
+        } else {
+            self.remove_all_bind_repeat_timers();
+        }
+    }
+
+    fn remove_all_bind_repeat_timers(&mut self) {
+        let keys: Vec<Key> = self.niri.bind_repeat_timers.keys().cloned().collect();
+
+        for key in keys {
+            if let Some(value) = self.niri.bind_repeat_timers.remove(&key) {
+                self.niri.event_loop.remove(value)
+            }
+        }
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
@@ -2106,6 +2142,11 @@ fn should_intercept_key(
     }
 
     match (final_bind, pressed) {
+        (None, true) => FilterResult::Forward,
+        (None, false) => {
+            suppressed_keys.remove(&key_code);
+            FilterResult::Forward
+        }
         (Some(bind), true) => {
             suppressed_keys.insert(key_code);
             FilterResult::Intercept(Some(bind))
@@ -2114,7 +2155,6 @@ fn should_intercept_key(
             suppressed_keys.remove(&key_code);
             FilterResult::Intercept(None)
         }
-        (None, true) => FilterResult::Forward,
     }
 }
 
@@ -2596,7 +2636,7 @@ mod tests {
 
         mods = Default::default();
         let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, FilterResult::Intercept(None)));
+        assert!(matches!(filter, FilterResult::Forward));
 
         // Ensure that no keys are being suppressed.
         assert!(suppressed_keys.is_empty());
