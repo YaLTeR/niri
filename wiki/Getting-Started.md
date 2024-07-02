@@ -195,7 +195,5 @@ These may vary depending on your distribution.
 | `resources/niri.service` | `/etc/systemd/user/` |
 | `resources/niri-shutdown.target` | `/etc/systemd/user/` |
 
-
-
 [Alacritty]: https://github.com/alacritty/alacritty
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
