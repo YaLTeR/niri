@@ -35,6 +35,11 @@ pub enum Request {
     Workspaces,
     /// Request information about the focused output.
     FocusedOutput,
+    /// Start continuously receiving events from the compositor.
+    ///
+    /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
+    /// [`Event`]s, one per line.
+    EventStream,
     /// Respond with an error (for testing error handling).
     ReturnError,
 }
@@ -511,6 +516,10 @@ pub enum OutputConfigChanged {
 /// A workspace.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
+    /// Unique id of this workspace.
+    ///
+    /// This id remains constant regardless of the workspace moving around and across monitors.
+    pub id: u64,
     /// Index of the workspace on its monitor.
     ///
     /// This is the same index you can use for requests like `niri msg action focus-workspace`.
@@ -523,6 +532,51 @@ pub struct Workspace {
     pub output: Option<String>,
     /// Whether the workspace is currently active on its output.
     pub is_active: bool,
+}
+
+/// A compositor event.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Event {
+    /// A new workspace was created.
+    WorkspaceCreated {
+        /// The new workspace.
+        workspace: Workspace,
+    },
+    /// A workspace was removed.
+    WorkspaceRemoved {
+        /// Id of the removed workspace.
+        id: u64,
+    },
+    /// A workspace was switched on an output.
+    ///
+    /// This doesn't mean the workspace became focused, just that it's now the active workspace on
+    /// its output.
+    WorkspaceSwitched {
+        /// Output where the workspace was switched.
+        output: String,
+        /// Id of the newly active workspace.
+        id: u64,
+    },
+    /// A workspace moved on an output or to a different output.
+    WorkspaceMoved {
+        /// Id of the moved workspace.
+        id: u64,
+        /// New output of the workspace.
+        output: String,
+        /// New position of the workspace on the output.
+        idx: u8,
+    },
+    /// Window focus changed.
+    WindowFocused {
+        // FIXME: replace with id, and WindowCreated/Removed.
+        /// The newly focused window, or `None` if no window is now focused.
+        window: Option<Window>,
+    },
+    /// The keyboard layout changed.
+    KeyboardLayoutChanged {
+        /// Name of the newly active layout.
+        name: String,
+    },
 }
 
 impl FromStr for WorkspaceReferenceArg {

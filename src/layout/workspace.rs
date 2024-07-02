@@ -122,7 +122,7 @@ pub struct OutputId(String);
 static WORKSPACE_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct WorkspaceId(u32);
+pub struct WorkspaceId(pub u32);
 
 impl WorkspaceId {
     fn next() -> WorkspaceId {

@@ -2400,6 +2400,7 @@ impl<W: LayoutElement> Layout<W> {
                 for monitor in monitors {
                     for (idx, workspace) in monitor.workspaces.iter().enumerate() {
                         workspaces.push(niri_ipc::Workspace {
+                            id: u64::from(workspace.id().0),
                             idx: u8::try_from(idx + 1).unwrap_or(u8::MAX),
                             name: workspace.name.clone(),
                             output: Some(monitor.output.name()),
@@ -2414,6 +2415,7 @@ impl<W: LayoutElement> Layout<W> {
                 .iter()
                 .enumerate()
                 .map(|(idx, ws)| niri_ipc::Workspace {
+                    id: u64::from(ws.id().0),
                     idx: u8::try_from(idx + 1).unwrap_or(u8::MAX),
                     name: ws.name.clone(),
                     output: None,
