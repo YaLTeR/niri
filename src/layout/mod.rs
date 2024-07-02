@@ -1269,7 +1269,7 @@ impl<W: LayoutElement> Layout<W> {
             let workspace = monitor.active_workspace();
 
             if workspace.columns.is_empty() {
-                self.switch_workspace_down();
+                self.focus_output(output);
             } else {
                 let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
                 let new_idx = curr_idx.saturating_sub(1);
@@ -1290,7 +1290,7 @@ impl<W: LayoutElement> Layout<W> {
             let workspace = monitor.active_workspace();
 
             if workspace.columns.is_empty() {
-                self.switch_workspace_down();
+                self.focus_output(output);
             } else {
                 let column = &workspace.columns[workspace.active_column_idx];
                 let curr_idx = column.active_tile_idx;
