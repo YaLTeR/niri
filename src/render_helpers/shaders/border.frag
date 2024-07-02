@@ -21,6 +21,35 @@ uniform vec2 geo_size;
 uniform vec4 outer_radius;
 uniform float border_width;
 
+
+vec4 linear_color_mix(vec4 color1, vec4 color2, float color_ratio) {
+  vec4 lin_color1 = vec4(
+    pow(color1.r, 2.0),
+    pow(color1.g, 2.0),
+    pow(color1.b, 2.0),
+    color1.a
+  );
+
+  vec4 lin_color2 = vec4(
+    pow(color2.r, 2.0),
+    pow(color2.g, 2.0),
+    pow(color2.b, 2.0),
+    color2.a
+  );
+
+  vec4 color_out = mix(
+    lin_color1,
+    lin_color2,
+    color_ratio
+  );
+
+  return vec4(sqrt(color_out.r),
+    sqrt(color_out.g),
+    sqrt(color_out.b),
+    color_out.a
+  );
+}
+
 vec4 gradient_color(vec2 coords) {
     coords = coords + grad_offset;
 
@@ -33,7 +62,7 @@ vec4 gradient_color(vec2 coords) {
         frac += 1.0;
 
     frac = clamp(frac, 0.0, 1.0);
-    return mix(color_from, color_to, frac);
+    return linear_color_mix(color_from, color_to, frac);
 }
 
 float rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius) {
