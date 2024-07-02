@@ -2186,6 +2186,7 @@ dependencies = [
  "niri-ipc",
  "notify-rust",
  "ordered-float",
+ "pango",
  "pangocairo",
  "pipewire",
  "png",

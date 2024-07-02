@@ -192,6 +192,7 @@ fn render(
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
     let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
     layout.set_markup(&text);
 
@@ -206,6 +207,7 @@ fn render(
 
     cr.move_to(padding.into(), padding.into());
     let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
     layout.set_markup(&text);
 

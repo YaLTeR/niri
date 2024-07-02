@@ -109,6 +109,7 @@ fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
     let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
     layout.set_alignment(Alignment::Center);
     layout.set_markup(TEXT);
@@ -124,6 +125,7 @@ fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
 
     cr.move_to(padding.into(), padding.into());
     let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
     layout.set_alignment(Alignment::Center);
     layout.set_markup(TEXT);
