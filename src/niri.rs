@@ -114,6 +114,7 @@ use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
+use crate::protocols::output_management::{self, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
@@ -202,6 +203,7 @@ pub struct Niri {
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
     pub screencopy_state: ScreencopyManagerState,
+    pub output_management_state: OutputManagementManagerState,
     pub viewporter_state: ViewporterState,
     pub xdg_foreign_state: XdgForeignState,
     pub shm_state: ShmState,
@@ -1178,6 +1180,8 @@ impl State {
 
         #[cfg(feature = "dbus")]
         self.niri.on_ipc_outputs_changed();
+
+        output_management::notify_changes(self);
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -1482,6 +1486,10 @@ impl Niri {
             ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
+        let output_management_state =
+            OutputManagementManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
         let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
             !client.get_data::<ClientState>().unwrap().restricted
         });
@@ -1626,6 +1634,7 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            output_management_state,
             screencopy_state,
             viewporter_state,
             xdg_foreign_state,
