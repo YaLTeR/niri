@@ -166,8 +166,8 @@ nix run --impure github:guibou/nixGL -- ./results/bin/niri
 
 ### Packaging
 
-The recommended way to package niri  is to have niri run as a standalone desktop
-session. To do that, put files into the correct directories according to this table.
+The recommended way to package niri is so that it runs as a standalone desktop session.
+To do that, put files into the correct directories according to this table.
 
 | File | Destination |
 | ---- | ----------- |
