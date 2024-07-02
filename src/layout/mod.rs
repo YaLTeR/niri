@@ -46,6 +46,7 @@ use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
+use crate::ipc::server::smithay_window_to_ipc;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
@@ -53,7 +54,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::{output_size, round_logical_in_physical_max1, ResizeEdge};
-use crate::window::ResolvedWindowRules;
+use crate::window::{Mapped, ResolvedWindowRules};
 
 pub mod closing_window;
 pub mod focus_ring;
@@ -2387,7 +2388,9 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
     }
+}
 
+impl Layout<Mapped> {
     pub fn ipc_workspaces(&self) -> Vec<niri_ipc::Workspace> {
         match &self.monitor_set {
             MonitorSet::Normal {
@@ -2404,6 +2407,10 @@ impl<W: LayoutElement> Layout<W> {
                             name: workspace.name.clone(),
                             output: Some(monitor.output.name()),
                             is_active: monitor.active_workspace_idx == idx,
+                            windows: workspace
+                                .windows()
+                                .map(|mapped| smithay_window_to_ipc(&mapped.window))
+                                .collect(),
                         })
                     }
                 }
@@ -2418,6 +2425,10 @@ impl<W: LayoutElement> Layout<W> {
                     name: ws.name.clone(),
                     output: None,
                     is_active: false,
+                    windows: ws
+                        .windows()
+                        .map(|mapped| smithay_window_to_ipc(&mapped.window))
+                        .collect(),
                 })
                 .collect(),
         }

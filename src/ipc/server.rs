@@ -146,23 +146,12 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::Outputs(ipc_outputs)
         }
         Request::FocusedWindow => {
-            let window = ctx.ipc_focused_window.lock().unwrap().clone();
-            let window = window.map(|window| {
-                let wl_surface = window.toplevel().expect("no X11 support").wl_surface();
-                with_states(wl_surface, |states| {
-                    let role = states
-                        .data_map
-                        .get::<XdgToplevelSurfaceData>()
-                        .unwrap()
-                        .lock()
-                        .unwrap();
-
-                    niri_ipc::Window {
-                        title: role.title.clone(),
-                        app_id: role.app_id.clone(),
-                    }
-                })
-            });
+            let window = ctx
+                .ipc_focused_window
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(smithay_window_to_ipc);
             Response::FocusedWindow(window)
         }
         Request::Action(action) => {
@@ -236,4 +225,21 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     };
 
     Ok(response)
+}
+
+pub fn smithay_window_to_ipc(window: &smithay::desktop::Window) -> niri_ipc::Window {
+    let wl_surface = window.toplevel().expect("no X11 support").wl_surface();
+    with_states(wl_surface, |states| {
+        let role = states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap();
+
+        niri_ipc::Window {
+            title: role.title.clone(),
+            app_id: role.app_id.clone(),
+        }
+    })
 }

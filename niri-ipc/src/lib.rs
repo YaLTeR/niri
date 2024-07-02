@@ -491,7 +491,7 @@ pub enum Transform {
 }
 
 /// Toplevel window.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
 pub struct Window {
     /// Title, if set.
     pub title: Option<String>,
@@ -523,6 +523,8 @@ pub struct Workspace {
     pub output: Option<String>,
     /// Whether the workspace is currently active on its output.
     pub is_active: bool,
+    /// The windows currently on this workspace
+    pub windows: Vec<Window>,
 }
 
 impl FromStr for WorkspaceReferenceArg {
