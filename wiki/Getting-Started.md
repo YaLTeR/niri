@@ -164,21 +164,38 @@ If you're not on NixOS, you may need [NixGL](https://github.com/nix-community/ni
 nix run --impure github:guibou/nixGL -- ./results/bin/niri
 ```
 
-### Installation
+### Packaging
 
-The recommended way to install and run niri is as a standalone desktop session.
-To do that, put files into the correct directories according to this table.
+The recommended way to package niri  is to have niri run as a standalone desktop
+session. To do that, put files into the correct directories according to this table.
 
-| File | Package | Manual |
-| ---- | ----------- | ----------- |
-| `target/release/niri` | `/usr/bin/` | `/usr/local/bin/` |
-| `resources/niri-session` | `/usr/bin/` | `/usr/local/bin/` |
-| `resources/niri.desktop` | `/usr/share/wayland-sessions/` |`/usr/local/share/wayland-sessions/` |
-| `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |`/usr/local/share/xdg-desktop-portal/` |
+| File | Destination |
+| ---- | ----------- |
+| `target/release/niri` | `/usr/bin/` | 
+| `resources/niri-session` | `/usr/bin/` |
+| `resources/niri.desktop` | `/usr/share/wayland-sessions/` |
+| `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |
+| `resources/niri.service` | `/usr/lib/systemd/user/` |
+| `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
+
+Doing this will make niri appear in GDM and other display managers.
+
+### Manual Installation
+
+If installing directly without a package, the recommended file destinations area
+slightly different. In this case, put the files in the directories indicated in 
+the table below.
+
+| File | Destination |
+| ---- | ----------- |
+| `target/release/niri` | `/usr/local/bin/` |
+| `resources/niri-session` | `/usr/local/bin/` |
+| `resources/niri.desktop`  | `/usr/local/share/wayland-sessions/` |
+| `resources/niri-portals.conf` | `/usr/local/share/xdg-desktop-portal/` |
 | `resources/niri.service` | `/usr/lib/systemd/user/` |`/etc/systemd/user/` |
 | `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |`/etc/systemd/user/` |
 
-Doing this will make niri appear in GDM and other display managers.
+
 
 [Alacritty]: https://github.com/alacritty/alacritty
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
