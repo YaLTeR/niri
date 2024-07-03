@@ -3429,7 +3429,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#234586dbea6bc084cb72a32f164997e47ea36b2b"
+source = "git+https://github.com/Smithay/smithay.git?branch=fix/unwrap_drm_connectors#fac4b339e64afc28ebb5d572bfcd8582a18ec5c3"
 dependencies = [
  "drm",
  "edid-rs",

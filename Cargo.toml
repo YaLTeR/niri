@@ -26,6 +26,7 @@ default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 git = "https://github.com/Smithay/smithay.git"
+branch = "fix/unwrap_drm_connectors"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
