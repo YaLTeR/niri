@@ -1166,12 +1166,12 @@ impl State {
 
         let _span = tracy_client::span!("State::refresh_ipc_outputs");
 
-        for (name, ipc_output) in self.backend.ipc_outputs().lock().unwrap().iter_mut() {
+        for ipc_output in self.backend.ipc_outputs().lock().unwrap().values_mut() {
             let logical = self
                 .niri
                 .global_space
                 .outputs()
-                .find(|output| output.name() == *name)
+                .find(|output| output.name() == ipc_output.name)
                 .map(logical_output);
             ipc_output.logical = logical;
         }
