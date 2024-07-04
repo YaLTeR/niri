@@ -555,7 +555,7 @@ impl OutputManagementHandler for State {
         &mut self.niri.output_management_state
     }
 
-    fn apply_output_config(&mut self, config: Vec<niri_config::Output>) {
+    fn apply_output_config(&mut self, config: niri_config::Outputs) {
         self.niri.config.borrow_mut().outputs = config;
         self.reload_output_config();
     }

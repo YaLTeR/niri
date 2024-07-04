@@ -38,7 +38,7 @@ pub struct OutputManagementManagerState {
     serial: u32,
     clients: HashMap<ClientId, ClientData>,
     current_state: HashMap<OutputId, niri_ipc::Output>,
-    current_config: Vec<niri_config::Output>,
+    current_config: niri_config::Outputs,
 }
 
 pub struct OutputManagementManagerGlobalData {
@@ -47,7 +47,7 @@ pub struct OutputManagementManagerGlobalData {
 
 pub trait OutputManagementHandler {
     fn output_management_state(&mut self) -> &mut OutputManagementManagerState;
-    fn apply_output_config(&mut self, config: Vec<niri_config::Output>);
+    fn apply_output_config(&mut self, config: niri_config::Outputs);
 }
 
 #[derive(Debug)]
@@ -84,11 +84,11 @@ impl OutputManagementManagerState {
             clients: HashMap::new(),
             serial: 0,
             current_state: HashMap::new(),
-            current_config: Vec::new(),
+            current_config: Default::default(),
         }
     }
 
-    pub fn on_config_changed(&mut self, new_config: Vec<niri_config::Output>) {
+    pub fn on_config_changed(&mut self, new_config: niri_config::Outputs) {
         self.current_config = new_config;
     }
 
@@ -405,8 +405,7 @@ where
                     Entry::Vacant(entry) => {
                         let mut config = g_state
                             .current_config
-                            .iter()
-                            .find(|o| o.name.eq_ignore_ascii_case(&current_config.name))
+                            .find(&current_config.name)
                             .cloned()
                             .unwrap_or_else(|| niri_config::Output {
                                 name: current_config.name.clone(),
@@ -455,8 +454,7 @@ where
                     Entry::Vacant(entry) => {
                         let mut config = g_state
                             .current_config
-                            .iter()
-                            .find(|o| o.name.eq_ignore_ascii_case(&current_config.name))
+                            .find(&current_config.name)
                             .cloned()
                             .unwrap_or_else(|| niri_config::Output {
                                 name: current_config.name.clone(),
