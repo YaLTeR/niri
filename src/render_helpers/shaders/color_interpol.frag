@@ -18,10 +18,8 @@ vec4 color_root(vec4 color) {
 }
 
 vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
-  
-  float gradient_type = grad_format;
 
-  if(gradient_type == 0.0) { //   CssLinear
+  if(grad_format == 0.0) { //   CssLinear
     return mix(color1, color2, color_ratio);
   }
   
@@ -30,7 +28,7 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
   color1 = color_linear(color1);
   color2 = color_linear(color2);
 
-  if (gradient_type == 1.0) {
+  if (grad_format == 1.0) { // rgb linear
     color_out = mix(
       color1,
       color2,

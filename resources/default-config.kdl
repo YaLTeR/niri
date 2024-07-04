@@ -152,6 +152,7 @@ layout {
         // The angle is the same as in linear-gradient, and is optional,
         // defaulting to 180 (top-to-bottom gradient).
         // You can use any CSS linear-gradient tool on the web to set these up.
+        // for gradient types visit the wiki
         //
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
 

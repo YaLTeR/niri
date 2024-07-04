@@ -32,7 +32,7 @@ layout {
         active-color "#ffc87f"
         inactive-color "#505050"
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
-        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" gradient-type="linear"
     }
 
     struts {
@@ -169,7 +169,7 @@ layout {
         inactive-color "#505050"
 
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
-        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" gradient-type="linear"
     }
 }
 ```
@@ -209,7 +209,7 @@ There's also a *deprecated* syntax for setting colors with four numbers represen
 
 Similarly to colors, you can set `active-gradient` and `inactive-gradient`, which will take precedence.
 
-Gradients are rendered the same as CSS [`linear-gradient(angle, from, to)`](https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient).
+Gradients can be rendered the same as CSS [`linear-gradient(angle, from, to)`](https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient).
 The angle works the same as in `linear-gradient`, and is optional, defaulting to `180` (top-to-bottom gradient).
 You can use any CSS linear-gradient tool on the web to set these up, like [this one](https://www.css-gradient.com/).
 
@@ -220,6 +220,13 @@ layout {
     }
 }
 ```
+
+Gradients can be rendered with different kinds of color interpolation, this doesen't mean that the arguments the gradient takes
+are any different. Except for an optional `gradient-type` argument which can currently be:
+`gradient-type="css-linear"`(Default),
+`gradient-type="linear"`,
+`gradient-type="Oklab"`(Unimplemented),
+`gradient-type="Lch"`
 
 Gradients can be colored relative to windows individually (the default), or to the whole view of the workspace.
 To do that, set `relative-to="workspace-view"`.
