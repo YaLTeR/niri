@@ -32,8 +32,13 @@ impl Shaders {
 
         let border = ShaderProgram::compile(
             renderer,
-            include_str!("border.frag"),
+            concat!(
+                include_str!("border_head.frag"),
+                include_str!("color_interpol.frag"),
+                include_str!("border.frag")
+            ),
             &[
+                UniformName::new("grad_format", UniformType::_1f),
                 UniformName::new("color_from", UniformType::_4f),
                 UniformName::new("color_to", UniformType::_4f),
                 UniformName::new("grad_offset", UniformType::_2f),
@@ -66,7 +71,13 @@ impl Shaders {
             })
             .ok();
 
-        let resize = compile_resize_program(renderer, include_str!("resize.frag"))
+        let resize = compile_resize_program(
+                renderer,
+                concat!(
+                    include_str!("color_interpol.frag"),
+                    include_str!("resize.frag")
+                )
+            )
             .map_err(|err| {
                 warn!("error compiling resize shader: {err:?}");
             })
@@ -150,6 +161,7 @@ fn compile_resize_program(
         renderer,
         &program,
         &[
+            UniformName::new("grad_format", UniformType::_1f),
             UniformName::new("niri_input_to_curr_geo", UniformType::Matrix3x3),
             UniformName::new("niri_curr_geo_to_prev_geo", UniformType::Matrix3x3),
             UniformName::new("niri_curr_geo_to_next_geo", UniformType::Matrix3x3),

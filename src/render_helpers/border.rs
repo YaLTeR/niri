@@ -28,6 +28,7 @@ pub struct BorderRenderElement {
 struct Parameters {
     size: Size<f64, Logical>,
     gradient_area: Rectangle<f64, Logical>,
+    gradient_format: f32,
     color_from: [f32; 4],
     color_to: [f32; 4],
     angle: f32,
@@ -43,6 +44,7 @@ impl BorderRenderElement {
     pub fn new(
         size: Size<f64, Logical>,
         gradient_area: Rectangle<f64, Logical>,
+        gradient_format: f32,
         color_from: [f32; 4],
         color_to: [f32; 4],
         angle: f32,
@@ -57,6 +59,7 @@ impl BorderRenderElement {
             params: Parameters {
                 size,
                 gradient_area,
+                gradient_format,
                 color_from,
                 color_to,
                 angle,
@@ -77,6 +80,7 @@ impl BorderRenderElement {
             params: Parameters {
                 size: Default::default(),
                 gradient_area: Default::default(),
+                gradient_format: 0.,
                 color_from: Default::default(),
                 color_to: Default::default(),
                 angle: 0.,
@@ -97,6 +101,7 @@ impl BorderRenderElement {
         &mut self,
         size: Size<f64, Logical>,
         gradient_area: Rectangle<f64, Logical>,
+        gradient_format: f32,
         color_from: [f32; 4],
         color_to: [f32; 4],
         angle: f32,
@@ -108,6 +113,7 @@ impl BorderRenderElement {
         let params = Parameters {
             size,
             gradient_area,
+            gradient_format,
             color_from,
             color_to,
             angle,
@@ -128,6 +134,7 @@ impl BorderRenderElement {
         let Parameters {
             size,
             gradient_area,
+            gradient_format,
             color_from,
             color_to,
             angle,
@@ -167,6 +174,7 @@ impl BorderRenderElement {
             None,
             scale,
             vec![
+                Uniform::new("grad_format", gradient_format),
                 Uniform::new("color_from", color_from),
                 Uniform::new("color_to", color_to),
                 Uniform::new("grad_offset", grad_offset.to_array()),

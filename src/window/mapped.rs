@@ -289,6 +289,7 @@ impl Mapped {
                     return BorderRenderElement::new(
                         geo.size,
                         Rectangle::from_loc_and_size((0., 0.), geo.size),
+                        0.,
                         elem.color(),
                         elem.color(),
                         0.,

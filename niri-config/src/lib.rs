@@ -410,6 +410,8 @@ pub struct Gradient {
     pub angle: i16,
     #[knuffel(property, default)]
     pub relative_to: GradientRelativeTo,
+    #[knuffel(property, default)]
+    pub gradient_type: GradientType,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -417,6 +419,15 @@ pub enum GradientRelativeTo {
     #[default]
     Window,
     WorkspaceView,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum GradientType {
+    #[default]
+    CssLinear,
+    Linear,
+    Oklab,
+    Lch,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
