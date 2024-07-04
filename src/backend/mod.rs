@@ -9,6 +9,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::input::CompositorMod;
 use crate::niri::Niri;
+use crate::utils::id::IdCounter;
 
 pub mod tty;
 pub use tty::Tty;
@@ -31,7 +32,22 @@ pub enum RenderResult {
     Skipped,
 }
 
-pub type IpcOutputMap = HashMap<String, niri_ipc::Output>;
+pub type IpcOutputMap = HashMap<OutputId, niri_ipc::Output>;
+
+static OUTPUT_ID_COUNTER: IdCounter = IdCounter::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OutputId(u32);
+
+impl OutputId {
+    fn next() -> OutputId {
+        OutputId(OUTPUT_ID_COUNTER.next())
+    }
+
+    pub fn get(self) -> u32 {
+        self.0
+    }
+}
 
 impl Backend {
     pub fn init(&mut self, niri: &mut Niri) {
