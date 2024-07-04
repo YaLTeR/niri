@@ -156,7 +156,7 @@ pub struct Niri {
     /// This does not include transient output config changes done via IPC. It is only used when
     /// reloading the config from disk to determine if the output configuration should be reloaded
     /// (and transient changes dropped).
-    pub config_file_output_config: Vec<niri_config::Output>,
+    pub config_file_output_config: niri_config::Outputs,
 
     pub event_loop: LoopHandle<'static, State>,
     pub scheduler: Scheduler<()>,
@@ -1058,10 +1058,7 @@ impl State {
         for output in self.niri.global_space.outputs() {
             let name = output.name();
             let config = self.niri.config.borrow_mut();
-            let config = config
-                .outputs
-                .iter()
-                .find(|o| o.name.eq_ignore_ascii_case(&name));
+            let config = config.outputs.find(&name);
 
             let scale = config
                 .and_then(|c| c.scale)
@@ -1113,18 +1110,14 @@ impl State {
     pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
         {
             let mut config = self.niri.config.borrow_mut();
-            let config = if let Some(config) = config
-                .outputs
-                .iter_mut()
-                .find(|o| o.name.eq_ignore_ascii_case(name))
-            {
+            let config = if let Some(config) = config.outputs.find_mut(name) {
                 config
             } else {
-                config.outputs.push(niri_config::Output {
+                config.outputs.0.push(niri_config::Output {
                     name: String::from(name),
                     ..Default::default()
                 });
-                config.outputs.last_mut().unwrap()
+                config.outputs.0.last_mut().unwrap()
             };
 
             match action {
@@ -1753,11 +1746,7 @@ impl Niri {
         for output in self.global_space.outputs().chain(new_output) {
             let name = output.name();
             let position = self.global_space.output_geometry(output).map(|geo| geo.loc);
-            let config = config
-                .outputs
-                .iter()
-                .find(|o| o.name.eq_ignore_ascii_case(&name))
-                .and_then(|c| c.position);
+            let config = config.outputs.find(&name).and_then(|c| c.position);
 
             outputs.push(Data {
                 output: output.clone(),
@@ -1862,10 +1851,7 @@ impl Niri {
         let name = output.name();
 
         let config = self.config.borrow();
-        let c = config
-            .outputs
-            .iter()
-            .find(|o| o.name.eq_ignore_ascii_case(&name));
+        let c = config.outputs.find(&name);
         let scale = c.and_then(|c| c.scale).map(|s| s.0).unwrap_or_else(|| {
             let size_mm = output.physical_properties().size;
             let resolution = output.current_mode().unwrap().size;

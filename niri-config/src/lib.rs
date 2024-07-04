@@ -23,7 +23,7 @@ pub struct Config {
     #[knuffel(child, default)]
     pub input: Input,
     #[knuffel(children(name = "output"))]
-    pub outputs: Vec<Output>,
+    pub outputs: Outputs,
     #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(child, default)]
@@ -288,6 +288,9 @@ pub struct Touch {
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Outputs(pub Vec<Output>);
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
@@ -1514,6 +1517,24 @@ fn expect_only_children<S>(
     }
 }
 
+impl FromIterator<Output> for Outputs {
+    fn from_iter<T: IntoIterator<Item = Output>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl Outputs {
+    pub fn find(&self, name: &str) -> Option<&Output> {
+        self.0.iter().find(|o| o.name.eq_ignore_ascii_case(name))
+    }
+
+    pub fn find_mut(&mut self, name: &str) -> Option<&mut Output> {
+        self.0
+            .iter_mut()
+            .find(|o| o.name.eq_ignore_ascii_case(name))
+    }
+}
+
 impl<S> knuffel::Decode<S> for DefaultColumnWidth
 where
     S: knuffel::traits::ErrorSpan,
@@ -2635,7 +2656,7 @@ mod tests {
                     focus_follows_mouse: true,
                     workspace_auto_back_and_forth: true,
                 },
-                outputs: vec![Output {
+                outputs: Outputs(vec![Output {
                     off: false,
                     name: "eDP-1".to_owned(),
                     scale: Some(FloatOrInt(2.)),
@@ -2647,7 +2668,7 @@ mod tests {
                         refresh: Some(144.),
                     }),
                     variable_refresh_rate: true,
-                }],
+                }]),
                 layout: Layout {
                     focus_ring: FocusRing {
                         off: false,
