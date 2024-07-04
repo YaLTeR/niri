@@ -223,10 +223,15 @@ layout {
 
 Gradients can be rendered with different kinds of color interpolation, this doesen't mean that the arguments the gradient takes
 are any different. Except for an optional `gradient-type` argument which can currently be:
+
 `gradient-type="css-linear"`(Default),
+
 `gradient-type="linear"`,
+
 `gradient-type="Oklab"`(Unimplemented),
+
 `gradient-type="Lch"`
+
 
 Gradients can be colored relative to windows individually (the default), or to the whole view of the workspace.
 To do that, set `relative-to="workspace-view"`.
