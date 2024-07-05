@@ -50,6 +50,15 @@ For this reason, most of the default keys use the `Mod` modifier.
 > Here, look at `sym: Left` and `sym: Right`: these are the key names.
 > I was pressing the left and the right arrow in this example.
 
+Binds will do key repeat by default (i.e. holding down a bind will make it trigger repeatedly).
+You can disable that for specific binds with `repeat=false`:
+
+```
+binds {
+    Mod+T repeat=false { spawn "alacritty"; }
+}
+```
+
 Binds can also have a cooldown, which will rate-limit the bind and prevent it from repeatedly triggering too quickly.
 
 ```
