@@ -21,6 +21,7 @@ tracy-client = { version = "0.17.0", default-features = false }
 
 [workspace.dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
+branch = "fix/multiple_cursor_planes"
 # path = "../smithay"
 default-features = false
 

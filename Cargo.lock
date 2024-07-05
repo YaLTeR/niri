@@ -3355,7 +3355,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay.git#f208cd758416e4495e9eb8b27a96c523e92817a6"
+source = "git+https://github.com/Smithay/smithay.git?branch=fix/multiple_cursor_planes#9d36da3e692f9090c2ddbcf5a94b93bb185f32e1"
 dependencies = [
  "appendlist",
  "bitflags 2.5.0",
