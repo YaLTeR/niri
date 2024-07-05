@@ -24,9 +24,9 @@ use smithay::backend::drm::{
     DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
 };
 use smithay::backend::egl::context::ContextPriority;
-use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
+use smithay::backend::egl::{EGLDevice, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::gles::{Capability, GlesRenderer};
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
 use smithay::backend::renderer::multigpu::{GpuManager, MultiFrame, MultiRenderer};
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
@@ -148,7 +148,16 @@ impl OutputDevice {
             builder.add_connector(connector);
             builder.add_crtc(*crtc);
             let planes = self.drm.planes(crtc).map_err(LeaseRejected::with_cause)?;
-            builder.add_plane(planes.primary.handle);
+            let (primary_plane, primary_plane_claim) = planes
+                .primary
+                .iter()
+                .find_map(|plane| {
+                    self.drm
+                        .claim_plane(plane.handle, *crtc)
+                        .map(|claim| (plane, claim))
+                })
+                .ok_or_else(LeaseRejected::default)?;
+            builder.add_plane(primary_plane.handle, primary_plane_claim);
         }
         Ok(builder)
     }
@@ -239,25 +248,7 @@ impl Tty {
             })
             .unwrap();
 
-        let config_ = config.clone();
-        let create_renderer = move |display: &EGLDisplay| {
-            let color_transforms = config_
-                .borrow()
-                .debug
-                .enable_color_transformations_capability;
-
-            let egl_context = EGLContext::new_with_priority(display, ContextPriority::High)?;
-            let gles = if color_transforms {
-                unsafe { GlesRenderer::new(egl_context)? }
-            } else {
-                let capabilities = unsafe { GlesRenderer::supported_capabilities(&egl_context) }?
-                    .into_iter()
-                    .filter(|c| *c != Capability::ColorTransformations);
-                unsafe { GlesRenderer::with_capabilities(egl_context, capabilities)? }
-            };
-            Ok(gles)
-        };
-        let api = GbmGlesBackend::with_factory(Box::new(create_renderer));
+        let api = GbmGlesBackend::with_context_priority(ContextPriority::High);
         let gpu_manager = GpuManager::new(api).context("error creating the GPU manager")?;
 
         let (primary_node, primary_render_node) = primary_node_from_config(&config.borrow())
@@ -1987,8 +1978,8 @@ fn surface_dmabuf_feedback(
     let surface = compositor.surface();
     let planes = surface.planes();
 
-    let plane_formats = planes
-        .primary
+    let plane_formats = surface
+        .plane_info()
         .formats
         .iter()
         .chain(planes.overlay.iter().flat_map(|p| p.formats.iter()))
