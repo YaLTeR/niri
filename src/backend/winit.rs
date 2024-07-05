@@ -17,7 +17,7 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::Window;
 
-use super::{IpcOutputMap, RenderResult};
+use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::{resources, shaders, RenderTarget};
@@ -61,7 +61,7 @@ impl Winit {
 
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
-            "winit".to_owned(),
+            OutputId::next(),
             niri_ipc::Output {
                 name: output.name(),
                 make: physical_properties.make,
@@ -98,7 +98,7 @@ impl Winit {
 
                     {
                         let mut ipc_outputs = winit.ipc_outputs.lock().unwrap();
-                        let output = ipc_outputs.get_mut("winit").unwrap();
+                        let output = ipc_outputs.values_mut().next().unwrap();
                         let mode = &mut output.modes[0];
                         mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
                         mode.height = size.h.clamp(0, u16::MAX as i32) as u16;

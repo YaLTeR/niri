@@ -114,6 +114,7 @@ use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
+use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
@@ -155,7 +156,7 @@ pub struct Niri {
     /// This does not include transient output config changes done via IPC. It is only used when
     /// reloading the config from disk to determine if the output configuration should be reloaded
     /// (and transient changes dropped).
-    pub config_file_output_config: Vec<niri_config::Output>,
+    pub config_file_output_config: niri_config::Outputs,
 
     pub event_loop: LoopHandle<'static, State>,
     pub scheduler: Scheduler<()>,
@@ -202,6 +203,7 @@ pub struct Niri {
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
     pub screencopy_state: ScreencopyManagerState,
+    pub output_management_state: OutputManagementManagerState,
     pub viewporter_state: ViewporterState,
     pub xdg_foreign_state: XdgForeignState,
     pub shm_state: ShmState,
@@ -232,6 +234,7 @@ pub struct Niri {
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<u32>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
+    pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
@@ -1051,15 +1054,12 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    fn reload_output_config(&mut self) {
+    pub fn reload_output_config(&mut self) {
         let mut resized_outputs = vec![];
         for output in self.niri.global_space.outputs() {
             let name = output.name();
             let config = self.niri.config.borrow_mut();
-            let config = config
-                .outputs
-                .iter()
-                .find(|o| o.name.eq_ignore_ascii_case(&name));
+            let config = config.outputs.find(&name);
 
             let scale = config
                 .and_then(|c| c.scale)
@@ -1103,23 +1103,22 @@ impl State {
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.cancel(self);
         }
+
+        let config = self.niri.config.borrow().outputs.clone();
+        self.niri.output_management_state.on_config_changed(config);
     }
 
     pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
         {
             let mut config = self.niri.config.borrow_mut();
-            let config = if let Some(config) = config
-                .outputs
-                .iter_mut()
-                .find(|o| o.name.eq_ignore_ascii_case(name))
-            {
+            let config = if let Some(config) = config.outputs.find_mut(name) {
                 config
             } else {
-                config.outputs.push(niri_config::Output {
+                config.outputs.0.push(niri_config::Output {
                     name: String::from(name),
                     ..Default::default()
                 });
-                config.outputs.last_mut().unwrap()
+                config.outputs.0.last_mut().unwrap()
             };
 
             match action {
@@ -1166,18 +1165,21 @@ impl State {
 
         let _span = tracy_client::span!("State::refresh_ipc_outputs");
 
-        for (name, ipc_output) in self.backend.ipc_outputs().lock().unwrap().iter_mut() {
+        for ipc_output in self.backend.ipc_outputs().lock().unwrap().values_mut() {
             let logical = self
                 .niri
                 .global_space
                 .outputs()
-                .find(|output| output.name() == *name)
+                .find(|output| output.name() == ipc_output.name)
                 .map(logical_output);
             ipc_output.logical = logical;
         }
 
         #[cfg(feature = "dbus")]
         self.niri.on_ipc_outputs_changed();
+
+        let new_config = self.backend.ipc_outputs().lock().unwrap().clone();
+        self.niri.output_management_state.notify_changes(new_config);
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -1482,6 +1484,11 @@ impl Niri {
             ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
+        let mut output_management_state =
+            OutputManagementManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
+        output_management_state.on_config_changed(config_.outputs.clone());
         let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
             !client.get_data::<ClientState>().unwrap().restricted
         });
@@ -1626,6 +1633,7 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            output_management_state,
             screencopy_state,
             viewporter_state,
             xdg_foreign_state,
@@ -1650,6 +1658,7 @@ impl Niri {
             popup_grab: None,
             suppressed_keys: HashSet::new(),
             bind_cooldown_timers: HashMap::new(),
+            bind_repeat_timer: Option::default(),
             presentation_state,
             security_context_state,
             gamma_control_manager_state,
@@ -1739,11 +1748,7 @@ impl Niri {
         for output in self.global_space.outputs().chain(new_output) {
             let name = output.name();
             let position = self.global_space.output_geometry(output).map(|geo| geo.loc);
-            let config = config
-                .outputs
-                .iter()
-                .find(|o| o.name.eq_ignore_ascii_case(&name))
-                .and_then(|c| c.position);
+            let config = config.outputs.find(&name).and_then(|c| c.position);
 
             outputs.push(Data {
                 output: output.clone(),
@@ -1848,10 +1853,7 @@ impl Niri {
         let name = output.name();
 
         let config = self.config.borrow();
-        let c = config
-            .outputs
-            .iter()
-            .find(|o| o.name.eq_ignore_ascii_case(&name));
+        let c = config.outputs.find(&name);
         let scale = c.and_then(|c| c.scale).map(|s| s.0).unwrap_or_else(|| {
             let size_mm = output.physical_properties().size;
             let resolution = output.current_mode().unwrap().size;

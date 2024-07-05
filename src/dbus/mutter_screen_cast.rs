@@ -191,7 +191,11 @@ impl Session {
     ) -> fdo::Result<OwnedObjectPath> {
         debug!(connector, ?properties, "record_monitor");
 
-        let Some(output) = self.ipc_outputs.lock().unwrap().get(connector).cloned() else {
+        let output = {
+            let ipc_outputs = self.ipc_outputs.lock().unwrap();
+            ipc_outputs.values().find(|o| o.name == connector).cloned()
+        };
+        let Some(output) = output else {
             return Err(fdo::Error::Failed("no such monitor".to_owned()));
         };
 

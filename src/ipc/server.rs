@@ -143,7 +143,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         Request::Version => Response::Version(version()),
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
-            Response::Outputs(ipc_outputs)
+            let outputs = ipc_outputs.values().cloned().map(|o| (o.name.clone(), o));
+            Response::Outputs(outputs.collect())
         }
         Request::FocusedWindow => {
             let window = ctx.ipc_focused_window.lock().unwrap().clone();
@@ -183,8 +184,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         Request::Output { output, action } => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
             let found = ipc_outputs
-                .keys()
-                .any(|name| name.eq_ignore_ascii_case(&output));
+                .values()
+                .any(|o| o.name.eq_ignore_ascii_case(&output));
             let response = if found {
                 OutputConfigChanged::Applied
             } else {
@@ -223,7 +224,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                         .ipc_outputs()
                         .lock()
                         .unwrap()
-                        .get(&active_output)
+                        .values()
+                        .find(|o| o.name == active_output)
                         .cloned()
                 });
 

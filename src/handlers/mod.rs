@@ -68,9 +68,13 @@ use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
+use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
 use crate::utils::{output_size, send_scale_transform};
-use crate::{delegate_foreign_toplevel, delegate_gamma_control, delegate_screencopy};
+use crate::{
+    delegate_foreign_toplevel, delegate_gamma_control, delegate_output_management,
+    delegate_screencopy,
+};
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -545,3 +549,15 @@ delegate_xdg_activation!(State);
 
 impl FractionalScaleHandler for State {}
 delegate_fractional_scale!(State);
+
+impl OutputManagementHandler for State {
+    fn output_management_state(&mut self) -> &mut OutputManagementManagerState {
+        &mut self.niri.output_management_state
+    }
+
+    fn apply_output_config(&mut self, config: niri_config::Outputs) {
+        self.niri.config.borrow_mut().outputs = config;
+        self.reload_output_config();
+    }
+}
+delegate_output_management!(State);

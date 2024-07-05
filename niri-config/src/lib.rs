@@ -23,7 +23,7 @@ pub struct Config {
     #[knuffel(child, default)]
     pub input: Input,
     #[knuffel(children(name = "output"))]
-    pub outputs: Vec<Output>,
+    pub outputs: Outputs,
     #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(child, default)]
@@ -288,6 +288,9 @@ pub struct Touch {
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Outputs(pub Vec<Output>);
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
@@ -894,6 +897,7 @@ pub struct Binds(pub Vec<Bind>);
 pub struct Bind {
     pub key: Key,
     pub action: Action,
+    pub repeat: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
 }
@@ -957,6 +961,8 @@ pub enum Action {
     FocusColumnLast,
     FocusColumnRightOrFirst,
     FocusColumnLeftOrLast,
+    FocusWindowOrMonitorUp,
+    FocusWindowOrMonitorDown,
     FocusColumnOrMonitorLeft,
     FocusColumnOrMonitorRight,
     FocusWindowDown,
@@ -1035,6 +1041,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusColumnLast => Self::FocusColumnLast,
             niri_ipc::Action::FocusColumnRightOrFirst => Self::FocusColumnRightOrFirst,
             niri_ipc::Action::FocusColumnLeftOrLast => Self::FocusColumnLeftOrLast,
+            niri_ipc::Action::FocusWindowOrMonitorUp => Self::FocusWindowOrMonitorUp,
+            niri_ipc::Action::FocusWindowOrMonitorDown => Self::FocusWindowOrMonitorDown,
             niri_ipc::Action::FocusColumnOrMonitorLeft => Self::FocusColumnOrMonitorLeft,
             niri_ipc::Action::FocusColumnOrMonitorRight => Self::FocusColumnOrMonitorRight,
             niri_ipc::Action::FocusWindowDown => Self::FocusWindowDown,
@@ -1522,6 +1530,24 @@ fn expect_only_children<S>(
             "property",
             "no properties expected for this node",
         ))
+    }
+}
+
+impl FromIterator<Output> for Outputs {
+    fn from_iter<T: IntoIterator<Item = Output>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl Outputs {
+    pub fn find(&self, name: &str) -> Option<&Output> {
+        self.0.iter().find(|o| o.name.eq_ignore_ascii_case(name))
+    }
+
+    pub fn find_mut(&mut self, name: &str) -> Option<&mut Output> {
+        self.0
+            .iter_mut()
+            .find(|o| o.name.eq_ignore_ascii_case(name))
     }
 }
 
@@ -2203,11 +2229,15 @@ where
             .parse::<Key>()
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
+        let mut repeat = true;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         for (name, val) in &node.properties {
             match &***name {
+                "repeat" => {
+                    repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
                         knuffel::traits::DecodeScalar::decode(val, ctx)?,
@@ -2235,6 +2265,7 @@ where
         let dummy = Self {
             key,
             action: Action::Spawn(vec![]),
+            repeat: true,
             cooldown: None,
             allow_when_locked: false,
         };
@@ -2262,6 +2293,7 @@ where
                     Ok(Self {
                         key,
                         action,
+                        repeat,
                         cooldown,
                         allow_when_locked,
                     })
@@ -2646,7 +2678,7 @@ mod tests {
                     focus_follows_mouse: true,
                     workspace_auto_back_and_forth: true,
                 },
-                outputs: vec![Output {
+                outputs: Outputs(vec![Output {
                     off: false,
                     name: "eDP-1".to_owned(),
                     scale: Some(FloatOrInt(2.)),
@@ -2658,7 +2690,7 @@ mod tests {
                         refresh: Some(144.),
                     }),
                     variable_refresh_rate: true,
-                }],
+                }]),
                 layout: Layout {
                     focus_ring: FocusRing {
                         off: false,
@@ -2830,6 +2862,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::Spawn(vec!["alacritty".to_owned()]),
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
                     },
@@ -2839,6 +2872,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::CloseWindow,
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2848,6 +2882,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         action: Action::FocusMonitorLeft,
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2857,6 +2892,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
                         },
                         action: Action::MoveWindowToMonitorRight,
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2866,6 +2902,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::ConsumeWindowIntoColumn,
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2875,6 +2912,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::FocusWorkspace(WorkspaceReference::Index(1)),
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2886,6 +2924,7 @@ mod tests {
                         action: Action::FocusWorkspace(WorkspaceReference::Name(
                             "workspace-1".to_string(),
                         )),
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2895,6 +2934,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
                         action: Action::Quit(true),
+                        repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
@@ -2904,6 +2944,7 @@ mod tests {
                             modifiers: Modifiers::COMPOSITOR,
                         },
                         action: Action::FocusWorkspaceDown,
+                        repeat: true,
                         cooldown: Some(Duration::from_millis(150)),
                         allow_when_locked: false,
                     },

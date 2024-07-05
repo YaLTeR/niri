@@ -57,6 +57,7 @@ use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
 use super::{IpcOutputMap, RenderResult};
+use crate::backend::OutputId;
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
@@ -118,6 +119,7 @@ pub struct OutputDevice {
     render_node: DrmNode,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
+    output_ids: HashMap<crtc::Handle, OutputId>,
     // SAFETY: drop after all the objects used with them are dropped.
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
@@ -575,6 +577,7 @@ impl Tty {
             gbm,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
+            output_ids: HashMap::new(),
             drm_lease_state,
             active_leases: Vec::new(),
             non_desktop_connectors: HashSet::new(),
@@ -599,6 +602,7 @@ impl Tty {
             return;
         };
 
+        let mut removed = Vec::new();
         for event in device.drm_scanner.scan_connectors(&device.drm) {
             match event {
                 DrmScanEvent::Connected {
@@ -611,8 +615,24 @@ impl Tty {
                 }
                 DrmScanEvent::Disconnected {
                     crtc: Some(crtc), ..
-                } => self.connector_disconnected(niri, node, crtc),
+                } => {
+                    self.connector_disconnected(niri, node, crtc);
+                    removed.push(crtc);
+                }
                 _ => (),
+            }
+        }
+
+        // FIXME: this is better done in connector_disconnected(), but currently we call that to
+        // turn off outputs temporarily, too. So we can't do this there.
+        let Some(device) = self.devices.get_mut(&node) else {
+            error!("device disappeared");
+            return;
+        };
+
+        for crtc in removed {
+            if device.output_ids.remove(&crtc).is_none() {
+                error!("output ID missing for disconnected crtc: {crtc:?}");
             }
         }
 
@@ -724,12 +744,15 @@ impl Tty {
             return Ok(());
         }
 
+        // This should be unique per CRTC connection, however currently we can call
+        // connector_connected() multiple times for turning the output off and on.
+        device.output_ids.entry(crtc).or_insert_with(OutputId::next);
+
         let config = self
             .config
             .borrow()
             .outputs
-            .iter()
-            .find(|o| o.name.eq_ignore_ascii_case(&output_name))
+            .find(&output_name)
             .cloned()
             .unwrap_or_default();
 
@@ -1464,7 +1487,7 @@ impl Tty {
 
         for (node, device) in &self.devices {
             for (connector, crtc) in device.drm_scanner.crtcs() {
-                let connector_name = format!(
+                let name = format!(
                     "{}-{}",
                     connector.interface().as_str(),
                     connector.interface_id(),
@@ -1527,7 +1550,7 @@ impl Tty {
                     .map(logical_output);
 
                 let ipc_output = niri_ipc::Output {
-                    name: connector_name.clone(),
+                    name,
                     make,
                     model,
                     physical_size,
@@ -1538,7 +1561,11 @@ impl Tty {
                     logical,
                 };
 
-                ipc_outputs.insert(connector_name, ipc_output);
+                let id = device.output_ids.get(&crtc).copied().unwrap_or_else(|| {
+                    error!("output ID missing for crtc: {crtc:?}");
+                    OutputId::next()
+                });
+                ipc_outputs.insert(id, ipc_output);
             }
         }
 
@@ -1605,8 +1632,7 @@ impl Tty {
                     .config
                     .borrow()
                     .outputs
-                    .iter()
-                    .find(|o| o.name.eq_ignore_ascii_case(&surface.name))
+                    .find(&surface.name)
                     .cloned()
                     .unwrap_or_default();
                 if config.off {
@@ -1735,8 +1761,7 @@ impl Tty {
                     .config
                     .borrow()
                     .outputs
-                    .iter()
-                    .find(|o| o.name.eq_ignore_ascii_case(&output_name))
+                    .find(&output_name)
                     .cloned()
                     .unwrap_or_default();
 

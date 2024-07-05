@@ -57,11 +57,12 @@ impl DisplayConfig {
             .ipc_outputs
             .lock()
             .unwrap()
-            .iter()
+            .values()
             // Take only enabled outputs.
-            .filter(|(_, output)| output.current_mode.is_some() && output.logical.is_some())
-            .map(|(c, output)| {
+            .filter(|output| output.current_mode.is_some() && output.logical.is_some())
+            .map(|output| {
                 // Loosely matches the check in Mutter.
+                let c = &output.name;
                 let is_laptop_panel = matches!(c.get(..4), Some("eDP-" | "LVDS" | "DSI-"));
 
                 // FIXME: use proper serial when we have libdisplay-info.
