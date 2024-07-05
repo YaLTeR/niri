@@ -954,7 +954,7 @@ impl<W: LayoutElement> Layout<W> {
             ..
         } = &mut self.monitor_set
         else {
-            todo!()
+            return;
         };
 
         for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
