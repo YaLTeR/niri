@@ -1242,8 +1242,6 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub wait_for_frame_completion_before_queueing: bool,
     #[knuffel(child)]
-    pub enable_color_transformations_capability: bool,
-    #[knuffel(child)]
     pub enable_overlay_planes: bool,
     #[knuffel(child)]
     pub disable_cursor_plane: bool,

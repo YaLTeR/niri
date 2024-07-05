@@ -25,7 +25,7 @@ pub fn render_snapshot_from_surface_tree(
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(data) = data {
-                let data = &*data.borrow();
+                let data = &*data.lock().unwrap();
 
                 if let Some(view) = data.view() {
                     location += view.offset.to_f64();
@@ -42,19 +42,17 @@ pub fn render_snapshot_from_surface_tree(
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(data) = data {
-                if let Some(view) = data.borrow().view() {
-                    location += view.offset.to_f64();
-                } else {
+                let Some(view) = data.lock().unwrap().view() else {
                     return;
-                }
+                };
+                location += view.offset.to_f64();
 
                 if let Err(err) = import_surface(renderer, states) {
                     warn!("failed to import surface: {err:?}");
                     return;
                 }
 
-                let data = data.borrow();
-                let view = data.view().unwrap();
+                let data = data.lock().unwrap();
                 let Some(texture) = data.texture::<GlesRenderer>(renderer.id()) else {
                     return;
                 };

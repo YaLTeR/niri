@@ -17,7 +17,7 @@ pub trait NiriRenderer:
     + AsGlesRenderer
 {
     // Associated types to work around the instability of associated type bounds.
-    type NiriTextureId: Texture + Clone + 'static;
+    type NiriTextureId: Texture + Clone + Send + 'static;
     type NiriError: std::error::Error
         + Send
         + Sync
@@ -28,7 +28,7 @@ pub trait NiriRenderer:
 impl<R> NiriRenderer for R
 where
     R: ImportAll + ImportMem + ExportMem + Bind<Dmabuf> + Offscreen<GlesTexture> + AsGlesRenderer,
-    R::TextureId: Texture + Clone + 'static,
+    R::TextureId: Texture + Clone + Send + 'static,
     R::Error: std::error::Error + Send + Sync + From<<GlesRenderer as Renderer>::Error> + 'static,
 {
     type NiriTextureId = R::TextureId;
