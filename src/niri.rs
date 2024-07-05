@@ -4144,18 +4144,22 @@ impl Niri {
             return;
         }
 
-        if self.seat.get_pointer().unwrap().is_grabbed() {
+        let pointer = &self.seat.get_pointer().unwrap();
+        if pointer.is_grabbed() {
             return;
         }
 
+        // Recompute the current pointer focus because we don't update it during animations.
+        let current_focus = self.surface_under_and_global_space(pointer.current_location());
+
         if let Some(output) = &new_focus.output {
-            if self.pointer_focus.output.as_ref() != Some(output) {
+            if current_focus.output.as_ref() != Some(output) {
                 self.layout.focus_output(output);
             }
         }
 
         if let Some(window) = &new_focus.window {
-            if self.pointer_focus.window.as_ref() != Some(window) {
+            if current_focus.window.as_ref() != Some(window) {
                 self.layout.activate_window(window);
             }
         }
