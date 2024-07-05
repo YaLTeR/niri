@@ -1391,6 +1391,37 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn scroll_amount_to_activate(&self, window: &W::Id) -> f64 {
+        let column_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(window))
+            .unwrap();
+
+        if self.active_column_idx == column_idx {
+            return 0.;
+        }
+
+        let current_x = self.view_pos();
+        let new_view_offset = self.compute_new_view_offset_for_column(
+            current_x,
+            column_idx,
+            Some(self.active_column_idx),
+        );
+
+        // Consider the end of an ongoing animation because that's what compute to fit does too.
+        let final_x = if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
+            current_x - self.view_offset + anim.to()
+        } else {
+            current_x
+        };
+
+        let new_col_x = self.column_x(column_idx);
+        let from_view_offset = final_x - new_col_x;
+
+        (from_view_offset - new_view_offset).abs() / self.working_area.size.w
+    }
+
     pub fn activate_window(&mut self, window: &W::Id) {
         let column_idx = self
             .columns

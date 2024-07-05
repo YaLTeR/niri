@@ -75,7 +75,7 @@ pub struct Input {
     #[knuffel(child)]
     pub warp_mouse_to_focus: bool,
     #[knuffel(child)]
-    pub focus_follows_mouse: bool,
+    pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
     pub workspace_auto_back_and_forth: bool,
 }
@@ -288,6 +288,15 @@ pub struct Touch {
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct FocusFollowsMouse {
+    #[knuffel(property, str)]
+    pub max_scroll_amount: Option<Percent>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Percent(pub f64);
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Outputs(pub Vec<Output>);
@@ -1794,6 +1803,16 @@ where
 }
 
 impl Animation {
+    pub fn new_off() -> Self {
+        Self {
+            off: true,
+            kind: AnimationKind::Easing(EasingParams {
+                duration_ms: 0,
+                curve: AnimationCurve::Linear,
+            }),
+        }
+    }
+
     fn decode_node<S: knuffel::traits::ErrorSpan>(
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
@@ -2418,6 +2437,23 @@ impl FromStr for TapButtonMap {
     }
 }
 
+impl FromStr for Percent {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((value, empty)) = s.split_once('%') else {
+            return Err(miette!("value must end with '%'"));
+        };
+
+        if !empty.is_empty() {
+            return Err(miette!("trailing characters after '%' are not allowed"));
+        }
+
+        let value: f64 = value.parse().map_err(|_| miette!("error parsing value"))?;
+        Ok(Percent(value / 100.))
+    }
+}
+
 pub fn set_miette_hook() -> Result<(), miette::InstallError> {
     miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())))
 }
@@ -2664,7 +2700,9 @@ mod tests {
                     },
                     disable_power_key_handling: true,
                     warp_mouse_to_focus: true,
-                    focus_follows_mouse: true,
+                    focus_follows_mouse: Some(FocusFollowsMouse {
+                        max_scroll_amount: None,
+                    }),
                     workspace_auto_back_and_forth: true,
                 },
                 outputs: Outputs(vec![Output {

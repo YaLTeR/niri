@@ -947,6 +947,22 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn scroll_amount_to_activate(&self, window: &W::Id) -> f64 {
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return 0.;
+        };
+
+        for mon in monitors {
+            for ws in &mon.workspaces {
+                if ws.has_window(window) {
+                    return ws.scroll_amount_to_activate(window);
+                }
+            }
+        }
+
+        0.
+    }
+
     pub fn activate_window(&mut self, window: &W::Id) {
         let MonitorSet::Normal {
             monitors,
