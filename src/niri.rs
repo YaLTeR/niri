@@ -59,8 +59,8 @@ use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
 use smithay::utils::{
-    ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
-    SERIAL_COUNTER,
+    ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
+    Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
     with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
@@ -236,6 +236,7 @@ pub struct Niri {
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
+    pub layer_shell_on_demand_focus: Option<LayerSurface>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
 
@@ -716,6 +717,18 @@ impl State {
     }
 
     pub fn update_keyboard_focus(&mut self) {
+        // Clean up on-demand layer surface focus if necessary.
+        if let Some(surface) = &self.niri.layer_shell_on_demand_focus {
+            // Still alive and has on-demand interactivity.
+            let good = surface.alive()
+                && surface.cached_state().keyboard_interactivity
+                    == wlr_layer::KeyboardInteractivity::OnDemand;
+            if !good {
+                self.niri.layer_shell_on_demand_focus = None;
+            }
+        }
+
+        // Compute the current focus.
         let focus = if self.niri.is_locked() {
             KeyboardFocus::LockScreen {
                 surface: self.niri.lock_surface_focus(),
@@ -749,10 +762,19 @@ impl State {
                     })
             };
             let layer_focus = |surface: &LayerSurface| {
-                // FIXME: support on-demand.
-                let can_receive_keyboard_focus = surface.cached_state().keyboard_interactivity
+                let can_receive_exclusive_focus = surface.cached_state().keyboard_interactivity
                     == wlr_layer::KeyboardInteractivity::Exclusive;
-                can_receive_keyboard_focus
+                let is_on_demand_surface =
+                    Some(surface) == self.niri.layer_shell_on_demand_focus.as_ref();
+
+                (can_receive_exclusive_focus || is_on_demand_surface)
+                    .then(|| surface.wl_surface().clone())
+                    .map(|surface| KeyboardFocus::LayerShell { surface })
+            };
+            let on_d_focus = |surface: &LayerSurface| {
+                let is_on_demand_surface =
+                    Some(surface) == self.niri.layer_shell_on_demand_focus.as_ref();
+                is_on_demand_surface
                     .then(|| surface.wl_surface().clone())
                     .map(|surface| KeyboardFocus::LayerShell { surface })
             };
@@ -772,6 +794,10 @@ impl State {
                 surface = surface.or_else(|| layers.layers_on(Layer::Top).find_map(layer_focus));
                 surface = surface.or_else(layout_focus);
             }
+
+            // Bottom and background layers can receive on-demand focus only.
+            surface = surface.or_else(|| layers.layers_on(Layer::Bottom).find_map(on_d_focus));
+            surface = surface.or_else(|| layers.layers_on(Layer::Background).find_map(on_d_focus));
 
             surface.unwrap_or(KeyboardFocus::Layout { surface: None })
         } else {
@@ -1668,6 +1694,7 @@ impl Niri {
 
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
+            layer_shell_on_demand_focus: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             cursor_manager,
@@ -4107,6 +4134,31 @@ impl Niri {
         });
     }
 
+    pub fn focus_layer_surface_if_on_demand(&mut self, surface: Option<LayerSurface>) {
+        if let Some(surface) = surface {
+            if surface.cached_state().keyboard_interactivity
+                == wlr_layer::KeyboardInteractivity::OnDemand
+            {
+                if self.layer_shell_on_demand_focus.as_ref() != Some(&surface) {
+                    self.layer_shell_on_demand_focus = Some(surface);
+
+                    // FIXME: granular.
+                    self.queue_redraw_all();
+                }
+
+                return;
+            }
+        }
+
+        // Something else got clicked, clear on-demand layer-shell focus.
+        if self.layer_shell_on_demand_focus.is_some() {
+            self.layer_shell_on_demand_focus = None;
+
+            // FIXME: granular.
+            self.queue_redraw_all();
+        }
+    }
+
     #[cfg(feature = "dbus")]
     pub fn on_ipc_outputs_changed(&self) {
         let _span = tracy_client::span!("Niri::on_ipc_outputs_changed");
@@ -4173,6 +4225,13 @@ impl Niri {
                 }
 
                 self.layout.activate_window(window);
+                self.layer_shell_on_demand_focus = None;
+            }
+        }
+
+        if let Some(layer) = &new_focus.layer {
+            if current_focus.layer.as_ref() != Some(layer) {
+                self.layer_shell_on_demand_focus = Some(layer.clone());
             }
         }
     }
