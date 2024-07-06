@@ -21,6 +21,7 @@ tracy-client = { version = "0.17.0", default-features = false }
 
 [workspace.dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
+rev = "234586dbea6bc084cb72a32f164997e47ea36b2b"
 # path = "../smithay"
 default-features = false
 
