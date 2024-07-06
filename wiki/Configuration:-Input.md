@@ -68,7 +68,7 @@ input {
 
     // disable-power-key-handling
     // warp-mouse-to-focus
-    // focus-follows-mouse
+    // focus-follows-mouse max-scroll-amount="0%"
     // workspace-auto-back-and-forth
 }
 ```
@@ -204,6 +204,24 @@ Focuses windows and outputs automatically when moving the mouse over them.
 ```
 input {
     focus-follows-mouse
+}
+```
+
+<sup>Since: 0.1.8</sup> You can optionally set `max-scroll-amount`.
+Then, focus-follows-mouse won't focus a window if it will result in the view scrolling more than the set amount.
+The value is a percentage of the working area width.
+
+```
+input {
+    // Allow focus-follows-mouse when it results in scrolling at most 10% of the screen.
+    focus-follows-mouse max-scroll-amount="10%"
+}
+```
+
+```
+input {
+    // Allow focus-follows-mouse only when it will not scroll the view.
+    focus-follows-mouse max-scroll-amount="0%"
 }
 ```
 

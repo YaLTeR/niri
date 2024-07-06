@@ -1143,13 +1143,13 @@ impl State {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
             let mut point = (new_pos - geom.loc.to_f64())
                 .to_physical(output.current_scale().fractional_scale())
-                .to_i32_round();
+                .to_i32_round::<i32>();
 
             let size = output.current_mode().unwrap().size;
             let transform = output.current_transform();
             let size = transform.transform_size(size);
-            point.x = min(size.w - 1, point.x);
-            point.y = min(size.h - 1, point.y);
+            point.x = point.x.clamp(0, size.w - 1);
+            point.y = point.y.clamp(0, size.h - 1);
 
             self.niri.screenshot_ui.pointer_motion(point);
         }
@@ -1242,13 +1242,13 @@ impl State {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
             let mut point = (pos - geom.loc.to_f64())
                 .to_physical(output.current_scale().fractional_scale())
-                .to_i32_round();
+                .to_i32_round::<i32>();
 
             let size = output.current_mode().unwrap().size;
             let transform = output.current_transform();
             let size = transform.transform_size(size);
-            point.x = min(size.w - 1, point.x);
-            point.y = min(size.h - 1, point.y);
+            point.x = point.x.clamp(0, size.w - 1);
+            point.y = point.y.clamp(0, size.h - 1);
 
             self.niri.screenshot_ui.pointer_motion(point);
         }

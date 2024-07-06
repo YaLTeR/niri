@@ -50,7 +50,7 @@ For this reason, most of the default keys use the `Mod` modifier.
 > Here, look at `sym: Left` and `sym: Right`: these are the key names.
 > I was pressing the left and the right arrow in this example.
 
-<sup>Since: 0.1.7</sup> Binds will repeat by default (i.e. holding down a bind will make it trigger repeatedly).
+<sup>Since: 0.1.8</sup> Binds will repeat by default (i.e. holding down a bind will make it trigger repeatedly).
 You can disable that for specific binds with `repeat=false`:
 
 ```

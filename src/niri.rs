@@ -4140,9 +4140,9 @@ impl Niri {
     }
 
     pub fn handle_focus_follows_mouse(&mut self, new_focus: &PointerFocus) {
-        if !self.config.borrow().input.focus_follows_mouse {
+        let Some(ffm) = self.config.borrow().input.focus_follows_mouse else {
             return;
-        }
+        };
 
         let pointer = &self.seat.get_pointer().unwrap();
         if pointer.is_grabbed() {
@@ -4160,6 +4160,12 @@ impl Niri {
 
         if let Some(window) = &new_focus.window {
             if current_focus.window.as_ref() != Some(window) {
+                if let Some(threshold) = ffm.max_scroll_amount {
+                    if self.layout.scroll_amount_to_activate(window) > threshold.0 {
+                        return;
+                    }
+                }
+
                 self.layout.activate_window(window);
             }
         }
