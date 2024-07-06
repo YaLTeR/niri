@@ -7,7 +7,6 @@ uniform float niri_tint;
 varying vec2 niri_v_coords;
 uniform vec2 niri_size;
 
-uniform float grad_format;
 uniform mat3 niri_input_to_curr_geo;
 uniform mat3 niri_curr_geo_to_prev_geo;
 uniform mat3 niri_curr_geo_to_next_geo;

@@ -413,8 +413,8 @@ pub struct Gradient {
     pub angle: i16,
     #[knuffel(property, default)]
     pub relative_to: GradientRelativeTo,
-    #[knuffel(property, default)]
-    pub gradient_type: GradientType,
+    #[knuffel(child)]
+    pub _in: GradientInterpolation,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -424,13 +424,30 @@ pub enum GradientRelativeTo {
     WorkspaceView,
 }
 
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct GradientInterpolation {
+    #[knuffel(property, default)]
+    pub color_space: GradientColorSpace,
+    #[knuffel(property, default)]
+    pub hue_interpol: HueInterpolation
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum GradientType {
+pub enum GradientColorSpace {
     #[default]
-    CssLinear,
-    Linear,
+    Srgb,
+    SrgbLinear,
     Oklab,
-    Lch,
+    XyzD50,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum HueInterpolation {
+    #[default]
+    Shorter,
+    Longer,
+    Increasing,
+    Decreasing,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

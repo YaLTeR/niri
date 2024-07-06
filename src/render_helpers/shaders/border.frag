@@ -1,3 +1,75 @@
+precision mediump float;
+
+#if defined(DEBUG_FLAGS)
+uniform float niri_tint;
+#endif
+
+uniform float niri_alpha;
+uniform float niri_scale;
+
+uniform vec2 niri_size;
+varying vec2 niri_v_coords;
+
+uniform float colorspace;
+uniform float hue_interpolation;
+uniform vec4 color_from;
+uniform vec4 color_to;
+uniform vec2 grad_offset;
+uniform float grad_width;
+uniform vec2 grad_vec;
+
+uniform mat3 input_to_geo;
+uniform vec2 geo_size;
+uniform vec4 outer_radius;
+uniform float border_width;
+
+vec4 srgb_to_linear(vec4 color) {
+  return vec4(
+    (color.rgb / color.aaa) * (color.rgb / color.aaa),
+    color.a
+  );
+}
+
+vec4 linear_to_srgb(vec4 color) {
+  return vec4(
+    sqrt(color.r) * color.a,
+    sqrt(color.g) * color.a,
+    sqrt(color.b) * color.a,
+    color.a
+  );
+}
+
+vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
+
+  if (colorspace == 0.0) //  srgb
+    return mix(color1, color2, color_ratio);
+  
+  vec4 color_out;
+
+  color1 = srgb_to_linear(color1);
+  color2 = srgb_to_linear(color2);
+
+  if (colorspace == 1.0) { // srgb-linear
+    color_out = mix(
+      color1,
+      color2,
+      color_ratio
+    );
+  } else if (colorspace == 2.0) { // oklab
+    color1 = xyz_to_oklab(linear_to_xyz(color1));
+    color2 = xyz_to_oklab(linear_to_xyz(color2));
+    color_out = 
+  } else {
+    color_out = vec4(
+      255.0,
+      0.0,
+      0.0,
+      1.0
+    );
+  }
+  return linear_to_srgb(color_out);
+}
+
 vec4 gradient_color(vec2 coords) {
     coords = coords + grad_offset;
 

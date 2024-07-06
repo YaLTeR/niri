@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, GradientInterpolation, GradientColorSpace, HueInterpolation};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -757,7 +757,10 @@ impl<W: LayoutElement> Tile<W> {
                         return BorderRenderElement::new(
                             geo.size,
                             Rectangle::from_loc_and_size((0., 0.), geo.size),
-                            0.,
+                            GradientInterpolation{
+                                color_space: GradientColorSpace::Srgb,
+                                hue_interpol: HueInterpolation::Shorter
+                            },
                             elem.color(),
                             elem.color(),
                             0.,
