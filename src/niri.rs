@@ -367,6 +367,8 @@ pub struct PointerFocus {
     pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
     pub window: Option<Window>,
+    // If surface belongs to a layer surface, this is that layer surface.
+    pub layer: Option<LayerSurface>,
 }
 
 #[derive(Default)]
@@ -2143,10 +2145,13 @@ impl Niri {
                             WindowSurfaceType::ALL,
                         )
                         .map(|(surface, pos_within_layer)| {
-                            (surface, pos_within_layer.to_f64() + layer_pos_within_output)
+                            (
+                                (surface, pos_within_layer.to_f64() + layer_pos_within_output),
+                                layer,
+                            )
                         })
                 })
-                .map(|s| (s, None))
+                .map(|(s, l)| (s, (None, Some(l.clone()))))
         };
 
         let window_under = || {
@@ -2163,7 +2168,7 @@ impl Niri {
                         .map(|(s, pos_within_window)| {
                             (s, pos_within_window.to_f64() + win_pos_within_output)
                         })
-                        .map(|s| (s, Some(window.clone())))
+                        .map(|s| (s, (Some(window.clone()), None)))
                 })
         };
 
@@ -2181,7 +2186,7 @@ impl Niri {
                 .or_else(window_under);
         }
 
-        let Some(((surface, surface_pos_within_output), window)) = under
+        let Some(((surface, surface_pos_within_output), (window, layer))) = under
             .or_else(|| layer_surface_under(Layer::Bottom))
             .or_else(|| layer_surface_under(Layer::Background))
         else {
@@ -2193,6 +2198,7 @@ impl Niri {
 
         rv.surface = Some((surface, surface_loc_in_global_space));
         rv.window = window;
+        rv.layer = layer;
         rv
     }
 
