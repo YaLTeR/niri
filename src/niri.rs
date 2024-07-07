@@ -1211,6 +1211,42 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
+    pub fn open_screenshot_ui(&mut self) {
+        if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
+            return;
+        }
+
+        let default_output = self
+            .niri
+            .output_under_cursor()
+            .or_else(|| self.niri.layout.active_output().cloned());
+        let Some(default_output) = default_output else {
+            return;
+        };
+
+        self.niri.layout.update_render_elements_all();
+
+        let Some(screenshots) = self
+            .backend
+            .with_primary_renderer(|renderer| self.niri.capture_screenshots(renderer).collect())
+        else {
+            return;
+        };
+
+        // Now that we captured the screenshots, clear grabs like drag-and-drop, etc.
+        self.niri.seat.get_pointer().unwrap().unset_grab(
+            self,
+            SERIAL_COUNTER.next_serial(),
+            get_monotonic_time().as_millis() as u32,
+        );
+
+        self.niri.screenshot_ui.open(screenshots, default_output);
+        self.niri
+            .cursor_manager
+            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+        self.niri.queue_redraw_all();
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_pw_msg(&mut self, msg: PwToNiri) {
         match msg {
@@ -3827,29 +3863,6 @@ impl Niri {
             let screenshot = screenshot.map(|res| res.unwrap());
             Some((output, screenshot))
         })
-    }
-
-    pub fn open_screenshot_ui(&mut self, renderer: &mut GlesRenderer) {
-        if self.is_locked() || self.screenshot_ui.is_open() {
-            return;
-        }
-
-        let default_output = self
-            .output_under_cursor()
-            .or_else(|| self.layout.active_output().cloned())
-            .or_else(|| self.global_space.outputs().next().cloned());
-        let Some(default_output) = default_output else {
-            return;
-        };
-
-        self.layout.update_render_elements_all();
-
-        let screenshots = self.capture_screenshots(renderer).collect();
-
-        self.screenshot_ui.open(screenshots, default_output);
-        self.cursor_manager
-            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
-        self.queue_redraw_all();
     }
 
     pub fn screenshot(

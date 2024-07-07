@@ -513,9 +513,7 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::Screenshot => {
-                self.backend.with_primary_renderer(|renderer| {
-                    self.niri.open_screenshot_ui(renderer);
-                });
+                self.open_screenshot_ui();
             }
             Action::ScreenshotWindow => {
                 let active = self.niri.layout.active_window();
