@@ -589,7 +589,7 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnRightOrMonitorRight => {
-                if let Some(output) = self.niri.output_left() {
+                if let Some(output) = self.niri.output_right() {
                     if self.niri.layout.move_column_right_or_output(&output)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
