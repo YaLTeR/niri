@@ -209,7 +209,7 @@ There's also a *deprecated* syntax for setting colors with four numbers represen
 
 Similarly to colors, you can set `active-gradient` and `inactive-gradient`, which will take precedence.
 
-Gradients can be rendered the same as CSS [`linear-gradient(angle, from, to)`](https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient).
+Gradients are rendered the same as CSS [`linear-gradient(angle, from, to)`](https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient).
 The angle works the same as in `linear-gradient`, and is optional, defaulting to `180` (top-to-bottom gradient).
 You can use any CSS linear-gradient tool on the web to set these up, like [this one](https://www.css-gradient.com/).
 
