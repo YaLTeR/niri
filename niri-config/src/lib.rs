@@ -8,17 +8,15 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use bitflags::bitflags;
-use bitflags::parser::ParseError;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
-use miette::{miette, Context, IntoDiagnostic, MietteError, NarratableReportHandler};
+use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform, WorkspaceReferenceArg};
 use regex::Regex;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 use smithay::reexports::input;
-use smithay::reexports::winit::window::CursorIconParseError;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
@@ -441,56 +439,6 @@ pub struct GradientInterpolation {
     pub color_space: GradientColorSpace,
     #[knuffel(property, default)]
     pub hue_interpol: HueInterpolation
-}
-
-impl FromStr for GradientInterpolation {
-
-    type Err = miette::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut iter = s.split_whitespace();
-        let in_part1 = iter.next();
-        let in_part2 = iter.next();
-
-        let color = if in_part1 != None {
-            let in_str = in_part1.unwrap();  
-            match in_str {
-                "srgb" => GradientColorSpace::Srgb,
-                "srgb-linear" => GradientColorSpace::SrgbLinear,
-                "display-p3" => GradientColorSpace::DisplayP3,
-                "a98-rgb" => GradientColorSpace::A98Rgb,
-                "prophoto-rgb" => GradientColorSpace::ProphotoRgb,
-                "rec2020" => GradientColorSpace::Rec2020,
-                "lab" => GradientColorSpace::Lab,
-                "oklab" => GradientColorSpace::Oklab,
-                "xyz" => GradientColorSpace::Xyz,
-                "xyz-d50" => GradientColorSpace::XyzD50,
-                "xyz-d65" => GradientColorSpace::XyzD65,
-                "hsl" => GradientColorSpace::Hsl,
-                "hwb" => GradientColorSpace::Hwb,
-                "lch" => GradientColorSpace::Lch,
-                "oklch" => GradientColorSpace::Oklch,
-                &_ => return Err(miette!("Invalid color-space: {in_str}"))
-            }
-        } else {
-            GradientColorSpace::Srgb
-        };
-
-        let interpolation = if in_part2 != None {
-            let in_str = in_part2.unwrap();
-            match in_str {
-                "shorter" => HueInterpolation::Shorter,
-                "longer" => HueInterpolation::Longer,
-                "increasing" => HueInterpolation::Increasing,
-                "decreasing" => HueInterpolation::Decreasing,
-                &_ => return Err(miette!("Invalid hue-interpolation: {in_str}"))
-            }
-        } else {
-            HueInterpolation::Shorter
-        };
-
-        Ok( Self { color_space: color, hue_interpol: interpolation } )
-    }
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -1489,6 +1437,55 @@ impl CornerRadius {
             bottom_right: self.bottom_right * scale,
             bottom_left: self.bottom_left * scale,
         }
+    }
+}
+
+impl FromStr for GradientInterpolation {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut iter = s.split_whitespace();
+        let in_part1 = iter.next();
+        let in_part2 = iter.next();
+
+        let color = if in_part1 != None {
+            let in_str = in_part1.unwrap();  
+            match in_str {
+                "srgb" => GradientColorSpace::Srgb,
+                "srgb-linear" => GradientColorSpace::SrgbLinear,
+                "display-p3" => GradientColorSpace::DisplayP3,
+                "a98-rgb" => GradientColorSpace::A98Rgb,
+                "prophoto-rgb" => GradientColorSpace::ProphotoRgb,
+                "rec2020" => GradientColorSpace::Rec2020,
+                "lab" => GradientColorSpace::Lab,
+                "oklab" => GradientColorSpace::Oklab,
+                "xyz" => GradientColorSpace::Xyz,
+                "xyz-d50" => GradientColorSpace::XyzD50,
+                "xyz-d65" => GradientColorSpace::XyzD65,
+                "hsl" => GradientColorSpace::Hsl,
+                "hwb" => GradientColorSpace::Hwb,
+                "lch" => GradientColorSpace::Lch,
+                "oklch" => GradientColorSpace::Oklch,
+                &_ => return Err(miette!("Invalid color-space: {in_str}"))
+            }
+        } else {
+            GradientColorSpace::Srgb
+        };
+
+        let interpolation = if in_part2 != None {
+            let in_str = in_part2.unwrap();
+            match in_str {
+                "shorter" => HueInterpolation::Shorter,
+                "longer" => HueInterpolation::Longer,
+                "increasing" => HueInterpolation::Increasing,
+                "decreasing" => HueInterpolation::Decreasing,
+                &_ => return Err(miette!("Invalid hue-interpolation: {in_str}"))
+            }
+        } else {
+            HueInterpolation::Shorter
+        };
+
+        Ok( Self { color_space: color, hue_interpol: interpolation } )
     }
 }
 
