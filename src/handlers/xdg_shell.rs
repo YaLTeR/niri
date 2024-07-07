@@ -110,11 +110,13 @@ impl XdgShellHandler for State {
                 if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
                     // FIXME: don't activate once we can pass specific windows to actions.
                     self.niri.layout.activate_window(&window);
+                    self.niri.layer_shell_on_demand_focus = None;
                     self.niri.layout.toggle_full_width();
                 }
                 if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
                     // FIXME: don't activate once we can pass specific windows to actions.
                     self.niri.layout.activate_window(&window);
+                    self.niri.layer_shell_on_demand_focus = None;
                     self.niri.layout.reset_window_height();
                 }
                 // FIXME: granular.
@@ -184,10 +186,13 @@ impl XdgShellHandler for State {
                     let _ = PopupManager::dismiss_popup(&root, &popup);
                     return;
                 }
+
+                // FIXME: popup grabs for on-demand bottom and background layers.
             } else {
                 if layers.layers_on(Layer::Overlay).any(|l| {
                     l.cached_state().keyboard_interactivity
                         == wlr_layer::KeyboardInteractivity::Exclusive
+                        || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref()
                 }) {
                     let _ = PopupManager::dismiss_popup(&root, &popup);
                     return;
@@ -198,6 +203,7 @@ impl XdgShellHandler for State {
                     && layers.layers_on(Layer::Top).any(|l| {
                         l.cached_state().keyboard_interactivity
                             == wlr_layer::KeyboardInteractivity::Exclusive
+                            || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref()
                     })
                 {
                     let _ = PopupManager::dismiss_popup(&root, &popup);
