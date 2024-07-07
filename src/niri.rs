@@ -3761,6 +3761,74 @@ impl Niri {
         self.queue_redraw_all();
     }
 
+    pub fn capture_screenshots<'a>(
+        &'a self,
+        renderer: &'a mut GlesRenderer,
+    ) -> impl Iterator<Item = (Output, [OutputScreenshot; 3])> + 'a {
+        self.global_space.outputs().cloned().filter_map(|output| {
+            let size = output.current_mode().unwrap().size;
+            let transform = output.current_transform();
+            let size = transform.transform_size(size);
+
+            let scale = Scale::from(output.current_scale().fractional_scale());
+            let targets = [
+                RenderTarget::Output,
+                RenderTarget::Screencast,
+                RenderTarget::ScreenCapture,
+            ];
+            let screenshot = targets.map(|target| {
+                let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
+                let elements = elements.iter().rev();
+
+                let res = render_to_texture(
+                    renderer,
+                    size,
+                    scale,
+                    Transform::Normal,
+                    Fourcc::Abgr8888,
+                    elements,
+                );
+                if let Err(err) = &res {
+                    warn!("error rendering output {}: {err:?}", output.name());
+                }
+                let res_output = res.ok();
+
+                let pointer = self.pointer_element(renderer, &output);
+                let res_pointer = if pointer.is_empty() {
+                    None
+                } else {
+                    let res = render_to_encompassing_texture(
+                        renderer,
+                        scale,
+                        Transform::Normal,
+                        Fourcc::Abgr8888,
+                        &pointer,
+                    );
+                    if let Err(err) = &res {
+                        warn!("error rendering pointer for {}: {err:?}", output.name());
+                    }
+                    res.ok()
+                };
+
+                res_output.map(|(texture, _)| {
+                    OutputScreenshot::from_textures(
+                        renderer,
+                        scale,
+                        texture,
+                        res_pointer.map(|(texture, _, geo)| (texture, geo)),
+                    )
+                })
+            });
+
+            if screenshot.iter().any(|res| res.is_none()) {
+                return None;
+            }
+
+            let screenshot = screenshot.map(|res| res.unwrap());
+            Some((output, screenshot))
+        })
+    }
+
     pub fn open_screenshot_ui(&mut self, renderer: &mut GlesRenderer) {
         if self.is_locked() || self.screenshot_ui.is_open() {
             return;
@@ -3776,73 +3844,7 @@ impl Niri {
 
         self.layout.update_render_elements_all();
 
-        let screenshots = self
-            .global_space
-            .outputs()
-            .cloned()
-            .filter_map(|output| {
-                let size = output.current_mode().unwrap().size;
-                let transform = output.current_transform();
-                let size = transform.transform_size(size);
-
-                let scale = Scale::from(output.current_scale().fractional_scale());
-                let targets = [
-                    RenderTarget::Output,
-                    RenderTarget::Screencast,
-                    RenderTarget::ScreenCapture,
-                ];
-                let screenshot = targets.map(|target| {
-                    let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
-                    let elements = elements.iter().rev();
-
-                    let res = render_to_texture(
-                        renderer,
-                        size,
-                        scale,
-                        Transform::Normal,
-                        Fourcc::Abgr8888,
-                        elements,
-                    );
-                    if let Err(err) = &res {
-                        warn!("error rendering output {}: {err:?}", output.name());
-                    }
-                    let res_output = res.ok();
-
-                    let pointer = self.pointer_element(renderer, &output);
-                    let res_pointer = if pointer.is_empty() {
-                        None
-                    } else {
-                        let res = render_to_encompassing_texture(
-                            renderer,
-                            scale,
-                            Transform::Normal,
-                            Fourcc::Abgr8888,
-                            &pointer,
-                        );
-                        if let Err(err) = &res {
-                            warn!("error rendering pointer for {}: {err:?}", output.name());
-                        }
-                        res.ok()
-                    };
-
-                    res_output.map(|(texture, _)| {
-                        OutputScreenshot::from_textures(
-                            renderer,
-                            scale,
-                            texture,
-                            res_pointer.map(|(texture, _, geo)| (texture, geo)),
-                        )
-                    })
-                });
-
-                if screenshot.iter().any(|res| res.is_none()) {
-                    return None;
-                }
-
-                let screenshot = screenshot.map(|res| res.unwrap());
-                Some((output, screenshot))
-            })
-            .collect();
+        let screenshots = self.capture_screenshots(renderer).collect();
 
         self.screenshot_ui.open(screenshots, default_output);
         self.cursor_manager
