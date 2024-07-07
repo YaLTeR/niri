@@ -175,8 +175,19 @@ impl BorderRenderElement {
         let colorspace = match gradient_format.color_space {
             GradientColorSpace::Srgb => 0.,
             GradientColorSpace::SrgbLinear => 1.,
-            GradientColorSpace::Oklab => 2.,
-            GradientColorSpace::XyzD50 => 3.
+            GradientColorSpace::DisplayP3 => 2.,
+            GradientColorSpace::A98Rgb => 3.,
+            GradientColorSpace::ProphotoRgb => 4.,
+            GradientColorSpace::Rec2020 => 5.,
+            GradientColorSpace::Lab => 6.,
+            GradientColorSpace::Oklab => 7.,
+            GradientColorSpace::Xyz => 8.,
+            GradientColorSpace::XyzD50 => 9.,
+            GradientColorSpace::XyzD65 => 10.,
+            GradientColorSpace::Hsl => 11.,
+            GradientColorSpace::Hwb => 12.,
+            GradientColorSpace::Lch => 13.,
+            GradientColorSpace::Oklch => 14.,
         };
 
         let hue_interpolation = match gradient_format.hue_interpol {

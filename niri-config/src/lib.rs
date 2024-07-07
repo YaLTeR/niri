@@ -10,7 +10,7 @@ use std::time::Duration;
 use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
-use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
+use miette::{miette, Context, IntoDiagnostic, MietteError, NarratableReportHandler};
 use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform, WorkspaceReferenceArg};
 use regex::Regex;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
@@ -422,7 +422,7 @@ pub struct Gradient {
     pub angle: i16,
     #[knuffel(property, default)]
     pub relative_to: GradientRelativeTo,
-    #[knuffel(child)]
+    #[knuffel(property, str)]
     pub _in: GradientInterpolation,
 }
 
@@ -441,13 +441,65 @@ pub struct GradientInterpolation {
     pub hue_interpol: HueInterpolation
 }
 
+impl FromStr for GradientInterpolation {
+
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Vec<&str> = text.split_whitespace().collect();
+        let mut iter = s.split_whitespace();
+        let in_part1 = iter.next().unwrap();
+        let in_part2 = iter.next().unwrap();
+
+        let color = match in_part1 {
+            "srgb" => GradientColorSpace::Srgb,
+            "srgb-linear" => GradientColorSpace::SrgbLinear,
+            "display-p3" => GradientColorSpace::DisplayP3,
+            "a98-rgb" => GradientColorSpace::A98Rgb,
+            "prophoto-rgb" => GradientColorSpace::ProphotoRgb,
+            "rec2020" => GradientColorSpace::Rec2020,
+            "lab" => GradientColorSpace::Lab,
+            "oklab" => GradientColorSpace::Oklab,
+            "xyz" => GradientColorSpace::Xyz,
+            "xyz-d50" => GradientColorSpace::XyzD50,
+            "xyz-d65" => GradientColorSpace::XyzD65,
+            "hsl" => GradientColorSpace::Hsl,
+            "hwb" => GradientColorSpace::Hwb,
+            "lch" => GradientColorSpace::Lch,
+            "oklch" => GradientColorSpace::Oklch,
+            _ => GradientColorSpace::Srgb,
+        };
+
+        let interpolation = match in_part2 {
+            "shorter" => HueInterpolation::Shorter,
+            "longer" => HueInterpolation::Longer,
+            "increasing" => HueInterpolation::Increasing,
+            "decreasing" => HueInterpolation::Decreasing,
+            _ => HueInterpolation::Shorter
+        };
+
+        Ok( Self { color_space: color, hue_interpol: interpolation } )
+    }
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum GradientColorSpace {
     #[default]
     Srgb,
     SrgbLinear,
+    DisplayP3,
+    A98Rgb,
+    ProphotoRgb,
+    Rec2020,
+    Lab,
     Oklab,
+    Xyz,
     XyzD50,
+    XyzD65,
+    Hsl,
+    Hwb,
+    Lch,
+    Oklch
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]

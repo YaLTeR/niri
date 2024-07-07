@@ -41,8 +41,9 @@ vec4 linear_to_srgb(vec4 color) {
 
 vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
 
-  if (colorspace == 0.0) //  srgb
+  if (colorspace == 0.0) { //  srgb
     return mix(color1, color2, color_ratio);
+  }
   
   vec4 color_out;
 
@@ -55,10 +56,6 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
       color2,
       color_ratio
     );
-  } else if (colorspace == 2.0) { // oklab
-    color1 = xyz_to_oklab(linear_to_xyz(color1));
-    color2 = xyz_to_oklab(linear_to_xyz(color2));
-    color_out = 
   } else {
     color_out = vec4(
       255.0,
