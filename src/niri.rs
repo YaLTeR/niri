@@ -124,13 +124,14 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
-    render_to_shm, render_to_texture, render_to_vec, shaders, RenderTarget,
+    render_to_encompassing_texture, render_to_shm, render_to_texture, render_to_vec, shaders,
+    RenderTarget,
 };
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
-use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
+use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
@@ -3790,8 +3791,8 @@ impl Niri {
                     RenderTarget::Screencast,
                     RenderTarget::ScreenCapture,
                 ];
-                let textures = targets.map(|target| {
-                    let elements = self.render::<GlesRenderer>(renderer, &output, true, target);
+                let screenshot = targets.map(|target| {
+                    let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
                     let elements = elements.iter().rev();
 
                     let res = render_to_texture(
@@ -3802,25 +3803,48 @@ impl Niri {
                         Fourcc::Abgr8888,
                         elements,
                     );
-
                     if let Err(err) = &res {
                         warn!("error rendering output {}: {err:?}", output.name());
                     }
+                    let res_output = res.ok();
 
-                    res
+                    let pointer = self.pointer_element(renderer, &output);
+                    let res_pointer = if pointer.is_empty() {
+                        None
+                    } else {
+                        let res = render_to_encompassing_texture(
+                            renderer,
+                            scale,
+                            Transform::Normal,
+                            Fourcc::Abgr8888,
+                            &pointer,
+                        );
+                        if let Err(err) = &res {
+                            warn!("error rendering pointer for {}: {err:?}", output.name());
+                        }
+                        res.ok()
+                    };
+
+                    res_output.map(|(texture, _)| {
+                        OutputScreenshot::from_textures(
+                            renderer,
+                            scale,
+                            texture,
+                            res_pointer.map(|(texture, _, geo)| (texture, geo)),
+                        )
+                    })
                 });
 
-                if textures.iter().any(|res| res.is_err()) {
+                if screenshot.iter().any(|res| res.is_none()) {
                     return None;
                 }
 
-                let textures = textures.map(|res| res.unwrap().0);
-                Some((output, textures))
+                let screenshot = screenshot.map(|res| res.unwrap());
+                Some((output, screenshot))
             })
             .collect();
 
-        self.screenshot_ui
-            .open(renderer, screenshots, default_output);
+        self.screenshot_ui.open(screenshots, default_output);
         self.cursor_manager
             .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
         self.queue_redraw_all();

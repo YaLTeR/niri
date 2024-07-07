@@ -948,6 +948,8 @@ pub enum Action {
     ConfirmScreenshot,
     #[knuffel(skip)]
     CancelScreenshot,
+    #[knuffel(skip)]
+    ScreenshotTogglePointer,
     Screenshot,
     ScreenshotScreen,
     ScreenshotWindow,
