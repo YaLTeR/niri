@@ -221,8 +221,8 @@ layout {
 }
 ```
 
-Gradients can be rendered with different kinds of color interpolation, this doesen't mean that the arguments the gradient takes
-are any different. Except for an optional `in` argument which can take both a colorspace and a hue interpolation method if the color space is polar
+Gradients can be rendered with different kinds of color interpolation, this doesen't mean that the arguments the gradient takes are any different.
+Except for an optional `in` argument which can take both a colorspace and a hue interpolation method if the color space is polar.
 
 Gradients can be colored relative to windows individually (the default), or to the whole view of the workspace.
 To do that, set `relative-to="workspace-view"`.
