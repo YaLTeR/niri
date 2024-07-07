@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 clap = { workspace = true, optional = true }
+schemars = "0.8.21"
 serde.workspace = true
 serde_json.workspace = true
 
