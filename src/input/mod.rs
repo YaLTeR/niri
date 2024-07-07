@@ -508,10 +508,12 @@ impl State {
                     .set_cursor_image(CursorImageStatus::default_named());
                 self.niri.queue_redraw_all();
             }
+            Action::ScreenshotTogglePointer => {
+                self.niri.screenshot_ui.toggle_pointer();
+                self.niri.queue_redraw_all();
+            }
             Action::Screenshot => {
-                self.backend.with_primary_renderer(|renderer| {
-                    self.niri.open_screenshot_ui(renderer);
-                });
+                self.open_screenshot_ui();
             }
             Action::ScreenshotWindow => {
                 let active = self.niri.layout.active_window();
@@ -1404,6 +1406,11 @@ impl State {
 
         self.update_pointer_focus();
 
+        if ButtonState::Pressed == button_state {
+            let layer_focus = self.niri.pointer_focus.layer.clone();
+            self.niri.focus_layer_surface_if_on_demand(layer_focus);
+        }
+
         if let Some(button) = event.button() {
             let pos = pointer.current_location();
             if let Some((output, _)) = self.niri.output_under(pos) {
@@ -1685,19 +1692,19 @@ impl State {
                     tool.tip_down(serial, event.time_msec());
 
                     if let Some(pos) = self.niri.tablet_cursor_location {
-                        if let Some(mapped) = self.niri.window_under(pos) {
-                            let window = mapped.window.clone();
+                        let under = self.niri.surface_under_and_global_space(pos);
+                        if let Some(window) = under.window {
                             self.niri.layout.activate_window(&window);
 
                             // FIXME: granular.
                             self.niri.queue_redraw_all();
-                        } else if let Some((output, _)) = self.niri.output_under(pos) {
-                            let output = output.clone();
+                        } else if let Some(output) = under.output {
                             self.niri.layout.activate_output(&output);
 
                             // FIXME: granular.
                             self.niri.queue_redraw_all();
                         }
+                        self.niri.focus_layer_surface_if_on_demand(under.layer);
                     }
                 }
                 TabletToolTipState::Up => {
@@ -2042,29 +2049,24 @@ impl State {
             return;
         };
 
+        let under = self.niri.surface_under_and_global_space(touch_location);
+
         if !handle.is_grabbed() {
-            let output_under_touch = self
-                .niri
-                .global_space
-                .output_under(touch_location)
-                .next()
-                .cloned();
-            if let Some(mapped) = self.niri.window_under(touch_location) {
-                let window = mapped.window.clone();
+            if let Some(window) = under.window {
                 self.niri.layout.activate_window(&window);
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
-            } else if let Some(output) = output_under_touch {
+            } else if let Some(output) = under.output {
                 self.niri.layout.activate_output(&output);
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
-            };
+            }
+            self.niri.focus_layer_surface_if_on_demand(under.layer);
         };
 
         let serial = SERIAL_COUNTER.next_serial();
-        let under = self.niri.surface_under_and_global_space(touch_location);
         handle.down(
             self,
             under.surface,

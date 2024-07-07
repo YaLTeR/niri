@@ -59,8 +59,8 @@ use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
 use smithay::utils::{
-    ClockSource, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size, Transform,
-    SERIAL_COUNTER,
+    ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
+    Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
     with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
@@ -124,13 +124,14 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
-    render_to_shm, render_to_texture, render_to_vec, shaders, RenderTarget,
+    render_to_encompassing_texture, render_to_shm, render_to_texture, render_to_vec, shaders,
+    RenderTarget,
 };
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
-use crate::ui::screenshot_ui::{ScreenshotUi, ScreenshotUiRenderElement};
+use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
@@ -236,6 +237,7 @@ pub struct Niri {
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
+    pub layer_shell_on_demand_focus: Option<LayerSurface>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
 
@@ -367,6 +369,8 @@ pub struct PointerFocus {
     pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
     pub window: Option<Window>,
+    // If surface belongs to a layer surface, this is that layer surface.
+    pub layer: Option<LayerSurface>,
 }
 
 #[derive(Default)]
@@ -714,6 +718,18 @@ impl State {
     }
 
     pub fn update_keyboard_focus(&mut self) {
+        // Clean up on-demand layer surface focus if necessary.
+        if let Some(surface) = &self.niri.layer_shell_on_demand_focus {
+            // Still alive and has on-demand interactivity.
+            let good = surface.alive()
+                && surface.cached_state().keyboard_interactivity
+                    == wlr_layer::KeyboardInteractivity::OnDemand;
+            if !good {
+                self.niri.layer_shell_on_demand_focus = None;
+            }
+        }
+
+        // Compute the current focus.
         let focus = if self.niri.is_locked() {
             KeyboardFocus::LockScreen {
                 surface: self.niri.lock_surface_focus(),
@@ -747,10 +763,19 @@ impl State {
                     })
             };
             let layer_focus = |surface: &LayerSurface| {
-                // FIXME: support on-demand.
-                let can_receive_keyboard_focus = surface.cached_state().keyboard_interactivity
+                let can_receive_exclusive_focus = surface.cached_state().keyboard_interactivity
                     == wlr_layer::KeyboardInteractivity::Exclusive;
-                can_receive_keyboard_focus
+                let is_on_demand_surface =
+                    Some(surface) == self.niri.layer_shell_on_demand_focus.as_ref();
+
+                (can_receive_exclusive_focus || is_on_demand_surface)
+                    .then(|| surface.wl_surface().clone())
+                    .map(|surface| KeyboardFocus::LayerShell { surface })
+            };
+            let on_d_focus = |surface: &LayerSurface| {
+                let is_on_demand_surface =
+                    Some(surface) == self.niri.layer_shell_on_demand_focus.as_ref();
+                is_on_demand_surface
                     .then(|| surface.wl_surface().clone())
                     .map(|surface| KeyboardFocus::LayerShell { surface })
             };
@@ -770,6 +795,10 @@ impl State {
                 surface = surface.or_else(|| layers.layers_on(Layer::Top).find_map(layer_focus));
                 surface = surface.or_else(layout_focus);
             }
+
+            // Bottom and background layers can receive on-demand focus only.
+            surface = surface.or_else(|| layers.layers_on(Layer::Bottom).find_map(on_d_focus));
+            surface = surface.or_else(|| layers.layers_on(Layer::Background).find_map(on_d_focus));
 
             surface.unwrap_or(KeyboardFocus::Layout { surface: None })
         } else {
@@ -1180,6 +1209,42 @@ impl State {
 
         let new_config = self.backend.ipc_outputs().lock().unwrap().clone();
         self.niri.output_management_state.notify_changes(new_config);
+    }
+
+    pub fn open_screenshot_ui(&mut self) {
+        if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
+            return;
+        }
+
+        let default_output = self
+            .niri
+            .output_under_cursor()
+            .or_else(|| self.niri.layout.active_output().cloned());
+        let Some(default_output) = default_output else {
+            return;
+        };
+
+        self.niri.layout.update_render_elements_all();
+
+        let Some(screenshots) = self
+            .backend
+            .with_primary_renderer(|renderer| self.niri.capture_screenshots(renderer).collect())
+        else {
+            return;
+        };
+
+        // Now that we captured the screenshots, clear grabs like drag-and-drop, etc.
+        self.niri.seat.get_pointer().unwrap().unset_grab(
+            self,
+            SERIAL_COUNTER.next_serial(),
+            get_monotonic_time().as_millis() as u32,
+        );
+
+        self.niri.screenshot_ui.open(screenshots, default_output);
+        self.niri
+            .cursor_manager
+            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+        self.niri.queue_redraw_all();
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -1666,6 +1731,7 @@ impl Niri {
 
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
+            layer_shell_on_demand_focus: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             cursor_manager,
@@ -2143,10 +2209,13 @@ impl Niri {
                             WindowSurfaceType::ALL,
                         )
                         .map(|(surface, pos_within_layer)| {
-                            (surface, pos_within_layer.to_f64() + layer_pos_within_output)
+                            (
+                                (surface, pos_within_layer.to_f64() + layer_pos_within_output),
+                                layer,
+                            )
                         })
                 })
-                .map(|s| (s, None))
+                .map(|(s, l)| (s, (None, Some(l.clone()))))
         };
 
         let window_under = || {
@@ -2163,7 +2232,7 @@ impl Niri {
                         .map(|(s, pos_within_window)| {
                             (s, pos_within_window.to_f64() + win_pos_within_output)
                         })
-                        .map(|s| (s, Some(window.clone())))
+                        .map(|s| (s, (Some(window.clone()), None)))
                 })
         };
 
@@ -2181,7 +2250,7 @@ impl Niri {
                 .or_else(window_under);
         }
 
-        let Some(((surface, surface_pos_within_output), window)) = under
+        let Some(((surface, surface_pos_within_output), (window, layer))) = under
             .or_else(|| layer_surface_under(Layer::Bottom))
             .or_else(|| layer_surface_under(Layer::Background))
         else {
@@ -2193,6 +2262,7 @@ impl Niri {
 
         rv.surface = Some((surface, surface_loc_in_global_space));
         rv.window = window;
+        rv.layer = layer;
         rv
     }
 
@@ -3727,70 +3797,72 @@ impl Niri {
         self.queue_redraw_all();
     }
 
-    pub fn open_screenshot_ui(&mut self, renderer: &mut GlesRenderer) {
-        if self.is_locked() || self.screenshot_ui.is_open() {
-            return;
-        }
+    pub fn capture_screenshots<'a>(
+        &'a self,
+        renderer: &'a mut GlesRenderer,
+    ) -> impl Iterator<Item = (Output, [OutputScreenshot; 3])> + 'a {
+        self.global_space.outputs().cloned().filter_map(|output| {
+            let size = output.current_mode().unwrap().size;
+            let transform = output.current_transform();
+            let size = transform.transform_size(size);
 
-        let default_output = self
-            .output_under_cursor()
-            .or_else(|| self.layout.active_output().cloned())
-            .or_else(|| self.global_space.outputs().next().cloned());
-        let Some(default_output) = default_output else {
-            return;
-        };
+            let scale = Scale::from(output.current_scale().fractional_scale());
+            let targets = [
+                RenderTarget::Output,
+                RenderTarget::Screencast,
+                RenderTarget::ScreenCapture,
+            ];
+            let screenshot = targets.map(|target| {
+                let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
+                let elements = elements.iter().rev();
 
-        self.layout.update_render_elements_all();
+                let res = render_to_texture(
+                    renderer,
+                    size,
+                    scale,
+                    Transform::Normal,
+                    Fourcc::Abgr8888,
+                    elements,
+                );
+                if let Err(err) = &res {
+                    warn!("error rendering output {}: {err:?}", output.name());
+                }
+                let res_output = res.ok();
 
-        let screenshots = self
-            .global_space
-            .outputs()
-            .cloned()
-            .filter_map(|output| {
-                let size = output.current_mode().unwrap().size;
-                let transform = output.current_transform();
-                let size = transform.transform_size(size);
-
-                let scale = Scale::from(output.current_scale().fractional_scale());
-                let targets = [
-                    RenderTarget::Output,
-                    RenderTarget::Screencast,
-                    RenderTarget::ScreenCapture,
-                ];
-                let textures = targets.map(|target| {
-                    let elements = self.render::<GlesRenderer>(renderer, &output, true, target);
-                    let elements = elements.iter().rev();
-
-                    let res = render_to_texture(
+                let pointer = self.pointer_element(renderer, &output);
+                let res_pointer = if pointer.is_empty() {
+                    None
+                } else {
+                    let res = render_to_encompassing_texture(
                         renderer,
-                        size,
                         scale,
                         Transform::Normal,
                         Fourcc::Abgr8888,
-                        elements,
+                        &pointer,
                     );
-
                     if let Err(err) = &res {
-                        warn!("error rendering output {}: {err:?}", output.name());
+                        warn!("error rendering pointer for {}: {err:?}", output.name());
                     }
+                    res.ok()
+                };
 
-                    res
-                });
+                res_output.map(|(texture, _)| {
+                    OutputScreenshot::from_textures(
+                        renderer,
+                        scale,
+                        texture,
+                        res_pointer.map(|(texture, _, geo)| (texture, geo)),
+                    )
+                })
+            });
 
-                if textures.iter().any(|res| res.is_err()) {
-                    return None;
-                }
+            if screenshot.iter().any(|res| res.is_none()) {
+                return None;
+            }
 
-                let textures = textures.map(|res| res.unwrap().0);
-                Some((output, textures))
-            })
-            .collect();
-
-        self.screenshot_ui
-            .open(renderer, screenshots, default_output);
-        self.cursor_manager
-            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
-        self.queue_redraw_all();
+            let screenshot = screenshot.map(|res| res.unwrap());
+            Some((output, screenshot))
+        })
     }
 
     pub fn screenshot(
@@ -4101,6 +4173,31 @@ impl Niri {
         });
     }
 
+    pub fn focus_layer_surface_if_on_demand(&mut self, surface: Option<LayerSurface>) {
+        if let Some(surface) = surface {
+            if surface.cached_state().keyboard_interactivity
+                == wlr_layer::KeyboardInteractivity::OnDemand
+            {
+                if self.layer_shell_on_demand_focus.as_ref() != Some(&surface) {
+                    self.layer_shell_on_demand_focus = Some(surface);
+
+                    // FIXME: granular.
+                    self.queue_redraw_all();
+                }
+
+                return;
+            }
+        }
+
+        // Something else got clicked, clear on-demand layer-shell focus.
+        if self.layer_shell_on_demand_focus.is_some() {
+            self.layer_shell_on_demand_focus = None;
+
+            // FIXME: granular.
+            self.queue_redraw_all();
+        }
+    }
+
     #[cfg(feature = "dbus")]
     pub fn on_ipc_outputs_changed(&self) {
         let _span = tracy_client::span!("Niri::on_ipc_outputs_changed");
@@ -4167,6 +4264,13 @@ impl Niri {
                 }
 
                 self.layout.activate_window(window);
+                self.layer_shell_on_demand_focus = None;
+            }
+        }
+
+        if let Some(layer) = &new_focus.layer {
+            if current_focus.layer.as_ref() != Some(layer) {
+                self.layer_shell_on_demand_focus = Some(layer.clone());
             }
         }
     }

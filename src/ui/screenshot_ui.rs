@@ -13,13 +13,13 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::ExportMem;
 use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
-use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::{render_to_texture, RenderTarget};
 use crate::utils::to_physical_precise_round;
 
 const BORDER: i32 = 2;
@@ -37,6 +37,7 @@ pub enum ScreenshotUi {
         selection: (Output, Point<i32, Physical>, Point<i32, Physical>),
         output_data: HashMap<Output, OutputData>,
         mouse_down: bool,
+        show_pointer: bool,
     },
 }
 
@@ -45,10 +46,15 @@ pub struct OutputData {
     scale: f64,
     transform: Transform,
     // Output, screencast, screen capture.
-    texture: [GlesTexture; 3],
-    texture_buffer: [TextureBuffer<GlesTexture>; 3],
+    screenshot: [OutputScreenshot; 3],
     buffers: [SolidColorBuffer; 8],
     locations: [Point<i32, Physical>; 8],
+}
+
+pub struct OutputScreenshot {
+    texture: GlesTexture,
+    buffer: TextureBuffer<GlesTexture>,
+    pointer: Option<(TextureBuffer<GlesTexture>, Rectangle<f64, Logical>)>,
 }
 
 niri_render_elements! {
@@ -67,9 +73,8 @@ impl ScreenshotUi {
 
     pub fn open(
         &mut self,
-        renderer: &GlesRenderer,
         // Output, screencast, screen capture.
-        screenshots: HashMap<Output, [GlesTexture; 3]>,
+        screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
     ) -> bool {
         if screenshots.is_empty() {
@@ -100,29 +105,19 @@ impl ScreenshotUi {
             }
         };
 
-        let scale = selection.0.current_scale().integer_scale();
         let selection = (
             selection.0,
             selection.1.loc,
-            selection.1.loc + selection.1.size - Size::from((scale, scale)),
+            selection.1.loc + selection.1.size - Size::from((1, 1)),
         );
 
         let output_data = screenshots
             .into_iter()
-            .map(|(output, texture)| {
+            .map(|(output, screenshot)| {
                 let transform = output.current_transform();
                 let output_mode = output.current_mode().unwrap();
                 let size = transform.transform_size(output_mode.size);
                 let scale = output.current_scale().fractional_scale();
-                let texture_buffer = texture.clone().map(|texture| {
-                    TextureBuffer::from_texture(
-                        renderer,
-                        texture,
-                        scale,
-                        Transform::Normal,
-                        Vec::new(),
-                    )
-                });
                 let buffers = [
                     SolidColorBuffer::new((0., 0.), [1., 1., 1., 1.]),
                     SolidColorBuffer::new((0., 0.), [1., 1., 1., 1.]),
@@ -138,8 +133,7 @@ impl ScreenshotUi {
                     size,
                     scale,
                     transform,
-                    texture,
-                    texture_buffer,
+                    screenshot,
                     buffers,
                     locations,
                 };
@@ -151,6 +145,7 @@ impl ScreenshotUi {
             selection,
             output_data,
             mouse_down: false,
+            show_pointer: true,
         };
 
         self.update_buffers();
@@ -176,6 +171,12 @@ impl ScreenshotUi {
         *self = Self::Closed { last_selection };
 
         true
+    }
+
+    pub fn toggle_pointer(&mut self) {
+        if let Self::Open { show_pointer, .. } = self {
+            *show_pointer = !*show_pointer;
+        }
     }
 
     pub fn is_open(&self) -> bool {
@@ -259,10 +260,15 @@ impl ScreenshotUi {
         &self,
         output: &Output,
         target: RenderTarget,
-    ) -> ArrayVec<ScreenshotUiRenderElement, 9> {
+    ) -> ArrayVec<ScreenshotUiRenderElement, 10> {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
-        let Self::Open { output_data, .. } = self else {
+        let Self::Open {
+            output_data,
+            show_pointer,
+            ..
+        } = self
+        else {
             panic!("screenshot UI must be open to render it");
         };
 
@@ -289,9 +295,26 @@ impl ScreenshotUi {
             RenderTarget::Screencast => 1,
             RenderTarget::ScreenCapture => 2,
         };
+
+        if *show_pointer {
+            if let Some((buffer, geo)) = output_data.screenshot[index].pointer.clone() {
+                elements.push(
+                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                        buffer,
+                        geo.loc,
+                        1.,
+                        None,
+                        None,
+                        Kind::Unspecified,
+                    ))
+                    .into(),
+                );
+            }
+        }
+
         elements.push(
             PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                output_data.texture_buffer[index].clone(),
+                output_data.screenshot[index].buffer.clone(),
                 (0., 0.),
                 1.,
                 None,
@@ -313,6 +336,7 @@ impl ScreenshotUi {
         let Self::Open {
             selection,
             output_data,
+            show_pointer,
             ..
         } = self
         else {
@@ -321,12 +345,67 @@ impl ScreenshotUi {
 
         let data = &output_data[&selection.0];
         let rect = rect_from_corner_points(selection.1, selection.2);
+
+        let screenshot = &data.screenshot[0];
+
+        // Composite the pointer on top if needed.
+        let mut tex_rect = None;
+        if *show_pointer {
+            if let Some((buffer, geo)) = screenshot.pointer.clone() {
+                let scale = buffer.texture_scale();
+                let offset = rect.loc.to_f64().to_logical(scale);
+                let offset = offset.upscale(-1.);
+
+                let mut elements = ArrayVec::<_, 2>::new();
+                elements.push(PrimaryGpuTextureRenderElement(
+                    TextureRenderElement::from_texture_buffer(
+                        buffer,
+                        geo.loc + offset,
+                        1.,
+                        None,
+                        None,
+                        Kind::Unspecified,
+                    ),
+                ));
+                elements.push(PrimaryGpuTextureRenderElement(
+                    TextureRenderElement::from_texture_buffer(
+                        screenshot.buffer.clone(),
+                        offset,
+                        1.,
+                        None,
+                        None,
+                        Kind::Unspecified,
+                    ),
+                ));
+                let elements = elements.iter().rev();
+
+                let res = render_to_texture(
+                    renderer,
+                    rect.size,
+                    scale,
+                    Transform::Normal,
+                    Fourcc::Abgr8888,
+                    elements,
+                );
+                match res {
+                    Ok((texture, _)) => {
+                        tex_rect = Some((texture, Rectangle::from_loc_and_size((0, 0), rect.size)));
+                    }
+                    Err(err) => {
+                        warn!("error compositing pointer onto screenshot: {err:?}");
+                    }
+                }
+            }
+        }
+
+        let (texture, rect) = tex_rect.unwrap_or_else(|| (screenshot.texture.clone(), rect));
+        // The size doesn't actually matter because we're not transforming anything.
         let buf_rect = rect
             .to_logical(1)
-            .to_buffer(1, Transform::Normal, &data.size.to_logical(1));
+            .to_buffer(1, Transform::Normal, &Size::from((1, 1)));
 
         let mapping = renderer
-            .copy_texture(&data.texture[0], buf_rect, Fourcc::Abgr8888)
+            .copy_texture(&texture, buf_rect, Fourcc::Abgr8888)
             .context("error copying texture")?;
         let copy = renderer
             .map_texture(&mapping)
@@ -390,6 +469,7 @@ impl ScreenshotUi {
             selection,
             output_data,
             mouse_down,
+            ..
         } = self
         else {
             return false;
@@ -439,6 +519,38 @@ impl Default for ScreenshotUi {
     }
 }
 
+impl OutputScreenshot {
+    pub fn from_textures(
+        renderer: &mut GlesRenderer,
+        scale: Scale<f64>,
+        texture: GlesTexture,
+        pointer: Option<(GlesTexture, Rectangle<i32, Physical>)>,
+    ) -> Self {
+        Self {
+            texture: texture.clone(),
+            buffer: TextureBuffer::from_texture(
+                renderer,
+                texture,
+                scale,
+                Transform::Normal,
+                Vec::new(),
+            ),
+            pointer: pointer.map(|(texture, geo)| {
+                (
+                    TextureBuffer::from_texture(
+                        renderer,
+                        texture,
+                        scale,
+                        Transform::Normal,
+                        Vec::new(),
+                    ),
+                    geo.to_f64().to_logical(scale),
+                )
+            }),
+        }
+    }
+}
+
 fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
     if raw == Keysym::Escape {
         return Some(Action::CancelScreenshot);
@@ -452,6 +564,10 @@ fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
         || (!mods.ctrl && (raw == Keysym::space || raw == Keysym::Return))
     {
         return Some(Action::ConfirmScreenshot);
+    }
+
+    if !mods.ctrl && raw == Keysym::p {
+        return Some(Action::ScreenshotTogglePointer);
     }
 
     None
