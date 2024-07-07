@@ -100,11 +100,10 @@ impl ScreenshotUi {
             }
         };
 
-        let scale = selection.0.current_scale().integer_scale();
         let selection = (
             selection.0,
             selection.1.loc,
-            selection.1.loc + selection.1.size - Size::from((scale, scale)),
+            selection.1.loc + selection.1.size - Size::from((1, 1)),
         );
 
         let output_data = screenshots
