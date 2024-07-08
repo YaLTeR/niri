@@ -1,19 +1,18 @@
 use std::fs;
 use std::path::PathBuf;
 
-const NO_TEST_COMMENT: &str = "<!-- no-test -->";
-
 struct KdlCodeBlock {
     filename: String,
     code: String,
     line_number: usize,
+    must_fail: bool,
 }
 
 fn extract_kdl_from_file(file_contents: &str, filename: &str) -> Vec<KdlCodeBlock> {
-    // Removes the > from callouts that might contain ```kdl```
-    let lines: Vec<_> = file_contents
+    let mut lines = file_contents
         .lines()
         .map(|line| {
+            // Removes the > from callouts that might contain ```kdl```
             let line = line.trim();
             if line.starts_with(">") {
                 if line.len() == 1 {
@@ -25,22 +24,18 @@ fn extract_kdl_from_file(file_contents: &str, filename: &str) -> Vec<KdlCodeBloc
                 line
             }
         })
-        .enumerate()
-        .collect();
+        .enumerate();
 
-    let mut lines_iter = lines.iter();
     let mut kdl_code_blocks = vec![];
 
-    while let Some((line_number, line)) = lines_iter.next() {
-        let start_snippet =
-            line.starts_with("```kdl") && lines[line_number - 1].1 != NO_TEST_COMMENT;
-
-        if !start_snippet {
+    while let Some((line_number, line)) = lines.next() {
+        if !line.starts_with("```kdl") {
             continue;
         }
 
         let mut snippet = String::new();
-        for (_, line) in lines_iter
+
+        for (_, line) in lines
             .by_ref()
             .take_while(|(_, line)| !line.starts_with("```"))
         {
@@ -50,8 +45,9 @@ fn extract_kdl_from_file(file_contents: &str, filename: &str) -> Vec<KdlCodeBloc
 
         kdl_code_blocks.push(KdlCodeBlock {
             code: snippet,
-            line_number: *line_number,
+            line_number,
             filename: filename.to_string(),
+            must_fail: line.contains("must-fail"),
         });
     }
 
@@ -86,15 +82,23 @@ fn wiki_docs_parses() {
         code,
         line_number,
         filename,
+        must_fail,
     } in code_blocks
     {
         if let Err(error) = niri_config::Config::parse(&filename, &code) {
+            if !must_fail {
+                errors.push(format!(
+                    "Error parsing wiki KDL code block at {}:{}: {:?}",
+                    filename,
+                    line_number,
+                    miette::Report::new(error)
+                ));
+            }
+        } else if must_fail {
             errors.push(format!(
-                "Error parsing wiki KDL code block at {}:{}: {:?}",
-                filename,
-                line_number,
-                miette::Report::new(error)
-            ))
+                "Expected error parsing wiki KDL code block at {}:{}",
+                filename, line_number
+            ));
         }
     }
 
