@@ -76,6 +76,7 @@
             libglvnd # For libEGL
             xorg.libXcursor
             xorg.libXi
+            libxkbcommon
           ];
 
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
@@ -89,9 +90,9 @@
         checks.niri = niri;
         packages.default = niri;
 
-        devShells.default = pkgs.mkShell.override {stdenv = pkgs.clangStdenv;} {
-          inherit (niri) nativeBuildInputs buildInputs LIBCLANG_PATH;
-          packages = niri.runtimeDependencies;
+        devShells.default = pkgs.mkShell.override {stdenv = pkgs.clangStdenv;} rec {
+          inherit (niri) LIBCLANG_PATH;
+          packages = niri.runtimeDependencies ++ niri.nativeBuildInputs ++ niri.buildInputs;
 
           # Force linking to libEGL, which is always dlopen()ed, and to
           # libwayland-client, which is always dlopen()ed except by the
@@ -102,6 +103,9 @@
             "-lwayland-client"
             "-Wl,--pop-state"
           ];
+
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath packages;
+          PKG_CONFIG_PATH = pkgs.lib.makeLibraryPath packages;
         };
       }
     );
