@@ -37,6 +37,40 @@ float linear_to_srgb(float color) {
     pow(color * 1.055, 1.0 / 2.4) - 0.055 ;
 } 
 
+vec4 linear_to_oklab(vec4 color){
+  float l = color.r * 0.4122214708 + color.g * 0.5363325363 + color.b * 0.0514459929;
+  float m = color.r * 0.2119034982 + color.g * 0.6806995451 + color.b * 0.1073969566;
+  float s = color.r * 0.0883024619 + color.g * 0.2817188376 + color.b * 0.6299787005;
+
+  l = pow(l, 1.0 / 3.0);
+  m = pow(m, 1.0 / 3.0);
+  s = pow(s, 1.0 / 3.0);
+  
+  return vec4(
+    l * 0.2104542553 + m * 0.7936177850 + s * -0.0040720468,
+    l * 1.9779984951 + m * -2.4285922050 + s * 0.4505937099,
+    l * 0.0259040371 + m * 0.7827717662 + s * -0.8086757660,
+    color.a
+  );
+}
+
+vec4 oklab_to_linear(vec4 color){
+  float l = color.x + color.y * 0.3963377774 + color.z * 0.2158037573;
+  float m = color.x + color.y * -0.1055613458 + color.z * -0.0638541728;
+  float s = color.x + color.y * -0.0894841775 + color.z * -1.2914855480;
+
+  l = pow(l, 3.0);
+  m = pow(m, 3.0);
+  s = pow(s, 3.0);
+
+  return vec4(
+    l * 4.0767416621 + m * -3.3077115913 + s * 0.2309699292,
+    l * -1.2684380046 + m * 2.6097574011 + s * -0.3413193965,
+    l * -0.0041960863 + m * -0.7034186147 + s * 1.7076147010,
+    color.a
+  );
+}
+
 vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
 
   if (colorspace == 0.0) { //  srgb
@@ -64,6 +98,12 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
       color2,
       color_ratio
     );
+  } else if (colorspace == 2.0) {
+    color_out = oklab_to_linear(mix(
+      linear_to_oklab(color1),
+      linear_to_oklab(color2),
+      color_ratio
+      ));
   } else {
     color_out = vec4(
       1.0,
