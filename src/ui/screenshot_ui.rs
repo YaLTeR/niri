@@ -1,20 +1,26 @@
+use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::iter::zip;
-use std::mem;
+use std::rc::Rc;
+use std::time::Duration;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
-use niri_config::Action;
+use niri_config::{Action, Config};
+use pango::{Alignment, FontDescription};
+use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{ButtonState, MouseButton};
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::ExportMem;
+use smithay::backend::renderer::{ExportMem, Texture as _};
 use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 
+use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -22,22 +28,36 @@ use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_texture, RenderTarget};
 use crate::utils::to_physical_precise_round;
 
-const BORDER: i32 = 2;
+const SELECTION_BORDER: i32 = 2;
+
+const PADDING: i32 = 8;
+const FONT: &str = "sans 14px";
+const BORDER: i32 = 4;
+const TEXT_HIDE_P: &str =
+    "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> P </span> to hide the pointer.";
+const TEXT_SHOW_P: &str =
+    "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
 
 // Ideally the screenshot UI should support cross-output selections. However, that poses some
 // technical challenges when the outputs have different scales and such. So, this implementation
 // allows only single-output selections for now.
 //
 // As a consequence of this, selection coordinates are in output-local coordinate space.
+#[allow(clippy::large_enum_variant)]
 pub enum ScreenshotUi {
     Closed {
         last_selection: Option<(WeakOutput, Rectangle<i32, Physical>)>,
+        config: Rc<RefCell<Config>>,
     },
     Open {
         selection: (Output, Point<i32, Physical>, Point<i32, Physical>),
         output_data: HashMap<Output, OutputData>,
         mouse_down: bool,
         show_pointer: bool,
+        open_anim: Animation,
+        config: Rc<RefCell<Config>>,
     },
 }
 
@@ -49,12 +69,13 @@ pub struct OutputData {
     screenshot: [OutputScreenshot; 3],
     buffers: [SolidColorBuffer; 8],
     locations: [Point<i32, Physical>; 8],
+    panel: Option<(TextureBuffer<GlesTexture>, TextureBuffer<GlesTexture>)>,
 }
 
 pub struct OutputScreenshot {
     texture: GlesTexture,
-    buffer: TextureBuffer<GlesTexture>,
-    pointer: Option<(TextureBuffer<GlesTexture>, Rectangle<f64, Logical>)>,
+    buffer: PrimaryGpuTextureRenderElement,
+    pointer: Option<PrimaryGpuTextureRenderElement>,
 }
 
 niri_render_elements! {
@@ -65,14 +86,16 @@ niri_render_elements! {
 }
 
 impl ScreenshotUi {
-    pub fn new() -> Self {
+    pub fn new(config: Rc<RefCell<Config>>) -> Self {
         Self::Closed {
             last_selection: None,
+            config,
         }
     }
 
     pub fn open(
         &mut self,
+        renderer: &mut GlesRenderer,
         // Output, screencast, screen capture.
         screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
@@ -81,7 +104,11 @@ impl ScreenshotUi {
             return false;
         }
 
-        let Self::Closed { last_selection } = self else {
+        let Self::Closed {
+            last_selection,
+            config,
+        } = self
+        else {
             return false;
         };
 
@@ -129,6 +156,16 @@ impl ScreenshotUi {
                     SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.5]),
                 ];
                 let locations = [Default::default(); 8];
+
+                let mut render_panel_ = |text| {
+                    render_panel(renderer, scale, text)
+                        .map_err(|err| warn!("error rendering help panel: {err:?}"))
+                        .ok()
+                };
+                let panel_show = render_panel_(TEXT_SHOW_P);
+                let panel_hide = render_panel_(TEXT_HIDE_P);
+                let panel = Option::zip(panel_show, panel_hide);
+
                 let data = OutputData {
                     size,
                     scale,
@@ -136,16 +173,24 @@ impl ScreenshotUi {
                     screenshot,
                     buffers,
                     locations,
+                    panel,
                 };
                 (output, data)
             })
             .collect();
+
+        let open_anim = {
+            let c = config.borrow();
+            Animation::new(0., 1., 0., c.animations.screenshot_ui_open.0)
+        };
 
         *self = Self::Open {
             selection,
             output_data,
             mouse_down: false,
             show_pointer: true,
+            open_anim,
+            config: config.clone(),
         };
 
         self.update_buffers();
@@ -154,13 +199,11 @@ impl ScreenshotUi {
     }
 
     pub fn close(&mut self) -> bool {
-        let selection = match mem::take(self) {
-            Self::Open { selection, .. } => selection,
-            closed @ Self::Closed { .. } => {
-                // Put it back.
-                *self = closed;
-                return false;
-            }
+        let Self::Open {
+            selection, config, ..
+        } = self
+        else {
+            return false;
         };
 
         let last_selection = Some((
@@ -168,7 +211,10 @@ impl ScreenshotUi {
             rect_from_corner_points(selection.1, selection.2),
         ));
 
-        *self = Self::Closed { last_selection };
+        *self = Self::Closed {
+            last_selection,
+            config: config.clone(),
+        };
 
         true
     }
@@ -181,6 +227,22 @@ impl ScreenshotUi {
 
     pub fn is_open(&self) -> bool {
         matches!(self, ScreenshotUi::Open { .. })
+    }
+
+    pub fn advance_animations(&mut self, current_time: Duration) {
+        let Self::Open { open_anim, .. } = self else {
+            return;
+        };
+
+        open_anim.set_current_time(current_time);
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        let Self::Open { open_anim, .. } = self else {
+            return false;
+        };
+
+        !open_anim.is_done()
     }
 
     fn update_buffers(&mut self) {
@@ -213,7 +275,7 @@ impl ScreenshotUi {
                     *b = rect.loc + rect.size - Size::from((1, 1));
                 }
 
-                let border = to_physical_precise_round(scale, BORDER);
+                let border = to_physical_precise_round(scale, SELECTION_BORDER);
 
                 let resize = move |buffer: &mut SolidColorBuffer, w: i32, h: i32| {
                     let size = Size::<_, Physical>::from((w, h));
@@ -260,12 +322,14 @@ impl ScreenshotUi {
         &self,
         output: &Output,
         target: RenderTarget,
-    ) -> ArrayVec<ScreenshotUiRenderElement, 10> {
+    ) -> ArrayVec<ScreenshotUiRenderElement, 11> {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
         let Self::Open {
             output_data,
             show_pointer,
+            mouse_down,
+            open_anim,
             ..
         } = self
         else {
@@ -278,12 +342,40 @@ impl ScreenshotUi {
             return elements;
         };
 
+        let scale = output_data.scale;
+        let progress = open_anim.clamped_value().clamp(0., 1.) as f32;
+
+        // The help panel goes on top.
+        if let Some((show, hide)) = &output_data.panel {
+            let buffer = if *show_pointer { hide } else { show };
+
+            let size = buffer.texture().size();
+            let padding: i32 = to_physical_precise_round(scale, PADDING);
+            let x = max(0, (output_data.size.w - size.w) / 2);
+            let y = max(0, output_data.size.h - size.h - padding * 2);
+            let location = Point::<_, Physical>::from((x, y))
+                .to_f64()
+                .to_logical(scale);
+
+            let alpha = if *mouse_down { 0.3 } else { 0.9 };
+
+            let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                buffer.clone(),
+                location,
+                alpha * progress,
+                None,
+                None,
+                Kind::Unspecified,
+            ));
+            elements.push(elem.into());
+        }
+
         let buf_loc = zip(&output_data.buffers, &output_data.locations);
         elements.extend(buf_loc.map(|(buffer, loc)| {
             SolidColorRenderElement::from_buffer(
                 buffer,
-                loc.to_f64().to_logical(output_data.scale),
-                1.,
+                loc.to_f64().to_logical(scale),
+                progress,
                 Kind::Unspecified,
             )
             .into()
@@ -295,34 +387,14 @@ impl ScreenshotUi {
             RenderTarget::Screencast => 1,
             RenderTarget::ScreenCapture => 2,
         };
+        let screenshot = &output_data.screenshot[index];
 
         if *show_pointer {
-            if let Some((buffer, geo)) = output_data.screenshot[index].pointer.clone() {
-                elements.push(
-                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                        buffer,
-                        geo.loc,
-                        1.,
-                        None,
-                        None,
-                        Kind::Unspecified,
-                    ))
-                    .into(),
-                );
+            if let Some(pointer) = screenshot.pointer.clone() {
+                elements.push(pointer.into());
             }
         }
-
-        elements.push(
-            PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                output_data.screenshot[index].buffer.clone(),
-                (0., 0.),
-                1.,
-                None,
-                None,
-                Kind::Unspecified,
-            ))
-            .into(),
-        );
+        elements.push(screenshot.buffer.clone().into());
 
         elements
     }
@@ -351,33 +423,16 @@ impl ScreenshotUi {
         // Composite the pointer on top if needed.
         let mut tex_rect = None;
         if *show_pointer {
-            if let Some((buffer, geo)) = screenshot.pointer.clone() {
-                let scale = buffer.texture_scale();
-                let offset = rect.loc.to_f64().to_logical(scale);
-                let offset = offset.upscale(-1.);
+            if let Some(pointer) = screenshot.pointer.clone() {
+                let scale = pointer.0.buffer().texture_scale();
+                let offset = rect.loc.upscale(-1);
 
                 let mut elements = ArrayVec::<_, 2>::new();
-                elements.push(PrimaryGpuTextureRenderElement(
-                    TextureRenderElement::from_texture_buffer(
-                        buffer,
-                        geo.loc + offset,
-                        1.,
-                        None,
-                        None,
-                        Kind::Unspecified,
-                    ),
-                ));
-                elements.push(PrimaryGpuTextureRenderElement(
-                    TextureRenderElement::from_texture_buffer(
-                        screenshot.buffer.clone(),
-                        offset,
-                        1.,
-                        None,
-                        None,
-                        Kind::Unspecified,
-                    ),
-                ));
-                let elements = elements.iter().rev();
+                elements.push(pointer);
+                elements.push(screenshot.buffer.clone());
+                let elements = elements.iter().rev().map(|elem| {
+                    RelocateRenderElement::from_element(elem, offset, Relocate::Relative)
+                });
 
                 let res = render_to_texture(
                     renderer,
@@ -513,12 +568,6 @@ impl ScreenshotUi {
     }
 }
 
-impl Default for ScreenshotUi {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl OutputScreenshot {
     pub fn from_textures(
         renderer: &mut GlesRenderer,
@@ -526,27 +575,42 @@ impl OutputScreenshot {
         texture: GlesTexture,
         pointer: Option<(GlesTexture, Rectangle<i32, Physical>)>,
     ) -> Self {
-        Self {
-            texture: texture.clone(),
-            buffer: TextureBuffer::from_texture(
+        let buffer = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+            TextureBuffer::from_texture(
                 renderer,
-                texture,
+                texture.clone(),
                 scale,
                 Transform::Normal,
                 Vec::new(),
             ),
-            pointer: pointer.map(|(texture, geo)| {
-                (
-                    TextureBuffer::from_texture(
-                        renderer,
-                        texture,
-                        scale,
-                        Transform::Normal,
-                        Vec::new(),
-                    ),
-                    geo.to_f64().to_logical(scale),
-                )
-            }),
+            (0., 0.),
+            1.,
+            None,
+            None,
+            Kind::Unspecified,
+        ));
+
+        let pointer = pointer.map(|(texture, geo)| {
+            PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                TextureBuffer::from_texture(
+                    renderer,
+                    texture,
+                    scale,
+                    Transform::Normal,
+                    Vec::new(),
+                ),
+                geo.to_f64().to_logical(scale).loc,
+                1.,
+                None,
+                None,
+                Kind::Unspecified,
+            ))
+        });
+
+        Self {
+            texture,
+            buffer,
+            pointer,
         }
     }
 }
@@ -584,4 +648,74 @@ pub fn rect_from_corner_points(
     // We're adding + 1 because the pointer is clamped to output size - 1, so to get the full
     // screen worth of selection we must add back that + 1.
     Rectangle::from_extemities((x1, y1), (x2 + 1, y2 + 1))
+}
+
+fn render_panel(
+    renderer: &mut GlesRenderer,
+    scale: f64,
+    text: &str,
+) -> anyhow::Result<TextureBuffer<GlesTexture>> {
+    let _span = tracy_client::span!("screenshot_ui::render_panel");
+
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
+
+    // Add 2 px of spacing to separate the backgrounds of the "Space" and "P" keys.
+    let spacing = to_physical_precise_round::<i32>(scale, 2) * 1024;
+
+    let mut font = FontDescription::from_string(FONT);
+    font.set_absolute_size(to_physical_precise_round(scale, font.size()));
+
+    let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
+    let cr = cairo::Context::new(&surface)?;
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
+    layout.set_font_description(Some(&font));
+    layout.set_alignment(Alignment::Center);
+    layout.set_markup(text);
+    layout.set_spacing(spacing);
+
+    let (mut width, mut height) = layout.pixel_size();
+    width += padding * 2;
+    height += padding * 2;
+
+    let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
+    let cr = cairo::Context::new(&surface)?;
+    cr.set_source_rgb(0.1, 0.1, 0.1);
+    cr.paint()?;
+
+    cr.move_to(padding.into(), padding.into());
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
+    layout.set_font_description(Some(&font));
+    layout.set_alignment(Alignment::Center);
+    layout.set_markup(text);
+    layout.set_spacing(spacing);
+
+    cr.set_source_rgb(1., 1., 1.);
+    pangocairo::functions::show_layout(&cr, &layout);
+
+    cr.move_to(0., 0.);
+    cr.line_to(width.into(), 0.);
+    cr.line_to(width.into(), height.into());
+    cr.line_to(0., height.into());
+    cr.line_to(0., 0.);
+    cr.set_source_rgb(0.3, 0.3, 0.3);
+    // Keep the border width even to avoid blurry edges.
+    cr.set_line_width((f64::from(BORDER) / 2. * scale).round() * 2.);
+    cr.stroke()?;
+    drop(cr);
+
+    let data = surface.take_data().unwrap();
+    let buffer = TextureBuffer::from_memory(
+        renderer,
+        &data,
+        Fourcc::Argb8888,
+        (width, height),
+        false,
+        scale,
+        Transform::Normal,
+        Vec::new(),
+    )?;
+
+    Ok(buffer)
 }

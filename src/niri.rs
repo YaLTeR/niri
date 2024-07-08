@@ -1240,7 +1240,12 @@ impl State {
             get_monotonic_time().as_millis() as u32,
         );
 
-        self.niri.screenshot_ui.open(screenshots, default_output);
+        self.backend.with_primary_renderer(|renderer| {
+            self.niri
+                .screenshot_ui
+                .open(renderer, screenshots, default_output)
+        });
+
         self.niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
@@ -1584,7 +1589,7 @@ impl Niri {
         let mods_with_finger_scroll_binds =
             mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
 
-        let screenshot_ui = ScreenshotUi::new();
+        let screenshot_ui = ScreenshotUi::new(config.clone());
         let config_error_notification = ConfigErrorNotification::new(config.clone());
 
         let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
@@ -2967,6 +2972,10 @@ impl Niri {
                 .advance_animations(target_presentation_time);
             state.unfinished_animations_remain |=
                 self.config_error_notification.are_animations_ongoing();
+
+            self.screenshot_ui
+                .advance_animations(target_presentation_time);
+            state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
 
             // Also keep redrawing if the current cursor is animated.
             state.unfinished_animations_remain |= self

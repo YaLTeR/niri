@@ -87,7 +87,7 @@ impl HotkeyOverlay {
         let output_size = output_size(output);
 
         let mut buffers = self.buffers.borrow_mut();
-        buffers.retain(|output, _| output.upgrade().is_some());
+        buffers.retain(|output, _| output.is_alive());
 
         // FIXME: should probably use the working area rather than view size.
         let weak = output.downgrade();
