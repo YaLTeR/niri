@@ -20,3 +20,4 @@ tracy-client.workspace = true
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
+miette = { version = "5.10.0", features = ["fancy"] }
