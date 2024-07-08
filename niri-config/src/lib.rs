@@ -1465,8 +1465,11 @@ impl FromStr for GradientInterpolation {
             GradientColorSpace::Srgb
         };
 
-        let interpolation = if color == GradientColorSpace::Oklch && in_part2 != None {
+        let interpolation = if in_part2 != None {
             let in_str = in_part2.unwrap();
+            if color != GradientColorSpace::Oklch {
+                return Err(miette!("There's a value: {in_str}  after a non polar colorspace"))
+            }
             if in_part3 == None || in_part3.unwrap() != "hue" {
                 return Err(miette!("Invalid hue-interpolation: {in_str}  you may be missing 'hue' at the end."))
             } else if iter.next() == None {
@@ -1480,7 +1483,7 @@ impl FromStr for GradientInterpolation {
             } else {
                 // this is a placeholder and should be changed if anything is added to in for
                 // gradients 
-                return Err(miette!("there seems to be a value after ’hue’ at ’in’ "))
+                return Err(miette!("Theres a missing indicator ’hue’ from ’in’ "))
             }
         } else {
             HueInterpolation::Shorter
