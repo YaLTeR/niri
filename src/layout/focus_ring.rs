@@ -1,7 +1,7 @@
 use std::iter::zip;
 
 use arrayvec::ArrayVec;
-use niri_config::{CornerRadius, Gradient, GradientRelativeTo, GradientInterpolation, GradientColorSpace, HueInterpolation};
+use niri_config::{CornerRadius, Gradient, GradientRelativeTo, GradientInterpolation};
 use smithay::backend::renderer::element::Kind;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
@@ -91,10 +91,7 @@ impl FocusRing {
             to: color,
             angle: 0,
             relative_to: GradientRelativeTo::Window,
-            _in: GradientInterpolation { 
-                color_space: GradientColorSpace::Srgb,
-                hue_interpol: HueInterpolation::Shorter
-            }
+            in_: GradientInterpolation::default()
         });
 
         let full_rect = Rectangle::from_loc_and_size((-width, -width), self.full_size);
@@ -102,9 +99,6 @@ impl FocusRing {
             GradientRelativeTo::Window => full_rect,
             GradientRelativeTo::WorkspaceView => view_rect,
         };
-
-        let gradient_format = gradient._in;
-
 
         let rounded_corner_border_width = if self.is_border {
             // HACK: increase the border width used for the inner rounded corners a tiny bit to
@@ -185,7 +179,7 @@ impl FocusRing {
                 border.update(
                     size,
                     Rectangle::from_loc_and_size(gradient_area.loc - loc, gradient_area.size),
-                    gradient_format,
+                    gradient.in_,
                     gradient.from.into(),
                     gradient.to.into(),
                     ((gradient.angle as f32) - 90.).to_radians(),
@@ -206,7 +200,7 @@ impl FocusRing {
                     gradient_area.loc - self.locations[0],
                     gradient_area.size,
                 ),
-                gradient_format,
+                gradient.in_,
                 gradient.from.into(),
                 gradient.to.into(),
                 ((gradient.angle as f32) - 90.).to_radians(),

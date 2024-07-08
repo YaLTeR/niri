@@ -5,7 +5,7 @@ use std::time::Duration;
 use niri::animation::ANIMATION_SLOWDOWN;
 use niri::layout::focus_ring::FocusRing;
 use niri::render_helpers::border::BorderRenderElement;
-use niri_config::{Color, CornerRadius, FloatOrInt};
+use niri_config::{Color, CornerRadius, FloatOrInt, GradientInterpolation};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
@@ -104,6 +104,7 @@ impl TestCase for GradientArea {
             [BorderRenderElement::new(
                 area.size,
                 g_area,
+                GradientInterpolation::default(),
                 [1., 0., 0., 1.],
                 [0., 1., 0., 1.],
                 FRAC_PI_4,

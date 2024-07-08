@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::cmp::{max, min};
 use std::time::Duration;
 
-use niri_config::{CornerRadius, GradientColorSpace, GradientInterpolation, HueInterpolation, WindowRule};
+use niri_config::{CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -289,10 +289,7 @@ impl Mapped {
                     return BorderRenderElement::new(
                         geo.size,
                         Rectangle::from_loc_and_size((0., 0.), geo.size),
-                        GradientInterpolation{
-                            color_space: GradientColorSpace::Srgb,
-                            hue_interpol: HueInterpolation::Shorter
-                        },
+                        GradientInterpolation::default(),
                         elem.color(),
                         elem.color(),
                         0.,

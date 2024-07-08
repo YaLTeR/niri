@@ -18,6 +18,10 @@ use tracing_subscriber::EnvFilter;
 
 use crate::cases::gradient_angle::GradientAngle;
 use crate::cases::gradient_area::GradientArea;
+use crate::cases::gradient_srgb::GradientSrgb;
+use crate::cases::gradient_srgblinear::GradientSrgbLinear;
+use crate::cases::gradient_oklab::GradientOklab;
+use crate::cases::gradient_oklch_shorter::GradientOklch;
 use crate::cases::layout::Layout;
 use crate::cases::TestCase;
 
@@ -112,6 +116,11 @@ fn build_ui(app: &adw::Application) {
 
     s.add(GradientAngle::new, "Gradient - Angle");
     s.add(GradientArea::new, "Gradient - Area");
+    s.add(GradientSrgb::new, "Gradient - Srgb");
+    s.add(GradientSrgbLinear::new, "Gradient - SrgbLinear");
+    s.add(GradientOklab::new, "Gradient - Oklab");
+    s.add(GradientOklch::new, "Gradient - Oklch");
+
 
     let content_headerbar = adw::HeaderBar::new();
 

@@ -68,10 +68,7 @@ impl Shaders {
             })
             .ok();
 
-        let resize = compile_resize_program(
-                renderer,
-                include_str!("resize.frag")
-            )
+        let resize = compile_resize_program(renderer, include_str!("resize.frag"))
             .map_err(|err| {
                 warn!("error compiling resize shader: {err:?}");
             })

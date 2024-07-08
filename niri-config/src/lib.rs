@@ -422,8 +422,8 @@ pub struct Gradient {
     pub angle: i16,
     #[knuffel(property, default)]
     pub relative_to: GradientRelativeTo,
-    #[knuffel(property, str)]
-    pub _in: GradientInterpolation,
+    #[knuffel(property(name="in"), str)]
+    pub in_: GradientInterpolation,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -433,35 +433,22 @@ pub enum GradientRelativeTo {
     WorkspaceView,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct GradientInterpolation {
-    #[knuffel(property, default)]
     pub color_space: GradientColorSpace,
-    #[knuffel(property, default)]
     pub hue_interpol: HueInterpolation
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum GradientColorSpace {
     #[default]
     Srgb,
     SrgbLinear,
-    DisplayP3,
-    A98Rgb,
-    ProphotoRgb,
-    Rec2020,
-    Lab,
     Oklab,
-    Xyz,
-    XyzD50,
-    XyzD65,
-    Hsl,
-    Hwb,
-    Lch,
     Oklch
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum HueInterpolation {
     #[default]
     Shorter,
@@ -1447,24 +1434,14 @@ impl FromStr for GradientInterpolation {
         let mut iter = s.split_whitespace();
         let in_part1 = iter.next();
         let in_part2 = iter.next();
+        let in_part3 = iter.next();
 
         let color = if in_part1 != None {
             let in_str = in_part1.unwrap();  
             match in_str {
                 "srgb" => GradientColorSpace::Srgb,
                 "srgb-linear" => GradientColorSpace::SrgbLinear,
-                "display-p3" => GradientColorSpace::DisplayP3,
-                "a98-rgb" => GradientColorSpace::A98Rgb,
-                "prophoto-rgb" => GradientColorSpace::ProphotoRgb,
-                "rec2020" => GradientColorSpace::Rec2020,
-                "lab" => GradientColorSpace::Lab,
                 "oklab" => GradientColorSpace::Oklab,
-                "xyz" => GradientColorSpace::Xyz,
-                "xyz-d50" => GradientColorSpace::XyzD50,
-                "xyz-d65" => GradientColorSpace::XyzD65,
-                "hsl" => GradientColorSpace::Hsl,
-                "hwb" => GradientColorSpace::Hwb,
-                "lch" => GradientColorSpace::Lch,
                 "oklch" => GradientColorSpace::Oklch,
                 &_ => return Err(miette!("Invalid color-space: {in_str}"))
             }
@@ -1472,14 +1449,22 @@ impl FromStr for GradientInterpolation {
             GradientColorSpace::Srgb
         };
 
-        let interpolation = if in_part2 != None {
+        let interpolation = if color == GradientColorSpace::Oklch && in_part2 != None {
             let in_str = in_part2.unwrap();
-            match in_str {
-                "shorter" => HueInterpolation::Shorter,
-                "longer" => HueInterpolation::Longer,
-                "increasing" => HueInterpolation::Increasing,
-                "decreasing" => HueInterpolation::Decreasing,
-                &_ => return Err(miette!("Invalid hue-interpolation: {in_str}"))
+            if in_part3 == None || in_part3.unwrap() != "hue" {
+                return Err(miette!("Invalid hue-interpolation: {in_str}  you may be missing 'hue' at the end."))
+            } else if iter.next() == None {
+                match in_str {
+                    "shorter" => HueInterpolation::Shorter,
+                    "longer" => HueInterpolation::Longer,
+                    "increasing" => HueInterpolation::Increasing,
+                    "decreasing" => HueInterpolation::Decreasing,
+                    &_ => return Err(miette!("Invalid hue-interpolation: {in_str}"))
+                }
+            } else {
+                // this is a placeholder and should be changed if anything is added to in for
+                // gradients 
+                return Err(miette!("there seems to be a value after ’hue’ at ’in’ "))
             }
         } else {
             HueInterpolation::Shorter
