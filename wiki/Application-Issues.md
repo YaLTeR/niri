@@ -20,7 +20,7 @@ Both of these can be fixed by resizing the new Chromium window.
 
 There's [a bug](https://github.com/wez/wezterm/issues/4708) in WezTerm that it waits for a zero-sized Wayland configure event, so its window never shows up in niri. To work around it, put this window rule in the niri config (included in the default config):
 
-```
+```kdl
 window-rule {
     match app-id=r#"^org\.wezfurlong\.wezterm$"#
     default-column-width {}
