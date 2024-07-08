@@ -571,6 +571,8 @@ pub struct Animations {
     pub window_resize: WindowResizeAnim,
     #[knuffel(child, default)]
     pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
+    #[knuffel(child, default)]
+    pub screenshot_ui_open: ScreenshotUiOpenAnim,
 }
 
 impl Default for Animations {
@@ -585,6 +587,7 @@ impl Default for Animations {
             window_close: Default::default(),
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
+            screenshot_ui_open: Default::default(),
         }
     }
 }
@@ -712,6 +715,21 @@ impl Default for ConfigNotificationOpenCloseAnim {
                 damping_ratio: 0.6,
                 stiffness: 1000,
                 epsilon: 0.001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScreenshotUiOpenAnim(pub Animation);
+
+impl Default for ScreenshotUiOpenAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Easing(EasingParams {
+                duration_ms: 200,
+                curve: AnimationCurve::EaseOutQuad,
             }),
         })
     }
@@ -1788,6 +1806,21 @@ where
 }
 
 impl<S> knuffel::Decode<S> for ConfigNotificationOpenCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ScreenshotUiOpenAnim
 where
     S: knuffel::traits::ErrorSpan,
 {

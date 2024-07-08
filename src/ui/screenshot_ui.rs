@@ -1,11 +1,13 @@
+use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::iter::zip;
-use std::mem;
+use std::rc::Rc;
+use std::time::Duration;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
-use niri_config::Action;
+use niri_config::{Action, Config};
 use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
@@ -18,6 +20,7 @@ use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 
+use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -42,15 +45,19 @@ const TEXT_SHOW_P: &str =
 // allows only single-output selections for now.
 //
 // As a consequence of this, selection coordinates are in output-local coordinate space.
+#[allow(clippy::large_enum_variant)]
 pub enum ScreenshotUi {
     Closed {
         last_selection: Option<(WeakOutput, Rectangle<i32, Physical>)>,
+        config: Rc<RefCell<Config>>,
     },
     Open {
         selection: (Output, Point<i32, Physical>, Point<i32, Physical>),
         output_data: HashMap<Output, OutputData>,
         mouse_down: bool,
         show_pointer: bool,
+        open_anim: Animation,
+        config: Rc<RefCell<Config>>,
     },
 }
 
@@ -79,9 +86,10 @@ niri_render_elements! {
 }
 
 impl ScreenshotUi {
-    pub fn new() -> Self {
+    pub fn new(config: Rc<RefCell<Config>>) -> Self {
         Self::Closed {
             last_selection: None,
+            config,
         }
     }
 
@@ -96,7 +104,11 @@ impl ScreenshotUi {
             return false;
         }
 
-        let Self::Closed { last_selection } = self else {
+        let Self::Closed {
+            last_selection,
+            config,
+        } = self
+        else {
             return false;
         };
 
@@ -167,11 +179,18 @@ impl ScreenshotUi {
             })
             .collect();
 
+        let open_anim = {
+            let c = config.borrow();
+            Animation::new(0., 1., 0., c.animations.screenshot_ui_open.0)
+        };
+
         *self = Self::Open {
             selection,
             output_data,
             mouse_down: false,
             show_pointer: true,
+            open_anim,
+            config: config.clone(),
         };
 
         self.update_buffers();
@@ -180,13 +199,11 @@ impl ScreenshotUi {
     }
 
     pub fn close(&mut self) -> bool {
-        let selection = match mem::take(self) {
-            Self::Open { selection, .. } => selection,
-            closed @ Self::Closed { .. } => {
-                // Put it back.
-                *self = closed;
-                return false;
-            }
+        let Self::Open {
+            selection, config, ..
+        } = self
+        else {
+            return false;
         };
 
         let last_selection = Some((
@@ -194,7 +211,10 @@ impl ScreenshotUi {
             rect_from_corner_points(selection.1, selection.2),
         ));
 
-        *self = Self::Closed { last_selection };
+        *self = Self::Closed {
+            last_selection,
+            config: config.clone(),
+        };
 
         true
     }
@@ -207,6 +227,22 @@ impl ScreenshotUi {
 
     pub fn is_open(&self) -> bool {
         matches!(self, ScreenshotUi::Open { .. })
+    }
+
+    pub fn advance_animations(&mut self, current_time: Duration) {
+        let Self::Open { open_anim, .. } = self else {
+            return;
+        };
+
+        open_anim.set_current_time(current_time);
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        let Self::Open { open_anim, .. } = self else {
+            return false;
+        };
+
+        !open_anim.is_done()
     }
 
     fn update_buffers(&mut self) {
@@ -293,6 +329,7 @@ impl ScreenshotUi {
             output_data,
             show_pointer,
             mouse_down,
+            open_anim,
             ..
         } = self
         else {
@@ -306,6 +343,7 @@ impl ScreenshotUi {
         };
 
         let scale = output_data.scale;
+        let progress = open_anim.clamped_value().clamp(0., 1.) as f32;
 
         // The help panel goes on top.
         if let Some((show, hide)) = &output_data.panel {
@@ -324,7 +362,7 @@ impl ScreenshotUi {
             let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                 buffer.clone(),
                 location,
-                alpha,
+                alpha * progress,
                 None,
                 None,
                 Kind::Unspecified,
@@ -337,7 +375,7 @@ impl ScreenshotUi {
             SolidColorRenderElement::from_buffer(
                 buffer,
                 loc.to_f64().to_logical(scale),
-                1.,
+                progress,
                 Kind::Unspecified,
             )
             .into()
@@ -527,12 +565,6 @@ impl ScreenshotUi {
         self.update_buffers();
 
         true
-    }
-}
-
-impl Default for ScreenshotUi {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

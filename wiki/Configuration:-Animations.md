@@ -45,6 +45,11 @@ animations {
     config-notification-open-close {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
     }
+
+    screenshot-ui-open {
+        duration-ms 200
+        curve "ease-out-quad"
+    }
 }
 ```
 
@@ -350,6 +355,21 @@ This one uses an underdamped spring by default (`damping-ratio=0.6`) which cause
 animations {
     config-notification-open-close {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
+    }
+}
+```
+
+#### `screenshot-ui-open`
+
+<sup>Since: 0.1.8</sup>
+
+The open (fade-in) animation of the screenshot UI.
+
+```
+animations {
+    screenshot-ui-open {
+        duration-ms 200
+        curve "ease-out-quad"
     }
 }
 ```
