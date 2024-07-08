@@ -2,9 +2,8 @@ use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::iter::zip;
-use std::rc::Rc;
 
-use niri_config::{Action, Config, Key, Modifiers, Trigger};
+use niri_config::{Action, Bind, Key, Modifiers, Trigger};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::Kind;
@@ -29,7 +28,6 @@ const TITLE: &str = "Important Hotkeys";
 
 pub struct HotkeyOverlay {
     is_open: bool,
-    config: Rc<RefCell<Config>>,
     comp_mod: CompositorMod,
     buffers: RefCell<HashMap<WeakOutput, RenderedOverlay>>,
 }
@@ -39,10 +37,9 @@ pub struct RenderedOverlay {
 }
 
 impl HotkeyOverlay {
-    pub fn new(config: Rc<RefCell<Config>>, comp_mod: CompositorMod) -> Self {
+    pub fn new(comp_mod: CompositorMod) -> Self {
         Self {
             is_open: false,
-            config,
             comp_mod,
             buffers: RefCell::new(HashMap::new()),
         }
@@ -78,6 +75,7 @@ impl HotkeyOverlay {
         &self,
         renderer: &mut R,
         output: &Output,
+        binds: &[Bind],
     ) -> Option<PrimaryGpuTextureRenderElement> {
         if !self.is_open {
             return None;
@@ -101,7 +99,7 @@ impl HotkeyOverlay {
 
         let rendered = buffers.entry(weak).or_insert_with(|| {
             let renderer = renderer.as_gles_renderer();
-            render(renderer, &self.config.borrow(), self.comp_mod, scale)
+            render(renderer, binds, self.comp_mod, scale)
                 .unwrap_or_else(|_| RenderedOverlay { buffer: None })
         });
         let buffer = rendered.buffer.as_ref()?;
@@ -127,7 +125,7 @@ impl HotkeyOverlay {
 
 fn render(
     renderer: &mut GlesRenderer,
-    config: &Config,
+    binds: &[niri_config::Bind],
     comp_mod: CompositorMod,
     scale: f64,
 ) -> anyhow::Result<RenderedOverlay> {
@@ -142,8 +140,6 @@ fn render(
     // target_size.w -= margin * 2;
     // target_size.h -= margin * 2;
     // anyhow::ensure!(target_size.w > 0 && target_size.h > 0);
-
-    let binds = &config.binds.0;
 
     // Collect actions that we want to show.
     let mut actions = vec![&Action::ShowHotkeyOverlay];
@@ -232,9 +228,7 @@ fn render(
     let strings = actions
         .into_iter()
         .map(|action| {
-            let key = config
-                .binds
-                .0
+            let key = binds
                 .iter()
                 .find(|bind| bind.action == *action)
                 .map(|bind| key_name(comp_mod, &bind.key))

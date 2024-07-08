@@ -48,8 +48,8 @@ pub struct Config {
     pub environment: Environment,
     #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
-    #[knuffel(child, default)]
-    pub binds: Binds,
+    #[knuffel(children(name = "binds"))]
+    pub binds: Vec<Binds>,
     #[knuffel(child, default)]
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
@@ -906,8 +906,8 @@ pub struct BorderRule {
     pub inactive_gradient: Option<Gradient>,
 }
 
-#[derive(Debug, Default, PartialEq)]
-pub struct Binds(pub Vec<Bind>);
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct Binds(pub String, pub Vec<Bind>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
@@ -1039,6 +1039,7 @@ pub enum Action {
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,
     MoveWorkspaceToMonitorUp,
+    BindingMode(#[knuffel(argument, str)] String),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -2187,7 +2188,11 @@ where
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
-        expect_only_children(node, ctx);
+        let mode_name = node
+            .arguments
+            .first()
+            .map(|e| knuffel::DecodeScalar::decode(e, ctx))
+            .unwrap_or_else(|| Ok(String::from("default")))?;
 
         let mut seen_keys = HashSet::new();
 
@@ -2237,7 +2242,7 @@ where
             }
         }
 
-        Ok(Self(binds))
+        Ok(Self(mode_name, binds))
     }
 }
 
@@ -2915,100 +2920,105 @@ mod tests {
                         open_on_output: None,
                     },
                 ],
-                binds: Binds(vec![
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::Keysym(Keysym::t),
-                            modifiers: Modifiers::COMPOSITOR,
+                binds: vec![Binds(
+                    "default".to_string(),
+                    vec![
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::Keysym(Keysym::t),
+                                modifiers: Modifiers::COMPOSITOR,
+                            },
+                            action: Action::Spawn(vec!["alacritty".to_owned()]),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: true,
                         },
-                        action: Action::Spawn(vec!["alacritty".to_owned()]),
-                        repeat: true,
-                        cooldown: None,
-                        allow_when_locked: true,
-                    },
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::Keysym(Keysym::q),
-                            modifiers: Modifiers::COMPOSITOR,
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::Keysym(Keysym::q),
+                                modifiers: Modifiers::COMPOSITOR,
+                            },
+                            action: Action::CloseWindow,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
                         },
-                        action: Action::CloseWindow,
-                        repeat: true,
-                        cooldown: None,
-                        allow_when_locked: false,
-                    },
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::Keysym(Keysym::h),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::Keysym(Keysym::h),
+                                modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                            },
+                            action: Action::FocusMonitorLeft,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
                         },
-                        action: Action::FocusMonitorLeft,
-                        repeat: true,
-                        cooldown: None,
-                        allow_when_locked: false,
-                    },
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::Keysym(Keysym::l),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::Keysym(Keysym::l),
+                                modifiers: Modifiers::COMPOSITOR
+                                    | Modifiers::SHIFT
+                                    | Modifiers::CTRL,
+                            },
+                            action: Action::MoveWindowToMonitorRight,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
                         },
-                        action: Action::MoveWindowToMonitorRight,
-                        repeat: true,
-                        cooldown: None,
-                        allow_when_locked: false,
-                    },
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::Keysym(Keysym::comma),
-                            modifiers: Modifiers::COMPOSITOR,
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::Keysym(Keysym::comma),
+                                modifiers: Modifiers::COMPOSITOR,
+                            },
+                            action: Action::ConsumeWindowIntoColumn,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
                         },
-                        action: Action::ConsumeWindowIntoColumn,
-                        repeat: true,
-                        cooldown: None,
-                        allow_when_locked: false,
-                    },
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::Keysym(Keysym::_1),
-                            modifiers: Modifiers::COMPOSITOR,
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::Keysym(Keysym::_1),
+                                modifiers: Modifiers::COMPOSITOR,
+                            },
+                            action: Action::FocusWorkspace(WorkspaceReference::Index(1)),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
                         },
-                        action: Action::FocusWorkspace(WorkspaceReference::Index(1)),
-                        repeat: true,
-                        cooldown: None,
-                        allow_when_locked: false,
-                    },
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::Keysym(Keysym::_1),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::Keysym(Keysym::_1),
+                                modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                            },
+                            action: Action::FocusWorkspace(WorkspaceReference::Name(
+                                "workspace-1".to_string(),
+                            )),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
                         },
-                        action: Action::FocusWorkspace(WorkspaceReference::Name(
-                            "workspace-1".to_string(),
-                        )),
-                        repeat: true,
-                        cooldown: None,
-                        allow_when_locked: false,
-                    },
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::Keysym(Keysym::e),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::Keysym(Keysym::e),
+                                modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                            },
+                            action: Action::Quit(true),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
                         },
-                        action: Action::Quit(true),
-                        repeat: true,
-                        cooldown: None,
-                        allow_when_locked: false,
-                    },
-                    Bind {
-                        key: Key {
-                            trigger: Trigger::WheelScrollDown,
-                            modifiers: Modifiers::COMPOSITOR,
+                        Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollDown,
+                                modifiers: Modifiers::COMPOSITOR,
+                            },
+                            action: Action::FocusWorkspaceDown,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(150)),
+                            allow_when_locked: false,
                         },
-                        action: Action::FocusWorkspaceDown,
-                        repeat: true,
-                        cooldown: Some(Duration::from_millis(150)),
-                        allow_when_locked: false,
-                    },
-                ]),
+                    ],
+                )],
                 debug: DebugConfig {
                     render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
@@ -3102,5 +3112,21 @@ mod tests {
         let config = Config::parse("config.kdl", "").unwrap();
         assert_eq!(config.input.keyboard.repeat_delay, 600);
         assert_eq!(config.input.keyboard.repeat_rate, 25);
+    }
+
+    #[test]
+    fn binding_modes() {
+        Config::parse(
+            "",
+            r##"
+		binds {
+			A { binding-mode "test"; }
+		}
+		binds "test" {
+			B { binding-mode "default"; }
+		}
+	    "##,
+        )
+        .unwrap();
     }
 }

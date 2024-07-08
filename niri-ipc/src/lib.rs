@@ -37,6 +37,8 @@ pub enum Request {
     FocusedOutput,
     /// Respond with an error (for testing error handling).
     ReturnError,
+    /// Request name of the current binding mode.
+    BindingMode,
 }
 
 /// Reply from niri to client.
@@ -68,6 +70,8 @@ pub enum Response {
     Workspaces(Vec<Workspace>),
     /// Information about the focused output.
     FocusedOutput(Option<Output>),
+    /// Name of the current binding mode.
+    BindingMode(String),
 }
 
 /// Actions that niri can perform.

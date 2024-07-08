@@ -152,6 +152,8 @@ const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
 
+    pub binding_mode: niri_config::Binds,
+
     /// Output config from the config file.
     ///
     /// This does not include transient output config changes done via IPC. It is only used when
@@ -992,9 +994,9 @@ impl State {
         if config.binds != old_config.binds {
             self.niri.hotkey_overlay.on_hotkey_config_updated();
             self.niri.mods_with_wheel_binds =
-                mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
+                mods_with_wheel_binds(self.backend.mod_key(), &self.niri.binding_mode);
             self.niri.mods_with_finger_scroll_binds =
-                mods_with_finger_scroll_binds(self.backend.mod_key(), &config.binds);
+                mods_with_finger_scroll_binds(self.backend.mod_key(), &self.niri.binding_mode);
         }
 
         if config.window_rules != old_config.window_rules {
@@ -1477,6 +1479,13 @@ impl Niri {
         let config_ = config.borrow();
         let config_file_output_config = config_.outputs.clone();
 
+        let binding_mode = config_
+            .binds
+            .iter()
+            .find(|e| e.0 == "default")
+            .cloned()
+            .unwrap_or_else(|| niri_config::Binds(String::from("default"), vec![]));
+
         let layout = Layout::new(&config_);
 
         let compositor_state = CompositorState::new_v6::<State>(&display_handle);
@@ -1585,14 +1594,14 @@ impl Niri {
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
-        let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
+        let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &binding_mode);
         let mods_with_finger_scroll_binds =
-            mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
+            mods_with_finger_scroll_binds(backend.mod_key(), &binding_mode);
 
         let screenshot_ui = ScreenshotUi::new(config.clone());
         let config_error_notification = ConfigErrorNotification::new(config.clone());
 
-        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
+        let mut hotkey_overlay = HotkeyOverlay::new(backend.mod_key());
         if !config_.hotkey_overlay.skip_at_startup {
             hotkey_overlay.show();
         }
@@ -1674,6 +1683,7 @@ impl Niri {
         drop(config_);
         Self {
             config,
+            binding_mode,
             config_file_output_config,
 
             event_loop,
@@ -2880,7 +2890,10 @@ impl Niri {
         }
 
         // Draw the hotkey overlay on top.
-        if let Some(element) = self.hotkey_overlay.render(renderer, output) {
+        if let Some(element) = self
+            .hotkey_overlay
+            .render(renderer, output, &self.binding_mode.1)
+        {
             elements.push(element.into());
         }
 
