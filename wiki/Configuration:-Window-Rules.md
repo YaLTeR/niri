@@ -7,7 +7,7 @@ Window rules are processed in order of appearance in the config file.
 This means that you can put more generic rules first, then override them for specific windows later.
 For example:
 
-```
+```kdl
 // Set open-maximized to true for all windows.
 window-rule {
     open-maximized true
@@ -26,7 +26,7 @@ window-rule {
 
 Here are all matchers and properties that a window rule could have:
 
-```
+```kdl
 window-rule {
     match title="Firefox"
     match app-id="Alacritty"
@@ -77,7 +77,7 @@ window-rule {
 Each window rule can have several `match` and `exclude` directives.
 In order for the rule to apply, a window needs to match *any* of the `match` directives, and *none* of the `exclude` directives.
 
-```
+```kdl
 window-rule {
     // Match all Telegram windows...
     match app-id=r#"^org\.telegram\.desktop$"#
@@ -93,7 +93,7 @@ window-rule {
 Match and exclude directives have the same syntax.
 There can be multiple *matchers* in one directive, then the window should match all of them for the directive to apply.
 
-```
+```kdl
 window-rule {
     // Match Firefox windows with Gmail in title.
     match app-id="org.mozilla.firefox" title="Gmail"
@@ -121,7 +121,7 @@ Let's look at the matchers in more detail.
 These are regular expressions that should match anywhere in the window title and app ID respectively.
 You can read about the supported regular expression syntax [here](https://docs.rs/regex/latest/regex/#syntax).
 
-```
+```kdl
 // Match windows with title containing "Mozilla Firefox",
 // or windows with app ID containing "Alacritty".
 window-rule {
@@ -132,7 +132,7 @@ window-rule {
 
 Raw KDL strings can be helpful for writing out regular expressions:
 
-```
+```kdl
 window-rule {
     exclude app-id=r#"^org\.keepassxc\.KeePassXC$"#
 }
@@ -157,7 +157,7 @@ Matches active windows (same windows that have the active border / focus ring co
 Every workspace on the focused monitor will have one active window.
 This means that you will usually have multiple active windows (one per workspace), and when you switch between workspaces, you can see two active windows at once.
 
-```
+```kdl
 window-rule {
     match is-active=true
 }
@@ -172,7 +172,7 @@ Contrary to `is-active`, there can only be a single focused window.
 Also, when opening a layer-shell application launcher or pop-up menu, the keyboard focus goes to layer-shell.
 While layer-shell has the keyboard focus, windows will not match this rule.
 
-```
+```kdl
 window-rule {
     match is-focused=true
 }
@@ -188,7 +188,7 @@ Matches the window that is the "active" window in its column.
 Contrary to `is-active`, there is always one `is-active-in-column` window in each column.
 It is the window that was last focused in the column, i.e. the one that will gain focus if this column is focused.
 
-```
+```kdl
 window-rule {
     match is-active-in-column=true
 }
@@ -203,7 +203,7 @@ Matches during the first 60 seconds after starting niri.
 
 This is useful for properties like `open-on-output` which you may want to apply only right after starting niri.
 
-```
+```kdl
 // Open windows on the HDMI-A-1 monitor at niri startup, but not afterwards.
 window-rule {
     match at-startup=true
@@ -221,7 +221,7 @@ To be precise, they apply at the point when niri sends the initial configure req
 
 Set the default width for the new window.
 
-```
+```kdl
 // Give Blender and GIMP some guaranteed width on opening.
 window-rule {
     match app-id="^blender$"
@@ -242,7 +242,7 @@ If such an output does not exist, the window will open on the currently focused 
 
 If the window opens on an output that is not currently focused, the window will not be automatically focused.
 
-```
+```kdl
 // Open Firefox and Telegram (but not its Media Viewer)
 // on a specific monitor.
 window-rule {
@@ -264,7 +264,7 @@ If such a workspace does not exist, the window will open on the currently focuse
 
 If the window opens on an output that is not currently focused, the window will not be automatically focused.
 
-```
+```kdl
 // Open Fractal on the "chat" workspace.
 window-rule {
     match app-id=r#"^org\.gnome\.Fractal$"#
@@ -277,7 +277,7 @@ window-rule {
 
 Make the window open as a maximized column.
 
-```
+```kdl
 // Maximize Firefox by default.
 window-rule {
     match app-id=r#"^org\.mozilla\.firefox$"#
@@ -290,7 +290,7 @@ window-rule {
 
 Make the window open fullscreen.
 
-```
+```kdl
 window-rule {
     open-fullscreen true
 }
@@ -298,7 +298,7 @@ window-rule {
 
 You can also set this to `false` to *prevent* a window from opening fullscreen.
 
-```
+```kdl
 // Make the Telegram media viewer open in windowed mode.
 window-rule {
     match app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
@@ -329,7 +329,7 @@ To preview and set up this rule, check the `preview-render` option in the debug 
 The built-in screenshot UI is not affected by this problem though.
 If you open the screenshot UI while screencasting, you will be able to select the area to screenshot while seeing all windows normally, but on a screencast the selection UI will display with windows blocked out.
 
-```
+```kdl
 // Block out password managers from screencasts.
 window-rule {
     match app-id=r#"^org\.keepassxc\.KeePassXC$"#
@@ -345,7 +345,7 @@ This way you avoid accidentally showing the window on a screencast when opening 
 This setting will still let you use the interactive built-in screenshot UI, but it will block out the window from the fully automatic screenshot actions, such as `screenshot-screen` and `screenshot-window`.
 The reasoning is that with an interactive selection, you can make sure that you avoid screenshotting sensitive content.
 
-```
+```kdl
 window-rule {
     block-out-from "screen-capture"
 }
@@ -356,11 +356,11 @@ window-rule {
 >
 > For example, you might try to block out specific Firefox tabs like this:
 >
-> ```
+> ```kdl
 > window-rule {
 >     // Doesn't quite work! Try to block out the Gmail tab.
 >     match app-id=r#"^org\.mozilla\.firefox$"# title="- Gmail "
-> 
+>
 >     block-out-from "screencast"
 > }
 > ```
@@ -382,7 +382,7 @@ Opacity is applied to every surface of the window individually, so subsurfaces a
 
 Also, focus ring and border with background will show through semitransparent windows (see `prefer-no-csd` and the `draw-border-with-background` window rule below).
 
-```
+```kdl
 // Make inactive windows semitransparent.
 window-rule {
     match is-active=false
@@ -400,11 +400,11 @@ Set this to `false` to draw them as borders around the window even for windows w
 
 This property can be useful for rectangular windows that do not support the xdg-decoration protocol.
 
-| With Background | Without Background |
-| --------------- | ------------------ |
+| With Background                                  | Without Background                                  |
+| ------------------------------------------------ | --------------------------------------------------- |
 | ![](./img/simple-egl-border-with-background.png) | ![](./img/simple-egl-border-without-background.png) |
 
-```
+```kdl
 window-rule {
     draw-border-with-background false
 }
@@ -421,7 +421,7 @@ These rules have the same options as the normal focus ring and border config in 
 However, in addition to `off` to disable the border/focus ring, this window rule has an `on` flag that enables the border/focus ring for the window even if it was otherwise disabled.
 The `on` flag has precedence over the `off` flag, in case both are set.
 
-```
+```kdl
 window-rule {
     focus-ring {
         off
@@ -446,7 +446,7 @@ Set the corner radius of the window.
 On its own, this setting will only affect the border and the focus ring—they will round their corners to match the geometry corner radius.
 If you'd like to force-round the corners of the window itself, set `clip-to-geometry true` in addition to this setting.
 
-```
+```kdl
 window-rule {
     geometry-corner-radius 12
 }
@@ -459,7 +459,7 @@ The radius is set in logical pixels, and controls the radius of the window itsel
 Instead of one radius, you can set four, for each corner.
 The order is the same as in CSS: top-left, top-right, bottom-right, bottom-left.
 
-```
+```kdl
 window-rule {
     geometry-corner-radius 8 8 0 0
 }
@@ -479,7 +479,7 @@ This will cut out any client-side window shadows, and also round window corners 
 
 ![](./img/clip-to-geometry.png)
 
-```
+```kdl
 window-rule {
     clip-to-geometry true
 }
@@ -489,7 +489,7 @@ Enable border, set `geometry-corner-radius` and `clip-to-geometry`, and you've g
 
 ![](./img/border-radius-clip.png)
 
-```
+```kdl
 prefer-no-csd
 
 layout {
@@ -521,7 +521,7 @@ These values instruct niri to never ask the window to be smaller than the minimu
 >
 > This is a limitation of niri's window height distribution algorithm.
 
-```
+```kdl
 window-rule {
     min-width 100
     max-width 200
@@ -530,7 +530,7 @@ window-rule {
 }
 ```
 
-```
+```kdl
 // Fix OBS with server-side decorations missing a minimum width.
 window-rule {
     match app-id=r#"^com\.obsproject\.Studio$"#

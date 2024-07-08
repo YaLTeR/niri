@@ -4,7 +4,7 @@ In the `layout {}` section you can change various settings that influence how wi
 
 Here are the contents of this section at a glance:
 
-```
+```kdl
 layout {
     gaps 16
     center-focused-column "never"
@@ -52,7 +52,7 @@ Set gaps around (inside and outside) windows in logical pixels.
 The value will be rounded to physical pixels according to the scale factor of every output.
 For example, `gaps 0.5` on an output with `scale 2` will result in one physical-pixel wide gaps.
 
-```
+```kdl
 layout {
     gaps 16
 }
@@ -67,7 +67,7 @@ This can be set to:
 - `"always"`, the focused column will always be centered.
 - `"on-overflow"`, focusing a column will center it if it doesn't fit on screen together with the previously focused column.
 
-```
+```kdl
 layout {
     center-focused-column "always"
 }
@@ -83,7 +83,7 @@ The default preset widths are <sup>1</sup>&frasl;<sub>3</sub>, <sup>1</sup>&fras
 
 `fixed` sets the width in logical pixels exactly.
 
-```
+```kdl
 layout {
     // Cycle between 1/3, 1/2, 2/3 of the output, and a fixed 1280 logical pixels.
     preset-column-widths {
@@ -108,7 +108,7 @@ Set the default width of the new windows.
 
 The syntax is the same as in `preset-column-widths` above.
 
-```
+```kdl
 layout {
     // Open new windows sized 1/3 of the output.
     default-column-width { proportion 0.33333; }
@@ -117,7 +117,7 @@ layout {
 
 You can also leave the brackets empty, then the windows themselves will decide their initial width.
 
-```
+```kdl
 layout {
     // New windows decide their initial width themselves.
     default-column-width {}
@@ -139,23 +139,23 @@ They are very similar and have the same options.
 
 The difference is that the focus ring is drawn only around the active window, whereas borders are drawn around all windows and affect their sizes (windows shrink to make space for the borders).
 
-| Focus Ring | Border |
-| ---------- | ------ |
+| Focus Ring                | Border                |
+| ------------------------- | --------------------- |
 | ![](./img/focus-ring.png) | ![](./img/border.png) |
 
 > [!TIP]
 > By default, focus ring and border are rendered as a solid background rectangle behind windows.
 > That is, they will show up through semitransparent windows.
 > This is because windows using client-side decorations can have an arbitrary shape.
-> 
+>
 > If you don't like that, you should uncomment the `prefer-no-csd` setting at the [top level](./Configuration:-Miscellaneous.md) of the config.
 > Niri will draw focus rings and borders *around* windows that agree to omit their client-side decorations.
-> 
+>
 > Alternatively, you can override this behavior with the `draw-border-with-background` [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules).
 
 Focus ring and border have the following options.
 
-```
+```kdl
 layout {
     // focus-ring has the same options.
     border {
@@ -182,7 +182,7 @@ Set the thickness of the border in logical pixels.
 The value will be rounded to physical pixels according to the scale factor of every output.
 For example, `width 0.5` on an output with `scale 2` will result in one physical-pixel thick borders.
 
-```
+```kdl
 layout {
     border {
         width 2
@@ -213,7 +213,7 @@ Gradients are rendered the same as CSS [`linear-gradient(angle, from, to)`](http
 The angle works the same as in `linear-gradient`, and is optional, defaulting to `180` (top-to-bottom gradient).
 You can use any CSS linear-gradient tool on the web to set these up, like [this one](https://www.css-gradient.com/).
 
-```
+```kdl
 layout {
     focus-ring {
         active-gradient from="#80c8ff" to="#bbddff" angle=45
@@ -225,11 +225,11 @@ Gradients can be colored relative to windows individually (the default), or to t
 To do that, set `relative-to="workspace-view"`.
 Here's a visual example:
 
-| Default  | `relative-to="workspace-view"` |
-| --- | --- |
+| Default                          | `relative-to="workspace-view"`                      |
+| -------------------------------- | --------------------------------------------------- |
 | ![](./img/gradients-default.png) | ![](./img/gradients-relative-to-workspace-view.png) |
 
-```
+```kdl
 layout {
     border {
         active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
@@ -251,7 +251,7 @@ Top and bottom struts will simply add outer gaps in addition to the area occupie
 The value will be rounded to physical pixels according to the scale factor of every output.
 For example, `top 0.5` on an output with `scale 2` will result in one physical-pixel wide top strut.
 
-```
+```kdl
 layout {
     struts {
         left 64

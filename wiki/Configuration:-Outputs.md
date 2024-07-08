@@ -5,7 +5,7 @@ You can disable or adjust this with `output` sections.
 
 Here's what it looks like with all properties written out:
 
-```
+```kdl
 output "eDP-1" {
     // off
     mode "1920x1080@120.030"
@@ -30,7 +30,7 @@ Matching by output manufacturer and model is planned, but blocked on Smithay ado
 
 This flag turns off that output entirely.
 
-```
+```kdl
 // Turn off that monitor.
 output "HDMI-A-1" {
     off
@@ -49,7 +49,7 @@ If the mode is omitted altogether or doesn't work, niri will try to pick one aut
 Run `niri msg outputs` while inside a niri instance to list all outputs and their modes.
 The refresh rate that you set here must match *exactly*, down to the three decimal digits, to what you see in `niri msg outputs`.
 
-```
+```kdl
 // Set a high refresh rate for this monitor.
 // High refresh rate monitors tend to use 60 Hz as their preferred mode,
 // requiring a manual mode setting.
@@ -76,7 +76,7 @@ Set the scale of the monitor.
 
 <sup>Since: 0.1.7</sup> Scale below 0 and above 10 will now fail during config parsing. Scale was previously clamped to these values anyway.
 
-```
+```kdl
 output "eDP-1" {
     scale 2.0
 }
@@ -89,7 +89,7 @@ Rotate the output counter-clockwise.
 Valid values are: `"normal"`, `"90"`, `"180"`, `"270"`, `"flipped"`, `"flipped-90"`, `"flipped-180"` and `"flipped-270"`.
 Values with `flipped` additionally flip the output.
 
-```
+```kdl
 output "HDMI-A-1" {
     transform "90"
 }
@@ -107,7 +107,7 @@ The cursor can only move between directly adjacent outputs.
 > For example, a 3840×2160 output with scale 2.0 will have a logical size of 1920×1080, so to put another output directly adjacent to it on the right, set its x to 1920.
 > If the position is unset or results in an overlap, the output is instead placed automatically.
 
-```
+```kdl
 output "HDMI-A-1" {
     position x=1280 y=0
 }
@@ -140,7 +140,7 @@ You can check whether an output supports VRR in `niri msg outputs`.
 >
 > Some monitors will continuously modeset (flash black) with VRR enabled; I'm not sure if there's a way to fix it.
 
-```
+```kdl
 output "HDMI-A-1" {
     variable-refresh-rate
 }

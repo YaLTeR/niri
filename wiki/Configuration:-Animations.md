@@ -5,7 +5,7 @@ Additionally, you can disable or slow down all animations at once.
 
 Here's a quick glance at the available animations with their default values.
 
-```
+```kdl
 animations {
     // Uncomment to turn off all animations.
     // You can also put "off" into each individual animation to disable it.
@@ -67,7 +67,7 @@ To use this animation, set the following parameters:
 - `duration-ms`: duration of the animation in milliseconds.
 - `curve`: the easing curve to use.
 
-```
+```kdl
 animations {
     window-open {
         duration-ms 150
@@ -97,7 +97,7 @@ You can use the [Elastic](https://flathub.org/apps/app.drey.Elastic) app to help
 
 A spring animation is configured like this, with three mandatory parameters:
 
-```
+```kdl
 animations {
     workspace-switch {
         spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
@@ -134,7 +134,7 @@ Now let's go into more detail on the animations that you can configure.
 
 Animation when switching workspaces up and down, including after the vertical touchpad gesture (a spring is recommended).
 
-```
+```kdl
 animations {
     workspace-switch {
         spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
@@ -148,7 +148,7 @@ Window opening animation.
 
 This one uses an easing type by default.
 
-```
+```kdl
 animations {
     window-open {
         duration-ms 150
@@ -169,13 +169,13 @@ If a custom shader fails to compile, niri will print a warning and fall back to 
 When running niri as a systemd service, you can see the warnings in the journal: `journalctl -ef /usr/bin/niri`
 
 > [!WARNING]
-> 
+>
 > Custom shaders do not have a backwards compatibility guarantee.
 > I may need to change their interface as I'm developing new features.
 
 Example: open will fill the current geometry with a solid gradient that gradually fades in.
 
-```
+```kdl
 animations {
     window-open {
         duration-ms 250
@@ -208,7 +208,7 @@ Window closing animation.
 
 This one uses an easing type by default.
 
-```
+```kdl
 animations {
     window-close {
         duration-ms 150
@@ -229,13 +229,13 @@ If a custom shader fails to compile, niri will print a warning and fall back to 
 When running niri as a systemd service, you can see the warnings in the journal: `journalctl -ef /usr/bin/niri`
 
 > [!WARNING]
-> 
+>
 > Custom shaders do not have a backwards compatibility guarantee.
 > I may need to change their interface as I'm developing new features.
 
 Example: close will fill the current geometry with a solid gradient that gradually fades away.
 
-```
+```kdl
 animations {
     window-close {
         custom-shader r"
@@ -265,7 +265,7 @@ All horizontal camera view movement animations, such as:
 - When a new window appears off-screen and the camera scrolls to it.
 - After a horizontal touchpad gesture (a spring is recommended).
 
-```
+```kdl
 animations {
     horizontal-view-movement {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
@@ -288,7 +288,7 @@ Includes:
 
 This animation *does not* include the camera view movement, such as scrolling the workspace left and right.
 
-```
+```kdl
 animations {
     window-movement {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
@@ -305,7 +305,7 @@ Window resize animation.
 Only manual window resizes are animated, i.e. when you resize the window with `switch-preset-column-width` or `maximize-column`.
 Also, very small resizes (up to 10 pixels) are not animated.
 
-```
+```kdl
 animations {
     window-resize {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
@@ -325,13 +325,13 @@ If a custom shader fails to compile, niri will print a warning and fall back to 
 When running niri as a systemd service, you can see the warnings in the journal: `journalctl -ef /usr/bin/niri`
 
 > [!WARNING]
-> 
+>
 > Custom shaders do not have a backwards compatibility guarantee.
 > I may need to change their interface as I'm developing new features.
 
 Example: resize will show the next (after resize) window texture right away, stretched to the current geometry.
 
-```
+```kdl
 animations {
     window-resize {
         custom-shader r"
@@ -351,7 +351,7 @@ The open/close animation of the config parse error and new default config notifi
 
 This one uses an underdamped spring by default (`damping-ratio=0.6`) which causes a slight oscillation in the end.
 
-```
+```kdl
 animations {
     config-notification-open-close {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
@@ -365,7 +365,7 @@ animations {
 
 The open (fade-in) animation of the screenshot UI.
 
-```
+```kdl
 animations {
     screenshot-ui-open {
         duration-ms 200

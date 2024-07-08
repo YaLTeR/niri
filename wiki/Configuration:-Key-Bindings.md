@@ -8,7 +8,7 @@ Key bindings are declared in the `binds {}` section of the config.
 Each bind is a hotkey followed by one action enclosed in curly brackets.
 For example:
 
-```
+```kdl
 binds {
     Mod+Left { focus-column-left; }
     Super+Alt+L { spawn "swaylock"; }
@@ -53,7 +53,7 @@ For this reason, most of the default keys use the `Mod` modifier.
 <sup>Since: 0.1.8</sup> Binds will repeat by default (i.e. holding down a bind will make it trigger repeatedly).
 You can disable that for specific binds with `repeat=false`:
 
-```
+```kdl
 binds {
     Mod+T repeat=false { spawn "alacritty"; }
 }
@@ -61,7 +61,7 @@ binds {
 
 Binds can also have a cooldown, which will rate-limit the bind and prevent it from repeatedly triggering too quickly.
 
-```
+```kdl
 binds {
     Mod+T cooldown-ms=500 { spawn "alacritty"; }
 }
@@ -74,7 +74,7 @@ This is mostly useful for the scroll bindings.
 You can bind mouse wheel scroll ticks using the following syntax.
 These binds will change direction based on the `natural-scroll` setting.
 
-```
+```kdl
 binds {
     Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
     Mod+WheelScrollUp   cooldown-ms=150 { focus-workspace-up; }
@@ -88,7 +88,7 @@ Touchpad scrolling is continuous, so for these binds it is split into discrete i
 
 These binds are also affected by touchpad's `natural-scroll`, so these example binds are "inverted", since niri has `natural-scroll` enabled for touchpads by default.
 
-```
+```kdl
 binds {
     Mod+TouchpadScrollDown { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.02+"; }
     Mod+TouchpadScrollUp   { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.02-"; }
@@ -112,7 +112,7 @@ Run a program.
 `spawn` accepts a path to the program binary as the first argument, followed by arguments to the program.
 For example:
 
-```
+```kdl
 binds {
     // Run alacritty.
     Mod+T { spawn "alacritty"; }
@@ -128,7 +128,7 @@ binds {
 >
 > Spawn bindings have a special `allow-when-locked=true` property that makes them work even while the session is locked:
 >
-> ```
+> ```kdl
 > binds {
 >     // This mute bind will work even when the session is locked.
 >     XF86AudioMute allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
@@ -137,23 +137,23 @@ binds {
 
 Currently, niri *does not* use a shell to run commands, which means that you need to manually separate arguments.
 
-```
+```kdl
 binds {
     // Correct: every argument is in its own quotes.
     Mod+T { spawn "alacritty" "-e" "/usr/bin/fish"; }
 
     // Wrong: will interpret the whole `alacritty -e /usr/bin/fish` string as the binary path.
-    Mod+T { spawn "alacritty -e /usr/bin/fish"; }
+    Mod+D { spawn "alacritty -e /usr/bin/fish"; }
 
     // Wrong: will pass `-e /usr/bin/fish` as one argument, which alacritty won't understand.
-    Mod+T { spawn "alacritty" "-e /usr/bin/fish"; }
+    Mod+Q { spawn "alacritty" "-e /usr/bin/fish"; }
 }
 ```
 
 This also means that you cannot expand environment variables or `~`.
 If you need this, you can run the command through a shell manually.
 
-```
+```kdl
 binds {
     // Wrong: no shell expansion here. These strings will be passed literally to the program.
     Mod+T { spawn "grim" "-o" "$MAIN_OUTPUT" "~/screenshot.png"; }
@@ -161,17 +161,17 @@ binds {
     // Correct: run this through a shell manually so that it can expand the arguments.
     // Note that the entire command is passed as a SINGLE argument,
     // because shell will do its own argument splitting by whitespace.
-    Mod+T { spawn "sh" "-c" "grim -o $MAIN_OUTPUT ~/screenshot.png"; }
+    Mod+D { spawn "sh" "-c" "grim -o $MAIN_OUTPUT ~/screenshot.png"; }
 
     // You can also use a shell to run multiple commands,
     // use pipes, process substitution, and so on.
-    Mod+T { spawn "sh" "-c" "notify-send clipboard \"$(wl-paste)\""; }
+    Mod+Q { spawn "sh" "-c" "notify-send clipboard \"$(wl-paste)\""; }
 }
 ```
 
 As a special case, niri will expand `~` to the home directory *only* at the beginning of the program name.
 
-```
+```kdl
 binds {
     // This will work: one ~ at the very beginning.
     Mod+T { spawn "~/scripts/do-something.sh"; }
@@ -182,7 +182,7 @@ binds {
 
 Exit niri after showing a confirmation dialog to avoid accidentally triggering it.
 
-```
+```kdl
 binds {
     Mod+Shift+E { quit; }
 }
@@ -190,7 +190,7 @@ binds {
 
 If you want to skip the confirmation dialog, set the flag like so:
 
-```
+```kdl
 binds {
     Mod+Shift+E { quit skip-confirmation=true; }
 }
@@ -202,7 +202,7 @@ binds {
 
 Freeze the screen for a brief moment then crossfade to the new contents.
 
-```
+```kdl
 binds {
     Mod+Return { do-screen-transition; }
 }
@@ -221,7 +221,7 @@ dconf write /org/gnome/desktop/interface/color-scheme "\"prefer-dark\""
 By default, the screen is frozen for 250 ms to give windows time to redraw, before the crossfade.
 You can set this delay like this:
 
-```
+```kdl
 binds {
     Mod+Return { do-screen-transition delay-ms=100; }
 }

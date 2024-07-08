@@ -4,7 +4,7 @@
 
 You can declare named workspaces at the top level of the config:
 
-```
+```kdl
 workspace "browser"
 
 workspace "chat" {
@@ -18,7 +18,7 @@ Otherwise, they behave like any other workspace: you can move them around, move 
 Actions like `focus-workspace` or `move-column-to-workspace` can refer to workspaces by name.
 Also, you can use an `open-on-workspace` window rule to make a window open on a specific named workspace:
 
-```
+```kdl
 // Declare a workspace named "chat" that opens on the "DP-2" output.
 workspace "chat" {
     open-on-output "DP-2"
