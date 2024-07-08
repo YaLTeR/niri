@@ -11,13 +11,13 @@ use smithay::utils::{Logical, Physical, Rectangle, Size};
 
 use super::TestCase;
 
-pub struct GradientOklch {
+pub struct GradientOklchShorter {
     time: f32,
     prev_time: Duration,
     gradient_format: GradientInterpolation,
 }
 
-impl GradientOklch {
+impl GradientOklchShorter {
     pub fn new(_size: Size<i32, Logical>) -> Self {
         Self {
             time: 0.,
@@ -30,7 +30,7 @@ impl GradientOklch {
     }
 }
 
-impl TestCase for GradientOklch {
+impl TestCase for GradientOklchShorter {
     fn are_animations_ongoing(&self) -> bool {
         true
     }
