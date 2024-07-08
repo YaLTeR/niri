@@ -90,8 +90,7 @@ input {
 }
 ```
 
-<!-- no-test -->
-```kdl
+```kdl,must-fail
 // This is NOT valid: input section appears twice.
 input {
     keyboard {
@@ -108,7 +107,7 @@ input {
 
 Exceptions are, for example, sections that configure different devices by name:
 
-<!-- no-test -->
+<!-- NOTE: this may break in the future -->
 ```kdl
 output "eDP-1" {
     // ...
