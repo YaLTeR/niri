@@ -23,21 +23,19 @@ uniform vec2 geo_size;
 uniform vec4 outer_radius;
 uniform float border_width;
 
-vec4 srgb_to_linear(vec4 color) {
-  return vec4(
-    (color.rgb / color.aaa) * (color.rgb / color.aaa),
-    color.a
-  );
+float srgb_to_linear(float color) {
+  return 
+    color <= 0.04045 ?
+    color / 12.92 :
+    pow((color + 0.055) / 1.055, 2.4) ;
 }
 
-vec4 linear_to_srgb(vec4 color) {
-  return vec4(
-    sqrt(color.r) * color.a,
-    sqrt(color.g) * color.a,
-    sqrt(color.b) * color.a,
-    color.a
-  );
-}
+float linear_to_srgb(float color) {
+  return 
+    color <= 0.0031308 ?
+    color * 12.92 :
+    pow(color * 1.055, 1.0 / 2.4) - 0.055 ;
+} 
 
 vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
 
@@ -47,8 +45,18 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
   
   vec4 color_out;
 
-  color1 = srgb_to_linear(color1);
-  color2 = srgb_to_linear(color2);
+  color1.rgb = color1.rgb / color1.a;
+  color2.rgb = color2.rgb / color2.a;
+  
+  color1.rgb = vec3(
+    srgb_to_linear(color1.r),
+    srgb_to_linear(color1.g),
+    srgb_to_linear(color1.b));
+ 
+  color2.rgb = vec3(
+    srgb_to_linear(color2.r),
+    srgb_to_linear(color2.g),
+    srgb_to_linear(color2.b));
 
   if (colorspace == 1.0) { // srgb-linear
     color_out = mix(
@@ -58,13 +66,19 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
     );
   } else {
     color_out = vec4(
-      255.0,
+      1.0,
       0.0,
       0.0,
       1.0
     );
   }
-  return linear_to_srgb(color_out);
+
+  return vec4(
+    linear_to_srgb(color_out.r) * color_out.a,
+    linear_to_srgb(color_out.g) * color_out.a,
+    linear_to_srgb(color_out.b) * color_out.a,
+    color_out.a
+  );
 }
 
 vec4 gradient_color(vec2 coords) {
