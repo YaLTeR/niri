@@ -1240,7 +1240,12 @@ impl State {
             get_monotonic_time().as_millis() as u32,
         );
 
-        self.niri.screenshot_ui.open(screenshots, default_output);
+        self.backend.with_primary_renderer(|renderer| {
+            self.niri
+                .screenshot_ui
+                .open(renderer, screenshots, default_output)
+        });
+
         self.niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));

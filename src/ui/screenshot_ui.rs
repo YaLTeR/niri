@@ -6,12 +6,14 @@ use std::mem;
 use anyhow::Context;
 use arrayvec::ArrayVec;
 use niri_config::Action;
+use pango::{Alignment, FontDescription};
+use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{ButtonState, MouseButton};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::ExportMem;
+use smithay::backend::renderer::{ExportMem, Texture as _};
 use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
@@ -23,7 +25,17 @@ use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_texture, RenderTarget};
 use crate::utils::to_physical_precise_round;
 
-const BORDER: i32 = 2;
+const SELECTION_BORDER: i32 = 2;
+
+const PADDING: i32 = 8;
+const FONT: &str = "sans 14px";
+const BORDER: i32 = 4;
+const TEXT_HIDE_P: &str =
+    "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> P </span> to hide the pointer.";
+const TEXT_SHOW_P: &str =
+    "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
 
 // Ideally the screenshot UI should support cross-output selections. However, that poses some
 // technical challenges when the outputs have different scales and such. So, this implementation
@@ -50,6 +62,7 @@ pub struct OutputData {
     screenshot: [OutputScreenshot; 3],
     buffers: [SolidColorBuffer; 8],
     locations: [Point<i32, Physical>; 8],
+    panel: Option<(TextureBuffer<GlesTexture>, TextureBuffer<GlesTexture>)>,
 }
 
 pub struct OutputScreenshot {
@@ -74,6 +87,7 @@ impl ScreenshotUi {
 
     pub fn open(
         &mut self,
+        renderer: &mut GlesRenderer,
         // Output, screencast, screen capture.
         screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
@@ -130,6 +144,16 @@ impl ScreenshotUi {
                     SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.5]),
                 ];
                 let locations = [Default::default(); 8];
+
+                let mut render_panel_ = |text| {
+                    render_panel(renderer, scale, text)
+                        .map_err(|err| warn!("error rendering help panel: {err:?}"))
+                        .ok()
+                };
+                let panel_show = render_panel_(TEXT_SHOW_P);
+                let panel_hide = render_panel_(TEXT_HIDE_P);
+                let panel = Option::zip(panel_show, panel_hide);
+
                 let data = OutputData {
                     size,
                     scale,
@@ -137,6 +161,7 @@ impl ScreenshotUi {
                     screenshot,
                     buffers,
                     locations,
+                    panel,
                 };
                 (output, data)
             })
@@ -214,7 +239,7 @@ impl ScreenshotUi {
                     *b = rect.loc + rect.size - Size::from((1, 1));
                 }
 
-                let border = to_physical_precise_round(scale, BORDER);
+                let border = to_physical_precise_round(scale, SELECTION_BORDER);
 
                 let resize = move |buffer: &mut SolidColorBuffer, w: i32, h: i32| {
                     let size = Size::<_, Physical>::from((w, h));
@@ -261,12 +286,13 @@ impl ScreenshotUi {
         &self,
         output: &Output,
         target: RenderTarget,
-    ) -> ArrayVec<ScreenshotUiRenderElement, 10> {
+    ) -> ArrayVec<ScreenshotUiRenderElement, 11> {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
         let Self::Open {
             output_data,
             show_pointer,
+            mouse_down,
             ..
         } = self
         else {
@@ -279,11 +305,38 @@ impl ScreenshotUi {
             return elements;
         };
 
+        let scale = output_data.scale;
+
+        // The help panel goes on top.
+        if let Some((show, hide)) = &output_data.panel {
+            let buffer = if *show_pointer { hide } else { show };
+
+            let size = buffer.texture().size();
+            let padding: i32 = to_physical_precise_round(scale, PADDING);
+            let x = max(0, (output_data.size.w - size.w) / 2);
+            let y = max(0, output_data.size.h - size.h - padding * 2);
+            let location = Point::<_, Physical>::from((x, y))
+                .to_f64()
+                .to_logical(scale);
+
+            let alpha = if *mouse_down { 0.3 } else { 0.9 };
+
+            let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                buffer.clone(),
+                location,
+                alpha,
+                None,
+                None,
+                Kind::Unspecified,
+            ));
+            elements.push(elem.into());
+        }
+
         let buf_loc = zip(&output_data.buffers, &output_data.locations);
         elements.extend(buf_loc.map(|(buffer, loc)| {
             SolidColorRenderElement::from_buffer(
                 buffer,
-                loc.to_f64().to_logical(output_data.scale),
+                loc.to_f64().to_logical(scale),
                 1.,
                 Kind::Unspecified,
             )
@@ -563,4 +616,74 @@ pub fn rect_from_corner_points(
     // We're adding + 1 because the pointer is clamped to output size - 1, so to get the full
     // screen worth of selection we must add back that + 1.
     Rectangle::from_extemities((x1, y1), (x2 + 1, y2 + 1))
+}
+
+fn render_panel(
+    renderer: &mut GlesRenderer,
+    scale: f64,
+    text: &str,
+) -> anyhow::Result<TextureBuffer<GlesTexture>> {
+    let _span = tracy_client::span!("screenshot_ui::render_panel");
+
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
+
+    // Add 2 px of spacing to separate the backgrounds of the "Space" and "P" keys.
+    let spacing = to_physical_precise_round::<i32>(scale, 2) * 1024;
+
+    let mut font = FontDescription::from_string(FONT);
+    font.set_absolute_size(to_physical_precise_round(scale, font.size()));
+
+    let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
+    let cr = cairo::Context::new(&surface)?;
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
+    layout.set_font_description(Some(&font));
+    layout.set_alignment(Alignment::Center);
+    layout.set_markup(text);
+    layout.set_spacing(spacing);
+
+    let (mut width, mut height) = layout.pixel_size();
+    width += padding * 2;
+    height += padding * 2;
+
+    let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
+    let cr = cairo::Context::new(&surface)?;
+    cr.set_source_rgb(0.1, 0.1, 0.1);
+    cr.paint()?;
+
+    cr.move_to(padding.into(), padding.into());
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
+    layout.set_font_description(Some(&font));
+    layout.set_alignment(Alignment::Center);
+    layout.set_markup(text);
+    layout.set_spacing(spacing);
+
+    cr.set_source_rgb(1., 1., 1.);
+    pangocairo::functions::show_layout(&cr, &layout);
+
+    cr.move_to(0., 0.);
+    cr.line_to(width.into(), 0.);
+    cr.line_to(width.into(), height.into());
+    cr.line_to(0., height.into());
+    cr.line_to(0., 0.);
+    cr.set_source_rgb(0.3, 0.3, 0.3);
+    // Keep the border width even to avoid blurry edges.
+    cr.set_line_width((f64::from(BORDER) / 2. * scale).round() * 2.);
+    cr.stroke()?;
+    drop(cr);
+
+    let data = surface.take_data().unwrap();
+    let buffer = TextureBuffer::from_memory(
+        renderer,
+        &data,
+        Fourcc::Argb8888,
+        (width, height),
+        false,
+        scale,
+        Transform::Normal,
+        Vec::new(),
+    )?;
+
+    Ok(buffer)
 }
