@@ -19,7 +19,7 @@ pub struct TextureBuffer<T> {
 }
 
 /// Render element for a [`TextureBuffer`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TextureRenderElement<T> {
     buffer: TextureBuffer<T>,
     location: Point<f64, Logical>,
@@ -120,6 +120,10 @@ impl<T> TextureRenderElement<T> {
             size,
             kind,
         }
+    }
+
+    pub fn buffer(&self) -> &TextureBuffer<T> {
+        &self.buffer
     }
 }
 

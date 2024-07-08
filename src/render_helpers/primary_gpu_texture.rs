@@ -8,7 +8,7 @@ use super::texture::TextureRenderElement;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 /// Wrapper for a texture from the primary GPU for rendering with the primary GPU.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PrimaryGpuTextureRenderElement(pub TextureRenderElement<GlesTexture>);
 
 impl Element for PrimaryGpuTextureRenderElement {

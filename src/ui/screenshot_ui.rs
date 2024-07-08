@@ -8,12 +8,13 @@ use arrayvec::ArrayVec;
 use niri_config::Action;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{ButtonState, MouseButton};
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::ExportMem;
 use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
@@ -53,8 +54,8 @@ pub struct OutputData {
 
 pub struct OutputScreenshot {
     texture: GlesTexture,
-    buffer: TextureBuffer<GlesTexture>,
-    pointer: Option<(TextureBuffer<GlesTexture>, Rectangle<f64, Logical>)>,
+    buffer: PrimaryGpuTextureRenderElement,
+    pointer: Option<PrimaryGpuTextureRenderElement>,
 }
 
 niri_render_elements! {
@@ -295,34 +296,14 @@ impl ScreenshotUi {
             RenderTarget::Screencast => 1,
             RenderTarget::ScreenCapture => 2,
         };
+        let screenshot = &output_data.screenshot[index];
 
         if *show_pointer {
-            if let Some((buffer, geo)) = output_data.screenshot[index].pointer.clone() {
-                elements.push(
-                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                        buffer,
-                        geo.loc,
-                        1.,
-                        None,
-                        None,
-                        Kind::Unspecified,
-                    ))
-                    .into(),
-                );
+            if let Some(pointer) = screenshot.pointer.clone() {
+                elements.push(pointer.into());
             }
         }
-
-        elements.push(
-            PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                output_data.screenshot[index].buffer.clone(),
-                (0., 0.),
-                1.,
-                None,
-                None,
-                Kind::Unspecified,
-            ))
-            .into(),
-        );
+        elements.push(screenshot.buffer.clone().into());
 
         elements
     }
@@ -351,33 +332,16 @@ impl ScreenshotUi {
         // Composite the pointer on top if needed.
         let mut tex_rect = None;
         if *show_pointer {
-            if let Some((buffer, geo)) = screenshot.pointer.clone() {
-                let scale = buffer.texture_scale();
-                let offset = rect.loc.to_f64().to_logical(scale);
-                let offset = offset.upscale(-1.);
+            if let Some(pointer) = screenshot.pointer.clone() {
+                let scale = pointer.0.buffer().texture_scale();
+                let offset = rect.loc.upscale(-1);
 
                 let mut elements = ArrayVec::<_, 2>::new();
-                elements.push(PrimaryGpuTextureRenderElement(
-                    TextureRenderElement::from_texture_buffer(
-                        buffer,
-                        geo.loc + offset,
-                        1.,
-                        None,
-                        None,
-                        Kind::Unspecified,
-                    ),
-                ));
-                elements.push(PrimaryGpuTextureRenderElement(
-                    TextureRenderElement::from_texture_buffer(
-                        screenshot.buffer.clone(),
-                        offset,
-                        1.,
-                        None,
-                        None,
-                        Kind::Unspecified,
-                    ),
-                ));
-                let elements = elements.iter().rev();
+                elements.push(pointer);
+                elements.push(screenshot.buffer.clone());
+                let elements = elements.iter().rev().map(|elem| {
+                    RelocateRenderElement::from_element(elem, offset, Relocate::Relative)
+                });
 
                 let res = render_to_texture(
                     renderer,
@@ -526,27 +490,42 @@ impl OutputScreenshot {
         texture: GlesTexture,
         pointer: Option<(GlesTexture, Rectangle<i32, Physical>)>,
     ) -> Self {
-        Self {
-            texture: texture.clone(),
-            buffer: TextureBuffer::from_texture(
+        let buffer = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+            TextureBuffer::from_texture(
                 renderer,
-                texture,
+                texture.clone(),
                 scale,
                 Transform::Normal,
                 Vec::new(),
             ),
-            pointer: pointer.map(|(texture, geo)| {
-                (
-                    TextureBuffer::from_texture(
-                        renderer,
-                        texture,
-                        scale,
-                        Transform::Normal,
-                        Vec::new(),
-                    ),
-                    geo.to_f64().to_logical(scale),
-                )
-            }),
+            (0., 0.),
+            1.,
+            None,
+            None,
+            Kind::Unspecified,
+        ));
+
+        let pointer = pointer.map(|(texture, geo)| {
+            PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                TextureBuffer::from_texture(
+                    renderer,
+                    texture,
+                    scale,
+                    Transform::Normal,
+                    Vec::new(),
+                ),
+                geo.to_f64().to_logical(scale).loc,
+                1.,
+                None,
+                None,
+                Kind::Unspecified,
+            ))
+        });
+
+        Self {
+            texture,
+            buffer,
+            pointer,
         }
     }
 }
