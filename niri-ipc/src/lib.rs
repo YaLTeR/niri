@@ -152,10 +152,10 @@ pub enum Action {
     MoveColumnToFirst,
     /// Move the focused column to the end of the workspace.
     MoveColumnToLast,
-    /// Move the focused column to the left or to the left monitor
-    MoveColumnLeftOrMonitorLeft,
-    /// Move the focused column to the right or to the right monitor
-    MoveColumnRightOrMonitorRight,
+    /// Move the focused column to the left or to the monitor to the left.
+    MoveColumnLeftOrToMonitorLeft,
+    /// Move the focused column to the right or to the monitor to the right.
+    MoveColumnRightOrToMonitorRight,
     /// Move the focused window down in a column.
     MoveWindowDown,
     /// Move the focused window up in a column.

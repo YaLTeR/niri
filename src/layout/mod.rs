@@ -1196,7 +1196,7 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_column_to_last();
     }
 
-    pub fn move_column_left_or_output(&mut self, output: &OutputId) -> bool {
+    pub fn move_column_left_or_to_output(&mut self, output: &Output) -> bool {
         if let Some(monitor) = self.active_monitor() {
             let workspace = monitor.active_workspace();
             let curr_idx = workspace.active_column_idx;
@@ -1216,7 +1216,7 @@ impl<W: LayoutElement> Layout<W> {
             let workspace = monitor.active_workspace();
             let curr_idx = workspace.active_column_idx;
 
-            if !workspace.columns.is_empty() && curr_idx != 0 {
+            if !workspace.columns.is_empty() && curr_idx != workspace.columns.len() - 1 {
                 monitor.move_right();
                 return false;
             }
@@ -2827,8 +2827,8 @@ mod tests {
         MoveColumnRight,
         MoveColumnToFirst,
         MoveColumnToLast,
-        MoveColumnLeftOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
-        MoveColumnRightOrMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
+        MoveColumnLeftOrToMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
+        MoveColumnRightOrToMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
         MoveWindowDown,
         MoveWindowUp,
         MoveWindowDownOrToWorkspaceDown,
