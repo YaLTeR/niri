@@ -4,7 +4,7 @@ This page documents all top-level options that don't otherwise have dedicated pa
 
 Here are all of these options at a glance:
 
-```
+```kdl
 spawn-at-startup "waybar"
 spawn-at-startup "alacritty"
 
@@ -35,7 +35,7 @@ Add lines like this to spawn processes at niri startup.
 
 This option works the same way as the `spawn` key binding action, so please read about all its subtleties on the [key bindings](./Configuration:-Key-Bindings.md) page.
 
-```
+```kdl
 spawn-at-startup "waybar"
 spawn-at-startup "alacritty"
 ```
@@ -58,7 +58,7 @@ With `prefer-no-csd` set, applications that negotiate server-side decorations th
 >
 > Restart applications after changing `prefer-no-csd` in the config to apply it.
 
-```
+```kdl
 prefer-no-csd
 ```
 
@@ -71,13 +71,13 @@ The path is formatted with `strftime(3)` to give you the screenshot date and tim
 
 Niri will create the last folder of the path if it doesn't exist.
 
-```
+```kdl
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 ```
 
 You can also set this option to `null` to disable saving screenshots to disk.
 
-```
+```kdl
 screenshot-path null
 ```
 
@@ -85,7 +85,7 @@ screenshot-path null
 
 Override environment variables for processes spawned by niri.
 
-```
+```kdl
 environment {
     // Set a variable like this:
     // QT_QPA_PLATFORM "wayland"
@@ -99,7 +99,7 @@ environment {
 
 Change the theme and size of the cursor as well as set the `XCURSOR_THEME` and `XCURSOR_SIZE` environment variables.
 
-```
+```kdl
 cursor {
     xcursor-theme "breeze_cursors"
     xcursor-size 48
@@ -112,7 +112,7 @@ Settings for the "Important Hotkeys" overlay.
 
 Set the `skip-at-startup` flag if you don't want to see the hotkey help at niri startup.
 
-```
+```kdl
 hotkey-overlay {
     skip-at-startup
 }

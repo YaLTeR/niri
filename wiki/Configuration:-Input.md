@@ -8,7 +8,7 @@ Currently, there's no way to configure specific devices individually (but that i
 
 All settings at a glance:
 
-```
+```kdl
 input {
     keyboard {
         xkb {
@@ -81,7 +81,7 @@ In the `xkb` section, you can set layout, variant, options, model and rules.
 These are passed directly to libxkbcommon, which is also used by most other Wayland compositors.
 See the `xkeyboard-config(7)` manual for more information.
 
-```
+```kdl
 input {
     keyboard {
         xkb {
@@ -99,7 +99,7 @@ You can control this with the `track-layout` option.
 - `global`: layout change is global for all windows.
 - `window`: layout is tracked for each window individually.
 
-```
+```kdl
 input {
     keyboard {
         track-layout "global"
@@ -112,7 +112,7 @@ input {
 Delay is in milliseconds before the keyboard repeat starts.
 Rate is in characters per second.
 
-```
+```kdl
 input {
     keyboard {
         repeat-delay 600
@@ -136,7 +136,7 @@ A few settings are common between `touchpad`, `mouse` and `trackpoint`:
 - `natural-scroll`: if set, inverts the scrolling direction.
 - `accel-speed`: pointer acceleration speed, valid values are from `-1.0` to `1.0` where the default is `0.0`.
 - `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
-- `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`. 
+- `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
 
 Settings specific to `touchpad`s:
@@ -154,7 +154,7 @@ Settings specific to `touchpad`, `mouse` and `tablet`:
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
-```
+```kdl
 input {
     tablet {
         map-to-output "eDP-1"
@@ -179,7 +179,7 @@ These settings are not specific to a particular input device.
 By default, niri will take over the power button to make it sleep instead of power off.
 Set this if you would like to configure the power button elsewhere (i.e. `logind.conf`).
 
-```
+```kdl
 input {
     disable-power-key-handling
 }
@@ -191,7 +191,7 @@ Makes the mouse warp to newly focused windows.
 
 X and Y coordinates are computed separately, i.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then it will move only horizontally.
 
-```
+```kdl
 input {
     warp-mouse-to-focus
 }
@@ -201,7 +201,7 @@ input {
 
 Focuses windows and outputs automatically when moving the mouse over them.
 
-```
+```kdl
 input {
     focus-follows-mouse
 }
@@ -211,14 +211,14 @@ input {
 Then, focus-follows-mouse won't focus a window if it will result in the view scrolling more than the set amount.
 The value is a percentage of the working area width.
 
-```
+```kdl
 input {
     // Allow focus-follows-mouse when it results in scrolling at most 10% of the screen.
     focus-follows-mouse max-scroll-amount="10%"
 }
 ```
 
-```
+```kdl
 input {
     // Allow focus-follows-mouse only when it will not scroll the view.
     focus-follows-mouse max-scroll-amount="0%"
@@ -232,7 +232,7 @@ If this flag is enabled, switching to the same workspace by index twice will swi
 
 Niri will correctly switch to the workspace you came from, even if workspaces were reordered in the meantime.
 
-```
+```kdl
 input {
     workspace-auto-back-and-forth
 }
