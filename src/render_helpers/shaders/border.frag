@@ -23,10 +23,6 @@ uniform vec2 geo_size;
 uniform vec4 outer_radius;
 uniform float border_width;
 
-// for anyone who work on this in the future: 
-// https://github.com/color-js/color.js
-// https://bottosson.github.io/posts/oklab/
-
 float srgb_to_linear(float color) {
   return 
     color <= 0.04045 ?
