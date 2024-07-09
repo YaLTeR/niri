@@ -445,7 +445,7 @@ pub enum GradientColorSpace {
     Srgb,
     SrgbLinear,
     Oklab,
-    Oklch
+    Oklch,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -1481,8 +1481,7 @@ impl FromStr for GradientInterpolation {
                     &_ => return Err(miette!("Invalid hue-interpolation: {in_str}"))
                 }
             } else {
-                // this is a placeholder and should be changed if anything is added to in for
-                // gradients 
+                // this is a placeholder and should be changed if anything is added to in
                 return Err(miette!("Theres a missing indicator ’hue’ from ’in’ "))
             }
         } else {
