@@ -52,7 +52,6 @@ vec4 lab_to_lch(vec4 color) {
 }
 
 vec4 lch_to_lab(vec4 color) {
-  // gpus can't do trig
   float a = color.y * clamp(cos(radians(color.z)), -1.0, 1.0);
   float b = color.y * clamp(sin(radians(color.z)), -1.0, 1.0);
   return vec4(
@@ -105,8 +104,6 @@ vec4 oklab_to_linear(vec4 color){
     color.a
   );
 }
-
-
 
 vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
   //  srgb
