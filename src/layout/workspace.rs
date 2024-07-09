@@ -768,13 +768,17 @@ impl<W: LayoutElement> Workspace<W> {
         config: niri_config::Animation,
     ) {
         let new_col_x = self.column_x(idx);
-        let from_view_offset = current_x - new_col_x;
-        self.view_offset = from_view_offset;
+        let old_col_x = current_x - self.view_offset;
+        let offset_delta = old_col_x - new_col_x;
+        self.view_offset += offset_delta;
 
         let pixel = 1. / self.scale.fractional_scale();
 
         // If we're already animating towards that, don't restart it.
         if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
+            // Offset the animation for the active column change.
+            anim.offset(offset_delta);
+
             let to_diff = new_view_offset - anim.to();
             if (anim.value() - self.view_offset).abs() < pixel && to_diff.abs() < pixel {
                 // Correct for any inaccuracy.
