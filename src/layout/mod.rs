@@ -1211,7 +1211,7 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn move_column_right_or_to_output(&mut self, output: &OutputId) -> bool {
+    pub fn move_column_right_or_to_output(&mut self, output: &Output) -> bool {
         if let Some(monitor) = self.active_monitor() {
             let workspace = monitor.active_workspace();
             let curr_idx = workspace.active_column_idx;
