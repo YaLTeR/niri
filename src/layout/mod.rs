@@ -1211,7 +1211,7 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn move_column_right_or_output(&mut self, output: &OutputId) -> bool {
+    pub fn move_column_right_or_to_output(&mut self, output: &OutputId) -> bool {
         if let Some(monitor) = self.active_monitor() {
             let workspace = monitor.active_workspace();
             let curr_idx = workspace.active_column_idx;
@@ -3186,21 +3186,21 @@ mod tests {
                 Op::MoveColumnRight => layout.move_right(),
                 Op::MoveColumnToFirst => layout.move_column_to_first(),
                 Op::MoveColumnToLast => layout.move_column_to_last(),
-                Op::MoveColumnLeftOrMonitorLeft(id) => {
+                Op::MoveColumnLeftOrToMonitorLeft(id) => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    layout.move_column_left_or_output(&output);
+                    layout.move_column_left_or_to_output(&output);
                 }
-                Op::MoveColumnRightOrMonitorRight(id) => {
+                Op::MoveColumnRightOrToMonitorRight(id) => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
 
-                    layout.move_column_right_or_output(&output);
+                    layout.move_column_right_or_to_output(&output);
                 }
                 Op::MoveWindowDown => layout.move_down(),
                 Op::MoveWindowUp => layout.move_up(),
@@ -3432,8 +3432,8 @@ mod tests {
             Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
-            Op::MoveColumnLeftOrMonitorLeft(0),
-            Op::MoveColumnRightOrMonitorRight(1),
+            Op::MoveColumnLeftOrToMonitorLeft(0),
+            Op::MoveColumnRightOrToMonitorRight(1),
             Op::ConsumeWindowIntoColumn,
             Op::ExpelWindowFromColumn,
             Op::CenterColumn,
@@ -3613,8 +3613,8 @@ mod tests {
             Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
-            Op::MoveColumnLeftOrMonitorLeft(0),
-            Op::MoveColumnRightOrMonitorRight(1),
+            Op::MoveColumnLeftOrToMonitorLeft(0),
+            Op::MoveColumnRightOrToMonitorRight(1),
             Op::ConsumeWindowIntoColumn,
             Op::ExpelWindowFromColumn,
             Op::CenterColumn,
