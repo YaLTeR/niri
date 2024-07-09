@@ -180,7 +180,7 @@ impl BorderRenderElement {
             HueInterpolation::Shorter => 0.,
             HueInterpolation::Longer => 1.,
             HueInterpolation::Increasing => 2.,
-            HueInterpolation::Decreasing => 3.
+            HueInterpolation::Decreasing => 3.,
         };
 
         self.inner.update(
