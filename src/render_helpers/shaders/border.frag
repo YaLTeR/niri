@@ -104,7 +104,6 @@ vec4 oklab_to_linear(vec4 color){
     color.a
   );
 }
-
 vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
   //  srgb
   if (colorspace == 0.0) {
