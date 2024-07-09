@@ -771,16 +771,22 @@ impl<W: LayoutElement> Workspace<W> {
         let from_view_offset = current_x - new_col_x;
         self.view_offset = from_view_offset;
 
+        let pixel = 1. / self.scale.fractional_scale();
+
         // If we're already animating towards that, don't restart it.
-        if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
-            let pixel = 1. / self.scale.fractional_scale();
-            if (anim.value() - self.view_offset).abs() < pixel && anim.to() == new_view_offset {
+        if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
+            let to_diff = new_view_offset - anim.to();
+            if (anim.value() - self.view_offset).abs() < pixel && to_diff.abs() < pixel {
+                // Correct for any inaccuracy.
+                anim.offset(to_diff);
                 return;
             }
         }
 
         // If our view offset is already this, we don't need to do anything.
-        if self.view_offset == new_view_offset {
+        if (self.view_offset - new_view_offset).abs() < pixel {
+            // Correct for any inaccuracy.
+            self.view_offset = new_view_offset;
             self.view_offset_adj = None;
             return;
         }
