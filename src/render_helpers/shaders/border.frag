@@ -24,11 +24,11 @@ uniform vec4 outer_radius;
 uniform float border_width;
 
 float srgb_to_linear(float color) {
-  return pow(color, 2.2) ;
+  return pow(color, 2.2);
 }
 
 float linear_to_srgb(float color) {
-  return pow(color, 1.0 / 2.2) ;
+  return pow(color, 1.0 / 2.2);
 }
 
 vec3 lab_to_lch(vec3 color) {
@@ -149,11 +149,11 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
       color1.z == min_hue ?
         mod(color1.z - path_mod_distance, 360.0) :
         mod(color1.z + path_mod_distance, 360.0) ;
-
     float path_direct = 
       color1.z == min_hue ?
         color1.z + path_direct_distance :
         color1.z - path_direct_distance ;
+
     //  shorter
     if (hue_interpolation == 0.0) {
       color_out.z = 
