@@ -1021,6 +1021,8 @@ pub enum Action {
     MoveColumnRight,
     MoveColumnToFirst,
     MoveColumnToLast,
+    MoveColumnLeftOrToMonitorLeft,
+    MoveColumnRightOrToMonitorRight,
     MoveWindowDown,
     MoveWindowUp,
     MoveWindowDownOrToWorkspaceDown,
@@ -1101,6 +1103,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnRight => Self::MoveColumnRight,
             niri_ipc::Action::MoveColumnToFirst => Self::MoveColumnToFirst,
             niri_ipc::Action::MoveColumnToLast => Self::MoveColumnToLast,
+            niri_ipc::Action::MoveColumnLeftOrToMonitorLeft => Self::MoveColumnLeftOrToMonitorLeft,
+            niri_ipc::Action::MoveColumnRightOrToMonitorRight => {
+                Self::MoveColumnRightOrToMonitorRight
+            }
             niri_ipc::Action::MoveWindowDown => Self::MoveWindowDown,
             niri_ipc::Action::MoveWindowUp => Self::MoveWindowUp,
             niri_ipc::Action::MoveWindowDownOrToWorkspaceDown => {

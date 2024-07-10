@@ -571,6 +571,40 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::MoveColumnLeftOrToMonitorLeft => {
+                if let Some(output) = self.niri.output_left() {
+                    if self.niri.layout.move_column_left_or_to_output(&output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&output);
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+                } else {
+                    self.niri.layout.move_left();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveColumnRightOrToMonitorRight => {
+                if let Some(output) = self.niri.output_right() {
+                    if self.niri.layout.move_column_right_or_to_output(&output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&output);
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+                } else {
+                    self.niri.layout.move_right();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::MoveWindowDown => {
                 self.niri.layout.move_down();
                 self.maybe_warp_cursor_to_focus();

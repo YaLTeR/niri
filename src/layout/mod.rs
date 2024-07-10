@@ -1196,6 +1196,36 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_column_to_last();
     }
 
+    pub fn move_column_left_or_to_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+            let curr_idx = workspace.active_column_idx;
+
+            if !workspace.columns.is_empty() && curr_idx != 0 {
+                monitor.move_left();
+                return false;
+            }
+        }
+
+        self.move_column_to_output(output);
+        true
+    }
+
+    pub fn move_column_right_or_to_output(&mut self, output: &Output) -> bool {
+        if let Some(monitor) = self.active_monitor() {
+            let workspace = monitor.active_workspace();
+            let curr_idx = workspace.active_column_idx;
+
+            if !workspace.columns.is_empty() && curr_idx != workspace.columns.len() - 1 {
+                monitor.move_right();
+                return false;
+            }
+        }
+
+        self.move_column_to_output(output);
+        true
+    }
+
     pub fn move_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -2797,6 +2827,8 @@ mod tests {
         MoveColumnRight,
         MoveColumnToFirst,
         MoveColumnToLast,
+        MoveColumnLeftOrToMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
+        MoveColumnRightOrToMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
         MoveWindowDown,
         MoveWindowUp,
         MoveWindowDownOrToWorkspaceDown,
@@ -3154,6 +3186,22 @@ mod tests {
                 Op::MoveColumnRight => layout.move_right(),
                 Op::MoveColumnToFirst => layout.move_column_to_first(),
                 Op::MoveColumnToLast => layout.move_column_to_last(),
+                Op::MoveColumnLeftOrToMonitorLeft(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+
+                    layout.move_column_left_or_to_output(&output);
+                }
+                Op::MoveColumnRightOrToMonitorRight(id) => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+
+                    layout.move_column_right_or_to_output(&output);
+                }
                 Op::MoveWindowDown => layout.move_down(),
                 Op::MoveWindowUp => layout.move_up(),
                 Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),
@@ -3384,6 +3432,8 @@ mod tests {
             Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
+            Op::MoveColumnLeftOrToMonitorLeft(0),
+            Op::MoveColumnRightOrToMonitorRight(1),
             Op::ConsumeWindowIntoColumn,
             Op::ExpelWindowFromColumn,
             Op::CenterColumn,
@@ -3563,6 +3613,8 @@ mod tests {
             Op::FocusWindowOrWorkspaceDown,
             Op::MoveColumnLeft,
             Op::MoveColumnRight,
+            Op::MoveColumnLeftOrToMonitorLeft(0),
+            Op::MoveColumnRightOrToMonitorRight(1),
             Op::ConsumeWindowIntoColumn,
             Op::ExpelWindowFromColumn,
             Op::CenterColumn,
