@@ -422,7 +422,7 @@ pub struct Gradient {
     pub angle: i16,
     #[knuffel(property, default)]
     pub relative_to: GradientRelativeTo,
-    #[knuffel(property(name="in"), str)]
+    #[knuffel(property(name="in"), str, default)]
     pub in_: GradientInterpolation,
 }
 
