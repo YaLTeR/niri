@@ -98,14 +98,19 @@ vec3 oklab_to_linear(vec3 color){
 
 vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
   //  srgb
-  if (colorspace == 0.0) {
+  
+  if (color1 == color2) {
+    return color1;
+  }
+
+  if (colorspace == 0.0 || color1.rgb == color2.rgb) {
     return mix(color1, color2, color_ratio);
   }
   
   vec4 color_out;
 
-  color1.rgb /= color1.a;
-  color2.rgb /= color2.a;
+  color1.rgb /= color1.a != 0.0 ? color1.a : 1.0;
+  color2.rgb /= color2.a != 0.0 ? color2.a : 1.0;
   
   color1.rgb = vec3(
     srgb_to_linear(color1.r),
@@ -183,7 +188,7 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
   }
 
   return vec4(
-    linear_to_srgb(color_out.r) * color_out.a ,
+    linear_to_srgb(color_out.r) * color_out.a,
     linear_to_srgb(color_out.g) * color_out.a,
     linear_to_srgb(color_out.b) * color_out.a,
     color_out.a
