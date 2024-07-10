@@ -146,7 +146,7 @@ impl Element for SolidColorRenderElement {
     }
 
     fn alpha(&self) -> f32 {
-        1.0
+        self.color[3]
     }
 
     fn kind(&self) -> Kind {

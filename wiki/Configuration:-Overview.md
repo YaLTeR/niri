@@ -40,10 +40,12 @@ Lines starting with `//` are comments; they are ignored.
 
 Also, you can put `/-` in front of a section to comment out the entire section:
 
-```
+```kdl
 /-output "eDP-1" {
-    everything inside here
-    is ignored
+    // Everything inside here is ignored.
+    // The display won't be turned off
+    // as the whole section is commented out.
+    off
 }
 ```
 
@@ -53,7 +55,7 @@ Toggle options in niri are commonly represented as flags.
 Writing out the flag enables it, and omitting it or commenting it out disables it.
 For example:
 
-```
+```kdl
 // "Focus follows mouse" is enabled.
 input {
     focus-follows-mouse
@@ -62,7 +64,7 @@ input {
 }
 ```
 
-```
+```kdl
 // "Focus follows mouse" is disabled.
 input {
     // focus-follows-mouse
@@ -75,7 +77,7 @@ input {
 
 Most sections cannot be repeated. For example:
 
-```
+```kdl
 // This is valid: every section appears once.
 input {
     keyboard {
@@ -88,7 +90,7 @@ input {
 }
 ```
 
-```
+```kdl,must-fail
 // This is NOT valid: input section appears twice.
 input {
     keyboard {
@@ -105,7 +107,8 @@ input {
 
 Exceptions are, for example, sections that configure different devices by name:
 
-```
+<!-- NOTE: this may break in the future -->
+```kdl
 output "eDP-1" {
     // ...
 }

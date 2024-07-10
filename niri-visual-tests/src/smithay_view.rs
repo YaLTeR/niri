@@ -15,7 +15,7 @@ mod imp {
     use niri::utils::get_monotonic_time;
     use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
-    use smithay::backend::renderer::gles::{Capability, GlesRenderer};
+    use smithay::backend::renderer::gles::GlesRenderer;
     use smithay::backend::renderer::{Frame, Renderer, Unbind};
     use smithay::utils::{Physical, Rectangle, Scale, Transform};
 
@@ -186,13 +186,8 @@ mod imp {
 
         let egl_context = EGLContext::from_raw(egl_display, egl_config_id as *const _, egl_context)
             .context("error creating EGL context")?;
-        let capabilities = GlesRenderer::supported_capabilities(&egl_context)
-            .context("error getting supported renderer capabilities")?
-            .into_iter()
-            .filter(|c| *c != Capability::ColorTransformations);
 
-        let mut renderer = GlesRenderer::with_capabilities(egl_context, capabilities)
-            .context("error creating GlesRenderer")?;
+        let mut renderer = GlesRenderer::new(egl_context).context("error creating GlesRenderer")?;
 
         resources::init(&mut renderer);
         shaders::init(&mut renderer);

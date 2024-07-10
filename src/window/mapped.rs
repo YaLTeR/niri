@@ -461,8 +461,8 @@ impl LayoutElement for Mapped {
 
     fn min_size(&self) -> Size<i32, Logical> {
         let mut size = with_states(self.toplevel().wl_surface(), |state| {
-            let curr = state.cached_state.current::<SurfaceCachedState>();
-            curr.min_size
+            let mut guard = state.cached_state.get::<SurfaceCachedState>();
+            guard.current().min_size
         });
 
         if let Some(x) = self.rules.min_width {
@@ -477,8 +477,8 @@ impl LayoutElement for Mapped {
 
     fn max_size(&self) -> Size<i32, Logical> {
         let mut size = with_states(self.toplevel().wl_surface(), |state| {
-            let curr = state.cached_state.current::<SurfaceCachedState>();
-            curr.max_size
+            let mut guard = state.cached_state.get::<SurfaceCachedState>();
+            guard.current().max_size
         });
 
         if let Some(x) = self.rules.max_width {

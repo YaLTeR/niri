@@ -2603,7 +2603,7 @@ mod tests {
         let comp_mod = CompositorMod::Super;
         let mut suppressed_keys = HashSet::new();
 
-        let screenshot_ui = ScreenshotUi::new();
+        let screenshot_ui = ScreenshotUi::new(Default::default());
         let disable_power_key_handling = false;
 
         // The key_code we pick is arbitrary, the only thing
