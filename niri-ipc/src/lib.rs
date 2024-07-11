@@ -4,14 +4,14 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 mod socket;
 pub use socket::{Socket, SOCKET_PATH_ENV};
 
 /// Request from client to niri.
-#[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Request {
     /// Request the version string for the running niri instance.
     Version,
@@ -51,7 +51,8 @@ pub enum Request {
 pub type Reply = Result<Response, String>;
 
 /// Successful response from niri to client.
-#[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Response {
     /// A request that does not need a response was handled successfully.
     Handled,
@@ -74,10 +75,11 @@ pub enum Response {
 /// Actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most, but not all,
 // variants from niri-config should be present here.
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 #[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Action {
     /// Exit niri.
     Quit {
@@ -278,7 +280,8 @@ pub enum Action {
 }
 
 /// Change in window or column size.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum SizeChange {
     /// Set the size in logical pixels.
     SetFixed(i32),
@@ -291,7 +294,8 @@ pub enum SizeChange {
 }
 
 /// Workspace reference (index or name) to operate on.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum WorkspaceReferenceArg {
     /// Index of the workspace.
     Index(u8),
@@ -300,7 +304,8 @@ pub enum WorkspaceReferenceArg {
 }
 
 /// Layout to switch to.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum LayoutSwitchTarget {
     /// The next configured layout.
     Next,
@@ -311,10 +316,11 @@ pub enum LayoutSwitchTarget {
 /// Output actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most thigs from
 // niri-config should be present here.
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 #[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum OutputAction {
     /// Turn off the output.
     Off,
@@ -362,7 +368,8 @@ pub enum OutputAction {
 }
 
 /// Output mode to set.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ModeToSet {
     /// Niri will pick the mode automatically.
     Automatic,
@@ -371,7 +378,8 @@ pub enum ModeToSet {
 }
 
 /// Output mode as set in the config file.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ConfiguredMode {
     /// Width in physical pixels.
     pub width: u16,
@@ -382,7 +390,8 @@ pub struct ConfiguredMode {
 }
 
 /// Output scale to set.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ScaleToSet {
     /// Niri will pick the scale automatically.
     Automatic,
@@ -391,10 +400,11 @@ pub enum ScaleToSet {
 }
 
 /// Output position to set.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "clap", derive(clap::Subcommand))]
 #[cfg_attr(feature = "clap", command(subcommand_value_name = "POSITION"))]
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Position Values"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum PositionToSet {
     /// Position the output automatically.
     #[cfg_attr(feature = "clap", command(name = "auto"))]
@@ -405,8 +415,9 @@ pub enum PositionToSet {
 }
 
 /// Output position as set in the config file.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ConfiguredPosition {
     /// Logical X position.
     pub x: i32,
@@ -415,7 +426,8 @@ pub struct ConfiguredPosition {
 }
 
 /// Connected output.
-#[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Output {
     /// Name of the output.
     pub name: String,
@@ -442,7 +454,8 @@ pub struct Output {
 }
 
 /// Output mode.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Mode {
     /// Width in physical pixels.
     pub width: u16,
@@ -455,7 +468,8 @@ pub struct Mode {
 }
 
 /// Logical output in the compositor's coordinate space.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct LogicalOutput {
     /// Logical X position.
     pub x: i32,
@@ -472,8 +486,9 @@ pub struct LogicalOutput {
 }
 
 /// Output transform, which goes counter-clockwise.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Transform {
     /// Untransformed.
     Normal,
@@ -500,7 +515,8 @@ pub enum Transform {
 }
 
 /// Toplevel window.
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Window {
     /// Title, if set.
     pub title: Option<String>,
@@ -509,7 +525,8 @@ pub struct Window {
 }
 
 /// Output configuration change result.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum OutputConfigChanged {
     /// The target output was connected and the change was applied.
     Applied,
@@ -518,7 +535,8 @@ pub enum OutputConfigChanged {
 }
 
 /// A workspace.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Workspace {
     /// Index of the workspace on its monitor.
     ///
