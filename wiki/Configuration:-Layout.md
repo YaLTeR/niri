@@ -32,7 +32,7 @@ layout {
         active-color "#ffc87f"
         inactive-color "#505050"
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
-        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" gradient-type="linear"
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
     }
 
     struts {
