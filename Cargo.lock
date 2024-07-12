@@ -3335,7 +3335,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde_derive_internals",
- "syn 2.0.67",
+ "syn 2.0.69",
 ]
 
 [[package]]
@@ -3384,7 +3384,7 @@ checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.67",
+ "syn 2.0.69",
 ]
 
 [[package]]
