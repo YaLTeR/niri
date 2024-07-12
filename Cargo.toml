@@ -141,3 +141,14 @@ assets = [
 [package.metadata.generate-rpm.requires]
 alacritty = "*"
 fuzzel = "*"
+
+[package.metadata.deb]
+depends = "alacritty, fuzzel"
+assets = [
+    ["target/release/niri", "usr/bin/", "755"],
+    ["resources/niri-session", "usr/bin/", "755"],
+    ["resources/niri.desktop", "/usr/share/wayland-sessions/", "644"],
+    ["resources/niri-portals.conf", "/usr/share/xdg-desktop-portal/", "644"],
+    ["resources/niri.service", "/usr/lib/systemd/user/", "644"],
+    ["resources/niri-shutdown.target", "/usr/lib/systemd/user/", "644"],
+]
