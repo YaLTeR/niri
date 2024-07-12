@@ -5,6 +5,7 @@ use std::env;
 use std::sync::atomic::Ordering;
 
 use adw::prelude::{AdwApplicationWindowExt, NavigationPageExt};
+use cases::gradient_oklch_alpha::GradientOklchAlpha;
 use cases::tile::Tile;
 use cases::window::Window;
 use gtk::prelude::{
@@ -126,6 +127,7 @@ fn build_ui(app: &adw::Application) {
     s.add(GradientOklchLonger::new, "Gradient - Oklch Longer");
     s.add(GradientOklchIncreasing::new, "Gradient - Oklch Increasing");
     s.add(GradientOklchDecreasing::new, "Gradient - Oklch Decreasing");
+    s.add(GradientOklchAlpha::new, "Gradient - Alpha");
 
     let content_headerbar = adw::HeaderBar::new();
 

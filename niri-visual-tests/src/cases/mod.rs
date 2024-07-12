@@ -13,6 +13,7 @@ pub mod gradient_oklch_shorter;
 pub mod gradient_oklch_longer;
 pub mod gradient_oklch_increasing;
 pub mod gradient_oklch_decreasing;
+pub mod gradient_oklch_alpha;
 pub mod layout;
 pub mod tile;
 pub mod window;
