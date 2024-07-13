@@ -150,7 +150,7 @@ impl BorderRenderElement {
         }
 
         let mut grad_vec = grad_area_diag.project_onto(grad_dir);
-        if grad_dir.y <= 0. {
+        if grad_dir.y < 0. {
             grad_vec = -grad_vec;
         }
 
