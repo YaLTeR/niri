@@ -37,6 +37,7 @@ input {
         // click-method "clickfinger"
         // left-handed
         // disabled-on-external-mouse
+        // middle-emulation
     }
 
     mouse {
@@ -46,6 +47,7 @@ input {
         // accel-profile "flat"
         // scroll-method "no-scroll"
         // left-handed
+        // middle-emulation
     }
 
     trackpoint {
@@ -54,6 +56,7 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-method "on-button-down"
+        // middle-emulation
     }
 
     tablet {
@@ -138,6 +141,7 @@ A few settings are common between `touchpad`, `mouse` and `trackpoint`:
 - `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
+- `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
 Settings specific to `touchpad`s:
 

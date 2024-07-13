@@ -177,6 +177,8 @@ pub struct Touchpad {
     pub left_handed: bool,
     #[knuffel(child)]
     pub disabled_on_external_mouse: bool,
+    #[knuffel(child)]
+    pub middle_emulation: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -193,6 +195,8 @@ pub struct Mouse {
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child)]
     pub left_handed: bool,
+    #[knuffel(child)]
+    pub middle_emulation: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -207,6 +211,8 @@ pub struct Trackpoint {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child)]
+    pub middle_emulation: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2621,6 +2627,7 @@ mod tests {
                     accel-speed 0.4
                     accel-profile "flat"
                     scroll-method "no-scroll"
+                    middle-emulation
                 }
 
                 trackpoint {
@@ -2789,6 +2796,7 @@ mod tests {
                         tap_button_map: Some(TapButtonMap::LeftMiddleRight),
                         left_handed: false,
                         disabled_on_external_mouse: true,
+                        middle_emulation: false,
                     },
                     mouse: Mouse {
                         off: false,
@@ -2797,6 +2805,7 @@ mod tests {
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::NoScroll),
                         left_handed: false,
+                        middle_emulation: true,
                     },
                     trackpoint: Trackpoint {
                         off: true,
@@ -2804,6 +2813,7 @@ mod tests {
                         accel_speed: 0.0,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::OnButtonDown),
+                        middle_emulation: false,
                     },
                     tablet: Tablet {
                         off: false,
