@@ -535,7 +535,6 @@ impl Color {
 impl From<Color> for [f32; 4] {
     fn from(c: Color) -> Self {
         let [r, g, b, a] = [c.r, c.g, c.b, c.a].map(|x| x as f32 / 255.);
-        //[r * a, g * a, b * a, a]
         [r, g, b, a]
     }
 }
