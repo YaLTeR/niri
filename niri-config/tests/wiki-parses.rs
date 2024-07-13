@@ -14,7 +14,7 @@ fn extract_kdl_from_file(file_contents: &str, filename: &str) -> Vec<KdlCodeBloc
         .map(|line| {
             // Removes the > from callouts that might contain ```kdl```
             let line = line.trim();
-            if line.starts_with(">") {
+            if line.starts_with('>') {
                 if line.len() == 1 {
                     ""
                 } else {
@@ -58,7 +58,7 @@ fn extract_kdl_from_file(file_contents: &str, filename: &str) -> Vec<KdlCodeBloc
 fn wiki_docs_parses() {
     let wiki_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../wiki");
 
-    let code_blocks = fs::read_dir(&wiki_dir)
+    let code_blocks = fs::read_dir(wiki_dir)
         .unwrap()
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_file()))
@@ -68,13 +68,12 @@ fn wiki_docs_parses() {
                 .map(|ext| ext == "md")
                 .unwrap_or(false)
         })
-        .map(|file| {
+        .flat_map(|file| {
             let file_contents = fs::read_to_string(file.path()).unwrap();
             let file_path = file.path();
             let filename = file_path.to_str().unwrap();
             extract_kdl_from_file(&file_contents, filename)
-        })
-        .flatten();
+        });
 
     let mut errors = vec![];
 
