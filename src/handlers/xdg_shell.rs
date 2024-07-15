@@ -6,7 +6,7 @@ use smithay::desktop::{
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
     WindowSurfaceType,
 };
-use smithay::input::pointer::Focus;
+use smithay::input::pointer::{Focus, PointerGrab};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::ConstraintAdjustment;
@@ -36,6 +36,7 @@ use smithay::{
 };
 use tracing::field::Empty;
 
+use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
 use crate::input::DOUBLE_CLICK_TIME;
 use crate::layout::workspace::ColumnWidth;
@@ -65,8 +66,54 @@ impl XdgShellHandler for State {
         }
     }
 
-    fn move_request(&mut self, _surface: ToplevelSurface, _seat: WlSeat, _serial: Serial) {
-        // FIXME
+    fn move_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, serial: Serial) {
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        if !pointer.has_grab(serial) {
+            return;
+        }
+
+        let Some(start_data) = pointer.grab_start_data() else {
+            return;
+        };
+
+        let Some((focus, _)) = &start_data.focus else {
+            return;
+        };
+
+        let wl_surface = surface.wl_surface();
+        if !focus.id().same_client_as(&wl_surface.id()) {
+            return;
+        }
+
+        let Some((mapped, output)) = self.niri.layout.find_window_and_output(wl_surface) else {
+            return;
+        };
+
+        let window = mapped.window.clone();
+        let output = output.clone();
+
+        let output_pos = self
+            .niri
+            .global_space
+            .output_geometry(&output)
+            .unwrap()
+            .loc
+            .to_f64();
+
+        let pos_within_output = start_data.location - output_pos;
+
+        if !self
+            .niri
+            .layout
+            .interactive_move_begin(window.clone(), &output, pos_within_output)
+        {
+            return;
+        }
+
+        let grab = MoveGrab::new(start_data, window.clone());
+
+        pointer.set_grab(self, grab, serial, Focus::Clear);
+        self.niri.pointer_grab_ongoing = true;
     }
 
     fn resize_request(

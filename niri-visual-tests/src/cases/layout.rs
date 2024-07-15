@@ -198,11 +198,7 @@ impl TestCase for Layout {
     }
 
     fn are_animations_ongoing(&self) -> bool {
-        self.layout
-            .monitor_for_output(&self.output)
-            .unwrap()
-            .are_animations_ongoing()
-            || !self.steps.is_empty()
+        self.layout.are_animations_ongoing(Some(&self.output)) || !self.steps.is_empty()
     }
 
     fn advance_animations(&mut self, mut current_time: Duration) {
