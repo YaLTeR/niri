@@ -9,6 +9,7 @@ use smithay::backend::renderer::element::utils::{
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
 
+use super::tile::Tile;
 use super::workspace::{
     compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceId,
     WorkspaceRenderElement,
@@ -235,6 +236,56 @@ impl<W: LayoutElement> Monitor<W> {
             let ws = Workspace::new(self.output.clone(), self.options.clone());
             self.workspaces.push(ws);
         }
+
+        if activate {
+            self.activate_workspace(workspace_idx);
+        }
+    }
+
+    pub fn add_tile(
+        &mut self,
+        workspace_idx: usize,
+        column_idx: Option<usize>,
+        tile: Tile<W>,
+        activate: bool,
+        width: ColumnWidth,
+        is_full_width: bool,
+    ) {
+        let workspace = &mut self.workspaces[workspace_idx];
+
+        workspace.add_tile(column_idx, tile, activate, width, is_full_width, None);
+
+        // After adding a new window, workspace becomes this output's own.
+        workspace.original_output = OutputId::new(&self.output);
+
+        if workspace_idx == self.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            let ws = Workspace::new(self.output.clone(), self.options.clone());
+            self.workspaces.push(ws);
+        }
+
+        if activate {
+            self.activate_workspace(workspace_idx);
+        }
+    }
+
+    pub fn add_tile_to_column(
+        &mut self,
+        workspace_idx: usize,
+        column_idx: usize,
+        tile_idx: Option<usize>,
+        tile: Tile<W>,
+        activate: bool,
+    ) {
+        let workspace = &mut self.workspaces[workspace_idx];
+
+        workspace.add_tile_to_column(column_idx, tile_idx, tile, activate);
+
+        // After adding a new window, workspace becomes this output's own.
+        workspace.original_output = OutputId::new(&self.output);
+
+        // Since we're adding window to an existing column, the workspace isn't empty, and
+        // therefore cannot be the last one, so we never need to insert a new empty workspace.
 
         if activate {
             self.activate_workspace(workspace_idx);
@@ -682,7 +733,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn are_animations_ongoing(&self) -> bool {
+    pub(super) fn are_animations_ongoing(&self) -> bool {
         self.workspace_switch
             .as_ref()
             .is_some_and(|s| s.is_animation())

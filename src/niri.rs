@@ -116,6 +116,7 @@ use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
+use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -3076,6 +3077,10 @@ impl Niri {
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
         let monitor_elements: Vec<_> = mon.render_elements(renderer, target).collect();
+        let float_elements: Vec<_> = self
+            .layout
+            .render_floating_for_output(renderer, output, target)
+            .collect();
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
@@ -3106,10 +3111,12 @@ impl Niri {
 
         // Then the regular monitor elements and the top layer in varying order.
         if mon.render_above_top_layer() {
+            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
             extend_from_layer(&mut elements, Layer::Top);
         } else {
             extend_from_layer(&mut elements, Layer::Top);
+            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
         }
 
@@ -3151,11 +3158,7 @@ impl Niri {
                 }
             }
 
-            state.unfinished_animations_remain = self
-                .layout
-                .monitor_for_output(output)
-                .unwrap()
-                .are_animations_ongoing();
+            state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
 
             self.config_error_notification
                 .advance_animations(target_presentation_time);
@@ -4797,6 +4800,7 @@ impl ClientData for ClientState {
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
+        Tile = TileRenderElement<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
