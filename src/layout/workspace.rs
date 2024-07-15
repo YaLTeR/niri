@@ -8,6 +8,7 @@ use niri_config::{
 };
 use niri_ipc::SizeChange;
 use ordered_float::NotNan;
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -22,6 +23,7 @@ use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
@@ -106,6 +108,9 @@ pub struct Workspace<W: LayoutElement> {
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
 
+    /// Indication where an interactively-moved window is about to be placed.
+    insert_hint: Option<InsertHint>,
+
     /// Configurable properties of the layout as received from the parent monitor.
     pub(super) base_options: Rc<Options>,
 
@@ -117,6 +122,19 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum InsertPosition {
+    NewColumn(usize),
+    InColumn(usize, usize),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct InsertHint {
+    pub position: InsertPosition,
+    pub width: ColumnWidth,
+    pub is_full_width: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -418,6 +436,7 @@ impl<W: LayoutElement> Workspace<W> {
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
+            insert_hint: None,
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -456,6 +475,7 @@ impl<W: LayoutElement> Workspace<W> {
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
+            insert_hint: None,
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -958,6 +978,87 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows_mut().find(|win| win.is_wl_surface(wl_surface))
     }
 
+    pub fn set_insert_hint(&mut self, insert_hint: InsertHint) {
+        if self.options.insert_hint.off {
+            return;
+        }
+        self.insert_hint = Some(insert_hint);
+    }
+
+    pub fn clear_insert_hint(&mut self) {
+        self.insert_hint = None;
+    }
+
+    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
+        if self.columns.is_empty() {
+            return InsertPosition::NewColumn(0);
+        }
+        let Some((target_window, direction)) =
+            self.tiles_with_render_positions()
+                .find_map(|(tile, tile_pos)| {
+                    let pos_within_tile = pos - tile_pos;
+
+                    if tile.is_in_input_region(pos_within_tile)
+                        || tile.is_in_activation_region(pos_within_tile)
+                    {
+                        let size = tile.tile_size().to_f64();
+
+                        let mut edges = ResizeEdge::empty();
+                        if pos_within_tile.x < size.w / 3. {
+                            edges |= ResizeEdge::LEFT;
+                        } else if 2. * size.w / 3. < pos_within_tile.x {
+                            edges |= ResizeEdge::RIGHT;
+                        }
+                        if pos_within_tile.y < size.h / 3. {
+                            edges |= ResizeEdge::TOP;
+                        } else if 2. * size.h / 3. < pos_within_tile.y {
+                            edges |= ResizeEdge::BOTTOM;
+                        }
+                        return Some((tile.window().id(), edges));
+                    }
+
+                    None
+                })
+        else {
+            return InsertPosition::NewColumn(if pos.x < self.column_x(0) {
+                0
+            } else if pos.x
+                > self.column_x(self.columns.len() - 1) + self.data.last().unwrap().width
+            {
+                self.columns.len()
+            } else if pos.x < self.view_size().w / 2. {
+                self.active_column_idx
+            } else {
+                self.active_column_idx + 1
+            });
+        };
+
+        let mut target_column_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(target_window))
+            .unwrap();
+
+        if direction.contains(ResizeEdge::LEFT) || direction.contains(ResizeEdge::RIGHT) {
+            if direction.contains(ResizeEdge::RIGHT) {
+                target_column_idx += 1;
+            }
+            InsertPosition::NewColumn(target_column_idx)
+        } else if direction.contains(ResizeEdge::TOP) || direction.contains(ResizeEdge::BOTTOM) {
+            let mut target_window_idx = self.columns[target_column_idx]
+                .tiles
+                .iter()
+                .position(|tile| tile.window().id() == target_window)
+                .unwrap();
+            if direction.contains(ResizeEdge::BOTTOM) {
+                target_window_idx += 1;
+            }
+            InsertPosition::InColumn(target_column_idx, target_window_idx)
+        } else {
+            InsertPosition::NewColumn(target_column_idx)
+        }
+    }
+
     pub fn add_window(
         &mut self,
         col_idx: Option<usize>,
@@ -970,7 +1071,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.add_tile(col_idx, tile, activate, width, is_full_width, None);
     }
 
-    fn add_tile(
+    pub fn add_tile(
         &mut self,
         col_idx: Option<usize>,
         tile: Tile<W>,
@@ -2123,7 +2224,9 @@ impl<W: LayoutElement> Workspace<W> {
         zip(tiles, offsets)
     }
 
-    fn tiles_with_render_positions(&self) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> {
+    pub fn tiles_with_render_positions(
+        &self,
+    ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> {
         let scale = self.scale.fractional_scale();
         let view_off = Point::from((-self.view_pos(), 0.));
         self.columns_in_render_order()
@@ -2160,6 +2263,75 @@ impl<W: LayoutElement> Workspace<W> {
                         (tile, pos)
                     })
             })
+    }
+
+    fn insert_hint_area(&self, insert_hint: &InsertHint) -> Option<Rectangle<f64, Logical>> {
+        let mut hint_area = match insert_hint.position {
+            InsertPosition::NewColumn(column_index) => {
+                if column_index == 0 || column_index == self.columns.len() {
+                    let size = Size::from((
+                        insert_hint.width.resolve(&self.options, self.view_size.w),
+                        self.working_area.size.h - self.options.gaps * 2.,
+                    ));
+                    let mut loc = Point::from((
+                        self.column_x(column_index),
+                        self.working_area.loc.y + self.options.gaps,
+                    ));
+                    if column_index == 0 && !self.columns.is_empty() {
+                        loc.x -= size.w + self.options.gaps;
+                    }
+                    Rectangle::from_loc_and_size(loc, size)
+                } else if column_index > self.columns.len() {
+                    error!("insert hint column index is out of range");
+                    return None;
+                } else {
+                    let size =
+                        Size::from((300., self.working_area.size.h - self.options.gaps * 2.));
+                    let loc = Point::from((
+                        self.column_x(column_index) - size.w / 2. - self.options.gaps / 2.,
+                        self.working_area.loc.y + self.options.gaps,
+                    ));
+                    Rectangle::from_loc_and_size(loc, size)
+                }
+            }
+            InsertPosition::InColumn(column_index, tile_index) => {
+                if column_index > self.columns.len() {
+                    error!("insert hint column index is out of range");
+                    return None;
+                }
+                if tile_index > self.columns[column_index].tiles.len() {
+                    error!("insert hint tile index is out of range");
+                    return None;
+                }
+
+                let size = Size::from((self.data[column_index].width, 300.));
+                let loc = Point::from((
+                    self.column_x(column_index),
+                    (self.columns[column_index].tile_offset(tile_index).y - size.h / 2.)
+                        .max(self.options.gaps)
+                        .min(self.working_area.size.h - size.h - self.options.gaps),
+                ));
+                Rectangle::from_loc_and_size(loc, size)
+            }
+        };
+
+        let view_area =
+            Rectangle::from_loc_and_size(Point::from((self.view_pos(), 0.)), self.view_size());
+
+        // Make sure the hint is at least partially visible.
+        hint_area.loc.x = hint_area
+            .loc
+            .x
+            .max(view_area.loc.x + 150. - hint_area.size.w);
+        hint_area.loc.x = hint_area
+            .loc
+            .x
+            .min(view_area.loc.x + view_area.size.w - 150.);
+        hint_area = hint_area
+            .to_physical_precise_round(self.scale.fractional_scale())
+            .to_logical(self.scale.fractional_scale());
+
+        Some(hint_area)
     }
 
     /// Returns the geometry of the active tile relative to and clamped to the view.
@@ -2443,6 +2615,27 @@ impl<W: LayoutElement> Workspace<W> {
         for closing in self.closing_windows.iter().rev() {
             let elem = closing.render(renderer.as_gles_renderer(), view_rect, output_scale, target);
             rv.push(elem.into());
+        }
+
+        if let Some(insert_hint) = &self.insert_hint {
+            if let Some(mut area) = self.insert_hint_area(insert_hint) {
+                area.loc.x -= self.view_pos();
+
+                // TODO: don't re-create the buffer every render.
+                let buffer = SolidColorBuffer::new(
+                    area.size,
+                    self.options.insert_hint.color.to_array_premul(),
+                );
+                rv.push(
+                    TileRenderElement::SolidColor(SolidColorRenderElement::from_buffer(
+                        &buffer,
+                        area.loc,
+                        1.,
+                        Kind::Unspecified,
+                    ))
+                    .into(),
+                );
+            }
         }
 
         if self.columns.is_empty() {
