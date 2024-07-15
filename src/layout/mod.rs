@@ -43,13 +43,14 @@ use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
-use tile::Tile;
+use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
+use tile::{Tile, TileRenderElement};
 use workspace::WorkspaceId;
 
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
-use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
+use self::workspace::{compute_working_area, Column, ColumnWidth, InsertHint, OutputId, Workspace};
+use crate::layout::workspace::InsertPosition;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
@@ -79,6 +80,22 @@ niri_render_elements! {
 
 pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
+
+#[derive(Debug)]
+pub struct InteractiveMoveData<W: LayoutElement> {
+    /// The window being moved.
+    pub(self) tile: Tile<W>,
+    /// Output where the window is currently located/rendered.
+    pub(self) output: Output,
+    /// Current pointer position within output.
+    pub(self) pointer_pos_within_output: Point<f64, Logical>,
+    /// Window column width.
+    pub(self) width: ColumnWidth,
+    /// Whether the window column was full-width.
+    pub(self) is_full_width: bool,
+    /// Visual window geometry location relative to the pointer.
+    pub(self) window_offset_from_pointer: Point<f64, Logical>,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct InteractiveResizeData {
@@ -216,6 +233,8 @@ pub struct Layout<W: LayoutElement> {
     /// This normally indicates that the layout has keyboard focus, but not always. E.g. when the
     /// screenshot UI is open, it keeps the layout drawing as active.
     is_active: bool,
+    /// Ongoing interactive move.
+    interactive_move: Option<InteractiveMoveData<W>>,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -246,6 +265,7 @@ pub struct Options {
     pub struts: Struts,
     pub focus_ring: niri_config::FocusRing,
     pub border: niri_config::Border,
+    pub insert_hint: niri_config::InsertHint,
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
     /// Column widths that `toggle_width()` switches between.
@@ -267,6 +287,7 @@ impl Default for Options {
             struts: Default::default(),
             focus_ring: Default::default(),
             border: Default::default(),
+            insert_hint: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
             preset_column_widths: vec![
@@ -294,6 +315,17 @@ pub struct RemovedTile<W: LayoutElement> {
     width: ColumnWidth,
     /// Whether the column the tile was in was full-width.
     is_full_width: bool,
+}
+
+impl<W: LayoutElement> InteractiveMoveData<W> {
+    fn tile_render_location(&self) -> Point<f64, Logical> {
+        let scale = Scale::from(self.output.current_scale().fractional_scale());
+        let pos = self.pointer_pos_within_output + self.window_offset_from_pointer
+            - self.tile.window_loc()
+            + self.tile.render_offset();
+        // Round to physical pixels.
+        pos.to_physical_precise_round(scale).to_logical(scale)
+    }
 }
 
 impl Options {
@@ -329,6 +361,7 @@ impl Options {
             struts: layout.struts,
             focus_ring: layout.focus_ring,
             border: layout.border,
+            insert_hint: layout.insert_hint,
             center_focused_column: layout.center_focused_column,
             always_center_single_column: layout.always_center_single_column,
             preset_column_widths,
@@ -360,6 +393,7 @@ impl<W: LayoutElement> Layout<W> {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
             is_active: true,
+            interactive_move: None,
             options: Rc::new(options),
         }
     }
@@ -376,6 +410,7 @@ impl<W: LayoutElement> Layout<W> {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces },
             is_active: true,
+            interactive_move: None,
             options: opts,
         }
     }
@@ -765,6 +800,17 @@ impl<W: LayoutElement> Layout<W> {
         window: &W::Id,
         transaction: Transaction,
     ) -> Option<RemovedTile<W>> {
+        if let Some(move_) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                let move_ = self.interactive_move.take().unwrap();
+                return Some(RemovedTile {
+                    tile: move_.tile,
+                    width: move_.width,
+                    is_full_width: move_.is_full_width,
+                });
+            }
+        }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -811,6 +857,13 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
+        if let Some(move_) = &mut self.interactive_move {
+            if move_.tile.window().id() == window {
+                move_.tile.update_window();
+                return;
+            }
+        }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -834,6 +887,12 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, &Output)> {
+        if let Some(move_) = &self.interactive_move {
+            if move_.tile.window().is_wl_surface(wl_surface) {
+                return Some((move_.tile.window(), &move_.output));
+            }
+        }
+
         if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
             for mon in monitors {
                 for ws in &mon.workspaces {
@@ -939,6 +998,12 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         wl_surface: &WlSurface,
     ) -> Option<(&mut W, Option<&Output>)> {
+        if let Some(move_) = &mut self.interactive_move {
+            if move_.tile.window().is_wl_surface(wl_surface) {
+                return Some((move_.tile.window_mut(), Some(&move_.output)));
+            }
+        }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -962,6 +1027,12 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn window_loc(&self, window: &W::Id) -> Option<Point<f64, Logical>> {
+        if let Some(move_) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return Some(move_.tile.window_loc());
+            }
+        }
+
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1057,6 +1128,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn activate_window(&mut self, window: &W::Id) {
+        if self.interactive_move.is_some() {
+            return;
+        }
+
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1146,6 +1221,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn active_window(&self) -> Option<(&W, &Output)> {
+        if let Some(move_) = &self.interactive_move {
+            return Some((move_.tile.window(), &move_.output));
+        }
+
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1171,17 +1250,30 @@ impl<W: LayoutElement> Layout<W> {
             panic!()
         };
 
+        let moving_window = self
+            .interactive_move
+            .as_ref()
+            .filter(|move_| move_.output == *output)
+            .map(|move_| move_.tile.window())
+            .into_iter();
+
         let mon = monitors.iter().find(|mon| &mon.output == output).unwrap();
-        mon.workspaces.iter().flat_map(|ws| ws.windows())
+        let mon_windows = mon.workspaces.iter().flat_map(|ws| ws.windows());
+
+        moving_window.chain(mon_windows)
     }
 
-    pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>, WorkspaceId)) {
+    pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>)) {
+        if let Some(move_) = &self.interactive_move {
+            f(move_.tile.window(), Some(&move_.output), None);
+        }
+
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mon.workspaces {
                         for win in ws.windows() {
-                            f(win, Some(&mon.output), ws.id());
+                            f(win, Some(&mon.output), Some(ws.id()));
                         }
                     }
                 }
@@ -1189,7 +1281,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
                     for win in ws.windows() {
-                        f(win, None, ws.id());
+                        f(win, None, Some(ws.id()));
                     }
                 }
             }
@@ -1197,6 +1289,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn with_windows_mut(&mut self, mut f: impl FnMut(&mut W, Option<&Output>)) {
+        if let Some(move_) = &mut self.interactive_move {
+            f(move_.tile.window_mut(), Some(&move_.output));
+        }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1248,7 +1344,15 @@ impl<W: LayoutElement> Layout<W> {
             return None;
         };
 
-        monitors.iter().find(|monitor| &monitor.output == output)
+        monitors.iter().find(|mon| &mon.output == output)
+    }
+
+    pub fn monitor_for_output_mut(&mut self, output: &Output) -> Option<&mut Monitor<W>> {
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+            return None;
+        };
+
+        monitors.iter_mut().find(|mon| &mon.output == output)
     }
 
     pub fn monitor_for_workspace(&self, workspace_name: &str) -> Option<&Monitor<W>> {
@@ -1666,6 +1770,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus(&self) -> Option<&W> {
+        if let Some(move_) = &self.interactive_move {
+            return Some(move_.tile.window());
+        }
+
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1691,6 +1799,20 @@ impl<W: LayoutElement> Layout<W> {
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, Option<Point<f64, Logical>>)> {
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return None;
+        };
+
+        if let Some(move_) = &self.interactive_move {
+            let tile_pos = move_.tile_render_location();
+            let pos_within_tile = pos_within_output - tile_pos;
+
+            if move_.tile.is_in_input_region(pos_within_tile) {
+                let pos_within_surface = tile_pos + move_.tile.buf_loc();
+                return Some((move_.tile.window(), Some(pos_within_surface)));
+            } else if move_.tile.is_in_activation_region(pos_within_tile) {
+                return Some((move_.tile.window(), None));
+            }
+
             return None;
         };
 
@@ -1877,6 +1999,10 @@ impl<W: LayoutElement> Layout<W> {
     pub fn advance_animations(&mut self, current_time: Duration) {
         let _span = tracy_client::span!("Layout::advance_animations");
 
+        if let Some(move_) = &mut self.interactive_move {
+            move_.tile.advance_animations(current_time);
+        }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1894,6 +2020,22 @@ impl<W: LayoutElement> Layout<W> {
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
         let _span = tracy_client::span!("Layout::update_render_elements");
 
+        if let Some(move_) = &mut self.interactive_move {
+            if output.map_or(true, |output| move_.output == *output) {
+                let pos_within_output = move_.tile_render_location();
+                let view_rect = Rectangle::from_loc_and_size(
+                    pos_within_output.upscale(-1.),
+                    output_size(&move_.output),
+                );
+                move_.tile.update(true, view_rect);
+            }
+        }
+
+        for ws in self.workspaces_mut() {
+            ws.clear_insert_hint();
+        }
+        self.update_insert_hint();
+
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1906,13 +2048,18 @@ impl<W: LayoutElement> Layout<W> {
 
         for (idx, mon) in monitors.iter_mut().enumerate() {
             if output.map_or(true, |output| mon.output == *output) {
-                let is_active = self.is_active && idx == *active_monitor_idx;
+                let is_active =
+                    self.is_active && idx == *active_monitor_idx && self.interactive_move.is_none();
                 mon.update_render_elements(is_active);
             }
         }
     }
 
     pub fn update_shaders(&mut self) {
+        if let Some(move_) = &mut self.interactive_move {
+            move_.tile.update_shaders();
+        }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1927,6 +2074,36 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+    }
+
+    fn update_insert_hint(&mut self) {
+        let Some(move_) = self.interactive_move.take() else {
+            return;
+        };
+
+        let _span = tracy_client::span!("Layout::update_insert_hint");
+
+        if let Some(mon) = self.monitor_for_output_mut(&move_.output) {
+            if let Some((ws, offset)) = mon.workspace_under(move_.pointer_pos_within_output) {
+                let ws_id = ws.id();
+                let ws = mon
+                    .workspaces
+                    .iter_mut()
+                    .find(|ws| ws.id() == ws_id)
+                    .unwrap();
+
+                // TODO: empty workspaces need to reset their view position right away for this to
+                // look right.
+                let position = ws.get_insert_position(move_.pointer_pos_within_output - offset);
+                ws.set_insert_hint(InsertHint {
+                    position,
+                    width: move_.width,
+                    is_full_width: move_.is_full_width,
+                });
+            }
+        }
+
+        self.interactive_move = Some(move_);
     }
 
     pub fn ensure_named_workspace(&mut self, ws_config: &WorkspaceConfig) {
@@ -2402,6 +2579,188 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn interactive_move_begin(
+        &mut self,
+        window: &W::Id,
+        output: Output,
+        start_pos_within_output: Point<f64, Logical>,
+    ) -> bool {
+        if self.interactive_move.is_some() {
+            return false;
+        }
+
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+            return false;
+        };
+
+        let Some((mon, (ws, ws_offset))) = monitors.iter().find_map(|mon| {
+            mon.workspaces_with_render_positions()
+                .find(|(ws, _)| ws.has_window(window))
+                .map(|rv| (mon, rv))
+        }) else {
+            return false;
+        };
+
+        if mon.output() != &output {
+            return false;
+        }
+
+        let (tile, tile_offset) = ws
+            .tiles_with_render_positions()
+            .find(|(tile, _)| tile.window().id() == window)
+            .unwrap();
+        let window_offset = tile.window_loc();
+
+        let RemovedTile {
+            tile,
+            width,
+            is_full_width,
+        } = self.remove_window(window, Transaction::new()).unwrap();
+
+        tile.window().output_enter(&output);
+        tile.window()
+            .set_preferred_scale_transform(output.current_scale(), output.current_transform());
+
+        let window_offset_from_pointer =
+            ws_offset + tile_offset + window_offset - start_pos_within_output;
+
+        self.interactive_move = Some(InteractiveMoveData {
+            tile,
+            output,
+            pointer_pos_within_output: start_pos_within_output,
+            width,
+            is_full_width,
+            window_offset_from_pointer,
+        });
+
+        true
+    }
+
+    pub fn interactive_move_update(
+        &mut self,
+        window: &W::Id,
+        output: Output,
+        pointer_pos_within_output: Point<f64, Logical>,
+    ) -> bool {
+        let Some(mut move_) = self.interactive_move.take() else {
+            return false;
+        };
+
+        if window != move_.tile.window().id() {
+            return false;
+        }
+
+        if output != move_.output {
+            move_.tile.window().output_leave(&move_.output);
+            move_.tile.window().output_enter(&output);
+            move_
+                .tile
+                .window()
+                .set_preferred_scale_transform(output.current_scale(), output.current_transform());
+            move_.tile.update_config(
+                output.current_scale().fractional_scale(),
+                self.options.clone(),
+            );
+            move_.output = output.clone();
+            self.focus_output(&output);
+        }
+
+        move_.pointer_pos_within_output = pointer_pos_within_output;
+
+        self.interactive_move = Some(move_);
+
+        true
+    }
+
+    pub fn interactive_move_end(&mut self, window: &W::Id) {
+        let Some(move_) = &self.interactive_move else {
+            return;
+        };
+
+        if window != move_.tile.window().id() {
+            return;
+        }
+
+        let move_ = self.interactive_move.take().unwrap();
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal {
+                monitors,
+                active_monitor_idx,
+                ..
+            } => {
+                let (mon, ws_idx, position) = if let Some(mon) =
+                    monitors.iter_mut().find(|mon| mon.output == move_.output)
+                {
+                    let (ws, offset) = mon
+                        .workspace_under(move_.pointer_pos_within_output)
+                        // If the pointer is somehow outside the move output and a workspace switch
+                        // is in progress, this won't necessarily do the expected thing, but also
+                        // that is not really supposed to happen so eh?
+                        .unwrap_or_else(|| mon.workspaces_with_render_positions().next().unwrap());
+
+                    let ws_id = ws.id();
+                    let ws_idx = mon
+                        .workspaces
+                        .iter_mut()
+                        .position(|ws| ws.id() == ws_id)
+                        .unwrap();
+
+                    let ws = &mut mon.workspaces[ws_idx];
+                    let position = ws.get_insert_position(move_.pointer_pos_within_output - offset);
+                    (mon, ws_idx, position)
+                } else {
+                    let mon = &mut monitors[*active_monitor_idx];
+                    let ws_idx = mon.active_workspace_idx();
+                    let ws = &mut mon.workspaces[ws_idx];
+                    // No point in trying to use the pointer position on the wrong output.
+                    let position = InsertPosition::NewColumn(ws.columns.len());
+                    (mon, ws_idx, position)
+                };
+
+                match position {
+                    InsertPosition::NewColumn(column_idx) => {
+                        mon.add_tile(
+                            ws_idx,
+                            Some(column_idx),
+                            move_.tile,
+                            true,
+                            move_.width,
+                            move_.is_full_width,
+                        );
+                    }
+                    InsertPosition::InColumn(column_idx, tile_idx) => {
+                        mon.add_tile_to_column(
+                            ws_idx,
+                            column_idx,
+                            Some(tile_idx),
+                            move_.tile,
+                            true,
+                        );
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                let ws = if let Some(ws) = workspaces.get_mut(0) {
+                    ws
+                } else {
+                    workspaces.push(Workspace::new_no_outputs(self.options.clone()));
+                    &mut workspaces[0]
+                };
+
+                // No point in trying to use the pointer position without outputs.
+                ws.add_tile(
+                    None,
+                    move_.tile,
+                    true,
+                    move_.width,
+                    move_.is_full_width,
+                    None,
+                );
+            }
+        }
+    }
+
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -2523,6 +2882,14 @@ impl<W: LayoutElement> Layout<W> {
     pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
         let _span = tracy_client::span!("Layout::store_unmap_snapshot");
 
+        if let Some(move_) = &mut self.interactive_move {
+            if move_.tile.window().id() == window {
+                let scale = Scale::from(move_.output.current_scale().fractional_scale());
+                move_.tile.store_unmap_snapshot_if_empty(renderer, scale);
+                return;
+            }
+        }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -2546,6 +2913,13 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn clear_unmap_snapshot(&mut self, window: &W::Id) {
+        if let Some(move_) = &mut self.interactive_move {
+            if move_.tile.window().id() == window {
+                let _ = move_.tile.take_unmap_snapshot();
+                return;
+            }
+        }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -2598,10 +2972,43 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn render_floating_for_output<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        output: &Output,
+        target: RenderTarget,
+    ) -> impl Iterator<Item = TileRenderElement<R>> {
+        let mut rv = None;
+
+        if let Some(ref move_) = self.interactive_move {
+            if &move_.output == output {
+                let scale = Scale::from(move_.output.current_scale().fractional_scale());
+                let location = move_.tile_render_location();
+                rv = Some(move_.tile.render(renderer, location, scale, true, target));
+            }
+        }
+
+        rv.into_iter().flatten()
+    }
+
     pub fn refresh(&mut self, is_active: bool) {
         let _span = tracy_client::span!("Layout::refresh");
 
         self.is_active = is_active;
+
+        if let Some(move_) = &mut self.interactive_move {
+            let win = move_.tile.window_mut();
+
+            win.set_active_in_column(true);
+            win.set_activated(true);
+
+            win.set_interactive_resize(None);
+
+            win.set_bounds(output_size(&move_.output).to_i32_round());
+
+            win.send_pending_configure();
+            win.refresh();
+        }
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -2612,6 +3019,9 @@ impl<W: LayoutElement> Layout<W> {
                 for (idx, mon) in monitors.iter_mut().enumerate() {
                     let is_active = self.is_active && idx == *active_monitor_idx;
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
+                        let is_active = is_active
+                            && ws_idx == mon.active_workspace_idx
+                            && self.interactive_move.is_none();
                         ws.refresh(is_active);
 
                         // Cancel the view offset gesture after workspace switches, moves, etc.
@@ -2949,6 +3359,10 @@ mod tests {
         prop_oneof![(-10f64..10f64), (-50000f64..50000f64),]
     }
 
+    fn arbitrary_move_point() -> impl Strategy<Value = Point<f64, Logical>> {
+        any::<(f64, f64)>().prop_map(|(x, y)| Point::from((x, y)))
+    }
+
     fn arbitrary_resize_edge() -> impl Strategy<Value = ResizeEdge> {
         prop_oneof![
             Just(ResizeEdge::RIGHT),
@@ -3140,6 +3554,28 @@ mod tests {
             cancelled: bool,
             is_touchpad: Option<bool>,
         },
+        InteractiveMoveBegin {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
+            #[proptest(strategy = "1..=5usize")]
+            output_idx: usize,
+            #[proptest(strategy = "arbitrary_move_point()")]
+            point: Point<f64, Logical>,
+        },
+        InteractiveMoveUpdate {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
+            #[proptest(strategy = "1..=5usize")]
+            output_idx: usize,
+            #[proptest(strategy = "-20000f64..20000f64")]
+            dx: f64,
+            #[proptest(strategy = "-20000f64..20000f64")]
+            dy: f64,
+        },
+        InteractiveMoveEnd {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
+        },
         InteractiveResizeBegin {
             #[proptest(strategy = "1..=5usize")]
             window: usize,
@@ -3275,6 +3711,12 @@ mod tests {
                 } => {
                     let mut found_right_of = false;
 
+                    if let Some(move_) = &layout.interactive_move {
+                        if move_.tile.window().0.id == id {
+                            return;
+                        }
+                    }
+
                     match &mut layout.monitor_set {
                         MonitorSet::Normal { monitors, .. } => {
                             for mon in monitors {
@@ -3321,6 +3763,12 @@ mod tests {
                 } => {
                     let ws_name = format!("ws{ws_name}");
                     let mut found_workspace = false;
+
+                    if let Some(move_) = &layout.interactive_move {
+                        if move_.tile.window().0.id == id {
+                            return;
+                        }
+                    }
 
                     match &mut layout.monitor_set {
                         MonitorSet::Normal { monitors, .. } => {
@@ -3526,6 +3974,21 @@ mod tests {
                 }
                 Op::Communicate(id) => {
                     let mut update = false;
+
+                    if let Some(move_) = &layout.interactive_move {
+                        if move_.tile.window().0.id == id {
+                            if move_.tile.window().communicate() {
+                                update = true;
+                            }
+
+                            if update {
+                                // FIXME: serial.
+                                layout.update_window(&id, None);
+                            }
+                            return;
+                        }
+                    }
+
                     match &mut layout.monitor_set {
                         MonitorSet::Normal { monitors, .. } => {
                             'outer: for mon in monitors {
@@ -3616,6 +4079,32 @@ mod tests {
                     is_touchpad,
                 } => {
                     layout.workspace_switch_gesture_end(cancelled, is_touchpad);
+                }
+                Op::InteractiveMoveBegin {
+                    window,
+                    output_idx,
+                    point,
+                } => {
+                    let name = format!("output{output_idx}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+                    layout.interactive_move_begin(&window, output, point);
+                }
+                Op::InteractiveMoveUpdate {
+                    window,
+                    output_idx,
+                    dx,
+                    dy,
+                } => {
+                    let name = format!("output{output_idx}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+                    layout.interactive_move_update(&window, output, Point::from((dx, dy)));
+                }
+                Op::InteractiveMoveEnd { window } => {
+                    layout.interactive_move_end(&window);
                 }
                 Op::InteractiveResizeBegin { window, edges } => {
                     layout.interactive_resize_begin(window, edges);
