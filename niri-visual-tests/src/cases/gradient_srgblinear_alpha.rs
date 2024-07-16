@@ -15,7 +15,7 @@ impl GradientSrgbLinearAlpha {
         Self {
             gradient_format: GradientInterpolation {
                 color_space: GradientColorSpace::SrgbLinear,
-                hue_interpol: Default::default(),
+                hue_interpolation: Default::default(),
             },
         }
     }

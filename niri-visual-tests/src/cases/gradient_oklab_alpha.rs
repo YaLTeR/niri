@@ -15,7 +15,7 @@ impl GradientOklabAlpha {
         Self {
             gradient_format: GradientInterpolation {
                 color_space: GradientColorSpace::Oklab,
-                hue_interpol: Default::default(),
+                hue_interpolation: Default::default(),
             },
         }
     }

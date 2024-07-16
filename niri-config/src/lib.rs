@@ -442,7 +442,7 @@ pub enum GradientRelativeTo {
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct GradientInterpolation {
     pub color_space: GradientColorSpace,
-    pub hue_interpol: HueInterpolation,
+    pub hue_interpolation: HueInterpolation,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -1490,49 +1490,54 @@ impl FromStr for GradientInterpolation {
         let in_part2 = iter.next();
         let in_part3 = iter.next();
 
-        let color = if in_part1 != None {
-            let in_str = in_part1.unwrap();
-            match in_str {
-                "srgb" => GradientColorSpace::Srgb,
-                "srgb-linear" => GradientColorSpace::SrgbLinear,
-                "oklab" => GradientColorSpace::Oklab,
-                "oklch" => GradientColorSpace::Oklch,
-                &_ => return Err(miette!("Invalid color-space: {in_str}")),
-            }
-        } else {
-            GradientColorSpace::Srgb
+        let Some(in_part1) = in_part1 else {
+            return Err(miette!("missing color space"));
         };
 
-        let interpolation = if in_part2 != None {
-            let in_str = in_part2.unwrap();
-            if color != GradientColorSpace::Oklch {
+        let color = match in_part1 {
+            "srgb" => GradientColorSpace::Srgb,
+            "srgb-linear" => GradientColorSpace::SrgbLinear,
+            "oklab" => GradientColorSpace::Oklab,
+            "oklch" => GradientColorSpace::Oklch,
+            x => {
                 return Err(miette!(
-                    "There's a value: {in_str}  after a non polar colorspace"
-                ));
+                    "invalid color space {x}; can be srgb, srgb-linear, oklab or oklch"
+                ))
             }
-            if in_part3 == None || in_part3.unwrap() != "hue" {
+        };
+
+        let interpolation = if let Some(in_part2) = in_part2 {
+            if color != GradientColorSpace::Oklch {
+                return Err(miette!("only oklch color space can have hue interpolation"));
+            }
+
+            if in_part3 != Some("hue") {
                 return Err(miette!(
-                    "Invalid hue-interpolation: {in_str}  you may be missing 'hue' at the end."
+                    "interpolation must end with \"hue\", like \"oklch shorter hue\""
                 ));
-            } else if iter.next() == None {
-                match in_str {
+            } else if iter.next().is_some() {
+                return Err(miette!("unexpected text after hue interpolation"));
+            } else {
+                match in_part2 {
                     "shorter" => HueInterpolation::Shorter,
                     "longer" => HueInterpolation::Longer,
                     "increasing" => HueInterpolation::Increasing,
                     "decreasing" => HueInterpolation::Decreasing,
-                    &_ => return Err(miette!("Invalid hue-interpolation: {in_str}")),
+                    x => {
+                        return Err(miette!(
+                            "invalid hue interpolation {x}; \
+                             can be shorter, longer, increasing, decreasing"
+                        ))
+                    }
                 }
-            } else {
-                // this is a placeholder and should be changed if anything is added to in
-                return Err(miette!("Theres a missing indicator ’hue’ from ’in’ "));
             }
         } else {
-            HueInterpolation::Shorter
+            HueInterpolation::default()
         };
 
         Ok(Self {
             color_space: color,
-            hue_interpol: interpolation,
+            hue_interpolation: interpolation,
         })
     }
 }
@@ -2888,7 +2893,7 @@ mod tests {
                             relative_to: GradientRelativeTo::WorkspaceView,
                             in_: GradientInterpolation {
                                 color_space: GradientColorSpace::Srgb,
-                                hue_interpol: HueInterpolation::Shorter,
+                                hue_interpolation: HueInterpolation::Shorter,
                             },
                         }),
                         inactive_gradient: None,
@@ -3185,6 +3190,81 @@ mod tests {
 
         assert!("-".parse::<SizeChange>().is_err());
         assert!("10% ".parse::<SizeChange>().is_err());
+    }
+
+    #[test]
+    fn parse_gradient_interpolation() {
+        assert_eq!(
+            "srgb".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Srgb,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            "srgb-linear".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::SrgbLinear,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            "oklab".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklab,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            "oklch".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            "oklch shorter hue"
+                .parse::<GradientInterpolation>()
+                .unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                hue_interpolation: HueInterpolation::Shorter,
+            }
+        );
+        assert_eq!(
+            "oklch longer hue".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                hue_interpolation: HueInterpolation::Longer,
+            }
+        );
+        assert_eq!(
+            "oklch decreasing hue"
+                .parse::<GradientInterpolation>()
+                .unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                hue_interpolation: HueInterpolation::Decreasing,
+            }
+        );
+        assert_eq!(
+            "oklch increasing hue"
+                .parse::<GradientInterpolation>()
+                .unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                hue_interpolation: HueInterpolation::Increasing,
+            }
+        );
+
+        assert!("".parse::<GradientInterpolation>().is_err());
+        assert!("srgb shorter hue".parse::<GradientInterpolation>().is_err());
+        assert!("oklch shorter".parse::<GradientInterpolation>().is_err());
+        assert!("oklch shorter h".parse::<GradientInterpolation>().is_err());
+        assert!("oklch a hue".parse::<GradientInterpolation>().is_err());
+        assert!("oklch shorter hue a"
+            .parse::<GradientInterpolation>()
+            .is_err());
     }
 
     #[test]

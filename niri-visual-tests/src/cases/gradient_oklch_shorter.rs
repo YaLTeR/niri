@@ -17,7 +17,7 @@ impl GradientOklchShorter {
         Self {
             gradient_format: GradientInterpolation {
                 color_space: GradientColorSpace::Oklch,
-                hue_interpol: HueInterpolation::Shorter,
+                hue_interpolation: HueInterpolation::Shorter,
             },
         }
     }

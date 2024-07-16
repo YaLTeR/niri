@@ -178,7 +178,7 @@ impl BorderRenderElement {
             GradientColorSpace::Oklch => 3.,
         };
 
-        let hue_interpolation = match gradient_format.hue_interpol {
+        let hue_interpolation = match gradient_format.hue_interpolation {
             HueInterpolation::Shorter => 0.,
             HueInterpolation::Longer => 1.,
             HueInterpolation::Increasing => 2.,

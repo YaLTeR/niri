@@ -17,7 +17,7 @@ impl GradientOklchDecreasing {
         Self {
             gradient_format: GradientInterpolation {
                 color_space: GradientColorSpace::Oklch,
-                hue_interpol: HueInterpolation::Decreasing,
+                hue_interpolation: HueInterpolation::Decreasing,
             },
         }
     }

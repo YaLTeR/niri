@@ -17,7 +17,7 @@ impl GradientSrgbLinear {
         Self {
             gradient_format: GradientInterpolation {
                 color_space: GradientColorSpace::SrgbLinear,
-                hue_interpol: HueInterpolation::Shorter,
+                hue_interpolation: HueInterpolation::Shorter,
             },
         }
     }
