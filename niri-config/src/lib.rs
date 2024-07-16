@@ -428,7 +428,7 @@ pub struct Gradient {
     pub angle: i16,
     #[knuffel(property, default)]
     pub relative_to: GradientRelativeTo,
-    #[knuffel(property(name="in"), str, default)]
+    #[knuffel(property(name = "in"), str, default)]
     pub in_: GradientInterpolation,
 }
 
@@ -442,7 +442,7 @@ pub enum GradientRelativeTo {
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct GradientInterpolation {
     pub color_space: GradientColorSpace,
-    pub hue_interpol: HueInterpolation
+    pub hue_interpol: HueInterpolation,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -1465,13 +1465,13 @@ impl FromStr for GradientInterpolation {
         let in_part3 = iter.next();
 
         let color = if in_part1 != None {
-            let in_str = in_part1.unwrap();  
+            let in_str = in_part1.unwrap();
             match in_str {
                 "srgb" => GradientColorSpace::Srgb,
                 "srgb-linear" => GradientColorSpace::SrgbLinear,
                 "oklab" => GradientColorSpace::Oklab,
                 "oklch" => GradientColorSpace::Oklch,
-                &_ => return Err(miette!("Invalid color-space: {in_str}"))
+                &_ => return Err(miette!("Invalid color-space: {in_str}")),
             }
         } else {
             GradientColorSpace::Srgb
@@ -1480,27 +1480,34 @@ impl FromStr for GradientInterpolation {
         let interpolation = if in_part2 != None {
             let in_str = in_part2.unwrap();
             if color != GradientColorSpace::Oklch {
-                return Err(miette!("There's a value: {in_str}  after a non polar colorspace"))
+                return Err(miette!(
+                    "There's a value: {in_str}  after a non polar colorspace"
+                ));
             }
             if in_part3 == None || in_part3.unwrap() != "hue" {
-                return Err(miette!("Invalid hue-interpolation: {in_str}  you may be missing 'hue' at the end."))
+                return Err(miette!(
+                    "Invalid hue-interpolation: {in_str}  you may be missing 'hue' at the end."
+                ));
             } else if iter.next() == None {
                 match in_str {
                     "shorter" => HueInterpolation::Shorter,
                     "longer" => HueInterpolation::Longer,
                     "increasing" => HueInterpolation::Increasing,
                     "decreasing" => HueInterpolation::Decreasing,
-                    &_ => return Err(miette!("Invalid hue-interpolation: {in_str}"))
+                    &_ => return Err(miette!("Invalid hue-interpolation: {in_str}")),
                 }
             } else {
                 // this is a placeholder and should be changed if anything is added to in
-                return Err(miette!("Theres a missing indicator ’hue’ from ’in’ "))
+                return Err(miette!("Theres a missing indicator ’hue’ from ’in’ "));
             }
         } else {
             HueInterpolation::Shorter
         };
 
-        Ok( Self { color_space: color, hue_interpol: interpolation } )
+        Ok(Self {
+            color_space: color,
+            hue_interpol: interpolation,
+        })
     }
 }
 
@@ -2863,10 +2870,10 @@ mod tests {
                             to: Color::new(0, 128, 255, 255),
                             angle: 180,
                             relative_to: GradientRelativeTo::WorkspaceView,
-                            in_ : GradientInterpolation {
+                            in_: GradientInterpolation {
                                 color_space: GradientColorSpace::Srgb,
                                 hue_interpol: HueInterpolation::Shorter,
-                            }
+                            },
                         }),
                         inactive_gradient: None,
                     },

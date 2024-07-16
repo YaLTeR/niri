@@ -1,7 +1,7 @@
 use std::iter::zip;
 
 use arrayvec::ArrayVec;
-use niri_config::{CornerRadius, Gradient, GradientRelativeTo, GradientInterpolation};
+use niri_config::{CornerRadius, Gradient, GradientInterpolation, GradientRelativeTo};
 use smithay::backend::renderer::element::Kind;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
@@ -91,7 +91,7 @@ impl FocusRing {
             to: color,
             angle: 0,
             relative_to: GradientRelativeTo::Window,
-            in_: GradientInterpolation::default()
+            in_: GradientInterpolation::default(),
         });
 
         let full_rect = Rectangle::from_loc_and_size((-width, -width), self.full_size);

@@ -19,13 +19,13 @@ use tracing_subscriber::EnvFilter;
 
 use crate::cases::gradient_angle::GradientAngle;
 use crate::cases::gradient_area::GradientArea;
+use crate::cases::gradient_oklab::GradientOklab;
+use crate::cases::gradient_oklch_decreasing::GradientOklchDecreasing;
+use crate::cases::gradient_oklch_increasing::GradientOklchIncreasing;
+use crate::cases::gradient_oklch_longer::GradientOklchLonger;
+use crate::cases::gradient_oklch_shorter::GradientOklchShorter;
 use crate::cases::gradient_srgb::GradientSrgb;
 use crate::cases::gradient_srgblinear::GradientSrgbLinear;
-use crate::cases::gradient_oklab::GradientOklab;
-use crate::cases::gradient_oklch_shorter::GradientOklchShorter;
-use crate::cases::gradient_oklch_longer::GradientOklchLonger;
-use crate::cases::gradient_oklch_increasing::GradientOklchIncreasing;
-use crate::cases::gradient_oklch_decreasing::GradientOklchDecreasing;
 use crate::cases::layout::Layout;
 use crate::cases::TestCase;
 

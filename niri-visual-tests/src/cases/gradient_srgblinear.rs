@@ -1,5 +1,5 @@
 use niri::render_helpers::border::BorderRenderElement;
-use niri_config::{CornerRadius, GradientInterpolation, HueInterpolation, GradientColorSpace};
+use niri_config::{CornerRadius, GradientColorSpace, GradientInterpolation, HueInterpolation};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Rectangle, Size};
@@ -13,10 +13,10 @@ pub struct GradientSrgbLinear {
 impl GradientSrgbLinear {
     pub fn new(_size: Size<i32, Logical>) -> Self {
         Self {
-            gradient_format: GradientInterpolation{
+            gradient_format: GradientInterpolation {
                 color_space: GradientColorSpace::SrgbLinear,
-                hue_interpol: HueInterpolation::Shorter
-            }
+                hue_interpol: HueInterpolation::Shorter,
+            },
         }
     }
 }
