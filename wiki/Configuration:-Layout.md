@@ -249,6 +249,8 @@ Supported color spaces are:
 They are rendered the same as CSS.
 For example, `active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer hue"` will look the same as CSS `linear-gradient(45deg in oklch longer hue, #f00f, #0f05)`.
 
+![](./img/gradients-oklch.png)
+
 ```kdl
 layout {
     border {
