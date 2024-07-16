@@ -72,7 +72,7 @@ impl FocusRing {
         };
 
         for buf in &mut self.buffers {
-            buf.set_color(color.into());
+            buf.set_color(color.to_array_premul());
         }
 
         let radius = radius.fit_to(self.full_size.w as f32, self.full_size.h as f32);
@@ -180,8 +180,8 @@ impl FocusRing {
                     size,
                     Rectangle::from_loc_and_size(gradient_area.loc - loc, gradient_area.size),
                     gradient.in_,
-                    gradient.from.into(),
-                    gradient.to.into(),
+                    gradient.from,
+                    gradient.to,
                     ((gradient.angle as f32) - 90.).to_radians(),
                     Rectangle::from_loc_and_size(full_rect.loc - loc, full_rect.size),
                     rounded_corner_border_width,
@@ -201,8 +201,8 @@ impl FocusRing {
                     gradient_area.size,
                 ),
                 gradient.in_,
-                gradient.from.into(),
-                gradient.to.into(),
+                gradient.from,
+                gradient.to,
                 ((gradient.angle as f32) - 90.).to_radians(),
                 Rectangle::from_loc_and_size(full_rect.loc - self.locations[0], full_rect.size),
                 rounded_corner_border_width,

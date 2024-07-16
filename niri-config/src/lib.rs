@@ -410,8 +410,8 @@ impl Default for FocusRing {
         Self {
             off: false,
             width: FloatOrInt(4.),
-            active_color: Color::new(127, 200, 255, 255),
-            inactive_color: Color::new(80, 80, 80, 255),
+            active_color: Color::from_rgba8_unpremul(127, 200, 255, 255),
+            inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             active_gradient: None,
             inactive_gradient: None,
         }
@@ -484,8 +484,8 @@ impl Default for Border {
         Self {
             off: true,
             width: FloatOrInt(4.),
-            active_color: Color::new(255, 200, 127, 255),
-            inactive_color: Color::new(80, 80, 80, 255),
+            active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
+            inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             active_gradient: None,
             inactive_gradient: None,
         }
@@ -518,24 +518,50 @@ impl From<FocusRing> for Border {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+/// RGB color in [0, 1] with unpremultiplied alpha.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Color {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    pub a: u8,
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
 }
 
 impl Color {
-    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+    pub const fn new_unpremul(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r, g, b, a }
     }
-}
 
-impl From<Color> for [f32; 4] {
-    fn from(c: Color) -> Self {
-        let [r, g, b, a] = [c.r, c.g, c.b, c.a].map(|x| x as f32 / 255.);
-        [r, g, b, a]
+    pub fn from_rgba8_unpremul(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self::from_array_unpremul([r, g, b, a].map(|x| x as f32 / 255.))
+    }
+
+    pub fn from_array_premul([r, g, b, a]: [f32; 4]) -> Self {
+        let a = a.clamp(0., 1.);
+
+        if a == 0. {
+            Self::new_unpremul(0., 0., 0., 0.)
+        } else {
+            Self {
+                r: (r / a).clamp(0., 1.),
+                g: (g / a).clamp(0., 1.),
+                b: (b / a).clamp(0., 1.),
+                a,
+            }
+        }
+    }
+
+    pub fn from_array_unpremul([r, g, b, a]: [f32; 4]) -> Self {
+        Self { r, g, b, a }
+    }
+
+    pub fn to_array_unpremul(self) -> [f32; 4] {
+        [self.r, self.g, self.b, self.a]
+    }
+
+    pub fn to_array_premul(self) -> [f32; 4] {
+        let [r, g, b, a] = [self.r, self.g, self.b, self.a];
+        [r * a, g * a, b * a, a]
     }
 }
 
@@ -1515,8 +1541,8 @@ impl FromStr for Color {
     type Err = miette::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let [r, g, b, a] = csscolorparser::parse(s).into_diagnostic()?.to_rgba8();
-        Ok(Self { r, g, b, a })
+        let color = csscolorparser::parse(s).into_diagnostic()?.to_array();
+        Ok(Self::from_array_unpremul(color.map(|x| x as f32)))
     }
 }
 
@@ -1535,7 +1561,7 @@ struct ColorRgba {
 impl From<ColorRgba> for Color {
     fn from(value: ColorRgba) -> Self {
         let ColorRgba { r, g, b, a } = value;
-        Self { r, g, b, a }
+        Self::from_array_unpremul([r, g, b, a].map(|x| x as f32 / 255.))
     }
 }
 
@@ -2853,21 +2879,11 @@ mod tests {
                     focus_ring: FocusRing {
                         off: false,
                         width: FloatOrInt(5.),
-                        active_color: Color {
-                            r: 0,
-                            g: 100,
-                            b: 200,
-                            a: 255,
-                        },
-                        inactive_color: Color {
-                            r: 255,
-                            g: 200,
-                            b: 100,
-                            a: 0,
-                        },
+                        active_color: Color::from_rgba8_unpremul(0, 100, 200, 255),
+                        inactive_color: Color::from_rgba8_unpremul(255, 200, 100, 0),
                         active_gradient: Some(Gradient {
-                            from: Color::new(10, 20, 30, 255),
-                            to: Color::new(0, 128, 255, 255),
+                            from: Color::from_rgba8_unpremul(10, 20, 30, 255),
+                            to: Color::from_rgba8_unpremul(0, 128, 255, 255),
                             angle: 180,
                             relative_to: GradientRelativeTo::WorkspaceView,
                             in_: GradientInterpolation {
@@ -2880,18 +2896,8 @@ mod tests {
                     border: Border {
                         off: false,
                         width: FloatOrInt(3.),
-                        active_color: Color {
-                            r: 255,
-                            g: 200,
-                            b: 127,
-                            a: 255,
-                        },
-                        inactive_color: Color {
-                            r: 255,
-                            g: 200,
-                            b: 100,
-                            a: 0,
-                        },
+                        active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
+                        inactive_color: Color::from_rgba8_unpremul(255, 200, 100, 0),
                         active_gradient: None,
                         inactive_gradient: None,
                     },

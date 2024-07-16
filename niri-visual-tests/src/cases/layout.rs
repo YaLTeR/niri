@@ -50,8 +50,8 @@ impl Layout {
             border: niri_config::Border {
                 off: false,
                 width: FloatOrInt(4.),
-                active_color: Color::new(255, 163, 72, 255),
-                inactive_color: Color::new(50, 50, 50, 255),
+                active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
+                inactive_color: Color::from_rgba8_unpremul(50, 50, 50, 255),
                 active_gradient: None,
                 inactive_gradient: None,
             },

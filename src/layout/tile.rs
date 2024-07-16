@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CornerRadius, GradientInterpolation};
+use niri_config::{Color, CornerRadius, GradientInterpolation};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -758,8 +758,8 @@ impl<W: LayoutElement> Tile<W> {
                             geo.size,
                             Rectangle::from_loc_and_size((0., 0.), geo.size),
                             GradientInterpolation::default(),
-                            elem.color(),
-                            elem.color(),
+                            Color::from_array_premul(elem.color()),
+                            Color::from_array_premul(elem.color()),
                             0.,
                             Rectangle::from_loc_and_size((0., 0.), geo.size),
                             0.,

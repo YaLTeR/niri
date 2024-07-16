@@ -1,5 +1,7 @@
 use niri::render_helpers::border::BorderRenderElement;
-use niri_config::{CornerRadius, GradientColorSpace, GradientInterpolation, HueInterpolation};
+use niri_config::{
+    Color, CornerRadius, GradientColorSpace, GradientInterpolation, HueInterpolation,
+};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Rectangle, Size};
@@ -35,8 +37,8 @@ impl TestCase for GradientSrgbLinear {
             area.size,
             Rectangle::from_loc_and_size((0., 0.), area.size),
             self.gradient_format,
-            [1., 0., 0., 1.],
-            [0., 1., 0., 1.],
+            Color::new_unpremul(1., 0., 0., 1.),
+            Color::new_unpremul(0., 1., 0., 1.),
             0.,
             Rectangle::from_loc_and_size((0., 0.), area.size),
             0.,

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use glam::{Mat3, Vec2};
-use niri_config::{CornerRadius, GradientColorSpace, GradientInterpolation, HueInterpolation};
+use niri_config::{
+    Color, CornerRadius, GradientColorSpace, GradientInterpolation, HueInterpolation,
+};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
@@ -29,8 +31,8 @@ struct Parameters {
     size: Size<f64, Logical>,
     gradient_area: Rectangle<f64, Logical>,
     gradient_format: GradientInterpolation,
-    color_from: [f32; 4],
-    color_to: [f32; 4],
+    color_from: Color,
+    color_to: Color,
     angle: f32,
     geometry: Rectangle<f64, Logical>,
     border_width: f32,
@@ -45,8 +47,8 @@ impl BorderRenderElement {
         size: Size<f64, Logical>,
         gradient_area: Rectangle<f64, Logical>,
         gradient_format: GradientInterpolation,
-        color_from: [f32; 4],
-        color_to: [f32; 4],
+        color_from: Color,
+        color_to: Color,
         angle: f32,
         geometry: Rectangle<f64, Logical>,
         border_width: f32,
@@ -102,8 +104,8 @@ impl BorderRenderElement {
         size: Size<f64, Logical>,
         gradient_area: Rectangle<f64, Logical>,
         gradient_format: GradientInterpolation,
-        color_from: [f32; 4],
-        color_to: [f32; 4],
+        color_from: Color,
+        color_to: Color,
         angle: f32,
         geometry: Rectangle<f64, Logical>,
         border_width: f32,
@@ -190,8 +192,8 @@ impl BorderRenderElement {
             vec![
                 Uniform::new("colorspace", colorspace),
                 Uniform::new("hue_interpolation", hue_interpolation),
-                Uniform::new("color_from", color_from),
-                Uniform::new("color_to", color_to),
+                Uniform::new("color_from", color_from.to_array_unpremul()),
+                Uniform::new("color_to", color_to.to_array_unpremul()),
                 Uniform::new("grad_offset", grad_offset.to_array()),
                 Uniform::new("grad_width", w),
                 Uniform::new("grad_vec", grad_vec.to_array()),
