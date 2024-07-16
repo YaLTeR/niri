@@ -72,7 +72,7 @@ impl Tile {
             border: niri_config::Border {
                 off: false,
                 width: FloatOrInt(32.),
-                active_color: Color::new(255, 163, 72, 255),
+                active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
                 ..Default::default()
             },
             ..Default::default()

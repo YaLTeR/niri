@@ -32,7 +32,7 @@ layout {
         active-color "#ffc87f"
         inactive-color "#505050"
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
-        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
     }
 
     struts {
@@ -169,7 +169,7 @@ layout {
         inactive-color "#505050"
 
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
-        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
     }
 }
 ```
@@ -234,6 +234,27 @@ layout {
     border {
         active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+    }
+}
+```
+
+<sup>Since: 0.1.8</sup> You can set the gradient interpolation color space using syntax like `in="srgb-linear"` or `in="oklch longer hue"`.
+Supported color spaces are:
+
+- `srgb` (the default),
+- `srgb-linear`,
+- `oklab`,
+- `oklch` with `shorter hue` or `longer hue` or `increasing hue` or `decreasing hue`.
+
+They are rendered the same as CSS.
+For example, `active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer hue"` will look the same as CSS `linear-gradient(45deg in oklch longer hue, #f00f, #0f05)`.
+
+![](./img/gradients-oklch.png)
+
+```kdl
+layout {
+    border {
+        active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer hue"
     }
 }
 ```

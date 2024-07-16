@@ -410,8 +410,8 @@ impl Default for FocusRing {
         Self {
             off: false,
             width: FloatOrInt(4.),
-            active_color: Color::new(127, 200, 255, 255),
-            inactive_color: Color::new(80, 80, 80, 255),
+            active_color: Color::from_rgba8_unpremul(127, 200, 255, 255),
+            inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             active_gradient: None,
             inactive_gradient: None,
         }
@@ -428,6 +428,8 @@ pub struct Gradient {
     pub angle: i16,
     #[knuffel(property, default)]
     pub relative_to: GradientRelativeTo,
+    #[knuffel(property(name = "in"), str, default)]
+    pub in_: GradientInterpolation,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -435,6 +437,30 @@ pub enum GradientRelativeTo {
     #[default]
     Window,
     WorkspaceView,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub struct GradientInterpolation {
+    pub color_space: GradientColorSpace,
+    pub hue_interpolation: HueInterpolation,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum GradientColorSpace {
+    #[default]
+    Srgb,
+    SrgbLinear,
+    Oklab,
+    Oklch,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum HueInterpolation {
+    #[default]
+    Shorter,
+    Longer,
+    Increasing,
+    Decreasing,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -458,8 +484,8 @@ impl Default for Border {
         Self {
             off: true,
             width: FloatOrInt(4.),
-            active_color: Color::new(255, 200, 127, 255),
-            inactive_color: Color::new(80, 80, 80, 255),
+            active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
+            inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             active_gradient: None,
             inactive_gradient: None,
         }
@@ -492,23 +518,49 @@ impl From<FocusRing> for Border {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+/// RGB color in [0, 1] with unpremultiplied alpha.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Color {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    pub a: u8,
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
 }
 
 impl Color {
-    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+    pub const fn new_unpremul(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r, g, b, a }
     }
-}
 
-impl From<Color> for [f32; 4] {
-    fn from(c: Color) -> Self {
-        let [r, g, b, a] = [c.r, c.g, c.b, c.a].map(|x| x as f32 / 255.);
+    pub fn from_rgba8_unpremul(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self::from_array_unpremul([r, g, b, a].map(|x| x as f32 / 255.))
+    }
+
+    pub fn from_array_premul([r, g, b, a]: [f32; 4]) -> Self {
+        let a = a.clamp(0., 1.);
+
+        if a == 0. {
+            Self::new_unpremul(0., 0., 0., 0.)
+        } else {
+            Self {
+                r: (r / a).clamp(0., 1.),
+                g: (g / a).clamp(0., 1.),
+                b: (b / a).clamp(0., 1.),
+                a,
+            }
+        }
+    }
+
+    pub fn from_array_unpremul([r, g, b, a]: [f32; 4]) -> Self {
+        Self { r, g, b, a }
+    }
+
+    pub fn to_array_unpremul(self) -> [f32; 4] {
+        [self.r, self.g, self.b, self.a]
+    }
+
+    pub fn to_array_premul(self) -> [f32; 4] {
+        let [r, g, b, a] = [self.r, self.g, self.b, self.a];
         [r * a, g * a, b * a, a]
     }
 }
@@ -1429,12 +1481,73 @@ impl CornerRadius {
     }
 }
 
+impl FromStr for GradientInterpolation {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut iter = s.split_whitespace();
+        let in_part1 = iter.next();
+        let in_part2 = iter.next();
+        let in_part3 = iter.next();
+
+        let Some(in_part1) = in_part1 else {
+            return Err(miette!("missing color space"));
+        };
+
+        let color = match in_part1 {
+            "srgb" => GradientColorSpace::Srgb,
+            "srgb-linear" => GradientColorSpace::SrgbLinear,
+            "oklab" => GradientColorSpace::Oklab,
+            "oklch" => GradientColorSpace::Oklch,
+            x => {
+                return Err(miette!(
+                    "invalid color space {x}; can be srgb, srgb-linear, oklab or oklch"
+                ))
+            }
+        };
+
+        let interpolation = if let Some(in_part2) = in_part2 {
+            if color != GradientColorSpace::Oklch {
+                return Err(miette!("only oklch color space can have hue interpolation"));
+            }
+
+            if in_part3 != Some("hue") {
+                return Err(miette!(
+                    "interpolation must end with \"hue\", like \"oklch shorter hue\""
+                ));
+            } else if iter.next().is_some() {
+                return Err(miette!("unexpected text after hue interpolation"));
+            } else {
+                match in_part2 {
+                    "shorter" => HueInterpolation::Shorter,
+                    "longer" => HueInterpolation::Longer,
+                    "increasing" => HueInterpolation::Increasing,
+                    "decreasing" => HueInterpolation::Decreasing,
+                    x => {
+                        return Err(miette!(
+                            "invalid hue interpolation {x}; \
+                             can be shorter, longer, increasing, decreasing"
+                        ))
+                    }
+                }
+            }
+        } else {
+            HueInterpolation::default()
+        };
+
+        Ok(Self {
+            color_space: color,
+            hue_interpolation: interpolation,
+        })
+    }
+}
+
 impl FromStr for Color {
     type Err = miette::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let [r, g, b, a] = csscolorparser::parse(s).into_diagnostic()?.to_rgba8();
-        Ok(Self { r, g, b, a })
+        let color = csscolorparser::parse(s).into_diagnostic()?.to_array();
+        Ok(Self::from_array_unpremul(color.map(|x| x as f32)))
     }
 }
 
@@ -1453,7 +1566,7 @@ struct ColorRgba {
 impl From<ColorRgba> for Color {
     fn from(value: ColorRgba) -> Self {
         let ColorRgba { r, g, b, a } = value;
-        Self { r, g, b, a }
+        Self::from_array_unpremul([r, g, b, a].map(|x| x as f32 / 255.))
     }
 }
 
@@ -2771,41 +2884,25 @@ mod tests {
                     focus_ring: FocusRing {
                         off: false,
                         width: FloatOrInt(5.),
-                        active_color: Color {
-                            r: 0,
-                            g: 100,
-                            b: 200,
-                            a: 255,
-                        },
-                        inactive_color: Color {
-                            r: 255,
-                            g: 200,
-                            b: 100,
-                            a: 0,
-                        },
+                        active_color: Color::from_rgba8_unpremul(0, 100, 200, 255),
+                        inactive_color: Color::from_rgba8_unpremul(255, 200, 100, 0),
                         active_gradient: Some(Gradient {
-                            from: Color::new(10, 20, 30, 255),
-                            to: Color::new(0, 128, 255, 255),
+                            from: Color::from_rgba8_unpremul(10, 20, 30, 255),
+                            to: Color::from_rgba8_unpremul(0, 128, 255, 255),
                             angle: 180,
                             relative_to: GradientRelativeTo::WorkspaceView,
+                            in_: GradientInterpolation {
+                                color_space: GradientColorSpace::Srgb,
+                                hue_interpolation: HueInterpolation::Shorter,
+                            },
                         }),
                         inactive_gradient: None,
                     },
                     border: Border {
                         off: false,
                         width: FloatOrInt(3.),
-                        active_color: Color {
-                            r: 255,
-                            g: 200,
-                            b: 127,
-                            a: 255,
-                        },
-                        inactive_color: Color {
-                            r: 255,
-                            g: 200,
-                            b: 100,
-                            a: 0,
-                        },
+                        active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
+                        inactive_color: Color::from_rgba8_unpremul(255, 200, 100, 0),
                         active_gradient: None,
                         inactive_gradient: None,
                     },
@@ -3093,6 +3190,81 @@ mod tests {
 
         assert!("-".parse::<SizeChange>().is_err());
         assert!("10% ".parse::<SizeChange>().is_err());
+    }
+
+    #[test]
+    fn parse_gradient_interpolation() {
+        assert_eq!(
+            "srgb".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Srgb,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            "srgb-linear".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::SrgbLinear,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            "oklab".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklab,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            "oklch".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            "oklch shorter hue"
+                .parse::<GradientInterpolation>()
+                .unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                hue_interpolation: HueInterpolation::Shorter,
+            }
+        );
+        assert_eq!(
+            "oklch longer hue".parse::<GradientInterpolation>().unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                hue_interpolation: HueInterpolation::Longer,
+            }
+        );
+        assert_eq!(
+            "oklch decreasing hue"
+                .parse::<GradientInterpolation>()
+                .unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                hue_interpolation: HueInterpolation::Decreasing,
+            }
+        );
+        assert_eq!(
+            "oklch increasing hue"
+                .parse::<GradientInterpolation>()
+                .unwrap(),
+            GradientInterpolation {
+                color_space: GradientColorSpace::Oklch,
+                hue_interpolation: HueInterpolation::Increasing,
+            }
+        );
+
+        assert!("".parse::<GradientInterpolation>().is_err());
+        assert!("srgb shorter hue".parse::<GradientInterpolation>().is_err());
+        assert!("oklch shorter".parse::<GradientInterpolation>().is_err());
+        assert!("oklch shorter h".parse::<GradientInterpolation>().is_err());
+        assert!("oklch a hue".parse::<GradientInterpolation>().is_err());
+        assert!("oklch shorter hue a"
+            .parse::<GradientInterpolation>()
+            .is_err());
     }
 
     #[test]
