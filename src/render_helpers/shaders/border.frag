@@ -23,12 +23,48 @@ uniform vec2 geo_size;
 uniform vec4 outer_radius;
 uniform float border_width;
 
-float srgb_to_linear(float color) {
-  return pow(color, 2.2);
+vec4 premul_rect(vec4 color) {
+  color.rgb *= color.a;
+  return color;
 }
 
-float linear_to_srgb(float color) {
-  return pow(color, 1.0 / 2.2);
+vec4 premul_lch(vec4 color) {
+  color.xy *= color.a;
+  return color;
+}
+
+vec4 unpremul_rect(vec4 color) {
+  if (color.a == 0.0)
+    return color;
+
+  color.rgb /= color.a;
+  return color;
+}
+
+vec4 unpremul_lch(vec4 color) {
+  if (color.a == 0.0)
+    return color;
+
+  color.xy /= color.a;
+  return color;
+}
+
+vec4 premul_mix_unpremul_rect(vec4 color1, vec4 color2, float ratio) {
+  vec4 mixed = mix(premul_rect(color1), premul_rect(color2), ratio);
+  return unpremul_rect(mixed);
+}
+
+vec4 premul_mix_unpremul_lch(vec4 color1, vec4 color2, float ratio) {
+  vec4 mixed = mix(premul_lch(color1), premul_lch(color2), ratio);
+  return unpremul_lch(mixed);
+}
+
+vec3 srgb_to_linear(vec3 color) {
+  return pow(color, vec3(2.2));
+}
+
+vec3 linear_to_srgb(vec3 color) {
+  return pow(color, vec3(1.0 / 2.2));
 }
 
 vec3 lab_to_lch(vec3 color) {
@@ -51,7 +87,7 @@ vec3 lch_to_lab(vec3 color) {
     color.x,
     a,
     b
-  ); 
+  );
 }
 
 vec3 linear_to_oklab(vec3 color){
@@ -60,7 +96,7 @@ vec3 linear_to_oklab(vec3 color){
     vec3(0.2119034982, 0.6806995451, 0.1073969566),
     vec3(0.0883024619, 0.2817188376, 0.6299787005)
   );
-  mat3 lms_to_oklab = mat3( 
+  mat3 lms_to_oklab = mat3(
     vec3(0.2104542553, 0.7936177850, -0.0040720468),
     vec3(1.9779984951, -2.4285922050, 0.4505937099),
     vec3(0.0259040371, 0.7827717662, -0.8086757660)
@@ -97,48 +133,30 @@ vec3 oklab_to_linear(vec3 color){
 }
 
 vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
-  //  srgb
-
   vec4 color_out;
-  
+
+  //  srgb
   if (colorspace == 0.0) {
-    color_out = mix(color1, color2, color_ratio);
-    color_out.rgb = color_out.rgb * color_out.a;
-    return color_out;
+    return mix(premul_rect(color1), premul_rect(color2), color_ratio);
   }
 
-  color1.rgb = vec3(
-    srgb_to_linear(color1.r),
-    srgb_to_linear(color1.g),
-    srgb_to_linear(color1.b)
-  ); 
-  color2.rgb = vec3(
-    srgb_to_linear(color2.r),
-    srgb_to_linear(color2.g),
-    srgb_to_linear(color2.b)
-  );
+  color1.rgb = srgb_to_linear(color1.rgb);
+  color2.rgb = srgb_to_linear(color2.rgb);
+
   //  srgb-linear
   if (colorspace == 1.0) {
-    color_out = mix(
-      color1,
-      color2,
-      color_ratio
-    );
+    color_out = premul_mix_unpremul_rect(color1, color2, color_ratio);
   //  oklab
   } else if (colorspace == 2.0) {
     color1.xyz = linear_to_oklab(color1.rgb);
     color2.xyz = linear_to_oklab(color2.rgb);
-    color_out = mix(
-      color1,
-      color2,
-      color_ratio
-    );
-    color_out.rgb = oklab_to_linear(color_out.xyz);  
+    color_out = premul_mix_unpremul_rect(color1, color2, color_ratio);
+    color_out.rgb = oklab_to_linear(color_out.xyz);
   //  oklch
   } else if (colorspace == 3.0) {
     color1.xyz = lab_to_lch(linear_to_oklab(color1.rgb));
     color2.xyz = lab_to_lch(linear_to_oklab(color2.rgb));
-    color_out = mix(color1, color2, color_ratio);
+    color_out = premul_mix_unpremul_lch(color1, color2, color_ratio);
 
     float min_hue = min(color1.z, color2.z);
     float max_hue = max(color1.z, color2.z);
@@ -149,22 +167,22 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
       color1.z == min_hue ?
         mod(color1.z - path_mod_distance, 360.0) :
         mod(color1.z + path_mod_distance, 360.0) ;
-    float path_direct = 
+    float path_direct =
       color1.z == min_hue ?
         color1.z + path_direct_distance :
         color1.z - path_direct_distance ;
 
     //  shorter
     if (hue_interpolation == 0.0) {
-      color_out.z = 
+      color_out.z =
         max_hue - min_hue > 360.0 - max_hue + min_hue ?
           path_mod :
           path_direct ;
     //  longer
-    } else if (hue_interpolation == 1.0) { 
-      color_out.z = 
+    } else if (hue_interpolation == 1.0) {
+      color_out.z =
         max_hue - min_hue <= 360.0 - max_hue + min_hue ?
-          path_mod : 
+          path_mod :
           path_direct ;
     //  increasing
     } else if (hue_interpolation == 2.0) {
@@ -182,12 +200,7 @@ vec4 color_mix(vec4 color1, vec4 color2, float color_ratio) {
     color_out.rgb = clamp(oklab_to_linear(lch_to_lab(color_out.xyz)), 0.0, 1.0);
   }
 
-  return vec4(
-    linear_to_srgb(color_out.r) * color_out.a,
-    linear_to_srgb(color_out.g) * color_out.a,
-    linear_to_srgb(color_out.b) * color_out.a,
-    color_out.a
-  );
+  return premul_rect(vec4(linear_to_srgb(color_out.rgb), color_out.a));
 }
 
 vec4 gradient_color(vec2 coords) {

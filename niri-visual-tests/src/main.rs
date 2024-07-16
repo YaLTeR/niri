@@ -17,13 +17,16 @@ use tracing_subscriber::EnvFilter;
 use crate::cases::gradient_angle::GradientAngle;
 use crate::cases::gradient_area::GradientArea;
 use crate::cases::gradient_oklab::GradientOklab;
+use crate::cases::gradient_oklab_alpha::GradientOklabAlpha;
 use crate::cases::gradient_oklch_alpha::GradientOklchAlpha;
 use crate::cases::gradient_oklch_decreasing::GradientOklchDecreasing;
 use crate::cases::gradient_oklch_increasing::GradientOklchIncreasing;
 use crate::cases::gradient_oklch_longer::GradientOklchLonger;
 use crate::cases::gradient_oklch_shorter::GradientOklchShorter;
 use crate::cases::gradient_srgb::GradientSrgb;
+use crate::cases::gradient_srgb_alpha::GradientSrgbAlpha;
 use crate::cases::gradient_srgblinear::GradientSrgbLinear;
+use crate::cases::gradient_srgblinear_alpha::GradientSrgbLinearAlpha;
 use crate::cases::layout::Layout;
 use crate::cases::tile::Tile;
 use crate::cases::window::Window;
@@ -127,6 +130,9 @@ fn build_ui(app: &adw::Application) {
     s.add(GradientOklchLonger::new, "Gradient - Oklch Longer");
     s.add(GradientOklchIncreasing::new, "Gradient - Oklch Increasing");
     s.add(GradientOklchDecreasing::new, "Gradient - Oklch Decreasing");
+    s.add(GradientSrgbAlpha::new, "Gradient - Srgb Alpha");
+    s.add(GradientSrgbLinearAlpha::new, "Gradient - SrgbLinear Alpha");
+    s.add(GradientOklabAlpha::new, "Gradient - Oklab Alpha");
     s.add(GradientOklchAlpha::new, "Gradient - Oklch Alpha");
 
     let content_headerbar = adw::HeaderBar::new();
