@@ -594,13 +594,13 @@ pub struct DefaultColumnWidth(pub Option<PresetWidth>);
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Struts {
     #[knuffel(child, unwrap(argument), default)]
-    pub left: FloatOrInt<0, 65535>,
+    pub left: FloatOrInt<-65535, 65535>,
     #[knuffel(child, unwrap(argument), default)]
-    pub right: FloatOrInt<0, 65535>,
+    pub right: FloatOrInt<-65535, 65535>,
     #[knuffel(child, unwrap(argument), default)]
-    pub top: FloatOrInt<0, 65535>,
+    pub top: FloatOrInt<-65535, 65535>,
     #[knuffel(child, unwrap(argument), default)]
-    pub bottom: FloatOrInt<0, 65535>,
+    pub bottom: FloatOrInt<-65535, 65535>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
