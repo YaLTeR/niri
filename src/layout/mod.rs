@@ -4271,12 +4271,21 @@ mod tests {
         prop_oneof![Just(0.), Just(4.), ((1.)..=65535.)]
     }
 
+    fn arbitrary_spacing_neg() -> impl Strategy<Value = f64> {
+        // Give equal weight to:
+        // - 0: the element is disabled
+        // - 4: some reasonable value
+        // - -4: some reasonable negative value
+        // - random value, likely unreasonably big
+        prop_oneof![Just(0.), Just(4.), Just(-4.), ((1.)..=65535.)]
+    }
+
     fn arbitrary_struts() -> impl Strategy<Value = Struts> {
         (
-            arbitrary_spacing(),
-            arbitrary_spacing(),
-            arbitrary_spacing(),
-            arbitrary_spacing(),
+            arbitrary_spacing_neg(),
+            arbitrary_spacing_neg(),
+            arbitrary_spacing_neg(),
+            arbitrary_spacing_neg(),
         )
             .prop_map(|(left, right, top, bottom)| Struts {
                 left: FloatOrInt(left),
