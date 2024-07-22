@@ -52,6 +52,8 @@ Set gaps around (inside and outside) windows in logical pixels.
 The value will be rounded to physical pixels according to the scale factor of every output.
 For example, `gaps 0.5` on an output with `scale 2` will result in one physical-pixel wide gaps.
 
+<sup>Since: 0.1.8</sup> You can emulate "inner" vs. "outer" gaps with negative `struts` values (see the struts section below).
+
 ```kdl
 layout {
     gaps 16
@@ -284,3 +286,22 @@ layout {
 ```
 
 ![](./img/struts.png)
+
+<sup>Since: 0.1.8</sup> You can use negative values.
+They will push the windows outwards, even outside the edges of the screen.
+
+You can use negative struts with matching gaps value to emulate "inner" vs. "outer" gaps.
+For example, use this for inner gaps without outer gaps:
+
+```kdl
+layout {
+    gaps 16
+
+    struts {
+        left -16
+        right -16
+        top -16
+        bottom -16
+    }
+}
+```
