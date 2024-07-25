@@ -18,6 +18,8 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 use smithay::reexports::input;
 
+pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
+
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
     #[knuffel(child, default)]
@@ -323,6 +325,8 @@ pub struct Output {
     pub mode: Option<ConfiguredMode>,
     #[knuffel(child)]
     pub variable_refresh_rate: bool,
+    #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
+    pub background_color: Color,
 }
 
 impl Default for Output {
@@ -335,6 +339,7 @@ impl Default for Output {
             position: None,
             mode: None,
             variable_refresh_rate: false,
+            background_color: DEFAULT_BACKGROUND_COLOR,
         }
     }
 }
@@ -551,7 +556,7 @@ impl Color {
         }
     }
 
-    pub fn from_array_unpremul([r, g, b, a]: [f32; 4]) -> Self {
+    pub const fn from_array_unpremul([r, g, b, a]: [f32; 4]) -> Self {
         Self { r, g, b, a }
     }
 
@@ -2696,6 +2701,7 @@ mod tests {
                 position x=10 y=20
                 mode "1920x1080@144"
                 variable-refresh-rate
+                background-color "rgba(25, 25, 102, 1.0)"
             }
 
             layout {
@@ -2879,6 +2885,7 @@ mod tests {
                         refresh: Some(144.),
                     }),
                     variable_refresh_rate: true,
+                    background_color: Color::from_rgba8_unpremul(25, 25, 102, 255),
                 }]),
                 layout: Layout {
                     focus_ring: FocusRing {

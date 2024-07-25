@@ -13,6 +13,7 @@ use anyhow::{ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference,
+    DEFAULT_BACKGROUND_COLOR,
 };
 use niri_ipc::Workspace;
 use smithay::backend::allocator::Fourcc;
@@ -141,7 +142,6 @@ use crate::utils::{
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
 
-const CLEAR_COLOR: [f32; 4] = [0.2, 0.2, 0.2, 1.];
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 
 // We'll try to send frame callbacks at least once a second. We'll make a timer that fires once a
@@ -1085,6 +1085,8 @@ impl State {
 
     pub fn reload_output_config(&mut self) {
         let mut resized_outputs = vec![];
+        let mut recolored_outputs = vec![];
+
         for output in self.niri.global_space.outputs() {
             let name = output.name();
             let config = self.niri.config.borrow_mut();
@@ -1120,9 +1122,27 @@ impl State {
                 self.niri.ipc_outputs_changed = true;
                 resized_outputs.push(output.clone());
             }
+
+            let mut background_color = config
+                .map(|c| c.background_color)
+                .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+                .to_array_unpremul();
+            background_color[3] = 1.;
+
+            if let Some(state) = self.niri.output_state.get_mut(output) {
+                if state.background_buffer.color() != background_color {
+                    state.background_buffer.set_color(background_color);
+                    recolored_outputs.push(output.clone());
+                }
+            }
         }
+
         for output in resized_outputs {
             self.niri.output_resized(&output);
+        }
+
+        for output in recolored_outputs {
+            self.niri.queue_redraw(&output);
         }
 
         self.backend.on_output_config_changed(&mut self.niri);
@@ -1935,6 +1955,13 @@ impl Niri {
         let mut transform = c
             .map(|c| ipc_transform_to_smithay(c.transform))
             .unwrap_or(Transform::Normal);
+
+        let mut background_color = c
+            .map(|c| c.background_color)
+            .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            .to_array_unpremul();
+        background_color[3] = 1.;
+
         // FIXME: fix winit damage on other transforms.
         if name == "winit" {
             transform = Transform::Flipped180;
@@ -1966,7 +1993,7 @@ impl Niri {
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
             frame_callback_sequence: 0,
-            background_buffer: SolidColorBuffer::new(size, CLEAR_COLOR),
+            background_buffer: SolidColorBuffer::new(size, background_color),
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
