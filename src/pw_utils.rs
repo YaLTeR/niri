@@ -375,7 +375,7 @@ impl PipeWire {
                             size.w as u32,
                             size.h as u32,
                             fourcc,
-                            GbmBufferFlags::RENDERING | GbmBufferFlags::LINEAR,
+                            GbmBufferFlags::RENDERING,
                         ) {
                             Ok(bo) => bo,
                             Err(err) => {
