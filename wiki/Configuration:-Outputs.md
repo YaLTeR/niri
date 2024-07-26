@@ -13,6 +13,7 @@ output "eDP-1" {
     transform "90"
     position x=1280 y=0
     variable-refresh-rate
+    background-color "#003300"
 }
 
 output "HDMI-A-1" {
@@ -143,5 +144,20 @@ You can check whether an output supports VRR in `niri msg outputs`.
 ```kdl
 output "HDMI-A-1" {
     variable-refresh-rate
+}
+```
+
+### `background-color`
+
+<sup>Since: 0.1.8</sup>
+
+Set the background color that niri draws for this output.
+This is visible when you're not using any background tools like swaybg.
+
+The alpha channel for this color will be ignored.
+
+```kdl
+output "HDMI-A-1" {
+    background-color "#003300"
 }
 ```
