@@ -634,8 +634,16 @@ impl Tty {
             return;
         };
 
+        let scan_result = match device.drm_scanner.scan_connectors(&device.drm) {
+            Ok(x) => x,
+            Err(err) => {
+                warn!("error scanning connectors: {err:?}");
+                return;
+            }
+        };
+
         let mut removed = Vec::new();
-        for event in device.drm_scanner.scan_connectors(&device.drm) {
+        for event in scan_result {
             match event {
                 DrmScanEvent::Connected {
                     connector,
