@@ -1178,6 +1178,16 @@ impl Tty {
             return;
         };
 
+        // This happened for someone reconnecting 2 monitors with a KVM switch:
+        // https://github.com/YaLTeR/niri/issues/556
+        //
+        // Maybe the vblank didn't get cancelled or got reordered weirdly? Either way, we can avoid
+        // crashing here.
+        if matches!(output_state.redraw_state, RedrawState::Idle) {
+            error!("got vblank for an idle output {name}");
+            return;
+        }
+
         // Mark the last frame as submitted.
         match surface.compositor.frame_submitted() {
             Ok(Some((mut feedback, target_presentation_time))) => {
