@@ -52,7 +52,7 @@ We have integration with the [Tracy](https://github.com/wolfpld/tracy) profiler 
 cargo build --release --features=profile-with-tracy-ondemand
 ```
 
-Then you can open Tracy (you will need the latest stable release) and attach to a running niri instance to collect profiling data. Profiling data is collected "on demand"---that is, only when Tracy is connected. You can run a niri build like this as your main compositor if you'd like.
+Then you can open Tracy (you will need the latest stable release) and attach to a running niri instance to collect profiling data. Profiling data is collected "on demand"—that is, only when Tracy is connected. You can run a niri build like this as your main compositor if you'd like.
 
 > [!NOTE]
 > If you need to profile niri startup or the niri CLI, you can opt for "always on" profiling instead, using this feature flag:
