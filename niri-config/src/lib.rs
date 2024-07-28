@@ -2507,6 +2507,7 @@ impl FromStr for Key {
                 modifiers |= Modifiers::SUPER;
             } else if part.eq_ignore_ascii_case("iso_level3_shift")
                 || part.eq_ignore_ascii_case("mod5")
+                || part.eq_ignore_ascii_case("altgr")
             {
                 modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
             } else {
@@ -3276,20 +3277,15 @@ mod tests {
 
     #[test]
     fn parse_iso_level3_shift() {
-        assert_eq!(
-            "ISO_Level3_Shift+A".parse::<Key>().unwrap(),
-            Key {
-                trigger: Trigger::Keysym(Keysym::a),
-                modifiers: Modifiers::ISO_LEVEL3_SHIFT
-            },
-        );
-        assert_eq!(
-            "Mod5+A".parse::<Key>().unwrap(),
-            Key {
-                trigger: Trigger::Keysym(Keysym::a),
-                modifiers: Modifiers::ISO_LEVEL3_SHIFT
-            },
-        );
+        for input in ["ISO_Level3_Shift+A", "Mod5+A", "AltGr+A"] {
+            assert_eq!(
+                input.parse::<Key>().unwrap(),
+                Key {
+                    trigger: Trigger::Keysym(Keysym::a),
+                    modifiers: Modifiers::ISO_LEVEL3_SHIFT
+                },
+            );
+        }
     }
 
     #[test]
