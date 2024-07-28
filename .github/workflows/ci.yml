@@ -153,11 +153,9 @@ jobs:
         with:
           show-progress: false
 
-      - name: Install Rust
-        run: |
-          rustup set auto-self-update check-only
-          rustup toolchain install nightly --profile minimal --component rustfmt
-          rustup override set nightly
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
 
       - name: Run rustfmt
         run: cargo fmt --all -- --check
