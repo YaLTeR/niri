@@ -2,12 +2,13 @@ use std::ptr;
 
 use anyhow::{ensure, Context};
 use niri_config::BlockOutFrom;
-use smithay::backend::allocator::Fourcc;
+use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{buffer_dimensions, Bind, ExportMem, Frame, Offscreen, Renderer};
+use smithay::backend::renderer::{Bind, ExportMem, Frame, Offscreen, Renderer};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
@@ -233,16 +234,19 @@ pub fn render_to_vec(
     Ok(copy.to_vec())
 }
 
-#[cfg(feature = "xdp-gnome-screencast")]
 pub fn render_to_dmabuf(
     renderer: &mut GlesRenderer,
-    dmabuf: smithay::backend::allocator::dmabuf::Dmabuf,
+    dmabuf: Dmabuf,
     size: Size<i32, Physical>,
     scale: Scale<f64>,
     transform: Transform,
     elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
 ) -> anyhow::Result<SyncPoint> {
     let _span = tracy_client::span!();
+    ensure!(
+        dmabuf.width() == size.w as u32 && dmabuf.height() == size.h as u32,
+        "invalid buffer size"
+    );
     renderer.bind(dmabuf).context("error binding texture")?;
     render_elements(renderer, size, scale, transform, elements)
 }
@@ -250,32 +254,28 @@ pub fn render_to_dmabuf(
 pub fn render_to_shm(
     renderer: &mut GlesRenderer,
     buffer: &WlBuffer,
+    size: Size<i32, Physical>,
     scale: Scale<f64>,
     transform: Transform,
     elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
 ) -> anyhow::Result<()> {
     let _span = tracy_client::span!();
-
-    let buffer_size = buffer_dimensions(buffer).context("error getting buffer dimensions")?;
-    let size = buffer_size.to_logical(1, Transform::Normal).to_physical(1);
-
-    let mapping =
-        render_and_download(renderer, size, scale, transform, Fourcc::Argb8888, elements)?;
-    let bytes = renderer
-        .map_texture(&mapping)
-        .context("error mapping texture")?;
-
     shm::with_buffer_contents_mut(buffer, |shm_buffer, shm_len, buffer_data| {
         ensure!(
             // The buffer prefers pixels in little endian ...
-            buffer_data.format == wl_shm::Format::Argb8888
-                && buffer_data.stride == size.w * 4
+            buffer_data.format == wl_shm::Format::Xrgb8888
+                && buffer_data.width == size.w
                 && buffer_data.height == size.h
-                && shm_len as i32 == buffer_data.stride * buffer_data.height,
+                && buffer_data.stride == size.w * 4
+                && shm_len == buffer_data.stride as usize * buffer_data.height as usize,
             "invalid buffer format or size"
         );
+        let mapping =
+            render_and_download(renderer, size, scale, transform, Fourcc::Xrgb8888, elements)?;
 
-        ensure!(bytes.len() == shm_len, "mapped buffer has wrong length");
+        let bytes = renderer
+            .map_texture(&mapping)
+            .context("error mapping texture")?;
 
         unsafe {
             let _span = tracy_client::span!("copy_nonoverlapping");
