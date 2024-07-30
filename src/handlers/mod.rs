@@ -17,6 +17,7 @@ use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -69,7 +70,7 @@ use crate::protocols::foreign_toplevel::{
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
-use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
+use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
 use crate::utils::{output_size, send_scale_transform};
 use crate::{
     delegate_foreign_toplevel, delegate_gamma_control, delegate_output_management,
@@ -419,13 +420,29 @@ impl ForeignToplevelHandler for State {
 delegate_foreign_toplevel!(State);
 
 impl ScreencopyHandler for State {
-    fn frame(&mut self, screencopy: Screencopy) {
-        if let Err(err) = self
-            .niri
-            .render_for_screencopy(&mut self.backend, screencopy)
-        {
-            warn!("error rendering for screencopy: {err:?}");
+    fn frame(&mut self, manager: &ZwlrScreencopyManagerV1, screencopy: Screencopy) {
+        // If with_damage then push it onto the queue for redraw of the output,
+        // otherwise render it immediately.
+        if screencopy.with_damage() {
+            let Some(queue) = self.niri.screencopy_state.get_queue_mut(manager) else {
+                trace!("screencopy manager destroyed already");
+                return;
+            };
+            queue.push(screencopy);
+        } else {
+            self.backend.with_primary_renderer(|renderer| {
+                if let Err(err) = self
+                    .niri
+                    .render_for_screencopy_without_damage(renderer, manager, screencopy)
+                {
+                    warn!("error rendering for screencopy: {err:?}");
+                }
+            });
         }
+    }
+
+    fn screencopy_state(&mut self) -> &mut ScreencopyManagerState {
+        &mut self.niri.screencopy_state
     }
 }
 delegate_screencopy!(State);

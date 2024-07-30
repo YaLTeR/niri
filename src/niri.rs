@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
-use anyhow::{ensure, Context};
+use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference,
@@ -31,6 +31,7 @@ use smithay::backend::renderer::element::{
     PrimaryScanoutOutput, RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::Unbind;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -44,7 +45,7 @@ use smithay::desktop::{
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbContextHandler};
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
-use smithay::output::{self, Output, PhysicalProperties, Subpixel};
+use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
@@ -53,6 +54,7 @@ use smithay::reexports::calloop::{
 use smithay::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
+use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::backend::{
     ClientData, ClientId, DisconnectReason, GlobalId,
 };
@@ -116,7 +118,7 @@ use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
-use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
+use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::pw_utils::{CastSizeChange, CastTarget, PwToNiri};
@@ -125,8 +127,8 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
-    render_to_encompassing_texture, render_to_shm, render_to_texture, render_to_vec, shaders,
-    RenderTarget,
+    render_to_dmabuf, render_to_encompassing_texture, render_to_shm, render_to_texture,
+    render_to_vec, shaders, RenderTarget,
 };
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
@@ -2041,6 +2043,8 @@ impl Niri {
         #[cfg(feature = "xdp-gnome-screencast")]
         self.stop_casts_for_target(CastTarget::Output(output.downgrade()));
 
+        self.remove_screencopy_output(output);
+
         // Disable the output global and remove some time later to give the clients some time to
         // process it.
         let global = state.global;
@@ -3091,16 +3095,20 @@ impl Niri {
         // However, this should probably be restricted to sending frame callbacks to more surfaces,
         // to err on the safe side.
         self.send_frame_callbacks(output);
-
-        #[cfg(feature = "xdp-gnome-screencast")]
         backend.with_primary_renderer(|renderer| {
-            // Render and send to PipeWire screencast streams.
-            self.render_for_screen_cast(renderer, output, target_presentation_time);
+            #[cfg(feature = "xdp-gnome-screencast")]
+            {
+                // Render and send to PipeWire screencast streams.
+                self.render_for_screen_cast(renderer, output, target_presentation_time);
 
-            // FIXME: when a window is hidden, it should probably still receive frame callbacks and
-            // get rendered for screen cast. This is currently unimplemented, but happens to work
-            // by chance, since output redrawing is more eager than it should be.
-            self.render_windows_for_screen_cast(renderer, output, target_presentation_time);
+                // FIXME: when a window is hidden, it should probably still receive frame callbacks
+                // and get rendered for screen cast. This is currently
+                // unimplemented, but happens to work by chance, since output
+                // redrawing is more eager than it should be.
+                self.render_windows_for_screen_cast(renderer, output, target_presentation_time);
+            }
+
+            self.render_for_screencopy_with_damage(renderer, output);
         });
     }
 
@@ -3736,47 +3744,163 @@ impl Niri {
         }
     }
 
-    pub fn render_for_screencopy(
+    pub fn render_for_screencopy_with_damage(
         &mut self,
-        backend: &mut Backend,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+    ) {
+        let _span = tracy_client::span!("Niri::render_for_screencopy_with_damage");
+
+        let mut screencopy_state = mem::take(&mut self.screencopy_state);
+        let elements = OnceCell::new();
+
+        for queue in screencopy_state.queues_mut() {
+            let (damage_tracker, screencopy) = queue.split();
+            if let Some(screencopy) = screencopy {
+                if screencopy.output() == output {
+                    let elements = elements.get_or_init(|| {
+                        self.render(renderer, output, true, RenderTarget::ScreenCapture)
+                    });
+                    // FIXME: skip elements if not including pointers
+                    let render_result = Self::render_for_screencopy_internal(
+                        renderer,
+                        output,
+                        elements,
+                        true,
+                        damage_tracker,
+                        screencopy,
+                    );
+                    match render_result {
+                        Ok(damages) => {
+                            if let Some(damages) = damages {
+                                screencopy.damage(damages);
+                                queue.pop().submit(false);
+                            } else {
+                                trace!("no damage found, waiting till next redraw");
+                            }
+                        }
+                        Err(err) => {
+                            // Recreate damage tracker to report full damage next check.
+                            *damage_tracker =
+                                OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
+                            queue.pop();
+                            warn!("error rendering for screencopy: {err:?}");
+                        }
+                    }
+                };
+            }
+        }
+
+        self.screencopy_state = screencopy_state;
+    }
+
+    pub fn render_for_screencopy_without_damage(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        manager: &ZwlrScreencopyManagerV1,
         screencopy: Screencopy,
     ) -> anyhow::Result<()> {
-        let output = screencopy.output().clone();
-        ensure!(self.output_state.contains_key(&output), "output is missing");
+        let _span = tracy_client::span!("Niri::render_for_screencopy");
 
-        self.layout.update_render_elements(&output);
+        let output = screencopy.output();
+        ensure!(
+            self.output_state.contains_key(output),
+            "screencopy output missing"
+        );
 
-        backend
-            .with_primary_renderer(move |renderer| {
-                let elements = self
-                    .render(
-                        renderer,
-                        &output,
-                        screencopy.overlay_cursor(),
-                        RenderTarget::ScreenCapture,
-                    )
-                    .into_iter()
-                    .rev();
+        self.layout.update_render_elements(output);
 
-                let region_loc = screencopy.region_loc();
-                let elements = elements.map(|element| {
-                    RelocateRenderElement::from_element(
-                        element,
-                        region_loc.upscale(-1),
-                        Relocate::Relative,
-                    )
-                });
+        let elements = self.render(
+            renderer,
+            output,
+            screencopy.overlay_cursor(),
+            RenderTarget::ScreenCapture,
+        );
+        let Some(queue) = self.screencopy_state.get_queue_mut(manager) else {
+            bail!("screencopy manager destroyed already");
+        };
+        let damage_tracker = queue.split().0;
 
-                let scale = output.current_scale().fractional_scale().into();
-                let transform = output.current_transform();
-                render_to_shm(renderer, screencopy.buffer(), scale, transform, elements)
-                    .context("error rendering to screencopy shm buffer: {err:?}")?;
+        let render_result = Self::render_for_screencopy_internal(
+            renderer,
+            output,
+            &elements,
+            false,
+            damage_tracker,
+            &screencopy,
+        )
+        .map(|_damage| ());
 
-                screencopy.submit(false);
+        match render_result {
+            Ok(()) => screencopy.submit(false),
+            Err(_) => {
+                // Recreate damage tracker to report full damage next check.
+                *damage_tracker = OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
+            }
+        }
+        render_result
+    }
 
-                Ok(())
+    fn render_for_screencopy_internal<'a>(
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        elements: &[OutputRenderElements<GlesRenderer>],
+        with_damage: bool,
+        damage_tracker: &'a mut OutputDamageTracker,
+        screencopy: &Screencopy,
+    ) -> anyhow::Result<Option<&'a Vec<Rectangle<i32, Physical>>>> {
+        let OutputModeSource::Static {
+            size: last_size,
+            scale: last_scale,
+            transform: last_transform,
+        } = damage_tracker.mode().clone()
+        else {
+            unreachable!("damage tracker must have static mode");
+        };
+
+        let size = screencopy.buffer_size();
+        let scale: Scale<f64> = output.current_scale().fractional_scale().into();
+        let transform = output.current_transform();
+
+        if size != last_size || scale != last_scale || transform != last_transform {
+            *damage_tracker = OutputDamageTracker::new(size, scale, transform);
+        }
+
+        let region_loc = screencopy.region_loc();
+        let elements = elements
+            .iter()
+            .map(|element| {
+                RelocateRenderElement::from_element(
+                    element,
+                    region_loc.upscale(-1),
+                    Relocate::Relative,
+                )
             })
-            .context("primary renderer is missing")?
+            .collect::<Vec<_>>();
+
+        // Just checked damage tracker has static mode
+        let damages = damage_tracker.damage_output(1, &elements).unwrap().0;
+        if with_damage && damages.is_none() {
+            return Ok(None);
+        }
+
+        let elements = elements.iter().rev();
+
+        match screencopy.buffer() {
+            ScreencopyBuffer::Dmabuf(dmabuf) => {
+                let _sync =
+                    render_to_dmabuf(renderer, dmabuf.clone(), size, scale, transform, elements)
+                        .context("error rendering to screencopy dmabuf")?;
+            }
+            ScreencopyBuffer::Shm(wl_buffer) => {
+                render_to_shm(renderer, wl_buffer, size, scale, transform, elements)
+                    .context("error rendering to screencopy shm buffer")?;
+            }
+        }
+        if let Err(err) = renderer.unbind() {
+            warn!("error unbinding after rendering for screencopy: {err:?}");
+        }
+        Ok(damages)
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -3826,6 +3950,13 @@ impl Niri {
 
         for id in ids {
             self.stop_cast(id);
+        }
+    }
+
+    pub fn remove_screencopy_output(&mut self, output: &Output) {
+        let _span = tracy_client::span!("Niri::remove_screencopy_output");
+        for queue in self.screencopy_state.queues_mut() {
+            queue.remove_output(output);
         }
     }
 
