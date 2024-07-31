@@ -2327,6 +2327,9 @@ fn modifiers_from_state(mods: ModifiersState) -> Modifiers {
     if mods.iso_level3_shift {
         modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
     }
+    if mods.iso_level5_shift {
+        modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
+    }
     modifiers
 }
 
