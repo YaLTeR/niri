@@ -3,8 +3,10 @@ In niri we keep track of this via the `RedrawState` enum that you can find in an
 
 Here's a diagram of state transitions for the `RedrawState` state machine:
 
-![RedrawState state transition diagram](./img/RedrawState-light.drawio.png#gh-light-mode-only)
-![RedrawState state transition diagram](./img/RedrawState-dark.drawio.png#gh-dark-mode-only)
+<picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./img/RedrawState-dark.drawio.png">
+    <img alt="RedrawState state transition diagram" src="./img/RedrawState-light.drawio.png">
+</picture>
 
 `Idle` is the default state, when the output does not need to be repainted.
 Any operation that may cause the screen to update calls `queue_redraw()`, which moves the output to a `Queued` state.
