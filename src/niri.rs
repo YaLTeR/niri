@@ -1369,8 +1369,16 @@ impl State {
                     }
                 };
 
+                let render_formats = self
+                    .backend
+                    .with_primary_renderer(|renderer| {
+                        renderer.egl_context().dmabuf_render_formats().clone()
+                    })
+                    .unwrap_or_default();
+
                 let res = pw.start_cast(
                     gbm,
+                    render_formats,
                     session_id,
                     target,
                     size,
