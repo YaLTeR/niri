@@ -191,7 +191,9 @@ pub struct Niri {
     // When false, we're idling with monitors powered off.
     pub monitors_active: bool,
 
+    pub current_keyboard: niri_config::Keyboard,
     pub devices: HashSet<input::Device>,
+    pub keyboard_device_cache: HashMap<input::Device, niri_config::Keyboard>,
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
 
@@ -855,7 +857,7 @@ impl State {
                 }
             }
 
-            if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
+            if self.niri.current_keyboard.track_layout == TrackLayout::Window {
                 let current_layout =
                     keyboard.with_xkb_state(self, |context| context.active_layout());
 
@@ -955,19 +957,23 @@ impl State {
             self.niri.cursor_texture_cache.clear();
         }
 
+        let default_keyboard = config.input.fallback_keyboard();
+
+        let current_keyboard = self.niri.current_keyboard.clone();
+
         // We need &mut self to reload the xkb config, so just store it here.
-        if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
-            reload_xkb = Some(config.input.keyboard.xkb.clone());
+        if default_keyboard.xkb != current_keyboard.xkb {
+            reload_xkb = Some(default_keyboard.xkb.clone());
         }
 
         // Reload the repeat info.
-        if config.input.keyboard.repeat_rate != old_config.input.keyboard.repeat_rate
-            || config.input.keyboard.repeat_delay != old_config.input.keyboard.repeat_delay
+        if default_keyboard.repeat_rate != current_keyboard.repeat_rate
+            || default_keyboard.repeat_delay != current_keyboard.repeat_delay
         {
             let keyboard = self.niri.seat.get_keyboard().unwrap();
             keyboard.change_repeat_info(
-                config.input.keyboard.repeat_rate.into(),
-                config.input.keyboard.repeat_delay.into(),
+                default_keyboard.repeat_rate.into(),
+                default_keyboard.repeat_delay.into(),
             );
         }
 
@@ -1602,9 +1608,9 @@ impl Niri {
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
-            config_.input.keyboard.xkb.to_xkb_config(),
-            config_.input.keyboard.repeat_delay.into(),
-            config_.input.keyboard.repeat_rate.into(),
+            config_.input.fallback_keyboard().xkb.to_xkb_config(),
+            config_.input.fallback_keyboard().repeat_delay.into(),
+            config_.input.fallback_keyboard().repeat_rate.into(),
         )
         .unwrap();
         seat.add_pointer();
@@ -1720,7 +1726,9 @@ impl Niri {
             root_surface: HashMap::new(),
             monitors_active: true,
 
+            current_keyboard: Default::default(),
             devices: HashSet::new(),
+            keyboard_device_cache: HashMap::new(),
             tablets: HashMap::new(),
             touch: HashSet::new(),
 

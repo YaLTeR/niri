@@ -60,8 +60,8 @@ pub struct Config {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Input {
-    #[knuffel(child, default)]
-    pub keyboard: Keyboard,
+    #[knuffel(children(name = "keyboard"), default)]
+    pub keyboards: Vec<Keyboard>,
     #[knuffel(child, default)]
     pub touchpad: Touchpad,
     #[knuffel(child, default)]
@@ -82,8 +82,28 @@ pub struct Input {
     pub workspace_auto_back_and_forth: bool,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+impl Input {
+    pub fn fallback_keyboard(&self) -> Keyboard {
+        self.keyboards
+            .iter()
+            .find(|keyboard| keyboard.name.is_none())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn keyboard_named<K: AsRef<str>>(&self, name: K) -> Keyboard {
+        self.keyboards
+            .iter()
+            .find(|keyboard| keyboard.name.as_deref() == Some(name.as_ref()))
+            .cloned()
+            .unwrap_or_else(|| self.fallback_keyboard())
+    }
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone)]
 pub struct Keyboard {
+    #[knuffel(argument, unwrap(argument))]
+    pub name: Option<String>,
     #[knuffel(child, default)]
     pub xkb: Xkb,
     // The defaults were chosen to match wlroots and sway.
@@ -98,6 +118,7 @@ pub struct Keyboard {
 impl Default for Keyboard {
     fn default() -> Self {
         Self {
+            name: None,
             xkb: Default::default(),
             repeat_delay: 600,
             repeat_rate: 25,
@@ -144,7 +165,7 @@ pub enum CenterFocusedColumn {
     OnOverflow,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone)]
 pub enum TrackLayout {
     /// The layout change is global.
     #[default]
@@ -2657,6 +2678,16 @@ mod tests {
                     }
                 }
 
+                keyboard "test_keyboard" {
+                    repeat-delay 500
+                    repeat-rate 30
+                    track-layout "window"
+                    xkb {
+                        layout "us,ru"
+                        options "grp:win_space_toggle"
+                    }
+                }
+
                 touchpad {
                     tap
                     dwt
@@ -2821,16 +2852,30 @@ mod tests {
             "##,
             Config {
                 input: Input {
-                    keyboard: Keyboard {
-                        xkb: Xkb {
-                            layout: "us,ru".to_owned(),
-                            options: Some("grp:win_space_toggle".to_owned()),
+                    keyboards: vec![
+                        Keyboard {
+                            xkb: Xkb {
+                                layout: "us,ru".to_owned(),
+                                options: Some("grp:win_space_toggle".to_owned()),
+                                ..Default::default()
+                            },
+                            repeat_delay: 600,
+                            repeat_rate: 25,
+                            track_layout: TrackLayout::Window,
                             ..Default::default()
                         },
-                        repeat_delay: 600,
-                        repeat_rate: 25,
-                        track_layout: TrackLayout::Window,
-                    },
+                        Keyboard {
+                            xkb: Xkb {
+                                layout: "us,ru".to_owned(),
+                                options: Some("grp:win_space_toggle".to_owned()),
+                                ..Default::default()
+                            },
+                            repeat_delay: 500,
+                            repeat_rate: 30,
+                            track_layout: TrackLayout::Window,
+                            name: Some("test_keyboard".to_owned()),
+                        },
+                    ],
                     touchpad: Touchpad {
                         off: false,
                         tap: true,
@@ -3315,7 +3360,7 @@ mod tests {
     #[test]
     fn default_repeat_params() {
         let config = Config::parse("config.kdl", "").unwrap();
-        assert_eq!(config.input.keyboard.repeat_delay, 600);
-        assert_eq!(config.input.keyboard.repeat_rate, 25);
+        assert_eq!(config.input.fallback_keyboard().repeat_delay, 600);
+        assert_eq!(config.input.fallback_keyboard().repeat_rate, 25);
     }
 }
