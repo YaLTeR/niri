@@ -1,6 +1,20 @@
 X11 is very cursed, so built-in Xwayland support is not planned at the moment.
 However, there are multiple solutions to running X11 apps in niri.
 
+## Using xwayland-satellite
+
+[xwayland-satellite] is a new project that essentially implements rootless Xwayland in a separate application, without the host compositor's involvement.
+While it is still somewhat experimental, it handles a lot of applications correctly, like Steam, games and Discord.
+
+Build it according to instructions from its README, then run the `xwayland-satellite` binary.
+Now you can start X11 applications on the X11 DISPLAY that it provides:
+
+```
+env DISPLAY=:0 flatpak run com.valvesoftware.Steam
+```
+
+They will appear as normal windows.
+
 ## Directly running Xwayland in rootful mode
 
 This method involves invoking XWayland directly and running it as its own window, it also requires an extra X11 window manager running inside it.
@@ -99,19 +113,6 @@ gamescope -W 2560 -H 1440 -w 2560 -h 1440 -f  -- flatpak run com.valvesoftware.S
 > [!NOTE]
 > If Steam terminates abnormally while running in gamescope, it seems that subsequent gamescope invocations will sometimes fail to start it properly.
 > If this happens, run Steam inside a rootful Xwayland as described above, then exit it normally, and then you will be able to use gamescope again.
-
-## Using xwayland-satellite
-
-[xwayland-satellite] is an experimental new project that essentially implements rootless Xwayland in a separate application, without the host compositor's involvement.
-
-Build it according to instructions from its README, then run the `xwayland-satellite` binary.
-Now you can start X11 applications on the X11 DISPLAY that it provides:
-
-```
-env DISPLAY=:0 flatpak run com.valvesoftware.Steam
-```
-
-They will appear as normal windows.
 
 [xwayland-run]: https://gitlab.freedesktop.org/ofourdan/xwayland-run
 [xwayland-satellite]: https://github.com/Supreeeme/xwayland-satellite
