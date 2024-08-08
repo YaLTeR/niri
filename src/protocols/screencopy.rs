@@ -456,7 +456,7 @@ impl Screencopy {
         self.with_damage
     }
 
-    pub fn damage(&self, damages: &[Rectangle<i32, Physical>]) {
+    pub fn damage(&self, damages: impl Iterator<Item = Rectangle<i32, smithay::utils::Buffer>>) {
         for Rectangle { loc, size } in damages {
             self.frame
                 .damage(loc.x as u32, loc.y as u32, size.w as u32, size.h as u32);

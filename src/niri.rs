@@ -3773,6 +3773,18 @@ impl Niri {
                     match render_result {
                         Ok(damages) => {
                             if let Some(damages) = damages {
+                                // Convert from Physical coordinates back to Buffer coordinates.
+                                let transform = output.current_transform();
+                                let physical_size =
+                                    transform.transform_size(screencopy.buffer_size());
+                                let damages = damages.iter().map(|dmg| {
+                                    dmg.to_logical(1).to_buffer(
+                                        1,
+                                        transform.invert(),
+                                        &physical_size.to_logical(1),
+                                    )
+                                });
+
                                 screencopy.damage(damages);
                                 queue.pop().submit(false);
                             } else {
