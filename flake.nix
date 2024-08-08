@@ -83,7 +83,10 @@
         };
 
         cargoArtifacts = craneLib.buildDepsOnly craneArgs;
-        niri = craneLib.buildPackage (craneArgs // {inherit cargoArtifacts;});
+        niri = craneLib.buildPackage (craneArgs // {
+          inherit cargoArtifacts;
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath craneArgs.runtimeDependencies; # Needed for tests to find libxkbcommon
+        });
       in {
         formatter = pkgs.alejandra;
 
