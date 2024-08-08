@@ -210,10 +210,8 @@ where
 
                 let rect = Rectangle::from_loc_and_size((x, y), (width, height));
 
-                // This uses integer scale because fractional scale can only be signaled to
-                // surfaces, so screencopy clients can only see the integer scale for outputs.
-                let output_scale = output.current_scale().integer_scale();
-                let physical_rect = rect.to_physical(output_scale);
+                let output_scale = output.current_scale().fractional_scale();
+                let physical_rect = rect.to_physical_precise_round(output_scale);
 
                 // Clamp captured region to the output.
                 let Some(clamped_rect) = physical_rect.intersection(output_rect) else {
