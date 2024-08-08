@@ -28,6 +28,7 @@ use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
+use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::niri::State;
@@ -35,6 +36,7 @@ use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
+pub mod move_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
@@ -1332,8 +1334,58 @@ impl State {
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();
 
+                // Check if we need to start an interactive move.
+                if event.button() == Some(MouseButton::Left) && !pointer.is_grabbed() {
+                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                    let mod_down = match self.backend.mod_key() {
+                        CompositorMod::Super => mods.logo,
+                        CompositorMod::Alt => mods.alt,
+                    };
+                    if mod_down {
+                        let location = pointer.current_location();
+                        let (output, _) = self.niri.output_under(location).unwrap();
+                        let output = output.clone();
+
+                        // See and ignore if we got a double move-click gesture.
+                        // FIXME: deduplicate with move_request in xdg-shell somehow.
+                        let time = get_monotonic_time();
+                        let last_cell = mapped.last_interactive_move_start();
+                        let last = last_cell.get();
+                        last_cell.set(Some(time));
+                        if let Some(last_time) = last {
+                            if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
+                                self.niri.layout.activate_window(&window);
+                                // FIXME: granular.
+                                self.niri.queue_redraw_all();
+                                return;
+                            }
+                        }
+
+                        self.niri.layout.activate_window(&window);
+
+                        if self
+                            .niri
+                            .layout
+                            .interactive_move_begin(window.clone(), output, location)
+                        {
+                            let start_data = PointerGrabStartData {
+                                focus: None,
+                                button: event.button_code(),
+                                location,
+                            };
+                            let grab = MoveGrab::new(start_data, window.clone());
+                            pointer.set_grab(self, grab, serial, Focus::Clear);
+                            self.niri.pointer_grab_ongoing = true;
+                            self.niri
+                                .cursor_manager
+                                .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
+                            // FIXME: granular.
+                            self.niri.queue_redraw_all();
+                        }
+                    }
+                }
                 // Check if we need to start an interactive resize.
-                if event.button() == Some(MouseButton::Right) && !pointer.is_grabbed() {
+                else if event.button() == Some(MouseButton::Right) && !pointer.is_grabbed() {
                     let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                     let mod_down = match self.backend.mod_key() {
                         CompositorMod::Super => mods.logo,

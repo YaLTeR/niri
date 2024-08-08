@@ -69,6 +69,11 @@ pub struct Mapped {
     /// Snapshot right before an animated commit.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
 
+    /// Last time interactive move was started.
+    ///
+    /// Used for double-move-click tracking.
+    last_interactive_move_start: Cell<Option<Duration>>,
+
     /// State of an ongoing interactive resize.
     interactive_resize: Option<InteractiveResize>,
 
@@ -139,6 +144,7 @@ impl Mapped {
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
+            last_interactive_move_start: Cell::new(None),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
         }
@@ -251,6 +257,10 @@ impl Mapped {
 
     pub fn store_animation_snapshot(&mut self, renderer: &mut GlesRenderer) {
         self.animation_snapshot = Some(self.render_snapshot(renderer));
+    }
+
+    pub fn last_interactive_move_start(&self) -> &Cell<Option<Duration>> {
+        &self.last_interactive_move_start
     }
 
     pub fn last_interactive_resize_start(&self) -> &Cell<Option<(Duration, ResizeEdge)>> {
