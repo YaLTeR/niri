@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
+use calloop::generic::Generic;
+use calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::damage::OutputDamageTracker;
+use smithay::backend::renderer::sync::SyncPoint;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_frame_v1::{
     Flags, ZwlrScreencopyFrameV1,
@@ -464,7 +468,7 @@ impl Screencopy {
     }
 
     /// Submit the copied content.
-    pub fn submit(mut self, y_invert: bool) {
+    fn submit(mut self, y_invert: bool, timestamp: Duration) {
         // Notify client that buffer is ordinary.
         self.frame.flags(if y_invert {
             Flags::YInvert
@@ -473,13 +477,34 @@ impl Screencopy {
         });
 
         // Notify client about successful copy.
-        let time = get_monotonic_time();
-        let tv_sec_hi = (time.as_secs() >> 32) as u32;
-        let tv_sec_lo = (time.as_secs() & 0xFFFFFFFF) as u32;
-        let tv_nsec = time.subsec_nanos();
+        let tv_sec_hi = (timestamp.as_secs() >> 32) as u32;
+        let tv_sec_lo = (timestamp.as_secs() & 0xFFFFFFFF) as u32;
+        let tv_nsec = timestamp.subsec_nanos();
         self.frame.ready(tv_sec_hi, tv_sec_lo, tv_nsec);
 
         // Mark frame as submitted to ensure destructor isn't run.
         self.submitted = true;
+    }
+
+    pub fn submit_after_sync<T>(
+        self,
+        y_invert: bool,
+        sync_point: Option<SyncPoint>,
+        event_loop: &LoopHandle<'_, T>,
+    ) {
+        let timestamp = get_monotonic_time();
+        match sync_point.and_then(|s| s.export()) {
+            None => self.submit(y_invert, timestamp),
+            Some(sync_fd) => {
+                let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);
+                let mut screencopy = Some(self);
+                event_loop
+                    .insert_source(source, move |_, _, _| {
+                        screencopy.take().unwrap().submit(y_invert, timestamp);
+                        Ok(PostAction::Remove)
+                    })
+                    .unwrap();
+            }
+        }
     }
 }
