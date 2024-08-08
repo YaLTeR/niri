@@ -90,4 +90,6 @@ pub enum Msg {
     Version,
     /// Request an error from the running niri instance.
     RequestError,
+    /// Get the binding mode name.
+    BindingMode,
 }

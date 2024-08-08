@@ -314,7 +314,7 @@ impl State {
             serial,
             time,
             |this, mods, keysym| {
-                let bindings = &this.niri.config.borrow().binds;
+                let bindings = &this.niri.binding_mode;
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
@@ -1077,6 +1077,11 @@ impl State {
                     }
                 }
             }
+            Action::BindingMode(name) => {
+                if let Some(mode) = self.niri.config.borrow().binds.iter().find(|e| e.0 == name) {
+                    self.niri.binding_mode = mode.clone();
+                }
+            }
         }
     }
 
@@ -1500,13 +1505,11 @@ impl State {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &self.niri.binding_mode;
                     let bind_left =
                         find_configured_bind(bindings, comp_mod, Trigger::WheelScrollLeft, mods);
                     let bind_right =
                         find_configured_bind(bindings, comp_mod, Trigger::WheelScrollRight, mods);
-                    drop(config);
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
@@ -1523,13 +1526,11 @@ impl State {
                 let vertical = vertical_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.vertical_wheel_tracker.accumulate(vertical);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &self.niri.binding_mode;
                     let bind_up =
                         find_configured_bind(bindings, comp_mod, Trigger::WheelScrollUp, mods);
                     let bind_down =
                         find_configured_bind(bindings, comp_mod, Trigger::WheelScrollDown, mods);
-                    drop(config);
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
@@ -1566,8 +1567,7 @@ impl State {
                     .horizontal_finger_scroll_tracker
                     .accumulate(horizontal);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &self.niri.binding_mode;
                     let bind_left =
                         find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollLeft, mods);
                     let bind_right = find_configured_bind(
@@ -1576,7 +1576,6 @@ impl State {
                         Trigger::TouchpadScrollRight,
                         mods,
                     );
-                    drop(config);
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
@@ -1596,13 +1595,11 @@ impl State {
                     .vertical_finger_scroll_tracker
                     .accumulate(vertical);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &self.niri.binding_mode;
                     let bind_up =
                         find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollUp, mods);
                     let bind_down =
                         find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollDown, mods);
-                    drop(config);
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
@@ -2290,7 +2287,7 @@ fn find_configured_bind(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    for bind in &bindings.0 {
+    for bind in &bindings.1 {
         if bind.key.trigger != trigger {
             continue;
         }
@@ -2545,7 +2542,7 @@ pub fn mods_with_binds(
     };
 
     let mut rv = HashSet::new();
-    for bind in &binds.0 {
+    for bind in &binds.1 {
         if !triggers.iter().any(|trigger| bind.key.trigger == *trigger) {
             continue;
         }
@@ -2595,16 +2592,19 @@ mod tests {
     #[test]
     fn bindings_suppress_keys() {
         let close_keysym = Keysym::q;
-        let bindings = Binds(vec![Bind {
-            key: Key {
-                trigger: Trigger::Keysym(close_keysym),
-                modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
-            },
-            action: Action::CloseWindow,
-            repeat: true,
-            cooldown: None,
-            allow_when_locked: false,
-        }]);
+        let bindings = Binds(
+            String::from("default"),
+            vec![Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(close_keysym),
+                    modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
+                },
+                action: Action::CloseWindow,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+            }],
+        );
 
         let comp_mod = CompositorMod::Super;
         let mut suppressed_keys = HashSet::new();
@@ -2728,58 +2728,61 @@ mod tests {
 
     #[test]
     fn comp_mod_handling() {
-        let bindings = Binds(vec![
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::q),
-                    modifiers: Modifiers::COMPOSITOR,
+        let bindings = Binds(
+            String::from("default"),
+            vec![
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::q),
+                        modifiers: Modifiers::COMPOSITOR,
+                    },
+                    action: Action::CloseWindow,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
                 },
-                action: Action::CloseWindow,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::h),
-                    modifiers: Modifiers::SUPER,
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::h),
+                        modifiers: Modifiers::SUPER,
+                    },
+                    action: Action::FocusColumnLeft,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
                 },
-                action: Action::FocusColumnLeft,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::j),
-                    modifiers: Modifiers::empty(),
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::j),
+                        modifiers: Modifiers::empty(),
+                    },
+                    action: Action::FocusWindowDown,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
                 },
-                action: Action::FocusWindowDown,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::k),
-                    modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::k),
+                        modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
+                    },
+                    action: Action::FocusWindowUp,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
                 },
-                action: Action::FocusWindowUp,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::l),
-                    modifiers: Modifiers::SUPER | Modifiers::ALT,
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::l),
+                        modifiers: Modifiers::SUPER | Modifiers::ALT,
+                    },
+                    action: Action::FocusColumnRight,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
                 },
-                action: Action::FocusColumnRight,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-            },
-        ]);
+            ],
+        );
 
         assert_eq!(
             find_configured_bind(
@@ -2792,7 +2795,7 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[0])
+            Some(&bindings.1[0])
         );
         assert_eq!(
             find_configured_bind(
@@ -2815,7 +2818,7 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[1])
+            Some(&bindings.1[1])
         );
         assert_eq!(
             find_configured_bind(
@@ -2847,7 +2850,7 @@ mod tests {
                 ModifiersState::default(),
             )
             .as_ref(),
-            Some(&bindings.0[2])
+            Some(&bindings.1[2])
         );
 
         assert_eq!(
@@ -2861,7 +2864,7 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[3])
+            Some(&bindings.1[3])
         );
         assert_eq!(
             find_configured_bind(
@@ -2885,7 +2888,7 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[4])
+            Some(&bindings.1[4])
         );
         assert_eq!(
             find_configured_bind(

@@ -20,6 +20,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         },
         Msg::Workspaces => Request::Workspaces,
         Msg::RequestError => Request::ReturnError,
+        Msg::BindingMode => Request::BindingMode,
     };
 
     let socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -237,6 +238,19 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 };
                 println!("{is_active}{idx}{name}");
             }
+        }
+        Msg::BindingMode => {
+            let Response::BindingMode(response) = response else {
+                bail!("unexpected response: expected BindingMode, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+            println!("{response}");
         }
     }
 

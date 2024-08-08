@@ -235,6 +235,16 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let output = result.map_err(|_| String::from("error getting active output info"))?;
             Response::FocusedOutput(output)
         }
+        Request::BindingMode => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let workspaces = state.niri.binding_mode.0.clone();
+                let _ = tx.send_blocking(workspaces);
+            });
+            let result = rx.recv().await;
+            let mode = result.map_err(|_| String::from("error getting workspace info"))?;
+            Response::BindingMode(mode.clone())
+        }
     };
 
     Ok(response)
