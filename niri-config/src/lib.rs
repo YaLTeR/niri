@@ -1553,7 +1553,7 @@ impl FromStr for Color {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let color = csscolorparser::parse(s).into_diagnostic()?.to_array();
-        Ok(Self::from_array_unpremul(color.map(|x| x as f32)))
+        Ok(Self::from_array_unpremul(color))
     }
 }
 
