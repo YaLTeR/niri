@@ -1,4 +1,4 @@
-precision mediump float;
+precision highp float;
 
 #if defined(DEBUG_FLAGS)
 uniform float niri_tint;
