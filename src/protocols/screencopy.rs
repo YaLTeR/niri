@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::UNIX_EPOCH;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
@@ -21,6 +20,8 @@ use smithay::reexports::wayland_server::{
 };
 use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
 use smithay::wayland::{dmabuf, shm};
+
+use crate::utils::get_monotonic_time;
 
 const VERSION: u32 = 3;
 
@@ -470,7 +471,7 @@ impl Screencopy {
         });
 
         // Notify client about successful copy.
-        let time = UNIX_EPOCH.elapsed().unwrap();
+        let time = get_monotonic_time();
         let tv_sec_hi = (time.as_secs() >> 32) as u32;
         let tv_sec_lo = (time.as_secs() & 0xFFFFFFFF) as u32;
         let tv_nsec = time.subsec_nanos();
