@@ -282,7 +282,6 @@ pub struct Niri {
 
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
-    pub ipc_focused_window: Arc<Mutex<Option<Window>>>,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
@@ -837,7 +836,9 @@ impl State {
                 }
             }
 
-            *self.niri.ipc_focused_window.lock().unwrap() = newly_focused_window;
+            if let Some(server) = &self.niri.ipc_server {
+                server.focused_window_changed(newly_focused_window);
+            }
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
                 if Some(&grab.root) != focus.surface() {
@@ -1805,7 +1806,6 @@ impl Niri {
 
             ipc_server,
             ipc_outputs_changed: false,
-            ipc_focused_window: Arc::new(Mutex::new(None)),
 
             pipewire,
             casts: vec![],
