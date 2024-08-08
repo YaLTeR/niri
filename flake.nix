@@ -33,7 +33,7 @@
       system: let
         pkgs = nixpkgs.legacyPackages.${system};
         toolchain = fenix.packages.${system}.complete.toolchain;
-        craneLib = crane.lib.${system}.overrideToolchain toolchain;
+        craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
 
         craneArgs = {
           pname = "niri";
@@ -80,6 +80,7 @@
           ];
 
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath craneArgs.runtimeDependencies; # Needed for tests to find libxkbcommon
         };
 
         cargoArtifacts = craneLib.buildDepsOnly craneArgs;
