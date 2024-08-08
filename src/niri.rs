@@ -31,6 +31,7 @@ use smithay::backend::renderer::element::{
     PrimaryScanoutOutput, RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::Unbind;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
@@ -3771,7 +3772,7 @@ impl Niri {
                         screencopy,
                     );
                     match render_result {
-                        Ok(damages) => {
+                        Ok((sync, damages)) => {
                             if let Some(damages) = damages {
                                 // Convert from Physical coordinates back to Buffer coordinates.
                                 let transform = output.current_transform();
@@ -3786,7 +3787,7 @@ impl Niri {
                                 });
 
                                 screencopy.damage(damages);
-                                queue.pop().submit(false);
+                                queue.pop().submit_after_sync(false, sync, &self.event_loop);
                             } else {
                                 trace!("no damage found, waiting till next redraw");
                             }
@@ -3840,19 +3841,20 @@ impl Niri {
             false,
             damage_tracker,
             &screencopy,
-        )
-        .map(|_damage| ());
+        );
 
-        match render_result {
-            Ok(()) => screencopy.submit(false),
-            Err(_) => {
-                // Recreate damage tracker to report full damage next check.
-                *damage_tracker = OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
-            }
+        let res = render_result
+            .map(|(sync, _damage)| screencopy.submit_after_sync(false, sync, &self.event_loop));
+
+        if res.is_err() {
+            // Recreate damage tracker to report full damage next check.
+            *damage_tracker = OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
         }
-        render_result
+
+        res
     }
 
+    #[allow(clippy::type_complexity)]
     fn render_for_screencopy_internal<'a>(
         renderer: &mut GlesRenderer,
         output: &Output,
@@ -3860,7 +3862,7 @@ impl Niri {
         with_damage: bool,
         damage_tracker: &'a mut OutputDamageTracker,
         screencopy: &Screencopy,
-    ) -> anyhow::Result<Option<&'a Vec<Rectangle<i32, Physical>>>> {
+    ) -> anyhow::Result<(Option<SyncPoint>, Option<&'a Vec<Rectangle<i32, Physical>>>)> {
         let OutputModeSource::Static {
             size: last_size,
             scale: last_scale,
@@ -3893,26 +3895,30 @@ impl Niri {
         // Just checked damage tracker has static mode
         let damages = damage_tracker.damage_output(1, &elements).unwrap().0;
         if with_damage && damages.is_none() {
-            return Ok(None);
+            return Ok((None, None));
         }
 
         let elements = elements.iter().rev();
 
-        match screencopy.buffer() {
+        let sync = match screencopy.buffer() {
             ScreencopyBuffer::Dmabuf(dmabuf) => {
-                let _sync =
+                let sync =
                     render_to_dmabuf(renderer, dmabuf.clone(), size, scale, transform, elements)
                         .context("error rendering to screencopy dmabuf")?;
+                Some(sync)
             }
             ScreencopyBuffer::Shm(wl_buffer) => {
                 render_to_shm(renderer, wl_buffer, size, scale, transform, elements)
                     .context("error rendering to screencopy shm buffer")?;
+                None
             }
-        }
+        };
+
         if let Err(err) = renderer.unbind() {
             warn!("error unbinding after rendering for screencopy: {err:?}");
         }
-        Ok(damages)
+
+        Ok((sync, damages))
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
