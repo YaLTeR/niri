@@ -12,9 +12,9 @@ repository = "https://github.com/YaLTeR/niri"
 [workspace.dependencies]
 anyhow = "1.0.86"
 bitflags = "2.6.0"
-clap = { version = "~4.4.18", features = ["derive"] }
-serde = { version = "1.0.204", features = ["derive"] }
-serde_json = "1.0.120"
+clap = { version = "4.5.13", features = ["derive"] }
+serde = { version = "1.0.205", features = ["derive"] }
+serde_json = "1.0.122"
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracy-client = { version = "0.17.1", default-features = false }
@@ -47,7 +47,7 @@ async-channel = "2.3.1"
 async-io = { version = "1.13.0", optional = true }
 atomic = "0.6.0"
 bitflags.workspace = true
-bytemuck = { version = "1.16.1", features = ["derive"] }
+bytemuck = { version = "1.16.3", features = ["derive"] }
 calloop = { version = "0.14.0", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
 directories = "5.0.1"
@@ -63,7 +63,7 @@ log = { version = "0.4.22", features = ["max_level_trace", "release_max_level_de
 niri-config = { version = "0.1.7", path = "niri-config" }
 niri-ipc = { version = "0.1.7", path = "niri-ipc", features = ["clap"] }
 notify-rust = { version = "~4.10.0", optional = true }
-ordered-float = "4.2.1"
+ordered-float = "4.2.2"
 pango = { version = "0.20.0", features = ["v1_44"] }
 pangocairo = "0.20.0"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
