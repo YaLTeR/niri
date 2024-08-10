@@ -75,6 +75,7 @@ BuildRequires:  cairo-gobject-devel
 BuildRequires:  clang
 
 Requires:       mesa-dri-drivers
+Requires:       mesa-libEGL
 
 # Portal implementations used by niri
 Recommends:     xdg-desktop-portal-gtk
