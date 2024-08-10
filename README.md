@@ -57,6 +57,16 @@ Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top 
 One of the reasons that prompted me to try writing my own compositor is being able to properly separate the monitors.
 Being a GNOME Shell extension, PaperWM has to work against Shell's global window coordinate space to prevent windows from overflowing.
 
+## Tile Scrollably Elsewhere
+
+Here are some other projects which implement a similar workflow:
+
+- [PaperWM]: scrollable tiling on top of GNOME Shell.
+- [karousel]: scrollable tiling on top of KDE.
+- [papersway]: scrollable tiling on top of sway/i3.
+- [hyprscroller] and [hyprslidr]: scrollable tiling on top of Hyprland.
+- [PaperWM.spoon]: scrollable tiling on top of macOS.
+
 ## Contact
 
 We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
@@ -64,4 +74,8 @@ We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#
 [PaperWM]: https://github.com/paperwm/PaperWM
 [waybar]: https://github.com/Alexays/Waybar
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
-
+[karousel]: https://github.com/peterfajdiga/karousel
+[papersway]: https://spwhitton.name/tech/code/papersway/
+[hyprscroller]: https://github.com/dawsers/hyprscroller
+[hyprslidr]: https://gitlab.com/magus/hyprslidr
+[PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon
