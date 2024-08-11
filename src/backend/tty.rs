@@ -180,6 +180,7 @@ struct TtyOutputState {
 struct Surface {
     name: String,
     compositor: GbmDrmCompositor,
+    connector_handle: connector::Handle,
     dmabuf_feedback: Option<SurfaceDmabufFeedback>,
     gamma_props: Option<GammaProps>,
     /// Gamma change to apply upon session resume.
@@ -426,13 +427,10 @@ impl Tty {
                         }
 
                         // Restore VRR.
-                        let Some(connector) =
-                            surface.compositor.pending_connectors().into_iter().next()
-                        else {
-                            error!("surface pending connectors is empty");
-                            continue;
-                        };
-                        let Some(connector) = device.drm_scanner.connectors().get(&connector)
+                        let Some(connector) = device
+                            .drm_scanner
+                            .connectors()
+                            .get(&surface.connector_handle)
                         else {
                             error!("missing enabled connector in drm_scanner");
                             continue;
@@ -832,15 +830,13 @@ impl Tty {
         let mut vrr_enabled = false;
         if let Some(capable) = is_vrr_capable(&device.drm, connector.handle()) {
             if capable {
-                let word = if config.variable_refresh_rate {
-                    "enabling"
-                } else {
-                    "disabling"
-                };
+                // Even if on-demand, we still disable it until later checks.
+                let vrr = config.is_vrr_always_on();
+                let word = if vrr { "enabling" } else { "disabling" };
 
-                match set_vrr_enabled(&device.drm, crtc, config.variable_refresh_rate) {
+                match set_vrr_enabled(&device.drm, crtc, vrr) {
                     Ok(enabled) => {
-                        if enabled != config.variable_refresh_rate {
+                        if enabled != vrr {
                             warn!("failed {} VRR", word);
                         }
 
@@ -851,13 +847,13 @@ impl Tty {
                     }
                 }
             } else {
-                if config.variable_refresh_rate {
+                if !config.is_vrr_always_off() {
                     warn!("cannot enable VRR because connector is not vrr_capable");
                 }
 
                 // Try to disable it anyway to work around a bug where resetting DRM state causes
                 // vrr_capable to be reset to 0, potentially leaving VRR_ENABLED at 1.
-                let res = set_vrr_enabled(&device.drm, crtc, config.variable_refresh_rate);
+                let res = set_vrr_enabled(&device.drm, crtc, false);
                 if matches!(res, Ok(true)) {
                     warn!("error disabling VRR");
 
@@ -865,7 +861,7 @@ impl Tty {
                     vrr_enabled = true;
                 }
             }
-        } else if config.variable_refresh_rate {
+        } else if !config.is_vrr_always_off() {
             warn!("cannot enable VRR because connector is not vrr_capable");
         }
 
@@ -1005,6 +1001,7 @@ impl Tty {
             }
         }
 
+        let connector_handle = connector.handle();
         let vblank_frame_name =
             tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
         let time_since_presentation_plot_name =
@@ -1017,6 +1014,7 @@ impl Tty {
 
         let surface = Surface {
             name: output_name.clone(),
+            connector_handle,
             compositor,
             dmabuf_feedback,
             gamma_props,
@@ -1661,6 +1659,40 @@ impl Tty {
         }
     }
 
+    pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
+        let _span = tracy_client::span!("Tty::set_output_vrr");
+        let output_state = niri.output_state.get_mut(output).unwrap();
+        if output_state.frame_clock.vrr() == enable_vrr {
+            return;
+        }
+        for (&node, device) in self.devices.iter_mut() {
+            for (&crtc, surface) in device.surfaces.iter_mut() {
+                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                if tty_state.node == node && tty_state.crtc == crtc {
+                    let Some(connector) = device
+                        .drm_scanner
+                        .connectors()
+                        .get(&surface.connector_handle)
+                    else {
+                        error!("missing enabled connector in drm_scanner");
+                        return;
+                    };
+                    try_to_change_vrr(
+                        &device.drm,
+                        connector,
+                        crtc,
+                        surface,
+                        output_state,
+                        enable_vrr,
+                    );
+                    output_state.on_demand_vrr_enabled = enable_vrr;
+                    self.refresh_ipc_outputs(niri);
+                    return;
+                }
+            }
+        }
+    }
+
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::on_output_config_changed");
 
@@ -1675,9 +1707,7 @@ impl Tty {
         let mut to_connect = vec![];
 
         for (&node, device) in &mut self.devices {
-            for surface in device.surfaces.values_mut() {
-                let crtc = surface.compositor.crtc();
-
+            for (&crtc, surface) in device.surfaces.iter_mut() {
                 let config = self
                     .config
                     .borrow()
@@ -1691,12 +1721,11 @@ impl Tty {
                 }
 
                 // Check if we need to change the mode.
-                let Some(connector) = surface.compositor.pending_connectors().into_iter().next()
+                let Some(connector) = device
+                    .drm_scanner
+                    .connectors()
+                    .get(&surface.connector_handle)
                 else {
-                    error!("surface pending connectors is empty");
-                    continue;
-                };
-                let Some(connector) = device.drm_scanner.connectors().get(&connector) else {
                     error!("missing enabled connector in drm_scanner");
                     continue;
                 };
@@ -1707,8 +1736,9 @@ impl Tty {
                 };
 
                 let change_mode = surface.compositor.pending_mode() != mode;
-                let change_vrr = surface.vrr_enabled != config.variable_refresh_rate;
-                if !change_mode && !change_vrr {
+                let change_always_vrr = surface.vrr_enabled != config.is_vrr_always_on();
+                let is_on_demand_vrr = config.is_vrr_on_demand();
+                if !change_mode && !change_always_vrr && !is_on_demand_vrr {
                     continue;
                 }
 
@@ -1729,14 +1759,16 @@ impl Tty {
                     continue;
                 };
 
-                if change_vrr {
+                if (is_on_demand_vrr && surface.vrr_enabled != output_state.on_demand_vrr_enabled)
+                    || (!is_on_demand_vrr && change_always_vrr)
+                {
                     try_to_change_vrr(
                         &device.drm,
                         connector,
                         crtc,
                         surface,
                         output_state,
-                        config.variable_refresh_rate,
+                        !surface.vrr_enabled,
                     );
                 }
 

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::mem;
 
-use niri_config::FloatOrInt;
+use niri_config::{FloatOrInt, Vrr};
 use niri_ipc::Transform;
 use smithay::reexports::wayland_protocols_wlr::output_management::v1::server::{
     zwlr_output_configuration_head_v1, zwlr_output_configuration_v1, zwlr_output_head_v1,
@@ -693,9 +693,9 @@ where
                 new_config.scale = Some(FloatOrInt(scale));
             }
             zwlr_output_configuration_head_v1::Request::SetAdaptiveSync { state } => {
-                let enabled = match state {
-                    WEnum::Value(AdaptiveSyncState::Enabled) => true,
-                    WEnum::Value(AdaptiveSyncState::Disabled) => false,
+                let vrr = match state {
+                    WEnum::Value(AdaptiveSyncState::Enabled) => Some(Vrr { on_demand: false }),
+                    WEnum::Value(AdaptiveSyncState::Disabled) => None,
                     _ => {
                         warn!("SetAdaptativeSync: unknown requested adaptative sync");
                         conf_head.post_error(
@@ -705,7 +705,7 @@ where
                         return;
                     }
                 };
-                new_config.variable_refresh_rate = enabled;
+                new_config.variable_refresh_rate = vrr;
             }
             _ => unreachable!(),
         }

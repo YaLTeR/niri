@@ -324,9 +324,23 @@ pub struct Output {
     #[knuffel(child, unwrap(argument, str))]
     pub mode: Option<ConfiguredMode>,
     #[knuffel(child)]
-    pub variable_refresh_rate: bool,
+    pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
+}
+
+impl Output {
+    pub fn is_vrr_always_on(&self) -> bool {
+        self.variable_refresh_rate == Some(Vrr { on_demand: false })
+    }
+
+    pub fn is_vrr_on_demand(&self) -> bool {
+        self.variable_refresh_rate == Some(Vrr { on_demand: true })
+    }
+
+    pub fn is_vrr_always_off(&self) -> bool {
+        self.variable_refresh_rate.is_none()
+    }
 }
 
 impl Default for Output {
@@ -338,7 +352,7 @@ impl Default for Output {
             transform: Transform::Normal,
             position: None,
             mode: None,
-            variable_refresh_rate: false,
+            variable_refresh_rate: None,
             background_color: DEFAULT_BACKGROUND_COLOR,
         }
     }
@@ -350,6 +364,12 @@ pub struct Position {
     pub x: i32,
     #[knuffel(property)]
     pub y: i32,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Default)]
+pub struct Vrr {
+    #[knuffel(property, default = false)]
+    pub on_demand: bool,
 }
 
 // MIN and MAX generics are only used during parsing to check the value.
@@ -896,6 +916,8 @@ pub struct WindowRule {
     pub clip_to_geometry: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,
+    #[knuffel(child, unwrap(argument))]
+    pub variable_refresh_rate: Option<bool>,
 }
 
 // Remember to update the PartialEq impl when adding fields!
@@ -2705,7 +2727,7 @@ mod tests {
                 transform "flipped-90"
                 position x=10 y=20
                 mode "1920x1080@144"
-                variable-refresh-rate
+                variable-refresh-rate on-demand=true
                 background-color "rgba(25, 25, 102, 1.0)"
             }
 
@@ -2889,7 +2911,7 @@ mod tests {
                         height: 1080,
                         refresh: Some(144.),
                     }),
-                    variable_refresh_rate: true,
+                    variable_refresh_rate: Some(Vrr { on_demand: true }),
                     background_color: Color::from_rgba8_unpremul(25, 25, 102, 255),
                 }]),
                 layout: Layout {

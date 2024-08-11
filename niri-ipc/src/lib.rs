@@ -352,18 +352,11 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", command(subcommand))]
         position: PositionToSet,
     },
-    /// Toggle variable refresh rate.
+    /// Set the variable refresh rate mode.
     Vrr {
-        /// Whether to enable variable refresh rate.
-        #[cfg_attr(
-            feature = "clap",
-            arg(
-                value_name = "ON|OFF",
-                action = clap::ArgAction::Set,
-                value_parser = clap::builder::BoolishValueParser::new(),
-            ),
-        )]
-        enable: bool,
+        /// Variable refresh rate mode to set.
+        #[cfg_attr(feature = "clap", command(flatten))]
+        vrr: VrrToSet,
     },
 }
 
@@ -423,6 +416,27 @@ pub struct ConfiguredPosition {
     pub x: i32,
     /// Logical Y position.
     pub y: i32,
+}
+
+/// Output VRR to set.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct VrrToSet {
+    /// Whether to enable variable refresh rate.
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            value_name = "ON|OFF",
+            action = clap::ArgAction::Set,
+            value_parser = clap::builder::BoolishValueParser::new(),
+            hide_possible_values = true,
+        ),
+    )]
+    pub vrr: bool,
+    /// Only enable if there is a matched VRR window rule visible on the output.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub on_demand: bool,
 }
 
 /// Connected output.

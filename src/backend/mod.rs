@@ -153,6 +153,13 @@ impl Backend {
         }
     }
 
+    pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
+        match self {
+            Backend::Tty(tty) => tty.set_output_on_demand_vrr(niri, output, enable_vrr),
+            Backend::Winit(_) => (),
+        }
+    }
+
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         match self {
             Backend::Tty(tty) => tty.on_output_config_changed(niri),
