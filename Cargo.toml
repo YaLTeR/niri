@@ -78,6 +78,8 @@ tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
 url = { version = "2.5.2", optional = true }
+wayland-backend = "0.3.6"
+wayland-scanner = "0.31.4"
 xcursor = "0.3.6"
 zbus = { version = "~3.15.2", optional = true }
 

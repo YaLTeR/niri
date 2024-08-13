@@ -69,12 +69,13 @@ use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
+use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
 use crate::utils::{output_size, send_scale_transform};
 use crate::{
-    delegate_foreign_toplevel, delegate_gamma_control, delegate_output_management,
-    delegate_screencopy,
+    delegate_foreign_toplevel, delegate_gamma_control, delegate_mutter_x11_interop,
+    delegate_output_management, delegate_screencopy,
 };
 
 impl SeatHandler for State {
@@ -580,3 +581,6 @@ impl OutputManagementHandler for State {
     }
 }
 delegate_output_management!(State);
+
+impl MutterX11InteropHandler for State {}
+delegate_mutter_x11_interop!(State);

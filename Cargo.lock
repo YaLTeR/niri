@@ -2260,6 +2260,8 @@ dependencies = [
  "tracing-subscriber",
  "tracy-client",
  "url",
+ "wayland-backend",
+ "wayland-scanner",
  "xcursor",
  "xshell",
  "zbus",

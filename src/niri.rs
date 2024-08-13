@@ -118,6 +118,7 @@ use crate::ipc::server::IpcServer;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
+use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
 use crate::pw_utils::{Cast, PipeWire};
@@ -233,6 +234,7 @@ pub struct Niri {
     pub security_context_state: SecurityContextState,
     pub gamma_control_manager_state: GammaControlManagerState,
     pub activation_state: XdgActivationState,
+    pub mutter_x11_interop_state: MutterX11InteropManagerState,
 
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
@@ -1602,6 +1604,8 @@ impl Niri {
                 is_tty && !client.get_data::<ClientState>().unwrap().restricted
             });
         let activation_state = XdgActivationState::new::<State>(&display_handle);
+        let mutter_x11_interop_state =
+            MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
@@ -1764,6 +1768,7 @@ impl Niri {
             security_context_state,
             gamma_control_manager_state,
             activation_state,
+            mutter_x11_interop_state,
 
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
