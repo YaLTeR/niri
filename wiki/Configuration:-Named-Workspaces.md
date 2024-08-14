@@ -24,7 +24,7 @@ workspace "chat" {
     open-on-output "DP-2"
 }
 
-// Open Fractal on the "chat" workspace at niri startup.
+// Open Fractal on the "chat" workspace, if it runs at niri startup.
 window-rule {
     match at-startup=true app-id=r#"^org\.gnome\.Fractal$"#
     open-on-workspace "chat"
