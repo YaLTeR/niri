@@ -196,9 +196,12 @@ pub enum ColumnWidth {
 /// to fit the desired content, it can never become smaller than that when moving between monitors.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WindowHeight {
-    /// Automatically computed height, evenly distributed across the column.
-    Auto,
-    /// Fixed height in logical pixels.
+    /// Automatically computed *tile* height, distributed across the column according to weights.
+    ///
+    /// This controls the tile height rather than the window height because it's easier in the auto
+    /// height distribution algorithm.
+    Auto { weight: f64 },
+    /// Fixed *window* height in logical pixels.
     Fixed(f64),
 }
 
@@ -309,6 +312,12 @@ impl From<PresetWidth> for ColumnWidth {
             PresetWidth::Proportion(p) => Self::Proportion(p.clamp(0., 10000.)),
             PresetWidth::Fixed(f) => Self::Fixed(f64::from(f.clamp(1, 100000))),
         }
+    }
+}
+
+impl WindowHeight {
+    const fn auto_1() -> Self {
+        Self::Auto { weight: 1. }
     }
 }
 
@@ -1105,6 +1114,13 @@ impl<W: LayoutElement> Workspace<W> {
 
         let tile = column.tiles.remove(window_idx);
         column.data.remove(window_idx);
+
+        // If one window is left, reset its weight to 1.
+        if column.data.len() == 1 {
+            if let WindowHeight::Auto { weight } = &mut column.data[0].height {
+                *weight = 1.;
+            }
+        }
 
         if let Some(output) = &self.output {
             tile.window().output_leave(output);
@@ -2265,6 +2281,14 @@ impl<W: LayoutElement> Workspace<W> {
             let window = col.tiles.remove(tile_idx).into_window();
             col.data.remove(tile_idx);
             col.active_tile_idx = min(col.active_tile_idx, col.tiles.len() - 1);
+
+            // If one window is left, reset its weight to 1.
+            if col.data.len() == 1 {
+                if let WindowHeight::Auto { weight } = &mut col.data[0].height {
+                    *weight = 1.;
+                }
+            }
+
             col.update_tile_sizes(false);
             self.data[col_idx].update(col);
             let width = col.width;
@@ -2937,7 +2961,7 @@ impl<W: LayoutElement> Column<W> {
 
     fn add_tile(&mut self, tile: Tile<W>, animate: bool) {
         self.is_fullscreen = false;
-        self.data.push(TileData::new(&tile, WindowHeight::Auto));
+        self.data.push(TileData::new(&tile, WindowHeight::auto_1()));
         self.tiles.push(tile);
         self.update_tile_sizes(animate);
     }
@@ -3020,7 +3044,7 @@ impl<W: LayoutElement> Column<W> {
         // Compute the tile heights. Start by converting window heights to tile heights.
         let mut heights = zip(&self.tiles, &self.data)
             .map(|(tile, data)| match data.height {
-                WindowHeight::Auto => WindowHeight::Auto,
+                auto @ WindowHeight::Auto { .. } => auto,
                 WindowHeight::Fixed(height) => {
                     WindowHeight::Fixed(tile.tile_height_for_window_height(height.round().max(1.)))
                 }
@@ -3062,18 +3086,31 @@ impl<W: LayoutElement> Column<W> {
         // However, most max height uses are for fixed-size dialogs, where min height == max_height.
         // This case is separately handled above.
         while auto_tiles_left > 0 {
+            let mut total_weight: f64 = heights
+                .iter()
+                .filter_map(|h| {
+                    if let WindowHeight::Auto { weight } = *h {
+                        Some(weight)
+                    } else {
+                        None
+                    }
+                })
+                .sum();
+
             // Wayland requires us to round the requested size for a window to integer logical
             // pixels, therefore we compute the remaining auto height dynamically.
             let mut height_left_2 = height_left;
-            let mut auto_tiles_left_2 = auto_tiles_left;
+            let mut total_weight_2 = total_weight;
             let mut unsatisfied_min = false;
             for ((h, tile), min_size) in zip(zip(&mut heights, &self.tiles), &min_size) {
-                if matches!(h, WindowHeight::Fixed(_)) {
-                    continue;
-                }
+                let weight = match *h {
+                    WindowHeight::Auto { weight } => weight,
+                    WindowHeight::Fixed(_) => continue,
+                };
+                let factor = weight / total_weight_2;
 
                 // Compute the current auto height.
-                let auto = height_left_2 / auto_tiles_left_2 as f64;
+                let auto = height_left_2 * factor;
                 let mut auto = tile.tile_height_for_window_height(
                     tile.window_height_for_tile_height(auto).round().max(1.),
                 );
@@ -3087,8 +3124,8 @@ impl<W: LayoutElement> Column<W> {
                     unsatisfied_min = true;
                 }
 
-                auto_tiles_left_2 -= 1;
                 height_left_2 -= auto;
+                total_weight_2 -= weight;
             }
 
             // If some min height was unsatisfied, then we allocated the tile more than the auto
@@ -3100,18 +3137,21 @@ impl<W: LayoutElement> Column<W> {
 
             // All min heights were satisfied, fill them in.
             for (h, tile) in zip(&mut heights, &self.tiles) {
-                if matches!(h, WindowHeight::Fixed(_)) {
-                    continue;
-                }
+                let weight = match *h {
+                    WindowHeight::Auto { weight } => weight,
+                    WindowHeight::Fixed(_) => continue,
+                };
+                let factor = weight / total_weight;
 
                 // Compute the current auto height.
-                let auto = height_left / auto_tiles_left as f64;
+                let auto = height_left * factor;
                 let auto = tile.tile_height_for_window_height(
                     tile.window_height_for_tile_height(auto).round().max(1.),
                 );
 
                 *h = WindowHeight::Fixed(auto);
                 height_left -= auto;
+                total_weight -= weight;
                 auto_tiles_left -= 1;
             }
 
@@ -3203,6 +3243,16 @@ impl<W: LayoutElement> Column<W> {
             assert_eq!(self.tiles.len(), 1);
         }
 
+        if self.tiles.len() == 1 {
+            if let WindowHeight::Auto { weight } = self.data[0].height {
+                assert_eq!(
+                    weight, 1.,
+                    "auto height weight must reset to 1 for a single window"
+                );
+            }
+        }
+
+        let mut found_fixed = false;
         for (tile, data) in zip(&self.tiles, &self.data) {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.scale, tile.scale());
@@ -3217,6 +3267,14 @@ impl<W: LayoutElement> Column<W> {
             let rounded = size.to_physical_precise_round(scale).to_logical(scale);
             assert_abs_diff_eq!(size.w, rounded.w, epsilon = 1e-5);
             assert_abs_diff_eq!(size.h, rounded.h, epsilon = 1e-5);
+
+            if matches!(data.height, WindowHeight::Fixed(_)) {
+                assert!(
+                    !found_fixed,
+                    "there can only be one fixed-height window in a column"
+                );
+                found_fixed = true;
+            }
         }
     }
 
@@ -3310,10 +3368,19 @@ impl<W: LayoutElement> Column<W> {
 
     fn set_window_height(&mut self, change: SizeChange, tile_idx: Option<usize>, animate: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
+
+        // Start by converting all heights to automatic, since only one window in the column can be
+        // fixed-height. If the current tile is already fixed, however, we can skip that step.
+        // Which is not only for optimization, but also preserves automatic weights in case one
+        // window is resized in such a way that other windows hit their min size, and then back.
+        if !matches!(self.data[tile_idx].height, WindowHeight::Fixed(_)) {
+            self.convert_heights_to_auto();
+        }
+
         let current = self.data[tile_idx].height;
         let tile = &self.tiles[tile_idx];
         let current_window_px = match current {
-            WindowHeight::Auto => tile.window_size().h,
+            WindowHeight::Auto { .. } => tile.window_size().h,
             WindowHeight::Fixed(height) => height,
         };
         let current_tile_px = tile.tile_height_for_window_height(current_window_px);
@@ -3362,8 +3429,30 @@ impl<W: LayoutElement> Column<W> {
 
     fn reset_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
-        self.data[tile_idx].height = WindowHeight::Auto;
+        self.data[tile_idx].height = WindowHeight::auto_1();
         self.update_tile_sizes(animate);
+    }
+
+    /// Converts all heights in the column to automatic, preserving the apparent heights.
+    ///
+    /// All weights are recomputed to preserve the current tile heights while "centering" the
+    /// weights at the median window height (it gets weight = 1).
+    ///
+    /// One case where apparent heights will not be preserved is when the column is taller than the
+    /// working area.
+    fn convert_heights_to_auto(&mut self) {
+        let heights: Vec<_> = self.tiles.iter().map(|tile| tile.tile_size().h).collect();
+
+        // Weights are invariant to multiplication: a column with weights 2, 2, 1 is equivalent to
+        // a column with weights 4, 4, 2. So we find the median window height and use that as 1.
+        let mut sorted = heights.clone();
+        sorted.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = sorted[sorted.len() / 2];
+
+        for (data, height) in zip(&mut self.data, heights) {
+            let weight = height / median;
+            data.height = WindowHeight::Auto { weight };
+        }
     }
 
     fn set_fullscreen(&mut self, is_fullscreen: bool) {
@@ -3399,7 +3488,7 @@ impl<W: LayoutElement> Column<W> {
 
         // Chain with a dummy value to be able to get one past all tiles' Y.
         let dummy = TileData {
-            height: WindowHeight::Auto,
+            height: WindowHeight::auto_1(),
             size: Size::default(),
             interactively_resizing_by_left_edge: false,
         };

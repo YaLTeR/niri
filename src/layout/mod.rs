@@ -4263,6 +4263,101 @@ mod tests {
         compute_working_area(&output, struts);
     }
 
+    #[test]
+    fn set_window_height_recomputes_to_auto() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::SetWindowHeight(SizeChange::SetFixed(100)),
+            Op::FocusWindowUp,
+            Op::SetWindowHeight(SizeChange::SetFixed(200)),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn one_window_in_column_becomes_weight_1() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::SetWindowHeight(SizeChange::SetFixed(100)),
+            Op::Communicate(2),
+            Op::FocusWindowUp,
+            Op::SetWindowHeight(SizeChange::SetFixed(200)),
+            Op::Communicate(1),
+            Op::CloseWindow(0),
+            Op::CloseWindow(1),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn one_window_in_column_becomes_weight_1_after_fullscreen() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+            Op::SetWindowHeight(SizeChange::SetFixed(100)),
+            Op::Communicate(2),
+            Op::FocusWindowUp,
+            Op::SetWindowHeight(SizeChange::SetFixed(200)),
+            Op::Communicate(1),
+            Op::CloseWindow(0),
+            Op::FullscreenWindow(1),
+        ];
+
+        check_ops(&ops);
+    }
+
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {
         // Give equal weight to:
         // - 0: the element is disabled
