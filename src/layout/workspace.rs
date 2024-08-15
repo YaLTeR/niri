@@ -3074,6 +3074,17 @@ impl<W: LayoutElement> Column<W> {
             }
         }
 
+        let mut total_weight: f64 = heights
+            .iter()
+            .filter_map(|h| {
+                if let WindowHeight::Auto { weight } = *h {
+                    Some(weight)
+                } else {
+                    None
+                }
+            })
+            .sum();
+
         // Iteratively try to distribute the remaining height, checking against tile min heights.
         // Pick an auto height according to the current sizes, then check if it satisfies all
         // remaining min heights. If not, allocate fixed height to those tiles and repeat the
@@ -3086,17 +3097,6 @@ impl<W: LayoutElement> Column<W> {
         // However, most max height uses are for fixed-size dialogs, where min height == max_height.
         // This case is separately handled above.
         while auto_tiles_left > 0 {
-            let mut total_weight: f64 = heights
-                .iter()
-                .filter_map(|h| {
-                    if let WindowHeight::Auto { weight } = *h {
-                        Some(weight)
-                    } else {
-                        None
-                    }
-                })
-                .sum();
-
             // Wayland requires us to round the requested size for a window to integer logical
             // pixels, therefore we compute the remaining auto height dynamically.
             let mut height_left_2 = height_left;
@@ -3120,6 +3120,7 @@ impl<W: LayoutElement> Column<W> {
                     auto = min_size.h;
                     *h = WindowHeight::Fixed(auto);
                     height_left -= auto;
+                    total_weight -= weight;
                     auto_tiles_left -= 1;
                     unsatisfied_min = true;
                 }
