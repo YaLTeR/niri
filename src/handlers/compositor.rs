@@ -8,8 +8,9 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
-    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
-    BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
+    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, remove_pre_commit_hook,
+    with_states, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
+    SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
@@ -46,40 +47,7 @@ impl CompositorHandler for State {
     }
 
     fn new_surface(&mut self, surface: &WlSurface) {
-        add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
-            let maybe_dmabuf = with_states(surface, |surface_data| {
-                surface_data
-                    .cached_state
-                    .get::<SurfaceAttributes>()
-                    .pending()
-                    .buffer
-                    .as_ref()
-                    .and_then(|assignment| match assignment {
-                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
-                        _ => None,
-                    })
-            });
-            if let Some(dmabuf) = maybe_dmabuf {
-                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
-                    if let Some(client) = surface.client() {
-                        let res =
-                            state
-                                .niri
-                                .event_loop
-                                .insert_source(source, move |_, _, state| {
-                                    let display_handle = state.niri.display_handle.clone();
-                                    state
-                                        .client_compositor_state(&client)
-                                        .blocker_cleared(state, &display_handle);
-                                    Ok(())
-                                });
-                        if res.is_ok() {
-                            add_blocker(surface, blocker);
-                        }
-                    }
-                }
-            }
-        });
+        self.add_default_dmabuf_pre_commit_hook(surface);
     }
 
     fn commit(&mut self, surface: &WlSurface) {
@@ -157,6 +125,8 @@ impl CompositorHandler for State {
                         })
                         .map(|(mapped, _)| mapped.window.clone());
 
+                    // The mapped pre-commit hook deals with dma-bufs on its own.
+                    self.remove_default_dmabuf_pre_commit_hook(toplevel.wl_surface());
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
                     let mapped = Mapped::new(window, rules, hook);
                     let window = mapped.window.clone();
@@ -246,6 +216,7 @@ impl CompositorHandler for State {
                         });
 
                     self.niri.layout.remove_window(&window);
+                    self.add_default_dmabuf_pre_commit_hook(surface);
 
                     if was_active {
                         self.maybe_warp_cursor_to_focus();
@@ -356,6 +327,8 @@ impl CompositorHandler for State {
         self.niri
             .root_surface
             .retain(|k, v| k != surface && v != surface);
+
+        self.niri.dmabuf_pre_commit_hook.remove(surface);
     }
 }
 
@@ -371,3 +344,57 @@ impl ShmHandler for State {
 
 delegate_compositor!(State);
 delegate_shm!(State);
+
+impl State {
+    pub fn add_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        let hook = add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
+            let maybe_dmabuf = with_states(surface, |surface_data| {
+                surface_data
+                    .cached_state
+                    .get::<SurfaceAttributes>()
+                    .pending()
+                    .buffer
+                    .as_ref()
+                    .and_then(|assignment| match assignment {
+                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
+                        _ => None,
+                    })
+            });
+            if let Some(dmabuf) = maybe_dmabuf {
+                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
+                    if let Some(client) = surface.client() {
+                        let res =
+                            state
+                                .niri
+                                .event_loop
+                                .insert_source(source, move |_, _, state| {
+                                    let display_handle = state.niri.display_handle.clone();
+                                    state
+                                        .client_compositor_state(&client)
+                                        .blocker_cleared(state, &display_handle);
+                                    Ok(())
+                                });
+                        if res.is_ok() {
+                            add_blocker(surface, blocker);
+                            trace!("added default dmabuf blocker");
+                        }
+                    }
+                }
+            }
+        });
+
+        let s = surface.clone();
+        if let Some(prev) = self.niri.dmabuf_pre_commit_hook.insert(s, hook) {
+            error!("tried to add dmabuf pre-commit hook when there was already one");
+            remove_pre_commit_hook(surface, prev);
+        }
+    }
+
+    pub fn remove_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
+            remove_pre_commit_hook(surface, hook);
+        } else {
+            error!("tried to remove dmabuf pre-commit hook but there was none");
+        }
+    }
+}

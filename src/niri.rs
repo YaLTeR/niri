@@ -67,8 +67,8 @@ use smithay::utils::{
     Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
-    with_states, with_surface_tree_downward, CompositorClientState, CompositorState, SurfaceData,
-    TraversalAction,
+    with_states, with_surface_tree_downward, CompositorClientState, CompositorState, HookId,
+    SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
@@ -188,6 +188,9 @@ pub struct Niri {
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
     pub root_surface: HashMap<WlSurface, WlSurface>,
+
+    // Dmabuf readiness pre-commit hook for a surface.
+    pub dmabuf_pre_commit_hook: HashMap<WlSurface, HookId>,
 
     pub output_state: HashMap<Output, OutputState>,
     pub output_by_name: HashMap<String, Output>,
@@ -1732,6 +1735,7 @@ impl Niri {
             output_by_name: HashMap::new(),
             unmapped_windows: HashMap::new(),
             root_surface: HashMap::new(),
+            dmabuf_pre_commit_hook: HashMap::new(),
             monitors_active: true,
 
             devices: HashSet::new(),

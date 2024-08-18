@@ -1,5 +1,6 @@
 use std::cell::Cell;
 
+use calloop::Interest;
 use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, utils, LayerSurface,
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -17,8 +18,10 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{self, Resource, WEnum};
 use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::compositor::{
-    add_pre_commit_hook, with_states, BufferAssignment, HookId, SurfaceAttributes,
+    add_blocker, add_pre_commit_hook, with_states, BufferAssignment, CompositorHandler as _,
+    HookId, SurfaceAttributes,
 };
+use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::{self, Layer};
@@ -491,6 +494,7 @@ impl XdgShellHandler for State {
         let was_active = active_window == Some(&window);
 
         self.niri.layout.remove_window(&window);
+        self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
 
         if was_active {
             self.maybe_warp_cursor_to_focus();
@@ -1005,10 +1009,17 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             return;
         };
 
-        let (got_unmapped, commit_serial) = with_states(surface, |states| {
-            let got_unmapped = {
+        let (got_unmapped, dmabuf, commit_serial) = with_states(surface, |states| {
+            let (got_unmapped, dmabuf) = {
                 let mut guard = states.cached_state.get::<SurfaceAttributes>();
-                matches!(guard.pending().buffer, Some(BufferAssignment::Removed))
+                match guard.pending().buffer.as_ref() {
+                    Some(BufferAssignment::NewBuffer(buffer)) => {
+                        let dmabuf = get_dmabuf(buffer).cloned().ok();
+                        (false, dmabuf)
+                    }
+                    Some(BufferAssignment::Removed) => (true, None),
+                    None => (false, None),
+                }
             };
 
             let role = states
@@ -1018,8 +1029,11 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 .lock()
                 .unwrap();
 
-            (got_unmapped, role.configure_serial)
+            (got_unmapped, dmabuf, role.configure_serial)
         });
+
+        let mut dmabuf_blocker =
+            dmabuf.and_then(|dmabuf| dmabuf.generate_blocker(Interest::READ).ok());
 
         let animate = if let Some(serial) = commit_serial {
             mapped.should_animate_commit(serial)
@@ -1027,6 +1041,25 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             error!("commit on a mapped surface without a configured serial");
             false
         };
+
+        if let Some((blocker, source)) = dmabuf_blocker.take() {
+            if let Some(client) = surface.client() {
+                let res = state
+                    .niri
+                    .event_loop
+                    .insert_source(source, move |_, _, state| {
+                        let display_handle = state.niri.display_handle.clone();
+                        state
+                            .client_compositor_state(&client)
+                            .blocker_cleared(state, &display_handle);
+                        Ok(())
+                    });
+                if res.is_ok() {
+                    add_blocker(surface, blocker);
+                    trace!("added toplevel dmabuf blocker");
+                }
+            }
+        }
 
         let window = mapped.window.clone();
         if got_unmapped {
