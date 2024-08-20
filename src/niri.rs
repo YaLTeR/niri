@@ -32,7 +32,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::Unbind;
+use smithay::backend::renderer::{Color32F, Unbind};
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -1137,6 +1137,7 @@ impl State {
                 .unwrap_or(DEFAULT_BACKGROUND_COLOR)
                 .to_array_unpremul();
             background_color[3] = 1.;
+            let background_color = Color32F::from(background_color);
 
             if let Some(state) = self.niri.output_state.get_mut(output) {
                 if state.background_buffer.color() != background_color {

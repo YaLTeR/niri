@@ -16,7 +16,7 @@ mod imp {
     use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
     use smithay::backend::renderer::gles::GlesRenderer;
-    use smithay::backend::renderer::{Frame, Renderer, Unbind};
+    use smithay::backend::renderer::{Color32F, Frame, Renderer, Unbind};
     use smithay::utils::{Physical, Rectangle, Scale, Transform};
 
     use super::*;
@@ -147,7 +147,7 @@ mod imp {
                 .context("error creating frame")?;
 
             frame
-                .clear([0.3, 0.3, 0.3, 1.], &[rect])
+                .clear(Color32F::from([0.3, 0.3, 0.3, 1.]), &[rect])
                 .context("error clearing")?;
 
             for element in elements.iter().rev() {

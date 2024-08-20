@@ -13,6 +13,7 @@ use knuffel::Decode as _;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform, WorkspaceReferenceArg};
 use regex::Regex;
+use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
@@ -578,6 +579,10 @@ impl Color {
 
     pub const fn from_array_unpremul([r, g, b, a]: [f32; 4]) -> Self {
         Self { r, g, b, a }
+    }
+
+    pub fn from_color32f(color: Color32F) -> Self {
+        Self::from_array_premul(color.components())
     }
 
     pub fn to_array_unpremul(self) -> [f32; 4] {

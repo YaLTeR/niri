@@ -8,7 +8,7 @@ use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement
 use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Bind, ExportMem, Frame, Offscreen, Renderer};
+use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
@@ -302,7 +302,7 @@ fn render_elements(
         .context("error starting frame")?;
 
     frame
-        .clear([0., 0., 0., 0.], &[output_rect])
+        .clear(Color32F::TRANSPARENT, &[output_rect])
         .context("error clearing")?;
 
     for element in elements {
