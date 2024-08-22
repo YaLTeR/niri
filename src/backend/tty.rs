@@ -427,15 +427,6 @@ impl Tty {
                         }
 
                         // Restore VRR.
-                        let Some(connector) = device
-                            .drm_scanner
-                            .connectors()
-                            .get(&surface.connector_handle)
-                        else {
-                            error!("missing enabled connector in drm_scanner");
-                            continue;
-                        };
-
                         let output = niri
                             .global_space
                             .outputs()
@@ -455,7 +446,7 @@ impl Tty {
 
                         try_to_change_vrr(
                             &device.drm,
-                            connector,
+                            surface.connector_handle,
                             *crtc,
                             surface,
                             output_state,
@@ -1669,17 +1660,9 @@ impl Tty {
             for (&crtc, surface) in device.surfaces.iter_mut() {
                 let tty_state: &TtyOutputState = output.user_data().get().unwrap();
                 if tty_state.node == node && tty_state.crtc == crtc {
-                    let Some(connector) = device
-                        .drm_scanner
-                        .connectors()
-                        .get(&surface.connector_handle)
-                    else {
-                        error!("missing enabled connector in drm_scanner");
-                        return;
-                    };
                     try_to_change_vrr(
                         &device.drm,
-                        connector,
+                        surface.connector_handle,
                         crtc,
                         surface,
                         output_state,
@@ -1764,7 +1747,7 @@ impl Tty {
                 {
                     try_to_change_vrr(
                         &device.drm,
-                        connector,
+                        connector.handle(),
                         crtc,
                         surface,
                         output_state,
@@ -2420,7 +2403,7 @@ pub fn set_gamma_for_crtc(
 
 fn try_to_change_vrr(
     device: &DrmDevice,
-    connector: &connector::Info,
+    connector: connector::Handle,
     crtc: crtc::Handle,
     surface: &mut Surface,
     output_state: &mut crate::niri::OutputState,
@@ -2428,7 +2411,7 @@ fn try_to_change_vrr(
 ) {
     let _span = tracy_client::span!("try_to_change_vrr");
 
-    if is_vrr_capable(device, connector.handle()) == Some(true) {
+    if is_vrr_capable(device, connector) == Some(true) {
         let word = if enable_vrr { "enabling" } else { "disabling" };
 
         match set_vrr_enabled(device, crtc, enable_vrr) {
