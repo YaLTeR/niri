@@ -434,7 +434,7 @@ pub struct VrrToSet {
         ),
     )]
     pub vrr: bool,
-    /// Only enable if there is a matched VRR window rule visible on the output.
+    /// Only enable when the output shows a window matching the variable-refresh-rate window rule.
     #[cfg_attr(feature = "clap", arg(long))]
     pub on_demand: bool,
 }
