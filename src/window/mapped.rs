@@ -32,6 +32,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
+use crate::utils::transaction::Transaction;
 use crate::utils::{send_scale_transform, ResizeEdge};
 
 #[derive(Debug)]
@@ -70,6 +71,12 @@ pub struct Mapped {
 
     /// Snapshot right before an animated commit.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
+
+    /// Transaction that the next configure should take part in, if any.
+    transaction_for_next_configure: Option<Transaction>,
+
+    /// Pending transactions that have not been added as blockers for this window yet.
+    pending_transactions: Vec<(Serial, Transaction)>,
 
     /// State of an ongoing interactive resize.
     interactive_resize: Option<InteractiveResize>,
@@ -141,6 +148,8 @@ impl Mapped {
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
+            transaction_for_next_configure: None,
+            pending_transactions: Vec::new(),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
         }
@@ -253,6 +262,40 @@ impl Mapped {
 
     pub fn store_animation_snapshot(&mut self, renderer: &mut GlesRenderer) {
         self.animation_snapshot = Some(self.render_snapshot(renderer));
+    }
+
+    pub fn take_pending_transaction(&mut self, commit_serial: Serial) -> Option<Transaction> {
+        let mut rv = None;
+
+        // Pending transactions are appended in order by serial, so we can loop from the start
+        // until we hit a serial that is too new.
+        while let Some((serial, _)) = self.pending_transactions.first() {
+            // In this loop, we will complete the transaction corresponding to the commit, as well
+            // as all transactions corresponding to previous serials. This can happen when we
+            // request resizes too quickly, and the surface only responds to the last one.
+            //
+            // Note that in this case, completing the previous transactions can result in an
+            // inconsistent visual state, if another window is waiting for this window to assume a
+            // specific size (in a previous transaction), which is now different (in this commit).
+            //
+            // However, there isn't really a good way to deal with that. We cannot cancel any
+            // transactions because we need to keep sending frame callbacks, and cancelling a
+            // transaction will make the corresponding frame callbacks get lost, and the window
+            // will hang.
+            //
+            // This is why resize throttling (implemented separately) is important: it prevents
+            // visually inconsistent states by way of never having more than one transaction in
+            // flight.
+            if commit_serial.is_no_older_than(serial) {
+                let (_, transaction) = self.pending_transactions.remove(0);
+                // Previous transaction is dropped here, signaling completion.
+                rv = Some(transaction);
+            } else {
+                break;
+            }
+        }
+
+        rv
     }
 
     pub fn last_interactive_resize_start(&self) -> &Cell<Option<(Duration, ResizeEdge)>> {
@@ -442,7 +485,12 @@ impl LayoutElement for Mapped {
         }
     }
 
-    fn request_size(&mut self, size: Size<i32, Logical>, animate: bool) {
+    fn request_size(
+        &mut self,
+        size: Size<i32, Logical>,
+        animate: bool,
+        transaction: Option<Transaction>,
+    ) {
         let changed = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
@@ -452,6 +500,15 @@ impl LayoutElement for Mapped {
 
         if changed && animate {
             self.animate_next_configure = true;
+        }
+
+        // Store the transaction regardless of whether the size changed. This is because with 3+
+        // windows in a column, the size may change among windows 1 and 2 and then right away among
+        // windows 2 and 3, and we want all windows 1, 2 and 3 to use the last transaction, rather
+        // than window 1 getting stuck with the previous transaction that is immediately released
+        // by 2.
+        if let Some(transaction) = transaction {
+            self.transaction_for_next_configure = Some(transaction);
         }
     }
 
@@ -627,9 +684,19 @@ impl LayoutElement for Mapped {
     }
 
     fn send_pending_configure(&mut self) {
+        let _span =
+            trace_span!("send_pending_configure", surface = ?self.toplevel().wl_surface().id())
+                .entered();
+
         if let Some(serial) = self.toplevel().send_pending_configure() {
+            trace!(?serial, "sending configure");
+
             if self.animate_next_configure {
                 self.animate_serials.push(serial);
+            }
+
+            if let Some(transaction) = self.transaction_for_next_configure.take() {
+                self.pending_transactions.push((serial, transaction));
             }
 
             self.interactive_resize = match self.interactive_resize.take() {
@@ -648,6 +715,7 @@ impl LayoutElement for Mapped {
         }
 
         self.animate_next_configure = false;
+        self.transaction_for_next_configure = None;
     }
 
     fn is_fullscreen(&self) -> bool {

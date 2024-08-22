@@ -14,14 +14,14 @@ pub struct Window {
 impl Window {
     pub fn freeform(size: Size<i32, Logical>) -> Self {
         let mut window = TestWindow::freeform(0);
-        window.request_size(size, false);
+        window.request_size(size, false, None);
         window.communicate();
         Self { window }
     }
 
     pub fn fixed_size(size: Size<i32, Logical>) -> Self {
         let mut window = TestWindow::fixed_size(0);
-        window.request_size(size, false);
+        window.request_size(size, false, None);
         window.communicate();
         Self { window }
     }
@@ -29,7 +29,7 @@ impl Window {
     pub fn fixed_size_with_csd_shadow(size: Size<i32, Logical>) -> Self {
         let mut window = TestWindow::fixed_size(0);
         window.set_csd_shadow_width(64);
-        window.request_size(size, false);
+        window.request_size(size, false, None);
         window.communicate();
         Self { window }
     }
@@ -37,7 +37,8 @@ impl Window {
 
 impl TestCase for Window {
     fn resize(&mut self, width: i32, height: i32) {
-        self.window.request_size(Size::from((width, height)), false);
+        self.window
+            .request_size(Size::from((width, height)), false, None);
         self.window.communicate();
     }
 

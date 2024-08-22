@@ -22,6 +22,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
+use crate::utils::transaction::Transaction;
 use crate::utils::{output_size, send_scale_transform, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
@@ -2740,6 +2741,27 @@ impl<W: LayoutElement> Workspace<W> {
                 }
             }
 
+            let intent = if self.options.disable_resize_throttling {
+                ConfigureIntent::CanSend
+            } else if self.options.disable_transactions {
+                // When transactions are disabled, we don't use combined throttling, but rather
+                // compute throttling individually below.
+                ConfigureIntent::CanSend
+            } else {
+                col.tiles
+                    .iter()
+                    .fold(ConfigureIntent::NotNeeded, |intent, tile| {
+                        match (intent, tile.window().configure_intent()) {
+                            (_, ConfigureIntent::ShouldSend) => ConfigureIntent::ShouldSend,
+                            (ConfigureIntent::NotNeeded, tile_intent) => tile_intent,
+                            (ConfigureIntent::CanSend, ConfigureIntent::Throttled) => {
+                                ConfigureIntent::Throttled
+                            }
+                            (intent, _) => intent,
+                        }
+                    })
+            };
+
             for (tile_idx, tile) in col.tiles.iter_mut().enumerate() {
                 let win = tile.window_mut();
 
@@ -2759,7 +2781,13 @@ impl<W: LayoutElement> Workspace<W> {
                 );
                 win.set_bounds(bounds);
 
-                let intent = win.configure_intent();
+                // If transactions are disabled, also disable combined throttling, for more
+                // intuitive behavior.
+                let intent = if self.options.disable_transactions {
+                    win.configure_intent()
+                } else {
+                    intent
+                };
 
                 if matches!(
                     intent,
@@ -3167,13 +3195,14 @@ impl<W: LayoutElement> Column<W> {
             assert_eq!(auto_tiles_left, 0);
         }
 
+        let transaction = Transaction::new();
         for (tile, h) in zip(&mut self.tiles, heights) {
             let WindowHeight::Fixed(height) = h else {
                 unreachable!()
             };
 
             let size = Size::from((width, height));
-            tile.request_tile_size(size, animate);
+            tile.request_tile_size(size, animate, Some(transaction.clone()));
         }
     }
 

@@ -52,6 +52,7 @@ impl CompositorHandler for State {
 
     fn commit(&mut self, surface: &WlSurface) {
         let _span = tracy_client::span!("CompositorHandler::commit");
+        trace!(surface = ?surface.id(), "commit");
 
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);

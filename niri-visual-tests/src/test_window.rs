@@ -9,6 +9,7 @@ use niri::layout::{
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use niri::render_helpers::{RenderTarget, SplitElements};
+use niri::utils::transaction::Transaction;
 use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::output::{self, Output};
@@ -177,7 +178,12 @@ impl LayoutElement for TestWindow {
         }
     }
 
-    fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {
+    fn request_size(
+        &mut self,
+        size: Size<i32, Logical>,
+        _animate: bool,
+        _transaction: Option<Transaction>,
+    ) {
         self.inner.borrow_mut().requested_size = Some(size);
         self.inner.borrow_mut().pending_fullscreen = false;
     }

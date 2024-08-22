@@ -21,6 +21,7 @@ debug {
     wait-for-frame-completion-before-queueing
     emulate-zero-presentation-time
     disable-resize-throttling
+    disable-transactions
 }
 
 binds {
@@ -143,6 +144,24 @@ Disabling resize throttling will send resizes to windows as fast as possible, wh
 ```kdl
 debug {
     disable-resize-throttling
+}
+```
+
+### `disable-transactions`
+
+<sup>Since: 0.1.9</sup>
+
+Disable transactions (as of niri 0.1.9, only resize transactions are implemented).
+
+By default, windows which must resize together, do resize together.
+For example, all windows in a column must resize at the same time to maintain the combined column height equal to the screen height, and to maintain the same window width.
+
+Transactions make niri wait until all windows finish resizing before showing them all on screen in one, synchronized frame.
+For them to work properly, resize throttling shouldn't be disabled (with the previous debug flag).
+
+```kdl
+debug {
+    disable-transactions
 }
 ```
 

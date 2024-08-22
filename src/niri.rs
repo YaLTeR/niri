@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, mem, thread};
@@ -61,14 +62,14 @@ use smithay::reexports::wayland_server::backend::{
 };
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
+use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
 use smithay::utils::{
     ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
     Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::compositor::{
-    with_states, with_surface_tree_downward, CompositorClientState, CompositorState, HookId,
-    SurfaceData, TraversalAction,
+    with_states, with_surface_tree_downward, CompositorClientState, CompositorHandler,
+    CompositorState, HookId, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
@@ -191,6 +192,10 @@ pub struct Niri {
 
     // Dmabuf readiness pre-commit hook for a surface.
     pub dmabuf_pre_commit_hook: HashMap<WlSurface, HookId>,
+
+    /// Clients to notify about their blockers being cleared.
+    pub blocker_cleared_tx: Sender<Client>,
+    pub blocker_cleared_rx: Receiver<Client>,
 
     pub output_state: HashMap<Output, OutputState>,
     pub output_by_name: HashMap<String, Output>,
@@ -517,6 +522,10 @@ impl State {
     fn refresh(&mut self) {
         let _span = tracy_client::span!("State::refresh");
 
+        // Handle commits for surfaces whose blockers cleared this cycle. This should happen before
+        // layout.refresh() since this is where these surfaces handle commits.
+        self.notify_blocker_cleared();
+
         // These should be called periodically, before flushing the clients.
         self.niri.layout.refresh();
         self.niri.cursor_manager.check_cursor_image_surface_alive();
@@ -533,6 +542,15 @@ impl State {
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_outputs();
+    }
+
+    fn notify_blocker_cleared(&mut self) {
+        let dh = self.niri.display_handle.clone();
+        while let Ok(client) = self.niri.blocker_cleared_rx.try_recv() {
+            trace!("calling blocker_cleared");
+            self.client_compositor_state(&client)
+                .blocker_cleared(self, &dh);
+        }
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
@@ -1523,6 +1541,8 @@ impl Niri {
 
         let layout = Layout::new(&config_);
 
+        let (blocker_cleared_tx, blocker_cleared_rx) = mpsc::channel();
+
         let compositor_state = CompositorState::new_v6::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
             &display_handle,
@@ -1737,6 +1757,8 @@ impl Niri {
             unmapped_windows: HashMap::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
+            blocker_cleared_tx,
+            blocker_cleared_rx,
             monitors_active: true,
 
             devices: HashSet::new(),
@@ -2497,6 +2519,7 @@ impl Niri {
                 RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
             )
         }) {
+            trace!("redrawing output");
             let output = output.clone();
             self.redraw(backend, &output);
         }

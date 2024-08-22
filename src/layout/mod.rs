@@ -52,6 +52,7 @@ use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
+use crate::utils::transaction::Transaction;
 use crate::utils::{output_size, round_logical_in_physical_max1, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
@@ -153,7 +154,12 @@ pub trait LayoutElement {
         self.render(renderer, location, scale, alpha, target).popups
     }
 
-    fn request_size(&mut self, size: Size<i32, Logical>, animate: bool);
+    fn request_size(
+        &mut self,
+        size: Size<i32, Logical>,
+        animate: bool,
+        transaction: Option<Transaction>,
+    );
     fn request_fullscreen(&self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
@@ -237,6 +243,7 @@ pub struct Options {
 
     // Debug flags.
     pub disable_resize_throttling: bool,
+    pub disable_transactions: bool,
 }
 
 impl Default for Options {
@@ -255,6 +262,7 @@ impl Default for Options {
             default_width: None,
             animations: Default::default(),
             disable_resize_throttling: false,
+            disable_transactions: false,
         }
     }
 }
@@ -292,6 +300,7 @@ impl Options {
             default_width,
             animations: config.animations.clone(),
             disable_resize_throttling: config.debug.disable_resize_throttling,
+            disable_transactions: config.debug.disable_transactions,
         }
     }
 
@@ -2636,7 +2645,12 @@ mod tests {
             SplitElements::default()
         }
 
-        fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {
+        fn request_size(
+            &mut self,
+            size: Size<i32, Logical>,
+            _animate: bool,
+            _transaction: Option<Transaction>,
+        ) {
             self.0.requested_size.set(Some(size));
             self.0.pending_fullscreen.set(false);
         }

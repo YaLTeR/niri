@@ -1370,6 +1370,8 @@ pub struct DebugConfig {
     pub emulate_zero_presentation_time: bool,
     #[knuffel(child)]
     pub disable_resize_throttling: bool,
+    #[knuffel(child)]
+    pub disable_transactions: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]

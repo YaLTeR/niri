@@ -20,7 +20,7 @@ impl Tile {
     pub fn freeform(size: Size<i32, Logical>) -> Self {
         let window = TestWindow::freeform(0);
         let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size.to_f64(), false);
+        rv.tile.request_tile_size(size.to_f64(), false, None);
         rv.window.communicate();
         rv
     }
@@ -28,7 +28,7 @@ impl Tile {
     pub fn fixed_size(size: Size<i32, Logical>) -> Self {
         let window = TestWindow::fixed_size(0);
         let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size.to_f64(), false);
+        rv.tile.request_tile_size(size.to_f64(), false, None);
         rv.window.communicate();
         rv
     }
@@ -37,7 +37,7 @@ impl Tile {
         let window = TestWindow::fixed_size(0);
         window.set_csd_shadow_width(64);
         let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size.to_f64(), false);
+        rv.tile.request_tile_size(size.to_f64(), false, None);
         rv.window.communicate();
         rv
     }
@@ -85,7 +85,7 @@ impl Tile {
 impl TestCase for Tile {
     fn resize(&mut self, width: i32, height: i32) {
         self.tile
-            .request_tile_size(Size::from((width, height)).to_f64(), false);
+            .request_tile_size(Size::from((width, height)).to_f64(), false, None);
         self.window.communicate();
     }
 

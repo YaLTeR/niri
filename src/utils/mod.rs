@@ -23,6 +23,7 @@ use smithay::wayland::fractional_scale::with_fractional_scale;
 pub mod id;
 pub mod scale;
 pub mod spawning;
+pub mod transaction;
 pub mod watcher;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);

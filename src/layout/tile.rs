@@ -23,6 +23,7 @@ use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
+use crate::utils::transaction::Transaction;
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -503,7 +504,12 @@ impl<W: LayoutElement> Tile<W> {
         activation_region.contains(point)
     }
 
-    pub fn request_tile_size(&mut self, mut size: Size<f64, Logical>, animate: bool) {
+    pub fn request_tile_size(
+        &mut self,
+        mut size: Size<f64, Logical>,
+        animate: bool,
+        transaction: Option<Transaction>,
+    ) {
         // Can't go through effective_border_width() because we might be fullscreen.
         if !self.border.is_off() {
             let width = self.border.width();
@@ -514,7 +520,8 @@ impl<W: LayoutElement> Tile<W> {
         // The size request has to be i32 unfortunately, due to Wayland. We floor here instead of
         // round to avoid situations where proportionally-sized columns don't fit on the screen
         // exactly.
-        self.window.request_size(size.to_i32_floor(), animate);
+        self.window
+            .request_size(size.to_i32_floor(), animate, transaction);
     }
 
     pub fn tile_width_for_window_width(&self, size: f64) -> f64 {
