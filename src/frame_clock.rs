@@ -40,6 +40,10 @@ impl FrameClock {
         self.last_presentation_time = None;
     }
 
+    pub fn vrr(&self) -> bool {
+        self.vrr
+    }
+
     pub fn presented(&mut self, presentation_time: Duration) {
         if presentation_time.is_zero() {
             // Not interested in these.

@@ -12,7 +12,7 @@ output "eDP-1" {
     scale 2.0
     transform "90"
     position x=1280 y=0
-    variable-refresh-rate
+    variable-refresh-rate // on-demand=true
     background-color "#003300"
 }
 
@@ -144,6 +144,15 @@ You can check whether an output supports VRR in `niri msg outputs`.
 ```kdl
 output "HDMI-A-1" {
     variable-refresh-rate
+}
+```
+
+<sup>Since: 0.1.9</sup> You can also set the `on-demand=true` property, which will only enable VRR when this output shows a window matching the `variable-refresh-rate` window rule.
+This is helpful to avoid various issues with VRR, since it can be disabled most of the time, and only enabled for specific windows, like games or video players.
+
+```kdl
+output "HDMI-A-1" {
+    variable-refresh-rate on-demand=true
 }
 ```
 

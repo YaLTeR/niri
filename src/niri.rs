@@ -299,6 +299,7 @@ pub struct OutputState {
     pub global: GlobalId,
     pub frame_clock: FrameClock,
     pub redraw_state: RedrawState,
+    pub on_demand_vrr_enabled: bool,
     // After the last redraw, some ongoing animations still remain.
     pub unfinished_animations_remain: bool,
     /// Last sequence received in a vblank event.
@@ -1202,8 +1203,14 @@ impl State {
                         }
                     }
                 }
-                niri_ipc::OutputAction::Vrr { enable } => {
-                    config.variable_refresh_rate = enable;
+                niri_ipc::OutputAction::Vrr { vrr } => {
+                    config.variable_refresh_rate = if vrr.vrr {
+                        Some(niri_config::Vrr {
+                            on_demand: vrr.on_demand,
+                        })
+                    } else {
+                        None
+                    }
                 }
             }
         }
@@ -2005,6 +2012,7 @@ impl Niri {
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
+            on_demand_vrr_enabled: false,
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
@@ -3089,6 +3097,8 @@ impl Niri {
             lock_state => self.lock_state = lock_state,
         }
 
+        self.refresh_on_demand_vrr(backend, output);
+
         // Send the frame callbacks.
         //
         // FIXME: The logic here could be a bit smarter. Currently, during an animation, the
@@ -3116,6 +3126,39 @@ impl Niri {
 
             self.render_for_screencopy_with_damage(renderer, output);
         });
+    }
+
+    pub fn refresh_on_demand_vrr(&mut self, backend: &mut Backend, output: &Output) {
+        let _span = tracy_client::span!("Niri::refresh_on_demand_vrr");
+        let Some(on_demand) = self
+            .config
+            .borrow()
+            .outputs
+            .find(&output.name())
+            .map(|output| output.is_vrr_on_demand())
+        else {
+            warn!("error getting output config for {}", output.name());
+            return;
+        };
+        if !on_demand {
+            return;
+        }
+
+        let current = self.layout.windows_for_output(output).any(|mapped| {
+            mapped.rules().variable_refresh_rate == Some(true) && {
+                let mut visible = false;
+                mapped.window.with_surfaces(|surface, states| {
+                    if !visible
+                        && surface_primary_scanout_output(surface, states).as_ref() == Some(output)
+                    {
+                        visible = true;
+                    }
+                });
+                visible
+            }
+        });
+
+        backend.set_output_on_demand_vrr(self, output, current);
     }
 
     pub fn update_primary_scanout_output(
@@ -3181,13 +3224,9 @@ impl Niri {
             let offscreen_id = offscreen_id.as_ref();
 
             win.with_surfaces(|surface, states| {
-                states
-                    .data_map
-                    .insert_if_missing_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
                 let surface_primary_scanout_output = states
                     .data_map
-                    .get::<Mutex<PrimaryScanoutOutput>>()
-                    .unwrap();
+                    .get_or_insert_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
                 surface_primary_scanout_output
                     .lock()
                     .unwrap()
