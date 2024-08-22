@@ -47,6 +47,7 @@ window-rule {
     opacity 0.5
     block-out-from "screencast"
     // block-out-from "screen-capture"
+    variable-refresh-rate true
 
     focus-ring {
         // off
@@ -388,6 +389,26 @@ window-rule {
     match is-active=false
 
     opacity 0.95
+}
+```
+
+#### `variable-refresh-rate`
+
+<sup>Since: 0.1.9</sup>
+
+If set to true, whenever this window displays on an output with on-demand VRR, it will enable VRR on that output.
+
+```kdl
+// Configure some output with on-demand VRR.
+output "HDMI-A-1" {
+    variable-refresh-rate on-demand=true
+}
+
+// Enable on-demand VRR when mpv displays on the output.
+window-rule {
+    match app-id="^mpv$"
+
+    variable-refresh-rate true
 }
 ```
 
