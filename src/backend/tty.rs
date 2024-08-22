@@ -1650,7 +1650,8 @@ impl Tty {
     }
 
     pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
-        let _span = tracy_client::span!("Tty::set_output_vrr");
+        let _span = tracy_client::span!("Tty::set_output_on_demand_vrr");
+
         let output_state = niri.output_state.get_mut(output).unwrap();
         if output_state.frame_clock.vrr() == enable_vrr {
             return;
