@@ -180,7 +180,7 @@ struct TtyOutputState {
 struct Surface {
     name: String,
     compositor: GbmDrmCompositor,
-    connector_handle: connector::Handle,
+    connector: connector::Handle,
     dmabuf_feedback: Option<SurfaceDmabufFeedback>,
     gamma_props: Option<GammaProps>,
     /// Gamma change to apply upon session resume.
@@ -446,7 +446,7 @@ impl Tty {
 
                         try_to_change_vrr(
                             &device.drm,
-                            surface.connector_handle,
+                            surface.connector,
                             *crtc,
                             surface,
                             output_state,
@@ -992,7 +992,6 @@ impl Tty {
             }
         }
 
-        let connector_handle = connector.handle();
         let vblank_frame_name =
             tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
         let time_since_presentation_plot_name =
@@ -1005,7 +1004,7 @@ impl Tty {
 
         let surface = Surface {
             name: output_name.clone(),
-            connector_handle,
+            connector: connector.handle(),
             compositor,
             dmabuf_feedback,
             gamma_props,
@@ -1662,7 +1661,7 @@ impl Tty {
                 if tty_state.node == node && tty_state.crtc == crtc {
                     try_to_change_vrr(
                         &device.drm,
-                        surface.connector_handle,
+                        surface.connector,
                         crtc,
                         surface,
                         output_state,
@@ -1704,10 +1703,7 @@ impl Tty {
                 }
 
                 // Check if we need to change the mode.
-                let Some(connector) = device
-                    .drm_scanner
-                    .connectors()
-                    .get(&surface.connector_handle)
+                let Some(connector) = device.drm_scanner.connectors().get(&surface.connector)
                 else {
                     error!("missing enabled connector in drm_scanner");
                     continue;
