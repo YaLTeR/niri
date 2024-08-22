@@ -12,14 +12,16 @@ use smithay::output::{self, Output};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
-use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
+use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData};
 
 use super::{ResolvedWindowRules, WindowRef};
 use crate::handlers::KdeDecorationsModeState;
 use crate::layout::{
-    InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
+    ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
+    LayoutElementRenderSnapshot,
 };
 use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
@@ -566,6 +568,62 @@ impl LayoutElement for Mapped {
         self.toplevel().with_pending_state(|state| {
             state.bounds = Some(bounds);
         });
+    }
+
+    fn configure_intent(&self) -> ConfigureIntent {
+        let _span =
+            trace_span!("configure_intent", surface = ?self.toplevel().wl_surface().id()).entered();
+
+        with_states(self.toplevel().wl_surface(), |states| {
+            let attributes = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            if let Some(server_pending) = &attributes.server_pending {
+                let current_server = attributes.current_server_state();
+                if server_pending != current_server {
+                    // Something changed. Check if the only difference is the size, and if the
+                    // current server size matches the current committed size.
+                    let mut current_server_same_size = current_server.clone();
+                    current_server_same_size.size = server_pending.size;
+                    if current_server_same_size == *server_pending {
+                        // Only the size changed. Check if the window committed our previous size
+                        // request.
+                        if attributes.current.size == current_server.size {
+                            // The window had committed for our previous size change, so we can
+                            // change the size again.
+                            trace!(
+                                "current size matches server size: {:?}",
+                                attributes.current.size
+                            );
+                            ConfigureIntent::CanSend
+                        } else {
+                            // The window had not committed for our previous size change yet. Since
+                            // nothing else changed, do not send the new size request yet. This
+                            // throttling is done because some clients do not batch size requests,
+                            // leading to bad behavior with very fast input devices (i.e. a 1000 Hz
+                            // mouse). This throttling also helps interactive resize transactions
+                            // preserve visual consistency.
+                            trace!("throttling resize");
+                            ConfigureIntent::Throttled
+                        }
+                    } else {
+                        // Something else changed other than the size; send it.
+                        trace!("something changed other than the size");
+                        ConfigureIntent::ShouldSend
+                    }
+                } else {
+                    // Nothing changed since the last configure.
+                    ConfigureIntent::NotNeeded
+                }
+            } else {
+                // Nothing changed since the last configure.
+                ConfigureIntent::NotNeeded
+            }
+        })
     }
 
     fn send_pending_configure(&mut self) {

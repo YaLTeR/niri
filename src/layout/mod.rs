@@ -80,6 +80,19 @@ pub struct InteractiveResizeData {
     pub edges: ResizeEdge,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ConfigureIntent {
+    /// A configure is not needed (no changes to server pending state).
+    NotNeeded,
+    /// A configure is throttled (due to resizing too fast for example).
+    Throttled,
+    /// Can send the configure if it isn't throttled externally (only size changed).
+    CanSend,
+    /// Should send the configure regardless of external throttling (something other than size
+    /// changed).
+    ShouldSend,
+}
+
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
     type Id: PartialEq + std::fmt::Debug;
@@ -154,6 +167,7 @@ pub trait LayoutElement {
     fn set_active_in_column(&mut self, active: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
 
+    fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
 
     /// Whether the element is currently fullscreen.
@@ -220,6 +234,9 @@ pub struct Options {
     /// Initial width for new columns.
     pub default_width: Option<ColumnWidth>,
     pub animations: niri_config::Animations,
+
+    // Debug flags.
+    pub disable_resize_throttling: bool,
 }
 
 impl Default for Options {
@@ -237,6 +254,7 @@ impl Default for Options {
             ],
             default_width: None,
             animations: Default::default(),
+            disable_resize_throttling: false,
         }
     }
 }
@@ -273,6 +291,7 @@ impl Options {
             preset_widths,
             default_width,
             animations: config.animations.clone(),
+            disable_resize_throttling: config.debug.disable_resize_throttling,
         }
     }
 
@@ -2653,6 +2672,10 @@ mod tests {
         fn set_activated(&mut self, _active: bool) {}
 
         fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
+
+        fn configure_intent(&self) -> ConfigureIntent {
+            ConfigureIntent::CanSend
+        }
 
         fn send_pending_configure(&mut self) {}
 

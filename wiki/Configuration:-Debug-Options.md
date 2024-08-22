@@ -20,6 +20,7 @@ debug {
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
     emulate-zero-presentation-time
+    disable-resize-throttling
 }
 
 binds {
@@ -125,6 +126,23 @@ This is a thing on NVIDIA proprietary drivers, so this flag can be used to test 
 ```kdl
 debug {
     emulate-zero-presentation-time
+}
+```
+
+### `disable-resize-throttling`
+
+<sup>Since: 0.1.9</sup>
+
+Disable throttling resize events sent to windows.
+
+By default, when resizing quickly (e.g. interactively), a window will only receive the next size once it has made a commit for the previously requested size.
+This is required for resize transactions to work properly, and it also helps certain clients which don't batch incoming resizes from the compositor.
+
+Disabling resize throttling will send resizes to windows as fast as possible, which is potentially very fast (for example, on a 1000 Hz mouse).
+
+```kdl
+debug {
+    disable-resize-throttling
 }
 ```
 

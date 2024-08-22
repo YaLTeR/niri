@@ -3,7 +3,8 @@ use std::cmp::{max, min};
 use std::rc::Rc;
 
 use niri::layout::{
-    InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
+    ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
+    LayoutElementRenderSnapshot,
 };
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -214,6 +215,10 @@ impl LayoutElement for TestWindow {
     fn set_active_in_column(&mut self, _active: bool) {}
 
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
+
+    fn configure_intent(&self) -> ConfigureIntent {
+        ConfigureIntent::CanSend
+    }
 
     fn send_pending_configure(&mut self) {}
 

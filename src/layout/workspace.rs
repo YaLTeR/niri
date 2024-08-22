@@ -15,7 +15,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::tile::{Tile, TileRenderElement};
-use super::{InteractiveResizeData, LayoutElement, Options};
+use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options};
 use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
@@ -2759,7 +2759,15 @@ impl<W: LayoutElement> Workspace<W> {
                 );
                 win.set_bounds(bounds);
 
-                win.send_pending_configure();
+                let intent = win.configure_intent();
+
+                if matches!(
+                    intent,
+                    ConfigureIntent::CanSend | ConfigureIntent::ShouldSend
+                ) {
+                    win.send_pending_configure();
+                }
+
                 win.refresh();
             }
         }
