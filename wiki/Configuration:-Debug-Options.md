@@ -151,7 +151,7 @@ debug {
 
 <sup>Since: 0.1.9</sup>
 
-Disable transactions (as of niri 0.1.9, only resize transactions are implemented).
+Disable transactions (resize and close).
 
 By default, windows which must resize together, do resize together.
 For example, all windows in a column must resize at the same time to maintain the combined column height equal to the screen height, and to maintain the same window width.
