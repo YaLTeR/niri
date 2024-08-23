@@ -34,7 +34,7 @@ use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::output::WeakOutput;
+use smithay::output::{OutputModeSource, WeakOutput};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
@@ -756,6 +756,14 @@ impl Cast {
         };
         let damage_tracker = damage_tracker
             .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+
+        // Size change will drop the damage tracker, but scale change won't, so check it here.
+        let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
+            unreachable!();
+        };
+        if *t_scale != scale {
+            *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+        }
 
         let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
         if damage.is_none() {
