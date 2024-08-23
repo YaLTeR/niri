@@ -11,7 +11,7 @@ pub use spring::{Spring, SpringParams};
 
 pub static ANIMATION_SLOWDOWN: AtomicF64 = AtomicF64::new(1.);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Animation {
     from: f64,
     to: f64,
@@ -101,9 +101,9 @@ impl Animation {
     }
 
     /// Restarts the animation using the previous config.
-    pub fn restarted(self, from: f64, to: f64, initial_velocity: f64) -> Self {
+    pub fn restarted(&self, from: f64, to: f64, initial_velocity: f64) -> Self {
         if self.is_off {
-            return self;
+            return self.clone();
         }
 
         // Scale the velocity by slowdown to keep the touchpad gestures feeling right.
