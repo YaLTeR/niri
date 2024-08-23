@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesTexture;
+use smithay::utils::{Scale, Transform};
 
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
@@ -41,6 +42,14 @@ impl ScreenTransition {
 
     pub fn is_done(&self) -> bool {
         self.alpha == 0.
+    }
+
+    pub fn update_render_elements(&mut self, scale: Scale<f64>, transform: Transform) {
+        // These textures should remain full-screen, even if scale or transform changes.
+        for buffer in &mut self.from_texture {
+            buffer.set_texture_scale(scale);
+            buffer.set_texture_transform(transform);
+        }
     }
 
     pub fn render(&self, target: RenderTarget) -> PrimaryGpuTextureRenderElement {

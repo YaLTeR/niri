@@ -2855,6 +2855,17 @@ impl Niri {
 
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
         self.layout.update_render_elements(output);
+
+        for (out, state) in self.output_state.iter_mut() {
+            if output.map_or(true, |output| out == output) {
+                let scale = Scale::from(out.current_scale().fractional_scale());
+                let transform = out.current_transform();
+
+                if let Some(transition) = &mut state.screen_transition {
+                    transition.update_render_elements(scale, transform);
+                }
+            }
+        }
     }
 
     pub fn render<R: NiriRenderer>(
@@ -4554,7 +4565,6 @@ impl Niri {
             .filter_map(|output| {
                 let size = output.current_mode().unwrap().size;
                 let transform = output.current_transform();
-                let size = transform.transform_size(size);
 
                 let scale = Scale::from(output.current_scale().fractional_scale());
                 let targets = [
@@ -4570,7 +4580,7 @@ impl Niri {
                         renderer,
                         size,
                         scale,
-                        Transform::Normal,
+                        transform,
                         Fourcc::Abgr8888,
                         elements,
                     );
@@ -4591,8 +4601,8 @@ impl Niri {
                     TextureBuffer::from_texture(
                         renderer,
                         texture,
-                        output.current_scale().fractional_scale(),
-                        Transform::Normal,
+                        scale,
+                        transform,
                         Vec::new(), // We want windows below to get frame callbacks.
                     )
                 });

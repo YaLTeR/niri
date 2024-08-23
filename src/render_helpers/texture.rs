@@ -92,6 +92,18 @@ impl<T> TextureBuffer<T> {
     pub fn texture_scale(&self) -> Scale<f64> {
         self.scale
     }
+
+    pub fn set_texture_scale(&mut self, scale: impl Into<Scale<f64>>) {
+        self.scale = scale.into();
+    }
+
+    pub fn texture_transform(&self) -> Transform {
+        self.transform
+    }
+
+    pub fn set_texture_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+    }
 }
 
 impl<T: Texture> TextureBuffer<T> {
