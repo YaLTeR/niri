@@ -31,6 +31,7 @@ use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format, Fourcc};
 use smithay::backend::drm::DrmDeviceFd;
+use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::WeakOutput;
@@ -87,6 +88,8 @@ pub enum CastState {
         alpha: bool,
         modifier: Modifier,
         plane_count: i32,
+        // Lazily-initialized to keep the initialization to a single place.
+        damage_tracker: Option<OutputDamageTracker>,
     },
 }
 
@@ -417,6 +420,7 @@ impl PipeWire {
                             alpha,
                             modifier,
                             plane_count,
+                            ..
                         } if *alpha == format_has_alpha
                             && *modifier == Modifier::from(format.modifier()) =>
                         {
@@ -425,6 +429,13 @@ impl PipeWire {
                             let modifier = *modifier;
                             let plane_count = *plane_count;
 
+                            let damage_tracker =
+                                if let CastState::Ready { damage_tracker, .. } = &mut *state {
+                                    damage_tracker.take()
+                                } else {
+                                    None
+                                };
+
                             debug!("pw stream: moving to ready state");
 
                             *state = CastState::Ready {
@@ -432,6 +443,7 @@ impl PipeWire {
                                 alpha,
                                 modifier,
                                 plane_count,
+                                damage_tracker,
                             };
 
                             plane_count
@@ -464,6 +476,7 @@ impl PipeWire {
                                 alpha: format_has_alpha,
                                 modifier,
                                 plane_count: plane_count as i32,
+                                damage_tracker: None,
                             };
 
                             plane_count as i32
@@ -733,10 +746,23 @@ impl Cast {
     pub fn dequeue_buffer_and_render(
         &mut self,
         renderer: &mut GlesRenderer,
-        elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+        elements: &[impl RenderElement<GlesRenderer>],
         size: Size<i32, Physical>,
         scale: Scale<f64>,
     ) -> bool {
+        let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() else {
+            error!("cast must be in Ready state to render");
+            return false;
+        };
+        let damage_tracker = damage_tracker
+            .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+
+        let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
+        if damage.is_none() {
+            trace!("no damage, skipping frame");
+            return false;
+        }
+
         let mut buffer = match self.stream.dequeue_buffer() {
             Some(buffer) => buffer,
             None => {
@@ -754,7 +780,7 @@ impl Cast {
             size,
             scale,
             Transform::Normal,
-            elements,
+            elements.iter().rev(),
         ) {
             warn!("error rendering to dmabuf: {err:?}");
             return false;
