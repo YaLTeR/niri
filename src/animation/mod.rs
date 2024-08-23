@@ -292,7 +292,7 @@ impl Animation {
             return self.to;
         }
 
-        let passed = self.current_time - self.start_time;
+        let passed = self.current_time.saturating_sub(self.start_time);
 
         match self.kind {
             Kind::Easing { curve } => {
