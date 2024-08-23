@@ -3658,7 +3658,7 @@ impl Niri {
                 self.render(renderer, output, true, RenderTarget::Screencast)
             });
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -3802,7 +3802,7 @@ impl Niri {
                     .collect::<Vec<_>>()
             });
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, bbox.size, scale) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
