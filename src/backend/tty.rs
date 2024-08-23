@@ -1344,12 +1344,13 @@ impl Tty {
         let drm_compositor = &mut surface.compositor;
         match drm_compositor.render_frame::<_, _>(&mut renderer, &elements, [0.; 4]) {
             Ok(res) => {
-                if self
-                    .config
-                    .borrow()
-                    .debug
-                    .wait_for_frame_completion_before_queueing
-                {
+                let needs_sync = res.needs_sync()
+                    || self
+                        .config
+                        .borrow()
+                        .debug
+                        .wait_for_frame_completion_before_queueing;
+                if needs_sync {
                     if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
                         let _span = tracy_client::span!("wait for completion");
                         if let Err(err) = element.sync.wait() {
