@@ -148,6 +148,12 @@ impl Drop for Transaction {
     }
 }
 
+impl TransactionBlocker {
+    pub fn completed() -> Self {
+        Self(Weak::new())
+    }
+}
+
 impl Blocker for TransactionBlocker {
     fn state(&self) -> BlockerState {
         if self.0.upgrade().map_or(true, |x| x.is_completed()) {

@@ -19,6 +19,7 @@ use crate::input::swipe_tracker::SwipeTracker;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
+use crate::utils::transaction::Transaction;
 use crate::utils::{output_size, to_physical_precise_round, ResizeEdge};
 
 /// Amount of touchpad movement to scroll the height of one workspace.
@@ -442,7 +443,12 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window = workspace
-            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
+            .remove_tile_by_idx(
+                workspace.active_column_idx,
+                column.active_tile_idx,
+                Transaction::new(),
+                None,
+            )
             .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);
@@ -465,7 +471,12 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window = workspace
-            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
+            .remove_tile_by_idx(
+                workspace.active_column_idx,
+                column.active_tile_idx,
+                Transaction::new(),
+                None,
+            )
             .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);
@@ -488,7 +499,12 @@ impl<W: LayoutElement> Monitor<W> {
         let width = column.width;
         let is_full_width = column.is_full_width;
         let window = workspace
-            .remove_tile_by_idx(workspace.active_column_idx, column.active_tile_idx, None)
+            .remove_tile_by_idx(
+                workspace.active_column_idx,
+                column.active_tile_idx,
+                Transaction::new(),
+                None,
+            )
             .into_window();
 
         self.add_window(new_idx, window, true, width, is_full_width);

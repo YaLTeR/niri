@@ -52,7 +52,7 @@ use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
-use crate::utils::transaction::Transaction;
+use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{output_size, round_logical_in_physical_max1, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
@@ -752,15 +752,13 @@ impl<W: LayoutElement> Layout<W> {
         );
     }
 
-    pub fn remove_window(&mut self, window: &W::Id) -> Option<W> {
-        let mut rv = None;
-
+    pub fn remove_window(&mut self, window: &W::Id, transaction: Transaction) -> Option<W> {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for (idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         if ws.has_window(window) {
-                            rv = Some(ws.remove_window(window));
+                            let win = ws.remove_window(window, transaction);
 
                             // Clean up empty workspaces that are not active and not last.
                             if !ws.has_windows()
@@ -776,7 +774,7 @@ impl<W: LayoutElement> Layout<W> {
                                 }
                             }
 
-                            break;
+                            return Some(win);
                         }
                     }
                 }
@@ -784,20 +782,20 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
                     if ws.has_window(window) {
-                        rv = Some(ws.remove_window(window));
+                        let win = ws.remove_window(window, transaction);
 
                         // Clean up empty workspaces.
                         if !ws.has_windows() && workspaces[idx].name.is_none() {
                             workspaces.remove(idx);
                         }
 
-                        break;
+                        return Some(win);
                     }
                 }
             }
         }
 
-        rv
+        None
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
@@ -1970,7 +1968,12 @@ impl<W: LayoutElement> Layout<W> {
             let width = column.width;
             let is_full_width = column.is_full_width;
             let window = ws
-                .remove_tile_by_idx(ws.active_column_idx, column.active_tile_idx, None)
+                .remove_tile_by_idx(
+                    ws.active_column_idx,
+                    column.active_tile_idx,
+                    Transaction::new(),
+                    None,
+                )
                 .into_window();
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
@@ -2022,7 +2025,7 @@ impl<W: LayoutElement> Layout<W> {
 
         let Some(width) = width else { return };
 
-        let window = self.remove_window(window).unwrap();
+        let window = self.remove_window(window, Transaction::new()).unwrap();
 
         if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
             let new_idx = monitors
@@ -2425,6 +2428,7 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         renderer: &mut GlesRenderer,
         window: &W::Id,
+        blocker: TransactionBlocker,
     ) {
         let _span = tracy_client::span!("Layout::start_close_animation_for_window");
 
@@ -2433,7 +2437,7 @@ impl<W: LayoutElement> Layout<W> {
                 for mon in monitors {
                     for ws in &mut mon.workspaces {
                         if ws.has_window(window) {
-                            ws.start_close_animation_for_window(renderer, window);
+                            ws.start_close_animation_for_window(renderer, window, blocker);
                             return;
                         }
                     }
@@ -2442,7 +2446,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     if ws.has_window(window) {
-                        ws.start_close_animation_for_window(renderer, window);
+                        ws.start_close_animation_for_window(renderer, window, blocker);
                         return;
                     }
                 }
@@ -3143,7 +3147,7 @@ mod tests {
                     layout.add_window_to_named_workspace(&ws_name, win, None, false);
                 }
                 Op::CloseWindow(id) => {
-                    layout.remove_window(&id);
+                    layout.remove_window(&id, Transaction::new());
                 }
                 Op::FullscreenWindow(id) => {
                     layout.toggle_fullscreen(&id);

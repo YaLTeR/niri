@@ -20,6 +20,7 @@ use smithay::{delegate_compositor, delegate_shm};
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::niri::{ClientState, State};
 use crate::utils::send_scale_transform;
+use crate::utils::transaction::Transaction;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
 impl CompositorHandler for State {
@@ -193,11 +194,13 @@ impl CompositorHandler for State {
                         });
 
                 // Must start the close animation before window.on_commit().
+                let transaction = Transaction::new();
                 if !is_mapped {
+                    let blocker = transaction.blocker();
                     self.backend.with_primary_renderer(|renderer| {
                         self.niri
                             .layout
-                            .start_close_animation_for_window(renderer, &window);
+                            .start_close_animation_for_window(renderer, &window, blocker);
                     });
                 }
 
@@ -216,7 +219,7 @@ impl CompositorHandler for State {
                             id: u64::from(id.get()),
                         });
 
-                    self.niri.layout.remove_window(&window);
+                    self.niri.layout.remove_window(&window, transaction);
                     self.add_default_dmabuf_pre_commit_hook(surface);
 
                     if was_active {

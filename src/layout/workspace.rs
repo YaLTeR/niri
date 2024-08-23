@@ -22,7 +22,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
-use crate::utils::transaction::Transaction;
+use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{output_size, send_scale_transform, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
@@ -1098,6 +1098,7 @@ impl<W: LayoutElement> Workspace<W> {
         &mut self,
         column_idx: usize,
         window_idx: usize,
+        transaction: Transaction,
         anim_config: Option<niri_config::Animation>,
     ) -> Tile<W> {
         let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
@@ -1139,7 +1140,7 @@ impl<W: LayoutElement> Workspace<W> {
             offset
         } else {
             column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
-            column.update_tile_sizes(true);
+            column.update_tile_sizes_with_transaction(true, transaction);
             self.data[column_idx].update(column);
 
             prev_width - column.width()
@@ -1294,7 +1295,7 @@ impl<W: LayoutElement> Workspace<W> {
         column
     }
 
-    pub fn remove_window(&mut self, window: &W::Id) -> W {
+    pub fn remove_window(&mut self, window: &W::Id, transaction: Transaction) -> W {
         let column_idx = self
             .columns
             .iter()
@@ -1303,7 +1304,7 @@ impl<W: LayoutElement> Workspace<W> {
         let column = &self.columns[column_idx];
 
         let window_idx = column.position(window).unwrap();
-        self.remove_tile_by_idx(column_idx, window_idx, None)
+        self.remove_tile_by_idx(column_idx, window_idx, transaction, None)
             .into_window()
     }
 
@@ -1490,6 +1491,7 @@ impl<W: LayoutElement> Workspace<W> {
         &mut self,
         renderer: &mut GlesRenderer,
         window: &W::Id,
+        blocker: TransactionBlocker,
     ) {
         let output_scale = Scale::from(self.scale.fractional_scale());
 
@@ -1542,7 +1544,21 @@ impl<W: LayoutElement> Workspace<W> {
 
         let anim = Animation::new(0., 1., 0., self.options.animations.window_close.anim);
 
-        let res = ClosingWindow::new(renderer, snapshot, output_scale, tile_size, tile_pos, anim);
+        let blocker = if self.options.disable_transactions {
+            TransactionBlocker::completed()
+        } else {
+            blocker
+        };
+
+        let res = ClosingWindow::new(
+            renderer,
+            snapshot,
+            output_scale,
+            tile_size,
+            tile_pos,
+            blocker,
+            anim,
+        );
         match res {
             Ok(closing) => {
                 self.closing_windows.push(closing);
@@ -1781,6 +1797,7 @@ impl<W: LayoutElement> Workspace<W> {
             let tile = self.remove_tile_by_idx(
                 source_col_idx,
                 0,
+                Transaction::new(),
                 Some(self.options.animations.window_movement.0),
             );
             self.enter_output_for_window(tile.window());
@@ -1813,7 +1830,12 @@ impl<W: LayoutElement> Workspace<W> {
 
             let mut offset = Point::from((source_column.render_offset().x, 0.));
 
-            let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx, None);
+            let tile = self.remove_tile_by_idx(
+                source_col_idx,
+                source_column.active_tile_idx,
+                Transaction::new(),
+                None,
+            );
 
             self.add_tile_at(
                 self.active_column_idx,
@@ -1861,6 +1883,7 @@ impl<W: LayoutElement> Workspace<W> {
             let tile = self.remove_tile_by_idx(
                 source_col_idx,
                 0,
+                Transaction::new(),
                 Some(self.options.animations.window_movement.0),
             );
             self.enter_output_for_window(tile.window());
@@ -1888,7 +1911,12 @@ impl<W: LayoutElement> Workspace<W> {
             let width = source_column.width;
             let is_full_width = source_column.is_full_width;
 
-            let tile = self.remove_tile_by_idx(source_col_idx, source_column.active_tile_idx, None);
+            let tile = self.remove_tile_by_idx(
+                source_col_idx,
+                source_column.active_tile_idx,
+                Transaction::new(),
+                None,
+            );
 
             self.add_tile(
                 tile,
@@ -1921,7 +1949,7 @@ impl<W: LayoutElement> Workspace<W> {
         let mut offset = Point::from((offset, 0.));
         let prev_off = self.columns[source_column_idx].tile_offset(0);
 
-        let tile = self.remove_tile_by_idx(source_column_idx, 0, None);
+        let tile = self.remove_tile_by_idx(source_column_idx, 0, Transaction::new(), None);
         self.enter_output_for_window(tile.window());
 
         let prev_next_x = self.column_x(self.active_column_idx + 1);
@@ -1970,8 +1998,12 @@ impl<W: LayoutElement> Workspace<W> {
 
         let width = source_column.width;
         let is_full_width = source_column.is_full_width;
-        let tile =
-            self.remove_tile_by_idx(self.active_column_idx, source_column.active_tile_idx, None);
+        let tile = self.remove_tile_by_idx(
+            self.active_column_idx,
+            source_column.active_tile_idx,
+            Transaction::new(),
+            None,
+        );
 
         self.add_tile(
             tile,
@@ -3031,6 +3063,10 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn update_tile_sizes(&mut self, animate: bool) {
+        self.update_tile_sizes_with_transaction(animate, Transaction::new());
+    }
+
+    fn update_tile_sizes_with_transaction(&mut self, animate: bool, transaction: Transaction) {
         if self.is_fullscreen {
             self.tiles[0].request_fullscreen(self.view_size);
             return;
@@ -3195,7 +3231,6 @@ impl<W: LayoutElement> Column<W> {
             assert_eq!(auto_tiles_left, 0);
         }
 
-        let transaction = Transaction::new();
         for (tile, h) in zip(&mut self.tiles, heights) {
             let WindowHeight::Fixed(height) = h else {
                 unreachable!()

@@ -40,6 +40,7 @@ use crate::input::resize_grab::ResizeGrab;
 use crate::input::DOUBLE_CLICK_TIME;
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
+use crate::utils::transaction::Transaction;
 use crate::utils::{get_monotonic_time, send_scale_transform, ResizeEdge};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
@@ -485,16 +486,19 @@ impl XdgShellHandler for State {
         self.backend.with_primary_renderer(|renderer| {
             self.niri.layout.store_unmap_snapshot(renderer, &window);
         });
+
+        let transaction = Transaction::new();
+        let blocker = transaction.blocker();
         self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .layout
-                .start_close_animation_for_window(renderer, &window);
+                .start_close_animation_for_window(renderer, &window, blocker);
         });
 
         let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
         let was_active = active_window == Some(&window);
 
-        self.niri.layout.remove_window(&window);
+        self.niri.layout.remove_window(&window, transaction);
         self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
 
         if was_active {
