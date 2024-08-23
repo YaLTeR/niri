@@ -1278,7 +1278,7 @@ impl State {
             return;
         };
 
-        self.niri.layout.update_render_elements_all();
+        self.niri.update_render_elements(None);
 
         let Some(screenshots) = self
             .backend
@@ -2853,6 +2853,10 @@ impl Niri {
         }
     }
 
+    pub fn update_render_elements(&mut self, output: Option<&Output>) {
+        self.layout.update_render_elements(output);
+    }
+
     pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
@@ -3066,7 +3070,7 @@ impl Niri {
             // Also keep redrawing during a screen transition.
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
-            self.layout.update_render_elements(output);
+            self.update_render_elements(Some(output));
 
             // Render.
             res = backend.render(self, output, target_presentation_time);
@@ -3891,7 +3895,7 @@ impl Niri {
             "screencopy output missing"
         );
 
-        self.layout.update_render_elements(output);
+        self.update_render_elements(Some(output));
 
         let elements = self.render(
             renderer,
@@ -4135,7 +4139,7 @@ impl Niri {
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
-        self.layout.update_render_elements(output);
+        self.update_render_elements(Some(output));
 
         let size = output.current_mode().unwrap().size;
         let transform = output.current_transform();
@@ -4286,7 +4290,7 @@ impl Niri {
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_all_outputs");
 
-        self.layout.update_render_elements_all();
+        self.update_render_elements(None);
 
         let outputs: Vec<_> = self.global_space.outputs().cloned().collect();
 
@@ -4541,7 +4545,7 @@ impl Niri {
     pub fn do_screen_transition(&mut self, renderer: &mut GlesRenderer, delay_ms: Option<u16>) {
         let _span = tracy_client::span!("Niri::do_screen_transition");
 
-        self.layout.update_render_elements_all();
+        self.update_render_elements(None);
 
         let textures: Vec<_> = self
             .output_state

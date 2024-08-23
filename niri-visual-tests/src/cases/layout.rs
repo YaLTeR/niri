@@ -222,7 +222,7 @@ impl TestCase for Layout {
         renderer: &mut GlesRenderer,
         _size: Size<i32, Physical>,
     ) -> Vec<Box<dyn RenderElement<GlesRenderer>>> {
-        self.layout.update_render_elements(&self.output);
+        self.layout.update_render_elements(Some(&self.output));
         self.layout
             .monitor_for_output(&self.output)
             .unwrap()
