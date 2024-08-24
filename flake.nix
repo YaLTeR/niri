@@ -42,9 +42,9 @@
           src = nixpkgs.lib.cleanSourceWith {
             src = craneLib.path ./.;
             filter = path: type:
-              (builtins.match "resources" path == null) ||
-              ((craneLib.filterCargoSources path type) &&
-              (builtins.match "niri-visual-tests" path == null));
+              (builtins.match "resources" path == null)
+              || ((craneLib.filterCargoSources path type)
+                && (builtins.match "niri-visual-tests" path == null));
           };
 
           nativeBuildInputs = with pkgs; [
@@ -68,6 +68,9 @@
             stdenv.cc.cc.lib
             pipewire
             pango
+            cairo
+            glib
+            pixman
           ];
 
           runtimeDependencies = with pkgs; [
@@ -91,22 +94,11 @@
         checks.niri = niri;
         packages.default = niri;
 
-        devShells.default = pkgs.mkShell.override {stdenv = pkgs.clangStdenv;} rec {
+        devShells.default = craneLib.devShell {
+          inputsFrom = [niri];
+
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (craneArgs.runtimeDependencies ++ craneArgs.nativeBuildInputs ++ craneArgs.buildInputs);
           inherit (niri) LIBCLANG_PATH;
-          packages = niri.runtimeDependencies ++ niri.nativeBuildInputs ++ niri.buildInputs;
-
-          # Force linking to libEGL, which is always dlopen()ed, and to
-          # libwayland-client, which is always dlopen()ed except by the
-          # obscure winit backend.
-          RUSTFLAGS = map (a: "-C link-arg=${a}") [
-            "-Wl,--push-state,--no-as-needed"
-            "-lEGL"
-            "-lwayland-client"
-            "-Wl,--pop-state"
-          ];
-
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath packages;
-          PKG_CONFIG_PATH = pkgs.lib.makeLibraryPath packages;
         };
       }
     );
