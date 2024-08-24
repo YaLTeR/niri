@@ -8,6 +8,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use anyhow::Context as _;
+use calloop::timer::{TimeoutAction, Timer};
+use calloop::RegistrationToken;
 use pipewire::context::Context;
 use pipewire::core::Core;
 use pipewire::main_loop::MainLoop;
@@ -34,7 +36,7 @@ use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::output::{OutputModeSource, WeakOutput};
+use smithay::output::{Output, OutputModeSource, WeakOutput};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
@@ -44,6 +46,10 @@ use zbus::SignalContext;
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::State;
 use crate::render_helpers::render_to_dmabuf;
+use crate::utils::get_monotonic_time;
+
+// Give a 0.1 ms allowance for presentation time errors.
+const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
 
 pub struct PipeWire {
     _context: Context,
@@ -70,6 +76,7 @@ pub struct Cast {
     pub last_frame_time: Duration,
     min_time_between_frames: Rc<Cell<Duration>>,
     dmabufs: Rc<RefCell<HashMap<i64, Dmabuf>>>,
+    scheduled_redraw: Option<RegistrationToken>,
 }
 
 #[derive(Debug)]
@@ -315,10 +322,9 @@ impl PipeWire {
                     };
 
                     let max_frame_rate = format.max_framerate();
-                    // Subtract 0.5 ms to improve edge cases when equal to refresh rate.
-                    let min_frame_time = Duration::from_secs_f64(
-                        max_frame_rate.denom as f64 / max_frame_rate.num as f64,
-                    ) - Duration::from_micros(500);
+                    let min_frame_time = Duration::from_micros(
+                        1_000_000 * u64::from(max_frame_rate.denom) / u64::from(max_frame_rate.num),
+                    );
                     min_time_between_frames.set(min_frame_time);
 
                     let object = pod.as_object().unwrap();
@@ -651,6 +657,7 @@ impl PipeWire {
             last_frame_time: Duration::ZERO,
             min_time_between_frames,
             dmabufs,
+            scheduled_redraw: None,
         };
         Ok(cast)
     }
@@ -711,13 +718,13 @@ impl Cast {
         Ok(())
     }
 
-    pub fn should_skip_frame(&self, target_frame_time: Duration) -> bool {
+    fn compute_extra_delay(&self, target_frame_time: Duration) -> Duration {
         let last = self.last_frame_time;
         let min = self.min_time_between_frames.get();
 
         if last.is_zero() {
             trace!(?target_frame_time, ?last, "last is zero, recording");
-            return false;
+            return Duration::ZERO;
         }
 
         if target_frame_time < last {
@@ -727,20 +734,76 @@ impl Cast {
                 ?last,
                 "target frame time is below last, did it overflow or did we mispredict?"
             );
-            return false;
+            return Duration::ZERO;
         }
 
         let diff = target_frame_time - last;
         if diff < min {
+            let delay = min - diff;
             trace!(
                 ?target_frame_time,
                 ?last,
-                "skipping frame because it is too soon: diff={diff:?} < min={min:?}",
+                "frame is too soon: min={min:?}, delay={:?}",
+                delay
             );
-            return true;
+            return delay;
+        } else {
+            trace!("overshoot={:?}", diff - min);
         }
 
-        false
+        Duration::ZERO
+    }
+
+    fn schedule_redraw(
+        &mut self,
+        event_loop: &LoopHandle<'static, State>,
+        output: Output,
+        target_time: Duration,
+    ) {
+        if self.scheduled_redraw.is_some() {
+            return;
+        }
+
+        let now = get_monotonic_time();
+        let duration = target_time.saturating_sub(now);
+        let timer = Timer::from_duration(duration);
+        let token = event_loop
+            .insert_source(timer, move |_, _, state| {
+                state.niri.queue_redraw(&output);
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.scheduled_redraw = Some(token);
+    }
+
+    fn remove_scheduled_redraw(&mut self, event_loop: &LoopHandle<'static, State>) {
+        if let Some(token) = self.scheduled_redraw.take() {
+            event_loop.remove(token);
+        }
+    }
+
+    /// Checks whether this frame should be skipped because it's too soon.
+    ///
+    /// If the frame should be skipped, schedules a redraw and returns `true`. Otherwise, removes a
+    /// scheduled redraw, if any, and returns `false`.
+    ///
+    /// When this method returns `false`, the calling code is assumed to follow up with
+    /// [`Cast::dequeue_buffer_and_render()`].
+    pub fn check_time_and_schedule(
+        &mut self,
+        event_loop: &LoopHandle<'static, State>,
+        output: &Output,
+        target_frame_time: Duration,
+    ) -> bool {
+        let delay = self.compute_extra_delay(target_frame_time);
+        if delay >= CAST_DELAY_ALLOWANCE {
+            trace!("delay >= allowance, scheduling redraw");
+            self.schedule_redraw(event_loop, output.clone(), target_frame_time + delay);
+            true
+        } else {
+            self.remove_scheduled_redraw(event_loop);
+            false
+        }
     }
 
     pub fn dequeue_buffer_and_render(

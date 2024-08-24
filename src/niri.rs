@@ -3664,7 +3664,7 @@ impl Niri {
                 }
             }
 
-            if cast.should_skip_frame(target_presentation_time) {
+            if cast.check_time_and_schedule(&self.event_loop, output, target_presentation_time) {
                 continue;
             }
 
@@ -3726,7 +3726,7 @@ impl Niri {
                 }
             }
 
-            if cast.should_skip_frame(target_presentation_time) {
+            if cast.check_time_and_schedule(&self.event_loop, output, target_presentation_time) {
                 continue;
             }
 
@@ -3805,7 +3805,7 @@ impl Niri {
                 }
             }
 
-            if cast.should_skip_frame(target_presentation_time) {
+            if cast.check_time_and_schedule(&self.event_loop, output, target_presentation_time) {
                 continue;
             }
 
