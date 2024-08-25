@@ -254,11 +254,17 @@ impl KeyboardShortcutsInhibitHandler for State {
     }
 
     fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
-        info!("new inhibitor: {inhibitor:?}");
+        // FIXME: show a confirmation dialog with a "remember for this application" kind of toggle.
+        inhibitor.activate();
+        self.niri
+            .keyboard_shortcuts_inhibiting_surfaces
+            .insert(inhibitor.wl_surface().clone(), inhibitor);
     }
 
     fn inhibitor_destroyed(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
-        info!("inhibitor destroyed: {inhibitor:?}");
+        self.niri
+            .keyboard_shortcuts_inhibiting_surfaces
+            .remove(&inhibitor.wl_surface().clone());
     }
 }
 
