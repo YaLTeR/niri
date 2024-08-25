@@ -77,7 +77,7 @@ use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::input_method::{InputMethodManagerState, InputMethodSeat};
-use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState;
+use smithay::wayland::keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
 use smithay::wayland::pointer_gestures::PointerGesturesState;
@@ -260,6 +260,7 @@ pub struct Niri {
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
+    pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -1865,6 +1866,7 @@ impl Niri {
             layer_shell_on_demand_focus: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
+            keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,

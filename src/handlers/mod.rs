@@ -196,11 +196,12 @@ impl KeyboardShortcutsInhibitHandler for State {
     }
 
     fn new_inhibitor(&mut self, inhibitor: smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor) {
-        info!("new inhibitor: {inhibitor:?}");
+        inhibitor.activate();
+        self.niri.keyboard_shortcuts_inhibiting_surfaces.insert(inhibitor.wl_surface().clone(), inhibitor);
     }
 
     fn inhibitor_destroyed(&mut self, inhibitor: smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor) {
-        info!("inhibitor destroyed: {inhibitor:?}");
+        self.niri.keyboard_shortcuts_inhibiting_surfaces.remove(&inhibitor.wl_surface().clone());
     }
 }
 

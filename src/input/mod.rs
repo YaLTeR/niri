@@ -25,6 +25,7 @@ use smithay::input::pointer::{
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
+use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
@@ -287,6 +288,18 @@ impl State {
         Some(pos + target_geo.loc.to_f64())
     }
 
+    fn is_inhibiting_shortcuts(&self) -> bool {
+        self.niri
+            .keyboard_focus
+            .surface()
+            .and_then(|surface| {
+                self.niri
+                    .keyboard_shortcuts_inhibiting_surfaces
+                    .get(surface)
+            })
+            .map_or(false, KeyboardShortcutsInhibitor::is_active)
+    }
+
     fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
         let comp_mod = self.backend.mod_key();
 
@@ -306,6 +319,8 @@ impl State {
                 self.niri.event_loop.remove(token);
             }
         }
+
+        let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
@@ -337,6 +352,7 @@ impl State {
                     *mods,
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
+                    is_inhibiting_shortcuts,
                 )
             },
         ) else {
@@ -2315,6 +2331,7 @@ fn should_intercept_key(
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
+    is_inhibiting_shortcuts: bool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -2358,6 +2375,18 @@ fn should_intercept_key(
                 });
             }
         }
+    }
+
+    if is_inhibiting_shortcuts
+        && !matches!(
+            final_bind,
+            Some(Bind {
+                action: Action::ChangeVt(_),
+                ..
+            })
+        )
+    {
+        return FilterResult::Forward;
     }
 
     match (final_bind, pressed) {
@@ -2767,6 +2796,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                false,
             )
         };
 
@@ -2783,6 +2813,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                false,
             )
         };
 
