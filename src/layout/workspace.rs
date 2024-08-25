@@ -3484,6 +3484,22 @@ impl<W: LayoutElement> Column<W> {
             }
         };
 
+        // If there are multiple windows in a column, clamp the height according to other windows'
+        // min sizes.
+        let min_height_taken = self
+            .tiles
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| *idx != tile_idx)
+            .map(|(_, tile)| f64::max(1., tile.min_size().h) + self.options.gaps)
+            .sum::<f64>();
+        if min_height_taken > 0. {
+            let height_left =
+                self.working_area.size.h - self.options.gaps - min_height_taken - self.options.gaps;
+            let height_left = f64::max(1., tile.window_height_for_tile_height(height_left));
+            window_height = f64::min(height_left, window_height);
+        }
+
         // Clamp it against the window height constraints.
         let win = &self.tiles[tile_idx].window();
         let min_h = win.min_size().h;
