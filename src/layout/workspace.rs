@@ -3072,23 +3072,25 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
-        let min_size: Vec<_> = self.tiles.iter().map(Tile::min_size).collect();
+        let min_size: Vec<_> = self
+            .tiles
+            .iter()
+            .map(Tile::min_size)
+            .map(|mut size| {
+                size.w = size.w.max(1.);
+                size.h = size.h.max(1.);
+                size
+            })
+            .collect();
         let max_size: Vec<_> = self.tiles.iter().map(Tile::max_size).collect();
 
         // Compute the column width.
         let min_width = min_size
             .iter()
-            .filter_map(|size| {
-                let w = size.w;
-                if w == 0. {
-                    None
-                } else {
-                    Some(NotNan::new(w).unwrap())
-                }
-            })
+            .map(|size| NotNan::new(size.w).unwrap())
             .max()
             .map(NotNan::into_inner)
-            .unwrap_or(1.);
+            .unwrap();
         let max_width = max_size
             .iter()
             .filter_map(|size| {
@@ -3129,7 +3131,7 @@ impl<W: LayoutElement> Column<W> {
         // Subtract all fixed-height tiles.
         for (h, (min_size, max_size)) in zip(&mut heights, zip(&min_size, &max_size)) {
             // Check if the tile has an exact height constraint.
-            if min_size.h > 0. && min_size.h == max_size.h {
+            if min_size.h == max_size.h {
                 *h = WindowHeight::Fixed(min_size.h);
             }
 
@@ -3137,9 +3139,7 @@ impl<W: LayoutElement> Column<W> {
                 if max_size.h > 0. {
                     *h = f64::min(*h, max_size.h);
                 }
-                if min_size.h > 0. {
-                    *h = f64::max(*h, min_size.h);
-                }
+                *h = f64::max(*h, min_size.h);
 
                 height_left -= *h;
                 auto_tiles_left -= 1;
@@ -3182,19 +3182,20 @@ impl<W: LayoutElement> Column<W> {
                 let factor = weight / total_weight_2;
 
                 // Compute the current auto height.
-                let auto = height_left_2 * factor;
-                let mut auto = tile.tile_height_for_window_height(
-                    tile.window_height_for_tile_height(auto).round().max(1.),
-                );
+                let mut auto = height_left_2 * factor;
 
                 // Check if the auto height satisfies the min height.
-                if min_size.h > 0. && min_size.h > auto {
+                if min_size.h > auto {
                     auto = min_size.h;
                     *h = WindowHeight::Fixed(auto);
                     height_left -= auto;
                     total_weight -= weight;
                     auto_tiles_left -= 1;
                     unsatisfied_min = true;
+                } else {
+                    auto = tile.tile_height_for_window_height(
+                        tile.window_height_for_tile_height(auto).round().max(1.),
+                    );
                 }
 
                 height_left_2 -= auto;
