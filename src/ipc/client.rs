@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context};
 use niri_ipc::{
-    LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response, Socket, Transform,
+    KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response, Socket,
+    Transform,
 };
 use serde_json::json;
 
@@ -19,6 +20,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             action: action.clone(),
         },
         Msg::Workspaces => Request::Workspaces,
+        Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::RequestError => Request::ReturnError,
     };
 
@@ -236,6 +238,27 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     String::new()
                 };
                 println!("{is_active}{idx}{name}");
+            }
+        }
+        Msg::KeyboardLayouts => {
+            let Response::KeyboardLayouts(response) = response else {
+                bail!("unexpected response: expected KeyboardLayouts, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            let KeyboardLayouts { names, current_idx } = response;
+            let current_idx = usize::from(current_idx);
+
+            println!("Keyboard layouts:");
+            for (idx, name) in names.iter().enumerate() {
+                let is_active = if idx == current_idx { " * " } else { "   " };
+                println!("{is_active}{idx} {name}");
             }
         }
     }

@@ -8,8 +8,9 @@ use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{AsyncBufReadExt, AsyncWriteExt};
-use niri_ipc::{OutputConfigChanged, Reply, Request, Response};
+use niri_ipc::{KeyboardLayouts, OutputConfigChanged, Reply, Request, Response};
 use smithay::desktop::Window;
+use smithay::input::keyboard::XkbContextHandler;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
@@ -234,6 +235,23 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let result = rx.recv().await;
             let output = result.map_err(|_| String::from("error getting active output info"))?;
             Response::FocusedOutput(output)
+        }
+        Request::KeyboardLayouts => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let keyboard = state.niri.seat.get_keyboard().unwrap();
+                let layout = keyboard.with_xkb_state(state, |context| {
+                    let layouts = context.keymap().layouts();
+                    KeyboardLayouts {
+                        names: layouts.map(str::to_owned).collect(),
+                        current_idx: context.active_layout().0 as u8,
+                    }
+                });
+                let _ = tx.send_blocking(layout);
+            });
+            let result = rx.recv().await;
+            let layout = result.map_err(|_| String::from("error getting layout info"))?;
+            Response::KeyboardLayouts(layout)
         }
     };
 

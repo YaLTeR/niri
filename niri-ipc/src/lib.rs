@@ -36,6 +36,8 @@ pub enum Request {
     Workspaces,
     /// Request information about the focused output.
     FocusedOutput,
+    /// Request information about the keyboard layout.
+    KeyboardLayouts,
     /// Respond with an error (for testing error handling).
     ReturnError,
 }
@@ -70,6 +72,8 @@ pub enum Response {
     Workspaces(Vec<Workspace>),
     /// Information about the focused output.
     FocusedOutput(Option<Output>),
+    /// Information about the keyboard layout.
+    KeyboardLayouts(KeyboardLayouts),
 }
 
 /// Actions that niri can perform.
@@ -564,6 +568,16 @@ pub struct Workspace {
     pub output: Option<String>,
     /// Whether the workspace is currently active on its output.
     pub is_active: bool,
+}
+
+/// Configured keyboard layouts.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct KeyboardLayouts {
+    /// XKB names of the configured layouts.
+    pub names: Vec<String>,
+    /// Index of the currently active layout in `names`.
+    pub current_idx: u8,
 }
 
 impl FromStr for WorkspaceReferenceArg {

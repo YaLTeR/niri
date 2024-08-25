@@ -86,6 +86,8 @@ pub enum Msg {
         #[command(subcommand)]
         action: OutputAction,
     },
+    /// Get the configured keyboard layouts.
+    KeyboardLayouts,
     /// Print the version of the running niri instance.
     Version,
     /// Request an error from the running niri instance.
