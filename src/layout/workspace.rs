@@ -3168,12 +3168,11 @@ impl<W: LayoutElement> Column<W> {
         //
         // However, most max height uses are for fixed-size dialogs, where min height == max_height.
         // This case is separately handled above.
-        while auto_tiles_left > 0 {
+        'outer: while auto_tiles_left > 0 {
             // Wayland requires us to round the requested size for a window to integer logical
             // pixels, therefore we compute the remaining auto height dynamically.
             let mut height_left_2 = height_left;
             let mut total_weight_2 = total_weight;
-            let mut unsatisfied_min = false;
             for ((h, tile), min_size) in zip(zip(&mut heights, &self.tiles), &min_size) {
                 let weight = match *h {
                     WindowHeight::Auto { weight } => weight,
@@ -3191,22 +3190,24 @@ impl<W: LayoutElement> Column<W> {
                     height_left -= auto;
                     total_weight -= weight;
                     auto_tiles_left -= 1;
-                    unsatisfied_min = true;
-                } else {
-                    auto = tile.tile_height_for_window_height(
-                        tile.window_height_for_tile_height(auto).round().max(1.),
-                    );
+
+                    // If a min height was unsatisfied, then we allocate the tile more than the
+                    // auto height, which means that the remaining auto tiles now have less height
+                    // to work with, and the loop must run again.
+                    //
+                    // If we keep going in this loop and break out later, we may allocate less
+                    // height to the subsequent tiles than would be available next iteration and
+                    // potentially trip their min height check earlier than necessary, leading to
+                    // visible snapping.
+                    continue 'outer;
                 }
+
+                auto = tile.tile_height_for_window_height(
+                    tile.window_height_for_tile_height(auto).round().max(1.),
+                );
 
                 height_left_2 -= auto;
                 total_weight_2 -= weight;
-            }
-
-            // If some min height was unsatisfied, then we allocated the tile more than the auto
-            // height, which means that the remaining auto tiles now have less height to work
-            // with, and the loop must run again.
-            if unsatisfied_min {
-                continue;
             }
 
             // All min heights were satisfied, fill them in.
