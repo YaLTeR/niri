@@ -1,6 +1,4 @@
 # This flake file is community maintained
-# Maintainers:
-#   Bill Sun (github/billksun)
 {
   description = "Niri: A scrollable-tiling Wayland compositor.";
 
