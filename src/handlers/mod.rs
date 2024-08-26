@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
-use smithay::backend::input::TabletToolDescriptor;
+use smithay::backend::input::{InputEvent, TabletToolDescriptor};
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, PointerHandle,
@@ -79,7 +79,11 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
-use crate::protocols::virtual_pointer::{VirtualPointerHandler, VirtualPointerManagerState};
+use crate::protocols::virtual_pointer::{
+    VirtualPointerAxisEvent, VirtualPointerButtonEvent, VirtualPointerHandler,
+    VirtualPointerInputBackend, VirtualPointerManagerState, VirtualPointerMotionAbsoluteEvent,
+    VirtualPointerMotionEvent,
+};
 use crate::utils::{output_size, send_scale_transform, with_toplevel_role};
 use crate::{
     delegate_foreign_toplevel, delegate_gamma_control, delegate_mutter_x11_interop,
@@ -591,6 +595,24 @@ delegate_screencopy!(State);
 impl VirtualPointerHandler for State {
     fn virtual_pointer_manager_state(&mut self) -> &mut VirtualPointerManagerState {
         &mut self.niri.virtual_pointer_state
+    }
+
+    fn on_virtual_pointer_motion(&mut self, event: VirtualPointerMotionEvent) {
+        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerMotion { event });
+    }
+
+    fn on_virtual_pointer_motion_absolute(&mut self, event: VirtualPointerMotionAbsoluteEvent) {
+        self.process_input_event(
+            InputEvent::<VirtualPointerInputBackend>::PointerMotionAbsolute { event },
+        );
+    }
+
+    fn on_virtual_pointer_button(&mut self, event: VirtualPointerButtonEvent) {
+        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerButton { event });
+    }
+
+    fn on_virtual_pointer_axis(&mut self, event: VirtualPointerAxisEvent) {
+        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerAxis { event });
     }
 }
 delegate_virtual_pointer!(State);
