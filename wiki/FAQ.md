@@ -28,7 +28,7 @@ By default, Waybar is on the `bottom` layer, which is behind windows, so Waybar 
 
 Put this window rule in your config:
 
-```
+```kdl
 window-rule {
     geometry-corner-radius 12
     clip-to-geometry true
