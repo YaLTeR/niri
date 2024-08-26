@@ -36,3 +36,13 @@ window-rule {
 ```
 
 For more information, check [this wiki section](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#geometry-corner-radius).
+
+### How to hide the "Important Hotkeys" pop-up at the start?
+
+Put this into your config:
+
+```kdl
+hotkey-overlay {
+    skip-at-startup
+}
+```
