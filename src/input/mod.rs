@@ -2372,29 +2372,29 @@ fn should_intercept_key(
                     repeat: true,
                     cooldown: None,
                     allow_when_locked: false,
+                    // The screenshot UI owns the focus anyway, so this doesn't really matter.
+                    // But logically, nothing can inhibit its actions. Only opening it can be
+                    // inhibited.
+                    allow_inhibiting: false,
                 });
             }
         }
     }
 
-    if is_inhibiting_shortcuts
-        && !matches!(
-            final_bind,
-            Some(Bind {
-                action: Action::ChangeVt(_),
-                ..
-            })
-        )
-    {
-        return FilterResult::Forward;
-    }
-
     match (final_bind, pressed) {
         (Some(bind), true) => {
-            suppressed_keys.insert(key_code);
-            FilterResult::Intercept(Some(bind))
+            if is_inhibiting_shortcuts && bind.allow_inhibiting {
+                FilterResult::Forward
+            } else {
+                suppressed_keys.insert(key_code);
+                FilterResult::Intercept(Some(bind))
+            }
         }
         (_, false) => {
+            // By this point, we know that the key was supressed on press. Even if we're inhibiting
+            // shortcuts, we should still suppress the release. But we don't need to check for
+            // shortcuts inhibition here, because if it wasn't inhibited on press, it wouldn't be
+            // suppressed, so it would already have been forwarded at the start of this function.
             suppressed_keys.remove(&key_code);
             FilterResult::Intercept(None)
         }
@@ -2434,6 +2434,12 @@ fn find_bind(
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
+            // In a worst-case scenario, the user has no way to unlock the compositor and a
+            // misbehaving client has a keyboard shortcuts inhibitor, "jailing" the user.
+            // The user must always be able to change VTs to recover from such a situation.
+            // It also makes no sense to inhibit the default power key handling.
+            // Hardcoded binds must never be inhibited.
+            allow_inhibiting: false,
         });
     }
 
@@ -2772,6 +2778,7 @@ mod tests {
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
+            allow_inhibiting: true,
         }]);
 
         let comp_mod = CompositorMod::Super;
@@ -2908,6 +2915,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -2918,6 +2926,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -2928,6 +2937,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -2938,6 +2948,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -2948,6 +2959,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
         ]);
 
