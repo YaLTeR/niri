@@ -16,7 +16,6 @@ use niri_config::{
     Config, FloatOrInt, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference,
     DEFAULT_BACKGROUND_COLOR,
 };
-use niri_ipc::Workspace;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
@@ -4658,10 +4657,6 @@ impl Niri {
             // FIXME: granular.
             self.queue_redraw_all();
         }
-    }
-
-    pub fn ipc_workspaces(&self) -> Vec<Workspace> {
-        self.layout.ipc_workspaces()
     }
 }
 
