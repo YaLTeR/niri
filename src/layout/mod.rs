@@ -1854,7 +1854,7 @@ impl<W: LayoutElement> Layout<W> {
                     .map(|name| {
                         monitors
                             .iter_mut()
-                            .position(|monitor| monitor.output.name().eq_ignore_ascii_case(name))
+                            .position(|monitor| monitor.output_name().eq_ignore_ascii_case(name))
                             .unwrap_or(*primary_idx)
                     })
                     .unwrap_or(*active_monitor_idx);

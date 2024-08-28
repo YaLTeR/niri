@@ -34,6 +34,8 @@ const WORKSPACE_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
 pub struct Monitor<W: LayoutElement> {
     /// Output for this monitor.
     pub output: Output,
+    /// Cached name of the output.
+    output_name: String,
     // Must always contain at least one.
     pub workspaces: Vec<Workspace<W>>,
     /// Index of the currently active workspace.
@@ -93,6 +95,7 @@ impl WorkspaceSwitch {
 impl<W: LayoutElement> Monitor<W> {
     pub fn new(output: Output, workspaces: Vec<Workspace<W>>, options: Rc<Options>) -> Self {
         Self {
+            output_name: output.name(),
             output,
             workspaces,
             active_workspace_idx: 0,
@@ -100,6 +103,10 @@ impl<W: LayoutElement> Monitor<W> {
             workspace_switch: None,
             options,
         }
+    }
+
+    pub fn output_name(&self) -> &String {
+        &self.output_name
     }
 
     pub fn active_workspace_ref(&self) -> &Workspace<W> {
