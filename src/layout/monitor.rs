@@ -594,13 +594,8 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspaces.iter().position(|w| w.id() == id)
     }
 
-    pub fn switch_workspace(&mut self, idx: usize, animate: bool) {
+    pub fn switch_workspace(&mut self, idx: usize) {
         self.activate_workspace(min(idx, self.workspaces.len() - 1));
-
-        if !animate {
-            self.workspace_switch = None;
-            self.clean_up_workspaces();
-        }
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
@@ -608,16 +603,16 @@ impl<W: LayoutElement> Monitor<W> {
 
         if idx == self.active_workspace_idx {
             if let Some(prev_idx) = self.previous_workspace_idx() {
-                self.switch_workspace(prev_idx, false);
+                self.switch_workspace(prev_idx);
             }
         } else {
-            self.switch_workspace(idx, false);
+            self.switch_workspace(idx);
         }
     }
 
     pub fn switch_workspace_previous(&mut self) {
         if let Some(idx) = self.previous_workspace_idx() {
-            self.switch_workspace(idx, false);
+            self.switch_workspace(idx);
         }
     }
 
