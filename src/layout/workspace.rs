@@ -459,6 +459,11 @@ impl<W: LayoutElement> Workspace<W> {
         self.scale
     }
 
+    pub fn is_centering_focused_column(&self) -> bool {
+        self.options.center_focused_column == CenterFocusedColumn::Always
+            || (self.options.always_center_single_column && self.columns.len() <= 1)
+    }
+
     pub fn advance_animations(&mut self, current_time: Duration) {
         if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
             anim.set_current_time(current_time);
@@ -750,6 +755,10 @@ impl<W: LayoutElement> Workspace<W> {
         idx: usize,
         prev_idx: Option<usize>,
     ) -> f64 {
+        if self.is_centering_focused_column() {
+            return self.compute_new_view_offset_for_column_centered(current_x, idx);
+        }
+
         match self.options.center_focused_column {
             CenterFocusedColumn::Always => {
                 self.compute_new_view_offset_for_column_centered(current_x, idx)
@@ -1399,7 +1408,7 @@ impl<W: LayoutElement> Workspace<W> {
             if let Some(resize) = resize {
                 // If this is an interactive resize commit of an active window, then we need to
                 // either preserve the view offset or adjust it accordingly.
-                let centered = self.options.center_focused_column == CenterFocusedColumn::Always;
+                let centered = self.is_centering_focused_column();
 
                 let width = self.data[col_idx].width;
                 let offset = if centered {
@@ -2550,7 +2559,7 @@ impl<W: LayoutElement> Workspace<W> {
         let left_strut = self.working_area.loc.x;
         let right_strut = self.view_size.w - self.working_area.size.w - self.working_area.loc.x;
 
-        if self.options.center_focused_column == CenterFocusedColumn::Always {
+        if self.is_centering_focused_column() {
             let mut col_x = 0.;
             for (col_idx, col) in self.columns.iter().enumerate() {
                 let col_w = col.width();
@@ -2651,7 +2660,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let mut new_col_idx = target_snap.col_idx;
 
-        if self.options.center_focused_column != CenterFocusedColumn::Always {
+        if !self.is_centering_focused_column() {
             // Focus the furthest window towards the direction of the gesture.
             if target_view_offset >= current_view_offset {
                 for col_idx in (new_col_idx + 1)..self.columns.len() {
@@ -2768,6 +2777,8 @@ impl<W: LayoutElement> Workspace<W> {
             return false;
         }
 
+        let is_centering = self.is_centering_focused_column();
+
         let col = self
             .columns
             .iter_mut()
@@ -2786,7 +2797,7 @@ impl<W: LayoutElement> Workspace<W> {
                 dx = -dx;
             };
 
-            if self.options.center_focused_column == CenterFocusedColumn::Always {
+            if is_centering {
                 dx *= 2.;
             }
 
@@ -3637,6 +3648,9 @@ impl<W: LayoutElement> Column<W> {
         &self,
         data: impl Iterator<Item = TileData>,
     ) -> impl Iterator<Item = Point<f64, Logical>> {
+        // FIXME: this should take into account always-center-single-column, which means that
+        // Column should somehow know when it is being centered due to being the single column on
+        // the workspace or some other reason.
         let center = self.options.center_focused_column == CenterFocusedColumn::Always;
         let gaps = self.options.gaps;
         let col_width = self.width();
