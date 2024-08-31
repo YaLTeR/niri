@@ -216,7 +216,7 @@ impl CompositorHandler for State {
                     #[cfg(feature = "xdp-gnome-screencast")]
                     self.niri
                         .stop_casts_for_target(crate::pw_utils::CastTarget::Window {
-                            id: u64::from(id.get()),
+                            id: id.get(),
                         });
 
                     self.niri.layout.remove_window(&window, transaction.clone());

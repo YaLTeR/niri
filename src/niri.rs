@@ -1379,7 +1379,7 @@ impl State {
                     StreamTargetId::Window { id } => {
                         let mut window = None;
                         self.niri.layout.with_windows(|mapped, _, _| {
-                            if u64::from(mapped.id().get()) != id {
+                            if mapped.id().get() != id {
                                 return;
                             }
 
@@ -1502,7 +1502,7 @@ impl State {
                 .expect("no X11 support")
                 .wl_surface();
 
-            let id = u64::from(mapped.id().get());
+            let id = mapped.id().get();
             let props = with_states(wl_surface, |states| {
                 let role = states
                     .data_map
@@ -2841,9 +2841,7 @@ impl Niri {
         let mut to_stop = vec![];
         for (id, out) in output_changed {
             let refresh = out.current_mode().unwrap().refresh as u32;
-            let target = CastTarget::Window {
-                id: u64::from(id.get()),
-            };
+            let target = CastTarget::Window { id: id.get() };
             for cast in self.casts.iter_mut().filter(|cast| cast.target == target) {
                 if let Err(err) = cast.set_refresh(refresh) {
                     warn!("error changing cast FPS: {err:?}");
@@ -3712,7 +3710,7 @@ impl Niri {
             };
 
             let mut windows = self.layout.windows_for_output(output);
-            let Some(mapped) = windows.find(|win| u64::from(win.id().get()) == id) else {
+            let Some(mapped) = windows.find(|win| win.id().get() == id) else {
                 continue;
             };
 
@@ -3759,7 +3757,7 @@ impl Niri {
 
         let mut window = None;
         self.layout.with_windows(|mapped, _, _| {
-            if u64::from(mapped.id().get()) != window_id {
+            if mapped.id().get() != window_id {
                 return;
             }
 
@@ -3778,7 +3776,7 @@ impl Niri {
 
         let mut windows = self.layout.windows_for_output(output);
         let mapped = windows
-            .find(|mapped| u64::from(mapped.id().get()) == window_id)
+            .find(|mapped| mapped.id().get() == window_id)
             .unwrap();
 
         let scale = Scale::from(output.current_scale().fractional_scale());

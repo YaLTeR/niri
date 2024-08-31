@@ -375,7 +375,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
             .unwrap();
 
         niri_ipc::Window {
-            id: u64::from(mapped.id().get()),
+            id: mapped.id().get(),
             title: role.title.clone(),
             app_id: role.app_id.clone(),
             workspace_id: workspace_id.map(|id| u64::from(id.0)),
@@ -449,7 +449,7 @@ impl State {
                 break;
             }
 
-            let active_window_id = ws.active_window().map(|win| u64::from(win.id().get()));
+            let active_window_id = ws.active_window().map(|win| win.id().get());
             if ipc_ws.active_window_id != active_window_id {
                 events.push(Event::WorkspaceActiveWindowChanged {
                     workspace_id: id,
@@ -490,7 +490,7 @@ impl State {
                         output: mon.map(|mon| mon.output_name().clone()),
                         is_active: mon.map_or(false, |mon| mon.active_workspace_idx == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
-                        active_window_id: ws.active_window().map(|win| u64::from(win.id().get())),
+                        active_window_id: ws.active_window().map(|win| win.id().get()),
                     }
                 })
                 .collect();
@@ -521,7 +521,7 @@ impl State {
         let mut seen = HashSet::new();
         let mut focused_id = None;
         layout.with_windows(|mapped, _, ws_id| {
-            let id = u64::from(mapped.id().get());
+            let id = mapped.id().get();
             seen.insert(id);
 
             if mapped.is_focused() {
