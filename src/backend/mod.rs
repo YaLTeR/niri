@@ -37,7 +37,7 @@ pub type IpcOutputMap = HashMap<OutputId, niri_ipc::Output>;
 static OUTPUT_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct OutputId(u32);
+pub struct OutputId(u64);
 
 impl OutputId {
     fn next() -> OutputId {
@@ -45,7 +45,7 @@ impl OutputId {
     }
 
     pub fn get(self) -> u64 {
-        u64::from(self.0)
+        self.0
     }
 }
 

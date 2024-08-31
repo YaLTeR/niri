@@ -98,7 +98,7 @@ niri_render_elements! {
 static MAPPED_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MappedId(u32);
+pub struct MappedId(u64);
 
 impl MappedId {
     fn next() -> MappedId {
@@ -106,7 +106,7 @@ impl MappedId {
     }
 
     pub fn get(self) -> u64 {
-        u64::from(self.0)
+        self.0
     }
 }
 
