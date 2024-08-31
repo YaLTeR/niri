@@ -18,7 +18,7 @@ impl IdCounter {
     }
 
     pub fn next(&self) -> u32 {
-        self.value.fetch_add(1, Ordering::SeqCst)
+        self.value.fetch_add(1, Ordering::Relaxed)
     }
 }
 
