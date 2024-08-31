@@ -105,8 +105,8 @@ impl MappedId {
         MappedId(MAPPED_ID_COUNTER.next())
     }
 
-    pub fn get(self) -> u32 {
-        self.0
+    pub fn get(self) -> u64 {
+        u64::from(self.0)
     }
 }
 

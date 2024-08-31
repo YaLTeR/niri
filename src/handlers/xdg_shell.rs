@@ -480,7 +480,7 @@ impl XdgShellHandler for State {
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri
             .stop_casts_for_target(crate::pw_utils::CastTarget::Window {
-                id: u64::from(mapped.id().get()),
+                id: mapped.id().get(),
             });
 
         self.backend.with_primary_renderer(|renderer| {
