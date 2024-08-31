@@ -378,7 +378,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
             id: mapped.id().get(),
             title: role.title.clone(),
             app_id: role.app_id.clone(),
-            workspace_id: workspace_id.map(|id| u64::from(id.0)),
+            workspace_id: workspace_id.map(|id| id.get()),
             is_focused: mapped.is_focused(),
         }
     })
@@ -424,13 +424,13 @@ impl State {
 
         let mut events = Vec::new();
         let layout = &self.niri.layout;
-        let focused_ws_id = layout.active_workspace().map(|ws| u64::from(ws.id().0));
+        let focused_ws_id = layout.active_workspace().map(|ws| ws.id().get());
 
         // Check for workspace changes.
         let mut seen = HashSet::new();
         let mut need_workspaces_changed = false;
         for (mon, ws_idx, ws) in layout.workspaces() {
-            let id = u64::from(ws.id().0);
+            let id = ws.id().get();
             seen.insert(id);
 
             let Some(ipc_ws) = state.workspaces.get(&id) else {
@@ -482,7 +482,7 @@ impl State {
             let workspaces = layout
                 .workspaces()
                 .map(|(mon, ws_idx, ws)| {
-                    let id = u64::from(ws.id().0);
+                    let id = ws.id().get();
                     Workspace {
                         id,
                         idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
@@ -534,7 +534,7 @@ impl State {
                 return;
             };
 
-            let workspace_id = Some(u64::from(ws_id.0));
+            let workspace_id = Some(ws_id.get());
             let mut changed = ipc_win.workspace_id != workspace_id;
 
             let wl_surface = mapped.toplevel().wl_surface();
