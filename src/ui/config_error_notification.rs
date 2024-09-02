@@ -60,7 +60,8 @@ impl ConfigErrorNotification {
         Animation::new(from, to, 0., c.animations.config_notification_open_close.0)
     }
 
-    pub fn show_created(&mut self, created_path: Option<PathBuf>) {
+    pub fn show_created(&mut self, created_path: PathBuf) {
+        let created_path = Some(created_path);
         if self.created_path != created_path {
             self.created_path = created_path;
             self.buffers.borrow_mut().clear();

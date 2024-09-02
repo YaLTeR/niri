@@ -90,10 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Validate { config } => {
                 tracy_client::Client::start();
 
-                let path = config
-                    .or_else(env_config_path)
-                    .or_else(default_config_path)
-                    .expect("error getting config path");
+                let (path, _, _) = config_path(config);
                 Config::load(&path)?;
                 info!("config is valid");
                 return Ok(());
@@ -114,56 +111,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the config.
     let mut config_created = false;
-    let path = cli.config.or_else(env_config_path);
+    let (path, watch_path, create_default) = config_path(cli.config);
     env::remove_var("NIRI_CONFIG");
-    let path = path.or_else(|| {
-        let default_path = default_config_path()?;
-        let default_parent = default_path.parent().unwrap();
+    if create_default {
+        let default_parent = path.parent().unwrap();
 
-        if let Err(err) = fs::create_dir_all(default_parent) {
-            warn!(
-                "error creating config directories {:?}: {err:?}",
-                default_parent
-            );
-            return Some(default_path);
-        }
-
-        // Create the config and fill it with the default config if it doesn't exist.
-        let new_file = File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&default_path);
-        match new_file {
-            Ok(mut new_file) => {
-                let default = include_bytes!("../resources/default-config.kdl");
-                match new_file.write_all(default) {
-                    Ok(()) => {
-                        config_created = true;
-                        info!("wrote default config to {:?}", &default_path);
+        match fs::create_dir_all(default_parent) {
+            Ok(()) => {
+                // Create the config and fill it with the default config if it doesn't exist.
+                let new_file = File::options()
+                    .read(true)
+                    .write(true)
+                    .create_new(true)
+                    .open(&path);
+                match new_file {
+                    Ok(mut new_file) => {
+                        let default = include_bytes!("../resources/default-config.kdl");
+                        match new_file.write_all(default) {
+                            Ok(()) => {
+                                config_created = true;
+                                info!("wrote default config to {:?}", &path);
+                            }
+                            Err(err) => {
+                                warn!("error writing config file at {:?}: {err:?}", &path)
+                            }
+                        }
                     }
-                    Err(err) => {
-                        warn!("error writing config file at {:?}: {err:?}", &default_path)
-                    }
+                    Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(err) => warn!("error creating config file at {:?}: {err:?}", &path),
                 }
             }
-            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(err) => warn!("error creating config file at {:?}: {err:?}", &default_path),
+            Err(err) => {
+                warn!(
+                    "error creating config directories {:?}: {err:?}",
+                    default_parent
+                );
+            }
         }
-
-        Some(default_path)
-    });
+    }
 
     let mut config_errored = false;
-    let mut config = path
-        .as_deref()
-        .and_then(|path| match Config::load(path) {
-            Ok(config) => Some(config),
-            Err(err) => {
-                warn!("{err:?}");
-                config_errored = true;
-                None
-            }
+    let mut config = Config::load(&path)
+        .map_err(|err| {
+            warn!("{err:?}");
+            config_errored = true;
         })
         .unwrap_or_default();
 
@@ -231,19 +222,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Set up config file watcher.
-    let _watcher = if let Some(path) = path.clone() {
+    let _watcher = {
         let (tx, rx) = calloop::channel::sync_channel(1);
-        let watcher = Watcher::new(path.clone(), tx);
+        let watcher = Watcher::new(watch_path.clone(), tx);
         event_loop
             .handle()
             .insert_source(rx, move |event, _, state| match event {
-                calloop::channel::Event::Msg(()) => state.reload_config(path.clone()),
+                calloop::channel::Event::Msg(()) => state.reload_config(watch_path.clone()),
                 calloop::channel::Event::Closed => (),
             })
             .unwrap();
-        Some(watcher)
-    } else {
-        None
+        watcher
     };
 
     // Spawn commands from cli and auto-start.
@@ -333,6 +322,33 @@ fn default_config_path() -> Option<PathBuf> {
     let mut path = dirs.config_dir().to_owned();
     path.push("config.kdl");
     Some(path)
+}
+
+fn system_config_path() -> PathBuf {
+    PathBuf::from("/etc/niri/config.kdl")
+}
+
+/// Resolves and returns the config path to load, the config path to watch, and whether to create
+/// the default config at the path to load.
+fn config_path(cli_path: Option<PathBuf>) -> (PathBuf, PathBuf, bool) {
+    if let Some(explicit) = cli_path.or_else(env_config_path) {
+        return (explicit.clone(), explicit, false);
+    }
+
+    let system_path = system_config_path();
+    if let Some(path) = default_config_path() {
+        if path.exists() {
+            return (path.clone(), path, true);
+        }
+
+        if system_path.exists() {
+            (system_path, path, false)
+        } else {
+            (path.clone(), path, true)
+        }
+    } else {
+        (system_path.clone(), system_path, false)
+    }
 }
 
 fn notify_fd() -> anyhow::Result<()> {

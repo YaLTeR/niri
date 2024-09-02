@@ -13,8 +13,8 @@ You can find documentation for various sections of the config on these wiki page
 
 ### Loading
 
-Niri will load configuration from `$XDG_CONFIG_HOME/niri/config.kdl` or `~/.config/niri/config.kdl`.
-If that file is missing, niri will create it with the contents of [the default configuration file](https://github.com/YaLTeR/niri/blob/main/resources/default-config.kdl).
+Niri will load configuration from `$XDG_CONFIG_HOME/niri/config.kdl` or `~/.config/niri/config.kdl`, falling back to `/etc/niri/config.kdl`.
+If both of these files are missing, niri will create `$XDG_CONFIG_HOME/niri/config.kdl` with the contents of [the default configuration file](https://github.com/YaLTeR/niri/blob/main/resources/default-config.kdl), which are embedded into the niri binary at build time.
 Please use the default configuration file as the starting point for your custom configuration.
 
 The configuration is live-reloaded.
