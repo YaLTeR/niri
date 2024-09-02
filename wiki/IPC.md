@@ -4,9 +4,6 @@ Check `niri msg --help` for available commands.
 The `--json` flag prints the response in JSON, rather than formatted.
 For example, `niri msg --json outputs`.
 
-For programmatic access, check the [niri-ipc sub-crate](./niri-ipc/) which defines the types.
-The communication over the IPC socket happens in JSON.
-
 > [!TIP]
 > If you're getting parsing errors from `niri msg` after upgrading niri, make sure that you've restarted niri itself.
 > You might be trying to run a newer `niri msg` against an older `niri` compositor.
@@ -30,6 +27,37 @@ Though, this is more of a debug function than anything.
 You can get raw events from `niri msg --json event-stream`, or by connecting to the niri socket and requesting an event stream manually.
 
 You can find the full list of events along with documentation in the [niri-ipc sub-crate](./niri-ipc/).
+
+### Programmatic Access
+
+`niri msg --json` is a thin wrapper over writing and reading to a socket.
+When implementing more complex scripts and modules, you're encouraged to access the socket directly.
+
+Connect to the UNIX domain socket located at `$NIRI_SOCKET` in the filesystem.
+Write your request encoded in JSON on a single line, followed by a newline character, or by flushing and shutting down the write end of the connection.
+Read the reply as JSON, also on a single line.
+
+You can use `socat` to test communicating with niri directly:
+
+```sh
+$ socat STDIO /run/user/1000/niri.wayland-1.42516.sock
+"FocusedWindow"
+{"Ok":{"FocusedWindow":{"id":12,"title":"t socat STDIO /run/u ~","app_id":"Alacritty","workspace_id":6,"is_focused":true}}}
+```
+
+The reply is an `Ok` or an `Err` wrapping the same JSON object as you get from `niri msg --json`.
+
+For more complex requests, you can use `socat` to find how `niri msg` formats them:
+
+```sh
+$ socat STDIO UNIX-LISTEN:temp.sock
+(then, in a different terminal)
+$ env NIRI_SOCKET=./temp.sock niri msg action focus-workspace 2
+(then, look in the socat terminal)
+{"Action":{"FocusWorkspace":{"reference":{"Index":2}}}}
+```
+
+You can find all available requests and response types in the [niri-ipc sub-crate](./niri-ipc/).
 
 ### Backwards Compatibility
 
