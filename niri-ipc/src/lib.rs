@@ -21,6 +21,8 @@ pub enum Request {
     Outputs,
     /// Request information about workspaces.
     Workspaces,
+    /// Request information about open windows.
+    Windows,
     /// Request information about the configured keyboard layouts.
     KeyboardLayouts,
     /// Request information about the focused output.
@@ -73,6 +75,8 @@ pub enum Response {
     Outputs(HashMap<String, Output>),
     /// Information about workspaces.
     Workspaces(Vec<Workspace>),
+    /// Information about open windows.
+    Windows(Vec<Window>),
     /// Information about the keyboard layout.
     KeyboardLayouts(KeyboardLayouts),
     /// Information about the focused output.
