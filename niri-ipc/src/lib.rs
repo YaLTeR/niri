@@ -19,6 +19,12 @@ pub enum Request {
     Version,
     /// Request information about connected outputs.
     Outputs,
+    /// Request information about workspaces.
+    Workspaces,
+    /// Request information about the configured keyboard layouts.
+    KeyboardLayouts,
+    /// Request information about the focused output.
+    FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
     /// Perform an action.
@@ -34,12 +40,6 @@ pub enum Request {
         /// Configuration to apply.
         action: OutputAction,
     },
-    /// Request information about workspaces.
-    Workspaces,
-    /// Request information about the focused output.
-    FocusedOutput,
-    /// Request information about the keyboard layout.
-    KeyboardLayouts,
     /// Start continuously receiving events from the compositor.
     ///
     /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
@@ -71,16 +71,16 @@ pub enum Response {
     ///
     /// Map from connector name to output info.
     Outputs(HashMap<String, Output>),
+    /// Information about workspaces.
+    Workspaces(Vec<Workspace>),
+    /// Information about the keyboard layout.
+    KeyboardLayouts(KeyboardLayouts),
+    /// Information about the focused output.
+    FocusedOutput(Option<Output>),
     /// Information about the focused window.
     FocusedWindow(Option<Window>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
-    /// Information about workspaces.
-    Workspaces(Vec<Workspace>),
-    /// Information about the focused output.
-    FocusedOutput(Option<Output>),
-    /// Information about the keyboard layout.
-    KeyboardLayouts(KeyboardLayouts),
 }
 
 /// Actions that niri can perform.

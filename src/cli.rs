@@ -62,10 +62,12 @@ pub enum Msg {
     Outputs,
     /// List workspaces.
     Workspaces,
-    /// Print information about the focused window.
-    FocusedWindow,
+    /// Get the configured keyboard layouts.
+    KeyboardLayouts,
     /// Print information about the focused output.
     FocusedOutput,
+    /// Print information about the focused window.
+    FocusedWindow,
     /// Perform an action.
     Action {
         #[command(subcommand)]
@@ -86,8 +88,6 @@ pub enum Msg {
         #[command(subcommand)]
         action: OutputAction,
     },
-    /// Get the configured keyboard layouts.
-    KeyboardLayouts,
     /// Start continuously receiving events from the compositor.
     EventStream,
     /// Print the version of the running niri instance.
