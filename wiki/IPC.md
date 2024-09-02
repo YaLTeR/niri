@@ -51,9 +51,9 @@ For more complex requests, you can use `socat` to find how `niri msg` formats th
 
 ```sh
 $ socat STDIO UNIX-LISTEN:temp.sock
-(then, in a different terminal)
+# then, in a different terminal:
 $ env NIRI_SOCKET=./temp.sock niri msg action focus-workspace 2
-(then, look in the socat terminal)
+# then, look in the socat terminal:
 {"Action":{"FocusWorkspace":{"reference":{"Index":2}}}}
 ```
 
