@@ -260,6 +260,11 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let workspaces = state.workspaces.workspaces.values().cloned().collect();
             Response::Workspaces(workspaces)
         }
+        Request::Windows => {
+            let state = ctx.event_stream_state.borrow();
+            let windows = state.windows.windows.values().cloned().collect();
+            Response::Windows(windows)
+        }
         Request::KeyboardLayouts => {
             let state = ctx.event_stream_state.borrow();
             let layout = state.keyboard_layouts.keyboard_layouts.clone();

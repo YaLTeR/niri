@@ -20,6 +20,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             action: action.clone(),
         },
         Msg::Workspaces => Request::Workspaces,
+        Msg::Windows => Request::Windows,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
@@ -153,6 +154,45 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 }
             } else {
                 println!("No window is focused.");
+            }
+        }
+        Msg::Windows => {
+            let Response::Windows(mut windows) = response else {
+                bail!("unexpected response: expected Windows, got {response:?}");
+            };
+
+            if json {
+                let windows =
+                    serde_json::to_string(&windows).context("error formatting response")?;
+                println!("{windows}");
+                return Ok(());
+            }
+
+            windows.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+
+            for window in windows {
+                let focused = if window.is_focused { " (focused)" } else { "" };
+                println!("Window ID {}:{focused}", window.id);
+
+                if let Some(title) = window.title {
+                    println!("  Title: \"{title}\"");
+                } else {
+                    println!("  Title: (unset)");
+                }
+
+                if let Some(app_id) = window.app_id {
+                    println!("  App ID: \"{app_id}\"");
+                } else {
+                    println!("  App ID: (unset)");
+                }
+
+                if let Some(workspace_id) = window.workspace_id {
+                    println!("  Workspace ID: {workspace_id}");
+                } else {
+                    println!("  Workspace ID: (none)");
+                }
+
+                println!();
             }
         }
         Msg::FocusedOutput => {
