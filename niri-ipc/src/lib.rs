@@ -690,7 +690,7 @@ impl FromStr for WorkspaceReferenceArg {
             if let Ok(idx) = u8::try_from(index) {
                 Self::Index(idx)
             } else {
-                return Err("workspace indexes must be between 0 and 255");
+                return Err("workspace index must be between 0 and 255");
             }
         } else {
             Self::Name(s.to_string())
