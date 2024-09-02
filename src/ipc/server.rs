@@ -255,6 +255,17 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let outputs = ipc_outputs.values().cloned().map(|o| (o.name.clone(), o));
             Response::Outputs(outputs.collect())
         }
+        Request::Workspaces => {
+            let state = ctx.event_stream_state.borrow();
+            let workspaces = state.workspaces.workspaces.values().cloned().collect();
+            Response::Workspaces(workspaces)
+        }
+        Request::KeyboardLayouts => {
+            let state = ctx.event_stream_state.borrow();
+            let layout = state.keyboard_layouts.keyboard_layouts.clone();
+            let layout = layout.expect("keyboard layouts should be set at startup");
+            Response::KeyboardLayouts(layout)
+        }
         Request::FocusedWindow => {
             let state = ctx.event_stream_state.borrow();
             let windows = &state.windows.windows;
@@ -294,11 +305,6 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
 
             Response::OutputConfigChanged(response)
         }
-        Request::Workspaces => {
-            let state = ctx.event_stream_state.borrow();
-            let workspaces = state.workspaces.workspaces.values().cloned().collect();
-            Response::Workspaces(workspaces)
-        }
         Request::FocusedOutput => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
@@ -324,12 +330,6 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let result = rx.recv().await;
             let output = result.map_err(|_| String::from("error getting active output info"))?;
             Response::FocusedOutput(output)
-        }
-        Request::KeyboardLayouts => {
-            let state = ctx.event_stream_state.borrow();
-            let layout = state.keyboard_layouts.keyboard_layouts.clone();
-            let layout = layout.expect("keyboard layouts should be set at startup");
-            Response::KeyboardLayouts(layout)
         }
         Request::EventStream => Response::Handled,
     };
