@@ -133,6 +133,10 @@ impl WorkspaceId {
     pub fn get(self) -> u64 {
         self.0
     }
+
+    pub fn specific(id: u64) -> Self {
+        Self(id)
+    }
 }
 
 niri_render_elements! {

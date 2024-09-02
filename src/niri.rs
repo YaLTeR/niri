@@ -115,6 +115,7 @@ use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
+use crate::layout::workspace::WorkspaceId;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
@@ -2422,15 +2423,16 @@ impl Niri {
         &self,
         workspace_reference: WorkspaceReference,
     ) -> Option<(Option<Output>, usize)> {
-        let workspace_name = match workspace_reference {
+        let (target_workspace_index, target_workspace) = match workspace_reference {
             WorkspaceReference::Index(index) => {
                 return Some((None, index.saturating_sub(1) as usize));
             }
-            WorkspaceReference::Name(name) => name,
+            WorkspaceReference::Name(name) => self.layout.find_workspace_by_name(&name)?,
+            WorkspaceReference::Id(id) => {
+                let id = WorkspaceId::specific(id);
+                self.layout.find_workspace_by_id(id)?
+            }
         };
-
-        let (target_workspace_index, target_workspace) =
-            self.layout.find_workspace_by_name(&workspace_name)?;
 
         // FIXME: when we do fixes for no connected outputs, this will need fixing too.
         let active_workspace = self.layout.active_workspace()?;
