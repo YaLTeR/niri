@@ -836,6 +836,32 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn find_workspace_by_id(&self, id: WorkspaceId) -> Option<(usize, &Workspace<W>)> {
+        match &self.monitor_set {
+            MonitorSet::Normal { ref monitors, .. } => {
+                for mon in monitors {
+                    if let Some((index, workspace)) = mon
+                        .workspaces
+                        .iter()
+                        .enumerate()
+                        .find(|(_, w)| w.id() == id)
+                    {
+                        return Some((index, workspace));
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                if let Some((index, workspace)) =
+                    workspaces.iter().enumerate().find(|(_, w)| w.id() == id)
+                {
+                    return Some((index, workspace));
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn find_workspace_by_name(&self, workspace_name: &str) -> Option<(usize, &Workspace<W>)> {
         match &self.monitor_set {
             MonitorSet::Normal { ref monitors, .. } => {

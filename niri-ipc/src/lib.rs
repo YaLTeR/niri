@@ -308,10 +308,12 @@ pub enum SizeChange {
     AdjustProportion(f64),
 }
 
-/// Workspace reference (index or name) to operate on.
+/// Workspace reference (id, index or name) to operate on.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum WorkspaceReferenceArg {
+    /// Id of the workspace.
+    Id(u64),
     /// Index of the workspace.
     Index(u8),
     /// Name of the workspace.

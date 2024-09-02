@@ -1233,6 +1233,7 @@ impl From<niri_ipc::Action> for Action {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum WorkspaceReference {
+    Id(u64),
     Index(u8),
     Name(String),
 }
@@ -1240,6 +1241,7 @@ pub enum WorkspaceReference {
 impl From<WorkspaceReferenceArg> for WorkspaceReference {
     fn from(reference: WorkspaceReferenceArg) -> WorkspaceReference {
         match reference {
+            WorkspaceReferenceArg::Id(id) => Self::Id(id),
             WorkspaceReferenceArg::Index(i) => Self::Index(i),
             WorkspaceReferenceArg::Name(n) => Self::Name(n),
         }
