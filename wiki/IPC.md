@@ -40,7 +40,7 @@ Read the reply as JSON, also on a single line.
 You can use `socat` to test communicating with niri directly:
 
 ```sh
-$ socat STDIO /run/user/1000/niri.wayland-1.42516.sock
+$ socat STDIO "$NIRI_SOCKET"
 "FocusedWindow"
 {"Ok":{"FocusedWindow":{"id":12,"title":"t socat STDIO /run/u ~","app_id":"Alacritty","workspace_id":6,"is_focused":true}}}
 ```
