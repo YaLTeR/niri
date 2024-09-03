@@ -13,6 +13,7 @@ use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
+use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
 use smithay::input::keyboard::XkbContextHandler;
@@ -296,7 +297,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
             let found = ipc_outputs
                 .values()
-                .any(|o| o.name.eq_ignore_ascii_case(&output));
+                .any(|o| OutputName::from_ipc_output(o).matches(&output));
             let response = if found {
                 OutputConfigChanged::Applied
             } else {

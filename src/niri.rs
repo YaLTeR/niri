@@ -13,7 +13,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, PreviewRender, TrackLayout, WorkspaceReference,
+    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout, WorkspaceReference,
     DEFAULT_BACKGROUND_COLOR,
 };
 use smithay::backend::allocator::Fourcc;
@@ -142,7 +142,7 @@ use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
     center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
-    make_screenshot_path, output_size, send_scale_transform, write_png_rgba8,
+    make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
 };
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
@@ -198,7 +198,6 @@ pub struct Niri {
     pub blocker_cleared_rx: Receiver<Client>,
 
     pub output_state: HashMap<Output, OutputState>,
-    pub output_by_name: HashMap<String, Output>,
 
     // When false, we're idling with monitors powered off.
     pub monitors_active: bool,
@@ -1121,9 +1120,9 @@ impl State {
         let mut recolored_outputs = vec![];
 
         for output in self.niri.global_space.outputs() {
-            let name = output.name();
+            let name = output.user_data().get::<OutputName>().unwrap();
             let config = self.niri.config.borrow_mut();
-            let config = config.outputs.find(&name);
+            let config = config.outputs.find(name);
 
             let scale = config
                 .and_then(|c| c.scale)
@@ -1139,7 +1138,7 @@ impl State {
                 .map(|c| ipc_transform_to_smithay(c.transform))
                 .unwrap_or(Transform::Normal);
             // FIXME: fix winit damage on other transforms.
-            if name == "winit" {
+            if name.connector == "winit" {
                 transform = Transform::Flipped180;
             }
 
@@ -1193,11 +1192,36 @@ impl State {
 
     pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
         {
+            // Try hard to find the output config section corresponding to the output set by the
+            // user. Since if we add a new section and some existing section also matches the
+            // output, then our new section won't do anything.
+            let temp;
+            let match_name = if let Some(output) = self.niri.output_by_name_match(name) {
+                output.user_data().get::<OutputName>().unwrap()
+            } else if let Some(output_name) = self
+                .backend
+                .tty_checked()
+                .and_then(|tty| tty.disconnected_connector_name_by_name_match(name))
+            {
+                temp = output_name;
+                &temp
+            } else {
+                // Even if name is "make model serial", matching will work fine this way.
+                temp = OutputName {
+                    connector: name.to_owned(),
+                    make: None,
+                    model: None,
+                    serial: None,
+                };
+                &temp
+            };
+
             let mut config = self.niri.config.borrow_mut();
-            let config = if let Some(config) = config.outputs.find_mut(name) {
+            let config = if let Some(config) = config.outputs.find_mut(match_name) {
                 config
             } else {
                 config.outputs.0.push(niri_config::Output {
+                    // Save name as set by the user.
                     name: String::from(name),
                     ..Default::default()
                 });
@@ -1759,7 +1783,6 @@ impl Niri {
             layout,
             global_space: Space::default(),
             output_state: HashMap::new(),
-            output_by_name: HashMap::new(),
             unmapped_windows: HashMap::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
@@ -1892,13 +1915,13 @@ impl Niri {
         let config = self.config.borrow();
         let mut outputs = vec![];
         for output in self.global_space.outputs().chain(new_output) {
-            let name = output.name();
+            let name = output.user_data().get::<OutputName>().unwrap();
             let position = self.global_space.output_geometry(output).map(|geo| geo.loc);
-            let config = config.outputs.find(&name).and_then(|c| c.position);
+            let config = config.outputs.find(name).and_then(|c| c.position);
 
             outputs.push(Data {
                 output: output.clone(),
-                name,
+                name: name.connector.clone(),
                 position,
                 config,
             });
@@ -1996,10 +2019,10 @@ impl Niri {
     pub fn add_output(&mut self, output: Output, refresh_interval: Option<Duration>, vrr: bool) {
         let global = output.create_global::<State>(&self.display_handle);
 
-        let name = output.name();
+        let name = output.user_data().get::<OutputName>().unwrap();
 
         let config = self.config.borrow();
-        let c = config.outputs.find(&name);
+        let c = config.outputs.find(name);
         let scale = c.and_then(|c| c.scale).map(|s| s.0).unwrap_or_else(|| {
             let size_mm = output.physical_properties().size;
             let resolution = output.current_mode().unwrap().size;
@@ -2018,7 +2041,7 @@ impl Niri {
         background_color[3] = 1.;
 
         // FIXME: fix winit damage on other transforms.
-        if name == "winit" {
+        if name.connector == "winit" {
             transform = Transform::Flipped180;
         }
         drop(config);
@@ -2058,8 +2081,6 @@ impl Niri {
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
-        let rv = self.output_by_name.insert(name, output.clone());
-        assert!(rv.is_none(), "output was already tracked");
 
         // Must be last since it will call queue_redraw(output) which needs things to be filled-in.
         self.reposition_outputs(Some(&output));
@@ -2076,7 +2097,6 @@ impl Niri {
         self.gamma_control_manager_state.output_removed(output);
 
         let state = self.output_state.remove(output).unwrap();
-        self.output_by_name.remove(&output.name()).unwrap();
 
         match state.redraw_state {
             RedrawState::Idle => (),
@@ -2412,13 +2432,6 @@ impl Niri {
             .cloned()
     }
 
-    pub fn output_by_name(&self, name: &str) -> Option<Output> {
-        self.global_space
-            .outputs()
-            .find(|output| output.name().eq_ignore_ascii_case(name))
-            .cloned()
-    }
-
     pub fn find_output_and_workspace_index(
         &self,
         workspace_reference: WorkspaceReference,
@@ -2465,15 +2478,21 @@ impl Niri {
     pub fn output_for_tablet(&self) -> Option<&Output> {
         let config = self.config.borrow();
         let map_to_output = config.input.tablet.map_to_output.as_ref();
-        map_to_output.and_then(|name| self.output_by_name.get(name))
+        map_to_output.and_then(|name| self.output_by_name_match(name))
     }
 
     pub fn output_for_touch(&self) -> Option<&Output> {
         let config = self.config.borrow();
         let map_to_output = config.input.touch.map_to_output.as_ref();
         map_to_output
-            .and_then(|name| self.output_by_name.get(name))
+            .and_then(|name| self.output_by_name_match(name))
             .or_else(|| self.global_space.outputs().next())
+    }
+
+    pub fn output_by_name_match(&self, target: &str) -> Option<&Output> {
+        self.global_space
+            .outputs()
+            .find(|output| output_matches_name(output, target))
     }
 
     pub fn output_for_root(&self, root: &WlSurface) -> Option<&Output> {
@@ -3177,11 +3196,13 @@ impl Niri {
 
     pub fn refresh_on_demand_vrr(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::refresh_on_demand_vrr");
+
+        let name = output.user_data().get::<OutputName>().unwrap();
         let Some(on_demand) = self
             .config
             .borrow()
             .outputs
-            .find(&output.name())
+            .find(name)
             .map(|output| output.is_vrr_on_demand())
         else {
             warn!("error getting output config for {}", output.name());

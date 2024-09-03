@@ -359,6 +359,14 @@ impl Default for Output {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OutputName {
+    pub connector: String,
+    pub make: Option<String>,
+    pub model: Option<String>,
+    pub serial: Option<String>,
+}
+
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     #[knuffel(property)]
@@ -1720,14 +1728,95 @@ impl FromIterator<Output> for Outputs {
 }
 
 impl Outputs {
-    pub fn find(&self, name: &str) -> Option<&Output> {
-        self.0.iter().find(|o| o.name.eq_ignore_ascii_case(name))
+    pub fn find(&self, name: &OutputName) -> Option<&Output> {
+        self.0.iter().find(|o| name.matches(&o.name))
     }
 
-    pub fn find_mut(&mut self, name: &str) -> Option<&mut Output> {
-        self.0
-            .iter_mut()
-            .find(|o| o.name.eq_ignore_ascii_case(name))
+    pub fn find_mut(&mut self, name: &OutputName) -> Option<&mut Output> {
+        self.0.iter_mut().find(|o| name.matches(&o.name))
+    }
+}
+
+impl OutputName {
+    pub fn from_ipc_output(output: &niri_ipc::Output) -> Self {
+        Self {
+            connector: output.name.clone(),
+            make: (output.make != "Unknown").then(|| output.make.clone()),
+            model: (output.model != "Unknown").then(|| output.model.clone()),
+            serial: output.serial.clone(),
+        }
+    }
+
+    /// Returns an output description matching what Smithay's `Output::new()` does.
+    pub fn format_description(&self) -> String {
+        format!(
+            "{} - {} - {}",
+            self.make.as_deref().unwrap_or("Unknown"),
+            self.model.as_deref().unwrap_or("Unknown"),
+            self.connector,
+        )
+    }
+
+    /// Returns an output name that will match by make/model/serial or, if they are missing, by
+    /// connector.
+    pub fn format_make_model_serial_or_connector(&self) -> String {
+        if self.make.is_none() && self.model.is_none() && self.serial.is_none() {
+            self.connector.to_string()
+        } else {
+            let make = self.make.as_deref().unwrap_or("Unknown");
+            let model = self.model.as_deref().unwrap_or("Unknown");
+            let serial = self.serial.as_deref().unwrap_or("Unknown");
+            format!("{make} {model} {serial}")
+        }
+    }
+
+    pub fn matches(&self, target: &str) -> bool {
+        // Match by connector.
+        if target.eq_ignore_ascii_case(&self.connector) {
+            return true;
+        }
+
+        // If no other fields are available, don't try to match by them.
+        //
+        // This is used by niri msg output.
+        if self.make.is_none() && self.model.is_none() && self.serial.is_none() {
+            return false;
+        }
+
+        // Match by "make model serial" with Unknown if something is missing.
+        let make = self.make.as_deref().unwrap_or("Unknown");
+        let model = self.model.as_deref().unwrap_or("Unknown");
+        let serial = self.serial.as_deref().unwrap_or("Unknown");
+
+        let Some(target_make) = target.get(..make.len()) else {
+            return false;
+        };
+        let rest = &target[make.len()..];
+        if !target_make.eq_ignore_ascii_case(make) {
+            return false;
+        }
+        if !rest.starts_with(' ') {
+            return false;
+        }
+        let rest = &rest[1..];
+
+        let Some(target_model) = rest.get(..model.len()) else {
+            return false;
+        };
+        let rest = &rest[model.len()..];
+        if !target_model.eq_ignore_ascii_case(model) {
+            return false;
+        }
+        if !rest.starts_with(' ') {
+            return false;
+        }
+
+        let rest = &rest[1..];
+        if !rest.eq_ignore_ascii_case(serial) {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -3350,5 +3439,71 @@ mod tests {
         let config = Config::parse("config.kdl", "").unwrap();
         assert_eq!(config.input.keyboard.repeat_delay, 600);
         assert_eq!(config.input.keyboard.repeat_rate, 25);
+    }
+
+    #[test]
+    fn test_output_name_match() {
+        fn check(
+            target: &str,
+            connector: &str,
+            make: Option<&str>,
+            model: Option<&str>,
+            serial: Option<&str>,
+        ) -> bool {
+            let name = OutputName {
+                connector: connector.to_string(),
+                make: make.map(|x| x.to_string()),
+                model: model.map(|x| x.to_string()),
+                serial: serial.map(|x| x.to_string()),
+            };
+            name.matches(target)
+        }
+
+        assert!(check("dp-2", "DP-2", None, None, None));
+        assert!(!check("dp-1", "DP-2", None, None, None));
+        assert!(check("dp-2", "DP-2", Some("a"), Some("b"), Some("c")));
+        assert!(check(
+            "some company some monitor 1234",
+            "DP-2",
+            Some("Some Company"),
+            Some("Some Monitor"),
+            Some("1234")
+        ));
+        assert!(!check(
+            "some other company some monitor 1234",
+            "DP-2",
+            Some("Some Company"),
+            Some("Some Monitor"),
+            Some("1234")
+        ));
+        assert!(!check(
+            "make model serial ",
+            "DP-2",
+            Some("make"),
+            Some("model"),
+            Some("serial")
+        ));
+        assert!(check(
+            "make  serial",
+            "DP-2",
+            Some("make"),
+            Some(""),
+            Some("serial")
+        ));
+        assert!(check(
+            "make model unknown",
+            "DP-2",
+            Some("Make"),
+            Some("Model"),
+            None
+        ));
+        assert!(check(
+            "unknown unknown serial",
+            "DP-2",
+            None,
+            None,
+            Some("Serial")
+        ));
+        assert!(!check("unknown unknown unknown", "DP-2", None, None, None));
     }
 }

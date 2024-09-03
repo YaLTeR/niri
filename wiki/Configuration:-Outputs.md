@@ -19,13 +19,21 @@ output "eDP-1" {
 output "HDMI-A-1" {
     // ...settings for HDMI-A-1...
 }
+
+output "Some Company CoolMonitor 1234" {
+    // ...settings for CoolMonitor...
+}
 ```
 
-Outputs are matched by connector name (i.e. `eDP-1`, `HDMI-A-1`) which you can find by running `niri msg outputs`.
+Outputs are matched by connector name (i.e. `eDP-1`, `HDMI-A-1`), or by monitor manufacturer, model, and serial, separated by a single space each.
+You can find all of these by running `niri msg outputs`.
+
 Usually, the built-in monitor in laptops will be called `eDP-1`.
-Matching by output manufacturer and model is planned, but blocked on Smithay adopting libdisplay-info instead of edid-rs.
 
 <sup>Since: 0.1.6</sup> The output name is case-insensitive.
+
+<sup>Since: 0.1.9</sup> Outputs can be matched by manufacturer, model, and serial.
+Before, they could be matched only by the connector name.
 
 ### `off`
 

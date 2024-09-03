@@ -1943,6 +1943,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
 
 [[package]]
+name = "libdisplay-info"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb6dd47a677df2378a8bb88d08a593f51e8dddf4b61d2db5f2ceb35e67f9389d"
+dependencies = [
+ "bitflags 2.6.0",
+ "libc",
+ "libdisplay-info-derive",
+ "libdisplay-info-sys",
+ "thiserror",
+]
+
+[[package]]
+name = "libdisplay-info-derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea1cd31036b732a546d845f9485c56b1b606b5e476b0821c680dd66c8cd6fcee"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.72",
+]
+
+[[package]]
+name = "libdisplay-info-sys"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea8cec1fa7872b621f40c756bc1304b1a975461282e250b0e76737b037c0c236"
+
+[[package]]
 name = "libloading"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2238,6 +2268,7 @@ dependencies = [
  "k9",
  "keyframe",
  "libc",
+ "libdisplay-info",
  "log",
  "niri-config",
  "niri-ipc",

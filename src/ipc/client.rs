@@ -122,8 +122,8 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             let mut outputs = outputs.into_iter().collect::<Vec<_>>();
             outputs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
-            for (connector, output) in outputs.into_iter() {
-                print_output(connector, output)?;
+            for (_name, output) in outputs.into_iter() {
+                print_output(output)?;
                 println!();
             }
         }
@@ -207,7 +207,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             }
 
             if let Some(output) = output {
-                print_output(output.name.clone(), output)?;
+                print_output(output)?;
             } else {
                 println!("No output is focused.");
             }
@@ -364,11 +364,12 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_output(connector: String, output: Output) -> anyhow::Result<()> {
+fn print_output(output: Output) -> anyhow::Result<()> {
     let Output {
         name,
         make,
         model,
+        serial,
         physical_size,
         modes,
         current_mode,
@@ -377,7 +378,8 @@ fn print_output(connector: String, output: Output) -> anyhow::Result<()> {
         logical,
     } = output;
 
-    println!(r#"Output "{connector}" ({make} - {model} - {name})"#);
+    let serial = serial.as_deref().unwrap_or("Unknown");
+    println!(r#"Output "{make} {model} {serial}" ({name})"#);
 
     if let Some(current) = current_mode {
         let mode = *modes

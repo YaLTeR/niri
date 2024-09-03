@@ -41,7 +41,7 @@ use crate::input::DOUBLE_CLICK_TIME;
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::utils::transaction::Transaction;
-use crate::utils::{get_monotonic_time, send_scale_transform, ResizeEdge};
+use crate::utils::{get_monotonic_time, output_matches_name, send_scale_transform, ResizeEdge};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
 impl XdgShellHandler for State {
@@ -668,7 +668,12 @@ impl State {
             rules
                 .open_on_output
                 .as_deref()
-                .and_then(|name| self.niri.output_by_name.get(name))
+                .and_then(|name| {
+                    self.niri
+                        .global_space
+                        .outputs()
+                        .find(|output| output_matches_name(output, name))
+                })
                 .and_then(|o| self.niri.layout.monitor_for_output(o))
         });
 

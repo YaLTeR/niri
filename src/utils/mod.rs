@@ -10,7 +10,7 @@ use anyhow::{ensure, Context};
 use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
-use niri_config::Config;
+use niri_config::{Config, OutputName};
 use smithay::input::pointer::CursorIcon;
 use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
@@ -214,6 +214,11 @@ pub fn write_png_rgba8(
 
     let mut writer = encoder.write_header()?;
     writer.write_image_data(pixels)
+}
+
+pub fn output_matches_name(output: &Output, target: &str) -> bool {
+    let name = output.user_data().get::<OutputName>().unwrap();
+    name.matches(target)
 }
 
 #[cfg(feature = "dbus")]

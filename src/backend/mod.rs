@@ -174,6 +174,14 @@ impl Backend {
         }
     }
 
+    pub fn tty_checked(&mut self) -> Option<&mut Tty> {
+        if let Self::Tty(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
     pub fn tty(&mut self) -> &mut Tty {
         if let Self::Tty(v) = self {
             v

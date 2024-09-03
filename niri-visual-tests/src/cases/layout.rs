@@ -5,7 +5,7 @@ use niri::layout::workspace::ColumnWidth;
 use niri::layout::{LayoutElement as _, Options};
 use niri::render_helpers::RenderTarget;
 use niri::utils::get_monotonic_time;
-use niri_config::{Color, FloatOrInt};
+use niri_config::{Color, FloatOrInt, OutputName};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::layer_map_for_output;
@@ -41,6 +41,12 @@ impl Layout {
             refresh: 60000,
         });
         output.change_current_state(mode, None, None, None);
+        output.user_data().insert_if_missing(|| OutputName {
+            connector: String::new(),
+            make: None,
+            model: None,
+            serial: None,
+        });
 
         let options = Options {
             focus_ring: niri_config::FocusRing {

@@ -8,7 +8,7 @@ You can declare named workspaces at the top level of the config:
 workspace "browser"
 
 workspace "chat" {
-    open-on-output "DP-2"
+    open-on-output "Some Company CoolMonitor 1234"
 }
 ```
 

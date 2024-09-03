@@ -71,7 +71,7 @@ pub enum Response {
     Version(String),
     /// Information about connected outputs.
     ///
-    /// Map from connector name to output info.
+    /// Map from output name to output info.
     Outputs(HashMap<String, Output>),
     /// Information about workspaces.
     Workspaces(Vec<Workspace>),
@@ -466,6 +466,8 @@ pub struct Output {
     pub make: String,
     /// Textual description of the model.
     pub model: String,
+    /// Serial of the output, if known.
+    pub serial: Option<String>,
     /// Physical width and height of the output in millimeters, if known.
     pub physical_size: Option<(u32, u32)>,
     /// Available modes for the output.

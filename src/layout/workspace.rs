@@ -3,7 +3,9 @@ use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, PresetWidth, Struts, Workspace as WorkspaceConfig};
+use niri_config::{
+    CenterFocusedColumn, OutputName, PresetWidth, Struts, Workspace as WorkspaceConfig,
+};
 use niri_ipc::SizeChange;
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -117,8 +119,15 @@ pub struct Workspace<W: LayoutElement> {
     id: WorkspaceId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct OutputId(String);
+
+impl OutputId {
+    pub fn matches(&self, output: &Output) -> bool {
+        let output_name = output.user_data().get::<OutputName>().unwrap();
+        output_name.matches(&self.0)
+    }
+}
 
 static WORKSPACE_ID_COUNTER: IdCounter = IdCounter::new();
 
@@ -274,7 +283,8 @@ struct TileData {
 
 impl OutputId {
     pub fn new(output: &Output) -> Self {
-        Self(output.name())
+        let output_name = output.user_data().get::<OutputName>().unwrap();
+        Self(output_name.format_make_model_serial_or_connector())
     }
 }
 
@@ -401,8 +411,8 @@ impl<W: LayoutElement> Workspace<W> {
     ) -> Self {
         let original_output = OutputId(
             config
-                .clone()
-                .and_then(|c| c.open_on_output)
+                .as_ref()
+                .and_then(|c| c.open_on_output.clone())
                 .unwrap_or_default(),
         );
 
@@ -559,6 +569,11 @@ impl<W: LayoutElement> Workspace<W> {
         self.output = output;
 
         if let Some(output) = &self.output {
+            // Normalize original output: possibly replace connector with make/model/serial.
+            if self.original_output.matches(output) {
+                self.original_output = OutputId::new(output);
+            }
+
             let scale = output.current_scale();
             let transform = output.current_transform();
             let working_area = compute_working_area(output, self.options.struts);

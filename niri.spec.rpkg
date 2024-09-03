@@ -68,6 +68,7 @@ BuildRequires:  pkgconfig(libinput)
 BuildRequires:  pkgconfig(dbus-1)
 BuildRequires:  pkgconfig(systemd)
 BuildRequires:  pkgconfig(libseat)
+BuildRequires:  pkgconfig(libdisplay-info)
 BuildRequires:  pipewire-devel
 BuildRequires:  pango-devel
 BuildRequires:  cairo-gobject-devel

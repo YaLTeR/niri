@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use niri_config::Config;
+use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -59,6 +59,13 @@ impl Winit {
         output.change_current_state(Some(mode), None, None, None);
         output.set_preferred(mode);
 
+        output.user_data().insert_if_missing(|| OutputName {
+            connector: "winit".to_string(),
+            make: Some("Smithay".to_string()),
+            model: Some("Winit".to_string()),
+            serial: None,
+        });
+
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
             OutputId::next(),
@@ -66,6 +73,7 @@ impl Winit {
                 name: output.name(),
                 make: physical_properties.make,
                 model: physical_properties.model,
+                serial: None,
                 physical_size: None,
                 modes: vec![niri_ipc::Mode {
                     width: backend.window_size().w.clamp(0, u16::MAX as i32) as u16,

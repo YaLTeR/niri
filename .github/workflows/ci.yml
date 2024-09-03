@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev
+          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -85,7 +85,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev
+          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -110,7 +110,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev
+          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
 
       - uses: dtolnay/rust-toolchain@1.77.0
 
@@ -134,7 +134,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev
+          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -172,7 +172,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo dnf update -y
-          sudo dnf install -y cargo gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang libadwaita-devel
+          sudo dnf install -y cargo gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang libadwaita-devel libdisplay-info-devel
 
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --all

@@ -37,7 +37,7 @@ window-rule {
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
-    open-on-output "eDP-1"
+    open-on-output "Some Company CoolMonitor 1234"
     open-on-workspace "chat"
     open-maximized true
     open-fullscreen true
@@ -252,6 +252,8 @@ window-rule {
     exclude app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
 
     open-on-output "HDMI-A-1"
+    // Or:
+    // open-on-output "Some Company CoolMonitor 1234"
 }
 ```
 

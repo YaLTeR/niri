@@ -4,7 +4,6 @@ use std::fmt::Write;
 use std::iter::zip;
 use std::num::NonZeroU64;
 use std::os::fd::AsFd;
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -14,7 +13,7 @@ use std::{io, mem};
 use anyhow::{anyhow, bail, ensure, Context};
 use bytemuck::cast_slice_mut;
 use libc::dev_t;
-use niri_config::Config;
+use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
@@ -52,7 +51,6 @@ use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
-use smithay_drm_extras::edid::EdidInfo;
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
@@ -178,7 +176,7 @@ struct TtyOutputState {
 }
 
 struct Surface {
-    name: String,
+    name: OutputName,
     compositor: GbmDrmCompositor,
     connector: connector::Handle,
     dmabuf_feedback: Option<SurfaceDmabufFeedback>,
@@ -440,7 +438,7 @@ impl Tty {
                             continue;
                         };
                         let Some(output_state) = niri.output_state.get_mut(&output) else {
-                            error!("missing state for output {:?}", surface.name);
+                            error!("missing state for output {:?}", surface.name.connector);
                             continue;
                         };
 
@@ -746,14 +744,12 @@ impl Tty {
         connector: connector::Info,
         crtc: crtc::Handle,
     ) -> anyhow::Result<()> {
-        let output_name = format!(
-            "{}-{}",
-            connector.interface().as_str(),
-            connector.interface_id(),
-        );
-        debug!("connecting connector: {output_name}");
+        let connector_name = format_connector_name(&connector);
+        debug!("connecting connector: {connector_name}");
 
         let device = self.devices.get_mut(&node).context("missing device")?;
+
+        let output_name = make_output_name(&device.drm, connector.handle(), connector_name.clone());
 
         let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
@@ -761,11 +757,9 @@ impl Tty {
 
         if non_desktop {
             debug!("output is non desktop");
-            let description = get_edid_info(&device.drm, connector.handle())
-                .map(|info| truncate_to_nul(info.model))
-                .unwrap_or_else(|| "Unknown".into());
+            let description = output_name.format_description();
             if let Some(lease_state) = &mut device.drm_lease_state {
-                lease_state.add_connector::<State>(connector.handle(), output_name, description);
+                lease_state.add_connector::<State>(connector.handle(), connector_name, description);
             }
             device
                 .non_desktop_connectors
@@ -881,22 +875,13 @@ impl Tty {
         // Update the output mode.
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
 
-        let (make, model) = get_edid_info(&device.drm, connector.handle())
-            .map(|info| {
-                (
-                    truncate_to_nul(info.manufacturer),
-                    truncate_to_nul(info.model),
-                )
-            })
-            .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
-
         let output = Output::new(
-            output_name.clone(),
+            connector_name.clone(),
             PhysicalProperties {
                 size: (physical_width as i32, physical_height as i32).into(),
                 subpixel: connector.subpixel().into(),
-                model,
-                make,
+                model: output_name.model.as_deref().unwrap_or("Unknown").to_owned(),
+                make: output_name.make.as_deref().unwrap_or("Unknown").to_owned(),
             },
         );
 
@@ -907,6 +892,7 @@ impl Tty {
         output
             .user_data()
             .insert_if_missing(|| TtyOutputState { node, crtc });
+        output.user_data().insert_if_missing(|| output_name.clone());
 
         let mut planes = surface.planes().clone();
 
@@ -993,17 +979,18 @@ impl Tty {
         }
 
         let vblank_frame_name =
-            tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
-        let time_since_presentation_plot_name =
-            tracy_client::PlotName::new_leak(format!("{output_name} time since presentation, ms"));
+            tracy_client::FrameName::new_leak(format!("vblank on {connector_name}"));
+        let time_since_presentation_plot_name = tracy_client::PlotName::new_leak(format!(
+            "{connector_name} time since presentation, ms"
+        ));
         let presentation_misprediction_plot_name = tracy_client::PlotName::new_leak(format!(
-            "{output_name} presentation misprediction, ms"
+            "{connector_name} presentation misprediction, ms"
         ));
         let sequence_delta_plot_name =
-            tracy_client::PlotName::new_leak(format!("{output_name} sequence delta"));
+            tracy_client::PlotName::new_leak(format!("{connector_name} sequence delta"));
 
         let surface = Surface {
-            name: output_name.clone(),
+            name: output_name,
             connector: connector.handle(),
             compositor,
             dmabuf_feedback,
@@ -1066,7 +1053,7 @@ impl Tty {
             return;
         };
 
-        debug!("disconnecting connector: {:?}", surface.name);
+        debug!("disconnecting connector: {:?}", surface.name.connector);
 
         let output = niri
             .global_space
@@ -1108,7 +1095,7 @@ impl Tty {
         // Finish the Tracy frame, if any.
         drop(surface.vblank_frame.take());
 
-        let name = &surface.name;
+        let name = &surface.name.connector;
         trace!("vblank on {name} {meta:?}");
         span.emit_text(name);
 
@@ -1311,7 +1298,7 @@ impl Tty {
             return rv;
         };
 
-        span.emit_text(&surface.name);
+        span.emit_text(&surface.name.connector);
 
         if !device.drm.is_active() {
             warn!("device is inactive");
@@ -1526,22 +1513,10 @@ impl Tty {
 
         for (node, device) in &self.devices {
             for (connector, crtc) in device.drm_scanner.crtcs() {
-                let name = format!(
-                    "{}-{}",
-                    connector.interface().as_str(),
-                    connector.interface_id(),
-                );
-
+                let connector_name = format_connector_name(connector);
                 let physical_size = connector.size();
-
-                let (make, model) = get_edid_info(&device.drm, connector.handle())
-                    .map(|info| {
-                        (
-                            truncate_to_nul(info.manufacturer),
-                            truncate_to_nul(info.model),
-                        )
-                    })
-                    .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
+                let output_name =
+                    make_output_name(&device.drm, connector.handle(), connector_name.clone());
 
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
@@ -1589,9 +1564,10 @@ impl Tty {
                     .map(logical_output);
 
                 let ipc_output = niri_ipc::Output {
-                    name,
-                    make,
-                    model,
+                    name: connector_name,
+                    make: output_name.make.unwrap_or_else(|| "Unknown".into()),
+                    model: output_name.model.unwrap_or_else(|| "Unknown".into()),
+                    serial: output_name.serial,
                     physical_size,
                     modes,
                     current_mode,
@@ -1736,7 +1712,7 @@ impl Tty {
                     continue;
                 };
                 let Some(output_state) = niri.output_state.get_mut(&output) else {
-                    error!("missing state for output {:?}", surface.name);
+                    error!("missing state for output {:?}", surface.name.connector);
                     continue;
                 };
 
@@ -1759,7 +1735,7 @@ impl Tty {
                         warn!(
                             "output {:?}: configured mode {}x{}{} could not be found, \
                              falling back to preferred",
-                            surface.name,
+                            surface.name.connector,
                             target.width,
                             target.height,
                             if let Some(refresh) = target.refresh {
@@ -1770,7 +1746,10 @@ impl Tty {
                         );
                     }
 
-                    debug!("output {:?}: picking mode: {mode:?}", surface.name);
+                    debug!(
+                        "output {:?}: picking mode: {mode:?}",
+                        surface.name.connector
+                    );
                     if let Err(err) = surface.compositor.use_mode(mode) {
                         warn!("error changing mode: {err:?}");
                         continue;
@@ -1796,12 +1775,8 @@ impl Tty {
                     continue;
                 }
 
-                let output_name = format!(
-                    "{}-{}",
-                    connector.interface().as_str(),
-                    connector.interface_id(),
-                );
-
+                let connector_name = format_connector_name(connector);
+                let output_name = make_output_name(&device.drm, connector.handle(), connector_name);
                 let config = self
                     .config
                     .borrow()
@@ -1844,6 +1819,30 @@ impl Tty {
 
     pub fn get_device_from_node(&mut self, node: DrmNode) -> Option<&mut OutputDevice> {
         self.devices.get_mut(&node)
+    }
+
+    pub fn disconnected_connector_name_by_name_match(&self, target: &str) -> Option<OutputName> {
+        for device in self.devices.values() {
+            for (connector, crtc) in device.drm_scanner.crtcs() {
+                // Check if connected.
+                if connector.state() != connector::State::Connected {
+                    continue;
+                }
+
+                // Check if already enabled.
+                if device.surfaces.contains_key(&crtc) {
+                    continue;
+                }
+
+                let connector_name = format_connector_name(connector);
+                let output_name = make_output_name(&device.drm, connector.handle(), connector_name);
+                if output_name.matches(target) {
+                    return Some(output_name);
+                }
+            }
+        }
+
+        None
     }
 }
 
@@ -2277,23 +2276,21 @@ fn pick_mode(
     mode.map(|m| (*m, fallback))
 }
 
-fn truncate_to_nul(mut s: String) -> String {
-    if let Some(index) = s.find('\0') {
-        s.truncate(index);
-    }
-    s
-}
-
-fn get_edid_info(device: &DrmDevice, connector: connector::Handle) -> Option<EdidInfo> {
-    match catch_unwind(AssertUnwindSafe(move || {
-        EdidInfo::for_connector(device, connector)
-    })) {
-        Ok(info) => info,
-        Err(err) => {
-            warn!("edid-rs panicked: {err:?}");
-            None
-        }
-    }
+fn get_edid_info(
+    device: &DrmDevice,
+    connector: connector::Handle,
+) -> anyhow::Result<libdisplay_info::info::Info> {
+    let (_, info, value) =
+        find_drm_property(device, connector, "EDID").context("no EDID property")?;
+    let blob = info
+        .value_type()
+        .convert_value(value)
+        .as_blob()
+        .context("EDID was not blob type")?;
+    let data = device
+        .get_property_blob(blob)
+        .context("error getting EDID blob value")?;
+    libdisplay_info::info::Info::parse_edid(&data).context("error parsing EDID")
 }
 
 fn set_max_bpc(device: &DrmDevice, connector: connector::Handle, bpc: u64) -> anyhow::Result<u64> {
@@ -2415,41 +2412,47 @@ fn try_to_change_vrr(
         match set_vrr_enabled(device, crtc, enable_vrr) {
             Ok(enabled) => {
                 if enabled != enable_vrr {
-                    warn!("output {:?}: failed {} VRR", surface.name, word);
+                    warn!("output {:?}: failed {} VRR", surface.name.connector, word);
                 }
 
                 surface.vrr_enabled = enabled;
                 output_state.frame_clock.set_vrr(enabled);
             }
             Err(err) => {
-                warn!("output {:?}: error {} VRR: {err:?}", surface.name, word);
+                warn!(
+                    "output {:?}: error {} VRR: {err:?}",
+                    surface.name.connector, word
+                );
             }
         }
     } else if enable_vrr {
         warn!(
             "output {:?}: cannot enable VRR because connector is not vrr_capable",
-            surface.name
+            surface.name.connector
         );
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn format_connector_name(connector: &connector::Info) -> String {
+    format!(
+        "{}-{}",
+        connector.interface().as_str(),
+        connector.interface_id(),
+    )
+}
 
-    #[track_caller]
-    fn check(input: &str, expected: &str) {
-        let input = String::from(input);
-        assert_eq!(truncate_to_nul(input), expected);
-    }
-
-    #[test]
-    fn truncate_to_nul_works() {
-        check("", "");
-        check("qwer", "qwer");
-        check("abc\0def", "abc");
-        check("\0as", "");
-        check("a\0\0\0b", "a");
-        check("bb😁\0cc", "bb😁");
+fn make_output_name(
+    device: &DrmDevice,
+    connector: connector::Handle,
+    connector_name: String,
+) -> OutputName {
+    let info = get_edid_info(device, connector)
+        .map_err(|err| warn!("error getting EDID info for {connector_name}: {err:?}"))
+        .ok();
+    OutputName {
+        connector: connector_name,
+        make: info.as_ref().and_then(|info| info.make()),
+        model: info.as_ref().and_then(|info| info.model()),
+        serial: info.as_ref().and_then(|info| info.serial()),
     }
 }

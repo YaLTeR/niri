@@ -54,7 +54,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::transaction::{Transaction, TransactionBlocker};
-use crate::utils::{output_size, round_logical_in_physical_max1, ResizeEdge};
+use crate::utils::{output_matches_name, output_size, round_logical_in_physical_max1, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
@@ -344,8 +344,6 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn add_output(&mut self, output: Output) {
-        let id = OutputId::new(&output);
-
         self.monitor_set = match mem::take(&mut self.monitor_set) {
             MonitorSet::Normal {
                 mut monitors,
@@ -358,7 +356,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 let mut workspaces = vec![];
                 for i in (0..primary.workspaces.len()).rev() {
-                    if primary.workspaces[i].original_output == id {
+                    if primary.workspaces[i].original_output.matches(&output) {
                         let ws = primary.workspaces.remove(i);
 
                         // FIXME: this can be coded in a way that the workspace switch won't be
@@ -1722,18 +1720,16 @@ impl<W: LayoutElement> Layout<W> {
                 assert!(after_idx < monitor.workspaces.len());
             }
 
-            let monitor_id = OutputId::new(&monitor.output);
-
             if idx == primary_idx {
                 for ws in &monitor.workspaces {
-                    if ws.original_output == monitor_id {
+                    if ws.original_output.matches(&monitor.output) {
                         // This is the primary monitor's own workspace.
                         continue;
                     }
 
                     let own_monitor_exists = monitors
                         .iter()
-                        .any(|m| OutputId::new(&m.output) == ws.original_output);
+                        .any(|m| ws.original_output.matches(&m.output));
                     assert!(
                         !own_monitor_exists,
                         "primary monitor cannot have workspaces for which their own monitor exists"
@@ -1744,7 +1740,7 @@ impl<W: LayoutElement> Layout<W> {
                     monitor
                         .workspaces
                         .iter()
-                        .any(|workspace| workspace.original_output == monitor_id),
+                        .any(|workspace| workspace.original_output.matches(&monitor.output)),
                     "secondary monitor must not have any non-own workspaces"
                 );
             }
@@ -1881,7 +1877,7 @@ impl<W: LayoutElement> Layout<W> {
                     .map(|name| {
                         monitors
                             .iter_mut()
-                            .position(|monitor| monitor.output_name().eq_ignore_ascii_case(name))
+                            .position(|monitor| output_matches_name(&monitor.output, name))
                             .unwrap_or(*primary_idx)
                     })
                     .unwrap_or(*active_monitor_idx);
@@ -2556,7 +2552,7 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
 mod tests {
     use std::cell::Cell;
 
-    use niri_config::{FloatOrInt, WorkspaceName};
+    use niri_config::{FloatOrInt, OutputName, WorkspaceName};
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use smithay::output::{Mode, PhysicalProperties, Subpixel};
@@ -2967,7 +2963,7 @@ mod tests {
                     }
 
                     let output = Output::new(
-                        name,
+                        name.clone(),
                         PhysicalProperties {
                             size: Size::from((1280, 720)),
                             subpixel: Subpixel::Unknown,
@@ -2984,6 +2980,12 @@ mod tests {
                         None,
                         None,
                     );
+                    output.user_data().insert_if_missing(|| OutputName {
+                        connector: name,
+                        make: None,
+                        model: None,
+                        serial: None,
+                    });
                     layout.add_output(output.clone());
                 }
                 Op::AddScaledOutput { id, scale } => {
@@ -2993,7 +2995,7 @@ mod tests {
                     }
 
                     let output = Output::new(
-                        name,
+                        name.clone(),
                         PhysicalProperties {
                             size: Size::from((1280, 720)),
                             subpixel: Subpixel::Unknown,
@@ -3010,6 +3012,12 @@ mod tests {
                         Some(smithay::output::Scale::Fractional(scale)),
                         None,
                     );
+                    output.user_data().insert_if_missing(|| OutputName {
+                        connector: name,
+                        make: None,
+                        model: None,
+                        serial: None,
+                    });
                     layout.add_output(output.clone());
                 }
                 Op::RemoveOutput(id) => {
