@@ -36,3 +36,6 @@ When editing the config while niri is running, newly declared named workspaces w
 
 If you delete some named workspace from the config, the workspace will become normal (unnamed), and if there are no windows on it, it will be removed (as any other normal workspace).
 There's no way to give a name to an already existing workspace, but you can simply move windows that you want to a new, empty named workspace.
+
+<sup>Since: 0.1.9</sup> `open-on-output` can now use monitor manufacturer, model, and serial.
+Before, it could only use the connector name.

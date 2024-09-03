@@ -257,6 +257,9 @@ window-rule {
 }
 ```
 
+<sup>Since: 0.1.9</sup> `open-on-output` can now use monitor manufacturer, model, and serial.
+Before, it could only use the connector name.
+
 #### `open-on-workspace`
 
 <sup>Since: 0.1.6</sup>
