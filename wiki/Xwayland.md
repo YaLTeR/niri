@@ -15,6 +15,14 @@ env DISPLAY=:0 flatpak run com.valvesoftware.Steam
 
 They will appear as normal windows.
 
+You can also set `DISPLAY` by default for all apps by adding it to the `environment` section of the niri config:
+
+```kdl
+environment {
+    DISPLAY ":0"
+}
+```
+
 ## Directly running Xwayland in rootful mode
 
 This method involves invoking XWayland directly and running it as its own window, it also requires an extra X11 window manager running inside it.
