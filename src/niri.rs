@@ -3198,16 +3198,12 @@ impl Niri {
         let _span = tracy_client::span!("Niri::refresh_on_demand_vrr");
 
         let name = output.user_data().get::<OutputName>().unwrap();
-        let Some(on_demand) = self
+        let on_demand = self
             .config
             .borrow()
             .outputs
             .find(name)
-            .map(|output| output.is_vrr_on_demand())
-        else {
-            warn!("error getting output config for {}", output.name());
-            return;
-        };
+            .map_or(false, |output| output.is_vrr_on_demand());
         if !on_demand {
             return;
         }
