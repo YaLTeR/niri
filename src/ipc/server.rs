@@ -116,15 +116,6 @@ impl IpcServer {
             let _ = stream.disconnect.send_blocking(());
         }
     }
-
-    pub fn keyboard_layout_switched(&self, new_idx: u8) {
-        let mut state = self.event_stream_state.borrow_mut();
-        let state = &mut state.keyboard_layouts;
-
-        let event = Event::KeyboardLayoutSwitched { idx: new_idx };
-        state.apply(event.clone());
-        self.send_event(event);
-    }
 }
 
 impl Drop for IpcServer {
@@ -409,6 +400,26 @@ impl State {
         let state = &mut state.keyboard_layouts;
 
         let event = Event::KeyboardLayoutsChanged { keyboard_layouts };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    pub fn ipc_refresh_keyboard_layout_index(&mut self) {
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let idx = keyboard.with_xkb_state(self, |context| context.active_layout().0 as u8);
+
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.keyboard_layouts;
+
+        if state.keyboard_layouts.as_ref().unwrap().current_idx == idx {
+            return;
+        }
+
+        let event = Event::KeyboardLayoutSwitched { idx };
         state.apply(event.clone());
         server.send_event(event);
     }

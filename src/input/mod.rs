@@ -16,7 +16,7 @@ use smithay::backend::input::{
     TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState, XkbContextHandler};
+use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -540,17 +540,10 @@ impl State {
             }
             Action::SwitchLayout(action) => {
                 let keyboard = &self.niri.seat.get_keyboard().unwrap();
-                let new_idx = keyboard.with_xkb_state(self, |mut state| {
-                    match action {
-                        LayoutSwitchTarget::Next => state.cycle_next_layout(),
-                        LayoutSwitchTarget::Prev => state.cycle_prev_layout(),
-                    };
-                    state.active_layout().0
+                keyboard.with_xkb_state(self, |mut state| match action {
+                    LayoutSwitchTarget::Next => state.cycle_next_layout(),
+                    LayoutSwitchTarget::Prev => state.cycle_prev_layout(),
                 });
-
-                if let Some(server) = &self.niri.ipc_server {
-                    server.keyboard_layout_switched(new_idx as u8);
-                }
             }
             Action::MoveColumnLeft => {
                 self.niri.layout.move_left();

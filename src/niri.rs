@@ -543,6 +543,7 @@ impl State {
         self.niri.refresh_window_rules();
         self.refresh_ipc_outputs();
         self.ipc_refresh_layout();
+        self.ipc_refresh_keyboard_layout_index();
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_outputs();
@@ -911,10 +912,6 @@ impl State {
                     keyboard.with_xkb_state(self, |mut context| {
                         context.set_layout(new_layout);
                     });
-
-                    if let Some(server) = &self.niri.ipc_server {
-                        server.keyboard_layout_switched(new_layout.0 as u8);
-                    }
                 }
             }
 
