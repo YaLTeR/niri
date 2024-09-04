@@ -2589,15 +2589,45 @@ impl<W: LayoutElement> Workspace<W> {
                 }
             };
 
+            // Prevent the gesture from snapping further than the first/last column, as this is
+            // generally undesired.
+            //
+            // It's ok if leftmost_snap is > rightmost_snap (this happens if the columns on a
+            // workspace total up to less than the workspace width).
+            let leftmost_snap = snap_points(0., &self.columns[0]).0;
+            let last_col_idx = self.columns.len() - 1;
+            let last_col_x = self
+                .columns
+                .iter()
+                .take(last_col_idx)
+                .fold(0., |col_x, col| col_x + col.width() + gaps);
+            let rightmost_snap =
+                snap_points(last_col_x, &self.columns[last_col_idx]).1 - view_width;
+
+            snapping_points.push(Snap {
+                view_pos: leftmost_snap,
+                col_idx: 0,
+            });
+            snapping_points.push(Snap {
+                view_pos: rightmost_snap,
+                col_idx: last_col_idx,
+            });
+
             let mut push = |col_idx, left, right| {
-                snapping_points.push(Snap {
-                    view_pos: left,
-                    col_idx,
-                });
-                snapping_points.push(Snap {
-                    view_pos: right - view_width,
-                    col_idx,
-                });
+                if leftmost_snap < left && left < rightmost_snap {
+                    snapping_points.push(Snap {
+                        view_pos: left,
+                        col_idx,
+                    });
+                }
+
+                let right = right - view_width;
+                if leftmost_snap < right && right < rightmost_snap {
+                    snapping_points.push(Snap {
+                        view_pos: right,
+                        col_idx,
+                    });
+                }
             };
 
             let mut col_x = 0.;
