@@ -24,6 +24,7 @@ use niri::utils::spawning::{
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
 use niri_config::Config;
+use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
 use smithay::reexports::calloop::EventLoop;
@@ -191,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set NIRI_SOCKET for children.
     if let Some(ipc) = &state.niri.ipc_server {
-        env::set_var(niri_ipc::SOCKET_PATH_ENV, &ipc.socket_path);
+        env::set_var(SOCKET_PATH_ENV, &ipc.socket_path);
         info!("IPC listening on: {}", ipc.socket_path.to_string_lossy());
     }
 
@@ -262,7 +263,7 @@ fn import_environment() {
         "WAYLAND_DISPLAY",
         "XDG_CURRENT_DESKTOP",
         "XDG_SESSION_TYPE",
-        niri_ipc::SOCKET_PATH_ENV,
+        SOCKET_PATH_ENV,
     ]
     .join(" ");
 

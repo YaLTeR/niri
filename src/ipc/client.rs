@@ -1,7 +1,8 @@
 use anyhow::{anyhow, bail, Context};
+use niri_ipc::socket::Socket;
 use niri_ipc::{
     Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
-    Socket, Transform,
+    Transform,
 };
 use serde_json::json;
 

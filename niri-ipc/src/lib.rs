@@ -6,9 +6,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-mod socket;
-pub use socket::{Socket, SOCKET_PATH_ENV};
-
+pub mod socket;
 pub mod state;
 
 /// Request from client to niri.
