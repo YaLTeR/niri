@@ -1,4 +1,24 @@
 //! Types for communicating with niri via IPC.
+//!
+//! After connecting to the niri socket, you can send a single [`Request`] and receive a single
+//! [`Reply`], which is a `Result` wrapping a [`Response`]. If you requested an event stream, you
+//! can keep reading [`Event`]s from the socket after the response.
+//!
+//! You can use the [`socket::Socket`] helper if you're fine with blocking communication. However,
+//! it is a fairly simple helper, so if you need async, or if you're using a different language,
+//! you are encouraged to communicate with the socket manually.
+//!
+//! 1. Read the socket filesystem path from [`socket::SOCKET_PATH_ENV`] (`$NIRI_SOCKET`).
+//! 2. Connect to the socket and write a JSON-formatted [`Request`] on a single line. You can follow
+//!    up with a line break and a flush, or just flush and shutdown the write end of the socket.
+//! 3. Niri will respond with a single line JSON-formatted [`Reply`].
+//! 4. If you requested an event stream, niri will keep responding with JSON-formatted [`Event`]s,
+//!    on a single line each.
+//!
+//! ## Backwards compatibility
+//!
+//! This crate follows the niri version. It is **not** API-stable in terms of the Rust semver. In
+//! particular, expect new struct fields and enum variants to be added in patch version bumps.
 #![warn(missing_docs)]
 
 use std::collections::HashMap;

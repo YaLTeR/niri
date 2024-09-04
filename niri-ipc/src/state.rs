@@ -1,4 +1,10 @@
 //! Helpers for keeping track of the event stream state.
+//!
+//! 1. Create an [`EventStreamState`] using `Default::default()`, or any individual state part if
+//!    you only care about part of the state.
+//! 2. Connect to the niri socket and request an event stream.
+//! 3. Pass every [`Event`] to [`EventStreamStatePart::apply`] on your state.
+//! 4. Read the fields of the state as needed.
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
