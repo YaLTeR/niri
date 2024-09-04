@@ -60,6 +60,7 @@
             systemd # For libudev
             seatd # For libseat
             libxkbcommon
+            libdisplay-info
             libinput
             mesa # For libgbm
             fontconfig
