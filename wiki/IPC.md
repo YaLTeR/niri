@@ -26,7 +26,7 @@ To get a taste of the events, run `niri msg event-stream`.
 Though, this is more of a debug function than anything.
 You can get raw events from `niri msg --json event-stream`, or by connecting to the niri socket and requesting an event stream manually.
 
-You can find the full list of events along with documentation in the [niri-ipc sub-crate][niri-ipc].
+You can find the full list of events along with documentation [here](https://yalter.github.io/niri/niri_ipc/enum.Event.html).
 
 ### Programmatic Access
 
@@ -57,7 +57,7 @@ $ env NIRI_SOCKET=./temp.sock niri msg action focus-workspace 2
 {"Action":{"FocusWorkspace":{"reference":{"Index":2}}}}
 ```
 
-You can find all available requests and response types in the [niri-ipc sub-crate][niri-ipc].
+You can find all available requests and response types in the [niri-ipc sub-crate documentation](https://yalter.github.io/niri/niri_ipc/).
 
 ### Backwards Compatibility
 
@@ -75,5 +75,3 @@ Please prefer the JSON output for scripts, since I reserve the right to make any
 
 The `niri-ipc` sub-crate (like other niri sub-crates) is *not* API-stable in terms of the Rust semver; rather, it follows the version of niri itself.
 In particular, new struct fields and enum variants will be added.
-
-[niri-ipc]: https://github.com/YaLTeR/niri/tree/main/niri-ipc
