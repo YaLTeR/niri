@@ -2568,6 +2568,27 @@ impl<W: LayoutElement> Workspace<W> {
             }
         } else {
             let view_width = self.view_size.w;
+            let working_area_width = self.working_area.size.w;
+            let gaps = self.options.gaps;
+
+            let snap_points = |col_x, col: &Column<W>| {
+                let col_w = col.width();
+
+                // Normal columns align with the working area, but fullscreen columns align with the
+                // view size.
+                if col.is_fullscreen {
+                    let left = col_x;
+                    let right = col_x + col_w;
+                    (left, right)
+                } else {
+                    // Logic from compute_new_view_offset.
+                    let padding = ((working_area_width - col_w) / 2.).clamp(0., gaps);
+                    let left = col_x - padding - left_strut;
+                    let right = col_x + col_w + padding + right_strut;
+                    (left, right)
+                }
+            };
+
             let mut push = |col_idx, left, right| {
                 snapping_points.push(Snap {
                     view_pos: left,
@@ -2581,24 +2602,10 @@ impl<W: LayoutElement> Workspace<W> {
 
             let mut col_x = 0.;
             for (col_idx, col) in self.columns.iter().enumerate() {
-                let col_w = col.width();
+                let (left, right) = snap_points(col_x, col);
+                push(col_idx, left, right);
 
-                // Normal columns align with the working area, but fullscreen columns align with the
-                // view size.
-                if col.is_fullscreen {
-                    let left = col_x;
-                    let right = col_x + col_w;
-                    push(col_idx, left, right);
-                } else {
-                    // Logic from compute_new_view_offset.
-                    let padding =
-                        ((self.working_area.size.w - col_w) / 2.).clamp(0., self.options.gaps);
-                    let left = col_x - padding - left_strut;
-                    let right = col_x + col_w + padding + right_strut;
-                    push(col_idx, left, right);
-                }
-
-                col_x += col_w + self.options.gaps;
+                col_x += col.width() + gaps;
             }
         }
 
