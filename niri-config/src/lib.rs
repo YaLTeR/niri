@@ -1821,6 +1821,26 @@ impl OutputName {
 
         true
     }
+
+    // Similar in spirit to Ord, but I don't want to derive Eq to avoid mistakes (you should use
+    // `Self::match`, not Eq).
+    pub fn compare(&self, other: &Self) -> std::cmp::Ordering {
+        let self_missing_mms = self.make.is_none() && self.model.is_none() && self.serial.is_none();
+        let other_missing_mms =
+            other.make.is_none() && other.model.is_none() && other.serial.is_none();
+
+        match (self_missing_mms, other_missing_mms) {
+            (true, true) => self.connector.cmp(&other.connector),
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            (false, false) => self
+                .make
+                .cmp(&other.make)
+                .then_with(|| self.model.cmp(&other.model))
+                .then_with(|| self.serial.cmp(&other.serial))
+                .then_with(|| self.connector.cmp(&other.connector)),
+        }
+    }
 }
 
 impl<S> knuffel::Decode<S> for DefaultColumnWidth
@@ -2753,6 +2773,7 @@ pub fn set_miette_hook() -> Result<(), miette::InstallError> {
 
 #[cfg(test)]
 mod tests {
+    use k9::snapshot;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -3445,6 +3466,20 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
+    fn make_output_name(
+        connector: &str,
+        make: Option<&str>,
+        model: Option<&str>,
+        serial: Option<&str>,
+    ) -> OutputName {
+        OutputName {
+            connector: connector.to_string(),
+            make: make.map(|x| x.to_string()),
+            model: model.map(|x| x.to_string()),
+            serial: serial.map(|x| x.to_string()),
+        }
+    }
+
     #[test]
     fn test_output_name_match() {
         fn check(
@@ -3454,12 +3489,7 @@ mod tests {
             model: Option<&str>,
             serial: Option<&str>,
         ) -> bool {
-            let name = OutputName {
-                connector: connector.to_string(),
-                make: make.map(|x| x.to_string()),
-                model: model.map(|x| x.to_string()),
-                serial: serial.map(|x| x.to_string()),
-            };
+            let name = make_output_name(connector, make, model, serial);
             name.matches(target)
         }
 
@@ -3509,5 +3539,49 @@ mod tests {
             Some("Serial")
         ));
         assert!(!check("unknown unknown unknown", "DP-2", None, None, None));
+    }
+
+    #[test]
+    fn test_output_name_sorting() {
+        let mut names = vec![
+            make_output_name("DP-2", None, None, None),
+            make_output_name("DP-1", None, None, None),
+            make_output_name("DP-3", Some("B"), Some("A"), Some("A")),
+            make_output_name("DP-3", Some("A"), Some("B"), Some("A")),
+            make_output_name("DP-3", Some("A"), Some("A"), Some("B")),
+            make_output_name("DP-3", None, Some("A"), Some("A")),
+            make_output_name("DP-3", Some("A"), None, Some("A")),
+            make_output_name("DP-3", Some("A"), Some("A"), None),
+            make_output_name("DP-5", Some("A"), Some("A"), Some("A")),
+            make_output_name("DP-4", Some("A"), Some("A"), Some("A")),
+        ];
+        names.sort_by(|a, b| a.compare(b));
+        let names = names
+            .into_iter()
+            .map(|name| {
+                format!(
+                    "{} | {}",
+                    name.format_make_model_serial_or_connector(),
+                    name.connector,
+                )
+            })
+            .collect::<Vec<_>>();
+        snapshot!(
+            names,
+            r#"
+[
+    "Unknown A A | DP-3",
+    "A Unknown A | DP-3",
+    "A A Unknown | DP-3",
+    "A A A | DP-4",
+    "A A A | DP-5",
+    "A A B | DP-3",
+    "A B A | DP-3",
+    "B A A | DP-3",
+    "DP-1 | DP-1",
+    "DP-2 | DP-2",
+]
+"#
+        );
     }
 }

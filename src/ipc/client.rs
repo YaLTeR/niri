@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Context};
+use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
@@ -120,8 +121,11 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            let mut outputs = outputs.into_iter().collect::<Vec<_>>();
-            outputs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+            let mut outputs = outputs
+                .into_values()
+                .map(|out| (OutputName::from_ipc_output(&out), out))
+                .collect::<Vec<_>>();
+            outputs.sort_unstable_by(|a, b| a.0.compare(&b.0));
 
             for (_name, output) in outputs.into_iter() {
                 print_output(output)?;

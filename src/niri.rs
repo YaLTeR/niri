@@ -1904,7 +1904,7 @@ impl Niri {
         #[derive(Debug)]
         struct Data {
             output: Output,
-            name: String,
+            name: OutputName,
             position: Option<Point<i32, Logical>>,
             config: Option<niri_config::Position>,
         }
@@ -1918,7 +1918,7 @@ impl Niri {
 
             outputs.push(Data {
                 output: output.clone(),
-                name: name.connector.clone(),
+                name: name.clone(),
                 position,
                 config,
             });
@@ -1932,15 +1932,17 @@ impl Niri {
         // Connectors can appear in udev in any order. If we sort by name then we get output
         // positioning that does not depend on the order they appeared.
         //
-        // All outputs must have different (connector) names.
-        outputs.sort_unstable_by(|a, b| Ord::cmp(&a.name, &b.name));
+        // This sorting first compares by make/model/serial so that it is stable regardless of the
+        // connector name. However, if make/model/serial is equal or unknown, then it does fall
+        // back to comparing the connector name, which should always be unique.
+        outputs.sort_unstable_by(|a, b| a.name.compare(&b.name));
 
         // Place all outputs with explicitly configured position first, then the unconfigured ones.
         outputs.sort_by_key(|d| d.config.is_none());
 
         trace!(
             "placing outputs in order: {:?}",
-            outputs.iter().map(|d| &d.name)
+            outputs.iter().map(|d| &d.name.connector)
         );
 
         for data in outputs.into_iter() {
@@ -1967,9 +1969,10 @@ impl Niri {
 
                     if let Some(overlap) = overlap {
                         warn!(
-                            "output {name} at x={} y={} sized {}x{} \
+                            "output {} at x={} y={} sized {}x{} \
                              overlaps an existing output at x={} y={} sized {}x{}, \
                              falling back to automatic placement",
+                            name.connector,
                             pos.x,
                             pos.y,
                             size.w,
@@ -2003,8 +2006,8 @@ impl Niri {
             // in global_space, we ensure that this branch always runs for it.
             if Some(new_position) != position {
                 debug!(
-                    "putting output {name} at x={} y={}",
-                    new_position.x, new_position.y
+                    "putting output {} at x={} y={}",
+                    name.connector, new_position.x, new_position.y
                 );
                 output.change_current_state(None, None, None, Some(new_position));
                 self.ipc_outputs_changed = true;
