@@ -1949,14 +1949,13 @@ impl GammaProps {
                     property::Value::Blob(blob).into(),
                 )
                 .context("error setting GAMMA_LUT")
-                .map_err(|err| {
+                .inspect_err(|_| {
                     if blob != 0 {
                         // Destroy the blob we just allocated.
                         if let Err(err) = device.destroy_property_blob(blob) {
                             warn!("error destroying GAMMA_LUT property blob: {err:?}");
                         }
                     }
-                    err
                 })?;
         }
 
