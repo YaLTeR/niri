@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{
-    CenterFocusedColumn, OutputName, PresetWidth, Struts, Workspace as WorkspaceConfig,
+    CenterFocusedColumn, OutputName, PresetSize, Struts, Workspace as WorkspaceConfig,
 };
 use niri_ipc::SizeChange;
 use ordered_float::NotNan;
@@ -202,16 +202,17 @@ pub enum ColumnWidth {
 
 /// Height of a window in a column.
 ///
-/// Proportional height is intentionally omitted. With column widths you frequently want e.g. two
-/// columns side-by-side with 50% width each, and you want them to remain this way when moving to a
-/// differently sized monitor. Windows in a column, however, already auto-size to fill the available
-/// height, giving you this behavior. The only reason to set a different window height, then, is
-/// when you want something in the window to fit exactly, e.g. to fit 30 lines in a terminal, which
-/// corresponds to the `Fixed` variant.
+/// Every window but one in a column must be `Auto`-sized so that the total height can add up to
+/// the workspace height. Resizing a window converts all other windows to `Auto`, weighted to
+/// preserve their visual heights at the moment of the conversion.
 ///
-/// This does not preclude the usual set of binds to set or resize a window proportionally. Just,
-/// they are converted to, and stored as fixed height right away, so that once you resize a window
-/// to fit the desired content, it can never become smaller than that when moving between monitors.
+/// In contrast to column widths, proportional height changes are converted to, and stored as,
+/// fixed height right away. With column widths you frequently want e.g. two columns side-by-side
+/// with 50% width each, and you want them to remain this way when moving to a differently sized
+/// monitor. Windows in a column, however, already auto-size to fill the available height, giving
+/// you this behavior. The main reason to set a different window height, then, is when you want
+/// something in the window to fit exactly, e.g. to fit 30 lines in a terminal, which corresponds
+/// to the `Fixed` variant.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WindowHeight {
     /// Automatically computed *tile* height, distributed across the column according to weights.
@@ -221,6 +222,16 @@ pub enum WindowHeight {
     Auto { weight: f64 },
     /// Fixed *window* height in logical pixels.
     Fixed(f64),
+    /// One of the *tile* height proportion presets.
+    Preset(usize),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ResolvedSize {
+    /// Size of the tile including borders.
+    Tile(f64),
+    /// Size of the window excluding borders.
+    Window(f64),
 }
 
 #[derive(Debug)]
@@ -319,18 +330,29 @@ impl ColumnWidth {
             ColumnWidth::Proportion(proportion) => {
                 (view_width - options.gaps) * proportion - options.gaps
             }
-            ColumnWidth::Preset(idx) => options.preset_widths[idx].resolve(options, view_width),
+            ColumnWidth::Preset(idx) => {
+                options.preset_column_widths[idx].resolve(options, view_width)
+            }
             ColumnWidth::Fixed(width) => width,
         }
     }
 }
 
-impl From<PresetWidth> for ColumnWidth {
-    fn from(value: PresetWidth) -> Self {
+impl From<PresetSize> for ColumnWidth {
+    fn from(value: PresetSize) -> Self {
         match value {
-            PresetWidth::Proportion(p) => Self::Proportion(p.clamp(0., 10000.)),
-            PresetWidth::Fixed(f) => Self::Fixed(f64::from(f.clamp(1, 100000))),
+            PresetSize::Proportion(p) => Self::Proportion(p.clamp(0., 10000.)),
+            PresetSize::Fixed(f) => Self::Fixed(f64::from(f.clamp(1, 100000))),
         }
+    }
+}
+
+fn resolve_preset_size(preset: PresetSize, options: &Options, view_size: f64) -> ResolvedSize {
+    match preset {
+        PresetSize::Proportion(proportion) => {
+            ResolvedSize::Tile((view_size - options.gaps) * proportion - options.gaps)
+        }
+        PresetSize::Fixed(width) => ResolvedSize::Window(f64::from(width)),
     }
 }
 
@@ -650,7 +672,7 @@ impl<W: LayoutElement> Workspace<W> {
         match default_width {
             Some(Some(width)) => Some(width),
             Some(None) => None,
-            None => self.options.default_width,
+            None => self.options.default_column_width,
         }
     }
 
@@ -2351,6 +2373,17 @@ impl<W: LayoutElement> Workspace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
+    pub fn toggle_window_height(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        col.toggle_window_height(None, true);
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
         let (mut col_idx, tile_idx) = self
             .columns
@@ -3016,10 +3049,16 @@ impl<W: LayoutElement> Column<W> {
         let mut update_sizes = false;
 
         // If preset widths changed, make our width non-preset.
-        if self.options.preset_widths != options.preset_widths {
+        if self.options.preset_column_widths != options.preset_column_widths {
             if let ColumnWidth::Preset(idx) = self.width {
-                self.width = self.options.preset_widths[idx];
+                self.width = self.options.preset_column_widths[idx];
             }
+        }
+
+        // If preset heights changed, make our heights non-preset.
+        if self.options.preset_window_heights != options.preset_window_heights {
+            self.convert_heights_to_auto();
+            update_sizes = true;
         }
 
         if self.options.gaps != options.gaps {
@@ -3220,6 +3259,7 @@ impl<W: LayoutElement> Column<W> {
 
         let width = width.resolve(&self.options, self.working_area.size.w);
         let width = f64::max(f64::min(width, max_width), min_width);
+        let height = self.working_area.size.h;
 
         // Compute the tile heights. Start by converting window heights to tile heights.
         let mut heights = zip(&self.tiles, &self.data)
@@ -3228,8 +3268,19 @@ impl<W: LayoutElement> Column<W> {
                 WindowHeight::Fixed(height) => {
                     WindowHeight::Fixed(tile.tile_height_for_window_height(height.round().max(1.)))
                 }
+                WindowHeight::Preset(idx) => {
+                    let preset = self.options.preset_window_heights[idx];
+                    let window_height = match resolve_preset_size(preset, &self.options, height) {
+                        ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
+                        ResolvedSize::Window(h) => h,
+                    };
+                    let tile_height = tile
+                        .tile_height_for_window_height(window_height.round().clamp(1., 100000.));
+                    WindowHeight::Fixed(tile_height)
+                }
             })
             .collect::<Vec<_>>();
+
         let gaps_left = self.options.gaps * (self.tiles.len() + 1) as f64;
         let mut height_left = self.working_area.size.h - gaps_left;
         let mut auto_tiles_left = self.tiles.len();
@@ -3283,6 +3334,7 @@ impl<W: LayoutElement> Column<W> {
                 let weight = match *h {
                     WindowHeight::Auto { weight } => weight,
                     WindowHeight::Fixed(_) => continue,
+                    WindowHeight::Preset(_) => unreachable!(),
                 };
                 let factor = weight / total_weight_2;
 
@@ -3321,6 +3373,7 @@ impl<W: LayoutElement> Column<W> {
                 let weight = match *h {
                     WindowHeight::Auto { weight } => weight,
                     WindowHeight::Fixed(_) => continue,
+                    WindowHeight::Preset(_) => unreachable!(),
                 };
                 let factor = weight / total_weight;
 
@@ -3456,6 +3509,10 @@ impl<W: LayoutElement> Column<W> {
                 );
                 found_fixed = true;
             }
+
+            if let WindowHeight::Preset(idx) = data.height {
+                assert!(self.options.preset_window_heights.len() > idx);
+            }
         }
     }
 
@@ -3467,11 +3524,11 @@ impl<W: LayoutElement> Column<W> {
         };
 
         let idx = match width {
-            ColumnWidth::Preset(idx) => (idx + 1) % self.options.preset_widths.len(),
+            ColumnWidth::Preset(idx) => (idx + 1) % self.options.preset_column_widths.len(),
             _ => {
                 let current = self.width();
                 self.options
-                    .preset_widths
+                    .preset_column_widths
                     .iter()
                     .position(|prop| {
                         let resolved = prop.resolve(&self.options, self.working_area.size.w);
@@ -3500,7 +3557,7 @@ impl<W: LayoutElement> Column<W> {
         let current_px = width.resolve(&self.options, self.working_area.size.w);
 
         let current = match width {
-            ColumnWidth::Preset(idx) => self.options.preset_widths[idx],
+            ColumnWidth::Preset(idx) => self.options.preset_column_widths[idx],
             current => current,
         };
 
@@ -3551,17 +3608,18 @@ impl<W: LayoutElement> Column<W> {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         // Start by converting all heights to automatic, since only one window in the column can be
-        // fixed-height. If the current tile is already fixed, however, we can skip that step.
-        // Which is not only for optimization, but also preserves automatic weights in case one
-        // window is resized in such a way that other windows hit their min size, and then back.
-        if !matches!(self.data[tile_idx].height, WindowHeight::Fixed(_)) {
+        // non-auto-height. If the current tile is already non-auto, however, we can skip that
+        // step. Which is not only for optimization, but also preserves automatic weights in case
+        // one window is resized in such a way that other windows hit their min size, and then
+        // back.
+        if matches!(self.data[tile_idx].height, WindowHeight::Auto { .. }) {
             self.convert_heights_to_auto();
         }
 
         let current = self.data[tile_idx].height;
         let tile = &self.tiles[tile_idx];
         let current_window_px = match current {
-            WindowHeight::Auto { .. } => tile.window_size().h,
+            WindowHeight::Auto { .. } | WindowHeight::Preset(_) => tile.window_size().h,
             WindowHeight::Fixed(height) => height,
         };
         let current_tile_px = tile.tile_height_for_window_height(current_window_px);
@@ -3628,6 +3686,48 @@ impl<W: LayoutElement> Column<W> {
     fn reset_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
         self.data[tile_idx].height = WindowHeight::auto_1();
+        self.update_tile_sizes(animate);
+    }
+
+    fn toggle_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
+        let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
+
+        // Start by converting all heights to automatic, since only one window in the column can be
+        // non-auto-height. If the current tile is already non-auto, however, we can skip that
+        // step. Which is not only for optimization, but also preserves automatic weights in case
+        // one window is resized in such a way that other windows hit their min size, and then
+        // back.
+        if matches!(self.data[tile_idx].height, WindowHeight::Auto { .. }) {
+            self.convert_heights_to_auto();
+        }
+
+        let preset_idx = match self.data[tile_idx].height {
+            WindowHeight::Preset(idx) => (idx + 1) % self.options.preset_window_heights.len(),
+            _ => {
+                let current = self.data[tile_idx].size.h;
+                let tile = &self.tiles[tile_idx];
+                self.options
+                    .preset_window_heights
+                    .iter()
+                    .copied()
+                    .position(|preset| {
+                        let resolved =
+                            resolve_preset_size(preset, &self.options, self.working_area.size.h);
+                        let window_height = match resolved {
+                            ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
+                            ResolvedSize::Window(h) => h,
+                        };
+                        let resolved = tile.tile_height_for_window_height(
+                            window_height.round().clamp(1., 100000.),
+                        );
+
+                        // Some allowance for fractional scaling purposes.
+                        current + 1. < resolved
+                    })
+                    .unwrap_or(0)
+            }
+        };
+        self.data[tile_idx].height = WindowHeight::Preset(preset_idx);
         self.update_tile_sizes(animate);
     }
 
