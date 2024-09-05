@@ -392,9 +392,11 @@ pub struct Layout {
     #[knuffel(child, default)]
     pub border: Border,
     #[knuffel(child, unwrap(children), default)]
-    pub preset_column_widths: Vec<PresetWidth>,
+    pub preset_column_widths: Vec<PresetSize>,
     #[knuffel(child)]
-    pub default_column_width: Option<DefaultColumnWidth>,
+    pub default_column_width: Option<DefaultPresetSize>,
+    #[knuffel(child, unwrap(children), default)]
+    pub preset_window_heights: Vec<PresetSize>,
     #[knuffel(child, unwrap(argument), default)]
     pub center_focused_column: CenterFocusedColumn,
     #[knuffel(child)]
@@ -416,6 +418,7 @@ impl Default for Layout {
             always_center_single_column: false,
             gaps: FloatOrInt(16.),
             struts: Default::default(),
+            preset_window_heights: Default::default(),
         }
     }
 }
@@ -624,13 +627,13 @@ impl Default for Cursor {
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
-pub enum PresetWidth {
+pub enum PresetSize {
     Proportion(#[knuffel(argument)] f64),
     Fixed(#[knuffel(argument)] i32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DefaultColumnWidth(pub Option<PresetWidth>);
+pub struct DefaultPresetSize(pub Option<PresetSize>);
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Struts {
@@ -898,7 +901,7 @@ pub struct WindowRule {
 
     // Rules applied at initial configure.
     #[knuffel(child)]
-    pub default_column_width: Option<DefaultColumnWidth>,
+    pub default_column_width: Option<DefaultPresetSize>,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
     #[knuffel(child, unwrap(argument))]
@@ -1155,6 +1158,7 @@ pub enum Action {
     #[knuffel(skip)]
     ResetWindowHeightById(u64),
     SwitchPresetColumnWidth,
+    SwitchPresetWindowHeight,
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
@@ -1266,6 +1270,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
             niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
             niri_ipc::Action::SwitchPresetColumnWidth {} => Self::SwitchPresetColumnWidth,
+            niri_ipc::Action::SwitchPresetWindowHeight {} => Self::SwitchPresetWindowHeight,
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),
@@ -1882,7 +1887,7 @@ impl OutputName {
     }
 }
 
-impl<S> knuffel::Decode<S> for DefaultColumnWidth
+impl<S> knuffel::Decode<S> for DefaultPresetSize
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -1902,7 +1907,7 @@ where
                     "expected no more than one child",
                 ));
             }
-            PresetWidth::decode_node(child, ctx).map(Some).map(Self)
+            PresetSize::decode_node(child, ctx).map(Some).map(Self)
         } else {
             Ok(Self(None))
         }
@@ -2914,6 +2919,13 @@ mod tests {
                     fixed 1280
                 }
 
+                preset-window-heights {
+                    proportion 0.25
+                    proportion 0.5
+                    fixed 960
+                    fixed 1280
+                }
+
                 default-column-width { proportion 0.25; }
 
                 gaps 8
@@ -3104,14 +3116,20 @@ mod tests {
                         inactive_gradient: None,
                     },
                     preset_column_widths: vec![
-                        PresetWidth::Proportion(0.25),
-                        PresetWidth::Proportion(0.5),
-                        PresetWidth::Fixed(960),
-                        PresetWidth::Fixed(1280),
+                        PresetSize::Proportion(0.25),
+                        PresetSize::Proportion(0.5),
+                        PresetSize::Fixed(960),
+                        PresetSize::Fixed(1280),
                     ],
-                    default_column_width: Some(DefaultColumnWidth(Some(PresetWidth::Proportion(
+                    default_column_width: Some(DefaultPresetSize(Some(PresetSize::Proportion(
                         0.25,
                     )))),
+                    preset_window_heights: vec![
+                        PresetSize::Proportion(0.25),
+                        PresetSize::Proportion(0.5),
+                        PresetSize::Fixed(960),
+                        PresetSize::Fixed(1280),
+                    ],
                     gaps: FloatOrInt(8.),
                     struts: Struts {
                         left: FloatOrInt(1.),

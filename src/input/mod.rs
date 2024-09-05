@@ -1035,6 +1035,9 @@ impl State {
             Action::SwitchPresetColumnWidth => {
                 self.niri.layout.toggle_width();
             }
+            Action::SwitchPresetWindowHeight => {
+                self.niri.layout.toggle_window_height();
+            }
             Action::CenterColumn => {
                 self.niri.layout.center_column();
                 // FIXME: granular

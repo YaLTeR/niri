@@ -350,6 +350,8 @@ pub enum Action {
     },
     /// Switch between preset column widths.
     SwitchPresetColumnWidth {},
+    /// Switch between preset window heights.
+    SwitchPresetWindowHeight {},
     /// Toggle the maximized state of the focused column.
     MaximizeColumn {},
     /// Change the width of the focused column.
