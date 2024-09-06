@@ -3579,8 +3579,9 @@ impl<W: LayoutElement> Column<W> {
         let mut window_height = match change {
             SizeChange::SetFixed(fixed) => f64::from(fixed),
             SizeChange::SetProportion(proportion) => {
-                let tile_height =
-                    (self.working_area.size.h - self.options.gaps) * proportion - self.options.gaps;
+                let tile_height = (self.working_area.size.h - self.options.gaps)
+                    * (proportion / 100.)
+                    - self.options.gaps;
                 tile.window_height_for_tile_height(tile_height)
             }
             SizeChange::AdjustFixed(delta) => current_window_px + f64::from(delta),
