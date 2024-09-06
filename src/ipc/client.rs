@@ -3,7 +3,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
-    Transform,
+    Transform, Window,
 };
 use serde_json::json;
 
@@ -144,19 +144,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             }
 
             if let Some(window) = window {
-                println!("Focused window:");
-
-                if let Some(title) = window.title {
-                    println!("  Title: \"{title}\"");
-                } else {
-                    println!("  Title: (unset)");
-                }
-
-                if let Some(app_id) = window.app_id {
-                    println!("  App ID: \"{app_id}\"");
-                } else {
-                    println!("  App ID: (unset)");
-                }
+                print_window(&window);
             } else {
                 println!("No window is focused.");
             }
@@ -176,27 +164,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             windows.sort_unstable_by(|a, b| a.id.cmp(&b.id));
 
             for window in windows {
-                let focused = if window.is_focused { " (focused)" } else { "" };
-                println!("Window ID {}:{focused}", window.id);
-
-                if let Some(title) = window.title {
-                    println!("  Title: \"{title}\"");
-                } else {
-                    println!("  Title: (unset)");
-                }
-
-                if let Some(app_id) = window.app_id {
-                    println!("  App ID: \"{app_id}\"");
-                } else {
-                    println!("  App ID: (unset)");
-                }
-
-                if let Some(workspace_id) = window.workspace_id {
-                    println!("  Workspace ID: {workspace_id}");
-                } else {
-                    println!("  Workspace ID: (none)");
-                }
-
+                print_window(&window);
                 println!();
             }
         }
@@ -463,4 +431,27 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         println!("    {width}x{height}@{refresh:.3}{qualifier}");
     }
     Ok(())
+}
+
+fn print_window(window: &Window) {
+    let focused = if window.is_focused { " (focused)" } else { "" };
+    println!("Window ID {}:{focused}", window.id);
+
+    if let Some(title) = &window.title {
+        println!("  Title: \"{title}\"");
+    } else {
+        println!("  Title: (unset)");
+    }
+
+    if let Some(app_id) = &window.app_id {
+        println!("  App ID: \"{app_id}\"");
+    } else {
+        println!("  App ID: (unset)");
+    }
+
+    if let Some(workspace_id) = window.workspace_id {
+        println!("  Workspace ID: {workspace_id}");
+    } else {
+        println!("  Workspace ID: (none)");
+    }
 }
