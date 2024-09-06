@@ -121,7 +121,7 @@ pub enum Action {
         skip_confirmation: bool,
     },
     /// Power off all monitors via DPMS.
-    PowerOffMonitors,
+    PowerOffMonitors {},
     /// Spawn a command.
     Spawn {
         /// Command to spawn.
@@ -135,9 +135,9 @@ pub enum Action {
         delay_ms: Option<u16>,
     },
     /// Open the screenshot UI.
-    Screenshot,
+    Screenshot {},
     /// Screenshot the focused screen.
-    ScreenshotScreen,
+    ScreenshotScreen {},
     /// Screenshot a window.
     #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
     ScreenshotWindow {
@@ -175,75 +175,75 @@ pub enum Action {
         id: u64,
     },
     /// Focus the column to the left.
-    FocusColumnLeft,
+    FocusColumnLeft {},
     /// Focus the column to the right.
-    FocusColumnRight,
+    FocusColumnRight {},
     /// Focus the first column.
-    FocusColumnFirst,
+    FocusColumnFirst {},
     /// Focus the last column.
-    FocusColumnLast,
+    FocusColumnLast {},
     /// Focus the next column to the right, looping if at end.
-    FocusColumnRightOrFirst,
+    FocusColumnRightOrFirst {},
     /// Focus the next column to the left, looping if at start.
-    FocusColumnLeftOrLast,
+    FocusColumnLeftOrLast {},
     /// Focus the window or the monitor above.
-    FocusWindowOrMonitorUp,
+    FocusWindowOrMonitorUp {},
     /// Focus the window or the monitor below.
-    FocusWindowOrMonitorDown,
+    FocusWindowOrMonitorDown {},
     /// Focus the column or the monitor to the left.
-    FocusColumnOrMonitorLeft,
+    FocusColumnOrMonitorLeft {},
     /// Focus the column or the monitor to the right.
-    FocusColumnOrMonitorRight,
+    FocusColumnOrMonitorRight {},
     /// Focus the window below.
-    FocusWindowDown,
+    FocusWindowDown {},
     /// Focus the window above.
-    FocusWindowUp,
+    FocusWindowUp {},
     /// Focus the window below or the column to the left.
-    FocusWindowDownOrColumnLeft,
+    FocusWindowDownOrColumnLeft {},
     /// Focus the window below or the column to the right.
-    FocusWindowDownOrColumnRight,
+    FocusWindowDownOrColumnRight {},
     /// Focus the window above or the column to the left.
-    FocusWindowUpOrColumnLeft,
+    FocusWindowUpOrColumnLeft {},
     /// Focus the window above or the column to the right.
-    FocusWindowUpOrColumnRight,
+    FocusWindowUpOrColumnRight {},
     /// Focus the window or the workspace above.
-    FocusWindowOrWorkspaceDown,
+    FocusWindowOrWorkspaceDown {},
     /// Focus the window or the workspace above.
-    FocusWindowOrWorkspaceUp,
+    FocusWindowOrWorkspaceUp {},
     /// Move the focused column to the left.
-    MoveColumnLeft,
+    MoveColumnLeft {},
     /// Move the focused column to the right.
-    MoveColumnRight,
+    MoveColumnRight {},
     /// Move the focused column to the start of the workspace.
-    MoveColumnToFirst,
+    MoveColumnToFirst {},
     /// Move the focused column to the end of the workspace.
-    MoveColumnToLast,
+    MoveColumnToLast {},
     /// Move the focused column to the left or to the monitor to the left.
-    MoveColumnLeftOrToMonitorLeft,
+    MoveColumnLeftOrToMonitorLeft {},
     /// Move the focused column to the right or to the monitor to the right.
-    MoveColumnRightOrToMonitorRight,
+    MoveColumnRightOrToMonitorRight {},
     /// Move the focused window down in a column.
-    MoveWindowDown,
+    MoveWindowDown {},
     /// Move the focused window up in a column.
-    MoveWindowUp,
+    MoveWindowUp {},
     /// Move the focused window down in a column or to the workspace below.
-    MoveWindowDownOrToWorkspaceDown,
+    MoveWindowDownOrToWorkspaceDown {},
     /// Move the focused window up in a column or to the workspace above.
-    MoveWindowUpOrToWorkspaceUp,
+    MoveWindowUpOrToWorkspaceUp {},
     /// Consume or expel the focused window left.
-    ConsumeOrExpelWindowLeft,
+    ConsumeOrExpelWindowLeft {},
     /// Consume or expel the focused window right.
-    ConsumeOrExpelWindowRight,
+    ConsumeOrExpelWindowRight {},
     /// Consume the window to the right into the focused column.
-    ConsumeWindowIntoColumn,
+    ConsumeWindowIntoColumn {},
     /// Expel the focused window from the column.
-    ExpelWindowFromColumn,
+    ExpelWindowFromColumn {},
     /// Center the focused column on the screen.
-    CenterColumn,
+    CenterColumn {},
     /// Focus the workspace below.
-    FocusWorkspaceDown,
+    FocusWorkspaceDown {},
     /// Focus the workspace above.
-    FocusWorkspaceUp,
+    FocusWorkspaceUp {},
     /// Focus a workspace by reference (index or name).
     FocusWorkspace {
         /// Reference (index or name) of the workspace to focus.
@@ -251,11 +251,11 @@ pub enum Action {
         reference: WorkspaceReferenceArg,
     },
     /// Focus the previous workspace.
-    FocusWorkspacePrevious,
+    FocusWorkspacePrevious {},
     /// Move the focused window to the workspace below.
-    MoveWindowToWorkspaceDown,
+    MoveWindowToWorkspaceDown {},
     /// Move the focused window to the workspace above.
-    MoveWindowToWorkspaceUp,
+    MoveWindowToWorkspaceUp {},
     /// Move a window to a workspace.
     #[cfg_attr(
         feature = "clap",
@@ -273,9 +273,9 @@ pub enum Action {
         reference: WorkspaceReferenceArg,
     },
     /// Move the focused column to the workspace below.
-    MoveColumnToWorkspaceDown,
+    MoveColumnToWorkspaceDown {},
     /// Move the focused column to the workspace above.
-    MoveColumnToWorkspaceUp,
+    MoveColumnToWorkspaceUp {},
     /// Move the focused column to a workspace by reference (index or name).
     MoveColumnToWorkspace {
         /// Reference (index or name) of the workspace to move the column to.
@@ -283,33 +283,33 @@ pub enum Action {
         reference: WorkspaceReferenceArg,
     },
     /// Move the focused workspace down.
-    MoveWorkspaceDown,
+    MoveWorkspaceDown {},
     /// Move the focused workspace up.
-    MoveWorkspaceUp,
+    MoveWorkspaceUp {},
     /// Focus the monitor to the left.
-    FocusMonitorLeft,
+    FocusMonitorLeft {},
     /// Focus the monitor to the right.
-    FocusMonitorRight,
+    FocusMonitorRight {},
     /// Focus the monitor below.
-    FocusMonitorDown,
+    FocusMonitorDown {},
     /// Focus the monitor above.
-    FocusMonitorUp,
+    FocusMonitorUp {},
     /// Move the focused window to the monitor to the left.
-    MoveWindowToMonitorLeft,
+    MoveWindowToMonitorLeft {},
     /// Move the focused window to the monitor to the right.
-    MoveWindowToMonitorRight,
+    MoveWindowToMonitorRight {},
     /// Move the focused window to the monitor below.
-    MoveWindowToMonitorDown,
+    MoveWindowToMonitorDown {},
     /// Move the focused window to the monitor above.
-    MoveWindowToMonitorUp,
+    MoveWindowToMonitorUp {},
     /// Move the focused column to the monitor to the left.
-    MoveColumnToMonitorLeft,
+    MoveColumnToMonitorLeft {},
     /// Move the focused column to the monitor to the right.
-    MoveColumnToMonitorRight,
+    MoveColumnToMonitorRight {},
     /// Move the focused column to the monitor below.
-    MoveColumnToMonitorDown,
+    MoveColumnToMonitorDown {},
     /// Move the focused column to the monitor above.
-    MoveColumnToMonitorUp,
+    MoveColumnToMonitorUp {},
     /// Change the height of a window.
     #[cfg_attr(
         feature = "clap",
@@ -339,9 +339,9 @@ pub enum Action {
         id: Option<u64>,
     },
     /// Switch between preset column widths.
-    SwitchPresetColumnWidth,
+    SwitchPresetColumnWidth {},
     /// Toggle the maximized state of the focused column.
-    MaximizeColumn,
+    MaximizeColumn {},
     /// Change the width of the focused column.
     SetColumnWidth {
         /// How to change the width.
@@ -355,21 +355,21 @@ pub enum Action {
         layout: LayoutSwitchTarget,
     },
     /// Show the hotkey overlay.
-    ShowHotkeyOverlay,
+    ShowHotkeyOverlay {},
     /// Move the focused workspace to the monitor to the left.
-    MoveWorkspaceToMonitorLeft,
+    MoveWorkspaceToMonitorLeft {},
     /// Move the focused workspace to the monitor to the right.
-    MoveWorkspaceToMonitorRight,
+    MoveWorkspaceToMonitorRight {},
     /// Move the focused workspace to the monitor below.
-    MoveWorkspaceToMonitorDown,
+    MoveWorkspaceToMonitorDown {},
     /// Move the focused workspace to the monitor above.
-    MoveWorkspaceToMonitorUp,
+    MoveWorkspaceToMonitorUp {},
     /// Toggle a debug tint on windows.
-    ToggleDebugTint,
+    ToggleDebugTint {},
     /// Toggle visualization of render element opaque regions.
-    DebugToggleOpaqueRegions,
+    DebugToggleOpaqueRegions {},
     /// Toggle visualization of output damage.
-    DebugToggleDamage,
+    DebugToggleDamage {},
 }
 
 /// Change in window or column size.
