@@ -119,10 +119,8 @@ impl XdgShellHandler for State {
                     self.niri.layout.toggle_full_width();
                 }
                 if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
-                    // FIXME: don't activate once we can pass specific windows to actions.
-                    self.niri.layout.activate_window(&window);
                     self.niri.layer_shell_on_demand_focus = None;
-                    self.niri.layout.reset_window_height();
+                    self.niri.layout.reset_window_height(Some(&window));
                 }
                 // FIXME: granular.
                 self.niri.queue_redraw_all();

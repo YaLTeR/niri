@@ -2447,15 +2447,8 @@ impl Niri {
             }
         };
 
-        // FIXME: when we do fixes for no connected outputs, this will need fixing too.
-        let active_workspace = self.layout.active_workspace()?;
-
-        if target_workspace.current_output() == active_workspace.current_output() {
-            return Some((None, target_workspace_index));
-        }
-        let target_output = target_workspace.current_output()?;
-
-        Some((Some(target_output.clone()), target_workspace_index))
+        let target_output = target_workspace.current_output();
+        Some((target_output.cloned(), target_workspace_index))
     }
 
     pub fn output_down(&self) -> Option<Output> {

@@ -138,12 +138,42 @@ pub enum Action {
     Screenshot,
     /// Screenshot the focused screen.
     ScreenshotScreen,
-    /// Screenshot the focused window.
-    ScreenshotWindow,
-    /// Close the focused window.
-    CloseWindow,
-    /// Toggle fullscreen on the focused window.
-    FullscreenWindow,
+    /// Screenshot a window.
+    #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
+    ScreenshotWindow {
+        /// Id of the window to screenshot.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Close a window.
+    #[cfg_attr(feature = "clap", clap(about = "Close the focused window"))]
+    CloseWindow {
+        /// Id of the window to close.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Toggle fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Toggle fullscreen on the focused window")
+    )]
+    FullscreenWindow {
+        /// Id of the window to toggle fullscreen of.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Focus a window by id.
+    FocusWindow {
+        /// Id of the window to focus.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
     /// Focus the column to the left.
     FocusColumnLeft,
     /// Focus the column to the right.
@@ -226,8 +256,18 @@ pub enum Action {
     MoveWindowToWorkspaceDown,
     /// Move the focused window to the workspace above.
     MoveWindowToWorkspaceUp,
-    /// Move the focused window to a workspace by reference (index or name).
+    /// Move a window to a workspace.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move the focused window to a workspace by reference (index or name)")
+    )]
     MoveWindowToWorkspace {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        window_id: Option<u64>,
+
         /// Reference (index or name) of the workspace to move the window to.
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
@@ -270,14 +310,34 @@ pub enum Action {
     MoveColumnToMonitorDown,
     /// Move the focused column to the monitor above.
     MoveColumnToMonitorUp,
-    /// Change the height of the focused window.
+    /// Change the height of a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Change the height of the focused window")
+    )]
     SetWindowHeight {
+        /// Id of the window whose height to set.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
         /// How to change the height.
         #[cfg_attr(feature = "clap", arg())]
         change: SizeChange,
     },
-    /// Reset the height of the focused window back to automatic.
-    ResetWindowHeight,
+    /// Reset the height of a window back to automatic.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Reset the height of the focused window back to automatic")
+    )]
+    ResetWindowHeight {
+        /// Id of the window whose height to reset.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Switch between preset column widths.
     SwitchPresetColumnWidth,
     /// Toggle the maximized state of the focused column.

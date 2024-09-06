@@ -1073,8 +1073,16 @@ pub enum Action {
     Screenshot,
     ScreenshotScreen,
     ScreenshotWindow,
+    #[knuffel(skip)]
+    ScreenshotWindowById(u64),
     CloseWindow,
+    #[knuffel(skip)]
+    CloseWindowById(u64),
     FullscreenWindow,
+    #[knuffel(skip)]
+    FullscreenWindowById(u64),
+    #[knuffel(skip)]
+    FocusWindow(u64),
     FocusColumnLeft,
     FocusColumnRight,
     FocusColumnFirst,
@@ -1115,6 +1123,11 @@ pub enum Action {
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
     MoveWindowToWorkspace(#[knuffel(argument)] WorkspaceReference),
+    #[knuffel(skip)]
+    MoveWindowToWorkspaceById {
+        window_id: u64,
+        reference: WorkspaceReference,
+    },
     MoveColumnToWorkspaceDown,
     MoveColumnToWorkspaceUp,
     MoveColumnToWorkspace(#[knuffel(argument)] WorkspaceReference),
@@ -1133,7 +1146,14 @@ pub enum Action {
     MoveColumnToMonitorDown,
     MoveColumnToMonitorUp,
     SetWindowHeight(#[knuffel(argument, str)] SizeChange),
+    #[knuffel(skip)]
+    SetWindowHeightById {
+        id: u64,
+        change: SizeChange,
+    },
     ResetWindowHeight,
+    #[knuffel(skip)]
+    ResetWindowHeightById(u64),
     SwitchPresetColumnWidth,
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
@@ -1154,9 +1174,13 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
             niri_ipc::Action::Screenshot => Self::Screenshot,
             niri_ipc::Action::ScreenshotScreen => Self::ScreenshotScreen,
-            niri_ipc::Action::ScreenshotWindow => Self::ScreenshotWindow,
-            niri_ipc::Action::CloseWindow => Self::CloseWindow,
-            niri_ipc::Action::FullscreenWindow => Self::FullscreenWindow,
+            niri_ipc::Action::ScreenshotWindow { id: None } => Self::ScreenshotWindow,
+            niri_ipc::Action::ScreenshotWindow { id: Some(id) } => Self::ScreenshotWindowById(id),
+            niri_ipc::Action::CloseWindow { id: None } => Self::CloseWindow,
+            niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
+            niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
+            niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
+            niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
             niri_ipc::Action::FocusColumnLeft => Self::FocusColumnLeft,
             niri_ipc::Action::FocusColumnRight => Self::FocusColumnRight,
             niri_ipc::Action::FocusColumnFirst => Self::FocusColumnFirst,
@@ -1202,9 +1226,17 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWorkspacePrevious => Self::FocusWorkspacePrevious,
             niri_ipc::Action::MoveWindowToWorkspaceDown => Self::MoveWindowToWorkspaceDown,
             niri_ipc::Action::MoveWindowToWorkspaceUp => Self::MoveWindowToWorkspaceUp,
-            niri_ipc::Action::MoveWindowToWorkspace { reference } => {
-                Self::MoveWindowToWorkspace(WorkspaceReference::from(reference))
-            }
+            niri_ipc::Action::MoveWindowToWorkspace {
+                window_id: None,
+                reference,
+            } => Self::MoveWindowToWorkspace(WorkspaceReference::from(reference)),
+            niri_ipc::Action::MoveWindowToWorkspace {
+                window_id: Some(window_id),
+                reference,
+            } => Self::MoveWindowToWorkspaceById {
+                window_id,
+                reference: WorkspaceReference::from(reference),
+            },
             niri_ipc::Action::MoveColumnToWorkspaceDown => Self::MoveColumnToWorkspaceDown,
             niri_ipc::Action::MoveColumnToWorkspaceUp => Self::MoveColumnToWorkspaceUp,
             niri_ipc::Action::MoveColumnToWorkspace { reference } => {
@@ -1224,8 +1256,13 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnToMonitorRight => Self::MoveColumnToMonitorRight,
             niri_ipc::Action::MoveColumnToMonitorDown => Self::MoveColumnToMonitorDown,
             niri_ipc::Action::MoveColumnToMonitorUp => Self::MoveColumnToMonitorUp,
-            niri_ipc::Action::SetWindowHeight { change } => Self::SetWindowHeight(change),
-            niri_ipc::Action::ResetWindowHeight => Self::ResetWindowHeight,
+            niri_ipc::Action::SetWindowHeight { id: None, change } => Self::SetWindowHeight(change),
+            niri_ipc::Action::SetWindowHeight {
+                id: Some(id),
+                change,
+            } => Self::SetWindowHeightById { id, change },
+            niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
+            niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
             niri_ipc::Action::SwitchPresetColumnWidth => Self::SwitchPresetColumnWidth,
             niri_ipc::Action::MaximizeColumn => Self::MaximizeColumn,
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),

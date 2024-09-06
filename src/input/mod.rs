@@ -525,8 +525,26 @@ impl State {
                     });
                 }
             }
+            Action::ScreenshotWindowById(id) => {
+                let mut windows = self.niri.layout.windows();
+                let window = windows.find(|(_, m)| m.id().get() == id);
+                if let Some((Some(monitor), mapped)) = window {
+                    let output = &monitor.output;
+                    self.backend.with_primary_renderer(|renderer| {
+                        if let Err(err) = self.niri.screenshot_window(renderer, output, mapped) {
+                            warn!("error taking screenshot: {err:?}");
+                        }
+                    });
+                }
+            }
             Action::CloseWindow => {
                 if let Some(mapped) = self.niri.layout.focus() {
+                    mapped.toplevel().send_close();
+                }
+            }
+            Action::CloseWindowById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                if let Some((_, mapped)) = window {
                     mapped.toplevel().send_close();
                 }
             }
@@ -534,6 +552,37 @@ impl State {
                 let focus = self.niri.layout.focus().map(|m| m.window.clone());
                 if let Some(window) = focus {
                     self.niri.layout.toggle_fullscreen(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::FullscreenWindowById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_fullscreen(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::FocusWindow(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    let active_output = self.niri.layout.active_output().cloned();
+
+                    self.niri.layout.activate_window(&window);
+
+                    let new_active = self.niri.layout.active_output().cloned();
+                    #[allow(clippy::collapsible_if)]
+                    if new_active != active_output {
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&new_active.unwrap());
+                        }
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }
@@ -804,20 +853,75 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowToWorkspace(reference) => {
-                if let Some((output, index)) = self.niri.find_output_and_workspace_index(reference)
+                if let Some((mut output, index)) =
+                    self.niri.find_output_and_workspace_index(reference)
                 {
+                    // The source output is always the active output, so if the target output is
+                    // also the active output, we don't need to use move_to_output().
+                    if let Some(active) = self.niri.layout.active_output() {
+                        if output.as_ref() == Some(active) {
+                            output = None;
+                        }
+                    }
+
                     if let Some(output) = output {
-                        self.niri.layout.move_to_workspace_on_output(&output, index);
+                        self.niri.layout.move_to_output(None, &output, Some(index));
+
                         if !self.maybe_warp_cursor_to_focus_centered() {
                             self.move_cursor_to_output(&output);
                         }
                     } else {
-                        self.niri.layout.move_to_workspace(index);
+                        self.niri.layout.move_to_workspace(None, index);
                         self.maybe_warp_cursor_to_focus();
                     }
 
                     // FIXME: granular
                     self.niri.queue_redraw_all();
+                }
+            }
+            Action::MoveWindowToWorkspaceById {
+                window_id: id,
+                reference,
+            } => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    if let Some((output, index)) =
+                        self.niri.find_output_and_workspace_index(reference)
+                    {
+                        let target_was_active = self
+                            .niri
+                            .layout
+                            .active_output()
+                            .map_or(false, |active| output.as_ref() == Some(active));
+
+                        if let Some(output) = output {
+                            self.niri
+                                .layout
+                                .move_to_output(Some(&window), &output, Some(index));
+
+                            // If the active output changed (window was moved and focused).
+                            #[allow(clippy::collapsible_if)]
+                            if !target_was_active
+                                && self.niri.layout.active_output() == Some(&output)
+                            {
+                                if !self.maybe_warp_cursor_to_focus_centered() {
+                                    self.move_cursor_to_output(&output);
+                                }
+                            }
+                        } else {
+                            self.niri.layout.move_to_workspace(Some(&window), index);
+
+                            // If we focused the target window.
+                            let new_active_win = self.niri.layout.active_window();
+                            if new_active_win.map_or(false, |(win, _)| win.window == window) {
+                                self.maybe_warp_cursor_to_focus();
+                            }
+                        }
+
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
                 }
             }
             Action::MoveColumnToWorkspaceDown => {
@@ -833,8 +937,15 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnToWorkspace(reference) => {
-                if let Some((output, index)) = self.niri.find_output_and_workspace_index(reference)
+                if let Some((mut output, index)) =
+                    self.niri.find_output_and_workspace_index(reference)
                 {
+                    if let Some(active) = self.niri.layout.active_output() {
+                        if output.as_ref() == Some(active) {
+                            output = None;
+                        }
+                    }
+
                     if let Some(output) = output {
                         self.niri
                             .layout
@@ -864,8 +975,15 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::FocusWorkspace(reference) => {
-                if let Some((output, index)) = self.niri.find_output_and_workspace_index(reference)
+                if let Some((mut output, index)) =
+                    self.niri.find_output_and_workspace_index(reference)
                 {
+                    if let Some(active) = self.niri.layout.active_output() {
+                        if output.as_ref() == Some(active) {
+                            output = None;
+                        }
+                    }
+
                     if let Some(output) = output {
                         self.niri.layout.focus_output(&output);
                         self.niri.layout.switch_workspace(index);
@@ -959,7 +1077,7 @@ impl State {
             }
             Action::MoveWindowToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
-                    self.niri.layout.move_to_output(&output);
+                    self.niri.layout.move_to_output(None, &output, None);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -968,7 +1086,7 @@ impl State {
             }
             Action::MoveWindowToMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
-                    self.niri.layout.move_to_output(&output);
+                    self.niri.layout.move_to_output(None, &output, None);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -977,7 +1095,7 @@ impl State {
             }
             Action::MoveWindowToMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
-                    self.niri.layout.move_to_output(&output);
+                    self.niri.layout.move_to_output(None, &output, None);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -986,7 +1104,7 @@ impl State {
             }
             Action::MoveWindowToMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
-                    self.niri.layout.move_to_output(&output);
+                    self.niri.layout.move_to_output(None, &output, None);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -1033,10 +1151,24 @@ impl State {
                 self.niri.layout.set_column_width(change);
             }
             Action::SetWindowHeight(change) => {
-                self.niri.layout.set_window_height(change);
+                self.niri.layout.set_window_height(None, change);
+            }
+            Action::SetWindowHeightById { id, change } => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.set_window_height(Some(&window), change);
+                }
             }
             Action::ResetWindowHeight => {
-                self.niri.layout.reset_window_height();
+                self.niri.layout.reset_window_height(None);
+            }
+            Action::ResetWindowHeightById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.reset_window_height(Some(&window));
+                }
             }
             Action::ShowHotkeyOverlay => {
                 if self.niri.hotkey_overlay.show() {
@@ -1366,10 +1498,8 @@ impl State {
                                         self.niri.layout.toggle_full_width();
                                     }
                                     if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
-                                        // FIXME: don't activate once we can pass specific windows
-                                        // to actions.
                                         self.niri.layout.activate_window(&window);
-                                        self.niri.layout.reset_window_height();
+                                        self.niri.layout.reset_window_height(Some(&window));
                                     }
                                     // FIXME: granular.
                                     self.niri.queue_redraw_all();

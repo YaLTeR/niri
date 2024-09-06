@@ -133,6 +133,14 @@ impl<W: LayoutElement> Monitor<W> {
         &mut self.workspaces[self.active_workspace_idx]
     }
 
+    pub fn windows(&self) -> impl Iterator<Item = &W> {
+        self.workspaces.iter().flat_map(|ws| ws.windows())
+    }
+
+    pub fn has_window(&self, window: &W::Id) -> bool {
+        self.windows().any(|win| win.id() == window)
+    }
+
     fn activate_workspace(&mut self, idx: usize) {
         if self.active_workspace_idx == idx {
             return;
@@ -489,8 +497,32 @@ impl<W: LayoutElement> Monitor<W> {
         self.add_window(new_idx, window, true, width, is_full_width);
     }
 
-    pub fn move_to_workspace(&mut self, idx: usize) {
-        let source_workspace_idx = self.active_workspace_idx;
+    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
+        let (source_workspace_idx, col_idx, tile_idx) = if let Some(window) = window {
+            self.workspaces
+                .iter()
+                .enumerate()
+                .find_map(|(ws_idx, ws)| {
+                    ws.columns.iter().enumerate().find_map(|(col_idx, col)| {
+                        col.tiles
+                            .iter()
+                            .position(|tile| tile.window().id() == window)
+                            .map(|tile_idx| (ws_idx, col_idx, tile_idx))
+                    })
+                })
+                .unwrap()
+        } else {
+            let ws_idx = self.active_workspace_idx;
+
+            let ws = &self.workspaces[ws_idx];
+            if ws.columns.is_empty() {
+                return;
+            }
+
+            let col_idx = ws.active_column_idx;
+            let tile_idx = ws.columns[col_idx].active_tile_idx;
+            (ws_idx, col_idx, tile_idx)
+        };
 
         let new_idx = min(idx, self.workspaces.len() - 1);
         if new_idx == source_workspace_idx {
@@ -498,28 +530,22 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
-        if workspace.columns.is_empty() {
-            return;
-        }
-
-        let column = &workspace.columns[workspace.active_column_idx];
+        let column = &workspace.columns[col_idx];
         let width = column.width;
         let is_full_width = column.is_full_width;
+        let activate = source_workspace_idx == self.active_workspace_idx
+            && col_idx == workspace.active_column_idx
+            && tile_idx == column.active_tile_idx;
+
         let window = workspace
-            .remove_tile_by_idx(
-                workspace.active_column_idx,
-                column.active_tile_idx,
-                Transaction::new(),
-                None,
-            )
+            .remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None)
             .into_window();
 
-        self.add_window(new_idx, window, true, width, is_full_width);
+        self.add_window(new_idx, window, activate, width, is_full_width);
 
-        // Don't animate this action.
-        self.workspace_switch = None;
-
-        self.clean_up_workspaces();
+        if self.workspace_switch.is_none() {
+            self.clean_up_workspaces();
+        }
     }
 
     pub fn move_column_to_workspace_up(&mut self) {
@@ -571,11 +597,6 @@ impl<W: LayoutElement> Monitor<W> {
 
         let column = workspace.remove_column_by_idx(workspace.active_column_idx);
         self.add_column(new_idx, column, true);
-
-        // Don't animate this action.
-        self.workspace_switch = None;
-
-        self.clean_up_workspaces();
     }
 
     pub fn switch_workspace_up(&mut self) {
@@ -725,14 +746,6 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn set_column_width(&mut self, change: SizeChange) {
         self.active_workspace().set_column_width(change);
-    }
-
-    pub fn set_window_height(&mut self, change: SizeChange) {
-        self.active_workspace().set_window_height(change);
-    }
-
-    pub fn reset_window_height(&mut self) {
-        self.active_workspace().reset_window_height();
     }
 
     pub fn move_workspace_down(&mut self) {

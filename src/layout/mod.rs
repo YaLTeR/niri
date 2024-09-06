@@ -1092,6 +1092,20 @@ impl<W: LayoutElement> Layout<W> {
         Some(&mon.workspaces[mon.active_workspace_idx])
     }
 
+    pub fn active_workspace_mut(&mut self) -> Option<&mut Workspace<W>> {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return None;
+        };
+
+        let mon = &mut monitors[*active_monitor_idx];
+        Some(&mut mon.workspaces[mon.active_workspace_idx])
+    }
+
     pub fn active_window(&self) -> Option<(&W, &Output)> {
         let MonitorSet::Normal {
             monitors,
@@ -1502,17 +1516,11 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace_down();
     }
 
-    pub fn move_to_workspace(&mut self, idx: usize) {
+    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace(idx);
-    }
-
-    pub fn move_to_workspace_on_output(&mut self, output: &Output, idx: usize) {
-        self.move_to_output(output);
-        self.focus_output(output);
-        self.move_to_workspace(idx);
+        monitor.move_to_workspace(window, idx);
     }
 
     pub fn move_column_to_workspace_up(&mut self) {
@@ -1537,7 +1545,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn move_column_to_workspace_on_output(&mut self, output: &Output, idx: usize) {
-        self.move_to_output(output);
+        self.move_column_to_output(output);
         self.focus_output(output);
         self.move_column_to_workspace(idx);
     }
@@ -1943,18 +1951,38 @@ impl<W: LayoutElement> Layout<W> {
         monitor.set_column_width(change);
     }
 
-    pub fn set_window_height(&mut self, change: SizeChange) {
-        let Some(monitor) = self.active_monitor() else {
+    pub fn set_window_height(&mut self, window: Option<&W::Id>, change: SizeChange) {
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
             return;
         };
-        monitor.set_window_height(change);
+        workspace.set_window_height(window, change);
     }
 
-    pub fn reset_window_height(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+    pub fn reset_window_height(&mut self, window: Option<&W::Id>) {
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
             return;
         };
-        monitor.reset_window_height();
+        workspace.reset_window_height(window);
     }
 
     pub fn focus_output(&mut self, output: &Output) {
@@ -1973,7 +2001,12 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn move_to_output(&mut self, output: &Output) {
+    pub fn move_to_output(
+        &mut self,
+        window: Option<&W::Id>,
+        output: &Output,
+        target_ws_idx: Option<usize>,
+    ) {
         if let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1985,25 +2018,71 @@ impl<W: LayoutElement> Layout<W> {
                 .position(|mon| &mon.output == output)
                 .unwrap();
 
-            let current = &mut monitors[*active_monitor_idx];
-            let ws = current.active_workspace();
-            if !ws.has_windows() {
+            let (mon_idx, ws_idx, col_idx, tile_idx) = if let Some(window) = window {
+                monitors
+                    .iter()
+                    .enumerate()
+                    .find_map(|(mon_idx, mon)| {
+                        mon.workspaces.iter().enumerate().find_map(|(ws_idx, ws)| {
+                            ws.columns.iter().enumerate().find_map(|(col_idx, col)| {
+                                col.tiles
+                                    .iter()
+                                    .position(|tile| tile.window().id() == window)
+                                    .map(|tile_idx| (mon_idx, ws_idx, col_idx, tile_idx))
+                            })
+                        })
+                    })
+                    .unwrap()
+            } else {
+                let mon_idx = *active_monitor_idx;
+                let mon = &monitors[mon_idx];
+                let ws_idx = mon.active_workspace_idx;
+                let ws = &mon.workspaces[ws_idx];
+
+                if ws.columns.is_empty() {
+                    return;
+                }
+
+                let col_idx = ws.active_column_idx;
+                let tile_idx = ws.columns[col_idx].active_tile_idx;
+                (mon_idx, ws_idx, col_idx, tile_idx)
+            };
+
+            let workspace_idx = target_ws_idx.unwrap_or(monitors[new_idx].active_workspace_idx);
+            if mon_idx == new_idx && ws_idx == workspace_idx {
                 return;
             }
-            let column = &ws.columns[ws.active_column_idx];
+
+            let mon = &mut monitors[mon_idx];
+            let ws = &mut mon.workspaces[ws_idx];
+            let column = &ws.columns[col_idx];
             let width = column.width;
             let is_full_width = column.is_full_width;
+            let activate = mon_idx == *active_monitor_idx
+                && ws_idx == mon.active_workspace_idx
+                && col_idx == ws.active_column_idx
+                && tile_idx == column.active_tile_idx;
+
             let window = ws
-                .remove_tile_by_idx(
-                    ws.active_column_idx,
-                    column.active_tile_idx,
-                    Transaction::new(),
-                    None,
-                )
+                .remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None)
                 .into_window();
 
-            let workspace_idx = monitors[new_idx].active_workspace_idx;
-            self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
+            self.add_window_by_idx(
+                new_idx,
+                workspace_idx,
+                window,
+                activate,
+                width,
+                is_full_width,
+            );
+
+            let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+                unreachable!()
+            };
+            let mon = &mut monitors[mon_idx];
+            if mon.workspace_switch.is_none() {
+                monitors[mon_idx].clean_up_workspaces();
+            }
         }
     }
 
@@ -2543,6 +2622,41 @@ impl<W: LayoutElement> Layout<W> {
         let iter_no_outputs = iter_no_outputs.into_iter().flatten();
         iter_normal.chain(iter_no_outputs)
     }
+
+    pub fn workspaces_mut(&mut self) -> impl Iterator<Item = &mut Workspace<W>> + '_ {
+        let iter_normal;
+        let iter_no_outputs;
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                let it = monitors
+                    .iter_mut()
+                    .flat_map(|mon| mon.workspaces.iter_mut());
+
+                iter_normal = Some(it);
+                iter_no_outputs = None;
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                let it = workspaces.iter_mut();
+
+                iter_normal = None;
+                iter_no_outputs = Some(it);
+            }
+        }
+
+        let iter_normal = iter_normal.into_iter().flatten();
+        let iter_no_outputs = iter_no_outputs.into_iter().flatten();
+        iter_normal.chain(iter_no_outputs)
+    }
+
+    pub fn windows(&self) -> impl Iterator<Item = (Option<&Monitor<W>>, &W)> {
+        self.workspaces()
+            .flat_map(|(mon, _, ws)| ws.windows().map(move |win| (mon, win)))
+    }
+
+    pub fn has_window(&self, window: &W::Id) -> bool {
+        self.windows().any(|(_, win)| win.id() == window)
+    }
 }
 
 impl<W: LayoutElement> Default for MonitorSet<W> {
@@ -2892,19 +3006,39 @@ mod tests {
         FocusWorkspacePrevious,
         MoveWindowToWorkspaceDown,
         MoveWindowToWorkspaceUp,
-        MoveWindowToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
+        MoveWindowToWorkspace {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            window_id: Option<usize>,
+            #[proptest(strategy = "0..=4usize")]
+            workspace_idx: usize,
+        },
         MoveColumnToWorkspaceDown,
         MoveColumnToWorkspaceUp,
         MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
         MoveWorkspaceDown,
         MoveWorkspaceUp,
-        MoveWindowToOutput(#[proptest(strategy = "1..=5u8")] u8),
+        MoveWindowToOutput {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            window_id: Option<usize>,
+            #[proptest(strategy = "1..=5u8")]
+            output_id: u8,
+            #[proptest(strategy = "proptest::option::of(0..=4usize)")]
+            target_ws_idx: Option<usize>,
+        },
         MoveColumnToOutput(#[proptest(strategy = "1..=5u8")] u8),
         SwitchPresetColumnWidth,
         MaximizeColumn,
         SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
-        SetWindowHeight(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
-        ResetWindowHeight,
+        SetWindowHeight {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+            #[proptest(strategy = "arbitrary_size_change()")]
+            change: SizeChange,
+        },
+        ResetWindowHeight {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
         MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
         ViewOffsetGestureBegin {
@@ -3279,17 +3413,34 @@ mod tests {
                 Op::FocusWorkspacePrevious => layout.switch_workspace_previous(),
                 Op::MoveWindowToWorkspaceDown => layout.move_to_workspace_down(),
                 Op::MoveWindowToWorkspaceUp => layout.move_to_workspace_up(),
-                Op::MoveWindowToWorkspace(idx) => layout.move_to_workspace(idx),
+                Op::MoveWindowToWorkspace {
+                    window_id,
+                    workspace_idx,
+                } => {
+                    let window_id = window_id.filter(|id| {
+                        layout
+                            .active_monitor()
+                            .map_or(false, |mon| mon.has_window(id))
+                    });
+                    layout.move_to_workspace(window_id.as_ref(), workspace_idx);
+                }
                 Op::MoveColumnToWorkspaceDown => layout.move_column_to_workspace_down(),
                 Op::MoveColumnToWorkspaceUp => layout.move_column_to_workspace_up(),
                 Op::MoveColumnToWorkspace(idx) => layout.move_column_to_workspace(idx),
-                Op::MoveWindowToOutput(id) => {
+                Op::MoveWindowToOutput {
+                    window_id,
+                    output_id: id,
+                    target_ws_idx,
+                } => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                         return;
                     };
+                    let mon = layout.monitor_for_output(&output).unwrap();
 
-                    layout.move_to_output(&output);
+                    let window_id = window_id.filter(|id| layout.has_window(id));
+                    let target_ws_idx = target_ws_idx.filter(|idx| mon.workspaces.len() > *idx);
+                    layout.move_to_output(window_id.as_ref(), &output, target_ws_idx);
                 }
                 Op::MoveColumnToOutput(id) => {
                     let name = format!("output{id}");
@@ -3304,8 +3455,14 @@ mod tests {
                 Op::SwitchPresetColumnWidth => layout.toggle_width(),
                 Op::MaximizeColumn => layout.toggle_full_width(),
                 Op::SetColumnWidth(change) => layout.set_column_width(change),
-                Op::SetWindowHeight(change) => layout.set_window_height(change),
-                Op::ResetWindowHeight => layout.reset_window_height(),
+                Op::SetWindowHeight { id, change } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.set_window_height(id.as_ref(), change);
+                }
+                Op::ResetWindowHeight { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.reset_window_height(id.as_ref());
+                }
                 Op::Communicate(id) => {
                     let mut update = false;
                     match &mut layout.monitor_set {
@@ -3502,8 +3659,14 @@ mod tests {
             Op::FocusWorkspace(2),
             Op::MoveWindowToWorkspaceDown,
             Op::MoveWindowToWorkspaceUp,
-            Op::MoveWindowToWorkspace(1),
-            Op::MoveWindowToWorkspace(2),
+            Op::MoveWindowToWorkspace {
+                window_id: None,
+                workspace_idx: 1,
+            },
+            Op::MoveWindowToWorkspace {
+                window_id: None,
+                workspace_idx: 2,
+            },
             Op::MoveColumnToWorkspaceDown,
             Op::MoveColumnToWorkspaceUp,
             Op::MoveColumnToWorkspace(1),
@@ -3575,7 +3738,11 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::MoveWindowToOutput(2),
+            Op::MoveWindowToOutput {
+                window_id: None,
+                output_id: 2,
+                target_ws_idx: None,
+            },
             Op::FocusOutput(1),
             Op::Communicate(1),
             Op::Communicate(2),
@@ -3684,9 +3851,18 @@ mod tests {
             Op::FocusWorkspace(3),
             Op::MoveWindowToWorkspaceDown,
             Op::MoveWindowToWorkspaceUp,
-            Op::MoveWindowToWorkspace(1),
-            Op::MoveWindowToWorkspace(2),
-            Op::MoveWindowToWorkspace(3),
+            Op::MoveWindowToWorkspace {
+                window_id: None,
+                workspace_idx: 1,
+            },
+            Op::MoveWindowToWorkspace {
+                window_id: None,
+                workspace_idx: 2,
+            },
+            Op::MoveWindowToWorkspace {
+                window_id: None,
+                workspace_idx: 3,
+            },
             Op::MoveColumnToWorkspaceDown,
             Op::MoveColumnToWorkspaceUp,
             Op::MoveColumnToWorkspace(1),
@@ -3798,7 +3974,18 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::MoveWindowToWorkspace(2),
+            Op::AddOutput(2),
+            Op::FocusOutput(2),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::RemoveOutput(1),
+            Op::MoveWindowToWorkspace {
+                window_id: Some(0),
+                workspace_idx: 2,
+            },
         ];
 
         let mut layout = Layout::default();
@@ -3810,7 +3997,7 @@ mod tests {
             unreachable!()
         };
 
-        assert!(monitors[0].workspaces[0].has_windows());
+        assert!(monitors[0].workspaces[1].has_windows());
     }
 
     #[test]
@@ -3847,7 +4034,10 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::SetWindowHeight(SizeChange::AdjustProportion(-1e129)),
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::AdjustProportion(-1e129),
+            },
         ];
 
         let mut options = Options::default();
@@ -4311,9 +4501,15 @@ mod tests {
                 min_max_size: Default::default(),
             },
             Op::ConsumeOrExpelWindowLeft,
-            Op::SetWindowHeight(SizeChange::SetFixed(100)),
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(100),
+            },
             Op::FocusWindowUp,
-            Op::SetWindowHeight(SizeChange::SetFixed(200)),
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(200),
+            },
         ];
 
         check_ops(&ops);
@@ -4340,10 +4536,16 @@ mod tests {
                 min_max_size: Default::default(),
             },
             Op::ConsumeOrExpelWindowLeft,
-            Op::SetWindowHeight(SizeChange::SetFixed(100)),
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(100),
+            },
             Op::Communicate(2),
             Op::FocusWindowUp,
-            Op::SetWindowHeight(SizeChange::SetFixed(200)),
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(200),
+            },
             Op::Communicate(1),
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -4373,10 +4575,16 @@ mod tests {
                 min_max_size: Default::default(),
             },
             Op::ConsumeOrExpelWindowLeft,
-            Op::SetWindowHeight(SizeChange::SetFixed(100)),
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(100),
+            },
             Op::Communicate(2),
             Op::FocusWindowUp,
-            Op::SetWindowHeight(SizeChange::SetFixed(200)),
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(200),
+            },
             Op::Communicate(1),
             Op::CloseWindow(0),
             Op::FullscreenWindow(1),
