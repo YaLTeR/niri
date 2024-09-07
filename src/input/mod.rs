@@ -626,6 +626,19 @@ impl State {
                     });
                 }
             }
+            Action::ToggleKeyboardShortcutsInhibit => {
+                if let Some(inhibitor) = self.niri.keyboard_focus.surface().and_then(|surface| {
+                    self.niri
+                        .keyboard_shortcuts_inhibiting_surfaces
+                        .get(surface)
+                }) {
+                    if inhibitor.is_active() {
+                        inhibitor.inactivate();
+                    } else {
+                        inhibitor.activate();
+                    }
+                }
+            }
             Action::CloseWindow => {
                 if let Some(mapped) = self.niri.layout.focus() {
                     mapped.toplevel().send_close();
@@ -3071,6 +3084,7 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors
             | Action::SwitchLayout(_)
+            | Action::ToggleKeyboardShortcutsInhibit
     )
 }
 
