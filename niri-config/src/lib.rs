@@ -1079,6 +1079,7 @@ pub enum Action {
     ScreenshotWindow,
     #[knuffel(skip)]
     ScreenshotWindowById(u64),
+    ToggleKeyboardShortcutsInhibit,
     CloseWindow,
     #[knuffel(skip)]
     CloseWindowById(u64),
@@ -2664,6 +2665,12 @@ where
                         }
                     }
 
+                    // The toggle-inhibit action must always be uninhibitable.
+                    // Otherwise, it would be impossible to trigger it.
+                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
+                        allow_inhibiting = false;
+                    }
+
                     Ok(Self {
                         key,
                         action,
@@ -3009,6 +3016,8 @@ mod tests {
             }
 
             binds {
+                Mod+Escape { toggle-keyboard-shortcuts-inhibit; }
+                Mod+Shift+Escape allow-inhibiting=true { toggle-keyboard-shortcuts-inhibit; }
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
                 Mod+Q { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
@@ -3259,6 +3268,28 @@ mod tests {
                     },
                 ],
                 binds: Binds(vec![
+                    Bind {
+                        key: Key {
+                            trigger: Trigger::Keysym(Keysym::Escape),
+                            modifiers: Modifiers::COMPOSITOR,
+                        },
+                        action: Action::ToggleKeyboardShortcutsInhibit,
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Trigger::Keysym(Keysym::Escape),
+                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                        },
+                        action: Action::ToggleKeyboardShortcutsInhibit,
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: false,
+                    },
                     Bind {
                         key: Key {
                             trigger: Trigger::Keysym(Keysym::t),
