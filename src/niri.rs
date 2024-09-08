@@ -2157,9 +2157,20 @@ impl Niri {
 
     pub fn output_resized(&mut self, output: &Output) {
         let output_size = output_size(output).to_i32_round();
+        let scale = output.current_scale();
+        let transform = output.current_transform();
         let is_locked = self.is_locked();
 
-        layer_map_for_output(output).arrange();
+        {
+            let mut layer_map = layer_map_for_output(output);
+            layer_map.arrange();
+            for layer in layer_map.layers() {
+                layer.with_surfaces(|surface, data| {
+                    send_scale_transform(surface, data, scale, transform);
+                });
+            }
+        }
+
         self.layout.update_output_size(output);
 
         if let Some(state) = self.output_state.get_mut(output) {
@@ -2175,7 +2186,6 @@ impl Niri {
 
         // If the output size changed with an open screenshot UI, close the screenshot UI.
         if let Some((old_size, old_scale, old_transform)) = self.screenshot_ui.output_size(output) {
-            let transform = output.current_transform();
             let output_mode = output.current_mode().unwrap();
             let size = transform.transform_size(output_mode.size);
             let scale = output.current_scale().fractional_scale();
