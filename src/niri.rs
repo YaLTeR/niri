@@ -2163,12 +2163,12 @@ impl Niri {
 
         {
             let mut layer_map = layer_map_for_output(output);
-            layer_map.arrange();
             for layer in layer_map.layers() {
                 layer.with_surfaces(|surface, data| {
                     send_scale_transform(surface, data, scale, transform);
                 });
             }
+            layer_map.arrange();
         }
 
         self.layout.update_output_size(output);
