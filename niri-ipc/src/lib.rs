@@ -64,6 +64,16 @@ pub enum Request {
     ///
     /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
     /// [`Event`]s, one per line.
+    ///
+    /// The event stream will always give you the full current state up-front. For example, the
+    /// first workspace-related event you will receive will be [`Event::WorkspacesChanged`]
+    /// containing the full current workspaces state. You *do not* need to separately send
+    /// [`Request::Workspaces`] when using the event stream.
+    ///
+    /// Where reasonable, event stream state updates are atomic, though this is not always the
+    /// case. For example, a window may end up with a workspace id for a workspace that had already
+    /// been removed. This can happen if the corresponding [`Event::WorkspacesChanged`] arrives
+    /// before the corresponding [`Event::WindowOpenedOrChanged`].
     EventStream,
     /// Respond with an error (for testing error handling).
     ReturnError,
@@ -630,6 +640,12 @@ pub enum Transform {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Window {
     /// Unique id of this window.
+    ///
+    /// This id remains constant while this window is open.
+    ///
+    /// Do not assume that window ids will always increase without wrapping, or start at 1. That is
+    /// an implementation detail subject to change. For example, ids may change to be randomly
+    /// generated for each new window.
     pub id: u64,
     /// Title, if set.
     pub title: Option<String>,
@@ -660,10 +676,19 @@ pub struct Workspace {
     /// Unique id of this workspace.
     ///
     /// This id remains constant regardless of the workspace moving around and across monitors.
+    ///
+    /// Do not assume that workspace ids will always increase without wrapping, or start at 1. That
+    /// is an implementation detail subject to change. For example, ids may change to be randomly
+    /// generated for each new workspace.
     pub id: u64,
     /// Index of the workspace on its monitor.
     ///
     /// This is the same index you can use for requests like `niri msg action focus-workspace`.
+    ///
+    /// This index *will change* as you move and re-order workspace. It is merely the workspace's
+    /// current position on its monitor. Workspaces on different monitors can have the same index.
+    ///
+    /// If you need a unique workspace id that doesn't change, see [`Self::id`].
     pub idx: u8,
     /// Optional name of the workspace.
     pub name: Option<String>,
