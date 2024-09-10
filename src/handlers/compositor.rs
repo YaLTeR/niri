@@ -284,22 +284,29 @@ impl CompositorHandler for State {
             if let Some(output) = self.output_for_popup(&popup) {
                 self.niri.queue_redraw(&output.clone());
             }
+            return;
         }
 
         // This might be a layer-shell surface.
-        self.layer_shell_handle_commit(surface);
+        if self.layer_shell_handle_commit(surface) {
+            return;
+        }
 
         // This might be a cursor surface.
-        if matches!(&self.niri.cursor_manager.cursor_image(), CursorImageStatus::Surface(s) if s == surface)
-        {
+        if matches!(
+            &self.niri.cursor_manager.cursor_image(),
+            CursorImageStatus::Surface(s) if s == &root_surface
+        ) {
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
+            return;
         }
 
         // This might be a DnD icon surface.
-        if self.niri.dnd_icon.as_ref() == Some(surface) {
+        if self.niri.dnd_icon.as_ref() == Some(&root_surface) {
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
+            return;
         }
 
         // This might be a lock surface.
@@ -308,7 +315,7 @@ impl CompositorHandler for State {
                 if let Some(lock_surface) = &state.lock_surface {
                     if lock_surface.wl_surface() == &root_surface {
                         self.niri.queue_redraw(&output.clone());
-                        break;
+                        return;
                     }
                 }
             }

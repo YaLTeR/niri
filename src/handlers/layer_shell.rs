@@ -3,7 +3,7 @@ use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurf
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::wayland::compositor::with_states;
+use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::shell::wlr_layer::{
     Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
     WlrLayerShellState,
@@ -68,52 +68,65 @@ impl WlrLayerShellHandler for State {
 delegate_layer_shell!(State);
 
 impl State {
-    pub fn layer_shell_handle_commit(&mut self, surface: &WlSurface) {
-        let Some(output) = self
+    pub fn layer_shell_handle_commit(&mut self, surface: &WlSurface) -> bool {
+        let mut root_surface = surface.clone();
+        while let Some(parent) = get_parent(&root_surface) {
+            root_surface = parent;
+        }
+
+        let output = self
             .niri
             .layout
             .outputs()
             .find(|o| {
                 let map = layer_map_for_output(o);
-                map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                map.layer_for_surface(&root_surface, WindowSurfaceType::TOPLEVEL)
                     .is_some()
             })
-            .cloned()
-        else {
-            return;
+            .cloned();
+        let Some(output) = output else {
+            return false;
         };
 
-        let initial_configure_sent = with_states(surface, |states| {
-            states
-                .data_map
-                .get::<LayerSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .initial_configure_sent
-        });
-
-        let mut map = layer_map_for_output(&output);
-
-        // arrange the layers before sending the initial configure
-        // to respect any size the client may have sent
-        map.arrange();
-        // send the initial configure if relevant
-        if !initial_configure_sent {
-            let layer = map
-                .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
-                .unwrap();
-
-            let scale = output.current_scale();
-            let transform = output.current_transform();
-            with_states(surface, |data| {
-                send_scale_transform(surface, data, scale, transform);
+        if surface == &root_surface {
+            let initial_configure_sent = with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<LayerSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .initial_configure_sent
             });
 
-            layer.layer_surface().send_configure();
-        }
-        drop(map);
+            let mut map = layer_map_for_output(&output);
 
-        self.niri.output_resized(&output);
+            // arrange the layers before sending the initial configure
+            // to respect any size the client may have sent
+            map.arrange();
+            // send the initial configure if relevant
+            if !initial_configure_sent {
+                let layer = map
+                    .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                    .unwrap();
+
+                let scale = output.current_scale();
+                let transform = output.current_transform();
+                with_states(surface, |data| {
+                    send_scale_transform(surface, data, scale, transform);
+                });
+
+                layer.layer_surface().send_configure();
+            }
+            drop(map);
+
+            // This will call queue_redraw() inside.
+            self.niri.output_resized(&output);
+        } else {
+            // This is an unsync layer-shell subsurface.
+            self.niri.queue_redraw(&output);
+        }
+
+        true
     }
 }
