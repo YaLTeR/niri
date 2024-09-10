@@ -344,7 +344,7 @@ pub struct OutputState {
     pub debug_damage_tracker: OutputDamageTracker,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub enum RedrawState {
     /// The compositor is idle.
     #[default]

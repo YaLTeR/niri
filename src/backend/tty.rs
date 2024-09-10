@@ -1153,15 +1153,24 @@ impl Tty {
             return;
         };
 
-        // This happened for someone reconnecting 2 monitors with a KVM switch:
-        // https://github.com/YaLTeR/niri/issues/556
-        //
-        // Maybe the vblank didn't get cancelled or got reordered weirdly? Either way, we can avoid
-        // crashing here.
-        if matches!(output_state.redraw_state, RedrawState::Idle) {
-            error!("got vblank for an idle output {name}");
-            return;
-        }
+        let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
+            RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
+            state @ (RedrawState::Idle
+            | RedrawState::Queued
+            | RedrawState::WaitingForEstimatedVBlank(_)
+            | RedrawState::WaitingForEstimatedVBlankAndQueued(_)) => {
+                // This is an error!() because it shouldn't happen, but on some systems it somehow
+                // does. Kernel sending rogue vblank events?
+                //
+                // https://github.com/YaLTeR/niri/issues/556
+                // https://github.com/YaLTeR/niri/issues/615
+                error!(
+                    "unexpected redraw state for output {name} (should be WaitingForVBlank); \
+                     can happen when resuming from sleep or powering on monitors: {state:?}"
+                );
+                true
+            }
+        };
 
         // Mark the last frame as submitted.
         match surface.compositor.frame_submitted() {
@@ -1208,14 +1217,6 @@ impl Tty {
         output_state.last_drm_sequence = Some(meta.sequence);
 
         output_state.frame_clock.presented(presentation_time);
-
-        let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
-            RedrawState::Idle => unreachable!(),
-            RedrawState::Queued => unreachable!(),
-            RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
-            RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
-            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
-        };
 
         if redraw_needed || output_state.unfinished_animations_remain {
             let vblank_frame = tracy_client::Client::running()
