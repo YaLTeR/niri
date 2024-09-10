@@ -1,3 +1,4 @@
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::delegate_layer_shell;
 use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType};
 use smithay::output::Output;
@@ -5,7 +6,7 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::shell::wlr_layer::{
-    Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
+    self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
     WlrLayerShellState,
 };
 use smithay::wayland::shell::xdg::PopupSurface;
@@ -36,12 +37,19 @@ impl WlrLayerShellHandler for State {
             return;
         };
 
+        let wl_surface = surface.wl_surface().clone();
+        let is_new = self.niri.unmapped_layer_surfaces.insert(wl_surface);
+        assert!(is_new);
+
         let mut map = layer_map_for_output(&output);
         map.map_layer(&LayerSurface::new(surface, namespace))
             .unwrap();
     }
 
     fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
+        let wl_surface = surface.wl_surface();
+        self.niri.unmapped_layer_surfaces.remove(wl_surface);
+
         let output = if let Some((output, mut map, layer)) =
             self.niri.layout.outputs().find_map(|o| {
                 let map = layer_map_for_output(o);
@@ -101,15 +109,51 @@ impl State {
 
             let mut map = layer_map_for_output(&output);
 
-            // arrange the layers before sending the initial configure
-            // to respect any size the client may have sent
+            // Arrange the layers before sending the initial configure to respect any size the
+            // client may have sent.
             map.arrange();
-            // send the initial configure if relevant
-            if !initial_configure_sent {
-                let layer = map
-                    .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
-                    .unwrap();
 
+            let layer = map
+                .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                .unwrap();
+
+            if initial_configure_sent {
+                let is_mapped =
+                    with_renderer_surface_state(surface, |state| state.buffer().is_some())
+                        .unwrap_or_else(|| {
+                            error!("no renderer surface state even though we use commit handler");
+                            false
+                        });
+
+                if is_mapped {
+                    let was_unmapped = self.niri.unmapped_layer_surfaces.remove(surface);
+
+                    // Give focus to newly mapped on-demand surfaces. Some launchers like
+                    // lxqt-runner rely on this behavior. While this behavior doesn't make much
+                    // sense for other clients like panels, the consensus seems to be that it's not
+                    // a big deal since panels generally only open once at the start of the
+                    // session.
+                    //
+                    // Note that:
+                    // 1) Exclusive layer surfaces already get focus automatically in
+                    //    update_keyboard_focus().
+                    // 2) Same-layer exclusive layer surfaces are already preferred to on-demand
+                    //    surfaces in update_keyboard_focus(), so we don't need to check for that
+                    //    here.
+                    //
+                    // https://github.com/YaLTeR/niri/issues/641
+                    let on_demand = layer.cached_state().keyboard_interactivity
+                        == wlr_layer::KeyboardInteractivity::OnDemand;
+                    if was_unmapped && on_demand {
+                        // I guess it'd make sense to check that no higher-layer on-demand surface
+                        // has focus, but Smithay's Layer doesn't implement Ord so this would be a
+                        // little annoying.
+                        self.niri.layer_shell_on_demand_focus = Some(layer.clone());
+                    }
+                } else {
+                    self.niri.unmapped_layer_surfaces.insert(surface.clone());
+                }
+            } else {
                 let scale = output.current_scale();
                 let transform = output.current_transform();
                 with_states(surface, |data| {
