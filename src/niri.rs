@@ -794,23 +794,30 @@ impl State {
                         surface: Some(surface),
                     })
             };
-            let layer_focus = |surface: &LayerSurface| {
-                let can_receive_exclusive_focus = surface.cached_state().keyboard_interactivity
-                    == wlr_layer::KeyboardInteractivity::Exclusive;
-                let is_on_demand_surface =
-                    Some(surface) == self.niri.layer_shell_on_demand_focus.as_ref();
 
-                (can_receive_exclusive_focus || is_on_demand_surface)
-                    .then(|| surface.wl_surface().clone())
-                    .map(|surface| KeyboardFocus::LayerShell { surface })
+            let excl_focus_on_layer = |layer| {
+                layers.layers_on(layer).find_map(|surface| {
+                    let can_receive_exclusive_focus = surface.cached_state().keyboard_interactivity
+                        == wlr_layer::KeyboardInteractivity::Exclusive;
+                    can_receive_exclusive_focus
+                        .then(|| surface.wl_surface().clone())
+                        .map(|surface| KeyboardFocus::LayerShell { surface })
+                })
             };
-            let on_d_focus = |surface: &LayerSurface| {
-                let is_on_demand_surface =
-                    Some(surface) == self.niri.layer_shell_on_demand_focus.as_ref();
-                is_on_demand_surface
-                    .then(|| surface.wl_surface().clone())
-                    .map(|surface| KeyboardFocus::LayerShell { surface })
+
+            let on_d_focus_on_layer = |layer| {
+                layers.layers_on(layer).find_map(|surface| {
+                    let is_on_demand_surface =
+                        Some(surface) == self.niri.layer_shell_on_demand_focus.as_ref();
+                    is_on_demand_surface
+                        .then(|| surface.wl_surface().clone())
+                        .map(|surface| KeyboardFocus::LayerShell { surface })
+                })
             };
+
+            // Prefer exclusive focus on a layer, then check on-demand focus.
+            let focus_on_layer =
+                |layer| excl_focus_on_layer(layer).or_else(|| on_d_focus_on_layer(layer));
 
             let mut surface = grab_on_layer(Layer::Overlay);
             // FIXME: we shouldn't prioritize the top layer grabs over regular overlay input or a
@@ -818,19 +825,19 @@ impl State {
             // in the first place. Or a better way to structure this code.
             surface = surface.or_else(|| grab_on_layer(Layer::Top));
 
-            surface = surface.or_else(|| layers.layers_on(Layer::Overlay).find_map(layer_focus));
+            surface = surface.or_else(|| focus_on_layer(Layer::Overlay));
 
             if mon.render_above_top_layer() {
                 surface = surface.or_else(layout_focus);
-                surface = surface.or_else(|| layers.layers_on(Layer::Top).find_map(layer_focus));
+                surface = surface.or_else(|| focus_on_layer(Layer::Top));
             } else {
-                surface = surface.or_else(|| layers.layers_on(Layer::Top).find_map(layer_focus));
+                surface = surface.or_else(|| focus_on_layer(Layer::Top));
                 surface = surface.or_else(layout_focus);
             }
 
             // Bottom and background layers can receive on-demand focus only.
-            surface = surface.or_else(|| layers.layers_on(Layer::Bottom).find_map(on_d_focus));
-            surface = surface.or_else(|| layers.layers_on(Layer::Background).find_map(on_d_focus));
+            surface = surface.or_else(|| on_d_focus_on_layer(Layer::Bottom));
+            surface = surface.or_else(|| on_d_focus_on_layer(Layer::Background));
 
             surface.unwrap_or(KeyboardFocus::Layout { surface: None })
         } else {
