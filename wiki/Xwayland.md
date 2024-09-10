@@ -23,6 +23,12 @@ environment {
 }
 ```
 
+> [!NOTE]
+> If the `:0` DISPLAY is already taken (for example, by some other Xwayland server like `xwayland-run`), `xwayland-satellite` will try the next DISPLAY numbers in order: `:1`, `:2`, etc. and tell you which one it used in its output.
+> Then, you will need to use that DISPLAY number for the `env` command or for the niri `environment` block.
+>
+> You can also force a specific DISPLAY number like so: `xwayland-satellite :12` will start on `DISPLAY=:12`.
+
 ## Directly running Xwayland in rootful mode
 
 This method involves invoking XWayland directly and running it as its own window, it also requires an extra X11 window manager running inside it.
