@@ -917,6 +917,11 @@ impl Tty {
 
         // Filter out the CCS modifiers as they have increased bandwidth, causing some monitor
         // configurations to stop working.
+        //
+        // The invalid modifier attempt below should make this unnecessary in some cases, but it
+        // would still be a bad idea to remove this until Smithay has some kind of full-device
+        // modesetting test that is able to "downgrade" existing connector modifiers to get enough
+        // bandwidth for a newly connected one.
         let render_formats = render_formats
             .iter()
             .copied()
@@ -941,19 +946,55 @@ impl Tty {
             .collect::<FormatSet>();
 
         // Create the compositor.
-        let mut compositor = DrmCompositor::new(
+        let res = DrmCompositor::new(
             OutputModeSource::Auto(output.clone()),
             surface,
             Some(planes),
-            allocator,
+            allocator.clone(),
             device.gbm.clone(),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
             render_formats.clone(),
             device.drm.cursor_size(),
-            cursor_plane_gbm,
-        )?;
+            cursor_plane_gbm.clone(),
+        );
+
+        let mut compositor = match res {
+            Ok(x) => x,
+            Err(err) => {
+                warn!("error creating DRM compositor, will try with invalid modifier: {err:?}");
+
+                let render_formats = render_formats
+                    .iter()
+                    .copied()
+                    .filter(|format| format.modifier == Modifier::Invalid)
+                    .collect::<FormatSet>();
+
+                // DrmCompositor::new() consumed the surface...
+                let surface = device
+                    .drm
+                    .create_surface(crtc, mode, &[connector.handle()])?;
+                let mut planes = surface.planes().clone();
+                if !config.debug.enable_overlay_planes {
+                    planes.overlay.clear();
+                }
+
+                DrmCompositor::new(
+                    OutputModeSource::Auto(output.clone()),
+                    surface,
+                    Some(planes),
+                    allocator,
+                    device.gbm.clone(),
+                    SUPPORTED_COLOR_FORMATS,
+                    render_formats,
+                    device.drm.cursor_size(),
+                    cursor_plane_gbm,
+                )
+                .context("error creating DRM compositor")?
+            }
+        };
+
         if self.debug_tint {
             compositor.set_debug_flags(DebugFlags::TINT);
         }
