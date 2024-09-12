@@ -189,6 +189,9 @@ pub trait LayoutElement {
     /// This *will* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
     fn is_pending_fullscreen(&self) -> bool;
 
+    /// Size previously requested through [`LayoutElement::request_size()`].
+    fn requested_size(&self) -> Option<Size<i32, Logical>>;
+
     fn rules(&self) -> &ResolvedWindowRules;
 
     /// Runs periodic clean-up tasks.
@@ -2777,7 +2780,7 @@ mod tests {
         }
 
         fn communicate(&self) -> bool {
-            if let Some(size) = self.0.requested_size.take() {
+            if let Some(size) = self.0.requested_size.get() {
                 assert!(size.w >= 0);
                 assert!(size.h >= 0);
 
@@ -2885,6 +2888,10 @@ mod tests {
 
         fn is_pending_fullscreen(&self) -> bool {
             self.0.pending_fullscreen.get()
+        }
+
+        fn requested_size(&self) -> Option<Size<i32, Logical>> {
+            self.0.requested_size.get()
         }
 
         fn refresh(&self) {}
@@ -4694,6 +4701,36 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn fixed_height_takes_max_non_auto_into_account() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::SetWindowHeight { id: Some(0), change: SizeChange::SetFixed(704) },
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ConsumeOrExpelWindowLeft,
+        ];
+
+        let options = Options {
+            border: niri_config::Border {
+                off: false,
+                width: niri_config::FloatOrInt(4.),
+                ..Default::default()
+            },
+            gaps: 0.,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {

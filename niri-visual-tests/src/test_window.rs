@@ -87,7 +87,7 @@ impl TestWindow {
 
         let mut new_size = inner.size;
 
-        if let Some(size) = inner.requested_size.take() {
+        if let Some(size) = inner.requested_size {
             assert!(size.w >= 0);
             assert!(size.h >= 0);
 
@@ -234,6 +234,10 @@ impl LayoutElement for TestWindow {
 
     fn is_pending_fullscreen(&self) -> bool {
         self.inner.borrow().pending_fullscreen
+    }
+
+    fn requested_size(&self) -> Option<Size<i32, Logical>> {
+        self.inner.borrow().requested_size
     }
 
     fn refresh(&self) {}

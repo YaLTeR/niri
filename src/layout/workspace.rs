@@ -3272,12 +3272,45 @@ impl<W: LayoutElement> Column<W> {
         let width = f64::max(f64::min(width, max_width), min_width);
         let height = self.working_area.size.h;
 
+        // If there are multiple windows in a column, clamp the non-auto window's height according
+        // to other windows' min sizes.
+        let mut max_non_auto_window_height = None;
+        if self.tiles.len() > 1 {
+            if let Some(non_auto_idx) = self
+                .data
+                .iter()
+                .position(|data| !matches!(data.height, WindowHeight::Auto { .. }))
+            {
+                let min_height_taken = min_size
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, _)| *idx != non_auto_idx)
+                    .map(|(_, min_size)| min_size.h + self.options.gaps)
+                    .sum::<f64>();
+
+                let tile = &self.tiles[non_auto_idx];
+                let height_left = self.working_area.size.h
+                    - self.options.gaps
+                    - min_height_taken
+                    - self.options.gaps;
+                max_non_auto_window_height = Some(f64::max(
+                    1.,
+                    tile.window_height_for_tile_height(height_left).round(),
+                ));
+            }
+        }
+
         // Compute the tile heights. Start by converting window heights to tile heights.
         let mut heights = zip(&self.tiles, &self.data)
             .map(|(tile, data)| match data.height {
                 auto @ WindowHeight::Auto { .. } => auto,
                 WindowHeight::Fixed(height) => {
-                    WindowHeight::Fixed(tile.tile_height_for_window_height(height.round().max(1.)))
+                    let mut window_height = height.round().max(1.);
+                    if let Some(max) = max_non_auto_window_height {
+                        window_height = f64::min(window_height, max);
+                    }
+
+                    WindowHeight::Fixed(tile.tile_height_for_window_height(window_height))
                 }
                 WindowHeight::Preset(idx) => {
                     let preset = self.options.preset_window_heights[idx];
@@ -3285,8 +3318,13 @@ impl<W: LayoutElement> Column<W> {
                         ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
                         ResolvedSize::Window(h) => h,
                     };
-                    let tile_height = tile
-                        .tile_height_for_window_height(window_height.round().clamp(1., 100000.));
+
+                    let mut window_height = window_height.round().clamp(1., 100000.);
+                    if let Some(max) = max_non_auto_window_height {
+                        window_height = f64::min(window_height, max);
+                    }
+
+                    let tile_height = tile.tile_height_for_window_height(window_height);
                     WindowHeight::Fixed(tile_height)
                 }
             })
@@ -3488,7 +3526,8 @@ impl<W: LayoutElement> Column<W> {
             assert_eq!(self.tiles.len(), 1);
         }
 
-        if self.tiles.len() == 1 {
+        let tile_count = self.tiles.len();
+        if tile_count == 1 {
             if let WindowHeight::Auto { weight } = self.data[0].height {
                 assert_eq!(
                     weight, 1.,
@@ -3498,6 +3537,8 @@ impl<W: LayoutElement> Column<W> {
         }
 
         let mut found_fixed = false;
+        let mut total_height = 0.;
+        let mut total_min_height = 0.;
         for (tile, data) in zip(&self.tiles, &self.data) {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.scale, tile.scale());
@@ -3524,6 +3565,25 @@ impl<W: LayoutElement> Column<W> {
             if let WindowHeight::Preset(idx) = data.height {
                 assert!(self.options.preset_window_heights.len() > idx);
             }
+
+            let requested_size = tile.window().requested_size().unwrap();
+            total_height += tile.tile_height_for_window_height(f64::from(requested_size.h));
+            total_min_height += f64::max(1., tile.min_size().h);
+        }
+
+        if tile_count > 1
+            && self.scale.round() == self.scale
+            && self.working_area.size.h.round() == self.working_area.size.h
+            && self.options.gaps.round() == self.options.gaps
+        {
+            total_height += self.options.gaps * (tile_count + 1) as f64;
+            total_min_height += self.options.gaps * (tile_count + 1) as f64;
+            let max_height = f64::max(total_min_height, self.working_area.size.h);
+            assert!(
+                total_height <= max_height,
+                "multiple tiles in a column mustn't go beyond working area height \
+                 (total height {total_height} > max height {max_height})"
+            );
         }
     }
 

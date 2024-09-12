@@ -730,6 +730,10 @@ impl LayoutElement for Mapped {
             .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
     }
 
+    fn requested_size(&self) -> Option<Size<i32, Logical>> {
+        self.toplevel().with_pending_state(|state| state.size)
+    }
+
     fn refresh(&self) {
         self.window.refresh();
     }
