@@ -351,7 +351,13 @@ pub enum Action {
     /// Switch between preset column widths.
     SwitchPresetColumnWidth {},
     /// Switch between preset window heights.
-    SwitchPresetWindowHeight {},
+    SwitchPresetWindowHeight {
+        /// Id of the window whose height to switch.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Toggle the maximized state of the focused column.
     MaximizeColumn {},
     /// Change the width of the focused column.
