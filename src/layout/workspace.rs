@@ -191,13 +191,10 @@ struct InteractiveResize<W: LayoutElement> {
 pub enum ColumnWidth {
     /// Proportion of the current view width.
     Proportion(f64),
-    /// One of the proportion presets.
-    ///
-    /// This is separate from Proportion in order to be able to reliably cycle between preset
-    /// proportions.
-    Preset(usize),
     /// Fixed width in logical pixels.
     Fixed(f64),
+    /// One of the preset widths.
+    Preset(usize),
 }
 
 /// Height of a window in a column.
@@ -222,10 +219,11 @@ pub enum WindowHeight {
     Auto { weight: f64 },
     /// Fixed *window* height in logical pixels.
     Fixed(f64),
-    /// One of the *tile* height proportion presets.
+    /// One of the preset heights (tile or window).
     Preset(usize),
 }
 
+/// Resolved width or height in logical pixels.
 #[derive(Debug, Clone, Copy)]
 pub enum ResolvedSize {
     /// Size of the tile including borders.
