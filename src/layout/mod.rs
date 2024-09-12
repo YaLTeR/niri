@@ -4712,7 +4712,10 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::SetWindowHeight { id: Some(0), change: SizeChange::SetFixed(704) },
+            Op::SetWindowHeight {
+                id: Some(0),
+                change: SizeChange::SetFixed(704),
+            },
             Op::AddWindow {
                 id: 1,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
