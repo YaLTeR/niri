@@ -17,6 +17,12 @@ layout {
 
     default-column-width { proportion 0.5; }
 
+    preset-window-heights {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
     focus-ring {
         // off
         width 4
@@ -133,6 +139,29 @@ layout {
 > In practice, the only problematic client I saw is [foot](https://codeberg.org/dnkl/foot/), which takes this as a request to have a literal zero width.
 >
 > Either way, `default-column-width {}` is most useful for specific windows, in form of a [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules) with the same syntax.
+
+### `preset-window-heights`
+
+<sup>Since: 0.1.9</sup>
+
+Set the heights that the `switch-preset-window-height` action (Mod+Shift+R) toggles between.
+
+`proportion` sets the height as a fraction of the output height, taking gaps into account.
+The default preset heights are <sup>1</sup>&frasl;<sub>3</sub>, <sup>1</sup>&frasl;<sub>2</sub> and <sup>2</sup>&frasl;<sub>3</sub> of the output.
+
+`fixed` sets the height in logical pixels exactly.
+
+```kdl
+layout {
+    // Cycle between 1/3, 1/2, 2/3 of the output, and a fixed 720 logical pixels.
+    preset-window-heights {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+        fixed 720
+    }
+}
+```
 
 ### `focus-ring` and `border`
 
