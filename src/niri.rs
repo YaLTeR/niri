@@ -4570,6 +4570,10 @@ impl Niri {
 
         if let Some(window) = &new_focus.window {
             if current_focus.window.as_ref() != Some(window) {
+                if !self.layout.should_trigger_focus_follows_mouse_on(window) {
+                    return;
+                }
+
                 if let Some(threshold) = ffm.max_scroll_amount {
                     if self.layout.scroll_amount_to_activate(window) > threshold.0 {
                         return;

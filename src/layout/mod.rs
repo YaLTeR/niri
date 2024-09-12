@@ -1031,6 +1031,35 @@ impl<W: LayoutElement> Layout<W> {
         0.
     }
 
+    pub fn should_trigger_focus_follows_mouse_on(&self, window: &W::Id) -> bool {
+        // During an animation, it's easy to trigger focus-follows-mouse on the previous workspace,
+        // especially when clicking to switch workspace on a bar of some kind. This cancels the
+        // workspace switch, which is annoying and not intended.
+        //
+        // This function allows focus-follows-mouse to trigger only on the animation target
+        // workspace.
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return true;
+        };
+
+        let (mon, ws_idx) = monitors
+            .iter()
+            .find_map(|mon| {
+                mon.workspaces
+                    .iter()
+                    .position(|ws| ws.has_window(window))
+                    .map(|ws_idx| (mon, ws_idx))
+            })
+            .unwrap();
+
+        // During a gesture, focus-follows-mouse does not cause any unintended workspace switches.
+        if let Some(WorkspaceSwitch::Gesture(_)) = mon.workspace_switch {
+            return true;
+        }
+
+        ws_idx == mon.active_workspace_idx
+    }
+
     pub fn activate_window(&mut self, window: &W::Id) {
         let MonitorSet::Normal {
             monitors,
