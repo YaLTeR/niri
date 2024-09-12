@@ -1159,6 +1159,8 @@ pub enum Action {
     ResetWindowHeightById(u64),
     SwitchPresetColumnWidth,
     SwitchPresetWindowHeight,
+    #[knuffel(skip)]
+    SwitchPresetWindowHeightById(u64),
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
@@ -1270,7 +1272,12 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
             niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
             niri_ipc::Action::SwitchPresetColumnWidth {} => Self::SwitchPresetColumnWidth,
-            niri_ipc::Action::SwitchPresetWindowHeight {} => Self::SwitchPresetWindowHeight,
+            niri_ipc::Action::SwitchPresetWindowHeight { id: None } => {
+                Self::SwitchPresetWindowHeight
+            }
+            niri_ipc::Action::SwitchPresetWindowHeight { id: Some(id) } => {
+                Self::SwitchPresetWindowHeightById(id)
+            }
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),

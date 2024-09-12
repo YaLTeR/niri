@@ -740,10 +740,6 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().toggle_width();
     }
 
-    pub fn toggle_window_height(&mut self) {
-        self.active_workspace().toggle_window_height();
-    }
-
     pub fn toggle_full_width(&mut self) {
         self.active_workspace().toggle_full_width();
     }

@@ -1951,11 +1951,21 @@ impl<W: LayoutElement> Layout<W> {
         monitor.toggle_width();
     }
 
-    pub fn toggle_window_height(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
             return;
         };
-        monitor.toggle_window_height();
+        workspace.toggle_window_height(window);
     }
 
     pub fn toggle_full_width(&mut self) {
@@ -3048,7 +3058,10 @@ mod tests {
         },
         MoveColumnToOutput(#[proptest(strategy = "1..=5u8")] u8),
         SwitchPresetColumnWidth,
-        SwitchPresetWindowHeight,
+        SwitchPresetWindowHeight {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
         MaximizeColumn,
         SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
         SetWindowHeight {
@@ -3475,7 +3488,10 @@ mod tests {
                 Op::MoveWorkspaceDown => layout.move_workspace_down(),
                 Op::MoveWorkspaceUp => layout.move_workspace_up(),
                 Op::SwitchPresetColumnWidth => layout.toggle_width(),
-                Op::SwitchPresetWindowHeight => layout.toggle_window_height(),
+                Op::SwitchPresetWindowHeight { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.toggle_window_height(id.as_ref());
+                }
                 Op::MaximizeColumn => layout.toggle_full_width(),
                 Op::SetColumnWidth(change) => layout.set_column_width(change),
                 Op::SetWindowHeight { id, change } => {
@@ -4458,8 +4474,8 @@ mod tests {
                 min_max_size: Default::default(),
             },
             Op::ConsumeOrExpelWindowLeft,
-            Op::SwitchPresetWindowHeight,
-            Op::SwitchPresetWindowHeight,
+            Op::SwitchPresetWindowHeight { id: None },
+            Op::SwitchPresetWindowHeight { id: None },
         ];
         for op in ops {
             op.apply(&mut layout);

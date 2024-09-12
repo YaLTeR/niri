@@ -1036,7 +1036,14 @@ impl State {
                 self.niri.layout.toggle_width();
             }
             Action::SwitchPresetWindowHeight => {
-                self.niri.layout.toggle_window_height();
+                self.niri.layout.toggle_window_height(None);
+            }
+            Action::SwitchPresetWindowHeightById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_height(Some(&window));
+                }
             }
             Action::CenterColumn => {
                 self.niri.layout.center_column();
