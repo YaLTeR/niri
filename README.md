@@ -49,8 +49,6 @@ A lot of the essential functionality is implemented, plus some goodies on top.
 Feel free to give niri a try: follow the instructions on the [Getting Started](https://github.com/YaLTeR/niri/wiki/Getting-Started) wiki page.
 Have your [waybar]s and [fuzzel]s ready: niri is not a complete desktop environment.
 
-Note that NVIDIA GPUs may have issues.
-
 ## Inspiration
 
 Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top of GNOME Shell.
