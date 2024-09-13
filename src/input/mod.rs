@@ -1897,7 +1897,8 @@ impl State {
         let under = self.niri.surface_under_and_global_space(pos);
 
         let tablet_seat = self.niri.seat.tablet_seat();
-        let tool = tablet_seat.add_tool::<Self>(&self.niri.display_handle, &event.tool());
+        let display_handle = self.niri.display_handle.clone();
+        let tool = tablet_seat.add_tool::<Self>(self, &display_handle, &event.tool());
         let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
         if let Some(tablet) = tablet {
             match event.state() {
