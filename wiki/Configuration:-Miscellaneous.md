@@ -25,6 +25,8 @@ cursor {
 hotkey-overlay {
     skip-at-startup
 }
+
+prefer-no-fdo-screensaver-dbus-impl
 ```
 
 ### `spawn-at-startup`
@@ -116,4 +118,12 @@ Set the `skip-at-startup` flag if you don't want to see the hotkey help at niri 
 hotkey-overlay {
     skip-at-startup
 }
+```
+
+### `prefer-no-fdo-screensaver-dbus-impl`
+
+This disables Niri's implementation of the `org.freedesktop,Screensaver` D-Bus interface, which can cause problems with certain applications, particularly those that monitor user activity to enforce typing breaks.
+
+```kdl
+prefer-no-fdo-screensaver-dbus-impl
 ```
