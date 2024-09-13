@@ -68,8 +68,6 @@ The JSON output *should* remain stable, as in:
 
 However, new fields and enum variants will be added, so you should handle unknown fields or variants gracefully where reasonable.
 
-I am not 100% committing to the stability yet because there aren't many users, and there might be something basic I had missed in the JSON output design.
-
 The formatted/human-readable output (i.e. without `--json` flag) is **not** considered stable.
 Please prefer the JSON output for scripts, since I reserve the right to make any changes to the human-readable output.
 
