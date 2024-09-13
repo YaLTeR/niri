@@ -212,14 +212,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "dbus")]
     dbus::DBusServers::start(&mut state, cli.session);
 
-    // Notify systemd we're ready.
-    if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
-        warn!("error notifying systemd: {err:?}");
-    };
+    if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").map_or(true, |x| x != "1") {
+        // Notify systemd we're ready.
+        if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
+            warn!("error notifying systemd: {err:?}");
+        };
 
-    // Send ready notification to the NOTIFY_FD file descriptor.
-    if let Err(err) = notify_fd() {
-        warn!("error notifying fd: {err:?}");
+        // Send ready notification to the NOTIFY_FD file descriptor.
+        if let Err(err) = notify_fd() {
+            warn!("error notifying fd: {err:?}");
+        }
     }
 
     // Set up config file watcher.
