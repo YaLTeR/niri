@@ -57,6 +57,8 @@ pub struct Config {
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
+    #[knuffel(child, default)]
+    pub prefer_no_fdo_screensaver_dbus_impl: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
