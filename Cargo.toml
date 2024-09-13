@@ -8,6 +8,7 @@ authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 repository = "https://github.com/YaLTeR/niri"
+rust-version = "1.77"
 
 [workspace.dependencies]
 anyhow = "1.0.88"
@@ -37,6 +38,7 @@ authors.workspace = true
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 
 readme = "README.md"
 keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
