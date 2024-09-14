@@ -8,6 +8,7 @@ Here are the contents of this section at a glance:
 layout {
     gaps 16
     center-focused-column "never"
+    always-center-single-column
 
     preset-column-widths {
         proportion 0.33333
@@ -78,6 +79,18 @@ This can be set to:
 ```kdl
 layout {
     center-focused-column "always"
+}
+```
+
+### `always-center-single-column`
+
+<sup>Since: 0.1.9</sup>
+
+If set, niri will always center a single column on a workspace, regardless of the `center-focused-column` option.
+
+```kdl
+layout {
+    always-center-single-column
 }
 ```
 
