@@ -35,7 +35,7 @@ use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
+use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler};
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
 };
@@ -146,11 +146,34 @@ impl PointerConstraintsHandler for State {
 
     fn cursor_position_hint(
         &mut self,
-        _surface: &WlSurface,
-        _pointer: &PointerHandle<Self>,
-        _location: Point<f64, Logical>,
+        surface: &WlSurface,
+        pointer: &PointerHandle<Self>,
+        location: smithay::utils::Point<f64, Logical>,
     ) {
-        // FIXME
+        let is_constraint_active = with_pointer_constraint(surface, pointer, |constraint| {
+            constraint.map_or(false, |c| c.is_active())
+        });
+
+        if is_constraint_active {
+            if let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface {
+                if focused_surface == surface {
+                    let target = self
+                        .niri
+                        .output_for_root(surface)
+                        .and_then(|output| self.niri.global_space.output_geometry(output))
+                        .map_or(origin + location, |mut output_geometry| {
+                            // i32 sizes are exclusive, but f64 sizes are inclusive.
+                            output_geometry.size -= (1, 1).into();
+                            (origin + location).constrain(output_geometry.to_f64())
+                        });
+                    pointer.set_location(target);
+                } else {
+                    error!("cursor_position_hint called on a surface that is not the focused surface, but the constraint is active. this should be impossible.");
+                }
+            } else {
+                error!("cursor_position_hint called with no focused surface, but the constraint is active. this should be impossible.");
+            }
+        }
     }
 }
 delegate_pointer_constraints!(State);
