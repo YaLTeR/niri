@@ -3102,14 +3102,11 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn advance_animations(&mut self, current_time: Duration) {
-        match &mut self.move_animation {
-            Some(anim) => {
-                anim.set_current_time(current_time);
-                if anim.is_done() {
-                    self.move_animation = None;
-                }
+        if let Some(anim) = &mut self.move_animation {
+            anim.set_current_time(current_time);
+            if anim.is_done() {
+                self.move_animation = None;
             }
-            None => (),
         }
 
         for tile in &mut self.tiles {
