@@ -13,19 +13,25 @@
     };
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    crane,
-    nix-filter,
-    flake-utils,
-    fenix,
-    ...
-  }: let
-    systems = ["aarch64-linux" "x86_64-linux"];
-  in
+  outputs =
+    {
+      self,
+      nixpkgs,
+      crane,
+      nix-filter,
+      flake-utils,
+      fenix,
+      ...
+    }:
+    let
+      systems = [
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+    in
     flake-utils.lib.eachSystem systems (
-      system: let
+      system:
+      let
         pkgs = nixpkgs.legacyPackages.${system};
         toolchain = fenix.packages.${system}.complete.toolchain;
         craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
@@ -36,10 +42,10 @@
 
           src = nixpkgs.lib.cleanSourceWith {
             src = craneLib.path ./.;
-            filter = path: type:
+            filter =
+              path: type:
               (builtins.match "resources" path == null)
-              || ((craneLib.filterCargoSources path type)
-                && (builtins.match "niri-visual-tests" path == null));
+              || ((craneLib.filterCargoSources path type) && (builtins.match "niri-visual-tests" path == null));
           };
 
           nativeBuildInputs = with pkgs; [
@@ -83,17 +89,20 @@
         };
 
         cargoArtifacts = craneLib.buildDepsOnly craneArgs;
-        niri = craneLib.buildPackage (craneArgs // {inherit cargoArtifacts;});
-      in {
+        niri = craneLib.buildPackage (craneArgs // { inherit cargoArtifacts; });
+      in
+      {
         formatter = pkgs.nixfmt-rfc-style;
 
         checks.niri = niri;
         packages.default = niri;
 
         devShells.default = craneLib.devShell {
-          inputsFrom = [niri];
+          inputsFrom = [ niri ];
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (craneArgs.runtimeDependencies ++ craneArgs.nativeBuildInputs ++ craneArgs.buildInputs);
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (
+            craneArgs.runtimeDependencies ++ craneArgs.nativeBuildInputs ++ craneArgs.buildInputs
+          );
           inherit (niri) LIBCLANG_PATH;
         };
       }
