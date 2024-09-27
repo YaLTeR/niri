@@ -4,107 +4,139 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    crane.url = "github:ipetkov/crane";
-    flake-utils.url = "github:numtide/flake-utils";
     nix-filter.url = "github:numtide/nix-filter";
-    fenix = {
-      url = "github:nix-community/fenix/monthly";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      crane,
       nix-filter,
-      flake-utils,
-      fenix,
       ...
     }:
     let
+      inherit (nixpkgs) lib;
       systems = [
         "aarch64-linux"
         "x86_64-linux"
       ];
+
+      forAllSystems = lib.genAttrs systems;
+      nixpkgsFor = forAllSystems (system: nixpkgs.legacyPackages.${system});
     in
-    flake-utils.lib.eachSystem systems (
-      system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
-        toolchain = fenix.packages.${system}.complete.toolchain;
-        craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
+    {
+      checks = forAllSystems (system: {
+        inherit (self.packages.${system}) niri;
+      });
 
-        craneArgs = {
-          pname = "niri";
-          version = self.rev or "dirty";
+      devShells = forAllSystems (
+        system:
+        let
+          inherit (self.packages.${system}) niri;
+        in
+        {
+          default = nixpkgsFor.${system}.mkShell {
+            inputsFrom = [ niri ];
 
-          src = nixpkgs.lib.cleanSourceWith {
-            src = craneLib.path ./.;
-            filter =
-              path: type:
-              (builtins.match "resources" path == null)
-              || ((craneLib.filterCargoSources path type) && (builtins.match "niri-visual-tests" path == null));
+            env = {
+              LD_LIBRARY_PATH = lib.makeLibraryPath niri.buildInputs;
+              inherit (niri.env) LIBCLANG_PATH;
+            };
           };
+        }
+      );
 
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            autoPatchelfHook
-            clang
-            gdk-pixbuf
-            graphene
-            gtk4
-            libadwaita
-          ];
+      formatter = forAllSystems (system: nixpkgsFor.${system}.nixfmt-rfc-style);
 
-          buildInputs = with pkgs; [
-            wayland
-            systemd # For libudev
-            seatd # For libseat
-            libxkbcommon
-            libdisplay-info
-            libinput
-            mesa # For libgbm
-            fontconfig
-            stdenv.cc.cc.lib
-            pipewire
-            pango
-            cairo
-            glib
-            pixman
-          ];
+      packages = forAllSystems (system: {
+        niri = nixpkgsFor.${system}.callPackage (
+          {
+            cairo,
+            clang,
+            fontconfig,
+            gdk-pixbuf,
+            glib,
+            graphene,
+            gtk4,
+            libadwaita,
+            libclang,
+            libdisplay-info,
+            libglvnd,
+            libinput,
+            libxkbcommon,
+            mesa,
+            pango,
+            pipewire,
+            pixman,
+            pkg-config,
+            rustPlatform,
+            seatd,
+            stdenv,
+            systemd,
+            wayland,
+            xorg,
+          }:
+          rustPlatform.buildRustPackage rec {
+            pname = "niri";
+            version = self.shortRev or self.dirtyShortRev or "unknown";
 
-          runtimeDependencies = with pkgs; [
-            wayland
-            mesa
-            libglvnd # For libEGL
-            xorg.libXcursor
-            xorg.libXi
-            libxkbcommon
-          ];
+            cargoLock = {
+              # NOTE: This is only used for Git dependencies
+              allowBuiltinFetchGit = true;
+              lockFile = ./Cargo.lock;
+            };
 
-          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath craneArgs.runtimeDependencies; # Needed for tests to find libxkbcommon
-        };
+            src = nix-filter.lib.filter {
+              root = self;
+              include = [
+                "niri-config"
+                "niri-ipc"
+                "resources"
+                "src"
+              ];
+            };
 
-        cargoArtifacts = craneLib.buildDepsOnly craneArgs;
-        niri = craneLib.buildPackage (craneArgs // { inherit cargoArtifacts; });
-      in
-      {
-        formatter = pkgs.nixfmt-rfc-style;
+            nativeBuildInputs = [
+              clang
+              gdk-pixbuf
+              graphene
+              gtk4
+              libadwaita
+              pkg-config
+            ];
 
-        checks.niri = niri;
-        packages.default = niri;
+            buildInputs = [
+              cairo
+              fontconfig
+              glib
+              libdisplay-info
+              libinput
+              libxkbcommon
+              mesa # For libgbm
+              pango
+              pipewire
+              pixman
+              seatd # For libseat
+              stdenv.cc.cc.lib
+              systemd # For libudev
+              wayland
+            ];
 
-        devShells.default = craneLib.devShell {
-          inputsFrom = [ niri ];
+            runtimeDependencies = [
+              libglvnd # For libEGL
+              libxkbcommon
+              mesa
+              wayland
+              xorg.libXcursor
+              xorg.libXi
+            ];
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (
-            craneArgs.runtimeDependencies ++ craneArgs.nativeBuildInputs ++ craneArgs.buildInputs
-          );
-          inherit (niri) LIBCLANG_PATH;
-        };
-      }
-    );
+            LD_LIBRARY_PATH = lib.makeLibraryPath runtimeDependencies;
+            LIBCLANG_PATH = lib.getLib libclang + "/lib";
+          }
+        ) { };
+
+        default = self.packages.${system}.niri;
+      });
+    };
 }
