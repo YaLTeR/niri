@@ -12,21 +12,19 @@
       self,
       nixpkgs,
       nix-filter,
-      ...
     }:
     let
       inherit (nixpkgs) lib;
-      systems = [
-        "aarch64-linux"
-        "x86_64-linux"
-      ];
+      # Support all Linux systems that the nixpkgs flake exposes
+      systems = lib.intersectLists lib.systems.flakeExposed lib.platforms.linux;
 
       forAllSystems = lib.genAttrs systems;
       nixpkgsFor = forAllSystems (system: nixpkgs.legacyPackages.${system});
     in
     {
       checks = forAllSystems (system: {
-        inherit (self.packages.${system}) niri;
+        # We use the debug build here to save a bit of time
+        inherit (self.packages.${system}) niri-debug;
       });
 
       devShells = forAllSystems (
@@ -39,8 +37,14 @@
             inputsFrom = [ niri ];
 
             env = {
-              LD_LIBRARY_PATH = lib.makeLibraryPath niri.buildInputs;
-              inherit (niri.env) LIBCLANG_PATH;
+              inherit (niri) LIBCLANG_PATH;
+
+              # WARN: Do not overwrite this variable in your shell!
+              # It is required for `dlopen()` to work on some libraries; see the comment
+              # in the package expression
+              #
+              # This should only be set with `CARGO_BUILD_RUSTFLAGS="$CARGO_BUILD_RUSTFLAGS -C your-flags"`
+              inherit (niri) CARGO_BUILD_RUSTFLAGS;
             };
           };
         }
@@ -48,95 +52,154 @@
 
       formatter = forAllSystems (system: nixpkgsFor.${system}.nixfmt-rfc-style);
 
-      packages = forAllSystems (system: {
-        niri = nixpkgsFor.${system}.callPackage (
-          {
-            cairo,
-            clang,
-            fontconfig,
-            gdk-pixbuf,
-            glib,
-            graphene,
-            gtk4,
-            libadwaita,
-            libclang,
-            libdisplay-info,
-            libglvnd,
-            libinput,
-            libxkbcommon,
-            mesa,
-            pango,
-            pipewire,
-            pixman,
-            pkg-config,
-            rustPlatform,
-            seatd,
-            stdenv,
-            systemd,
-            wayland,
-            xorg,
-          }:
-          rustPlatform.buildRustPackage rec {
-            pname = "niri";
-            version = self.shortRev or self.dirtyShortRev or "unknown";
+      packages = forAllSystems (
+        system:
+        let
+          inherit (self.packages.${system}) niri;
+        in
+        {
+          niri = nixpkgsFor.${system}.callPackage (
+            {
+              cairo,
+              clang,
+              dbus,
+              libGL,
+              libclang,
+              libdisplay-info,
+              libinput,
+              libseat,
+              libxkbcommon,
+              mesa,
+              pango,
+              pipewire,
+              pkg-config,
+              rustPlatform,
+              systemd,
+              wayland,
+              withDbus ? true,
+              withSystemd ? true,
+              withScreencastSupport ? true,
+              withDinit ? false,
+            }:
 
-            cargoLock = {
-              # NOTE: This is only used for Git dependencies
-              allowBuiltinFetchGit = true;
-              lockFile = ./Cargo.lock;
-            };
+            rustPlatform.buildRustPackage {
+              pname = "niri";
+              version = self.shortRev or self.dirtyShortRev or "unknown";
 
-            src = nix-filter.lib.filter {
-              root = self;
-              include = [
-                "niri-config"
-                "niri-ipc"
-                "resources"
-                "src"
+              src = nix-filter.lib.filter {
+                root = self;
+                include = [
+                  "niri-config"
+                  "niri-ipc"
+                  "niri-visual-tests"
+                  "resources"
+                  "src"
+                  ./Cargo.lock
+                  ./Cargo.toml
+                ];
+              };
+
+              postPatch = ''
+                patchShebangs resources/niri-session
+                substituteInPlace resources/niri.service \
+                  --replace-fail '/usr/bin' "$out/bin"
+              '';
+
+              cargoLock = {
+                # NOTE: This is only used for Git dependencies
+                allowBuiltinFetchGit = true;
+                lockFile = ./Cargo.lock;
+              };
+
+              strictDeps = true;
+
+              nativeBuildInputs = [
+                clang
+                pkg-config
               ];
-            };
 
-            nativeBuildInputs = [
-              clang
-              gdk-pixbuf
-              graphene
-              gtk4
-              libadwaita
-              pkg-config
-            ];
+              buildInputs =
+                [
+                  cairo
+                  dbus
+                  libGL
+                  libdisplay-info
+                  libinput
+                  libseat
+                  libxkbcommon
+                  mesa # libgbm
+                  pango
+                  wayland
+                ]
+                ++ lib.optional (withDbus || withScreencastSupport || withSystemd) dbus
+                ++ lib.optional withScreencastSupport pipewire
+                # Also includes libudev
+                ++ lib.optional withSystemd systemd;
 
-            buildInputs = [
-              cairo
-              fontconfig
-              glib
-              libdisplay-info
-              libinput
-              libxkbcommon
-              mesa # For libgbm
-              pango
-              pipewire
-              pixman
-              seatd # For libseat
-              stdenv.cc.cc.lib
-              systemd # For libudev
-              wayland
-            ];
+              buildFeatures =
+                lib.optional withDbus "dbus"
+                ++ lib.optional withDinit "dinit"
+                ++ lib.optional withScreencastSupport "xdp-gnome-screencast"
+                ++ lib.optional withSystemd "systemd";
+              buildNoDefaultFeatures = true;
 
-            runtimeDependencies = [
-              libglvnd # For libEGL
-              libxkbcommon
-              mesa
-              wayland
-              xorg.libXcursor
-              xorg.libXi
-            ];
+              postInstall =
+                ''
+                  install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
+                  install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
+                ''
+                + lib.optionalString withSystemd ''
+                  install -Dm755 resources/niri-session $out/bin/niri-session
+                  install -Dm644 resources/niri{.service,-shutdown.target} -t $out/share/systemd/user
+                '';
 
-            LD_LIBRARY_PATH = lib.makeLibraryPath runtimeDependencies;
-            LIBCLANG_PATH = lib.getLib libclang + "/lib";
-          }
-        ) { };
+              env = {
+                LIBCLANG_PATH = lib.getLib libclang + "/lib";
 
-        default = self.packages.${system}.niri;
-      });
+                # Force linking with libEGL and libwayland-client
+                # so they can be discovered by `dlopen()`
+                CARGO_BUILD_RUSTFLAGS = toString (
+                  map (arg: "-C link-arg=" + arg) [
+                    "-Wl,--push-state,--no-as-needed"
+                    "-lEGL"
+                    "-lwayland-client"
+                    "-Wl,--pop-state"
+                  ]
+                );
+              };
+
+              passthru = {
+                providedSessions = [ "niri" ];
+              };
+
+              meta = {
+                description = "Scrollable-tiling Wayland compositor";
+                homepage = "https://github.com/YaLTeR/niri";
+                license = lib.licenses.gpl3Only;
+                mainProgram = "niri";
+                platforms = lib.platforms.linux;
+              };
+            }
+          ) { };
+
+          # NOTE: This is for development purposes only
+          #
+          # It is primarily to help with quickly iterating on
+          # changes made to the above expression - though it is
+          # also not stripped in order to better debug niri itself
+          niri-debug = niri.overrideAttrs (
+            newAttrs: oldAttrs: {
+              pname = oldAttrs.pname + "-debug";
+
+              cargoBuildType = "debug";
+              cargoCheckType = newAttrs.cargoBuildType;
+
+              dontStrip = true;
+            }
+          );
+
+          default = niri;
+        }
+      );
     };
 }
