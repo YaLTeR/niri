@@ -85,7 +85,7 @@
         cargoArtifacts = craneLib.buildDepsOnly craneArgs;
         niri = craneLib.buildPackage (craneArgs // {inherit cargoArtifacts;});
       in {
-        formatter = pkgs.alejandra;
+        formatter = pkgs.nixfmt-rfc-style;
 
         checks.niri = niri;
         packages.default = niri;
