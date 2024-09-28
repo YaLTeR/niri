@@ -159,6 +159,31 @@ impl DisplayConfig {
 
     #[zbus(signal)]
     pub async fn monitors_changed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn power_save_mode(&self) -> i32 {
+        -1
+    }
+
+    #[zbus(property)]
+    fn set_power_save_mode(&self, _mode: i32) -> zbus::Result<()> {
+        Err(zbus::Error::Unsupported)
+    }
+
+    #[zbus(property)]
+    fn panel_orientation_managed(&self) -> bool {
+        false
+    }
+
+    #[zbus(property)]
+    fn apply_monitors_config_allowed(&self) -> bool {
+        true
+    }
+
+    #[zbus(property)]
+    fn night_light_supported(&self) -> bool {
+        false
+    }
 }
 
 impl DisplayConfig {
