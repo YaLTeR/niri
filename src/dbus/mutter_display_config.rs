@@ -16,6 +16,42 @@ pub struct DisplayConfig {
 }
 
 #[derive(Serialize, Type)]
+pub struct CrtcResource {
+    id: u32,
+    winsys_id: i64,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    current_mode: i32,
+    current_transform: u32,
+    transforms: Vec<u32>,
+    properties: HashMap<String, OwnedValue>,
+}
+
+#[derive(Serialize, Type)]
+pub struct OutputResource {
+    id: u32,
+    winsys_id: i64,
+    current_crtc: i32,
+    possible_crtcs: Vec<u32>,
+    name: String,
+    modes: Vec<u32>,
+    clones: Vec<u32>,
+    properties: HashMap<String, OwnedValue>,
+}
+
+#[derive(Serialize, Type)]
+pub struct ModeResource {
+    id: u32,
+    winsys_id: i64,
+    width: u32,
+    height: u32,
+    frequency: f64,
+    flags: u32,
+}
+
+#[derive(Serialize, Type)]
 pub struct Monitor {
     names: (String, String, String, String),
     modes: Vec<Mode>,
@@ -33,6 +69,7 @@ pub struct Mode {
     properties: HashMap<String, OwnedValue>,
 }
 
+// GetCurrentState
 #[derive(Serialize, Type)]
 pub struct LogicalMonitor {
     x: i32,
@@ -46,6 +83,137 @@ pub struct LogicalMonitor {
 
 #[interface(name = "org.gnome.Mutter.DisplayConfig")]
 impl DisplayConfig {
+    async fn get_resources(
+        &self,
+    ) -> fdo::Result<(
+        u32,
+        Vec<CrtcResource>,
+        Vec<OutputResource>,
+        Vec<ModeResource>,
+        i32,
+        i32,
+    )> {
+        let mut crtcs: Vec<CrtcResource> = Vec::new();
+        let mut outputs: Vec<OutputResource> = Vec::new();
+        let mut modes: Vec<ModeResource> = Vec::new();
+
+        for (id, output) in self.ipc_outputs.lock().unwrap().values().enumerate() {
+            let c = &output.name;
+            let is_laptop_panel = matches!(c.get(..4), Some("eDP-" | "LVDS" | "DSI-"));
+            let display_name = make_display_name(output, is_laptop_panel);
+
+            let modes = output
+                .modes
+                .iter()
+                .map(|mode| {
+                    let id = modes.len() as u32;
+                    modes.push(ModeResource {
+                        id,
+                        winsys_id: id as i64,
+                        width: mode.width as u32,
+                        height: mode.height as u32,
+                        frequency: mode.refresh_rate as f64 / 1000.0,
+                        flags: 0,
+                    });
+                    id
+                })
+                .collect::<Vec<_>>();
+
+            let mut properties = HashMap::new();
+            properties.insert(
+                String::from("vendor"),
+                OwnedValue::from(zvariant::Str::from(output.make.clone())),
+            );
+            properties.insert(
+                String::from("product"),
+                OwnedValue::from(zvariant::Str::from(output.model.clone())),
+            );
+            if let Some(serial) = output.serial.as_ref() {
+                properties.insert(
+                    String::from("serial"),
+                    OwnedValue::from(zvariant::Str::from(serial.clone())),
+                );
+            }
+            if let Some((width, height)) = output.physical_size {
+                properties.insert(String::from("width-mm"), OwnedValue::from(width as i32));
+                properties.insert(String::from("height-mm"), OwnedValue::from(height as i32));
+            }
+            properties.insert(
+                String::from("display-name"),
+                OwnedValue::from(zvariant::Str::from(display_name)),
+            );
+
+            outputs.push(OutputResource {
+                id: id as u32,
+                winsys_id: id as i64,
+                current_crtc: id as i32,
+                possible_crtcs: vec![id as u32],
+                name: output.name.clone(),
+                modes,
+                clones: vec![],
+                properties,
+            });
+
+            // As we don't have access to actual CRTCs, simulate them
+            if let Some(logical) = output.logical.as_ref() {
+                crtcs.push(CrtcResource {
+                    id: id as u32,
+                    winsys_id: id as i64,
+                    x: logical.x,
+                    y: logical.y,
+                    width: logical.width as i32,
+                    height: logical.height as i32,
+                    current_mode: output.current_mode.unwrap() as i32,
+                    current_transform: logical.transform.to_wayland_id(),
+                    transforms: (0..=8).collect(),
+                    properties: HashMap::new(),
+                });
+            } else {
+                crtcs.push(CrtcResource {
+                    id: id as u32,
+                    winsys_id: id as i64,
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                    current_mode: -1,
+                    current_transform: 0,
+                    transforms: (0..=8).collect(),
+                    properties: HashMap::new(),
+                });
+            }
+        }
+
+        Ok((0, crtcs, outputs, modes, 65535, 65535))
+    }
+
+    #[dbus_interface(property)]
+    fn power_save_mode(&self) -> i32 {
+        -1
+    }
+
+    #[dbus_interface(property)]
+    fn set_power_save_mode(&self, _mode: i32) -> zbus::Result<()> {
+        Err(zbus::Error::Unsupported)
+    }
+
+    #[dbus_interface(property)]
+    fn panel_orientation_managed(&self) -> bool {
+        false
+    }
+
+    #[dbus_interface(property)]
+    fn apply_monitors_config_allowed(&self) -> bool {
+        true
+    }
+
+    #[dbus_interface(property)]
+    fn night_light_supported(&self) -> bool {
+        // TODO: actually add "whether gamma_length is non-zero" to
+        // ipc_outputs and ensure at least one such output here
+        true
+    }
+
     async fn get_current_state(
         &self,
     ) -> fdo::Result<(
@@ -124,22 +292,11 @@ impl DisplayConfig {
 
                 let logical = output.logical.as_ref().unwrap();
 
-                let transform = match logical.transform {
-                    niri_ipc::Transform::Normal => 0,
-                    niri_ipc::Transform::_90 => 1,
-                    niri_ipc::Transform::_180 => 2,
-                    niri_ipc::Transform::_270 => 3,
-                    niri_ipc::Transform::Flipped => 4,
-                    niri_ipc::Transform::Flipped90 => 5,
-                    niri_ipc::Transform::Flipped180 => 6,
-                    niri_ipc::Transform::Flipped270 => 7,
-                };
-
                 let logical_monitor = LogicalMonitor {
                     x: logical.x,
                     y: logical.y,
                     scale: logical.scale,
-                    transform,
+                    transform: logical.transform.to_wayland_id(),
                     is_primary: false,
                     monitors: vec![monitor.names.clone()],
                     properties: HashMap::new(),
