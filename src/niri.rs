@@ -634,7 +634,6 @@ impl State {
         let Some(output) = self.niri.layout.active_output() else {
             return false;
         };
-        let output = output.clone();
         let monitor = self.niri.layout.monitor_for_output(&output).unwrap();
 
         let mut rv = false;
@@ -2667,7 +2666,7 @@ impl Niri {
             .tablet_cursor_location
             .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
 
-        match self.cursor_manager.cursor_image().clone() {
+        match self.cursor_manager.cursor_image() {
             CursorImageStatus::Surface(ref surface) => {
                 let hotspot = with_states(surface, |states| {
                     states
@@ -2751,7 +2750,7 @@ impl Niri {
                 };
 
                 let icon = if let CursorImageStatus::Named(icon) = cursor_image {
-                    icon
+                    icon.clone()
                 } else {
                     Default::default()
                 };
