@@ -27,8 +27,8 @@ use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorati
 use smithay::wayland::shell::wlr_layer::{self, Layer};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
-    PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler,
-    XdgShellState, XdgToplevelSurfaceData,
+    PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+    XdgToplevelSurfaceData,
 };
 use smithay::wayland::xdg_foreign::{XdgForeignHandler, XdgForeignState};
 use smithay::{
@@ -261,7 +261,7 @@ impl XdgShellHandler for State {
 
         // A configure is required in response to this event. However, if an initial configure
         // wasn't sent, then we will send this as part of the initial configure later.
-        if initial_configure_sent(&surface) {
+        if surface.is_initial_configure_sent() {
             surface.send_configure();
         }
     }
@@ -552,7 +552,7 @@ impl XdgDecorationHandler for State {
 
         // A configure is required in response to this event. However, if an initial configure
         // wasn't sent, then we will send this as part of the initial configure later.
-        if initial_configure_sent(&toplevel) {
+        if toplevel.is_initial_configure_sent() {
             toplevel.send_configure();
         }
     }
@@ -565,7 +565,7 @@ impl XdgDecorationHandler for State {
 
         // A configure is required in response to this event. However, if an initial configure
         // wasn't sent, then we will send this as part of the initial configure later.
-        if initial_configure_sent(&toplevel) {
+        if toplevel.is_initial_configure_sent() {
             toplevel.send_configure();
         }
     }
@@ -619,18 +619,6 @@ impl XdgForeignHandler for State {
     }
 }
 delegate_xdg_foreign!(State);
-
-fn initial_configure_sent(toplevel: &ToplevelSurface) -> bool {
-    with_states(toplevel.wl_surface(), |states| {
-        states
-            .data_map
-            .get::<XdgToplevelSurfaceData>()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .initial_configure_sent
-    })
-}
 
 impl State {
     pub fn send_initial_configure(&mut self, toplevel: &ToplevelSurface) {
@@ -788,16 +776,7 @@ impl State {
         if let Some(popup) = self.niri.popups.find_popup(surface) {
             match popup {
                 PopupKind::Xdg(ref popup) => {
-                    let initial_configure_sent = with_states(surface, |states| {
-                        states
-                            .data_map
-                            .get::<XdgPopupSurfaceData>()
-                            .unwrap()
-                            .lock()
-                            .unwrap()
-                            .initial_configure_sent
-                    });
-                    if !initial_configure_sent {
+                    if !popup.is_initial_configure_sent() {
                         if let Some(output) = self.output_for_popup(&PopupKind::Xdg(popup.clone()))
                         {
                             let scale = output.current_scale();

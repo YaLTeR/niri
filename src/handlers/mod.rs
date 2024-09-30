@@ -143,6 +143,15 @@ impl PointerConstraintsHandler for State {
             &self.niri.pointer_focus,
         );
     }
+
+    fn cursor_position_hint(
+        &mut self,
+        _surface: &WlSurface,
+        _pointer: &PointerHandle<Self>,
+        _location: Point<f64, Logical>,
+    ) {
+        // FIXME
+    }
 }
 delegate_pointer_constraints!(State);
 

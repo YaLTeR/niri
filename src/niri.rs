@@ -44,7 +44,7 @@ use smithay::desktop::{
     layer_map_for_output, LayerSurface, PopupGrab, PopupManager, PopupUngrabStrategy, Space,
     Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::{Layout as KeyboardLayout, XkbContextHandler};
+use smithay::input::keyboard::Layout as KeyboardLayout;
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
 use smithay::input::{Seat, SeatState};
 use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel};
@@ -641,13 +641,13 @@ impl State {
         let Some(output) = self.niri.layout.active_output() else {
             return false;
         };
-        let monitor = self.niri.layout.monitor_for_output(&output).unwrap();
+        let monitor = self.niri.layout.monitor_for_output(output).unwrap();
 
         let mut rv = false;
         let rect = monitor.active_tile_visual_rectangle();
 
         if let Some(rect) = rect {
-            let output_geo = self.niri.global_space.output_geometry(&output).unwrap();
+            let output_geo = self.niri.global_space.output_geometry(output).unwrap();
             let mut rect = rect;
             rect.loc += output_geo.loc.to_f64();
             rv = self.move_cursor_to_rect(rect, mode);
@@ -899,8 +899,10 @@ impl State {
             }
 
             if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
-                let current_layout =
-                    keyboard.with_xkb_state(self, |context| context.active_layout());
+                let current_layout = keyboard.with_xkb_state(self, |context| {
+                    let xkb = context.xkb().lock().unwrap();
+                    xkb.active_layout()
+                });
 
                 let mut new_layout = current_layout;
                 // Store the currently active layout for the surface.
@@ -2601,16 +2603,14 @@ impl Niri {
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                let pointer_elements = render_elements_from_surface_tree(
+                render_elements_from_surface_tree(
                     renderer,
                     &surface,
                     pointer_pos,
                     output_scale,
                     1.,
                     Kind::Cursor,
-                );
-
-                pointer_elements
+                )
             }
             RenderCursor::Named {
                 icon,
@@ -2760,7 +2760,7 @@ impl Niri {
                 };
 
                 let icon = if let CursorImageStatus::Named(icon) = cursor_image {
-                    icon.clone()
+                    *icon
                 } else {
                     Default::default()
                 };

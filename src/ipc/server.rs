@@ -16,7 +16,6 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
-use smithay::input::keyboard::XkbContextHandler;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
@@ -385,10 +384,13 @@ impl State {
     pub fn ipc_keyboard_layouts_changed(&mut self) {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         let keyboard_layouts = keyboard.with_xkb_state(self, |context| {
-            let layouts = context.keymap().layouts();
+            let xkb = context.xkb().lock().unwrap();
+            let layouts = xkb.layouts();
             KeyboardLayouts {
-                names: layouts.map(str::to_owned).collect(),
-                current_idx: context.active_layout().0 as u8,
+                names: layouts
+                    .map(|layout| xkb.layout_name(layout).to_owned())
+                    .collect(),
+                current_idx: xkb.active_layout().0 as u8,
             }
         });
 
@@ -406,7 +408,10 @@ impl State {
 
     pub fn ipc_refresh_keyboard_layout_index(&mut self) {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
-        let idx = keyboard.with_xkb_state(self, |context| context.active_layout().0 as u8);
+        let idx = keyboard.with_xkb_state(self, |context| {
+            let xkb = context.xkb().lock().unwrap();
+            xkb.active_layout().0 as u8
+        });
 
         let Some(server) = &self.niri.ipc_server else {
             return;
