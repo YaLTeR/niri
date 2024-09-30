@@ -5,6 +5,13 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     nix-filter.url = "github:numtide/nix-filter";
+
+    # NOTE: This is not necessary for end users
+    # You can omit it with `inputs.rust-overlay.follows = ""`
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -12,6 +19,7 @@
       self,
       nixpkgs,
       nix-filter,
+      rust-overlay,
     }:
     let
       inherit (nixpkgs) lib;
@@ -30,11 +38,29 @@
       devShells = forAllSystems (
         system:
         let
+          pkgs = nixpkgsFor.${system};
           inherit (self.packages.${system}) niri;
         in
         {
-          default = nixpkgsFor.${system}.mkShell {
-            inputsFrom = [ niri ];
+          default = pkgs.mkShell {
+            packages = [
+              # NOTE: Nixpkgs' Rust toolchain isn't used here as we prefer
+              # a nightly toolchain for development, and *require* a nightly
+              # `rustfmt`
+              rust-overlay.packages.${system}.rust-nightly
+
+              pkgs.rust-analyzer
+            ];
+
+            nativeBuildInputs = [
+              pkgs.clang
+              pkgs.pkg-config
+              pkgs.wrapGAppsHook4 # For `niri-visual-tests`
+            ];
+
+            buildInputs = niri.buildInputs ++ [
+              pkgs.libadwaita # For `niri-visual-tests`
+            ];
 
             env = {
               inherit (niri) LIBCLANG_PATH;
