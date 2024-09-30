@@ -403,7 +403,7 @@ impl<W: LayoutElement> Monitor<W> {
             let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
             let new_idx = curr_idx.saturating_sub(1);
             if curr_idx == new_idx {
-                self.focus_left();
+                self.focus_right();
             } else {
                 workspace.focus_up();
             }

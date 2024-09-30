@@ -10,7 +10,7 @@ repository.workspace = true
 [dependencies]
 adw = { version = "0.7.0", package = "libadwaita", features = ["v1_4"] }
 anyhow.workspace = true
-gtk = { version = "0.9.1", package = "gtk4", features = ["v4_12"] }
+gtk = { version = "0.9.2", package = "gtk4", features = ["v4_12"] }
 niri = { version = "0.1.9", path = ".." }
 niri-config = { version = "0.1.9", path = "../niri-config" }
 smithay.workspace = true

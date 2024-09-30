@@ -11,15 +11,15 @@ repository = "https://github.com/YaLTeR/niri"
 rust-version = "1.77"
 
 [workspace.dependencies]
-anyhow = "1.0.88"
+anyhow = "1.0.89"
 bitflags = "2.6.0"
-clap = { version = "4.5.17", features = ["derive"] }
+clap = { version = "4.5.18", features = ["derive"] }
 k9 = "0.12.0"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-tracy-client = { version = "0.17.3", default-features = false }
+tracy-client = { version = "0.17.4", default-features = false }
 
 [workspace.dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
@@ -54,25 +54,25 @@ bytemuck = { version = "1.18.0", features = ["derive"] }
 calloop = { version = "0.14.1", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
 directories = "5.0.1"
-drm-ffi = "0.8.0"
+drm-ffi = "0.9.0"
 fastrand = "2.1.1"
 futures-util = { version = "0.3.30", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
 glam = "0.29.0"
-input = { version = "0.9.0", features = ["libinput_1_21"] }
+input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.158"
+libc = "0.2.159"
 libdisplay-info = "0.1.0"
 log = { version = "0.4.22", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "0.1.9", path = "niri-config" }
 niri-ipc = { version = "0.1.9", path = "niri-ipc", features = ["clap"] }
 notify-rust = { version = "~4.10.0", optional = true }
-ordered-float = "4.2.2"
-pango = { version = "0.20.1", features = ["v1_44"] }
-pangocairo = "0.20.1"
+ordered-float = "4.3.0"
+pango = { version = "0.20.4", features = ["v1_44"] }
+pangocairo = "0.20.4"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
-png = "0.17.13"
-portable-atomic = { version = "1.7.0", default-features = false, features = ["float"] }
+png = "0.17.14"
+portable-atomic = { version = "1.9.0", default-features = false, features = ["float"] }
 profiling = "1.0.15"
 sd-notify = "0.4.2"
 serde.workspace = true

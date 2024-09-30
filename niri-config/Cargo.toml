@@ -13,7 +13,7 @@ csscolorparser = "0.7.0"
 knuffel = "3.2.0"
 miette = "5.10.0"
 niri-ipc = { version = "0.1.9", path = "../niri-ipc" }
-regex = "1.10.6"
+regex = "1.11.0"
 smithay = { workspace = true, features = ["backend_libinput"] }
 tracing.workspace = true
 tracy-client.workspace = true
@@ -21,4 +21,4 @@ tracy-client.workspace = true
 [dev-dependencies]
 k9.workspace = true
 miette = { version = "5.10.0", features = ["fancy"] }
-pretty_assertions = "1.4.0"
+pretty_assertions = "1.4.1"

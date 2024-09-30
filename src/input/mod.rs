@@ -11,7 +11,7 @@ use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
-    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, MouseButton, PointerAxisEvent,
+    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
     TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
 };
@@ -2305,10 +2305,10 @@ impl State {
 /// to them from being delivered.
 #[allow(clippy::too_many_arguments)]
 fn should_intercept_key(
-    suppressed_keys: &mut HashSet<u32>,
+    suppressed_keys: &mut HashSet<Keycode>,
     bindings: &Binds,
     comp_mod: CompositorMod,
-    key_code: u32,
+    key_code: Keycode,
     modified: Keysym,
     raw: Option<Keysym>,
     pressed: bool,
@@ -2754,8 +2754,8 @@ mod tests {
         // The key_code we pick is arbitrary, the only thing
         // that matters is that they are different between cases.
 
-        let close_key_code = close_keysym.into();
-        let close_key_event = |suppr: &mut HashSet<u32>, mods: ModifiersState, pressed| {
+        let close_key_code = Keycode::from(close_keysym.raw() + 8u32);
+        let close_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
                 &bindings,
@@ -2771,12 +2771,12 @@ mod tests {
         };
 
         // Key event with the code which can't trigger any action.
-        let none_key_event = |suppr: &mut HashSet<u32>, mods: ModifiersState, pressed| {
+        let none_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
                 &bindings,
                 comp_mod,
-                Keysym::l.into(),
+                Keycode::from(Keysym::l.raw() + 8),
                 Keysym::l,
                 Some(Keysym::l),
                 pressed,
