@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -85,6 +85,10 @@ impl State {
                     .idle_notifier_state
                     .notify_activity(&self.niri.seat);
             }
+        }
+
+        if should_update_cursor_timeout(&event) {
+            self.niri.last_cursor_movement = Instant::now();
         }
 
         let hide_hotkey_overlay =
@@ -307,6 +311,10 @@ impl State {
             }
         }
 
+        if pressed {
+            self.hide_cursor_if_needed();
+        }
+
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
             event.key_code(),
@@ -349,7 +357,10 @@ impl State {
 
         self.handle_bind(bind.clone());
 
-        // Start the key repeat timer if necessary.
+        self.start_key_repeat(bind);
+    }
+
+    fn start_key_repeat(&mut self, bind: Bind) {
         if !bind.repeat {
             return;
         }
@@ -381,6 +392,22 @@ impl State {
             .unwrap();
 
         self.niri.bind_repeat_timer = Some(token);
+    }
+
+    fn hide_cursor_if_needed(&mut self) {
+        if !self.niri.config.borrow().cursor.hide_on_key_press {
+            return;
+        }
+
+        // niri keeps this set only while actively using a tablet, which means the cursor position
+        // is likely to change almost immediately, causing pointer_hidden to just flicker back and
+        // forth.
+        if self.niri.tablet_cursor_location.is_some() {
+            return;
+        }
+
+        self.niri.pointer_hidden = true;
+        self.niri.queue_redraw_all();
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
@@ -2531,6 +2558,20 @@ fn should_notify_activity<I: InputBackend>(event: &InputEvent<I>) -> bool {
     !matches!(
         event,
         InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. }
+    )
+}
+
+fn should_update_cursor_timeout<I: InputBackend>(event: &InputEvent<I>) -> bool {
+    matches!(
+        event,
+        InputEvent::PointerAxis { .. }
+            | InputEvent::PointerButton { .. }
+            | InputEvent::PointerMotion { .. }
+            | InputEvent::PointerMotionAbsolute { .. }
+            | InputEvent::TabletToolAxis { .. }
+            | InputEvent::TabletToolButton { .. }
+            | InputEvent::TabletToolProximity { .. }
+            | InputEvent::TabletToolTip { .. }
     )
 }
 
