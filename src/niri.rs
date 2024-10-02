@@ -267,6 +267,7 @@ pub struct Niri {
     /// When this happens, the pointer also loses any focus. This is so that touch can prevent
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
+    pub last_cursor_movement: Instant,
     // FIXME: this should be able to be removed once PointerFocus takes grabs into account.
     pub pointer_grab_ongoing: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
@@ -1860,6 +1861,7 @@ impl Niri {
             dnd_icon: None,
             pointer_focus: PointerFocus::default(),
             pointer_hidden: false,
+            last_cursor_movement: Instant::now(),
             pointer_grab_ongoing: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
@@ -2663,7 +2665,26 @@ impl Niri {
         pointer_elements
     }
 
+    fn hide_cursor_after_timeout_if_needed(&mut self) {
+        if self.pointer_hidden {
+            return;
+        }
+
+        let config = self.config.borrow();
+        let timeout = &config.cursor.hide_after_inactive_ms;
+
+        if let Some(duration_ms) = timeout {
+            let timeout = Duration::from_millis(*duration_ms as u64);
+
+            if self.last_cursor_movement.elapsed() >= timeout {
+                self.pointer_hidden = true;
+            }
+        }
+    }
+
     pub fn refresh_pointer_outputs(&mut self) {
+        self.hide_cursor_after_timeout_if_needed();
+
         if self.pointer_hidden {
             return;
         }
