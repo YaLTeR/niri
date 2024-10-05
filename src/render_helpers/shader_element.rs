@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::rc::Rc;
 
 use glam::{Mat3, Vec2};
@@ -76,14 +76,14 @@ unsafe fn compile_program(
     let debug_program =
         unsafe { link_program(gl, include_str!("shaders/texture.vert"), &debug_shader)? };
 
-    let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-    let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
-    let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-    let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-    let size = CStr::from_bytes_with_nul(b"niri_size\0").expect("NULL terminated");
-    let scale = CStr::from_bytes_with_nul(b"niri_scale\0").expect("NULL terminated");
-    let alpha = CStr::from_bytes_with_nul(b"niri_alpha\0").expect("NULL terminated");
-    let tint = CStr::from_bytes_with_nul(b"niri_tint\0").expect("NULL terminated");
+    let vert = c"vert";
+    let vert_position = c"vert_position";
+    let matrix = c"matrix";
+    let tex_matrix = c"tex_matrix";
+    let size = c"niri_size";
+    let scale = c"niri_scale";
+    let alpha = c"niri_alpha";
+    let tint = c"niri_tint";
 
     Ok(ShaderProgram(Rc::new(ShaderProgramInner {
         normal: ShaderProgramInternal {
