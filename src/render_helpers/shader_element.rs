@@ -88,26 +88,19 @@ unsafe fn compile_program(
     Ok(ShaderProgram(Rc::new(ShaderProgramInner {
         normal: ShaderProgramInternal {
             program,
-            uniform_matrix: gl
-                .GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-            uniform_tex_matrix: gl
-                .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-            uniform_size: gl
-                .GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
-            uniform_scale: gl
-                .GetUniformLocation(program, scale.as_ptr() as *const ffi::types::GLchar),
-            uniform_alpha: gl
-                .GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
-            attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-            attrib_vert_position: gl
-                .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
+            uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr()),
+            uniform_tex_matrix: gl.GetUniformLocation(program, tex_matrix.as_ptr()),
+            uniform_size: gl.GetUniformLocation(program, size.as_ptr()),
+            uniform_scale: gl.GetUniformLocation(program, scale.as_ptr()),
+            uniform_alpha: gl.GetUniformLocation(program, alpha.as_ptr()),
+            attrib_vert: gl.GetAttribLocation(program, vert.as_ptr()),
+            attrib_vert_position: gl.GetAttribLocation(program, vert_position.as_ptr()),
             additional_uniforms: additional_uniforms
                 .iter()
                 .map(|uniform| {
                     let name =
                         CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                    let location =
-                        gl.GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
+                    let location = gl.GetUniformLocation(program, name.as_ptr());
                     (
                         uniform.name.clone().into_owned(),
                         UniformDesc {
@@ -121,41 +114,26 @@ unsafe fn compile_program(
                 .iter()
                 .map(|name_| {
                     let name = CString::new(name_.as_bytes()).expect("Interior null in name");
-                    let location =
-                        gl.GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
+                    let location = gl.GetUniformLocation(program, name.as_ptr());
                     (name_.to_string(), location)
                 })
                 .collect(),
         },
         debug: ShaderProgramInternal {
             program: debug_program,
-            uniform_matrix: gl
-                .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
-            uniform_tex_matrix: gl.GetUniformLocation(
-                debug_program,
-                tex_matrix.as_ptr() as *const ffi::types::GLchar,
-            ),
-            uniform_size: gl
-                .GetUniformLocation(debug_program, size.as_ptr() as *const ffi::types::GLchar),
-            uniform_scale: gl
-                .GetUniformLocation(debug_program, scale.as_ptr() as *const ffi::types::GLchar),
-            uniform_alpha: gl
-                .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
-            attrib_vert: gl
-                .GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
-            attrib_vert_position: gl.GetAttribLocation(
-                debug_program,
-                vert_position.as_ptr() as *const ffi::types::GLchar,
-            ),
+            uniform_matrix: gl.GetUniformLocation(debug_program, matrix.as_ptr()),
+            uniform_tex_matrix: gl.GetUniformLocation(debug_program, tex_matrix.as_ptr()),
+            uniform_size: gl.GetUniformLocation(debug_program, size.as_ptr()),
+            uniform_scale: gl.GetUniformLocation(debug_program, scale.as_ptr()),
+            uniform_alpha: gl.GetUniformLocation(debug_program, alpha.as_ptr()),
+            attrib_vert: gl.GetAttribLocation(debug_program, vert.as_ptr()),
+            attrib_vert_position: gl.GetAttribLocation(debug_program, vert_position.as_ptr()),
             additional_uniforms: additional_uniforms
                 .iter()
                 .map(|uniform| {
                     let name =
                         CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                    let location = gl.GetUniformLocation(
-                        debug_program,
-                        name.as_ptr() as *const ffi::types::GLchar,
-                    );
+                    let location = gl.GetUniformLocation(debug_program, name.as_ptr());
                     (
                         uniform.name.clone().into_owned(),
                         UniformDesc {
@@ -169,16 +147,12 @@ unsafe fn compile_program(
                 .iter()
                 .map(|name_| {
                     let name = CString::new(name_.as_bytes()).expect("Interior null in name");
-                    let location = gl.GetUniformLocation(
-                        debug_program,
-                        name.as_ptr() as *const ffi::types::GLchar,
-                    );
+                    let location = gl.GetUniformLocation(debug_program, name.as_ptr());
                     (name_.to_string(), location)
                 })
                 .collect(),
         },
-        uniform_tint: gl
-            .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
+        uniform_tint: gl.GetUniformLocation(debug_program, tint.as_ptr()),
     })))
 }
 
