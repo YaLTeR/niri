@@ -154,31 +154,35 @@ impl PointerConstraintsHandler for State {
             constraint.map_or(false, |c| c.is_active())
         });
 
-        if is_constraint_active {
-            if let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface {
-                if focused_surface == surface {
-                    let mut root = surface.clone();
-                    while let Some(parent) = get_parent(&root) {
-                        root = parent;
-                    }
-
-                    let target = self
-                        .niri
-                        .output_for_root(&root)
-                        .and_then(|output| self.niri.global_space.output_geometry(output))
-                        .map_or(origin + location, |mut output_geometry| {
-                            // i32 sizes are exclusive, but f64 sizes are inclusive.
-                            output_geometry.size -= (1, 1).into();
-                            (origin + location).constrain(output_geometry.to_f64())
-                        });
-                    pointer.set_location(target);
-                } else {
-                    error!("cursor_position_hint called on a surface that is not the focused surface, but the constraint is active. this should be impossible.");
-                }
-            } else {
-                error!("cursor_position_hint called with no focused surface, but the constraint is active. this should be impossible.");
-            }
+        if !is_constraint_active {
+            return;
         }
+
+        let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface else {
+            error!("cursor_position_hint called with no focused surface, but the constraint is active. this should be impossible.");
+            return;
+        };
+
+        if focused_surface != surface {
+            error!("cursor_position_hint called on a surface that is not the focused surface, but the constraint is active. this should be impossible.");
+            return;
+        }
+
+        let mut root = surface.clone();
+        while let Some(parent) = get_parent(&root) {
+            root = parent;
+        }
+
+        let target = self
+            .niri
+            .output_for_root(&root)
+            .and_then(|output| self.niri.global_space.output_geometry(output))
+            .map_or(origin + location, |mut output_geometry| {
+                // i32 sizes are exclusive, but f64 sizes are inclusive.
+                output_geometry.size -= (1, 1).into();
+                (origin + location).constrain(output_geometry.to_f64())
+            });
+        pointer.set_location(target);
     }
 }
 delegate_pointer_constraints!(State);
