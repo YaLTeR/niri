@@ -189,6 +189,12 @@ impl PointerConstraintsHandler for State {
                 (origin + location).constrain(output_geometry.to_f64())
             });
         pointer.set_location(target);
+
+        // Redraw to update the cursor position if it's visible.
+        if !self.niri.pointer_hidden {
+            // FIXME: redraw only outputs overlapping the cursor.
+            self.niri.queue_redraw_all();
+        }
     }
 }
 delegate_pointer_constraints!(State);
