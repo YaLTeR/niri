@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -87,8 +87,8 @@ impl State {
             }
         }
 
-        if should_update_cursor_timeout(&event) {
-            self.niri.last_cursor_movement = Instant::now();
+        if should_reset_pointer_inactivity_timer(&event) {
+            self.niri.reset_pointer_inactivity_timer();
         }
 
         let hide_hotkey_overlay =
@@ -2561,7 +2561,7 @@ fn should_notify_activity<I: InputBackend>(event: &InputEvent<I>) -> bool {
     )
 }
 
-fn should_update_cursor_timeout<I: InputBackend>(event: &InputEvent<I>) -> bool {
+fn should_reset_pointer_inactivity_timer<I: InputBackend>(event: &InputEvent<I>) -> bool {
     matches!(
         event,
         InputEvent::PointerAxis { .. }
