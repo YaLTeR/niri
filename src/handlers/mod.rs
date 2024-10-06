@@ -159,12 +159,18 @@ impl PointerConstraintsHandler for State {
         }
 
         let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface else {
-            error!("cursor_position_hint called with no focused surface, but the constraint is active. this should be impossible.");
+            error!(
+                "cursor_position_hint called with no focused surface, \
+                 but the constraint is active; this should be impossible"
+            );
             return;
         };
 
         if focused_surface != surface {
-            error!("cursor_position_hint called on a surface that is not the focused surface, but the constraint is active. this should be impossible.");
+            error!(
+                "cursor_position_hint called on a surface that is not the focused surface, \
+                 but the constraint is active; this should be impossible"
+            );
             return;
         }
 
