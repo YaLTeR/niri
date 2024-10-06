@@ -148,7 +148,7 @@ impl PointerConstraintsHandler for State {
         &mut self,
         surface: &WlSurface,
         pointer: &PointerHandle<Self>,
-        location: smithay::utils::Point<f64, Logical>,
+        location: Point<f64, Logical>,
     ) {
         let is_constraint_active = with_pointer_constraint(surface, pointer, |constraint| {
             constraint.map_or(false, |c| c.is_active())
