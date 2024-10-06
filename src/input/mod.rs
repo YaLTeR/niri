@@ -1469,6 +1469,10 @@ impl State {
         let button_state = event.state();
 
         if ButtonState::Pressed == button_state {
+            // We received an event for the regular pointer, so show it now.
+            self.niri.pointer_hidden = false;
+            self.niri.tablet_cursor_location = None;
+
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();
 
