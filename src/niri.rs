@@ -77,6 +77,9 @@ use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::input_method::{InputMethodManagerState, InputMethodSeat};
+use smithay::wayland::keyboard_shortcuts_inhibit::{
+    KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
+};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
 use smithay::wayland::pointer_gestures::PointerGesturesState;
@@ -123,6 +126,7 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
+use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::pw_utils::{CastSizeChange, CastTarget, PwToNiri};
@@ -230,7 +234,9 @@ pub struct Niri {
     pub tablet_state: TabletManagerState,
     pub text_input_state: TextInputManagerState,
     pub input_method_state: InputMethodManagerState,
+    pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub virtual_keyboard_state: VirtualKeyboardManagerState,
+    pub virtual_pointer_state: VirtualPointerManagerState,
     pub pointer_gestures_state: PointerGesturesState,
     pub relative_pointer_state: RelativePointerManagerState,
     pub pointer_constraints_state: PointerConstraintsState,
@@ -256,6 +262,7 @@ pub struct Niri {
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
+    pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -1654,11 +1661,16 @@ impl Niri {
             InputMethodManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
+        let keyboard_shortcuts_inhibit_state =
+            KeyboardShortcutsInhibitState::new::<State>(&display_handle);
         let virtual_keyboard_state =
             VirtualKeyboardManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
-
+        let virtual_pointer_state =
+            VirtualPointerManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
         let foreign_toplevel_state =
             ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
@@ -1823,7 +1835,9 @@ impl Niri {
             xdg_foreign_state,
             text_input_state,
             input_method_state,
+            keyboard_shortcuts_inhibit_state,
             virtual_keyboard_state,
+            virtual_pointer_state,
             shm_state,
             output_manager_state,
             dmabuf_state,
@@ -1854,6 +1868,7 @@ impl Niri {
             layer_shell_on_demand_focus: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
+            keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
