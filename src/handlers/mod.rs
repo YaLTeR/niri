@@ -25,7 +25,7 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, Size};
-use smithay::wayland::compositor::with_states;
+use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -157,9 +157,14 @@ impl PointerConstraintsHandler for State {
         if is_constraint_active {
             if let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface {
                 if focused_surface == surface {
+                    let mut root = surface.clone();
+                    while let Some(parent) = get_parent(&root) {
+                        root = parent;
+                    }
+
                     let target = self
                         .niri
-                        .output_for_root(surface)
+                        .output_for_root(&root)
                         .and_then(|output| self.niri.global_space.output_geometry(output))
                         .map_or(origin + location, |mut output_geometry| {
                             // i32 sizes are exclusive, but f64 sizes are inclusive.
