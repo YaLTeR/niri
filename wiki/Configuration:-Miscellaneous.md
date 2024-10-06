@@ -20,6 +20,9 @@ environment {
 cursor {
     xcursor-theme "breeze_cursors"
     xcursor-size 48
+
+    hide-on-key-press
+    hide-after-inactive-ms 1000
 }
 
 hotkey-overlay {
@@ -103,6 +106,31 @@ Change the theme and size of the cursor as well as set the `XCURSOR_THEME` and `
 cursor {
     xcursor-theme "breeze_cursors"
     xcursor-size 48
+}
+```
+
+#### `hide-on-key-press`
+
+<sup>Since: 0.1.10</sup>
+
+If set, hides the cursor when pressing a key on the keyboard.
+
+```kdl
+cursor {
+    hide-on-key-press
+}
+```
+
+#### `hide-after-inactive-ms`
+
+<sup>Since: 0.1.10</sup>
+
+If set, the cursor will automatically hide once this number of milliseconds passes since the last cursor movement.
+
+```kdl
+cursor {
+    // Hide the cursor after one second of inactivity.
+    hide-after-inactive-ms 1000
 }
 ```
 
