@@ -158,19 +158,19 @@ impl PointerConstraintsHandler for State {
             return;
         }
 
+        // Logically the following two checks should always succeed (so, they should print
+        // error!()s if they fail). However, currently both can fail because niri's pointer focus
+        // doesn't take pointer grabs into account. So if you start, say, a middle-drag in Blender,
+        // then touchpad-swipe the window away, the niri pointer focus will change, even though the
+        // real pointer focus remains on the Blender surface due to the click grab.
+        //
+        // FIXME: add error!()s when niri pointer focus takes grabs into account. Alternatively,
+        // recompute the surface origin here (but that is a bit clunky).
         let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface else {
-            error!(
-                "cursor_position_hint called with no focused surface, \
-                 but the constraint is active; this should be impossible"
-            );
             return;
         };
 
         if focused_surface != surface {
-            error!(
-                "cursor_position_hint called on a surface that is not the focused surface, \
-                 but the constraint is active; this should be impossible"
-            );
             return;
         }
 
