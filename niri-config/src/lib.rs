@@ -2972,6 +2972,10 @@ mod tests {
                 }
 
                 center-focused-column "on-overflow"
+
+                insert-hint {
+                    color "rgb(255, 200, 127)"
+                }
             }
 
             spawn-at-startup "alacritty" "-e" "fish"
