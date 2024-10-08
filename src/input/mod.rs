@@ -1520,21 +1520,6 @@ impl State {
                         let (output, _) = self.niri.output_under(location).unwrap();
                         let output = output.clone();
 
-                        // See and ignore if we got a double move-click gesture.
-                        // FIXME: deduplicate with move_request in xdg-shell somehow.
-                        let time = get_monotonic_time();
-                        let last_cell = mapped.last_interactive_move_start();
-                        let last = last_cell.get();
-                        last_cell.set(Some(time));
-                        if let Some(last_time) = last {
-                            if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
-                                self.niri.layout.activate_window(&window);
-                                // FIXME: granular.
-                                self.niri.queue_redraw_all();
-                                return;
-                            }
-                        }
-
                         self.niri.layout.activate_window(&window);
 
                         if self
@@ -1553,8 +1538,6 @@ impl State {
                             self.niri
                                 .cursor_manager
                                 .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
-                            // FIXME: granular.
-                            self.niri.queue_redraw_all();
                         }
                     }
                 }

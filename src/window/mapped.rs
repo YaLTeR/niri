@@ -78,11 +78,6 @@ pub struct Mapped {
     /// Pending transactions that have not been added as blockers for this window yet.
     pending_transactions: Vec<(Serial, Transaction)>,
 
-    /// Last time interactive move was started.
-    ///
-    /// Used for double-move-click tracking.
-    last_interactive_move_start: Cell<Option<Duration>>,
-
     /// State of an ongoing interactive resize.
     interactive_resize: Option<InteractiveResize>,
 
@@ -155,7 +150,6 @@ impl Mapped {
             animation_snapshot: None,
             transaction_for_next_configure: None,
             pending_transactions: Vec::new(),
-            last_interactive_move_start: Cell::new(None),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
         }
@@ -302,10 +296,6 @@ impl Mapped {
         }
 
         rv
-    }
-
-    pub fn last_interactive_move_start(&self) -> &Cell<Option<Duration>> {
-        &self.last_interactive_move_start
     }
 
     pub fn last_interactive_resize_start(&self) -> &Cell<Option<(Duration, ResizeEdge)>> {

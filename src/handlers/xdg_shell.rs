@@ -92,25 +92,6 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.clone();
 
-        // See if we got a double move-click gesture.
-        let time = get_monotonic_time();
-        let last_cell = mapped.last_interactive_move_start();
-        let last = last_cell.get();
-        last_cell.set(Some(time));
-        if let Some(last_time) = last {
-            if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
-                // Allow quick move after a triple click.
-                last_cell.set(None);
-
-                // FIXME: don't activate once we can pass specific windows to actions.
-                self.niri.layout.activate_window(&window);
-                self.niri.layer_shell_on_demand_focus = None;
-                // FIXME: granular.
-                self.niri.queue_redraw_all();
-                return;
-            }
-        }
-
         let grab = MoveGrab::new(start_data, window.clone());
 
         if !self
