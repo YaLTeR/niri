@@ -787,16 +787,14 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn remove_window(&mut self, window: &W::Id, transaction: Transaction) -> Option<W> {
-        if self
-            .interactive_move
-            .as_ref()
-            .map_or(false, |move_| move_.window.window().id() == window)
-        {
-            let move_ = self.interactive_move.take().unwrap();
-            if let Some(workspace) = self.workspace_for_output_mut(&move_.output) {
-                workspace.clear_insert_hint();
+        if let Some(move_) = &self.interactive_move {
+            if move_.window.window().id() == window {
+                let move_ = self.interactive_move.take().unwrap();
+                if let Some(workspace) = self.workspace_for_output_mut(&move_.output) {
+                    workspace.clear_insert_hint();
+                }
+                return Some(move_.window.into_window());
             }
-            return Some(move_.window.into_window());
         }
 
         match &mut self.monitor_set {
@@ -1253,11 +1251,14 @@ impl<W: LayoutElement> Layout<W> {
         let moving_window = self
             .interactive_move
             .as_ref()
-            .map(|move_| move_.window.window());
+            .filter(|move_| move_.output == *output)
+            .map(|move_| move_.window.window())
+            .into_iter();
+
         let mon = monitors.iter().find(|mon| &mon.output == output).unwrap();
-        moving_window
-            .into_iter()
-            .chain(mon.workspaces.iter().flat_map(|ws| ws.windows()))
+        let mon_windows = mon.workspaces.iter().flat_map(|ws| ws.windows());
+
+        moving_window.chain(mon_windows)
     }
 
     pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>)) {
@@ -2818,10 +2819,9 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(move_) = &mut self.interactive_move {
             if move_.window.window().id() == window {
-                move_.window.store_unmap_snapshot_if_empty(
-                    renderer,
-                    move_.output.current_scale().fractional_scale().into(),
-                );
+                let scale = Scale::from(move_.output.current_scale().fractional_scale());
+                move_.window.store_unmap_snapshot_if_empty(renderer, scale);
+                return;
             }
         }
 
