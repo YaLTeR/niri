@@ -479,6 +479,9 @@ impl State {
             Action::PowerOffMonitors => {
                 self.niri.deactivate_monitors(&mut self.backend);
             }
+            Action::PowerOnMonitors => {
+                self.niri.activate_monitors(&mut self.backend);
+            }
             Action::ToggleDebugTint => {
                 self.backend.toggle_debug_tint();
                 self.niri.queue_redraw_all();
@@ -2582,6 +2585,7 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::ChangeVt(_)
             | Action::Suspend
             | Action::PowerOffMonitors
+            | Action::PowerOnMonitors
             | Action::SwitchLayout(_)
     )
 }
@@ -2589,7 +2593,11 @@ fn allowed_when_locked(action: &Action) -> bool {
 fn allowed_during_screenshot(action: &Action) -> bool {
     matches!(
         action,
-        Action::Quit(_) | Action::ChangeVt(_) | Action::Suspend | Action::PowerOffMonitors
+        Action::Quit(_)
+            | Action::ChangeVt(_)
+            | Action::Suspend
+            | Action::PowerOffMonitors
+            | Action::PowerOnMonitors
     )
 }
 

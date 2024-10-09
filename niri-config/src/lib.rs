@@ -1068,6 +1068,7 @@ pub enum Action {
     ChangeVt(i32),
     Suspend,
     PowerOffMonitors,
+    PowerOnMonitors,
     ToggleDebugTint,
     DebugToggleOpaqueRegions,
     DebugToggleDamage,
@@ -1182,6 +1183,7 @@ impl From<niri_ipc::Action> for Action {
         match value {
             niri_ipc::Action::Quit { skip_confirmation } => Self::Quit(skip_confirmation),
             niri_ipc::Action::PowerOffMonitors {} => Self::PowerOffMonitors,
+            niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
             niri_ipc::Action::Screenshot {} => Self::Screenshot,
