@@ -33,19 +33,19 @@ const WORKSPACE_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
 #[derive(Debug)]
 pub struct Monitor<W: LayoutElement> {
     /// Output for this monitor.
-    pub output: Output,
+    pub(super) output: Output,
     /// Cached name of the output.
     output_name: String,
     // Must always contain at least one.
-    pub workspaces: Vec<Workspace<W>>,
+    pub(super) workspaces: Vec<Workspace<W>>,
     /// Index of the currently active workspace.
-    pub active_workspace_idx: usize,
+    pub(super) active_workspace_idx: usize,
     /// ID of the previously active workspace.
-    pub previous_workspace_id: Option<WorkspaceId>,
+    pub(super) previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
-    pub workspace_switch: Option<WorkspaceSwitch>,
+    pub(super) workspace_switch: Option<WorkspaceSwitch>,
     /// Configurable properties of the layout.
-    pub options: Rc<Options>,
+    pub(super) options: Rc<Options>,
 }
 
 #[derive(Debug)]
@@ -59,7 +59,7 @@ pub struct WorkspaceSwitchGesture {
     /// Index of the workspace where the gesture was started.
     center_idx: usize,
     /// Current, fractional workspace index.
-    pub current_idx: f64,
+    pub(super) current_idx: f64,
     tracker: SwipeTracker,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
@@ -105,8 +105,16 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn output(&self) -> &Output {
+        &self.output
+    }
+
     pub fn output_name(&self) -> &String {
         &self.output_name
+    }
+
+    pub fn active_workspace_idx(&self) -> usize {
+        self.active_workspace_idx
     }
 
     pub fn active_workspace_ref(&self) -> &Workspace<W> {

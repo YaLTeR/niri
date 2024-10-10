@@ -37,7 +37,7 @@ pub struct Workspace<W: LayoutElement> {
     ///
     /// Most of the time this will be the workspace's current output, however, after an output
     /// disconnection, it may remain pointing to the disconnected output.
-    pub original_output: OutputId,
+    pub(super) original_output: OutputId,
 
     /// Current output of this workspace.
     output: Option<Output>,
@@ -67,13 +67,13 @@ pub struct Workspace<W: LayoutElement> {
     working_area: Rectangle<f64, Logical>,
 
     /// Columns of windows on this workspace.
-    pub columns: Vec<Column<W>>,
+    pub(super) columns: Vec<Column<W>>,
 
     /// Extra per-column data.
     data: Vec<ColumnData>,
 
     /// Index of the currently active column, if any.
-    pub active_column_idx: usize,
+    pub(super) active_column_idx: usize,
 
     /// Ongoing interactive resize.
     interactive_resize: Option<InteractiveResize<W>>,
@@ -107,13 +107,13 @@ pub struct Workspace<W: LayoutElement> {
     closing_windows: Vec<ClosingWindow>,
 
     /// Configurable properties of the layout as received from the parent monitor.
-    pub base_options: Rc<Options>,
+    pub(super) base_options: Rc<Options>,
 
     /// Configurable properties of the layout with logical sizes adjusted for the current `scale`.
-    pub options: Rc<Options>,
+    pub(super) options: Rc<Options>,
 
     /// Optional name of this workspace.
-    pub name: Option<String>,
+    pub(super) name: Option<String>,
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
@@ -237,7 +237,7 @@ pub struct Column<W: LayoutElement> {
     /// Tiles in this column.
     ///
     /// Must be non-empty.
-    pub tiles: Vec<Tile<W>>,
+    pub(super) tiles: Vec<Tile<W>>,
 
     /// Extra per-tile data.
     ///
@@ -245,19 +245,19 @@ pub struct Column<W: LayoutElement> {
     data: Vec<TileData>,
 
     /// Index of the currently active tile.
-    pub active_tile_idx: usize,
+    pub(super) active_tile_idx: usize,
 
     /// Desired width of this column.
     ///
     /// If the column is full-width or full-screened, this is the width that should be restored
     /// upon unfullscreening and untoggling full-width.
-    pub width: ColumnWidth,
+    pub(super) width: ColumnWidth,
 
     /// Whether this column is full-width.
-    pub is_full_width: bool,
+    pub(super) is_full_width: bool,
 
     /// Whether this column contains a single full-screened window.
-    pub is_fullscreen: bool,
+    pub(super) is_fullscreen: bool,
 
     /// Animation of the render offset during window swapping.
     move_animation: Option<Animation>,
@@ -469,6 +469,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn id(&self) -> WorkspaceId {
         self.id
+    }
+
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
     }
 
     pub fn unname(&mut self) {

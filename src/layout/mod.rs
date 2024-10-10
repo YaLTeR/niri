@@ -81,7 +81,7 @@ pub type LayoutElementRenderSnapshot =
 
 #[derive(Debug, Clone, Copy)]
 pub struct InteractiveResizeData {
-    pub edges: ResizeEdge,
+    pub(self) edges: ResizeEdge,
 }
 
 #[derive(Debug, Clone, Copy)]

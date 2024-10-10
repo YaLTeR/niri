@@ -559,7 +559,7 @@ impl State {
                 let mut windows = self.niri.layout.windows();
                 let window = windows.find(|(_, m)| m.id().get() == id);
                 if let Some((Some(monitor), mapped)) = window {
-                    let output = &monitor.output;
+                    let output = monitor.output();
                     self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot_window(renderer, output, mapped) {
                             warn!("error taking screenshot: {err:?}");

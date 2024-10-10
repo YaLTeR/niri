@@ -464,7 +464,7 @@ impl State {
             // Check for any changes that we can't signal as individual events.
             let output_name = mon.map(|mon| mon.output_name());
             if ipc_ws.idx != u8::try_from(ws_idx + 1).unwrap_or(u8::MAX)
-                || ipc_ws.name != ws.name
+                || ipc_ws.name.as_ref() != ws.name()
                 || ipc_ws.output.as_ref() != output_name
             {
                 need_workspaces_changed = true;
@@ -487,7 +487,7 @@ impl State {
             }
 
             // Check if this workspace became active.
-            let is_active = mon.map_or(false, |mon| mon.active_workspace_idx == ws_idx);
+            let is_active = mon.map_or(false, |mon| mon.active_workspace_idx() == ws_idx);
             if is_active && !ipc_ws.is_active {
                 events.push(Event::WorkspaceActivated { id, focused: false });
             }
@@ -508,9 +508,9 @@ impl State {
                     Workspace {
                         id,
                         idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
-                        name: ws.name.clone(),
+                        name: ws.name().cloned(),
                         output: mon.map(|mon| mon.output_name().clone()),
-                        is_active: mon.map_or(false, |mon| mon.active_workspace_idx == ws_idx),
+                        is_active: mon.map_or(false, |mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
                     }
