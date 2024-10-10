@@ -217,6 +217,9 @@ impl<W: LayoutElement> Monitor<W> {
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
+
+        // Since we're adding window right of something, the workspace isn't empty, and therefore
+        // cannot be the last one, so we never need to insert a new empty workspace.
     }
 
     pub fn add_column(&mut self, workspace_idx: usize, column: Column<W>, activate: bool) {
