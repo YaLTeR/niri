@@ -594,7 +594,7 @@ impl<W: LayoutElement> Layout<W> {
                             .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
                     })
                     .unwrap();
-                ws.add_window(window, true, width, is_full_width);
+                ws.add_window(None, window, true, width, is_full_width);
                 None
             }
         }
@@ -672,7 +672,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces.push(Workspace::new_no_outputs(self.options.clone()));
                     &mut workspaces[0]
                 };
-                ws.add_window(window, true, width, is_full_width);
+                ws.add_window(None, window, true, width, is_full_width);
                 None
             }
         }
