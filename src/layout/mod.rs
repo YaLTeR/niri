@@ -2173,40 +2173,6 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn move_window_to_output(&mut self, window: &W::Id, output: &Output) {
-        let mut width = None;
-        let mut is_full_width = false;
-
-        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            for mon in &*monitors {
-                for ws in &mon.workspaces {
-                    for col in &ws.columns {
-                        if col.contains(window) {
-                            width = Some(col.width);
-                            is_full_width = col.is_full_width;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        let Some(width) = width else { return };
-
-        let window = self.remove_window(window, Transaction::new()).unwrap();
-
-        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            let new_idx = monitors
-                .iter()
-                .position(|mon| &mon.output == output)
-                .unwrap();
-
-            let workspace_idx = monitors[new_idx].active_workspace_idx;
-            // FIXME: activate only if it was already active and focused.
-            self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
-        }
-    }
-
     pub fn move_workspace_to_output(&mut self, output: &Output) {
         let MonitorSet::Normal {
             monitors,
