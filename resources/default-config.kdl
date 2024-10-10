@@ -202,7 +202,9 @@ layout {
 
 // Uncomment this line to ask the clients to omit their client-side decorations if possible.
 // If the client will specifically ask for CSD, the request will be honored.
-// Additionally, clients will be informed that they are tiled, removing some rounded corners.
+// Additionally, clients will be informed that they are tiled, removing some client-side rounded corners.
+// This option will also fix border/focus ring drawing behind some semitransparent windows.
+// After enabling or disabling this, you need to restart the apps for this to take effect.
 // prefer-no-csd
 
 // You can change the path where screenshots are saved.
@@ -248,6 +250,13 @@ window-rule {
 
     // Use this instead if you want them visible on third-party screenshot tools.
     // block-out-from "screencast"
+}
+
+// Example: enable rounded corners for all windows.
+// (This example rule is commented out with a "/-" in front.)
+/-window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
 }
 
 binds {
@@ -422,7 +431,9 @@ binds {
     // Switches focus between the current and the previous workspace.
     // Mod+Tab { focus-workspace-previous; }
 
+    // Consume one window from the right into the focused column.
     Mod+Comma  { consume-window-into-column; }
+    // Expel one window from the focused column to the right.
     Mod+Period { expel-window-from-column; }
 
     // There are also commands that consume or expel a single window to the side.

@@ -267,6 +267,7 @@ pub struct Niri {
     /// When this happens, the pointer also loses any focus. This is so that touch can prevent
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
+    pub pointer_inactivity_timer: Option<RegistrationToken>,
     // FIXME: this should be able to be removed once PointerFocus takes grabs into account.
     pub pointer_grab_ongoing: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
@@ -588,6 +589,7 @@ impl State {
 
         // We moved the pointer, show it.
         self.niri.pointer_hidden = false;
+        self.niri.reset_pointer_inactivity_timer();
 
         // FIXME: granular
         self.niri.queue_redraw_all();
@@ -990,6 +992,7 @@ impl State {
         let mut window_rules_changed = false;
         let mut debug_config_changed = false;
         let mut shaders_changed = false;
+        let mut cursor_inactivity_timeout_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
@@ -1076,6 +1079,10 @@ impl State {
             shaders_changed = true;
         }
 
+        if config.cursor.hide_after_inactive_ms != old_config.cursor.hide_after_inactive_ms {
+            cursor_inactivity_timeout_changed = true;
+        }
+
         if config.debug != old_config.debug {
             debug_config_changed = true;
         }
@@ -1120,6 +1127,10 @@ impl State {
 
         if shaders_changed {
             self.niri.layout.update_shaders();
+        }
+
+        if cursor_inactivity_timeout_changed {
+            self.niri.reset_pointer_inactivity_timer();
         }
 
         // Can't really update xdg-decoration settings since we have to hide the globals for CSD
@@ -1783,7 +1794,7 @@ impl Niri {
             .unwrap();
 
         drop(config_);
-        Self {
+        let mut niri = Self {
             config,
             config_file_output_config,
 
@@ -1860,6 +1871,7 @@ impl Niri {
             dnd_icon: None,
             pointer_focus: PointerFocus::default(),
             pointer_hidden: false,
+            pointer_inactivity_timer: None,
             pointer_grab_ongoing: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
@@ -1895,7 +1907,11 @@ impl Niri {
 
             #[cfg(feature = "xdp-gnome-screencast")]
             mapped_cast_output: HashMap::new(),
-        }
+        };
+
+        niri.reset_pointer_inactivity_timer();
+
+        niri
     }
 
     #[cfg(feature = "dbus")]
@@ -4706,6 +4722,32 @@ impl Niri {
             // FIXME: granular.
             self.queue_redraw_all();
         }
+    }
+
+    pub fn reset_pointer_inactivity_timer(&mut self) {
+        let _span = tracy_client::span!("Niri::reset_pointer_inactivity_timer");
+
+        if let Some(token) = self.pointer_inactivity_timer.take() {
+            self.event_loop.remove(token);
+        }
+
+        let Some(timeout_ms) = self.config.borrow().cursor.hide_after_inactive_ms else {
+            return;
+        };
+
+        let duration = Duration::from_millis(timeout_ms as u64);
+        let timer = Timer::from_duration(duration);
+        let token = self
+            .event_loop
+            .insert_source(timer, move |_, _, state| {
+                state.niri.pointer_inactivity_timer = None;
+                state.niri.pointer_hidden = true;
+                state.niri.queue_redraw_all();
+
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.pointer_inactivity_timer = Some(token);
     }
 }
 

@@ -4,98 +4,232 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    crane.url = "github:ipetkov/crane";
-    flake-utils.url = "github:numtide/flake-utils";
     nix-filter.url = "github:numtide/nix-filter";
-    fenix = {
-      url = "github:nix-community/fenix/monthly";
+
+    # NOTE: This is not necessary for end users
+    # You can omit it with `inputs.rust-overlay.follows = ""`
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    crane,
-    nix-filter,
-    flake-utils,
-    fenix,
-    ...
-  }: let
-    systems = ["aarch64-linux" "x86_64-linux"];
-  in
-    flake-utils.lib.eachSystem systems (
-      system: let
-        pkgs = nixpkgs.legacyPackages.${system};
-        toolchain = fenix.packages.${system}.complete.toolchain;
-        craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
+  outputs =
+    {
+      self,
+      nixpkgs,
+      nix-filter,
+      rust-overlay,
+    }:
+    let
+      inherit (nixpkgs) lib;
+      # Support all Linux systems that the nixpkgs flake exposes
+      systems = lib.intersectLists lib.systems.flakeExposed lib.platforms.linux;
 
-        craneArgs = {
-          pname = "niri";
-          version = self.rev or "dirty";
+      forAllSystems = lib.genAttrs systems;
+      nixpkgsFor = forAllSystems (system: nixpkgs.legacyPackages.${system});
+    in
+    {
+      checks = forAllSystems (system: {
+        # We use the debug build here to save a bit of time
+        inherit (self.packages.${system}) niri-debug;
+      });
 
-          src = nixpkgs.lib.cleanSourceWith {
-            src = craneLib.path ./.;
-            filter = path: type:
-              (builtins.match "resources" path == null)
-              || ((craneLib.filterCargoSources path type)
-                && (builtins.match "niri-visual-tests" path == null));
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgsFor.${system};
+          inherit (self.packages.${system}) niri;
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              # NOTE: Nixpkgs' Rust toolchain isn't used here as we prefer
+              # a nightly toolchain for development, and *require* a nightly
+              # `rustfmt`
+              rust-overlay.packages.${system}.rust-nightly
+
+              pkgs.rust-analyzer
+            ];
+
+            nativeBuildInputs = [
+              pkgs.clang
+              pkgs.pkg-config
+              pkgs.wrapGAppsHook4 # For `niri-visual-tests`
+            ];
+
+            buildInputs = niri.buildInputs ++ [
+              pkgs.libadwaita # For `niri-visual-tests`
+            ];
+
+            env = {
+              inherit (niri) LIBCLANG_PATH;
+
+              # WARN: Do not overwrite this variable in your shell!
+              # It is required for `dlopen()` to work on some libraries; see the comment
+              # in the package expression
+              #
+              # This should only be set with `CARGO_BUILD_RUSTFLAGS="$CARGO_BUILD_RUSTFLAGS -C your-flags"`
+              inherit (niri) CARGO_BUILD_RUSTFLAGS;
+            };
           };
+        }
+      );
 
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            autoPatchelfHook
-            clang
-            gdk-pixbuf
-            graphene
-            gtk4
-            libadwaita
-          ];
+      formatter = forAllSystems (system: nixpkgsFor.${system}.nixfmt-rfc-style);
 
-          buildInputs = with pkgs; [
-            wayland
-            systemd # For libudev
-            seatd # For libseat
-            libxkbcommon
-            libdisplay-info
-            libinput
-            mesa # For libgbm
-            fontconfig
-            stdenv.cc.cc.lib
-            pipewire
-            pango
-            cairo
-            glib
-            pixman
-          ];
+      packages = forAllSystems (
+        system:
+        let
+          inherit (self.overlays.default nixpkgsFor.${system} null) niri;
+        in
+        {
+          inherit niri;
 
-          runtimeDependencies = with pkgs; [
-            wayland
-            mesa
-            libglvnd # For libEGL
-            xorg.libXcursor
-            xorg.libXi
-            libxkbcommon
-          ];
+          # NOTE: This is for development purposes only
+          #
+          # It is primarily to help with quickly iterating on
+          # changes made to the above expression - though it is
+          # also not stripped in order to better debug niri itself
+          niri-debug = niri.overrideAttrs (
+            newAttrs: oldAttrs: {
+              pname = oldAttrs.pname + "-debug";
 
-          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath craneArgs.runtimeDependencies; # Needed for tests to find libxkbcommon
-        };
+              cargoBuildType = "debug";
+              cargoCheckType = newAttrs.cargoBuildType;
 
-        cargoArtifacts = craneLib.buildDepsOnly craneArgs;
-        niri = craneLib.buildPackage (craneArgs // {inherit cargoArtifacts;});
-      in {
-        formatter = pkgs.alejandra;
+              dontStrip = true;
+            }
+          );
 
-        checks.niri = niri;
-        packages.default = niri;
+          default = niri;
+        }
+      );
 
-        devShells.default = craneLib.devShell {
-          inputsFrom = [niri];
+      overlays.default = final: _: {
+        niri = final.callPackage (
+          {
+            cairo,
+            clang,
+            dbus,
+            libGL,
+            libclang,
+            libdisplay-info,
+            libinput,
+            libseat,
+            libxkbcommon,
+            mesa,
+            pango,
+            pipewire,
+            pkg-config,
+            rustPlatform,
+            systemd,
+            wayland,
+            withDbus ? true,
+            withSystemd ? true,
+            withScreencastSupport ? true,
+            withDinit ? false,
+          }:
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (craneArgs.runtimeDependencies ++ craneArgs.nativeBuildInputs ++ craneArgs.buildInputs);
-          inherit (niri) LIBCLANG_PATH;
-        };
-      }
-    );
+          rustPlatform.buildRustPackage {
+            pname = "niri";
+            version = self.shortRev or self.dirtyShortRev or "unknown";
+
+            src = nix-filter.lib.filter {
+              root = self;
+              include = [
+                "niri-config"
+                "niri-ipc"
+                "niri-visual-tests"
+                "resources"
+                "src"
+                ./Cargo.lock
+                ./Cargo.toml
+              ];
+            };
+
+            postPatch = ''
+              patchShebangs resources/niri-session
+              substituteInPlace resources/niri.service \
+                --replace-fail '/usr/bin' "$out/bin"
+            '';
+
+            cargoLock = {
+              # NOTE: This is only used for Git dependencies
+              allowBuiltinFetchGit = true;
+              lockFile = ./Cargo.lock;
+            };
+
+            strictDeps = true;
+
+            nativeBuildInputs = [
+              clang
+              pkg-config
+            ];
+
+            buildInputs =
+              [
+                cairo
+                dbus
+                libGL
+                libdisplay-info
+                libinput
+                libseat
+                libxkbcommon
+                mesa # libgbm
+                pango
+                wayland
+              ]
+              ++ lib.optional (withDbus || withScreencastSupport || withSystemd) dbus
+              ++ lib.optional withScreencastSupport pipewire
+              # Also includes libudev
+              ++ lib.optional withSystemd systemd;
+
+            buildFeatures =
+              lib.optional withDbus "dbus"
+              ++ lib.optional withDinit "dinit"
+              ++ lib.optional withScreencastSupport "xdp-gnome-screencast"
+              ++ lib.optional withSystemd "systemd";
+            buildNoDefaultFeatures = true;
+
+            postInstall =
+              ''
+                install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
+                install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
+              ''
+              + lib.optionalString withSystemd ''
+                install -Dm755 resources/niri-session $out/bin/niri-session
+                install -Dm644 resources/niri{.service,-shutdown.target} -t $out/share/systemd/user
+              '';
+
+            env = {
+              LIBCLANG_PATH = lib.getLib libclang + "/lib";
+
+              # Force linking with libEGL and libwayland-client
+              # so they can be discovered by `dlopen()`
+              CARGO_BUILD_RUSTFLAGS = toString (
+                map (arg: "-C link-arg=" + arg) [
+                  "-Wl,--push-state,--no-as-needed"
+                  "-lEGL"
+                  "-lwayland-client"
+                  "-Wl,--pop-state"
+                ]
+              );
+            };
+
+            passthru = {
+              providedSessions = [ "niri" ];
+            };
+
+            meta = {
+              description = "Scrollable-tiling Wayland compositor";
+              homepage = "https://github.com/YaLTeR/niri";
+              license = lib.licenses.gpl3Only;
+              mainProgram = "niri";
+              platforms = lib.platforms.linux;
+            };
+          }
+        ) { };
+      };
+    };
 }

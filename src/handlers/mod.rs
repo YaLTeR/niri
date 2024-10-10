@@ -25,7 +25,7 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, Size};
-use smithay::wayland::compositor::with_states;
+use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -35,7 +35,7 @@ use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
+use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler};
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
 };
@@ -146,11 +146,55 @@ impl PointerConstraintsHandler for State {
 
     fn cursor_position_hint(
         &mut self,
-        _surface: &WlSurface,
-        _pointer: &PointerHandle<Self>,
-        _location: Point<f64, Logical>,
+        surface: &WlSurface,
+        pointer: &PointerHandle<Self>,
+        location: Point<f64, Logical>,
     ) {
-        // FIXME
+        let is_constraint_active = with_pointer_constraint(surface, pointer, |constraint| {
+            constraint.map_or(false, |c| c.is_active())
+        });
+
+        if !is_constraint_active {
+            return;
+        }
+
+        // Logically the following two checks should always succeed (so, they should print
+        // error!()s if they fail). However, currently both can fail because niri's pointer focus
+        // doesn't take pointer grabs into account. So if you start, say, a middle-drag in Blender,
+        // then touchpad-swipe the window away, the niri pointer focus will change, even though the
+        // real pointer focus remains on the Blender surface due to the click grab.
+        //
+        // FIXME: add error!()s when niri pointer focus takes grabs into account. Alternatively,
+        // recompute the surface origin here (but that is a bit clunky).
+        let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface else {
+            return;
+        };
+
+        if focused_surface != surface {
+            return;
+        }
+
+        let mut root = surface.clone();
+        while let Some(parent) = get_parent(&root) {
+            root = parent;
+        }
+
+        let target = self
+            .niri
+            .output_for_root(&root)
+            .and_then(|output| self.niri.global_space.output_geometry(output))
+            .map_or(origin + location, |mut output_geometry| {
+                // i32 sizes are exclusive, but f64 sizes are inclusive.
+                output_geometry.size -= (1, 1).into();
+                (origin + location).constrain(output_geometry.to_f64())
+            });
+        pointer.set_location(target);
+
+        // Redraw to update the cursor position if it's visible.
+        if !self.niri.pointer_hidden {
+            // FIXME: redraw only outputs overlapping the cursor.
+            self.niri.queue_redraw_all();
+        }
     }
 }
 delegate_pointer_constraints!(State);

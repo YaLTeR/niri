@@ -617,6 +617,10 @@ pub struct Cursor {
     pub xcursor_theme: String,
     #[knuffel(child, unwrap(argument), default = 24)]
     pub xcursor_size: u8,
+    #[knuffel(child)]
+    pub hide_on_key_press: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub hide_after_inactive_ms: Option<u32>,
 }
 
 impl Default for Cursor {
@@ -624,6 +628,8 @@ impl Default for Cursor {
         Self {
             xcursor_theme: String::from("default"),
             xcursor_size: 24,
+            hide_on_key_press: false,
+            hide_after_inactive_ms: None,
         }
     }
 }
@@ -1064,6 +1070,7 @@ pub enum Action {
     ChangeVt(i32),
     Suspend,
     PowerOffMonitors,
+    PowerOnMonitors,
     ToggleDebugTint,
     DebugToggleOpaqueRegions,
     DebugToggleDamage,
@@ -1178,6 +1185,7 @@ impl From<niri_ipc::Action> for Action {
         match value {
             niri_ipc::Action::Quit { skip_confirmation } => Self::Quit(skip_confirmation),
             niri_ipc::Action::PowerOffMonitors {} => Self::PowerOffMonitors,
+            niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
             niri_ipc::Action::Screenshot {} => Self::Screenshot,
@@ -2955,6 +2963,8 @@ mod tests {
             cursor {
                 xcursor-theme "breeze_cursors"
                 xcursor-size 16
+                hide-on-key-press
+                hide-after-inactive-ms 3000
             }
 
             screenshot-path "~/Screenshots/screenshot.png"
@@ -3156,6 +3166,8 @@ mod tests {
                 cursor: Cursor {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,
+                    hide_on_key_press: true,
+                    hide_after_inactive_ms: Some(3000),
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
                 hotkey_overlay: HotkeyOverlay {
