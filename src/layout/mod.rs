@@ -1340,18 +1340,38 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_up_or_to_workspace_up();
     }
 
-    pub fn consume_or_expel_window_left(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+    pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
             return;
         };
-        monitor.consume_or_expel_window_left();
+        workspace.consume_or_expel_window_left(window);
     }
 
-    pub fn consume_or_expel_window_right(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+    pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) {
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
             return;
         };
-        monitor.consume_or_expel_window_right();
+        workspace.consume_or_expel_window_right(window);
     }
 
     pub fn focus_left(&mut self) {
@@ -3011,8 +3031,14 @@ mod tests {
         MoveWindowUp,
         MoveWindowDownOrToWorkspaceDown,
         MoveWindowUpOrToWorkspaceUp,
-        ConsumeOrExpelWindowLeft,
-        ConsumeOrExpelWindowRight,
+        ConsumeOrExpelWindowLeft {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
+        ConsumeOrExpelWindowRight {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
         CenterColumn,
@@ -3420,8 +3446,14 @@ mod tests {
                 Op::MoveWindowUp => layout.move_up(),
                 Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),
                 Op::MoveWindowUpOrToWorkspaceUp => layout.move_up_or_to_workspace_up(),
-                Op::ConsumeOrExpelWindowLeft => layout.consume_or_expel_window_left(),
-                Op::ConsumeOrExpelWindowRight => layout.consume_or_expel_window_right(),
+                Op::ConsumeOrExpelWindowLeft { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.consume_or_expel_window_left(id.as_ref());
+                }
+                Op::ConsumeOrExpelWindowRight { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.consume_or_expel_window_right(id.as_ref());
+                }
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
                 Op::CenterColumn => layout.center_column(),
@@ -3700,8 +3732,8 @@ mod tests {
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
             Op::MoveWindowUpOrToWorkspaceUp,
-            Op::ConsumeOrExpelWindowLeft,
-            Op::ConsumeOrExpelWindowRight,
+            Op::ConsumeOrExpelWindowLeft { id: None },
+            Op::ConsumeOrExpelWindowRight { id: None },
             Op::MoveWorkspaceToOutput(1),
         ];
 
@@ -3897,8 +3929,8 @@ mod tests {
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
             Op::MoveWindowUpOrToWorkspaceUp,
-            Op::ConsumeOrExpelWindowLeft,
-            Op::ConsumeOrExpelWindowRight,
+            Op::ConsumeOrExpelWindowLeft { id: None },
+            Op::ConsumeOrExpelWindowRight { id: None },
         ];
 
         for third in every_op {
@@ -4233,7 +4265,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetFullscreenWindow {
                 window: 2,
                 is_fullscreen: false,
@@ -4301,7 +4333,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowRight,
+            Op::ConsumeOrExpelWindowRight { id: None },
         ];
 
         check_ops(&ops);
@@ -4358,7 +4390,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::FullscreenWindow(0),
         ];
 
@@ -4459,7 +4491,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SwitchPresetWindowHeight { id: None },
             Op::SwitchPresetWindowHeight { id: None },
         ];
@@ -4554,13 +4586,13 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
                 id: None,
                 change: SizeChange::SetFixed(100),
@@ -4589,13 +4621,13 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
                 id: None,
                 change: SizeChange::SetFixed(100),
@@ -4628,13 +4660,13 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
                 id: None,
                 change: SizeChange::SetFixed(100),
@@ -4671,7 +4703,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
         ];
 
         let options = Options {
