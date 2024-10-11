@@ -3724,7 +3724,11 @@ impl<W: LayoutElement> Column<W> {
         // the workspace or some other reason.
         let center = self.options.center_focused_column == CenterFocusedColumn::Always;
         let gaps = self.options.gaps;
-        let col_width = self.width();
+        let col_width = if self.tiles.is_empty() {
+            0.
+        } else {
+            self.width()
+        };
         let mut y = 0.;
 
         if !self.is_fullscreen {
