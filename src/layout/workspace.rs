@@ -993,6 +993,54 @@ impl<W: LayoutElement> Workspace<W> {
         self.add_column(col_idx, column, activate, anim_config);
     }
 
+    pub fn add_tile_to_column(
+        &mut self,
+        col_idx: usize,
+        tile_idx: Option<usize>,
+        tile: Tile<W>,
+        activate: bool,
+    ) {
+        self.enter_output_for_window(tile.window());
+
+        let prev_next_x = self.column_x(col_idx + 1);
+
+        let target_column = &mut self.columns[col_idx];
+        let tile_idx = tile_idx.unwrap_or(target_column.tiles.len());
+        let was_fullscreen = target_column.tiles[target_column.active_tile_idx].is_fullscreen();
+
+        target_column.add_tile_at(tile_idx, tile, true);
+        self.data[col_idx].update(target_column);
+
+        // If the target column is the active column and its window was requested to, but hasn't
+        // gone into fullscreen yet, then clear the stored view offset, since we just asked it to
+        // stop going into fullscreen.
+        if col_idx == self.active_column_idx && !was_fullscreen {
+            self.view_offset_before_fullscreen = None;
+        }
+
+        if activate {
+            target_column.active_tile_idx = tile_idx;
+            if self.active_column_idx != col_idx {
+                self.activate_column(col_idx);
+            }
+        } else if tile_idx <= target_column.active_tile_idx {
+            target_column.active_tile_idx += 1;
+        }
+
+        // Adding a wider window into a column increases its width now (even if the window will
+        // shrink later). Move the columns to account for this.
+        let offset = self.column_x(col_idx + 1) - prev_next_x;
+        if self.active_column_idx <= col_idx {
+            for col in &mut self.columns[col_idx + 1..] {
+                col.animate_move_from(-offset);
+            }
+        } else {
+            for col in &mut self.columns[..=col_idx] {
+                col.animate_move_from(offset);
+            }
+        }
+    }
+
     pub fn add_window_right_of(
         &mut self,
         right_of: &W::Id,
@@ -1779,29 +1827,14 @@ impl<W: LayoutElement> Workspace<W> {
                 Transaction::new(),
                 Some(self.options.animations.window_movement.0),
             );
-            self.enter_output_for_window(tile.window());
-
-            let next_col_idx = source_col_idx;
-            let prev_next_x = self.column_x(next_col_idx);
+            self.add_tile_to_column(target_column_idx, None, tile, true);
 
             let target_column = &mut self.columns[target_column_idx];
             offset.x -= target_column.render_offset().x;
-
-            target_column.add_tile(tile, true);
-            self.data[target_column_idx].update(target_column);
-            target_column.focus_last();
-
             offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
 
             let new_tile = target_column.tiles.last_mut().unwrap();
             new_tile.animate_move_from(offset);
-
-            // Consuming a window into a column could've increased its width if the new window had a
-            // larger min width. Move the next columns to account for this.
-            let offset_next = prev_next_x - self.column_x(next_col_idx);
-            for col in &mut self.columns[next_col_idx..] {
-                col.animate_move_from(offset_next);
-            }
         } else {
             // Move out of column.
             let width = source_column.width;
@@ -1865,26 +1898,13 @@ impl<W: LayoutElement> Workspace<W> {
                 Transaction::new(),
                 Some(self.options.animations.window_movement.0),
             );
-            self.enter_output_for_window(tile.window());
-
-            let prev_next_x = self.column_x(target_column_idx + 1);
+            self.add_tile_to_column(target_column_idx, None, tile, true);
 
             let target_column = &mut self.columns[target_column_idx];
-            target_column.add_tile(tile, true);
-            self.data[target_column_idx].update(target_column);
-            target_column.focus_last();
-
             offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
 
             let new_tile = target_column.tiles.last_mut().unwrap();
             new_tile.animate_move_from(offset);
-
-            // Consuming a window into a column could've increased its width if the new window had a
-            // larger min width. Move the next columns to account for this.
-            let offset_next = prev_next_x - self.column_x(target_column_idx + 1);
-            for col in &mut self.columns[target_column_idx + 1..] {
-                col.animate_move_from(offset_next);
-            }
         } else {
             // Move out of column.
             let width = source_column.width;
@@ -1921,42 +1941,24 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        let target_column_idx = self.active_column_idx;
         let source_column_idx = self.active_column_idx + 1;
 
         let offset = self.column_x(source_column_idx)
             + self.columns[source_column_idx].render_offset().x
-            - self.column_x(self.active_column_idx);
+            - self.column_x(target_column_idx);
         let mut offset = Point::from((offset, 0.));
         let prev_off = self.columns[source_column_idx].tile_offset(0);
 
         let tile = self.remove_tile_by_idx(source_column_idx, 0, Transaction::new(), None);
-        self.enter_output_for_window(tile.window());
+        self.add_tile_to_column(target_column_idx, None, tile, false);
 
-        let prev_next_x = self.column_x(self.active_column_idx + 1);
-
-        let target_column = &mut self.columns[self.active_column_idx];
-        let was_fullscreen = target_column.tiles[target_column.active_tile_idx].is_fullscreen();
-
-        target_column.add_tile(tile, true);
-        self.data[self.active_column_idx].update(target_column);
-
+        let target_column = &mut self.columns[target_column_idx];
         offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
-
-        if !was_fullscreen {
-            self.view_offset_before_fullscreen = None;
-        }
-
         offset.x -= target_column.render_offset().x;
 
         let new_tile = target_column.tiles.last_mut().unwrap();
         new_tile.animate_move_from(offset);
-
-        // Consuming a window into a column could've increased its width if the new window had a
-        // larger min width. Move the next columns to account for this.
-        let offset_next = prev_next_x - self.column_x(self.active_column_idx + 1);
-        for col in &mut self.columns[self.active_column_idx + 1..] {
-            col.animate_move_from(offset_next);
-        }
     }
 
     pub fn expel_from_column(&mut self) {
@@ -2912,7 +2914,7 @@ impl<W: LayoutElement> Column<W> {
 
         let is_pending_fullscreen = tile.window().is_pending_fullscreen();
 
-        rv.add_tile(tile, animate_resize);
+        rv.add_tile_at(0, tile, animate_resize);
 
         if is_pending_fullscreen {
             rv.set_fullscreen(true);
@@ -3056,11 +3058,27 @@ impl<W: LayoutElement> Column<W> {
         self.active_tile_idx = idx;
     }
 
-    fn add_tile(&mut self, tile: Tile<W>, animate: bool) {
+    fn add_tile_at(&mut self, idx: usize, tile: Tile<W>, animate: bool) {
+        // Inserting a tile pushes down all tiles below it, but also in always-centering mode it
+        // will affect the X position of all tiles in the column.
+        let mut prev_offsets = Vec::with_capacity(self.tiles.len() + 1);
+        prev_offsets.extend(self.tile_offsets().take(self.tiles.len()));
+
         self.is_fullscreen = false;
-        self.data.push(TileData::new(&tile, WindowHeight::auto_1()));
-        self.tiles.push(tile);
+        self.data
+            .insert(idx, TileData::new(&tile, WindowHeight::auto_1()));
+        self.tiles.insert(idx, tile);
         self.update_tile_sizes(animate);
+
+        // Animate tiles according to the offset changes.
+        prev_offsets.insert(idx, Point::default());
+        for (i, ((tile, offset), prev)) in zip(self.tiles_mut(), prev_offsets).enumerate() {
+            if i == idx {
+                continue;
+            }
+
+            tile.animate_move_from(prev - offset);
+        }
     }
 
     fn update_window(&mut self, window: &W::Id) {
@@ -3081,6 +3099,11 @@ impl<W: LayoutElement> Column<W> {
         self.data[tile_idx].update(tile);
 
         // Move windows below in tandem with resizing.
+        //
+        // FIXME: in always-centering mode, window resizing will affect the offsets of all other
+        // windows in the column, so they should all be animated. How should this interact with
+        // animated vs. non-animated resizes? For example, an animated +20 resize followed by two
+        // non-animated -10 resizes.
         if tile.resize_animation().is_some() && offset != 0. {
             for tile in &mut self.tiles[tile_idx + 1..] {
                 tile.animate_move_y_from_with_config(
@@ -3339,10 +3362,6 @@ impl<W: LayoutElement> Column<W> {
 
     fn focus_down(&mut self) {
         self.active_tile_idx = min(self.active_tile_idx + 1, self.tiles.len() - 1);
-    }
-
-    fn focus_last(&mut self) {
-        self.active_tile_idx = self.tiles.len() - 1;
     }
 
     fn move_up(&mut self) {
