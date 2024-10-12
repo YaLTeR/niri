@@ -2033,29 +2033,29 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let offset =
-            self.column_x(self.active_column_idx) - self.column_x(self.active_column_idx + 1);
-        let mut offset = Point::from((offset, 0.));
+        let source_col_idx = self.active_column_idx;
+        let target_col_idx = self.active_column_idx + 1;
+        let cur_x = self.column_x(source_col_idx);
 
         let source_column = &self.columns[self.active_column_idx];
         if source_column.tiles.len() == 1 {
             return;
         }
 
-        offset.x += source_column.render_offset().x;
+        let mut offset = Point::from((source_column.render_offset().x, 0.));
         let prev_off = source_column.tile_offset(source_column.active_tile_idx);
 
         let width = source_column.width;
         let is_full_width = source_column.is_full_width;
         let tile = self.remove_tile_by_idx(
-            self.active_column_idx,
+            source_col_idx,
             source_column.active_tile_idx,
             Transaction::new(),
             None,
         );
 
         self.add_tile(
-            Some(self.active_column_idx + 1),
+            Some(target_col_idx),
             tile,
             true,
             width,
@@ -2063,7 +2063,9 @@ impl<W: LayoutElement> Workspace<W> {
             Some(self.options.animations.window_movement.0),
         );
 
-        let new_col = &mut self.columns[self.active_column_idx];
+        offset.x += cur_x - self.column_x(target_col_idx);
+
+        let new_col = &mut self.columns[target_col_idx];
         offset += prev_off - new_col.tile_offset(0);
         new_col.tiles[0].animate_move_from(offset);
     }
