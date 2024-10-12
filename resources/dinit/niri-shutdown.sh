@@ -1,0 +1,3 @@
+#!/bin/sh
+
+dinitctl -u setenv WAYLAND_DISPLAY= XDG_SESSION_TYPE= XDG_CURRENT_DESKTOP= NIRI_SOCKET=
