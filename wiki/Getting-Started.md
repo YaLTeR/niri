@@ -9,7 +9,7 @@ Press <kbd>Super</kbd><kbd>T</kbd> to run a terminal ([Alacritty]) and <kbd>Supe
 To exit niri, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.
 
 If you're not using a display manager, you should run `niri-session` (systemd/dinit) or `niri --session` (others) from a TTY.
-The `--session` flag will make niri import its environment variables globally into system manager and D-Bus, and start its D-Bus services.
+The `--session` flag will make niri import its environment variables globally into the system manager and D-Bus, and start its D-Bus services.
 
 You can also run `niri` inside an existing desktop session.
 Then it will open as a window, where you can give it a try.
