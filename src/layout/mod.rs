@@ -753,10 +753,10 @@ impl<W: LayoutElement> Layout<W> {
 
                             // Clean up empty workspaces that are not active and not last.
                             if !ws.has_windows()
+                                && ws.name.is_none()
                                 && idx != mon.active_workspace_idx
                                 && idx != mon.workspaces.len() - 1
                                 && mon.workspace_switch.is_none()
-                                && mon.workspaces[idx].name.is_none()
                             {
                                 mon.workspaces.remove(idx);
 
@@ -776,7 +776,7 @@ impl<W: LayoutElement> Layout<W> {
                         let win = ws.remove_window(window, transaction);
 
                         // Clean up empty workspaces.
-                        if !ws.has_windows() && workspaces[idx].name.is_none() {
+                        if !ws.has_windows() && ws.name.is_none() {
                             workspaces.remove(idx);
                         }
 
