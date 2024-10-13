@@ -43,15 +43,9 @@ if hash systemctl &> /dev/null; then
     systemctl --user unset-environment WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP NIRI_SOCKET
 elif hash dinitctl &> /dev/null; then
     # Check that the user dinit daemon is running
-	if ! pgrep -u $(id -u) dinit &> /dev/null; then
-      echo "dinit user daemon is not running, starting..."
-      dinit &
-
-      # Check that the user dinit daemon has started successfully
-      if ! pgrep -u $(id -u) dinit &> /dev/null; then
-        echo "unable to start user dinit daemon"
-        exit 1
-      fi
+    if ! pgrep -u $(id -u) dinit &> /dev/null; then
+      echo "dinit user daemon is not running."
+      exit 1
     fi
 
     # Make sure there's no already running session.
