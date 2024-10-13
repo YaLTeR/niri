@@ -8,8 +8,8 @@ After installing, start niri from your display manager like GDM.
 Press <kbd>Super</kbd><kbd>T</kbd> to run a terminal ([Alacritty]) and <kbd>Super</kbd><kbd>D</kbd> to run an application launcher ([fuzzel]).
 To exit niri, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.
 
-If you're not using a display manager, you should run `niri-session` (systemd) or `niri --session` (not systemd) from a TTY.
-The `--session` flag will make niri import its environment variables globally into systemd and D-Bus, and start its D-Bus services.
+If you're not using a display manager, you should run `niri-session` (systemd/dinit) or `niri --session` (others) from a TTY.
+The `--session` flag will make niri import its environment variables globally into the system manager and D-Bus, and start its D-Bus services.
 
 You can also run `niri` inside an existing desktop session.
 Then it will open as a window, where you can give it a try.
@@ -178,8 +178,10 @@ To do that, put files into the correct directories according to this table.
 | `resources/niri-session` | `/usr/bin/` |
 | `resources/niri.desktop` | `/usr/share/wayland-sessions/` |
 | `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |
-| `resources/niri.service` | `/usr/lib/systemd/user/` |
-| `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
+| `resources/niri.service` (systemd) | `/usr/lib/systemd/user/` |
+| `resources/niri-shutdown.target` (systemd) | `/usr/lib/systemd/user/` |
+| `resources/dinit/niri` (dinit) | `/usr/lib/dinit.d/user/` |
+| `resources/dinit/niri-shutdown` (dinit) | `/usr/lib/dinit.d/user/` |
 
 Doing this will make niri appear in GDM and other display managers.
 
@@ -195,8 +197,10 @@ These may vary depending on your distribution.
 | `resources/niri-session` | `/usr/local/bin/` |
 | `resources/niri.desktop`  | `/usr/local/share/wayland-sessions/` |
 | `resources/niri-portals.conf` | `/usr/local/share/xdg-desktop-portal/` |
-| `resources/niri.service` | `/etc/systemd/user/` |
-| `resources/niri-shutdown.target` | `/etc/systemd/user/` |
+| `resources/niri.service` (systemd) | `/etc/systemd/user/` |
+| `resources/niri-shutdown.target` (systemd) | `/etc/systemd/user/` |
+| `resources/dinit/niri` (dinit) | `/etc/dinit.d/user/` |
+| `resources/dinit/niri-shutdown` (dinit) | `/etc/dinit.d/user/` |
 
 [Alacritty]: https://github.com/alacritty/alacritty
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
