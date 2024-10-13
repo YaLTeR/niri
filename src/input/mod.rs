@@ -707,16 +707,38 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::ConsumeOrExpelWindowLeft => {
-                self.niri.layout.consume_or_expel_window_left();
+                self.niri.layout.consume_or_expel_window_left(None);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::ConsumeOrExpelWindowLeftById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.consume_or_expel_window_left(Some(&window));
+                    self.maybe_warp_cursor_to_focus();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::ConsumeOrExpelWindowRight => {
-                self.niri.layout.consume_or_expel_window_right();
+                self.niri.layout.consume_or_expel_window_right(None);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::ConsumeOrExpelWindowRightById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri
+                        .layout
+                        .consume_or_expel_window_right(Some(&window));
+                    self.maybe_warp_cursor_to_focus();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::FocusColumnLeft => {
                 self.niri.layout.focus_left();

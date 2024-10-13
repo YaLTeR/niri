@@ -1122,7 +1122,11 @@ pub enum Action {
     MoveWindowDownOrToWorkspaceDown,
     MoveWindowUpOrToWorkspaceUp,
     ConsumeOrExpelWindowLeft,
+    #[knuffel(skip)]
+    ConsumeOrExpelWindowLeftById(u64),
     ConsumeOrExpelWindowRight,
+    #[knuffel(skip)]
+    ConsumeOrExpelWindowRightById(u64),
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
     CenterColumn,
@@ -1229,8 +1233,18 @@ impl From<niri_ipc::Action> for Action {
                 Self::MoveWindowDownOrToWorkspaceDown
             }
             niri_ipc::Action::MoveWindowUpOrToWorkspaceUp {} => Self::MoveWindowUpOrToWorkspaceUp,
-            niri_ipc::Action::ConsumeOrExpelWindowLeft {} => Self::ConsumeOrExpelWindowLeft,
-            niri_ipc::Action::ConsumeOrExpelWindowRight {} => Self::ConsumeOrExpelWindowRight,
+            niri_ipc::Action::ConsumeOrExpelWindowLeft { id: None } => {
+                Self::ConsumeOrExpelWindowLeft
+            }
+            niri_ipc::Action::ConsumeOrExpelWindowLeft { id: Some(id) } => {
+                Self::ConsumeOrExpelWindowLeftById(id)
+            }
+            niri_ipc::Action::ConsumeOrExpelWindowRight { id: None } => {
+                Self::ConsumeOrExpelWindowRight
+            }
+            niri_ipc::Action::ConsumeOrExpelWindowRight { id: Some(id) } => {
+                Self::ConsumeOrExpelWindowRightById(id)
+            }
             niri_ipc::Action::ConsumeWindowIntoColumn {} => Self::ConsumeWindowIntoColumn,
             niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
