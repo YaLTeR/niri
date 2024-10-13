@@ -1,7 +1,7 @@
 type              = process
 command           = niri --session
 restart           = false
-working-dig       = $HOME
+working-dir       = $HOME
 depends-on        = dbus
 after             = niri-shutdown
 chain-to          = niri-shutdown
