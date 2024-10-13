@@ -1817,14 +1817,18 @@ impl State {
             }
         }
 
-        let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
-            // Winit backend, discrete scrolling.
-            horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
-        });
-        let vertical_amount = vertical_amount.unwrap_or_else(|| {
-            // Winit backend, discrete scrolling.
-            vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
-        });
+        let scroll_factor = self.niri.config.borrow().input.touchpad.scroll_factor;
+
+        let horizontal_amount = scroll_factor
+            * horizontal_amount.unwrap_or_else(|| {
+                // Winit backend, discrete scrolling.
+                horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
+            });
+        let vertical_amount = scroll_factor
+            * vertical_amount.unwrap_or_else(|| {
+                // Winit backend, discrete scrolling.
+                vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
+            });
 
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {

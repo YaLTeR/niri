@@ -182,6 +182,8 @@ pub struct Touchpad {
     pub disabled_on_external_mouse: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument), default)]
+    pub scroll_factor: f64,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -3073,6 +3075,7 @@ mod tests {
                         left_handed: false,
                         disabled_on_external_mouse: true,
                         middle_emulation: false,
+                        scroll_factor: 1.0,
                     },
                     mouse: Mouse {
                         off: false,
