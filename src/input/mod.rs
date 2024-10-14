@@ -1809,7 +1809,6 @@ impl State {
                         }
                     }
                 }
-
                 return;
             } else {
                 self.niri.horizontal_finger_scroll_tracker.reset();
@@ -1817,18 +1816,23 @@ impl State {
             }
         }
 
-        let scroll_factor = self.niri.config.borrow().input.touchpad.scroll_factor;
+        let scroll_factor = match source {
+            AxisSource::Wheel => self.niri.config.borrow().input.mouse.scroll_factor,
+            AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor,
+            _ => 1.0,
+        };
 
         let horizontal_amount = scroll_factor
-            * horizontal_amount.unwrap_or_else(|| {
+            * horizontal_amount
                 // Winit backend, discrete scrolling.
-                horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
-            });
+                .or(horizontal_amount_v120.map(|a| a / 120. * 15.))
+                .unwrap_or(0.0);
+
         let vertical_amount = scroll_factor
-            * vertical_amount.unwrap_or_else(|| {
+            * vertical_amount
                 // Winit backend, discrete scrolling.
-                vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
-            });
+                .or(vertical_amount_v120.map(|a| a / 120. * 15.))
+                .unwrap_or(0.0);
 
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {
