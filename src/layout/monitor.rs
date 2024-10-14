@@ -20,7 +20,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::Transaction;
-use crate::utils::{output_size, to_physical_precise_round, ResizeEdge};
+use crate::utils::{output_size, round_logical_in_physical, ResizeEdge};
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
@@ -814,90 +814,71 @@ impl<W: LayoutElement> Monitor<W> {
         Some(rect)
     }
 
+    pub fn workspaces_with_render_positions(
+        &self,
+    ) -> impl Iterator<Item = (&Workspace<W>, Point<f64, Logical>)> {
+        let mut first = None;
+        let mut second = None;
+
+        match &self.workspace_switch {
+            Some(switch) => {
+                let render_idx = switch.current_idx();
+                let before_idx = render_idx.floor();
+                let after_idx = render_idx.ceil();
+
+                if after_idx >= 0. && before_idx < self.workspaces.len() as f64 {
+                    let scale = self.output.current_scale().fractional_scale();
+                    let size = output_size(&self.output);
+                    let offset =
+                        round_logical_in_physical(scale, (render_idx - before_idx) * size.h);
+
+                    // Ceil the height in physical pixels.
+                    let height = (size.h * scale).ceil() / scale;
+
+                    if before_idx >= 0. {
+                        let before_idx = before_idx as usize;
+                        let before_offset = Point::from((0., -offset));
+                        first = Some((&self.workspaces[before_idx], before_offset));
+                    }
+
+                    let after_idx = after_idx as usize;
+                    if after_idx < self.workspaces.len() {
+                        let after_offset = Point::from((0., -offset + height));
+                        second = Some((&self.workspaces[after_idx], after_offset));
+                    }
+                }
+            }
+            None => {
+                first = Some((
+                    &self.workspaces[self.active_workspace_idx],
+                    Point::from((0., 0.)),
+                ));
+            }
+        }
+
+        first.into_iter().chain(second)
+    }
+
     pub fn window_under(
         &self,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, Option<Point<f64, Logical>>)> {
-        match &self.workspace_switch {
-            Some(switch) => {
-                let size = output_size(&self.output).to_f64();
-
-                let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor();
-                let after_idx = render_idx.ceil();
-
-                let offset = (render_idx - before_idx) * size.h;
-
-                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
-                    return None;
-                }
-
-                let after_idx = after_idx as usize;
-
-                let (idx, ws_offset) = if pos_within_output.y < size.h - offset {
-                    if before_idx < 0. {
-                        return None;
-                    }
-
-                    (before_idx as usize, Point::from((0., offset)))
-                } else {
-                    if after_idx >= self.workspaces.len() {
-                        return None;
-                    }
-
-                    (after_idx, Point::from((0., -size.h + offset)))
-                };
-
-                let ws = &self.workspaces[idx];
-                let (win, win_pos) = ws.window_under(pos_within_output + ws_offset)?;
-                Some((win, win_pos.map(|p| p - ws_offset)))
-            }
-            None => {
-                let ws = &self.workspaces[self.active_workspace_idx];
-                ws.window_under(pos_within_output)
-            }
-        }
+        let size = output_size(&self.output);
+        let (ws, bounds) = self
+            .workspaces_with_render_positions()
+            .map(|(ws, offset)| (ws, Rectangle::from_loc_and_size(offset, size)))
+            .find(|(_, bounds)| bounds.contains(pos_within_output))?;
+        let (win, win_pos) = ws.window_under(pos_within_output - bounds.loc)?;
+        Some((win, win_pos.map(|p| p + bounds.loc)))
     }
 
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
-        match &self.workspace_switch {
-            Some(switch) => {
-                let size = output_size(&self.output);
-
-                let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor();
-                let after_idx = render_idx.ceil();
-
-                let offset = (render_idx - before_idx) * size.h;
-
-                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
-                    return None;
-                }
-
-                let after_idx = after_idx as usize;
-
-                let (idx, ws_offset) = if pos_within_output.y < size.h - offset {
-                    if before_idx < 0. {
-                        return None;
-                    }
-
-                    (before_idx as usize, Point::from((0., offset)))
-                } else {
-                    if after_idx >= self.workspaces.len() {
-                        return None;
-                    }
-
-                    (after_idx, Point::from((0., -size.h + offset)))
-                };
-
-                let ws = &self.workspaces[idx];
-                ws.resize_edges_under(pos_within_output + ws_offset)
-            }
-            None => {
-                let ws = &self.workspaces[self.active_workspace_idx];
-                ws.resize_edges_under(pos_within_output)
-            }
-        }
+        let size = output_size(&self.output);
+        let (ws, bounds) = self
+            .workspaces_with_render_positions()
+            .map(|(ws, offset)| (ws, Rectangle::from_loc_and_size(offset, size)))
+            .find(|(_, bounds)| bounds.contains(pos_within_output))?;
+        ws.resize_edges_under(pos_within_output - bounds.loc)
     }
 
     pub fn render_above_top_layer(&self) -> bool {
@@ -910,103 +891,52 @@ impl<W: LayoutElement> Monitor<W> {
         ws.render_above_top_layer()
     }
 
-    pub fn render_elements<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
+    pub fn render_elements<'a, R: NiriRenderer>(
+        &'a self,
+        renderer: &'a mut R,
         target: RenderTarget,
-    ) -> Vec<MonitorRenderElement<R>> {
+    ) -> impl Iterator<Item = MonitorRenderElement<R>> + '_ {
         let _span = tracy_client::span!("Monitor::render_elements");
 
         let scale = self.output.current_scale().fractional_scale();
         let size = output_size(&self.output);
+        // Ceil the height in physical pixels.
+        let height = (size.h * scale).ceil() as i32;
 
-        match &self.workspace_switch {
-            Some(switch) => {
-                let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor();
-                let after_idx = render_idx.ceil();
+        // Crop the elements to prevent them overflowing, currently visible during a workspace
+        // switch.
+        //
+        // HACK: crop to infinite bounds at least horizontally where we
+        // know there's no workspace joining or monitor bounds, otherwise
+        // it will cut pixel shaders and mess up the coordinate space.
+        // There's also a damage tracking bug which causes glitched
+        // rendering for maximized GTK windows.
+        //
+        // FIXME: use proper bounds after fixing the Crop element.
+        let crop_bounds = if self.workspace_switch.is_some() {
+            Rectangle::from_loc_and_size((-i32::MAX / 2, 0), (i32::MAX, height))
+        } else {
+            Rectangle::from_loc_and_size((-i32::MAX / 2, -i32::MAX / 2), (i32::MAX, i32::MAX))
+        };
 
-                let offset = (render_idx - before_idx) * size.h;
-
-                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
-                    return vec![];
-                }
-
-                let after_idx = after_idx as usize;
-                let after = if after_idx < self.workspaces.len() {
-                    let after = self.workspaces[after_idx].render_elements(renderer, target);
-                    let after = after.into_iter().filter_map(|elem| {
-                        Some(RelocateRenderElement::from_element(
-                            CropRenderElement::from_element(
-                                elem,
-                                scale,
-                                // HACK: crop to infinite bounds for all sides except the side
-                                // where the workspaces join,
-                                // otherwise it will cut pixel shaders and mess up
-                                // the coordinate space.
-                                Rectangle::from_extemities(
-                                    (-i32::MAX / 2, 0),
-                                    (i32::MAX / 2, i32::MAX / 2),
-                                ),
-                            )?,
-                            Point::from((0., -offset + size.h)).to_physical_precise_round(scale),
-                            Relocate::Relative,
-                        ))
-                    });
-
-                    if before_idx < 0. {
-                        return after.collect();
-                    }
-
-                    Some(after)
-                } else {
-                    None
-                };
-
-                let before_idx = before_idx as usize;
-                let before = self.workspaces[before_idx].render_elements(renderer, target);
-                let before = before.into_iter().filter_map(|elem| {
-                    Some(RelocateRenderElement::from_element(
-                        CropRenderElement::from_element(
-                            elem,
-                            scale,
-                            Rectangle::from_extemities(
-                                (-i32::MAX / 2, -i32::MAX / 2),
-                                (i32::MAX / 2, to_physical_precise_round(scale, size.h)),
-                            ),
-                        )?,
-                        Point::from((0., -offset)).to_physical_precise_round(scale),
-                        Relocate::Relative,
-                    ))
-                });
-                before.chain(after.into_iter().flatten()).collect()
-            }
-            None => {
-                let elements =
-                    self.workspaces[self.active_workspace_idx].render_elements(renderer, target);
-                elements
+        self.workspaces_with_render_positions()
+            .flat_map(move |(ws, offset)| {
+                ws.render_elements(renderer, target)
                     .into_iter()
-                    .filter_map(|elem| {
-                        Some(RelocateRenderElement::from_element(
-                            CropRenderElement::from_element(
-                                elem,
-                                scale,
-                                // HACK: set infinite crop bounds due to a damage tracking bug
-                                // which causes glitched rendering for maximized GTK windows.
-                                // FIXME: use proper bounds after fixing the Crop element.
-                                Rectangle::from_loc_and_size(
-                                    (-i32::MAX / 2, -i32::MAX / 2),
-                                    (i32::MAX, i32::MAX),
-                                ),
-                                // Rectangle::from_loc_and_size((0, 0), size),
-                            )?,
-                            (0, 0),
-                            Relocate::Relative,
-                        ))
+                    .filter_map(move |elem| {
+                        CropRenderElement::from_element(elem, scale, crop_bounds)
                     })
-                    .collect()
-            }
-        }
+                    .map(move |elem| {
+                        RelocateRenderElement::from_element(
+                            elem,
+                            // The offset we get from workspaces_with_render_positions() is already
+                            // rounded to physical pixels, but it's in the logical coordinate
+                            // space, so we need to convert it to physical.
+                            offset.to_physical_precise_round(scale),
+                            Relocate::Relative,
+                        )
+                    })
+            })
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {

@@ -233,7 +233,6 @@ impl TestCase for Layout {
             .monitor_for_output(&self.output)
             .unwrap()
             .render_elements(renderer, RenderTarget::Output)
-            .into_iter()
             .map(|elem| Box::new(elem) as _)
             .collect()
     }
