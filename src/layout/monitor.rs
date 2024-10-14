@@ -458,18 +458,20 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let column = &workspace.columns[workspace.active_column_idx];
-        let width = column.width;
-        let is_full_width = column.is_full_width;
-        let window = workspace
-            .remove_tile_by_idx(
-                workspace.active_column_idx,
-                column.active_tile_idx,
-                Transaction::new(),
-                None,
-            )
-            .into_window();
+        let removed = workspace.remove_tile_by_idx(
+            workspace.active_column_idx,
+            column.active_tile_idx,
+            Transaction::new(),
+            None,
+        );
 
-        self.add_window(new_idx, window, true, width, is_full_width);
+        self.add_window(
+            new_idx,
+            removed.tile.into_window(),
+            true,
+            removed.width,
+            removed.is_full_width,
+        );
     }
 
     pub fn move_to_workspace_down(&mut self) {
@@ -486,18 +488,20 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let column = &workspace.columns[workspace.active_column_idx];
-        let width = column.width;
-        let is_full_width = column.is_full_width;
-        let window = workspace
-            .remove_tile_by_idx(
-                workspace.active_column_idx,
-                column.active_tile_idx,
-                Transaction::new(),
-                None,
-            )
-            .into_window();
+        let removed = workspace.remove_tile_by_idx(
+            workspace.active_column_idx,
+            column.active_tile_idx,
+            Transaction::new(),
+            None,
+        );
 
-        self.add_window(new_idx, window, true, width, is_full_width);
+        self.add_window(
+            new_idx,
+            removed.tile.into_window(),
+            true,
+            removed.width,
+            removed.is_full_width,
+        );
     }
 
     pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
@@ -534,17 +538,19 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         let column = &workspace.columns[col_idx];
-        let width = column.width;
-        let is_full_width = column.is_full_width;
         let activate = source_workspace_idx == self.active_workspace_idx
             && col_idx == workspace.active_column_idx
             && tile_idx == column.active_tile_idx;
 
-        let window = workspace
-            .remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None)
-            .into_window();
+        let removed = workspace.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
 
-        self.add_window(new_idx, window, activate, width, is_full_width);
+        self.add_window(
+            new_idx,
+            removed.tile.into_window(),
+            activate,
+            removed.width,
+            removed.is_full_width,
+        );
 
         if self.workspace_switch.is_none() {
             self.clean_up_workspaces();

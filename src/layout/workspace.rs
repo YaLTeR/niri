@@ -17,7 +17,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::tile::{Tile, TileRenderElement};
-use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options};
+use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
@@ -1124,10 +1124,10 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn remove_tile_by_idx(
         &mut self,
         column_idx: usize,
-        window_idx: usize,
+        tile_idx: usize,
         transaction: Transaction,
         anim_config: Option<niri_config::Animation>,
-    ) -> Tile<W> {
+    ) -> RemovedTile<W> {
         let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
 
         let column = &mut self.columns[column_idx];
@@ -1136,13 +1136,13 @@ impl<W: LayoutElement> Workspace<W> {
         // Animate movement of other tiles.
         // FIXME: tiles can move by X too, in a centered or resizing layout with one window smaller
         // than the others.
-        let offset_y = column.tile_offset(window_idx + 1).y - column.tile_offset(window_idx).y;
-        for tile in &mut column.tiles[window_idx + 1..] {
+        let offset_y = column.tile_offset(tile_idx + 1).y - column.tile_offset(tile_idx).y;
+        for tile in &mut column.tiles[tile_idx + 1..] {
             tile.animate_move_y_from(offset_y);
         }
 
-        let tile = column.tiles.remove(window_idx);
-        column.data.remove(window_idx);
+        let tile = column.tiles.remove(tile_idx);
+        column.data.remove(tile_idx);
 
         // If one window is left, reset its weight to 1.
         if column.data.len() == 1 {
@@ -1161,6 +1161,12 @@ impl<W: LayoutElement> Workspace<W> {
                 self.interactive_resize = None;
             }
         }
+
+        let tile = RemovedTile {
+            tile,
+            width: column.width,
+            is_full_width: column.is_full_width,
+        };
 
         let became_empty = column.tiles.is_empty();
         let offset = if became_empty {
@@ -1322,7 +1328,7 @@ impl<W: LayoutElement> Workspace<W> {
         column
     }
 
-    pub fn remove_window(&mut self, window: &W::Id, transaction: Transaction) -> W {
+    pub fn remove_tile(&mut self, window: &W::Id, transaction: Transaction) -> RemovedTile<W> {
         let column_idx = self
             .columns
             .iter()
@@ -1330,9 +1336,8 @@ impl<W: LayoutElement> Workspace<W> {
             .unwrap();
         let column = &self.columns[column_idx];
 
-        let window_idx = column.position(window).unwrap();
-        self.remove_tile_by_idx(column_idx, window_idx, transaction, None)
-            .into_window()
+        let tile_idx = column.position(window).unwrap();
+        self.remove_tile_by_idx(column_idx, tile_idx, transaction, None)
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
@@ -1852,7 +1857,7 @@ impl<W: LayoutElement> Workspace<W> {
             }
 
             offset.x += self.columns[source_col_idx].render_offset().x;
-            let tile = self.remove_tile_by_idx(
+            let RemovedTile { tile, .. } = self.remove_tile_by_idx(
                 source_col_idx,
                 0,
                 Transaction::new(),
@@ -1868,12 +1873,9 @@ impl<W: LayoutElement> Workspace<W> {
             new_tile.animate_move_from(offset);
         } else {
             // Move out of column.
-            let width = source_column.width;
-            let is_full_width = source_column.is_full_width;
-
             let mut offset = Point::from((source_column.render_offset().x, 0.));
 
-            let tile =
+            let removed =
                 self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
 
             // We're inserting into the source column position.
@@ -1881,10 +1883,10 @@ impl<W: LayoutElement> Workspace<W> {
 
             self.add_tile(
                 Some(target_column_idx),
-                tile,
+                removed.tile,
                 source_tile_was_active,
-                width,
-                is_full_width,
+                removed.width,
+                removed.is_full_width,
                 Some(self.options.animations.window_movement.0),
             );
 
@@ -1951,7 +1953,7 @@ impl<W: LayoutElement> Workspace<W> {
                 self.activate_prev_column_on_removal = None;
             }
 
-            let tile = self.remove_tile_by_idx(
+            let RemovedTile { tile, .. } = self.remove_tile_by_idx(
                 source_col_idx,
                 0,
                 Transaction::new(),
@@ -1966,22 +1968,19 @@ impl<W: LayoutElement> Workspace<W> {
             new_tile.animate_move_from(offset);
         } else {
             // Move out of column.
-            let width = source_column.width;
-            let is_full_width = source_column.is_full_width;
-
             let prev_width = self.data[source_col_idx].width;
 
-            let tile =
+            let removed =
                 self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
 
             let target_column_idx = source_col_idx + 1;
 
             self.add_tile(
                 Some(target_column_idx),
-                tile,
+                removed.tile,
                 source_tile_was_active,
-                width,
-                is_full_width,
+                removed.width,
+                removed.is_full_width,
                 Some(self.options.animations.window_movement.0),
             );
 
@@ -2017,8 +2016,8 @@ impl<W: LayoutElement> Workspace<W> {
         let mut offset = Point::from((offset, 0.));
         let prev_off = self.columns[source_column_idx].tile_offset(0);
 
-        let tile = self.remove_tile_by_idx(source_column_idx, 0, Transaction::new(), None);
-        self.add_tile_to_column(target_column_idx, None, tile, false);
+        let removed = self.remove_tile_by_idx(source_column_idx, 0, Transaction::new(), None);
+        self.add_tile_to_column(target_column_idx, None, removed.tile, false);
 
         let target_column = &mut self.columns[target_column_idx];
         offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
@@ -2045,9 +2044,7 @@ impl<W: LayoutElement> Workspace<W> {
         let mut offset = Point::from((source_column.render_offset().x, 0.));
         let prev_off = source_column.tile_offset(source_column.active_tile_idx);
 
-        let width = source_column.width;
-        let is_full_width = source_column.is_full_width;
-        let tile = self.remove_tile_by_idx(
+        let removed = self.remove_tile_by_idx(
             source_col_idx,
             source_column.active_tile_idx,
             Transaction::new(),
@@ -2056,10 +2053,10 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.add_tile(
             Some(target_col_idx),
-            tile,
+            removed.tile,
             true,
-            width,
-            is_full_width,
+            removed.width,
+            removed.is_full_width,
             Some(self.options.animations.window_movement.0),
         );
 
@@ -2412,19 +2409,17 @@ impl<W: LayoutElement> Workspace<W> {
         if is_fullscreen && col.tiles.len() > 1 {
             // This wasn't the only window in its column; extract it into a separate column.
             let activate = self.active_column_idx == col_idx && col.active_tile_idx == tile_idx;
-            let width = col.width;
-            let is_full_width = col.is_full_width;
 
-            let tile = self.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
+            let removed = self.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
             // Create a column manually to disable the resize animation.
             let column = Column::new_with_tile(
-                tile,
+                removed.tile,
                 self.view_size,
                 self.working_area,
                 self.scale.fractional_scale(),
                 self.options.clone(),
-                width,
-                is_full_width,
+                removed.width,
+                removed.is_full_width,
                 false,
             );
             self.add_column(Some(col_idx + 1), column, activate, None);

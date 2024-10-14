@@ -44,6 +44,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
+use tile::Tile;
 use workspace::WorkspaceId;
 
 pub use self::monitor::MonitorRenderElement;
@@ -279,6 +280,15 @@ impl Default for Options {
             ],
         }
     }
+}
+
+/// Tile that was just removed from the layout.
+pub struct RemovedTile<W: LayoutElement> {
+    tile: Tile<W>,
+    /// Width of the column the tile was in.
+    width: ColumnWidth,
+    /// Whether the column the tile was in was full-width.
+    is_full_width: bool,
 }
 
 impl Options {
@@ -743,13 +753,17 @@ impl<W: LayoutElement> Layout<W> {
         );
     }
 
-    pub fn remove_window(&mut self, window: &W::Id, transaction: Transaction) -> Option<W> {
+    pub fn remove_window(
+        &mut self,
+        window: &W::Id,
+        transaction: Transaction,
+    ) -> Option<RemovedTile<W>> {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for (idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         if ws.has_window(window) {
-                            let win = ws.remove_window(window, transaction);
+                            let removed = ws.remove_tile(window, transaction);
 
                             // Clean up empty workspaces that are not active and not last.
                             if !ws.has_windows()
@@ -765,7 +779,7 @@ impl<W: LayoutElement> Layout<W> {
                                 }
                             }
 
-                            return Some(win);
+                            return Some(removed);
                         }
                     }
                 }
@@ -773,14 +787,14 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
                     if ws.has_window(window) {
-                        let win = ws.remove_window(window, transaction);
+                        let removed = ws.remove_tile(window, transaction);
 
                         // Clean up empty workspaces.
                         if !ws.has_windows() && ws.name.is_none() {
                             workspaces.remove(idx);
                         }
 
-                        return Some(win);
+                        return Some(removed);
                     }
                 }
             }
@@ -2111,24 +2125,20 @@ impl<W: LayoutElement> Layout<W> {
             let mon = &mut monitors[mon_idx];
             let ws = &mut mon.workspaces[ws_idx];
             let column = &ws.columns[col_idx];
-            let width = column.width;
-            let is_full_width = column.is_full_width;
             let activate = mon_idx == *active_monitor_idx
                 && ws_idx == mon.active_workspace_idx
                 && col_idx == ws.active_column_idx
                 && tile_idx == column.active_tile_idx;
 
-            let window = ws
-                .remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None)
-                .into_window();
+            let removed = ws.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
 
             self.add_window_by_idx(
                 new_idx,
                 workspace_idx,
-                window,
+                removed.tile.into_window(),
                 activate,
-                width,
-                is_full_width,
+                removed.width,
+                removed.is_full_width,
             );
 
             let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
