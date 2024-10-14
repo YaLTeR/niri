@@ -3237,27 +3237,8 @@ mod tests {
                     bbox,
                     min_max_size,
                 } => {
-                    match &mut layout.monitor_set {
-                        MonitorSet::Normal { monitors, .. } => {
-                            for mon in monitors {
-                                for ws in &mut mon.workspaces {
-                                    for win in ws.windows() {
-                                        if win.0.id == id {
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        MonitorSet::NoOutputs { workspaces, .. } => {
-                            for ws in workspaces {
-                                for win in ws.windows() {
-                                    if win.0.id == id {
-                                        return;
-                                    }
-                                }
-                            }
-                        }
+                    if layout.has_window(&id) {
+                        return;
                     }
 
                     let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
