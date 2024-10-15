@@ -2890,6 +2890,7 @@ mod tests {
                     accel-speed 0.2
                     accel-profile "flat"
                     scroll-method "two-finger"
+                    scroll-button 271
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
                 }
@@ -2899,6 +2900,7 @@ mod tests {
                     accel-speed 0.4
                     accel-profile "flat"
                     scroll-method "no-scroll"
+                    scroll-button 272
                     middle-emulation
                 }
 
@@ -3076,6 +3078,7 @@ mod tests {
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::TwoFinger),
+                        scroll_button: 271,
                         tap_button_map: Some(TapButtonMap::LeftMiddleRight),
                         left_handed: false,
                         disabled_on_external_mouse: true,
@@ -3087,6 +3090,7 @@ mod tests {
                         accel_speed: 0.4,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::NoScroll),
+                        scroll_button: 272,
                         left_handed: false,
                         middle_emulation: true,
                     },
