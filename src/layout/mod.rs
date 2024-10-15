@@ -211,6 +211,11 @@ pub trait LayoutElement {
 pub struct Layout<W: LayoutElement> {
     /// Monitors and workspaes in the layout.
     monitor_set: MonitorSet<W>,
+    /// Whether the layout should draw as active.
+    ///
+    /// This normally indicates that the layout has keyboard focus, but not always. E.g. when the
+    /// screenshot UI is open, it keeps the layout drawing as active.
+    is_active: bool,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -354,6 +359,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn with_options(options: Options) -> Self {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
+            is_active: true,
             options: Rc::new(options),
         }
     }
@@ -369,6 +375,7 @@ impl<W: LayoutElement> Layout<W> {
 
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces },
+            is_active: true,
             options: opts,
         }
     }
@@ -1899,7 +1906,8 @@ impl<W: LayoutElement> Layout<W> {
 
         for (idx, mon) in monitors.iter_mut().enumerate() {
             if output.map_or(true, |output| mon.output == *output) {
-                mon.update_render_elements(idx == *active_monitor_idx);
+                let is_active = self.is_active && idx == *active_monitor_idx;
+                mon.update_render_elements(is_active);
             }
         }
     }
@@ -2590,8 +2598,10 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn refresh(&mut self) {
+    pub fn refresh(&mut self, is_active: bool) {
         let _span = tracy_client::span!("Layout::refresh");
+
+        self.is_active = is_active;
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -2600,7 +2610,7 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 for (idx, mon) in monitors.iter_mut().enumerate() {
-                    let is_active = idx == *active_monitor_idx;
+                    let is_active = self.is_active && idx == *active_monitor_idx;
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         ws.refresh(is_active);
 
@@ -3097,6 +3107,9 @@ mod tests {
             id: Option<usize>,
         },
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
+        Refresh {
+            is_active: bool,
+        },
         MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
         ViewOffsetGestureBegin {
             #[proptest(strategy = "1..=5usize")]
@@ -3546,6 +3559,9 @@ mod tests {
                         // FIXME: serial.
                         layout.update_window(&id, None);
                     }
+                }
+                Op::Refresh { is_active } => {
+                    layout.refresh(is_active);
                 }
                 Op::MoveWorkspaceToOutput(id) => {
                     let name = format!("output{id}");
