@@ -24,7 +24,7 @@ use smithay::input::pointer::{
     GrabStartData as PointerGrabStartData, MotionEvent, RelativeMotionEvent,
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
-use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
@@ -243,25 +243,30 @@ impl State {
     where
         I::Device: 'static,
     {
-        let (target_geo, keep_ratio, px) = if let Some(output) = self.niri.output_for_tablet() {
-            (
-                self.niri.global_space.output_geometry(output).unwrap(),
-                true,
-                1. / output.current_scale().fractional_scale(),
-            )
-        } else {
-            let geo = self.global_bounding_rectangle()?;
+        let (target_geo, keep_ratio, px, transform) =
+            if let Some(output) = self.niri.output_for_tablet() {
+                (
+                    self.niri.global_space.output_geometry(output).unwrap(),
+                    true,
+                    1. / output.current_scale().fractional_scale(),
+                    output.current_transform(),
+                )
+            } else {
+                let geo = self.global_bounding_rectangle()?;
 
-            // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
-            // corresponding to the position on the right when clamping.
-            let output = self.niri.global_space.outputs().next().unwrap();
-            let scale = output.current_scale().fractional_scale();
+                // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
+                // corresponding to the position on the right when clamping.
+                let output = self.niri.global_space.outputs().next().unwrap();
+                let scale = output.current_scale().fractional_scale();
 
-            // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
-            (geo, false, 1. / scale)
+                // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
+                (geo, false, 1. / scale, Transform::Normal)
+            };
+
+        let mut pos = {
+            let size = transform.invert().transform_size(target_geo.size);
+            transform.transform_point_in(event.position_transformed(size), &size.to_f64())
         };
-
-        let mut pos = event.position_transformed(target_geo.size);
 
         if keep_ratio {
             pos.x /= target_geo.size.w as f64;
@@ -271,7 +276,8 @@ impl State {
             if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
                 if let Some(data) = self.niri.tablets.get(device) {
                     // This code does the same thing as mutter with "keep aspect ratio" enabled.
-                    let output_aspect_ratio = target_geo.size.w as f64 / target_geo.size.h as f64;
+                    let size = transform.invert().transform_size(target_geo.size);
+                    let output_aspect_ratio = size.w as f64 / size.h as f64;
                     let ratio = data.aspect_ratio / output_aspect_ratio;
 
                     if ratio > 1. {
