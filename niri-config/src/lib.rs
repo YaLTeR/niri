@@ -174,6 +174,8 @@ pub struct Touchpad {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub scroll_button: u32,
     #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
     #[knuffel(child)]
@@ -196,6 +198,8 @@ pub struct Mouse {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub scroll_button: u32,
     #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
@@ -214,6 +218,8 @@ pub struct Trackpoint {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub scroll_button: u32,
     #[knuffel(child)]
     pub middle_emulation: bool,
 }
@@ -2902,6 +2908,7 @@ mod tests {
                     accel-speed 0.0
                     accel-profile "flat"
                     scroll-method "on-button-down"
+                    scroll-button 273
                 }
 
                 tablet {
@@ -3089,6 +3096,7 @@ mod tests {
                         accel_speed: 0.0,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::OnButtonDown),
+                        scroll_button: 273,
                         middle_emulation: false,
                     },
                     tablet: Tablet {

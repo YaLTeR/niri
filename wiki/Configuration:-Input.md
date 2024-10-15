@@ -56,6 +56,7 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-method "on-button-down"
+        // scroll-button 273
         // middle-emulation
     }
 
@@ -140,6 +141,7 @@ A few settings are common between `touchpad`, `mouse` and `trackpoint`:
 - `accel-speed`: pointer acceleration speed, valid values are from `-1.0` to `1.0` where the default is `0.0`.
 - `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
+- `scroll-button`: the button key (numerical form) used for the `on-button-down` scroll method
   The default and supported methods vary depending on the device type.
 - `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
