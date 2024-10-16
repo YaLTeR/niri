@@ -2657,8 +2657,20 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
+
+            if method == niri_config::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
+
+            if default == input::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         }
 
         if let Some(tap_button_map) = c.tap_button_map {
@@ -2713,8 +2725,20 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
+
+            if method == niri_config::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
+
+            if default == input::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         }
     }
 
@@ -2734,6 +2758,24 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             let _ = device.config_accel_set_profile(accel_profile.into());
         } else if let Some(default) = device.config_accel_default_profile() {
             let _ = device.config_accel_set_profile(default);
+        }
+
+        if let Some(method) = c.scroll_method {
+            let _ = device.config_scroll_set_method(method.into());
+
+            if method == niri_config::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
+        } else if let Some(default) = device.config_scroll_default_method() {
+            let _ = device.config_scroll_set_method(default);
+
+            if default == input::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         }
     }
 
@@ -2756,8 +2798,20 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
+
+            if method == niri_config::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
+
+            if default == input::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         }
     }
 
