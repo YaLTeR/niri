@@ -176,8 +176,8 @@ pub struct Touchpad {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
-    #[knuffel(child, unwrap(argument), default)]
-    pub scroll_button: u32,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
     #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
     #[knuffel(child)]
