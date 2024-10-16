@@ -541,14 +541,17 @@ impl State {
         self.notify_blocker_cleared();
 
         // These should be called periodically, before flushing the clients.
-        self.niri.layout.refresh();
-        self.niri.cursor_manager.check_cursor_image_surface_alive();
-        self.niri.refresh_pointer_outputs();
         self.niri.popups.cleanup();
-        self.niri.global_space.refresh();
-        self.niri.refresh_idle_inhibit();
         self.refresh_popup_grab();
         self.update_keyboard_focus();
+
+        // Needs to be called after updating the keyboard focus.
+        self.niri.refresh_layout();
+
+        self.niri.cursor_manager.check_cursor_image_surface_alive();
+        self.niri.refresh_pointer_outputs();
+        self.niri.global_space.refresh();
+        self.niri.refresh_idle_inhibit();
         self.refresh_pointer_focus();
         foreign_toplevel::refresh(self);
         self.niri.refresh_window_rules();
@@ -2825,6 +2828,23 @@ impl Niri {
         }
     }
 
+    pub fn refresh_layout(&mut self) {
+        let layout_is_active = match &self.keyboard_focus {
+            KeyboardFocus::Layout { .. } => true,
+            KeyboardFocus::LayerShell { .. } => false,
+
+            // Draw layout as active in these cases to reduce unnecessary window animations.
+            // There's no confusion because these are both fullscreen modes.
+            //
+            // FIXME: when going into the screenshot UI from a layer-shell focus, and then back to
+            // layer-shell, the layout will briefly draw as active, despite never having focus.
+            KeyboardFocus::LockScreen { .. } => true,
+            KeyboardFocus::ScreenshotUi => true,
+        };
+
+        self.layout.refresh(layout_is_active);
+    }
+
     pub fn refresh_idle_inhibit(&mut self) {
         let _span = tracy_client::span!("Niri::refresh_idle_inhibit");
 
@@ -3044,7 +3064,7 @@ impl Niri {
 
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
-        let monitor_elements = mon.render_elements(renderer, target);
+        let monitor_elements: Vec<_> = mon.render_elements(renderer, target).collect();
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);

@@ -44,6 +44,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
+use tile::Tile;
 use workspace::WorkspaceId;
 
 pub use self::monitor::MonitorRenderElement;
@@ -210,6 +211,11 @@ pub trait LayoutElement {
 pub struct Layout<W: LayoutElement> {
     /// Monitors and workspaes in the layout.
     monitor_set: MonitorSet<W>,
+    /// Whether the layout should draw as active.
+    ///
+    /// This normally indicates that the layout has keyboard focus, but not always. E.g. when the
+    /// screenshot UI is open, it keeps the layout drawing as active.
+    is_active: bool,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -281,6 +287,15 @@ impl Default for Options {
     }
 }
 
+/// Tile that was just removed from the layout.
+pub struct RemovedTile<W: LayoutElement> {
+    tile: Tile<W>,
+    /// Width of the column the tile was in.
+    width: ColumnWidth,
+    /// Whether the column the tile was in was full-width.
+    is_full_width: bool,
+}
+
 impl Options {
     fn from_config(config: &Config) -> Self {
         let layout = &config.layout;
@@ -344,6 +359,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn with_options(options: Options) -> Self {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
+            is_active: true,
             options: Rc::new(options),
         }
     }
@@ -359,6 +375,7 @@ impl<W: LayoutElement> Layout<W> {
 
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces },
+            is_active: true,
             options: opts,
         }
     }
@@ -743,20 +760,24 @@ impl<W: LayoutElement> Layout<W> {
         );
     }
 
-    pub fn remove_window(&mut self, window: &W::Id, transaction: Transaction) -> Option<W> {
+    pub fn remove_window(
+        &mut self,
+        window: &W::Id,
+        transaction: Transaction,
+    ) -> Option<RemovedTile<W>> {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for (idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         if ws.has_window(window) {
-                            let win = ws.remove_window(window, transaction);
+                            let removed = ws.remove_tile(window, transaction);
 
                             // Clean up empty workspaces that are not active and not last.
                             if !ws.has_windows()
+                                && ws.name.is_none()
                                 && idx != mon.active_workspace_idx
                                 && idx != mon.workspaces.len() - 1
                                 && mon.workspace_switch.is_none()
-                                && mon.workspaces[idx].name.is_none()
                             {
                                 mon.workspaces.remove(idx);
 
@@ -765,7 +786,7 @@ impl<W: LayoutElement> Layout<W> {
                                 }
                             }
 
-                            return Some(win);
+                            return Some(removed);
                         }
                     }
                 }
@@ -773,14 +794,14 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
                     if ws.has_window(window) {
-                        let win = ws.remove_window(window, transaction);
+                        let removed = ws.remove_tile(window, transaction);
 
                         // Clean up empty workspaces.
-                        if !ws.has_windows() && workspaces[idx].name.is_none() {
+                        if !ws.has_windows() && ws.name.is_none() {
                             workspaces.remove(idx);
                         }
 
-                        return Some(win);
+                        return Some(removed);
                     }
                 }
             }
@@ -1885,7 +1906,8 @@ impl<W: LayoutElement> Layout<W> {
 
         for (idx, mon) in monitors.iter_mut().enumerate() {
             if output.map_or(true, |output| mon.output == *output) {
-                mon.update_render_elements(idx == *active_monitor_idx);
+                let is_active = self.is_active && idx == *active_monitor_idx;
+                mon.update_render_elements(is_active);
             }
         }
     }
@@ -2111,24 +2133,20 @@ impl<W: LayoutElement> Layout<W> {
             let mon = &mut monitors[mon_idx];
             let ws = &mut mon.workspaces[ws_idx];
             let column = &ws.columns[col_idx];
-            let width = column.width;
-            let is_full_width = column.is_full_width;
             let activate = mon_idx == *active_monitor_idx
                 && ws_idx == mon.active_workspace_idx
                 && col_idx == ws.active_column_idx
                 && tile_idx == column.active_tile_idx;
 
-            let window = ws
-                .remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None)
-                .into_window();
+            let removed = ws.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
 
             self.add_window_by_idx(
                 new_idx,
                 workspace_idx,
-                window,
+                removed.tile.into_window(),
                 activate,
-                width,
-                is_full_width,
+                removed.width,
+                removed.is_full_width,
             );
 
             let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
@@ -2580,8 +2598,10 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn refresh(&mut self) {
+    pub fn refresh(&mut self, is_active: bool) {
         let _span = tracy_client::span!("Layout::refresh");
+
+        self.is_active = is_active;
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -2590,7 +2610,7 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 for (idx, mon) in monitors.iter_mut().enumerate() {
-                    let is_active = idx == *active_monitor_idx;
+                    let is_active = self.is_active && idx == *active_monitor_idx;
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         ws.refresh(is_active);
 
@@ -3087,6 +3107,9 @@ mod tests {
             id: Option<usize>,
         },
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
+        Refresh {
+            is_active: bool,
+        },
         MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
         ViewOffsetGestureBegin {
             #[proptest(strategy = "1..=5usize")]
@@ -3237,27 +3260,8 @@ mod tests {
                     bbox,
                     min_max_size,
                 } => {
-                    match &mut layout.monitor_set {
-                        MonitorSet::Normal { monitors, .. } => {
-                            for mon in monitors {
-                                for ws in &mut mon.workspaces {
-                                    for win in ws.windows() {
-                                        if win.0.id == id {
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        MonitorSet::NoOutputs { workspaces, .. } => {
-                            for ws in workspaces {
-                                for win in ws.windows() {
-                                    if win.0.id == id {
-                                        return;
-                                    }
-                                }
-                            }
-                        }
+                    if layout.has_window(&id) {
+                        return;
                     }
 
                     let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
@@ -3555,6 +3559,9 @@ mod tests {
                         // FIXME: serial.
                         layout.update_window(&id, None);
                     }
+                }
+                Op::Refresh { is_active } => {
+                    layout.refresh(is_active);
                 }
                 Op::MoveWorkspaceToOutput(id) => {
                     let name = format!("output{id}");
