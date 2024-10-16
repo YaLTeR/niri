@@ -865,26 +865,30 @@ impl<W: LayoutElement> Monitor<W> {
         first.into_iter().chain(second)
     }
 
+    pub fn workspace_under(
+        &self,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<(&Workspace<W>, Point<f64, Logical>)> {
+        let size = output_size(&self.output);
+        let (ws, bounds) = self
+            .workspaces_with_render_positions()
+            .map(|(ws, offset)| (ws, Rectangle::from_loc_and_size(offset, size)))
+            .find(|(_, bounds)| bounds.contains(pos_within_output))?;
+        Some((ws, bounds.loc))
+    }
+
     pub fn window_under(
         &self,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, Option<Point<f64, Logical>>)> {
-        let size = output_size(&self.output);
-        let (ws, bounds) = self
-            .workspaces_with_render_positions()
-            .map(|(ws, offset)| (ws, Rectangle::from_loc_and_size(offset, size)))
-            .find(|(_, bounds)| bounds.contains(pos_within_output))?;
-        let (win, win_pos) = ws.window_under(pos_within_output - bounds.loc)?;
-        Some((win, win_pos.map(|p| p + bounds.loc)))
+        let (ws, offset) = self.workspace_under(pos_within_output)?;
+        let (win, win_pos) = ws.window_under(pos_within_output - offset)?;
+        Some((win, win_pos.map(|p| p + offset)))
     }
 
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
-        let size = output_size(&self.output);
-        let (ws, bounds) = self
-            .workspaces_with_render_positions()
-            .map(|(ws, offset)| (ws, Rectangle::from_loc_and_size(offset, size)))
-            .find(|(_, bounds)| bounds.contains(pos_within_output))?;
-        ws.resize_edges_under(pos_within_output - bounds.loc)
+        let (ws, offset) = self.workspace_under(pos_within_output)?;
+        ws.resize_edges_under(pos_within_output - offset)
     }
 
     pub fn render_above_top_layer(&self) -> bool {

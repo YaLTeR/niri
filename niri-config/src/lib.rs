@@ -70,6 +70,8 @@ pub struct Input {
     #[knuffel(child, default)]
     pub trackpoint: Trackpoint,
     #[knuffel(child, default)]
+    pub trackball: Trackball,
+    #[knuffel(child, default)]
     pub tablet: Tablet,
     #[knuffel(child, default)]
     pub touch: Touch,
@@ -220,6 +222,22 @@ pub struct Trackpoint {
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument), default)]
     pub scroll_button: u32,
+    #[knuffel(child)]
+    pub middle_emulation: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+pub struct Trackball {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub natural_scroll: bool,
+    #[knuffel(child, unwrap(argument), default)]
+    pub accel_speed: f64,
+    #[knuffel(child, unwrap(argument, str))]
+    pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
 }
@@ -2913,6 +2931,15 @@ mod tests {
                     scroll-button 273
                 }
 
+                trackball {
+                    off
+                    natural-scroll
+                    accel-speed 0.0
+                    accel-profile "flat"
+                    left-handed
+                    middle-emulation
+                }
+
                 tablet {
                     map-to-output "eDP-1"
                 }
@@ -3102,6 +3129,14 @@ mod tests {
                         scroll_method: Some(ScrollMethod::OnButtonDown),
                         scroll_button: 273,
                         middle_emulation: false,
+                    },
+                    trackball: Trackball {
+                        off: true,
+                        natural_scroll: true,
+                        accel_speed: 0.0,
+                        accel_profile: Some(AccelProfile::Flat),
+                        left_handed: true,
+                        middle_emulation: true,
                     },
                     tablet: Tablet {
                         off: false,
