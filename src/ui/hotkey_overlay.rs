@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::{Action, Config, Key, Modifiers, Trigger};
+use niri_config::{Action, Config, Key, Modifiers, Source, Trigger};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::Kind;
@@ -213,12 +213,16 @@ fn render(
     // Add the spawn actions.
     let mut spawn_actions = Vec::new();
     for bind in binds.iter().filter(|bind| {
+        let Source::Key(key) = bind.source else {
+            return false;
+        };
+
         matches!(bind.action, Action::Spawn(_))
             // Only show binds with Mod or Super to filter out stuff like volume up/down.
-            && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
-                || bind.key.modifiers.contains(Modifiers::SUPER))
+            && (key.modifiers.contains(Modifiers::COMPOSITOR)
+                || key.modifiers.contains(Modifiers::SUPER))
             // Also filter out wheel and touchpad scroll binds.
-            && matches!(bind.key.trigger, Trigger::Keysym(_))
+            && matches!(key.trigger, Trigger::Keysym(_))
     }) {
         let action = &bind.action;
 
@@ -237,7 +241,13 @@ fn render(
                 .0
                 .iter()
                 .find(|bind| bind.action == *action)
-                .map(|bind| key_name(comp_mod, &bind.key))
+                .and_then(|bind| {
+                    if let Source::Key(key) = &bind.source {
+                        Some(key_name(comp_mod, key))
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or_else(|| String::from("(not bound)"));
 
             (format!(" {key} "), action_name(action))

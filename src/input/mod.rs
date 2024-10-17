@@ -6,14 +6,15 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, Modifiers, Trigger};
+use niri_config::{Action, Bind, Binds, Key, Modifiers, Source, Switch, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
     InputBackend, InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
-    PointerButtonEvent, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
+    PointerButtonEvent, PointerMotionEvent, ProximityState, SwitchToggleEvent,
+    TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
+    TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
@@ -127,7 +128,7 @@ impl State {
             TouchUp { event } => self.on_touch_up::<I>(event),
             TouchCancel { event } => self.on_touch_cancel::<I>(event),
             TouchFrame { event } => self.on_touch_frame::<I>(event),
-            SwitchToggle { .. } => (),
+            SwitchToggle { event } => self.on_switch_toggle::<I>(event),
             Special(_) => (),
         }
 
@@ -427,7 +428,7 @@ impl State {
             return;
         }
 
-        match self.niri.bind_cooldown_timers.entry(bind.key) {
+        match self.niri.bind_cooldown_timers.entry(bind.source) {
             // The bind is on cooldown.
             Entry::Occupied(_) => (),
             Entry::Vacant(entry) => {
@@ -436,7 +437,12 @@ impl State {
                     .niri
                     .event_loop
                     .insert_source(timer, move |_, _, state| {
-                        if state.niri.bind_cooldown_timers.remove(&bind.key).is_none() {
+                        if state
+                            .niri
+                            .bind_cooldown_timers
+                            .remove(&bind.source)
+                            .is_none()
+                        {
                             error!("bind cooldown timer entry disappeared");
                         }
                         TimeoutAction::Drop
@@ -2360,6 +2366,39 @@ impl State {
         };
         handle.cancel(self);
     }
+
+    fn on_switch_toggle<I: InputBackend>(&mut self, evt: I::SwitchToggleEvent) {
+        let Some(switch) = evt.switch() else {
+            return;
+        };
+
+        let switch = match (switch, evt.state()) {
+            (smithay::backend::input::Switch::Lid, smithay::backend::input::SwitchState::Off) => {
+                Switch::LidOn
+            }
+            (smithay::backend::input::Switch::Lid, smithay::backend::input::SwitchState::On) => {
+                Switch::LidOff
+            }
+            (
+                smithay::backend::input::Switch::TabletMode,
+                smithay::backend::input::SwitchState::Off,
+            ) => Switch::TabletModeOff,
+            (
+                smithay::backend::input::Switch::TabletMode,
+                smithay::backend::input::SwitchState::On,
+            ) => Switch::TabletModeOn,
+            _ => unreachable!(),
+        };
+
+        let bind = {
+            let bindings = &self.niri.config.borrow().binds;
+            find_configured_switch_bind(bindings, switch)
+        };
+
+        if let Some(bind) = bind {
+            self.handle_bind(bind);
+        }
+    }
 }
 
 /// Check whether the key should be intercepted and mark intercepted
@@ -2408,11 +2447,11 @@ fn should_intercept_key(
         if use_screenshot_ui_action {
             if let Some(raw) = raw {
                 final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
-                    key: Key {
+                    source: Source::Key(Key {
                         trigger: Trigger::Keysym(raw),
                         // Not entirely correct but it doesn't matter in how we currently use it.
                         modifiers: Modifiers::empty(),
-                    },
+                    }),
                     action,
                     repeat: true,
                     cooldown: None,
@@ -2458,11 +2497,11 @@ fn find_bind(
 
     if let Some(action) = hardcoded_action {
         return Some(Bind {
-            key: Key {
+            source: Source::Key(Key {
                 // Not entirely correct but it doesn't matter in how we currently use it.
                 trigger: Trigger::Keysym(modified),
                 modifiers: Modifiers::empty(),
-            },
+            }),
             action,
             repeat: true,
             cooldown: None,
@@ -2492,11 +2531,15 @@ fn find_configured_bind(
     }
 
     for bind in &bindings.0 {
-        if bind.key.trigger != trigger {
+        let Source::Key(key) = bind.source else {
+            continue;
+        };
+
+        if key.trigger != trigger {
             continue;
         }
 
-        let mut bind_modifiers = bind.key.modifiers;
+        let mut bind_modifiers = key.modifiers;
         if bind_modifiers.contains(Modifiers::COMPOSITOR) {
             bind_modifiers |= comp_mod;
         } else if bind_modifiers.contains(comp_mod) {
@@ -2506,6 +2549,22 @@ fn find_configured_bind(
         if bind_modifiers == modifiers {
             return Some(bind.clone());
         }
+    }
+
+    None
+}
+
+fn find_configured_switch_bind(bindings: &Binds, switch: Switch) -> Option<Bind> {
+    for bind in &bindings.0 {
+        let Source::Switch(switch_source) = bind.source else {
+            continue;
+        };
+
+        if switch_source != switch {
+            continue;
+        }
+
+        return Some(bind.clone());
     }
 
     None
@@ -2766,11 +2825,15 @@ pub fn mods_with_binds(
 
     let mut rv = HashSet::new();
     for bind in &binds.0 {
-        if !triggers.iter().any(|trigger| bind.key.trigger == *trigger) {
+        let Source::Key(key) = bind.source else {
+            continue;
+        };
+
+        if !triggers.iter().any(|trigger| key.trigger == *trigger) {
             continue;
         }
 
-        let mut mods = bind.key.modifiers;
+        let mut mods = key.modifiers;
         if mods.contains(Modifiers::COMPOSITOR) {
             mods.remove(Modifiers::COMPOSITOR);
             mods.insert(comp_mod);
@@ -2816,10 +2879,10 @@ mod tests {
     fn bindings_suppress_keys() {
         let close_keysym = Keysym::q;
         let bindings = Binds(vec![Bind {
-            key: Key {
+            source: Source::Key(Key {
                 trigger: Trigger::Keysym(close_keysym),
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
-            },
+            }),
             action: Action::CloseWindow,
             repeat: true,
             cooldown: None,
@@ -2950,50 +3013,50 @@ mod tests {
     fn comp_mod_handling() {
         let bindings = Binds(vec![
             Bind {
-                key: Key {
+                source: Source::Key(Key {
                     trigger: Trigger::Keysym(Keysym::q),
                     modifiers: Modifiers::COMPOSITOR,
-                },
+                }),
                 action: Action::CloseWindow,
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
             Bind {
-                key: Key {
+                source: Source::Key(Key {
                     trigger: Trigger::Keysym(Keysym::h),
                     modifiers: Modifiers::SUPER,
-                },
+                }),
                 action: Action::FocusColumnLeft,
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
             Bind {
-                key: Key {
+                source: Source::Key(Key {
                     trigger: Trigger::Keysym(Keysym::j),
                     modifiers: Modifiers::empty(),
-                },
+                }),
                 action: Action::FocusWindowDown,
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
             Bind {
-                key: Key {
+                source: Source::Key(Key {
                     trigger: Trigger::Keysym(Keysym::k),
                     modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
-                },
+                }),
                 action: Action::FocusWindowUp,
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
             },
             Bind {
-                key: Key {
+                source: Source::Key(Key {
                     trigger: Trigger::Keysym(Keysym::l),
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
-                },
+                }),
                 action: Action::FocusColumnRight,
                 repeat: true,
                 cooldown: None,

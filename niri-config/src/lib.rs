@@ -1019,9 +1019,15 @@ pub struct BorderRule {
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
 
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
+pub enum Source {
+    Key(Key),
+    Switch(Switch),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
-    pub key: Key,
+    pub source: Source,
     pub action: Action,
     pub repeat: bool,
     pub cooldown: Option<Duration>,
@@ -1045,6 +1051,14 @@ pub enum Trigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum Switch {
+    LidOn,
+    LidOff,
+    TabletModeOn,
+    TabletModeOff,
 }
 
 bitflags! {
@@ -2548,7 +2562,7 @@ where
                     ctx.emit_error(e);
                 }
                 Ok(bind) => {
-                    if seen_keys.insert(bind.key) {
+                    if seen_keys.insert(bind.source) {
                         binds.push(bind);
                     } else {
                         // ideally, this error should point to the previous instance of this keybind
@@ -2614,10 +2628,7 @@ where
             ));
         }
 
-        let key = node
-            .node_name
-            .parse::<Key>()
-            .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
+        let source = Source::decode_node(node, ctx)?;
 
         let mut repeat = true;
         let mut cooldown = None;
@@ -2653,7 +2664,7 @@ where
         // That way, the parent can handle the existence of duplicate keybinds,
         // even if their contents are not valid.
         let dummy = Self {
-            key,
+            source,
             action: Action::Spawn(vec![]),
             repeat: true,
             cooldown: None,
@@ -2681,7 +2692,7 @@ where
                     }
 
                     Ok(Self {
-                        key,
+                        source,
                         action,
                         repeat,
                         cooldown,
@@ -2762,6 +2773,53 @@ impl FromStr for Key {
         };
 
         Ok(Key { trigger, modifiers })
+    }
+}
+
+impl FromStr for Switch {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (pre, switch_name) = s
+            .split_once('+')
+            .ok_or_else(|| miette!("invalid switch expression: expected Switch+<NameDirection>"))?;
+        if !pre.eq_ignore_ascii_case("switch") {
+            return Err(miette!("invalid pre: {pre}"));
+        }
+
+        let switch = if switch_name.eq_ignore_ascii_case("LidOn") {
+            Switch::LidOn
+        } else if switch_name.eq_ignore_ascii_case("LidOff") {
+            Switch::LidOff
+        } else if switch_name.eq_ignore_ascii_case("TabletModeOn") {
+            Switch::TabletModeOn
+        } else if switch_name.eq_ignore_ascii_case("TabletModeOff") {
+            Switch::TabletModeOff
+        } else {
+            return Err(miette!("invalid switch: {switch_name}"));
+        };
+
+        Ok(switch)
+    }
+}
+
+impl<S> knuffel::Decode<S> for Source
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        _ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        if node.node_name.to_lowercase().starts_with("switch") {
+            Ok(Source::Switch(node.node_name.parse::<Switch>().map_err(
+                |e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid switch")),
+            )?))
+        } else {
+            Ok(Source::Key(node.node_name.parse::<Key>().map_err(|e| {
+                DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind"))
+            })?))
+        }
     }
 }
 
@@ -3035,6 +3093,7 @@ mod tests {
                 Mod+Shift+1 { focus-workspace "workspace-1"; }
                 Mod+Shift+E { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
+                Switch+TabletModeOn { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }
             }
 
             debug {
@@ -3279,70 +3338,70 @@ mod tests {
                 ],
                 binds: Binds(vec![
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::Keysym(Keysym::t),
                             modifiers: Modifiers::COMPOSITOR,
-                        },
+                        }),
                         action: Action::Spawn(vec!["alacritty".to_owned()]),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
                     },
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::Keysym(Keysym::q),
                             modifiers: Modifiers::COMPOSITOR,
-                        },
+                        }),
                         action: Action::CloseWindow,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::Keysym(Keysym::h),
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
-                        },
+                        }),
                         action: Action::FocusMonitorLeft,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::Keysym(Keysym::l),
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
-                        },
+                        }),
                         action: Action::MoveWindowToMonitorRight,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::Keysym(Keysym::comma),
                             modifiers: Modifiers::COMPOSITOR,
-                        },
+                        }),
                         action: Action::ConsumeWindowIntoColumn,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::Keysym(Keysym::_1),
                             modifiers: Modifiers::COMPOSITOR,
-                        },
+                        }),
                         action: Action::FocusWorkspace(WorkspaceReference::Index(1)),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::Keysym(Keysym::_1),
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
-                        },
+                        }),
                         action: Action::FocusWorkspace(WorkspaceReference::Name(
                             "workspace-1".to_string(),
                         )),
@@ -3351,23 +3410,36 @@ mod tests {
                         allow_when_locked: false,
                     },
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::Keysym(Keysym::e),
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
-                        },
+                        }),
                         action: Action::Quit(true),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                     },
                     Bind {
-                        key: Key {
+                        source: Source::Key(Key {
                             trigger: Trigger::WheelScrollDown,
                             modifiers: Modifiers::COMPOSITOR,
-                        },
+                        }),
                         action: Action::FocusWorkspaceDown,
                         repeat: true,
                         cooldown: Some(Duration::from_millis(150)),
+                        allow_when_locked: false,
+                    },
+                    Bind {
+                        source: Source::Switch(Switch::TabletModeOn),
+                        action: Action::Spawn(
+                            vec![
+                                "bash".to_owned(),
+                                "-c".to_owned(),
+                                "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true".to_owned(),
+                            ],
+                        ),
+                        repeat: true,
+                        cooldown: None,
                         allow_when_locked: false,
                     },
                 ]),

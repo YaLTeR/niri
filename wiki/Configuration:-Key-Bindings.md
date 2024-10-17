@@ -98,6 +98,19 @@ binds {
 Both mouse wheel and touchpad scroll binds will prevent applications from receiving any scroll events when their modifiers are held down.
 For example, if you have a `Mod+WheelScrollDown` bind, then while holding `Mod`, all mouse wheel scrolling will be consumed by niri.
 
+### Switch Bindings
+
+You can bind switch to certain actions using the following syntax.
+
+```kdl
+binds {
+    Switch+TabletModeOn { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }
+    Switch+TabletModeOff { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false"; }
+}
+```
+
+Supported switches at the moment include `TabledMode` and `Lid`.
+
 ### Actions
 
 Every action that you can bind is also available for programmatic invocation via `niri msg action`.
