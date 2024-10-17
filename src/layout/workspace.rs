@@ -567,6 +567,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.name = None;
     }
 
+    pub fn has_windows_or_name(&self) -> bool {
+        self.has_windows() || self.name.is_some()
+    }
+
     pub fn scale(&self) -> smithay::output::Scale {
         self.scale
     }
