@@ -2620,7 +2620,7 @@ impl<W: LayoutElement> Layout<W> {
         let window_offset = tile.window_loc();
 
         let RemovedTile {
-            tile,
+            mut tile,
             width,
             is_full_width,
         } = self.remove_window(window, Transaction::new()).unwrap();
@@ -2628,6 +2628,12 @@ impl<W: LayoutElement> Layout<W> {
         tile.window().output_enter(&output);
         tile.window()
             .set_preferred_scale_transform(output.current_scale(), output.current_transform());
+
+        // Unfullscreen and let the window pick a natural size.
+        //
+        // This is not *necessary* for now, but it will make more sense when we have floating.
+        tile.window_mut()
+            .request_size(Size::from((0, 0)), true, None);
 
         let window_offset_from_pointer =
             ws_offset + tile_offset + window_offset - start_pos_within_output;
