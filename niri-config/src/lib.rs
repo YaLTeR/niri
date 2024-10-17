@@ -186,6 +186,8 @@ pub struct Touchpad {
     pub disabled_on_external_mouse: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument), default = 1.0)]
+    pub scroll_factor: f64,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -206,6 +208,8 @@ pub struct Mouse {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument), default = 1.0)]
+    pub scroll_factor: f64,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -2915,6 +2919,7 @@ mod tests {
                     scroll-button 272
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
+                    scroll-factor 0.9
                 }
 
                 mouse {
@@ -2924,6 +2929,7 @@ mod tests {
                     scroll-method "no-scroll"
                     scroll-button 273
                     middle-emulation
+                    scroll-factor 0.2
                 }
 
                 trackpoint {
@@ -3116,6 +3122,7 @@ mod tests {
                         left_handed: false,
                         disabled_on_external_mouse: true,
                         middle_emulation: false,
+                        scroll_factor: 1.0,
                     },
                     mouse: Mouse {
                         off: false,
@@ -3126,6 +3133,7 @@ mod tests {
                         scroll_button: Some(273),
                         left_handed: false,
                         middle_emulation: true,
+                        scroll_factor: 1.0,
                     },
                     trackpoint: Trackpoint {
                         off: true,
