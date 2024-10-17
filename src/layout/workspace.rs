@@ -1128,7 +1128,15 @@ impl<W: LayoutElement> Workspace<W> {
         transaction: Transaction,
         anim_config: Option<niri_config::Animation>,
     ) -> RemovedTile<W> {
-        let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
+        // If this is the only tile in the column, remove the whole column.
+        if self.columns[column_idx].tiles.len() == 1 {
+            let mut column = self.remove_column_by_idx(column_idx, anim_config);
+            return RemovedTile {
+                tile: column.tiles.remove(tile_idx),
+                width: column.width,
+                is_full_width: column.is_full_width,
+            };
+        }
 
         let column = &mut self.columns[column_idx];
         let prev_width = self.data[column_idx].width;
@@ -1168,16 +1176,10 @@ impl<W: LayoutElement> Workspace<W> {
             is_full_width: column.is_full_width,
         };
 
-        let became_empty = column.tiles.is_empty();
-        let offset = if became_empty {
-            offset
-        } else {
-            column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
-            column.update_tile_sizes_with_transaction(true, transaction);
-            self.data[column_idx].update(column);
-
-            prev_width - column.width()
-        };
+        column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
+        column.update_tile_sizes_with_transaction(true, transaction);
+        self.data[column_idx].update(column);
+        let offset = prev_width - column.width();
 
         // Animate movement of the other columns.
         let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
@@ -1189,66 +1191,6 @@ impl<W: LayoutElement> Workspace<W> {
             for col in &mut self.columns[..=column_idx] {
                 col.animate_move_from_with_config(-offset, movement_config);
             }
-        }
-
-        if became_empty {
-            if column_idx + 1 == self.active_column_idx {
-                // The previous column, that we were going to activate upon removal of the active
-                // column, has just been itself removed.
-                self.activate_prev_column_on_removal = None;
-            }
-
-            if column_idx == self.active_column_idx {
-                self.view_offset_before_fullscreen = None;
-            }
-
-            self.columns.remove(column_idx);
-            self.data.remove(column_idx);
-            if self.columns.is_empty() {
-                return tile;
-            }
-
-            let view_config =
-                anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
-
-            if column_idx < self.active_column_idx {
-                // A column to the left was removed; preserve the current position.
-                // FIXME: preserve activate_prev_column_on_removal.
-                self.active_column_idx -= 1;
-                self.activate_prev_column_on_removal = None;
-            } else if column_idx == self.active_column_idx
-                && self.activate_prev_column_on_removal.is_some()
-            {
-                // The active column was removed, and we needed to activate the previous column.
-                if 0 < column_idx {
-                    let prev_offset = self.activate_prev_column_on_removal.unwrap();
-
-                    self.activate_column_with_anim_config(self.active_column_idx - 1, view_config);
-
-                    // Restore the view offset but make sure to scroll the view in case the
-                    // previous window had resized.
-                    let current_x = self.view_pos();
-                    self.animate_view_offset_with_config(
-                        current_x,
-                        self.active_column_idx,
-                        prev_offset,
-                        view_config,
-                    );
-                    self.animate_view_offset_to_column_with_config(
-                        current_x,
-                        self.active_column_idx,
-                        None,
-                        view_config,
-                    );
-                }
-            } else {
-                self.activate_column_with_anim_config(
-                    min(self.active_column_idx, self.columns.len() - 1),
-                    view_config,
-                );
-            }
-
-            return tile;
         }
 
         tile
