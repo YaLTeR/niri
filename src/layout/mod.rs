@@ -2034,7 +2034,7 @@ impl<W: LayoutElement> Layout<W> {
         for ws in self.workspaces_mut() {
             ws.clear_insert_hint();
         }
-        self.update_insert_hint();
+        self.update_insert_hint(output);
 
         let MonitorSet::Normal {
             monitors,
@@ -2076,10 +2076,14 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    fn update_insert_hint(&mut self) {
+    fn update_insert_hint(&mut self, output: Option<&Output>) {
         let Some(move_) = self.interactive_move.take() else {
             return;
         };
+        if output.map_or(false, |out| &move_.output != out) {
+            self.interactive_move = Some(move_);
+            return;
+        }
 
         let _span = tracy_client::span!("Layout::update_insert_hint");
 
