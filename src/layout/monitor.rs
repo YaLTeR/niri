@@ -30,8 +30,6 @@ const WORKSPACE_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     limit: 0.05,
 };
 
-const ALLOW_WORKSPACE_ABOVE_FIRST: bool = true;
-
 #[derive(Debug)]
 pub struct Monitor<W: LayoutElement> {
     /// Output for this monitor.
@@ -206,7 +204,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
 
-        let idx_offset = if ALLOW_WORKSPACE_ABOVE_FIRST && workspace_idx == 0 {
+        let idx_offset = if self.options.allow_workspace_above_first && workspace_idx == 0 {
             self.add_workspace_top();
             1
         } else {
@@ -252,7 +250,7 @@ impl<W: LayoutElement> Monitor<W> {
         if workspace_idx == self.workspaces.len() - 1 {
             self.add_workspace_bottom();
         }
-        let idx_offset = if ALLOW_WORKSPACE_ABOVE_FIRST && workspace_idx == 0 {
+        let idx_offset = if self.options.allow_workspace_above_first && workspace_idx == 0 {
             self.add_workspace_top();
             1
         } else {
@@ -267,7 +265,11 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn clean_up_workspaces(&mut self) {
         assert!(self.workspace_switch.is_none());
 
-        let range_start = if ALLOW_WORKSPACE_ABOVE_FIRST { 1 } else { 0 };
+        let range_start = if self.options.allow_workspace_above_first {
+            1
+        } else {
+            0
+        };
         for idx in (range_start..self.workspaces.len() - 1).rev() {
             if self.active_workspace_idx == idx {
                 continue;

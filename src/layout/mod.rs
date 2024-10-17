@@ -248,6 +248,7 @@ pub struct Options {
     pub border: niri_config::Border,
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
+    pub allow_workspace_above_first: bool,
     /// Column widths that `toggle_width()` switches between.
     pub preset_column_widths: Vec<ColumnWidth>,
     /// Initial width for new columns.
@@ -269,6 +270,7 @@ impl Default for Options {
             border: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
+            allow_workspace_above_first: false,
             preset_column_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
                 ColumnWidth::Proportion(0.5),
@@ -331,6 +333,7 @@ impl Options {
             border: layout.border,
             center_focused_column: layout.center_focused_column,
             always_center_single_column: layout.always_center_single_column,
+            allow_workspace_above_first: layout.allow_workspace_above_first,
             preset_column_widths,
             default_column_width,
             animations: config.animations.clone(),
