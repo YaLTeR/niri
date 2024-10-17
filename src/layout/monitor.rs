@@ -570,7 +570,7 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let column = workspace.remove_column_by_idx(workspace.active_column_idx);
+        let column = workspace.remove_column_by_idx(workspace.active_column_idx, None);
         self.add_column(new_idx, column, true);
     }
 
@@ -587,7 +587,7 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let column = workspace.remove_column_by_idx(workspace.active_column_idx);
+        let column = workspace.remove_column_by_idx(workspace.active_column_idx, None);
         self.add_column(new_idx, column, true);
     }
 
@@ -604,7 +604,7 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let column = workspace.remove_column_by_idx(workspace.active_column_idx);
+        let column = workspace.remove_column_by_idx(workspace.active_column_idx, None);
         self.add_column(new_idx, column, true);
     }
 

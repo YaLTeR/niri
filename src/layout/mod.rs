@@ -2176,7 +2176,7 @@ impl<W: LayoutElement> Layout<W> {
             if !ws.has_windows() {
                 return;
             }
-            let column = ws.remove_column_by_idx(ws.active_column_idx);
+            let column = ws.remove_column_by_idx(ws.active_column_idx, None);
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             self.add_column_by_idx(new_idx, workspace_idx, column, true);
