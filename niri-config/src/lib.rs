@@ -176,6 +176,8 @@ pub struct Touchpad {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
     #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
     #[knuffel(child)]
@@ -198,6 +200,8 @@ pub struct Mouse {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
     #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
@@ -216,6 +220,8 @@ pub struct Trackpoint {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
     #[knuffel(child)]
     pub middle_emulation: bool,
 }
@@ -230,6 +236,10 @@ pub struct Trackball {
     pub accel_speed: f64,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
     #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
@@ -2902,6 +2912,7 @@ mod tests {
                     accel-speed 0.2
                     accel-profile "flat"
                     scroll-method "two-finger"
+                    scroll-button 272
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
                 }
@@ -2911,6 +2922,7 @@ mod tests {
                     accel-speed 0.4
                     accel-profile "flat"
                     scroll-method "no-scroll"
+                    scroll-button 273
                     middle-emulation
                 }
 
@@ -2920,6 +2932,7 @@ mod tests {
                     accel-speed 0.0
                     accel-profile "flat"
                     scroll-method "on-button-down"
+                    scroll-button 274
                 }
 
                 trackball {
@@ -2927,6 +2940,8 @@ mod tests {
                     natural-scroll
                     accel-speed 0.0
                     accel-profile "flat"
+                    scroll-method "edge"
+                    scroll-button 275
                     left-handed
                     middle-emulation
                 }
@@ -3096,6 +3111,7 @@ mod tests {
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::TwoFinger),
+                        scroll_button: Some(272),
                         tap_button_map: Some(TapButtonMap::LeftMiddleRight),
                         left_handed: false,
                         disabled_on_external_mouse: true,
@@ -3107,6 +3123,7 @@ mod tests {
                         accel_speed: 0.4,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::NoScroll),
+                        scroll_button: Some(273),
                         left_handed: false,
                         middle_emulation: true,
                     },
@@ -3116,6 +3133,7 @@ mod tests {
                         accel_speed: 0.0,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::OnButtonDown),
+                        scroll_button: Some(274),
                         middle_emulation: false,
                     },
                     trackball: Trackball {
@@ -3123,6 +3141,8 @@ mod tests {
                         natural_scroll: true,
                         accel_speed: 0.0,
                         accel_profile: Some(AccelProfile::Flat),
+                        scroll_method: Some(ScrollMethod::Edge),
+                        scroll_button: Some(275),
                         left_handed: true,
                         middle_emulation: true,
                     },
