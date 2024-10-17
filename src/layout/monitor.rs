@@ -105,7 +105,6 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    /// adds a workspace above the top most one. Also modifies self.active_workspace_idx
     fn add_workspace_top(&mut self) {
         let ws = Workspace::new(self.output.clone(), self.options.clone());
         self.workspaces.insert(0, ws);
