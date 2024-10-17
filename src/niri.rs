@@ -1919,6 +1919,10 @@ impl Niri {
 
     #[cfg(feature = "dbus")]
     pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
+        use std::os::fd::{AsRawFd, BorrowedFd};
+
+        use smithay::reexports::rustix::io::{fcntl_setfd, FdFlags};
+
         let conn = zbus::blocking::ConnectionBuilder::system()?.build()?;
 
         let message = conn.call_method(
@@ -1929,7 +1933,14 @@ impl Niri {
             &("handle-power-key", "niri", "Power key handling", "block"),
         )?;
 
-        let fd = message.body()?;
+        let fd: zbus::zvariant::OwnedFd = message.body()?;
+
+        // Don't leak the fd to child processes.
+        let borrowed = unsafe { BorrowedFd::borrow_raw(fd.as_raw_fd()) };
+        if let Err(err) = fcntl_setfd(borrowed, FdFlags::CLOEXEC) {
+            warn!("error setting CLOEXEC on inhibit fd: {err:?}");
+        };
+
         self.inhibit_power_key_fd = Some(fd);
 
         Ok(())
