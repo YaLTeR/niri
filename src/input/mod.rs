@@ -6,14 +6,15 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, Modifiers, Trigger};
+use niri_config::{Action, Bind, Binds, Key, Modifiers, SwitchBinds, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
     InputBackend, InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
-    PointerButtonEvent, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
+    PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
+    TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
+    TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
@@ -127,7 +128,7 @@ impl State {
             TouchUp { event } => self.on_touch_up::<I>(event),
             TouchCancel { event } => self.on_touch_cancel::<I>(event),
             TouchFrame { event } => self.on_touch_frame::<I>(event),
-            SwitchToggle { .. } => (),
+            SwitchToggle { event } => self.on_switch_toggle::<I>(event),
             Special(_) => (),
         }
 
@@ -2360,6 +2361,21 @@ impl State {
         };
         handle.cancel(self);
     }
+
+    fn on_switch_toggle<I: InputBackend>(&mut self, evt: I::SwitchToggleEvent) {
+        let Some(switch) = evt.switch() else {
+            return;
+        };
+
+        let action = {
+            let bindings = &self.niri.config.borrow().switch_events;
+            find_configured_switch_action(bindings, switch, evt.state())
+        };
+
+        if let Some(action) = action {
+            self.do_action(action, true);
+        }
+    }
 }
 
 /// Check whether the key should be intercepted and mark intercepted
@@ -2509,6 +2525,23 @@ fn find_configured_bind(
     }
 
     None
+}
+
+fn find_configured_switch_action(
+    bindings: &SwitchBinds,
+    switch: Switch,
+    state: SwitchState,
+) -> Option<Action> {
+    let switch_action = match (switch, state) {
+        (Switch::Lid, SwitchState::Off) => &bindings.lid_open,
+        (Switch::Lid, SwitchState::On) => &bindings.lid_close,
+        (Switch::TabletMode, SwitchState::Off) => &bindings.tablet_mode_off,
+        (Switch::TabletMode, SwitchState::On) => &bindings.tablet_mode_on,
+        _ => unreachable!(),
+    };
+    switch_action
+        .as_ref()
+        .map(|switch_action| Action::Spawn(switch_action.spawn.clone()))
 }
 
 fn modifiers_from_state(mods: ModifiersState) -> Modifiers {
