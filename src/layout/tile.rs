@@ -364,6 +364,11 @@ impl<W: LayoutElement> Tile<W> {
         });
     }
 
+    pub fn stop_move_animations(&mut self) {
+        self.move_x_animation = None;
+        self.move_y_animation = None;
+    }
+
     pub fn window(&self) -> &W {
         &self.window
     }
