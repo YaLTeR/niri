@@ -111,6 +111,9 @@ pub struct Workspace<W: LayoutElement> {
     /// Indication where an interactively-moved window is about to be placed.
     insert_hint: Option<InsertHint>,
 
+    /// Buffer for the insert hint.
+    insert_hint_buffer: SolidColorBuffer,
+
     /// Configurable properties of the layout as received from the parent monitor.
     pub(super) base_options: Rc<Options>,
 
@@ -437,6 +440,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
             insert_hint: None,
+            insert_hint_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -476,6 +480,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
             insert_hint: None,
+            insert_hint_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -553,6 +558,13 @@ impl<W: LayoutElement> Workspace<W> {
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::from_loc_and_size(col_pos, view_size);
             col.update_render_elements(is_active, view_rect);
+        }
+
+        if let Some(insert_hint) = &self.insert_hint {
+            if let Some(area) = self.insert_hint_area(insert_hint) {
+                self.insert_hint_buffer
+                    .update(area.size, self.options.insert_hint.color.to_array_premul());
+            }
         }
     }
 
@@ -2311,18 +2323,15 @@ impl<W: LayoutElement> Workspace<W> {
             }
         };
 
-        let view_area =
-            Rectangle::from_loc_and_size(Point::from((self.view_pos(), 0.)), self.view_size());
+        hint_area.loc.x -= self.view_pos();
+
+        let view_size = self.view_size();
 
         // Make sure the hint is at least partially visible.
-        hint_area.loc.x = hint_area
-            .loc
-            .x
-            .max(view_area.loc.x + 150. - hint_area.size.w);
-        hint_area.loc.x = hint_area
-            .loc
-            .x
-            .min(view_area.loc.x + view_area.size.w - 150.);
+        hint_area.loc.x = hint_area.loc.x.max(150. - hint_area.size.w);
+        hint_area.loc.x = hint_area.loc.x.min(view_size.w - 150.);
+
+        // Round to physical pixels.
         hint_area = hint_area
             .to_physical_precise_round(self.scale.fractional_scale())
             .to_logical(self.scale.fractional_scale());
@@ -2614,17 +2623,10 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         if let Some(insert_hint) = &self.insert_hint {
-            if let Some(mut area) = self.insert_hint_area(insert_hint) {
-                area.loc.x -= self.view_pos();
-
-                // TODO: don't re-create the buffer every render.
-                let buffer = SolidColorBuffer::new(
-                    area.size,
-                    self.options.insert_hint.color.to_array_premul(),
-                );
+            if let Some(area) = self.insert_hint_area(insert_hint) {
                 rv.push(
                     TileRenderElement::SolidColor(SolidColorRenderElement::from_buffer(
-                        &buffer,
+                        &self.insert_hint_buffer,
                         area.loc,
                         1.,
                         Kind::Unspecified,
