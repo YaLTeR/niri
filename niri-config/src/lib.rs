@@ -431,6 +431,8 @@ pub struct Layout {
     pub center_focused_column: CenterFocusedColumn,
     #[knuffel(child)]
     pub always_center_single_column: bool,
+    #[knuffel(child)]
+    pub allow_workspace_above_first: bool,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
     pub gaps: FloatOrInt<0, 65535>,
     #[knuffel(child, default)]
@@ -446,6 +448,7 @@ impl Default for Layout {
             default_column_width: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
+            allow_workspace_above_first: false,
             gaps: FloatOrInt(16.),
             struts: Default::default(),
             preset_window_heights: Default::default(),
@@ -3250,6 +3253,7 @@ mod tests {
                     },
                     center_focused_column: CenterFocusedColumn::OnOverflow,
                     always_center_single_column: false,
+                    allow_workspace_above_first: false,
                 },
                 spawn_at_startup: vec![SpawnAtStartup {
                     command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
