@@ -2267,10 +2267,8 @@ impl<W: LayoutElement> Workspace<W> {
         let mut hint_area = match insert_hint.position {
             InsertPosition::NewColumn(column_index) => {
                 if column_index == 0 || column_index == self.columns.len() {
-                    let size = Size::from((
-                        insert_hint.width.resolve(&self.options, self.view_size.w),
-                        self.working_area.size.h - self.options.gaps * 2.,
-                    ));
+                    let size =
+                        Size::from((300., self.working_area.size.h - self.options.gaps * 2.));
                     let mut loc = Point::from((
                         self.column_x(column_index),
                         self.working_area.loc.y + self.options.gaps,
