@@ -1020,17 +1020,17 @@ impl<W: LayoutElement> Workspace<W> {
                     None
                 })
         else {
-            return InsertPosition::NewColumn(if pos.x < self.column_x(0) {
+            let x = pos.x + self.view_pos();
+            let col_idx = if x < self.column_x(0) {
                 0
-            } else if pos.x
-                > self.column_x(self.columns.len() - 1) + self.data.last().unwrap().width
-            {
+            } else if x > self.column_x(self.columns.len() - 1) + self.data.last().unwrap().width {
                 self.columns.len()
-            } else if pos.x < self.view_size().w / 2. {
+            } else if x < self.view_size().w / 2. {
                 self.active_column_idx
             } else {
                 self.active_column_idx + 1
-            });
+            };
+            return InsertPosition::NewColumn(col_idx);
         };
 
         let mut target_column_idx = self
