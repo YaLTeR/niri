@@ -130,7 +130,7 @@ pub enum InsertPosition {
     InColumn(usize, usize),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct InsertHint {
     pub position: InsertPosition,
     pub width: ColumnWidth,
