@@ -54,6 +54,8 @@ pub struct Config {
     #[knuffel(child, default)]
     pub binds: Binds,
     #[knuffel(child, default)]
+    pub switch_events: SwitchBinds,
+    #[knuffel(child, default)]
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
@@ -1086,6 +1088,24 @@ bitflags! {
         const ISO_LEVEL5_SHIFT = 1 << 5;
         const COMPOSITOR = 1 << 6;
     }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct SwitchBinds {
+    #[knuffel(child)]
+    pub lid_open: Option<SwitchAction>,
+    #[knuffel(child)]
+    pub lid_close: Option<SwitchAction>,
+    #[knuffel(child)]
+    pub tablet_mode_on: Option<SwitchAction>,
+    #[knuffel(child)]
+    pub tablet_mode_off: Option<SwitchAction>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct SwitchAction {
+    #[knuffel(child, unwrap(arguments))]
+    pub spawn: Vec<String>,
 }
 
 // Remember to add new actions to the CLI enum too.
@@ -3079,6 +3099,11 @@ mod tests {
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
             }
 
+            switch-events {
+                tablet-mode-on { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }
+                tablet-mode-off { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false"; }
+            }
+
             debug {
                 render-drm-device "/dev/dri/renderD129"
             }
@@ -3426,6 +3451,24 @@ mod tests {
                         allow_when_locked: false,
                     },
                 ]),
+                switch_events: SwitchBinds {
+                    lid_open: None,
+                    lid_close: None,
+                    tablet_mode_on: Some(SwitchAction {
+                        spawn: vec![
+                            "bash".to_owned(),
+                            "-c".to_owned(),
+                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true".to_owned(),
+                        ],
+                    }),
+                    tablet_mode_off: Some(SwitchAction {
+                        spawn: vec![
+                            "bash".to_owned(),
+                            "-c".to_owned(),
+                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false".to_owned(),
+                        ],
+                    }),
+                },
                 debug: DebugConfig {
                     render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
