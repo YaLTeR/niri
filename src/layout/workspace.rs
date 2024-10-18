@@ -1097,7 +1097,8 @@ impl<W: LayoutElement> Workspace<W> {
                     self.compute_new_view_offset_for_column(self.view_pos(), idx, None);
             }
 
-            let prev_offset = (!was_empty).then(|| self.static_view_offset());
+            let prev_offset = (!was_empty && idx == self.active_column_idx + 1)
+                .then(|| self.static_view_offset());
 
             let anim_config =
                 anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
