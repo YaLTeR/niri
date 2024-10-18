@@ -1021,15 +1021,13 @@ impl<W: LayoutElement> Workspace<W> {
                 })
         else {
             let x = pos.x + self.view_pos();
-            let col_idx = if x < self.column_x(0) {
-                0
-            } else if x > self.column_x(self.columns.len() - 1) + self.data.last().unwrap().width {
-                self.columns.len()
-            } else if x < self.view_size().w / 2. {
-                self.active_column_idx
-            } else {
-                self.active_column_idx + 1
-            };
+            // Aim for the center of the gap.
+            let x = x + self.options.gaps / 2.;
+            let (col_idx, _) = self
+                .column_xs(self.data.iter().copied())
+                .enumerate()
+                .min_by_key(|(_, col_x)| NotNan::new((col_x - x).abs()).unwrap())
+                .unwrap();
             return InsertPosition::NewColumn(col_idx);
         };
 
