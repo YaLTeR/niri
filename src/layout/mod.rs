@@ -2625,6 +2625,7 @@ impl<W: LayoutElement> Layout<W> {
             is_full_width,
         } = self.remove_window(window, Transaction::new()).unwrap();
 
+        tile.stop_move_animations();
         tile.window().output_enter(&output);
         tile.window()
             .set_preferred_scale_transform(output.current_scale(), output.current_transform());
