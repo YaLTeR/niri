@@ -2703,7 +2703,7 @@ impl<W: LayoutElement> Layout<W> {
                 active_monitor_idx,
                 ..
             } => {
-                let (mon, ws_idx, position) = if let Some(mon) =
+                let (mon, ws_idx, position, offset) = if let Some(mon) =
                     monitors.iter_mut().find(|mon| mon.output == move_.output)
                 {
                     let (ws, offset) = mon
@@ -2722,15 +2722,23 @@ impl<W: LayoutElement> Layout<W> {
 
                     let ws = &mut mon.workspaces[ws_idx];
                     let position = ws.get_insert_position(move_.pointer_pos_within_output - offset);
-                    (mon, ws_idx, position)
+                    (mon, ws_idx, position, offset)
                 } else {
                     let mon = &mut monitors[*active_monitor_idx];
+                    let ws_id = mon.active_workspace().id();
+                    let (_, offset) = mon
+                        .workspaces_with_render_positions()
+                        .find(|(ws, _)| ws.id() == ws_id)
+                        .unwrap();
                     let ws_idx = mon.active_workspace_idx();
                     let ws = &mut mon.workspaces[ws_idx];
                     // No point in trying to use the pointer position on the wrong output.
                     let position = InsertPosition::NewColumn(ws.columns.len());
-                    (mon, ws_idx, position)
+                    (mon, ws_idx, position, offset)
                 };
+
+                let win_id = move_.tile.window().id().clone();
+                let window_render_loc = move_.tile_render_location() + move_.tile.window_loc();
 
                 match position {
                     InsertPosition::NewColumn(column_idx) => {
@@ -2753,6 +2761,15 @@ impl<W: LayoutElement> Layout<W> {
                         );
                     }
                 }
+
+                let ws = &mut mon.workspaces[ws_idx];
+                let (tile, tile_render_loc) = ws
+                    .tiles_with_render_positions_mut(false)
+                    .find(|(tile, _)| tile.window().id() == &win_id)
+                    .unwrap();
+                let new_window_render_loc = offset + tile_render_loc + tile.window_loc();
+
+                tile.animate_move_from(window_render_loc - new_window_render_loc);
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 let ws = if let Some(ws) = workspaces.get_mut(0) {

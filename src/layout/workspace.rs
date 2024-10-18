@@ -2242,7 +2242,7 @@ impl<W: LayoutElement> Workspace<W> {
             })
     }
 
-    fn tiles_with_render_positions_mut(
+    pub fn tiles_with_render_positions_mut(
         &mut self,
         round: bool,
     ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> {
