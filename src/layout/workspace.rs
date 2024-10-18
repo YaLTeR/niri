@@ -2615,13 +2615,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let mut rv = vec![];
 
-        // Draw the closing windows on top.
-        let view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0.), self.view_size);
-        for closing in self.closing_windows.iter().rev() {
-            let elem = closing.render(renderer.as_gles_renderer(), view_rect, output_scale, target);
-            rv.push(elem.into());
-        }
-
+        // Draw the insert hint.
         if let Some(insert_hint) = &self.insert_hint {
             if let Some(area) = self.insert_hint_area(insert_hint) {
                 rv.push(
@@ -2634,6 +2628,13 @@ impl<W: LayoutElement> Workspace<W> {
                     .into(),
                 );
             }
+        }
+
+        // Draw the closing windows on top of the other windows.
+        let view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0.), self.view_size);
+        for closing in self.closing_windows.iter().rev() {
+            let elem = closing.render(renderer.as_gles_renderer(), view_rect, output_scale, target);
+            rv.push(elem.into());
         }
 
         if self.columns.is_empty() {
