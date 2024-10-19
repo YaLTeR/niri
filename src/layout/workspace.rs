@@ -3085,7 +3085,9 @@ impl<W: LayoutElement> Column<W> {
         self.active_tile_idx = idx;
     }
 
-    fn add_tile_at(&mut self, idx: usize, tile: Tile<W>, animate: bool) {
+    fn add_tile_at(&mut self, idx: usize, mut tile: Tile<W>, animate: bool) {
+        tile.update_config(self.scale, self.options.clone());
+
         // Inserting a tile pushes down all tiles below it, but also in always-centering mode it
         // will affect the X position of all tiles in the column.
         let mut prev_offsets = Vec::with_capacity(self.tiles.len() + 1);
