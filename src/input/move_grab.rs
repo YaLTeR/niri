@@ -73,6 +73,8 @@ impl PointerGrab<State> for MoveGrab {
                             false,
                         );
                     }
+                    // FIXME: only redraw the previous and the new output.
+                    data.niri.queue_redraw_all();
                     return;
                 }
             } else {
