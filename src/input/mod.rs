@@ -46,6 +46,7 @@ pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
 pub mod touch_move_grab;
+pub mod touch_resize_grab;
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 

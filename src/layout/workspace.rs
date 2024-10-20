@@ -2978,6 +2978,10 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
+        if self.interactive_resize.is_some() {
+            return false;
+        }
+
         let col = self
             .columns
             .iter_mut()
