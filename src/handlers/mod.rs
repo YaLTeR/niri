@@ -10,7 +10,7 @@ use std::thread;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
-use smithay::backend::input::TabletToolDescriptor;
+use smithay::backend::input::{InputEvent, TabletToolDescriptor};
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, PointerHandle,
@@ -34,6 +34,9 @@ use smithay::wayland::fractional_scale::FractionalScaleHandler;
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
+use smithay::wayland::keyboard_shortcuts_inhibit::{
+    KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
+};
 use smithay::wayland::output::OutputHandler;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler};
 use smithay::wayland::security_context::{
@@ -58,11 +61,12 @@ use smithay::wayland::xdg_activation::{
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
     delegate_drm_lease, delegate_fractional_scale, delegate_idle_inhibit, delegate_idle_notify,
-    delegate_input_method_manager, delegate_output, delegate_pointer_constraints,
-    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
-    delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation,
+    delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_output,
+    delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
+    delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_session_lock, delegate_tablet_manager,
+    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
+    delegate_xdg_activation,
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
@@ -74,10 +78,15 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
+use crate::protocols::virtual_pointer::{
+    VirtualPointerAxisEvent, VirtualPointerButtonEvent, VirtualPointerHandler,
+    VirtualPointerInputBackend, VirtualPointerManagerState, VirtualPointerMotionAbsoluteEvent,
+    VirtualPointerMotionEvent,
+};
 use crate::utils::{output_size, send_scale_transform};
 use crate::{
     delegate_foreign_toplevel, delegate_gamma_control, delegate_mutter_x11_interop,
-    delegate_output_management, delegate_screencopy,
+    delegate_output_management, delegate_screencopy, delegate_virtual_pointer,
 };
 
 impl SeatHandler for State {
@@ -238,7 +247,27 @@ impl InputMethodHandler for State {
     }
 }
 
+impl KeyboardShortcutsInhibitHandler for State {
+    fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
+        &mut self.niri.keyboard_shortcuts_inhibit_state
+    }
+
+    fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
+        inhibitor.activate();
+        self.niri
+            .keyboard_shortcuts_inhibiting_surfaces
+            .insert(inhibitor.wl_surface().clone(), inhibitor);
+    }
+
+    fn inhibitor_destroyed(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
+        self.niri
+            .keyboard_shortcuts_inhibiting_surfaces
+            .remove(&inhibitor.wl_surface().clone());
+    }
+}
+
 delegate_input_method_manager!(State);
+delegate_keyboard_shortcuts_inhibit!(State);
 delegate_virtual_keyboard_manager!(State);
 
 impl SelectionHandler for State {
@@ -518,6 +547,31 @@ impl ScreencopyHandler for State {
     }
 }
 delegate_screencopy!(State);
+
+impl VirtualPointerHandler for State {
+    fn virtual_pointer_manager_state(&mut self) -> &mut VirtualPointerManagerState {
+        &mut self.niri.virtual_pointer_state
+    }
+
+    fn on_virtual_pointer_motion(&mut self, event: VirtualPointerMotionEvent) {
+        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerMotion { event });
+    }
+
+    fn on_virtual_pointer_motion_absolute(&mut self, event: VirtualPointerMotionAbsoluteEvent) {
+        self.process_input_event(
+            InputEvent::<VirtualPointerInputBackend>::PointerMotionAbsolute { event },
+        );
+    }
+
+    fn on_virtual_pointer_button(&mut self, event: VirtualPointerButtonEvent) {
+        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerButton { event });
+    }
+
+    fn on_virtual_pointer_axis(&mut self, event: VirtualPointerAxisEvent) {
+        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerAxis { event });
+    }
+}
+delegate_virtual_pointer!(State);
 
 impl DrmLeaseHandler for State {
     fn drm_lease_state(&mut self, node: DrmNode) -> &mut DrmLeaseState {

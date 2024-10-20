@@ -26,6 +26,7 @@ use smithay::input::pointer::{
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
+use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
@@ -298,6 +299,18 @@ impl State {
         Some(pos + target_geo.loc.to_f64())
     }
 
+    fn is_inhibiting_shortcuts(&self) -> bool {
+        self.niri
+            .keyboard_focus
+            .surface()
+            .and_then(|surface| {
+                self.niri
+                    .keyboard_shortcuts_inhibiting_surfaces
+                    .get(surface)
+            })
+            .map_or(false, KeyboardShortcutsInhibitor::is_active)
+    }
+
     fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
         let comp_mod = self.backend.mod_key();
 
@@ -321,6 +334,8 @@ impl State {
         if pressed {
             self.hide_cursor_if_needed();
         }
+
+        let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
@@ -352,6 +367,7 @@ impl State {
                     *mods,
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
+                    is_inhibiting_shortcuts,
                 )
             },
         ) else {
@@ -572,6 +588,19 @@ impl State {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
+                }
+            }
+            Action::ToggleKeyboardShortcutsInhibit => {
+                if let Some(inhibitor) = self.niri.keyboard_focus.surface().and_then(|surface| {
+                    self.niri
+                        .keyboard_shortcuts_inhibiting_surfaces
+                        .get(surface)
+                }) {
+                    if inhibitor.is_active() {
+                        inhibitor.inactivate();
+                    } else {
+                        inhibitor.activate();
+                    }
                 }
             }
             Action::CloseWindow => {
@@ -2393,6 +2422,7 @@ fn should_intercept_key(
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
+    is_inhibiting_shortcuts: bool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -2433,6 +2463,10 @@ fn should_intercept_key(
                     repeat: true,
                     cooldown: None,
                     allow_when_locked: false,
+                    // The screenshot UI owns the focus anyway, so this doesn't really matter.
+                    // But logically, nothing can inhibit its actions. Only opening it can be
+                    // inhibited.
+                    allow_inhibiting: false,
                 });
             }
         }
@@ -2440,10 +2474,18 @@ fn should_intercept_key(
 
     match (final_bind, pressed) {
         (Some(bind), true) => {
-            suppressed_keys.insert(key_code);
-            FilterResult::Intercept(Some(bind))
+            if is_inhibiting_shortcuts && bind.allow_inhibiting {
+                FilterResult::Forward
+            } else {
+                suppressed_keys.insert(key_code);
+                FilterResult::Intercept(Some(bind))
+            }
         }
         (_, false) => {
+            // By this point, we know that the key was supressed on press. Even if we're inhibiting
+            // shortcuts, we should still suppress the release. But we don't need to check for
+            // shortcuts inhibition here, because if it wasn't inhibited on press, it wouldn't be
+            // suppressed, so it would already have been forwarded at the start of this function.
             suppressed_keys.remove(&key_code);
             FilterResult::Intercept(None)
         }
@@ -2483,6 +2525,12 @@ fn find_bind(
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
+            // In a worst-case scenario, the user has no way to unlock the compositor and a
+            // misbehaving client has a keyboard shortcuts inhibitor, "jailing" the user.
+            // The user must always be able to change VTs to recover from such a situation.
+            // It also makes no sense to inhibit the default power key handling.
+            // Hardcoded binds must never be inhibited.
+            allow_inhibiting: false,
         });
     }
 
@@ -2930,6 +2978,7 @@ mod tests {
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
+            allow_inhibiting: true,
         }]);
 
         let comp_mod = CompositorMod::Super;
@@ -2954,6 +3003,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                false,
             )
         };
 
@@ -2970,6 +3020,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                false,
             )
         };
 
@@ -3064,6 +3115,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -3074,6 +3126,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -3084,6 +3137,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -3094,6 +3148,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -3104,6 +3159,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
         ]);
 
