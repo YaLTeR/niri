@@ -24,7 +24,10 @@ use smithay::input::pointer::{
     GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
     GrabStartData as PointerGrabStartData, MotionEvent, RelativeMotionEvent,
 };
-use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
+use smithay::input::touch::{
+    DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
+};
+use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
@@ -42,6 +45,7 @@ pub mod resize_grab;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
+pub mod touch_move_grab;
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
@@ -54,6 +58,20 @@ pub enum CompositorMod {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabletData {
     pub aspect_ratio: f64,
+}
+
+pub enum PointerOrTouchStartData<D: SeatHandler> {
+    Pointer(PointerGrabStartData<D>),
+    Touch(TouchGrabStartData<D>),
+}
+
+impl<D: SeatHandler> PointerOrTouchStartData<D> {
+    pub fn location(&self) -> Point<f64, Logical> {
+        match self {
+            PointerOrTouchStartData::Pointer(x) => x.location,
+            PointerOrTouchStartData::Touch(x) => x.location,
+        }
+    }
 }
 
 impl State {

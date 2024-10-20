@@ -6,7 +6,7 @@ use smithay::desktop::{
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
     WindowSurfaceType,
 };
-use smithay::input::pointer::{Focus, PointerGrab};
+use smithay::input::pointer::Focus;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::ConstraintAdjustment;
@@ -38,7 +38,8 @@ use tracing::field::Empty;
 
 use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
-use crate::input::DOUBLE_CLICK_TIME;
+use crate::input::touch_move_grab::TouchMoveGrab;
+use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::utils::transaction::Transaction;
@@ -67,23 +68,38 @@ impl XdgShellHandler for State {
     }
 
     fn move_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, serial: Serial) {
-        let pointer = self.niri.seat.get_pointer().unwrap();
-        if !pointer.has_grab(serial) {
-            return;
-        }
-
-        let Some(start_data) = pointer.grab_start_data() else {
-            return;
-        };
-
-        let Some((focus, _)) = &start_data.focus else {
-            return;
-        };
-
         let wl_surface = surface.wl_surface();
-        if !focus.id().same_client_as(&wl_surface.id()) {
-            return;
+
+        let mut grab_start_data = None;
+
+        // See if this comes from a pointer grab.
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        if pointer.has_grab(serial) {
+            if let Some(start_data) = pointer.grab_start_data() {
+                if let Some((focus, _)) = &start_data.focus {
+                    if focus.id().same_client_as(&wl_surface.id()) {
+                        grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
+                    }
+                }
+            }
         }
+
+        // See if this comes from a touch grab.
+        if let Some(touch) = self.niri.seat.get_touch() {
+            if touch.has_grab(serial) {
+                if let Some(start_data) = touch.grab_start_data() {
+                    if let Some((focus, _)) = &start_data.focus {
+                        if focus.id().same_client_as(&wl_surface.id()) {
+                            grab_start_data = Some(PointerOrTouchStartData::Touch(start_data));
+                        }
+                    }
+                }
+            }
+        }
+
+        let Some(start_data) = grab_start_data else {
+            return;
+        };
 
         let Some((mapped, output)) = self.niri.layout.find_window_and_output(wl_surface) else {
             return;
@@ -100,7 +116,7 @@ impl XdgShellHandler for State {
             .loc
             .to_f64();
 
-        let pos_within_output = start_data.location - output_pos;
+        let pos_within_output = start_data.location() - output_pos;
 
         if !self
             .niri
@@ -110,10 +126,20 @@ impl XdgShellHandler for State {
             return;
         }
 
-        let grab = MoveGrab::new(start_data, window.clone());
+        match start_data {
+            PointerOrTouchStartData::Pointer(start_data) => {
+                let grab = MoveGrab::new(start_data, window);
+                pointer.set_grab(self, grab, serial, Focus::Clear);
+                self.niri.pointer_grab_ongoing = true;
+            }
+            PointerOrTouchStartData::Touch(start_data) => {
+                let touch = self.niri.seat.get_touch().unwrap();
+                let grab = TouchMoveGrab::new(start_data, window);
+                touch.set_grab(self, grab, serial);
+            }
+        }
 
-        pointer.set_grab(self, grab, serial, Focus::Clear);
-        self.niri.pointer_grab_ongoing = true;
+        self.niri.queue_redraw(&output);
     }
 
     fn resize_request(
