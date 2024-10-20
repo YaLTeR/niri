@@ -1061,7 +1061,10 @@ impl Tty {
         if niri.monitors_active {
             // Redraw the new monitor.
             niri.event_loop.insert_idle(move |state| {
-                state.niri.queue_redraw(&output);
+                // Guard against output disconnecting before the idle has a chance to run.
+                if state.niri.output_state.contains_key(&output) {
+                    state.niri.queue_redraw(&output);
+                }
             });
         }
 
