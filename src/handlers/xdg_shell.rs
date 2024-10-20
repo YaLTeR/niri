@@ -36,8 +36,11 @@ use smithay::{
 };
 use tracing::field::Empty;
 
+use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
-use crate::input::DOUBLE_CLICK_TIME;
+use crate::input::touch_move_grab::TouchMoveGrab;
+use crate::input::touch_resize_grab::TouchResizeGrab;
+use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
 use crate::layout::workspace::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::utils::transaction::Transaction;
@@ -65,8 +68,78 @@ impl XdgShellHandler for State {
         }
     }
 
-    fn move_request(&mut self, _surface: ToplevelSurface, _seat: WlSeat, _serial: Serial) {
-        // FIXME
+    fn move_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, serial: Serial) {
+        let wl_surface = surface.wl_surface();
+
+        let mut grab_start_data = None;
+
+        // See if this comes from a pointer grab.
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        if pointer.has_grab(serial) {
+            if let Some(start_data) = pointer.grab_start_data() {
+                if let Some((focus, _)) = &start_data.focus {
+                    if focus.id().same_client_as(&wl_surface.id()) {
+                        grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
+                    }
+                }
+            }
+        }
+
+        // See if this comes from a touch grab.
+        if let Some(touch) = self.niri.seat.get_touch() {
+            if touch.has_grab(serial) {
+                if let Some(start_data) = touch.grab_start_data() {
+                    if let Some((focus, _)) = &start_data.focus {
+                        if focus.id().same_client_as(&wl_surface.id()) {
+                            grab_start_data = Some(PointerOrTouchStartData::Touch(start_data));
+                        }
+                    }
+                }
+            }
+        }
+
+        let Some(start_data) = grab_start_data else {
+            return;
+        };
+
+        let Some((mapped, output)) = self.niri.layout.find_window_and_output(wl_surface) else {
+            return;
+        };
+
+        let window = mapped.window.clone();
+        let output = output.clone();
+        let output_pos = self
+            .niri
+            .global_space
+            .output_geometry(&output)
+            .unwrap()
+            .loc
+            .to_f64();
+
+        let pos_within_output = start_data.location() - output_pos;
+
+        if !self
+            .niri
+            .layout
+            .interactive_move_begin(&window, output.clone(), pos_within_output)
+        {
+            return;
+        }
+
+        match start_data {
+            PointerOrTouchStartData::Pointer(start_data) => {
+                let grab = MoveGrab::new(start_data, window);
+                pointer.set_grab(self, grab, serial, Focus::Clear);
+                self.niri.pointer_grab_ongoing = true;
+            }
+            PointerOrTouchStartData::Touch(start_data) => {
+                let touch = self.niri.seat.get_touch().unwrap();
+                let grab = TouchMoveGrab::new(start_data, window);
+                touch.set_grab(self, grab, serial);
+            }
+        }
+
+        self.niri.queue_redraw(&output);
     }
 
     fn resize_request(
@@ -76,23 +149,38 @@ impl XdgShellHandler for State {
         serial: Serial,
         edges: xdg_toplevel::ResizeEdge,
     ) {
-        let pointer = self.niri.seat.get_pointer().unwrap();
-        if !pointer.has_grab(serial) {
-            return;
-        }
-
-        let Some(start_data) = pointer.grab_start_data() else {
-            return;
-        };
-
-        let Some((focus, _)) = &start_data.focus else {
-            return;
-        };
-
         let wl_surface = surface.wl_surface();
-        if !focus.id().same_client_as(&wl_surface.id()) {
-            return;
+
+        let mut grab_start_data = None;
+
+        // See if this comes from a pointer grab.
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        if pointer.has_grab(serial) {
+            if let Some(start_data) = pointer.grab_start_data() {
+                if let Some((focus, _)) = &start_data.focus {
+                    if focus.id().same_client_as(&wl_surface.id()) {
+                        grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
+                    }
+                }
+            }
         }
+
+        // See if this comes from a touch grab.
+        if let Some(touch) = self.niri.seat.get_touch() {
+            if touch.has_grab(serial) {
+                if let Some(start_data) = touch.grab_start_data() {
+                    if let Some((focus, _)) = &start_data.focus {
+                        if focus.id().same_client_as(&wl_surface.id()) {
+                            grab_start_data = Some(PointerOrTouchStartData::Touch(start_data));
+                        }
+                    }
+                }
+            }
+        }
+
+        let Some(start_data) = grab_start_data else {
+            return;
+        };
 
         let Some((mapped, _)) = self.niri.layout.find_window_and_output(wl_surface) else {
             return;
@@ -128,14 +216,26 @@ impl XdgShellHandler for State {
             }
         }
 
-        let grab = ResizeGrab::new(start_data, window.clone());
-
-        if !self.niri.layout.interactive_resize_begin(window, edges) {
+        if !self
+            .niri
+            .layout
+            .interactive_resize_begin(window.clone(), edges)
+        {
             return;
         }
 
-        pointer.set_grab(self, grab, serial, Focus::Clear);
-        self.niri.pointer_grab_ongoing = true;
+        match start_data {
+            PointerOrTouchStartData::Pointer(start_data) => {
+                let grab = ResizeGrab::new(start_data, window);
+                pointer.set_grab(self, grab, serial, Focus::Clear);
+                self.niri.pointer_grab_ongoing = true;
+            }
+            PointerOrTouchStartData::Touch(start_data) => {
+                let touch = self.niri.seat.get_touch().unwrap();
+                let grab = TouchResizeGrab::new(start_data, window);
+                touch.set_grab(self, grab, serial);
+            }
+        }
     }
 
     fn reposition_request(

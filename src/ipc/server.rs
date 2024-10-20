@@ -551,12 +551,12 @@ impl State {
             }
 
             let Some(ipc_win) = state.windows.get(&id) else {
-                let window = make_ipc_window(mapped, Some(ws_id));
+                let window = make_ipc_window(mapped, ws_id);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             };
 
-            let workspace_id = Some(ws_id.get());
+            let workspace_id = ws_id.map(|id| id.get());
             let mut changed = ipc_win.workspace_id != workspace_id;
 
             let wl_surface = mapped.toplevel().wl_surface();
@@ -572,7 +572,7 @@ impl State {
             });
 
             if changed {
-                let window = make_ipc_window(mapped, Some(ws_id));
+                let window = make_ipc_window(mapped, ws_id);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             }

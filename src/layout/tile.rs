@@ -90,7 +90,7 @@ niri_render_elements! {
     }
 }
 
-type TileRenderSnapshot =
+pub type TileRenderSnapshot =
     RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
 #[derive(Debug)]
@@ -362,6 +362,11 @@ impl<W: LayoutElement> Tile<W> {
             anim,
             from: from + current_offset,
         });
+    }
+
+    pub fn stop_move_animations(&mut self) {
+        self.move_x_animation = None;
+        self.move_y_animation = None;
     }
 
     pub fn window(&self) -> &W {
