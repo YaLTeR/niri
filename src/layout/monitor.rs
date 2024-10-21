@@ -105,6 +105,17 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    fn add_workspace_top(&mut self) {
+        let ws = Workspace::new(self.output.clone(), self.options.clone());
+        self.workspaces.insert(0, ws);
+        self.active_workspace_idx += 1;
+    }
+
+    fn add_workspace_bottom(&mut self) {
+        let ws = Workspace::new(self.output.clone(), self.options.clone());
+        self.workspaces.push(ws);
+    }
+
     pub fn output(&self) -> &Output {
         &self.output
     }
@@ -189,13 +200,18 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.original_output = OutputId::new(&self.output);
 
         if workspace_idx == self.workspaces.len() - 1 {
-            // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
         }
 
+        let idx_offset = if self.options.allow_workspace_above_first && workspace_idx == 0 {
+            self.add_workspace_top();
+            1
+        } else {
+            0
+        };
+
         if activate {
-            self.activate_workspace(workspace_idx);
+            self.activate_workspace(workspace_idx + idx_offset);
         }
     }
 
@@ -231,20 +247,29 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.original_output = OutputId::new(&self.output);
 
         if workspace_idx == self.workspaces.len() - 1 {
-            // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
         }
+        let idx_offset = if self.options.allow_workspace_above_first && workspace_idx == 0 {
+            self.add_workspace_top();
+            1
+        } else {
+            0
+        };
 
         if activate {
-            self.activate_workspace(workspace_idx);
+            self.activate_workspace(workspace_idx + idx_offset);
         }
     }
 
     pub fn clean_up_workspaces(&mut self) {
         assert!(self.workspace_switch.is_none());
 
-        for idx in (0..self.workspaces.len() - 1).rev() {
+        let range_start = if self.options.allow_workspace_above_first {
+            1
+        } else {
+            0
+        };
+        for idx in (range_start..self.workspaces.len() - 1).rev() {
             if self.active_workspace_idx == idx {
                 continue;
             }
