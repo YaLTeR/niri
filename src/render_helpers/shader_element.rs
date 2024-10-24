@@ -185,7 +185,7 @@ impl ShaderRenderElement {
         // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
         scale: f32,
         alpha: f32,
-        uniforms: Vec<Uniform<'_>>,
+        additional_uniforms: Vec<Uniform<'static>>,
         textures: HashMap<String, GlesTexture>,
         kind: Kind,
     ) -> Self {
@@ -197,7 +197,7 @@ impl ShaderRenderElement {
             opaque_regions: opaque_regions.unwrap_or_default(),
             scale,
             alpha,
-            additional_uniforms: uniforms.into_iter().map(|u| u.into_owned()).collect(),
+            additional_uniforms,
             textures,
             kind,
         }
@@ -227,13 +227,13 @@ impl ShaderRenderElement {
         size: Size<f64, Logical>,
         opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
         scale: f32,
-        uniforms: Vec<Uniform<'_>>,
+        uniforms: Vec<Uniform<'static>>,
         textures: HashMap<String, GlesTexture>,
     ) {
         self.area.size = size;
         self.opaque_regions = opaque_regions.unwrap_or_default();
         self.scale = scale;
-        self.additional_uniforms = uniforms.into_iter().map(|u| u.into_owned()).collect();
+        self.additional_uniforms = uniforms;
         self.textures = textures;
 
         self.commit_counter.increment();
