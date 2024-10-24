@@ -114,6 +114,11 @@ pub struct Workspace<W: LayoutElement> {
     /// Buffer for the insert hint.
     insert_hint_buffer: SolidColorBuffer,
 
+    /// Whether a pointer grab is active.
+    ///
+    /// This means that view offset animations should be temporarily frozen.
+    is_pointer_grabbed: bool,
+
     /// Configurable properties of the layout as received from the parent monitor.
     pub(super) base_options: Rc<Options>,
 
@@ -441,6 +446,7 @@ impl<W: LayoutElement> Workspace<W> {
             closing_windows: vec![],
             insert_hint: None,
             insert_hint_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            is_pointer_grabbed: false,
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -481,6 +487,7 @@ impl<W: LayoutElement> Workspace<W> {
             closing_windows: vec![],
             insert_hint: None,
             insert_hint_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            is_pointer_grabbed: false,
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -515,10 +522,12 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn advance_animations(&mut self, current_time: Duration) {
         if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
-            anim.set_current_time(current_time);
-            self.view_offset = anim.value();
-            if anim.is_done() {
-                self.view_offset_adj = None;
+            if !self.is_pointer_grabbed {
+                anim.set_current_time(current_time);
+                self.view_offset = anim.value();
+                if anim.is_done() {
+                    self.view_offset_adj = None;
+                }
             }
         } else if let Some(ViewOffsetAdjustment::Gesture(gesture)) = &self.view_offset_adj {
             self.view_offset = gesture.current_view_offset;
@@ -1696,6 +1705,33 @@ impl<W: LayoutElement> Workspace<W> {
             Err(err) => {
                 warn!("error creating a closing window animation: {err:?}");
             }
+        }
+    }
+
+    pub fn set_pointer_grabbed(&mut self, is_grabbed: bool) {
+        if self.is_pointer_grabbed == is_grabbed {
+            return;
+        }
+
+        self.is_pointer_grabbed = is_grabbed;
+
+        // After ungrabbing, restart the view offset animation.
+        if !is_grabbed {
+            if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
+                // FIXME: preserve velocity.
+                let anim = anim.restarted(anim.value(), anim.to(), 0.);
+                self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(anim));
+            }
+        }
+    }
+
+    /// Stops a view offset animation if one is in progress.
+    ///
+    /// The view will stop in place. When calling this, make sure that you will move the view to
+    /// the active window when necessary.
+    pub fn cancel_view_offset_anim(&mut self) {
+        if let Some(ViewOffsetAdjustment::Animation(_)) = &self.view_offset_adj {
+            self.view_offset_adj = None;
         }
     }
 

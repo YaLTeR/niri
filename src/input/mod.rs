@@ -1735,6 +1735,8 @@ impl State {
             },
         );
         pointer.frame(self);
+
+        self.niri.refresh_layout_is_grabbed();
     }
 
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
@@ -2370,6 +2372,8 @@ impl State {
 
         // We're using touch, hide the pointer.
         self.niri.pointer_hidden = true;
+
+        self.niri.refresh_layout_is_grabbed();
     }
     fn on_touch_up<I: InputBackend>(&mut self, evt: I::TouchUpEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {

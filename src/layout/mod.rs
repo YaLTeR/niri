@@ -1928,6 +1928,12 @@ impl<W: LayoutElement> Layout<W> {
         mon.resize_edges_under(pos_within_output)
     }
 
+    pub fn set_pointer_grabbed(&mut self, is_grabbed: bool) {
+        for ws in self.workspaces_mut() {
+            ws.set_pointer_grabbed(is_grabbed);
+        }
+    }
+
     #[cfg(test)]
     fn verify_invariants(&self) {
         use std::collections::HashSet;
@@ -2912,6 +2918,13 @@ impl<W: LayoutElement> Layout<W> {
                                 .unwrap();
 
                             tile_pos = Some(ws_offset + tile_offset);
+
+                            // The view offset anim is paused because a grab is active. Since we
+                            // just dragged a window out, cancel the animation, because when we put
+                            // the window back, we will animate to it afresh.
+                            let ws_id = ws.id();
+                            let ws = self.workspaces_mut().find(|ws| ws.id() == ws_id).unwrap();
+                            ws.cancel_view_offset_anim();
                         }
                     }
                 }

@@ -2840,7 +2840,17 @@ impl Niri {
         }
     }
 
+    pub fn refresh_layout_is_grabbed(&mut self) {
+        let pointer = self.seat.get_pointer().unwrap();
+        let touch = self.seat.get_touch();
+        let touch_is_grabbed = touch.map_or(false, |touch| touch.is_grabbed());
+        self.layout
+            .set_pointer_grabbed(pointer.is_grabbed() || touch_is_grabbed);
+    }
+
     pub fn refresh_layout(&mut self) {
+        self.refresh_layout_is_grabbed();
+
         let layout_is_active = match &self.keyboard_focus {
             KeyboardFocus::Layout { .. } => true,
             KeyboardFocus::LayerShell { .. } => false,
