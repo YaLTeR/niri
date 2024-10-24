@@ -5,6 +5,7 @@ You can find documentation for various sections of the config on these wiki page
 * [`input {}`](./Configuration:-Input.md)
 * [`output "eDP-1" {}`](./Configuration:-Outputs.md)
 * [`binds {}`](./Configuration:-Key-Bindings.md)
+* [`switch-events {}`](./Configuration:-Switch-Events.md)
 * [`layout {}`](./Configuration:-Layout.md)
 * [top-level options](./Configuration:-Miscellaneous.md)
 * [`window-rule {}`](./Configuration:-Window-Rules.md)

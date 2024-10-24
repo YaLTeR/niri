@@ -6,14 +6,15 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, Modifiers, Trigger};
+use niri_config::{Action, Bind, Binds, Key, Modifiers, SwitchBinds, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
     InputBackend, InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
-    PointerButtonEvent, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
+    PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
+    TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
+    TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
@@ -24,7 +25,7 @@ use smithay::input::pointer::{
     GrabStartData as PointerGrabStartData, MotionEvent, RelativeMotionEvent,
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
-use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
@@ -127,7 +128,7 @@ impl State {
             TouchUp { event } => self.on_touch_up::<I>(event),
             TouchCancel { event } => self.on_touch_cancel::<I>(event),
             TouchFrame { event } => self.on_touch_frame::<I>(event),
-            SwitchToggle { .. } => (),
+            SwitchToggle { event } => self.on_switch_toggle::<I>(event),
             Special(_) => (),
         }
 
@@ -243,25 +244,30 @@ impl State {
     where
         I::Device: 'static,
     {
-        let (target_geo, keep_ratio, px) = if let Some(output) = self.niri.output_for_tablet() {
-            (
-                self.niri.global_space.output_geometry(output).unwrap(),
-                true,
-                1. / output.current_scale().fractional_scale(),
-            )
-        } else {
-            let geo = self.global_bounding_rectangle()?;
+        let (target_geo, keep_ratio, px, transform) =
+            if let Some(output) = self.niri.output_for_tablet() {
+                (
+                    self.niri.global_space.output_geometry(output).unwrap(),
+                    true,
+                    1. / output.current_scale().fractional_scale(),
+                    output.current_transform(),
+                )
+            } else {
+                let geo = self.global_bounding_rectangle()?;
 
-            // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
-            // corresponding to the position on the right when clamping.
-            let output = self.niri.global_space.outputs().next().unwrap();
-            let scale = output.current_scale().fractional_scale();
+                // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
+                // corresponding to the position on the right when clamping.
+                let output = self.niri.global_space.outputs().next().unwrap();
+                let scale = output.current_scale().fractional_scale();
 
-            // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
-            (geo, false, 1. / scale)
+                // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
+                (geo, false, 1. / scale, Transform::Normal)
+            };
+
+        let mut pos = {
+            let size = transform.invert().transform_size(target_geo.size);
+            transform.transform_point_in(event.position_transformed(size), &size.to_f64())
         };
-
-        let mut pos = event.position_transformed(target_geo.size);
 
         if keep_ratio {
             pos.x /= target_geo.size.w as f64;
@@ -271,7 +277,8 @@ impl State {
             if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
                 if let Some(data) = self.niri.tablets.get(device) {
                     // This code does the same thing as mutter with "keep aspect ratio" enabled.
-                    let output_aspect_ratio = target_geo.size.w as f64 / target_geo.size.h as f64;
+                    let size = transform.invert().transform_size(target_geo.size);
+                    let output_aspect_ratio = size.w as f64 / size.h as f64;
                     let ratio = data.aspect_ratio / output_aspect_ratio;
 
                     if ratio > 1. {
@@ -559,7 +566,7 @@ impl State {
                 let mut windows = self.niri.layout.windows();
                 let window = windows.find(|(_, m)| m.id().get() == id);
                 if let Some((Some(monitor), mapped)) = window {
-                    let output = &monitor.output;
+                    let output = monitor.output();
                     self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot_window(renderer, output, mapped) {
                             warn!("error taking screenshot: {err:?}");
@@ -707,16 +714,38 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::ConsumeOrExpelWindowLeft => {
-                self.niri.layout.consume_or_expel_window_left();
+                self.niri.layout.consume_or_expel_window_left(None);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::ConsumeOrExpelWindowLeftById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.consume_or_expel_window_left(Some(&window));
+                    self.maybe_warp_cursor_to_focus();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::ConsumeOrExpelWindowRight => {
-                self.niri.layout.consume_or_expel_window_right();
+                self.niri.layout.consume_or_expel_window_right(None);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::ConsumeOrExpelWindowRightById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri
+                        .layout
+                        .consume_or_expel_window_right(Some(&window));
+                    self.maybe_warp_cursor_to_focus();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::FocusColumnLeft => {
                 self.niri.layout.focus_left();
@@ -2332,6 +2361,21 @@ impl State {
         };
         handle.cancel(self);
     }
+
+    fn on_switch_toggle<I: InputBackend>(&mut self, evt: I::SwitchToggleEvent) {
+        let Some(switch) = evt.switch() else {
+            return;
+        };
+
+        let action = {
+            let bindings = &self.niri.config.borrow().switch_events;
+            find_configured_switch_action(bindings, switch, evt.state())
+        };
+
+        if let Some(action) = action {
+            self.do_action(action, true);
+        }
+    }
 }
 
 /// Check whether the key should be intercepted and mark intercepted
@@ -2483,6 +2527,23 @@ fn find_configured_bind(
     None
 }
 
+fn find_configured_switch_action(
+    bindings: &SwitchBinds,
+    switch: Switch,
+    state: SwitchState,
+) -> Option<Action> {
+    let switch_action = match (switch, state) {
+        (Switch::Lid, SwitchState::Off) => &bindings.lid_open,
+        (Switch::Lid, SwitchState::On) => &bindings.lid_close,
+        (Switch::TabletMode, SwitchState::Off) => &bindings.tablet_mode_off,
+        (Switch::TabletMode, SwitchState::On) => &bindings.tablet_mode_on,
+        _ => unreachable!(),
+    };
+    switch_action
+        .as_ref()
+        .map(|switch_action| Action::Spawn(switch_action.spawn.clone()))
+}
+
 fn modifiers_from_state(mods: ModifiersState) -> Modifiers {
     let mut modifiers = Modifiers::empty();
     if mods.ctrl {
@@ -2629,8 +2690,20 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
+
+            if method == niri_config::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
+
+            if default == input::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         }
 
         if let Some(tap_button_map) = c.tap_button_map {
@@ -2685,8 +2758,57 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
+
+            if method == niri_config::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
+
+            if default == input::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
+        }
+    }
+
+    if is_trackball {
+        let c = &config.trackball;
+        let _ = device.config_send_events_set_mode(if c.off {
+            input::SendEventsMode::DISABLED
+        } else {
+            input::SendEventsMode::ENABLED
+        });
+        let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
+        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
+        let _ = device.config_left_handed_set(c.left_handed);
+
+        if let Some(accel_profile) = c.accel_profile {
+            let _ = device.config_accel_set_profile(accel_profile.into());
+        } else if let Some(default) = device.config_accel_default_profile() {
+            let _ = device.config_accel_set_profile(default);
+        }
+
+        if let Some(method) = c.scroll_method {
+            let _ = device.config_scroll_set_method(method.into());
+
+            if method == niri_config::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
+        } else if let Some(default) = device.config_scroll_default_method() {
+            let _ = device.config_scroll_set_method(default);
+
+            if default == input::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         }
     }
 
@@ -2709,8 +2831,20 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
+
+            if method == niri_config::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
+
+            if default == input::ScrollMethod::OnButtonDown {
+                if let Some(button) = c.scroll_button {
+                    let _ = device.config_scroll_set_button(button);
+                }
+            }
         }
     }
 

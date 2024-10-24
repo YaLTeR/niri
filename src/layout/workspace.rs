@@ -17,7 +17,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::tile::{Tile, TileRenderElement};
-use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options};
+use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
@@ -37,7 +37,7 @@ pub struct Workspace<W: LayoutElement> {
     ///
     /// Most of the time this will be the workspace's current output, however, after an output
     /// disconnection, it may remain pointing to the disconnected output.
-    pub original_output: OutputId,
+    pub(super) original_output: OutputId,
 
     /// Current output of this workspace.
     output: Option<Output>,
@@ -67,13 +67,13 @@ pub struct Workspace<W: LayoutElement> {
     working_area: Rectangle<f64, Logical>,
 
     /// Columns of windows on this workspace.
-    pub columns: Vec<Column<W>>,
+    pub(super) columns: Vec<Column<W>>,
 
     /// Extra per-column data.
     data: Vec<ColumnData>,
 
     /// Index of the currently active column, if any.
-    pub active_column_idx: usize,
+    pub(super) active_column_idx: usize,
 
     /// Ongoing interactive resize.
     interactive_resize: Option<InteractiveResize<W>>,
@@ -107,13 +107,13 @@ pub struct Workspace<W: LayoutElement> {
     closing_windows: Vec<ClosingWindow>,
 
     /// Configurable properties of the layout as received from the parent monitor.
-    pub base_options: Rc<Options>,
+    pub(super) base_options: Rc<Options>,
 
     /// Configurable properties of the layout with logical sizes adjusted for the current `scale`.
-    pub options: Rc<Options>,
+    pub(super) options: Rc<Options>,
 
     /// Optional name of this workspace.
-    pub name: Option<String>,
+    pub(super) name: Option<String>,
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
@@ -237,7 +237,7 @@ pub struct Column<W: LayoutElement> {
     /// Tiles in this column.
     ///
     /// Must be non-empty.
-    pub tiles: Vec<Tile<W>>,
+    pub(super) tiles: Vec<Tile<W>>,
 
     /// Extra per-tile data.
     ///
@@ -245,19 +245,19 @@ pub struct Column<W: LayoutElement> {
     data: Vec<TileData>,
 
     /// Index of the currently active tile.
-    pub active_tile_idx: usize,
+    pub(super) active_tile_idx: usize,
 
     /// Desired width of this column.
     ///
     /// If the column is full-width or full-screened, this is the width that should be restored
     /// upon unfullscreening and untoggling full-width.
-    pub width: ColumnWidth,
+    pub(super) width: ColumnWidth,
 
     /// Whether this column is full-width.
-    pub is_full_width: bool,
+    pub(super) is_full_width: bool,
 
     /// Whether this column contains a single full-screened window.
-    pub is_fullscreen: bool,
+    pub(super) is_fullscreen: bool,
 
     /// Animation of the render offset during window swapping.
     move_animation: Option<Animation>,
@@ -469,6 +469,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn id(&self) -> WorkspaceId {
         self.id
+    }
+
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
     }
 
     pub fn unname(&mut self) {
@@ -954,31 +958,27 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows_mut().find(|win| win.is_wl_surface(wl_surface))
     }
 
-    pub fn add_window_at(
+    pub fn add_window(
         &mut self,
-        col_idx: usize,
+        col_idx: Option<usize>,
         window: W,
         activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
     ) {
         let tile = Tile::new(window, self.scale.fractional_scale(), self.options.clone());
-        self.add_tile_at(col_idx, tile, activate, width, is_full_width, None);
+        self.add_tile(col_idx, tile, activate, width, is_full_width, None);
     }
 
-    fn add_tile_at(
+    fn add_tile(
         &mut self,
-        col_idx: usize,
+        col_idx: Option<usize>,
         tile: Tile<W>,
         activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
         anim_config: Option<niri_config::Animation>,
     ) {
-        self.enter_output_for_window(tile.window());
-
-        let was_empty = self.columns.is_empty();
-
         let column = Column::new_with_tile(
             tile,
             self.view_size,
@@ -989,72 +989,56 @@ impl<W: LayoutElement> Workspace<W> {
             is_full_width,
             true,
         );
-        self.data.insert(col_idx, ColumnData::new(&column));
-        self.columns.insert(col_idx, column);
 
-        if activate {
-            // If this is the first window on an empty workspace, remove the effect of whatever
-            // view_offset was left over and skip the animation.
-            if was_empty {
-                self.view_offset = 0.;
-                self.view_offset_adj = None;
-                self.view_offset =
-                    self.compute_new_view_offset_for_column(self.view_pos(), col_idx, None);
-            }
-
-            let prev_offset = (!was_empty).then(|| self.static_view_offset());
-
-            let anim_config =
-                anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
-            self.activate_column_with_anim_config(col_idx, anim_config);
-            self.activate_prev_column_on_removal = prev_offset;
-        }
-
-        // Animate movement of other columns.
-        let offset = self.column_x(col_idx + 1) - self.column_x(col_idx);
-        let config = anim_config.unwrap_or(self.options.animations.window_movement.0);
-        if self.active_column_idx <= col_idx {
-            for col in &mut self.columns[col_idx + 1..] {
-                col.animate_move_from_with_config(-offset, config);
-            }
-        } else {
-            for col in &mut self.columns[..col_idx] {
-                col.animate_move_from_with_config(offset, config);
-            }
-        }
+        self.add_column(col_idx, column, activate, anim_config);
     }
 
-    pub fn add_window(
+    pub fn add_tile_to_column(
         &mut self,
-        window: W,
-        activate: bool,
-        width: ColumnWidth,
-        is_full_width: bool,
-    ) {
-        let col_idx = if self.columns.is_empty() {
-            0
-        } else {
-            self.active_column_idx + 1
-        };
-
-        self.add_window_at(col_idx, window, activate, width, is_full_width);
-    }
-
-    fn add_tile(
-        &mut self,
+        col_idx: usize,
+        tile_idx: Option<usize>,
         tile: Tile<W>,
         activate: bool,
-        width: ColumnWidth,
-        is_full_width: bool,
-        anim_config: Option<niri_config::Animation>,
     ) {
-        let col_idx = if self.columns.is_empty() {
-            0
-        } else {
-            self.active_column_idx + 1
-        };
+        self.enter_output_for_window(tile.window());
 
-        self.add_tile_at(col_idx, tile, activate, width, is_full_width, anim_config);
+        let prev_next_x = self.column_x(col_idx + 1);
+
+        let target_column = &mut self.columns[col_idx];
+        let tile_idx = tile_idx.unwrap_or(target_column.tiles.len());
+        let was_fullscreen = target_column.tiles[target_column.active_tile_idx].is_fullscreen();
+
+        target_column.add_tile_at(tile_idx, tile, true);
+        self.data[col_idx].update(target_column);
+
+        // If the target column is the active column and its window was requested to, but hasn't
+        // gone into fullscreen yet, then clear the stored view offset, since we just asked it to
+        // stop going into fullscreen.
+        if col_idx == self.active_column_idx && !was_fullscreen {
+            self.view_offset_before_fullscreen = None;
+        }
+
+        if activate {
+            target_column.active_tile_idx = tile_idx;
+            if self.active_column_idx != col_idx {
+                self.activate_column(col_idx);
+            }
+        } else if tile_idx <= target_column.active_tile_idx {
+            target_column.active_tile_idx += 1;
+        }
+
+        // Adding a wider window into a column increases its width now (even if the window will
+        // shrink later). Move the columns to account for this.
+        let offset = self.column_x(col_idx + 1) - prev_next_x;
+        if self.active_column_idx <= col_idx {
+            for col in &mut self.columns[col_idx + 1..] {
+                col.animate_move_from(-offset);
+            }
+        } else {
+            for col in &mut self.columns[..=col_idx] {
+                col.animate_move_from(offset);
+            }
+        }
     }
 
     pub fn add_window_right_of(
@@ -1064,62 +1048,39 @@ impl<W: LayoutElement> Workspace<W> {
         width: ColumnWidth,
         is_full_width: bool,
     ) {
-        self.enter_output_for_window(&window);
-
         let right_of_idx = self
             .columns
             .iter()
             .position(|col| col.contains(right_of))
             .unwrap();
-        let idx = right_of_idx + 1;
-
-        let column = Column::new(
-            window,
-            self.view_size,
-            self.working_area,
-            self.scale.fractional_scale(),
-            self.options.clone(),
-            width,
-            is_full_width,
-            true,
-        );
-        self.data.insert(idx, ColumnData::new(&column));
-        self.columns.insert(idx, column);
+        let col_idx = right_of_idx + 1;
 
         // Activate the new window if right_of was active.
-        if self.active_column_idx == right_of_idx {
-            let prev_offset = self.static_view_offset();
-            self.activate_column(idx);
-            self.activate_prev_column_on_removal = Some(prev_offset);
-        } else if idx <= self.active_column_idx {
-            self.active_column_idx += 1;
-        }
+        let activate = self.active_column_idx == right_of_idx;
 
-        // Animate movement of other columns.
-        let offset = self.column_x(idx + 1) - self.column_x(idx);
-        if self.active_column_idx <= idx {
-            for col in &mut self.columns[idx + 1..] {
-                col.animate_move_from(-offset);
-            }
-        } else {
-            for col in &mut self.columns[..idx] {
-                col.animate_move_from(offset);
-            }
-        }
+        self.add_window(Some(col_idx), window, activate, width, is_full_width);
     }
 
-    pub fn add_column(&mut self, mut column: Column<W>, activate: bool) {
+    pub fn add_column(
+        &mut self,
+        idx: Option<usize>,
+        mut column: Column<W>,
+        activate: bool,
+        anim_config: Option<niri_config::Animation>,
+    ) {
         for tile in &column.tiles {
             self.enter_output_for_window(tile.window());
         }
 
         let was_empty = self.columns.is_empty();
 
-        let idx = if self.columns.is_empty() {
-            0
-        } else {
-            self.active_column_idx + 1
-        };
+        let idx = idx.unwrap_or_else(|| {
+            if was_empty {
+                0
+            } else {
+                self.active_column_idx + 1
+            }
+        });
 
         column.update_config(self.scale.fractional_scale(), self.options.clone());
         column.set_view_size(self.view_size, self.working_area);
@@ -1136,21 +1097,27 @@ impl<W: LayoutElement> Workspace<W> {
                     self.compute_new_view_offset_for_column(self.view_pos(), idx, None);
             }
 
-            let prev_offset = (!was_empty).then(|| self.static_view_offset());
+            let prev_offset = (!was_empty && idx == self.active_column_idx + 1)
+                .then(|| self.static_view_offset());
 
-            self.activate_column(idx);
+            let anim_config =
+                anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
+            self.activate_column_with_anim_config(idx, anim_config);
             self.activate_prev_column_on_removal = prev_offset;
+        } else if !was_empty && idx <= self.active_column_idx {
+            self.active_column_idx += 1;
         }
 
         // Animate movement of other columns.
         let offset = self.column_x(idx + 1) - self.column_x(idx);
+        let config = anim_config.unwrap_or(self.options.animations.window_movement.0);
         if self.active_column_idx <= idx {
             for col in &mut self.columns[idx + 1..] {
-                col.animate_move_from(-offset);
+                col.animate_move_from_with_config(-offset, config);
             }
         } else {
             for col in &mut self.columns[..idx] {
-                col.animate_move_from(offset);
+                col.animate_move_from_with_config(offset, config);
             }
         }
     }
@@ -1158,11 +1125,19 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn remove_tile_by_idx(
         &mut self,
         column_idx: usize,
-        window_idx: usize,
+        tile_idx: usize,
         transaction: Transaction,
         anim_config: Option<niri_config::Animation>,
-    ) -> Tile<W> {
-        let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
+    ) -> RemovedTile<W> {
+        // If this is the only tile in the column, remove the whole column.
+        if self.columns[column_idx].tiles.len() == 1 {
+            let mut column = self.remove_column_by_idx(column_idx, anim_config);
+            return RemovedTile {
+                tile: column.tiles.remove(tile_idx),
+                width: column.width,
+                is_full_width: column.is_full_width,
+            };
+        }
 
         let column = &mut self.columns[column_idx];
         let prev_width = self.data[column_idx].width;
@@ -1170,13 +1145,13 @@ impl<W: LayoutElement> Workspace<W> {
         // Animate movement of other tiles.
         // FIXME: tiles can move by X too, in a centered or resizing layout with one window smaller
         // than the others.
-        let offset_y = column.tile_offset(window_idx + 1).y - column.tile_offset(window_idx).y;
-        for tile in &mut column.tiles[window_idx + 1..] {
+        let offset_y = column.tile_offset(tile_idx + 1).y - column.tile_offset(tile_idx).y;
+        for tile in &mut column.tiles[tile_idx + 1..] {
             tile.animate_move_y_from(offset_y);
         }
 
-        let tile = column.tiles.remove(window_idx);
-        column.data.remove(window_idx);
+        let tile = column.tiles.remove(tile_idx);
+        column.data.remove(tile_idx);
 
         // If one window is left, reset its weight to 1.
         if column.data.len() == 1 {
@@ -1196,16 +1171,16 @@ impl<W: LayoutElement> Workspace<W> {
             }
         }
 
-        let became_empty = column.tiles.is_empty();
-        let offset = if became_empty {
-            offset
-        } else {
-            column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
-            column.update_tile_sizes_with_transaction(true, transaction);
-            self.data[column_idx].update(column);
-
-            prev_width - column.width()
+        let tile = RemovedTile {
+            tile,
+            width: column.width,
+            is_full_width: column.is_full_width,
         };
+
+        column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
+        column.update_tile_sizes_with_transaction(true, transaction);
+        self.data[column_idx].update(column);
+        let offset = prev_width - column.width();
 
         // Animate movement of the other columns.
         let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
@@ -1219,79 +1194,24 @@ impl<W: LayoutElement> Workspace<W> {
             }
         }
 
-        if became_empty {
-            if column_idx + 1 == self.active_column_idx {
-                // The previous column, that we were going to activate upon removal of the active
-                // column, has just been itself removed.
-                self.activate_prev_column_on_removal = None;
-            }
-
-            if column_idx == self.active_column_idx {
-                self.view_offset_before_fullscreen = None;
-            }
-
-            self.columns.remove(column_idx);
-            self.data.remove(column_idx);
-            if self.columns.is_empty() {
-                return tile;
-            }
-
-            let view_config =
-                anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
-
-            if column_idx < self.active_column_idx {
-                // A column to the left was removed; preserve the current position.
-                // FIXME: preserve activate_prev_column_on_removal.
-                self.active_column_idx -= 1;
-                self.activate_prev_column_on_removal = None;
-            } else if column_idx == self.active_column_idx
-                && self.activate_prev_column_on_removal.is_some()
-            {
-                // The active column was removed, and we needed to activate the previous column.
-                if 0 < column_idx {
-                    let prev_offset = self.activate_prev_column_on_removal.unwrap();
-
-                    self.activate_column_with_anim_config(self.active_column_idx - 1, view_config);
-
-                    // Restore the view offset but make sure to scroll the view in case the
-                    // previous window had resized.
-                    let current_x = self.view_pos();
-                    self.animate_view_offset_with_config(
-                        current_x,
-                        self.active_column_idx,
-                        prev_offset,
-                        view_config,
-                    );
-                    self.animate_view_offset_to_column_with_config(
-                        current_x,
-                        self.active_column_idx,
-                        None,
-                        view_config,
-                    );
-                }
-            } else {
-                self.activate_column_with_anim_config(
-                    min(self.active_column_idx, self.columns.len() - 1),
-                    view_config,
-                );
-            }
-
-            return tile;
-        }
-
         tile
     }
 
-    pub fn remove_column_by_idx(&mut self, column_idx: usize) -> Column<W> {
+    pub fn remove_column_by_idx(
+        &mut self,
+        column_idx: usize,
+        anim_config: Option<niri_config::Animation>,
+    ) -> Column<W> {
         // Animate movement of the other columns.
+        let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
         let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
         if self.active_column_idx <= column_idx {
             for col in &mut self.columns[column_idx + 1..] {
-                col.animate_move_from(offset);
+                col.animate_move_from_with_config(offset, movement_config);
             }
         } else {
             for col in &mut self.columns[..column_idx] {
-                col.animate_move_from(-offset);
+                col.animate_move_from_with_config(-offset, movement_config);
             }
         }
 
@@ -1329,6 +1249,8 @@ impl<W: LayoutElement> Workspace<W> {
             return column;
         }
 
+        let view_config = anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
+
         if column_idx < self.active_column_idx {
             // A column to the left was removed; preserve the current position.
             // FIXME: preserve activate_prev_column_on_removal.
@@ -1341,22 +1263,35 @@ impl<W: LayoutElement> Workspace<W> {
             if 0 < column_idx {
                 let prev_offset = self.activate_prev_column_on_removal.unwrap();
 
-                self.activate_column(self.active_column_idx - 1);
+                self.activate_column_with_anim_config(self.active_column_idx - 1, view_config);
 
                 // Restore the view offset but make sure to scroll the view in case the
                 // previous window had resized.
                 let current_x = self.view_pos();
-                self.animate_view_offset(current_x, self.active_column_idx, prev_offset);
-                self.animate_view_offset_to_column(current_x, self.active_column_idx, None);
+                self.animate_view_offset_with_config(
+                    current_x,
+                    self.active_column_idx,
+                    prev_offset,
+                    view_config,
+                );
+                self.animate_view_offset_to_column_with_config(
+                    current_x,
+                    self.active_column_idx,
+                    None,
+                    view_config,
+                );
             }
         } else {
-            self.activate_column(min(self.active_column_idx, self.columns.len() - 1));
+            self.activate_column_with_anim_config(
+                min(self.active_column_idx, self.columns.len() - 1),
+                view_config,
+            );
         }
 
         column
     }
 
-    pub fn remove_window(&mut self, window: &W::Id, transaction: Transaction) -> W {
+    pub fn remove_tile(&mut self, window: &W::Id, transaction: Transaction) -> RemovedTile<W> {
         let column_idx = self
             .columns
             .iter()
@@ -1364,9 +1299,8 @@ impl<W: LayoutElement> Workspace<W> {
             .unwrap();
         let column = &self.columns[column_idx];
 
-        let window_idx = column.position(window).unwrap();
-        self.remove_tile_by_idx(column_idx, window_idx, transaction, None)
-            .into_window()
+        let tile_idx = column.position(window).unwrap();
+        self.remove_tile_by_idx(column_idx, tile_idx, transaction, None)
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
@@ -1832,162 +1766,196 @@ impl<W: LayoutElement> Workspace<W> {
         self.columns[self.active_column_idx].move_up();
     }
 
-    pub fn consume_or_expel_window_left(&mut self) {
+    pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
         if self.columns.is_empty() {
             return;
         }
 
-        let source_col_idx = self.active_column_idx;
+        let (source_col_idx, source_tile_idx) = if let Some(window) = window {
+            self.columns
+                .iter_mut()
+                .enumerate()
+                .find_map(|(col_idx, col)| {
+                    col.tiles
+                        .iter()
+                        .position(|tile| tile.window().id() == window)
+                        .map(|tile_idx| (col_idx, tile_idx))
+                })
+                .unwrap()
+        } else {
+            let source_col_idx = self.active_column_idx;
+            let source_tile_idx = self.columns[self.active_column_idx].active_tile_idx;
+            (source_col_idx, source_tile_idx)
+        };
+
         let source_column = &self.columns[source_col_idx];
-        let prev_off = source_column.tile_offset(source_column.active_tile_idx);
+        let prev_off = source_column.tile_offset(source_tile_idx);
+
+        let source_tile_was_active = self.active_column_idx == source_col_idx
+            && source_column.active_tile_idx == source_tile_idx;
 
         if source_column.tiles.len() == 1 {
-            if self.active_column_idx == 0 {
+            if source_col_idx == 0 {
                 return;
             }
-
-            let offset = self.column_x(source_col_idx) - self.column_x(source_col_idx - 1);
-            let mut offset = Point::from((offset, 0.));
 
             // Move into adjacent column.
             let target_column_idx = source_col_idx - 1;
 
-            // Make sure the previous (target) column is activated so the animation looks right.
-            self.activate_prev_column_on_removal = Some(self.static_view_offset() + offset.x);
+            let offset = if self.active_column_idx <= source_col_idx {
+                // Tiles to the right animate from the following column.
+                self.column_x(source_col_idx) - self.column_x(target_column_idx)
+            } else {
+                // Tiles to the left animate to preserve their right edge position.
+                f64::max(
+                    0.,
+                    self.data[target_column_idx].width - self.data[source_col_idx].width,
+                )
+            };
+            let mut offset = Point::from((offset, 0.));
+
+            if source_tile_was_active {
+                // Make sure the previous (target) column is activated so the animation looks right.
+                self.activate_prev_column_on_removal = Some(self.static_view_offset() + offset.x);
+            }
+
             offset.x += self.columns[source_col_idx].render_offset().x;
-            let tile = self.remove_tile_by_idx(
+            let RemovedTile { tile, .. } = self.remove_tile_by_idx(
                 source_col_idx,
                 0,
                 Transaction::new(),
                 Some(self.options.animations.window_movement.0),
             );
-            self.enter_output_for_window(tile.window());
-
-            let next_col_idx = source_col_idx;
-            let prev_next_x = self.column_x(next_col_idx);
+            self.add_tile_to_column(target_column_idx, None, tile, source_tile_was_active);
 
             let target_column = &mut self.columns[target_column_idx];
             offset.x -= target_column.render_offset().x;
-
-            target_column.add_tile(tile, true);
-            self.data[target_column_idx].update(target_column);
-            target_column.focus_last();
-
             offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
 
             let new_tile = target_column.tiles.last_mut().unwrap();
             new_tile.animate_move_from(offset);
-
-            // Consuming a window into a column could've increased its width if the new window had a
-            // larger min width. Move the next columns to account for this.
-            let offset_next = prev_next_x - self.column_x(next_col_idx);
-            for col in &mut self.columns[next_col_idx..] {
-                col.animate_move_from(offset_next);
-            }
         } else {
             // Move out of column.
-            let width = source_column.width;
-            let is_full_width = source_column.is_full_width;
-
             let mut offset = Point::from((source_column.render_offset().x, 0.));
 
-            let tile = self.remove_tile_by_idx(
-                source_col_idx,
-                source_column.active_tile_idx,
-                Transaction::new(),
-                None,
-            );
+            let removed =
+                self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
 
-            self.add_tile_at(
-                self.active_column_idx,
-                tile,
-                true,
-                width,
-                is_full_width,
+            // We're inserting into the source column position.
+            let target_column_idx = source_col_idx;
+
+            self.add_tile(
+                Some(target_column_idx),
+                removed.tile,
+                source_tile_was_active,
+                removed.width,
+                removed.is_full_width,
                 Some(self.options.animations.window_movement.0),
             );
 
-            // We added to the left, don't activate even further left on removal.
-            self.activate_prev_column_on_removal = None;
+            if source_tile_was_active {
+                // We added to the left, don't activate even further left on removal.
+                self.activate_prev_column_on_removal = None;
+            }
 
-            let new_col = &mut self.columns[self.active_column_idx];
+            if target_column_idx < self.active_column_idx {
+                // Tiles to the left animate from the following column.
+                offset.x += self.column_x(target_column_idx + 1) - self.column_x(target_column_idx);
+            }
+
+            let new_col = &mut self.columns[target_column_idx];
             offset += prev_off - new_col.tile_offset(0);
             new_col.tiles[0].animate_move_from(offset);
         }
     }
 
-    pub fn consume_or_expel_window_right(&mut self) {
+    pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) {
         if self.columns.is_empty() {
             return;
         }
 
-        let source_col_idx = self.active_column_idx;
-        let offset = self.column_x(source_col_idx) - self.column_x(source_col_idx + 1);
-        let mut offset = Point::from((offset, 0.));
+        let (source_col_idx, source_tile_idx) = if let Some(window) = window {
+            self.columns
+                .iter_mut()
+                .enumerate()
+                .find_map(|(col_idx, col)| {
+                    col.tiles
+                        .iter()
+                        .position(|tile| tile.window().id() == window)
+                        .map(|tile_idx| (col_idx, tile_idx))
+                })
+                .unwrap()
+        } else {
+            let source_col_idx = self.active_column_idx;
+            let source_tile_idx = self.columns[self.active_column_idx].active_tile_idx;
+            (source_col_idx, source_tile_idx)
+        };
+
+        let cur_x = self.column_x(source_col_idx);
 
         let source_column = &self.columns[source_col_idx];
-        offset.x += source_column.render_offset().x;
-        let prev_off = source_column.tile_offset(source_column.active_tile_idx);
+        let mut offset = Point::from((source_column.render_offset().x, 0.));
+        let prev_off = source_column.tile_offset(source_tile_idx);
+
+        let source_tile_was_active = self.active_column_idx == source_col_idx
+            && source_column.active_tile_idx == source_tile_idx;
 
         if source_column.tiles.len() == 1 {
-            if self.active_column_idx + 1 == self.columns.len() {
+            if source_col_idx + 1 == self.columns.len() {
                 return;
             }
 
             // Move into adjacent column.
             let target_column_idx = source_col_idx;
 
+            offset.x += cur_x - self.column_x(source_col_idx + 1);
             offset.x -= self.columns[source_col_idx + 1].render_offset().x;
 
-            // Make sure the target column gets activated.
-            self.activate_prev_column_on_removal = None;
-            let tile = self.remove_tile_by_idx(
+            if source_tile_was_active {
+                // Make sure the target column gets activated.
+                self.activate_prev_column_on_removal = None;
+            }
+
+            let RemovedTile { tile, .. } = self.remove_tile_by_idx(
                 source_col_idx,
                 0,
                 Transaction::new(),
                 Some(self.options.animations.window_movement.0),
             );
-            self.enter_output_for_window(tile.window());
-
-            let prev_next_x = self.column_x(target_column_idx + 1);
+            self.add_tile_to_column(target_column_idx, None, tile, source_tile_was_active);
 
             let target_column = &mut self.columns[target_column_idx];
-            target_column.add_tile(tile, true);
-            self.data[target_column_idx].update(target_column);
-            target_column.focus_last();
-
             offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
 
             let new_tile = target_column.tiles.last_mut().unwrap();
             new_tile.animate_move_from(offset);
-
-            // Consuming a window into a column could've increased its width if the new window had a
-            // larger min width. Move the next columns to account for this.
-            let offset_next = prev_next_x - self.column_x(target_column_idx + 1);
-            for col in &mut self.columns[target_column_idx + 1..] {
-                col.animate_move_from(offset_next);
-            }
         } else {
             // Move out of column.
-            let width = source_column.width;
-            let is_full_width = source_column.is_full_width;
+            let prev_width = self.data[source_col_idx].width;
 
-            let tile = self.remove_tile_by_idx(
-                source_col_idx,
-                source_column.active_tile_idx,
-                Transaction::new(),
-                None,
-            );
+            let removed =
+                self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
+
+            let target_column_idx = source_col_idx + 1;
 
             self.add_tile(
-                tile,
-                true,
-                width,
-                is_full_width,
+                Some(target_column_idx),
+                removed.tile,
+                source_tile_was_active,
+                removed.width,
+                removed.is_full_width,
                 Some(self.options.animations.window_movement.0),
             );
 
-            let new_col = &mut self.columns[self.active_column_idx];
+            offset.x += if self.active_column_idx <= target_column_idx {
+                // Tiles to the right animate to the following column.
+                cur_x - self.column_x(target_column_idx)
+            } else {
+                // Tiles to the left animate for a change in width.
+                -f64::max(0., prev_width - self.data[target_column_idx].width)
+            };
+
+            let new_col = &mut self.columns[target_column_idx];
             offset += prev_off - new_col.tile_offset(0);
             new_col.tiles[0].animate_move_from(offset);
         }
@@ -2002,42 +1970,24 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
+        let target_column_idx = self.active_column_idx;
         let source_column_idx = self.active_column_idx + 1;
 
         let offset = self.column_x(source_column_idx)
             + self.columns[source_column_idx].render_offset().x
-            - self.column_x(self.active_column_idx);
+            - self.column_x(target_column_idx);
         let mut offset = Point::from((offset, 0.));
         let prev_off = self.columns[source_column_idx].tile_offset(0);
 
-        let tile = self.remove_tile_by_idx(source_column_idx, 0, Transaction::new(), None);
-        self.enter_output_for_window(tile.window());
+        let removed = self.remove_tile_by_idx(source_column_idx, 0, Transaction::new(), None);
+        self.add_tile_to_column(target_column_idx, None, removed.tile, false);
 
-        let prev_next_x = self.column_x(self.active_column_idx + 1);
-
-        let target_column = &mut self.columns[self.active_column_idx];
-        let was_fullscreen = target_column.tiles[target_column.active_tile_idx].is_fullscreen();
-
-        target_column.add_tile(tile, true);
-        self.data[self.active_column_idx].update(target_column);
-
+        let target_column = &mut self.columns[target_column_idx];
         offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
-
-        if !was_fullscreen {
-            self.view_offset_before_fullscreen = None;
-        }
-
         offset.x -= target_column.render_offset().x;
 
         let new_tile = target_column.tiles.last_mut().unwrap();
         new_tile.animate_move_from(offset);
-
-        // Consuming a window into a column could've increased its width if the new window had a
-        // larger min width. Move the next columns to account for this.
-        let offset_next = prev_next_x - self.column_x(self.active_column_idx + 1);
-        for col in &mut self.columns[self.active_column_idx + 1..] {
-            col.animate_move_from(offset_next);
-        }
     }
 
     pub fn expel_from_column(&mut self) {
@@ -2045,36 +1995,37 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let offset =
-            self.column_x(self.active_column_idx) - self.column_x(self.active_column_idx + 1);
-        let mut offset = Point::from((offset, 0.));
+        let source_col_idx = self.active_column_idx;
+        let target_col_idx = self.active_column_idx + 1;
+        let cur_x = self.column_x(source_col_idx);
 
         let source_column = &self.columns[self.active_column_idx];
         if source_column.tiles.len() == 1 {
             return;
         }
 
-        offset.x += source_column.render_offset().x;
+        let mut offset = Point::from((source_column.render_offset().x, 0.));
         let prev_off = source_column.tile_offset(source_column.active_tile_idx);
 
-        let width = source_column.width;
-        let is_full_width = source_column.is_full_width;
-        let tile = self.remove_tile_by_idx(
-            self.active_column_idx,
+        let removed = self.remove_tile_by_idx(
+            source_col_idx,
             source_column.active_tile_idx,
             Transaction::new(),
             None,
         );
 
         self.add_tile(
-            tile,
+            Some(target_col_idx),
+            removed.tile,
             true,
-            width,
-            is_full_width,
+            removed.width,
+            removed.is_full_width,
             Some(self.options.animations.window_movement.0),
         );
 
-        let new_col = &mut self.columns[self.active_column_idx];
+        offset.x += cur_x - self.column_x(target_col_idx);
+
+        let new_col = &mut self.columns[target_col_idx];
         offset += prev_off - new_col.tile_offset(0);
         new_col.tiles[0].animate_move_from(offset);
     }
@@ -2420,45 +2371,23 @@ impl<W: LayoutElement> Workspace<W> {
 
         if is_fullscreen && col.tiles.len() > 1 {
             // This wasn't the only window in its column; extract it into a separate column.
-            let target_window_was_focused =
-                self.active_column_idx == col_idx && col.active_tile_idx == tile_idx;
-            let window = col.tiles.remove(tile_idx).into_window();
-            col.data.remove(tile_idx);
-            col.active_tile_idx = min(col.active_tile_idx, col.tiles.len() - 1);
+            let activate = self.active_column_idx == col_idx && col.active_tile_idx == tile_idx;
 
-            // If one window is left, reset its weight to 1.
-            if col.data.len() == 1 {
-                if let WindowHeight::Auto { weight } = &mut col.data[0].height {
-                    *weight = 1.;
-                }
-            }
-
-            col.update_tile_sizes(false);
-            self.data[col_idx].update(col);
-            let width = col.width;
-            let is_full_width = col.is_full_width;
-
-            col_idx += 1;
-            let column = Column::new(
-                window,
+            let removed = self.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
+            // Create a column manually to disable the resize animation.
+            let column = Column::new_with_tile(
+                removed.tile,
                 self.view_size,
                 self.working_area,
                 self.scale.fractional_scale(),
                 self.options.clone(),
-                width,
-                is_full_width,
+                removed.width,
+                removed.is_full_width,
                 false,
             );
-            self.data.insert(col_idx, ColumnData::new(&column));
-            self.columns.insert(col_idx, column);
+            self.add_column(Some(col_idx + 1), column, activate, None);
 
-            if target_window_was_focused {
-                self.activate_column(col_idx);
-                self.view_offset_before_fullscreen = Some(self.static_view_offset());
-            } else if self.active_column_idx >= col_idx {
-                self.active_column_idx += 1;
-            }
-
+            col_idx += 1;
             col = &mut self.columns[col_idx];
         }
 
@@ -2986,30 +2915,6 @@ impl<W: LayoutElement> Workspace<W> {
 
 impl<W: LayoutElement> Column<W> {
     #[allow(clippy::too_many_arguments)]
-    fn new(
-        window: W,
-        view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
-        scale: f64,
-        options: Rc<Options>,
-        width: ColumnWidth,
-        is_full_width: bool,
-        animate_resize: bool,
-    ) -> Self {
-        let tile = Tile::new(window, scale, options.clone());
-        Self::new_with_tile(
-            tile,
-            view_size,
-            working_area,
-            scale,
-            options,
-            width,
-            is_full_width,
-            animate_resize,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
     fn new_with_tile(
         tile: Tile<W>,
         view_size: Size<f64, Logical>,
@@ -3036,7 +2941,7 @@ impl<W: LayoutElement> Column<W> {
 
         let is_pending_fullscreen = tile.window().is_pending_fullscreen();
 
-        rv.add_tile(tile, animate_resize);
+        rv.add_tile_at(0, tile, animate_resize);
 
         if is_pending_fullscreen {
             rv.set_fullscreen(true);
@@ -3180,11 +3085,29 @@ impl<W: LayoutElement> Column<W> {
         self.active_tile_idx = idx;
     }
 
-    fn add_tile(&mut self, tile: Tile<W>, animate: bool) {
+    fn add_tile_at(&mut self, idx: usize, mut tile: Tile<W>, animate: bool) {
+        tile.update_config(self.scale, self.options.clone());
+
+        // Inserting a tile pushes down all tiles below it, but also in always-centering mode it
+        // will affect the X position of all tiles in the column.
+        let mut prev_offsets = Vec::with_capacity(self.tiles.len() + 1);
+        prev_offsets.extend(self.tile_offsets().take(self.tiles.len()));
+
         self.is_fullscreen = false;
-        self.data.push(TileData::new(&tile, WindowHeight::auto_1()));
-        self.tiles.push(tile);
+        self.data
+            .insert(idx, TileData::new(&tile, WindowHeight::auto_1()));
+        self.tiles.insert(idx, tile);
         self.update_tile_sizes(animate);
+
+        // Animate tiles according to the offset changes.
+        prev_offsets.insert(idx, Point::default());
+        for (i, ((tile, offset), prev)) in zip(self.tiles_mut(), prev_offsets).enumerate() {
+            if i == idx {
+                continue;
+            }
+
+            tile.animate_move_from(prev - offset);
+        }
     }
 
     fn update_window(&mut self, window: &W::Id) {
@@ -3205,6 +3128,11 @@ impl<W: LayoutElement> Column<W> {
         self.data[tile_idx].update(tile);
 
         // Move windows below in tandem with resizing.
+        //
+        // FIXME: in always-centering mode, window resizing will affect the offsets of all other
+        // windows in the column, so they should all be animated. How should this interact with
+        // animated vs. non-animated resizes? For example, an animated +20 resize followed by two
+        // non-animated -10 resizes.
         if tile.resize_animation().is_some() && offset != 0. {
             for tile in &mut self.tiles[tile_idx + 1..] {
                 tile.animate_move_y_from_with_config(
@@ -3463,10 +3391,6 @@ impl<W: LayoutElement> Column<W> {
 
     fn focus_down(&mut self) {
         self.active_tile_idx = min(self.active_tile_idx + 1, self.tiles.len() - 1);
-    }
-
-    fn focus_last(&mut self) {
-        self.active_tile_idx = self.tiles.len() - 1;
     }
 
     fn move_up(&mut self) {
@@ -3848,7 +3772,11 @@ impl<W: LayoutElement> Column<W> {
         // the workspace or some other reason.
         let center = self.options.center_focused_column == CenterFocusedColumn::Always;
         let gaps = self.options.gaps;
-        let col_width = self.width();
+        let col_width = if self.tiles.is_empty() {
+            0.
+        } else {
+            self.width()
+        };
         let mut y = 0.;
 
         if !self.is_fullscreen {

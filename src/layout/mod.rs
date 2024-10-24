@@ -44,6 +44,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
+use tile::Tile;
 use workspace::WorkspaceId;
 
 pub use self::monitor::MonitorRenderElement;
@@ -81,7 +82,7 @@ pub type LayoutElementRenderSnapshot =
 
 #[derive(Debug, Clone, Copy)]
 pub struct InteractiveResizeData {
-    pub edges: ResizeEdge,
+    pub(self) edges: ResizeEdge,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -210,6 +211,11 @@ pub trait LayoutElement {
 pub struct Layout<W: LayoutElement> {
     /// Monitors and workspaes in the layout.
     monitor_set: MonitorSet<W>,
+    /// Whether the layout should draw as active.
+    ///
+    /// This normally indicates that the layout has keyboard focus, but not always. E.g. when the
+    /// screenshot UI is open, it keeps the layout drawing as active.
+    is_active: bool,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -281,6 +287,15 @@ impl Default for Options {
     }
 }
 
+/// Tile that was just removed from the layout.
+pub struct RemovedTile<W: LayoutElement> {
+    tile: Tile<W>,
+    /// Width of the column the tile was in.
+    width: ColumnWidth,
+    /// Whether the column the tile was in was full-width.
+    is_full_width: bool,
+}
+
 impl Options {
     fn from_config(config: &Config) -> Self {
         let layout = &config.layout;
@@ -344,6 +359,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn with_options(options: Options) -> Self {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
+            is_active: true,
             options: Rc::new(options),
         }
     }
@@ -359,6 +375,7 @@ impl<W: LayoutElement> Layout<W> {
 
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces },
+            is_active: true,
             options: opts,
         }
     }
@@ -543,14 +560,7 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
-        if let ColumnWidth::Fixed(w) = &mut width {
-            let rules = window.rules();
-            let border_config = rules.border.resolve_against(self.options.border);
-            if !border_config.off {
-                *w += border_config.width.0 * 2.;
-            }
-        }
+        let width = self.resolve_default_width(&window, width);
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -594,7 +604,7 @@ impl<W: LayoutElement> Layout<W> {
                             .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
                     })
                     .unwrap();
-                ws.add_window(window, true, width, is_full_width);
+                ws.add_window(None, window, true, width, is_full_width);
                 None
             }
         }
@@ -632,14 +642,7 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
-        if let ColumnWidth::Fixed(w) = &mut width {
-            let rules = window.rules();
-            let border_config = rules.border.resolve_against(self.options.border);
-            if !border_config.off {
-                *w += border_config.width.0 * 2.;
-            }
-        }
+        let width = self.resolve_default_width(&window, width);
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -672,7 +675,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces.push(Workspace::new_no_outputs(self.options.clone()));
                     &mut workspaces[0]
                 };
-                ws.add_window(window, true, width, is_full_width);
+                ws.add_window(None, window, true, width, is_full_width);
                 None
             }
         }
@@ -690,14 +693,7 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) -> Option<&Output> {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
-        if let ColumnWidth::Fixed(w) = &mut width {
-            let rules = window.rules();
-            let border_config = rules.border.resolve_against(self.options.border);
-            if !border_config.off {
-                *w += border_config.width.0 * 2.;
-            }
-        }
+        let width = self.resolve_default_width(&window, width);
 
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -728,14 +724,7 @@ impl<W: LayoutElement> Layout<W> {
         width: Option<ColumnWidth>,
         is_full_width: bool,
     ) {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
-        if let ColumnWidth::Fixed(w) = &mut width {
-            let rules = window.rules();
-            let border_config = rules.border.resolve_against(self.options.border);
-            if !border_config.off {
-                *w += border_config.width.0 * 2.;
-            }
-        }
+        let width = self.resolve_default_width(&window, width);
 
         let MonitorSet::Normal {
             monitors,
@@ -771,20 +760,24 @@ impl<W: LayoutElement> Layout<W> {
         );
     }
 
-    pub fn remove_window(&mut self, window: &W::Id, transaction: Transaction) -> Option<W> {
+    pub fn remove_window(
+        &mut self,
+        window: &W::Id,
+        transaction: Transaction,
+    ) -> Option<RemovedTile<W>> {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for (idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         if ws.has_window(window) {
-                            let win = ws.remove_window(window, transaction);
+                            let removed = ws.remove_tile(window, transaction);
 
                             // Clean up empty workspaces that are not active and not last.
                             if !ws.has_windows()
+                                && ws.name.is_none()
                                 && idx != mon.active_workspace_idx
                                 && idx != mon.workspaces.len() - 1
                                 && mon.workspace_switch.is_none()
-                                && mon.workspaces[idx].name.is_none()
                             {
                                 mon.workspaces.remove(idx);
 
@@ -793,7 +786,7 @@ impl<W: LayoutElement> Layout<W> {
                                 }
                             }
 
-                            return Some(win);
+                            return Some(removed);
                         }
                     }
                 }
@@ -801,14 +794,14 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
                     if ws.has_window(window) {
-                        let win = ws.remove_window(window, transaction);
+                        let removed = ws.remove_tile(window, transaction);
 
                         // Clean up empty workspaces.
-                        if !ws.has_windows() && workspaces[idx].name.is_none() {
+                        if !ws.has_windows() && ws.name.is_none() {
                             workspaces.remove(idx);
                         }
 
-                        return Some(win);
+                        return Some(removed);
                     }
                 }
             }
@@ -1368,18 +1361,38 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_up_or_to_workspace_up();
     }
 
-    pub fn consume_or_expel_window_left(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+    pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
             return;
         };
-        monitor.consume_or_expel_window_left();
+        workspace.consume_or_expel_window_left(window);
     }
 
-    pub fn consume_or_expel_window_right(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+    pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) {
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
             return;
         };
-        monitor.consume_or_expel_window_right();
+        workspace.consume_or_expel_window_right(window);
     }
 
     pub fn focus_left(&mut self) {
@@ -1893,7 +1906,8 @@ impl<W: LayoutElement> Layout<W> {
 
         for (idx, mon) in monitors.iter_mut().enumerate() {
             if output.map_or(true, |output| mon.output == *output) {
-                mon.update_render_elements(idx == *active_monitor_idx);
+                let is_active = self.is_active && idx == *active_monitor_idx;
+                mon.update_render_elements(is_active);
             }
         }
     }
@@ -2119,24 +2133,20 @@ impl<W: LayoutElement> Layout<W> {
             let mon = &mut monitors[mon_idx];
             let ws = &mut mon.workspaces[ws_idx];
             let column = &ws.columns[col_idx];
-            let width = column.width;
-            let is_full_width = column.is_full_width;
             let activate = mon_idx == *active_monitor_idx
                 && ws_idx == mon.active_workspace_idx
                 && col_idx == ws.active_column_idx
                 && tile_idx == column.active_tile_idx;
 
-            let window = ws
-                .remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None)
-                .into_window();
+            let removed = ws.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
 
             self.add_window_by_idx(
                 new_idx,
                 workspace_idx,
-                window,
+                removed.tile.into_window(),
                 activate,
-                width,
-                is_full_width,
+                removed.width,
+                removed.is_full_width,
             );
 
             let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
@@ -2166,44 +2176,10 @@ impl<W: LayoutElement> Layout<W> {
             if !ws.has_windows() {
                 return;
             }
-            let column = ws.remove_column_by_idx(ws.active_column_idx);
+            let column = ws.remove_column_by_idx(ws.active_column_idx, None);
 
             let workspace_idx = monitors[new_idx].active_workspace_idx;
             self.add_column_by_idx(new_idx, workspace_idx, column, true);
-        }
-    }
-
-    pub fn move_window_to_output(&mut self, window: &W::Id, output: &Output) {
-        let mut width = None;
-        let mut is_full_width = false;
-
-        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            for mon in &*monitors {
-                for ws in &mon.workspaces {
-                    for col in &ws.columns {
-                        if col.contains(window) {
-                            width = Some(col.width);
-                            is_full_width = col.is_full_width;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        let Some(width) = width else { return };
-
-        let window = self.remove_window(window, Transaction::new()).unwrap();
-
-        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            let new_idx = monitors
-                .iter()
-                .position(|mon| &mon.output == output)
-                .unwrap();
-
-            let workspace_idx = monitors[new_idx].active_workspace_idx;
-            // FIXME: activate only if it was already active and focused.
-            self.add_window_by_idx(new_idx, workspace_idx, window, true, width, is_full_width);
         }
     }
 
@@ -2622,8 +2598,10 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn refresh(&mut self) {
+    pub fn refresh(&mut self, is_active: bool) {
         let _span = tracy_client::span!("Layout::refresh");
+
+        self.is_active = is_active;
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -2632,7 +2610,7 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 for (idx, mon) in monitors.iter_mut().enumerate() {
-                    let is_active = idx == *active_monitor_idx;
+                    let is_active = self.is_active && idx == *active_monitor_idx;
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         ws.refresh(is_active);
 
@@ -2719,6 +2697,18 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn has_window(&self, window: &W::Id) -> bool {
         self.windows().any(|(_, win)| win.id() == window)
+    }
+
+    fn resolve_default_width(&self, window: &W, width: Option<ColumnWidth>) -> ColumnWidth {
+        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
+        if let ColumnWidth::Fixed(w) = &mut width {
+            let rules = window.rules();
+            let border_config = rules.border.resolve_against(self.options.border);
+            if !border_config.off {
+                *w += border_config.width.0 * 2.;
+            }
+        }
+        width
     }
 }
 
@@ -3061,8 +3051,14 @@ mod tests {
         MoveWindowUp,
         MoveWindowDownOrToWorkspaceDown,
         MoveWindowUpOrToWorkspaceUp,
-        ConsumeOrExpelWindowLeft,
-        ConsumeOrExpelWindowRight,
+        ConsumeOrExpelWindowLeft {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
+        ConsumeOrExpelWindowRight {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
         CenterColumn,
@@ -3111,6 +3107,9 @@ mod tests {
             id: Option<usize>,
         },
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
+        Refresh {
+            is_active: bool,
+        },
         MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
         ViewOffsetGestureBegin {
             #[proptest(strategy = "1..=5usize")]
@@ -3261,27 +3260,8 @@ mod tests {
                     bbox,
                     min_max_size,
                 } => {
-                    match &mut layout.monitor_set {
-                        MonitorSet::Normal { monitors, .. } => {
-                            for mon in monitors {
-                                for ws in &mut mon.workspaces {
-                                    for win in ws.windows() {
-                                        if win.0.id == id {
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        MonitorSet::NoOutputs { workspaces, .. } => {
-                            for ws in workspaces {
-                                for win in ws.windows() {
-                                    if win.0.id == id {
-                                        return;
-                                    }
-                                }
-                            }
-                        }
+                    if layout.has_window(&id) {
+                        return;
                     }
 
                     let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
@@ -3470,8 +3450,14 @@ mod tests {
                 Op::MoveWindowUp => layout.move_up(),
                 Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),
                 Op::MoveWindowUpOrToWorkspaceUp => layout.move_up_or_to_workspace_up(),
-                Op::ConsumeOrExpelWindowLeft => layout.consume_or_expel_window_left(),
-                Op::ConsumeOrExpelWindowRight => layout.consume_or_expel_window_right(),
+                Op::ConsumeOrExpelWindowLeft { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.consume_or_expel_window_left(id.as_ref());
+                }
+                Op::ConsumeOrExpelWindowRight { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.consume_or_expel_window_right(id.as_ref());
+                }
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
                 Op::CenterColumn => layout.center_column(),
@@ -3573,6 +3559,9 @@ mod tests {
                         // FIXME: serial.
                         layout.update_window(&id, None);
                     }
+                }
+                Op::Refresh { is_active } => {
+                    layout.refresh(is_active);
                 }
                 Op::MoveWorkspaceToOutput(id) => {
                     let name = format!("output{id}");
@@ -3750,8 +3739,8 @@ mod tests {
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
             Op::MoveWindowUpOrToWorkspaceUp,
-            Op::ConsumeOrExpelWindowLeft,
-            Op::ConsumeOrExpelWindowRight,
+            Op::ConsumeOrExpelWindowLeft { id: None },
+            Op::ConsumeOrExpelWindowRight { id: None },
             Op::MoveWorkspaceToOutput(1),
         ];
 
@@ -3947,8 +3936,8 @@ mod tests {
             Op::MoveWindowDownOrToWorkspaceDown,
             Op::MoveWindowUp,
             Op::MoveWindowUpOrToWorkspaceUp,
-            Op::ConsumeOrExpelWindowLeft,
-            Op::ConsumeOrExpelWindowRight,
+            Op::ConsumeOrExpelWindowLeft { id: None },
+            Op::ConsumeOrExpelWindowRight { id: None },
         ];
 
         for third in every_op {
@@ -4283,7 +4272,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetFullscreenWindow {
                 window: 2,
                 is_fullscreen: false,
@@ -4351,7 +4340,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowRight,
+            Op::ConsumeOrExpelWindowRight { id: None },
         ];
 
         check_ops(&ops);
@@ -4408,7 +4397,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::FullscreenWindow(0),
         ];
 
@@ -4509,7 +4498,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SwitchPresetWindowHeight { id: None },
             Op::SwitchPresetWindowHeight { id: None },
         ];
@@ -4604,13 +4593,13 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
                 id: None,
                 change: SizeChange::SetFixed(100),
@@ -4639,13 +4628,13 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
                 id: None,
                 change: SizeChange::SetFixed(100),
@@ -4678,13 +4667,13 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
                 id: 2,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
                 id: None,
                 change: SizeChange::SetFixed(100),
@@ -4721,7 +4710,7 @@ mod tests {
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
             },
-            Op::ConsumeOrExpelWindowLeft,
+            Op::ConsumeOrExpelWindowLeft { id: None },
         ];
 
         let options = Options {

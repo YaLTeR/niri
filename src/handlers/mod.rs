@@ -474,7 +474,7 @@ impl ForeignToplevelHandler for State {
                 if &requested_output != current_output {
                     self.niri
                         .layout
-                        .move_window_to_output(&window, &requested_output);
+                        .move_to_output(Some(&window), &requested_output, None);
                 }
             }
 

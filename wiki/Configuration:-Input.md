@@ -56,6 +56,7 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-method "on-button-down"
+        // scroll-button 273
         // middle-emulation
     }
 
@@ -134,13 +135,14 @@ A few settings are common between input devices:
 
 - `off`: if set, no events will be sent from this device.
 
-A few settings are common between `touchpad`, `mouse` and `trackpoint`:
+A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackball`:
 
 - `natural-scroll`: if set, inverts the scrolling direction.
 - `accel-speed`: pointer acceleration speed, valid values are from `-1.0` to `1.0` where the default is `0.0`.
 - `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
+- `scroll-button`: the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
 - `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
 Settings specific to `touchpad`s:

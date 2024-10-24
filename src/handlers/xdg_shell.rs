@@ -288,7 +288,7 @@ impl XdgShellHandler for State {
                 if &requested_output != current_output {
                     self.niri
                         .layout
-                        .move_window_to_output(&window, &requested_output);
+                        .move_to_output(Some(&window), &requested_output, None);
                 }
             }
 
@@ -332,7 +332,7 @@ impl XdgShellHandler for State {
 
                     *output = mon
                         .filter(|(_, parent)| !parent)
-                        .map(|(mon, _)| mon.output.clone());
+                        .map(|(mon, _)| mon.output().clone());
                     let mon = mon.map(|(mon, _)| mon);
 
                     let ws = mon
@@ -416,7 +416,7 @@ impl XdgShellHandler for State {
 
                     *output = mon
                         .filter(|(_, parent)| !parent)
-                        .map(|(mon, _)| mon.output.clone());
+                        .map(|(mon, _)| mon.output().clone());
                     let mon = mon.map(|(mon, _)| mon);
 
                     let ws = workspace_name
@@ -694,7 +694,7 @@ impl State {
         // mapped, it fetches the possibly changed parent's output again, and shows up there.
         let output = mon
             .filter(|(_, parent)| !parent)
-            .map(|(mon, _)| mon.output.clone());
+            .map(|(mon, _)| mon.output().clone());
         let mon = mon.map(|(mon, _)| mon);
 
         let mut width = None;
@@ -747,7 +747,7 @@ impl State {
             width,
             is_full_width,
             output,
-            workspace_name: ws.and_then(|w| w.name.clone()),
+            workspace_name: ws.and_then(|w| w.name().cloned()),
         };
 
         toplevel.send_configure();

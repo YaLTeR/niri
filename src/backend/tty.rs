@@ -1019,6 +1019,14 @@ impl Tty {
             }
         }
 
+        // Some buggy monitors replug upon powering off, so powering on here would prevent such
+        // monitors from powering off. Therefore, we avoid unconditionally powering on.
+        if !niri.monitors_active {
+            if let Err(err) = compositor.clear() {
+                warn!("error clearing drm surface: {err:?}");
+            }
+        }
+
         let vblank_frame_name =
             tracy_client::FrameName::new_leak(format!("vblank on {connector_name}"));
         let time_since_presentation_plot_name = tracy_client::PlotName::new_leak(format!(
@@ -1050,15 +1058,14 @@ impl Tty {
 
         niri.add_output(output.clone(), Some(refresh_interval(mode)), vrr_enabled);
 
-        // Some buggy monitors replug upon powering off, so powering on here would prevent such
-        // monitors from powering off. Therefore, we avoid unconditionally powering on.
         if niri.monitors_active {
             // Redraw the new monitor.
             niri.event_loop.insert_idle(move |state| {
-                state.niri.queue_redraw(&output);
+                // Guard against output disconnecting before the idle has a chance to run.
+                if state.niri.output_state.contains_key(&output) {
+                    state.niri.queue_redraw(&output);
+                }
             });
-        } else {
-            set_crtc_active(&device.drm, crtc, false);
         }
 
         Ok(())
@@ -1659,10 +1666,9 @@ impl Tty {
         }
 
         for device in self.devices.values_mut() {
-            for (crtc, surface) in device.surfaces.iter_mut() {
-                set_crtc_active(&device.drm, *crtc, false);
-                if let Err(err) = surface.compositor.reset_state() {
-                    warn!("error resetting surface state: {err:?}");
+            for surface in device.surfaces.values_mut() {
+                if let Err(err) = surface.compositor.clear() {
+                    warn!("error clearing drm surface: {err:?}");
                 }
             }
         }
@@ -2152,17 +2158,6 @@ fn get_drm_property(
     props
         .into_iter()
         .find_map(|(handle, value)| (handle == prop).then_some(value))
-}
-
-fn set_crtc_active(drm: &DrmDevice, crtc: crtc::Handle, active: bool) {
-    let Some((prop, _, _)) = find_drm_property(drm, crtc, "ACTIVE") else {
-        return;
-    };
-
-    let value = property::Value::Boolean(active);
-    if let Err(err) = drm.set_property(crtc, prop, value.into()) {
-        warn!("error setting CRTC property: {err:?}");
-    }
 }
 
 fn refresh_interval(mode: DrmMode) -> Duration {

@@ -74,7 +74,7 @@ pub struct Tile<W: LayoutElement> {
     scale: f64,
 
     /// Configurable properties of the layout.
-    pub options: Rc<Options>,
+    pub(super) options: Rc<Options>,
 }
 
 niri_render_elements! {
