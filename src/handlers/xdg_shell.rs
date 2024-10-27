@@ -23,6 +23,7 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::input_method::InputMethodSeat;
+use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::{self, Layer};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
@@ -75,27 +76,44 @@ impl XdgShellHandler for State {
 
         // See if this comes from a pointer grab.
         let pointer = self.niri.seat.get_pointer().unwrap();
-        if pointer.has_grab(serial) {
-            if let Some(start_data) = pointer.grab_start_data() {
+        pointer.with_grab(|grab_serial, grab| {
+            if grab_serial == serial {
+                let start_data = grab.start_data();
                 if let Some((focus, _)) = &start_data.focus {
                     if focus.id().same_client_as(&wl_surface.id()) {
-                        grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
-                    }
-                }
-            }
-        }
+                        // Deny move requests from DnD grabs to work around
+                        // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
+                        let is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
 
-        // See if this comes from a touch grab.
-        if let Some(touch) = self.niri.seat.get_touch() {
-            if touch.has_grab(serial) {
-                if let Some(start_data) = touch.grab_start_data() {
-                    if let Some((focus, _)) = &start_data.focus {
-                        if focus.id().same_client_as(&wl_surface.id()) {
-                            grab_start_data = Some(PointerOrTouchStartData::Touch(start_data));
+                        if !is_dnd_grab {
+                            grab_start_data =
+                                Some(PointerOrTouchStartData::Pointer(start_data.clone()));
                         }
                     }
                 }
             }
+        });
+
+        // See if this comes from a touch grab.
+        if let Some(touch) = self.niri.seat.get_touch() {
+            touch.with_grab(|grab_serial, grab| {
+                if grab_serial == serial {
+                    let start_data = grab.start_data();
+                    if let Some((focus, _)) = &start_data.focus {
+                        if focus.id().same_client_as(&wl_surface.id()) {
+                            // Deny move requests from DnD grabs to work around
+                            // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
+                            let is_dnd_grab =
+                                grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+
+                            if !is_dnd_grab {
+                                grab_start_data =
+                                    Some(PointerOrTouchStartData::Touch(start_data.clone()));
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         let Some(start_data) = grab_start_data else {
