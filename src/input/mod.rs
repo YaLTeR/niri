@@ -2043,6 +2043,7 @@ impl State {
                         self.move_cursor(pos);
                     }
 
+                    self.niri.pointer_hidden = false;
                     self.niri.tablet_cursor_location = None;
                 }
             }
