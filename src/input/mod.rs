@@ -423,7 +423,7 @@ impl State {
     }
 
     fn hide_cursor_if_needed(&mut self) {
-        if !self.niri.config.borrow().cursor.hide_on_key_press {
+        if !self.niri.config.borrow().cursor.hide_when_typing {
             return;
         }
 

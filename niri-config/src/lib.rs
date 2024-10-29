@@ -666,7 +666,7 @@ pub struct Cursor {
     #[knuffel(child, unwrap(argument), default = 24)]
     pub xcursor_size: u8,
     #[knuffel(child)]
-    pub hide_on_key_press: bool,
+    pub hide_when_typing: bool,
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
 }
@@ -676,7 +676,7 @@ impl Default for Cursor {
         Self {
             xcursor_theme: String::from("default"),
             xcursor_size: 24,
-            hide_on_key_press: false,
+            hide_when_typing: false,
             hide_after_inactive_ms: None,
         }
     }
@@ -3061,7 +3061,7 @@ mod tests {
             cursor {
                 xcursor-theme "breeze_cursors"
                 xcursor-size 16
-                hide-on-key-press
+                hide-when-typing
                 hide-after-inactive-ms 3000
             }
 
@@ -3286,7 +3286,7 @@ mod tests {
                 cursor: Cursor {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,
-                    hide_on_key_press: true,
+                    hide_when_typing: true,
                     hide_after_inactive_ms: Some(3000),
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
