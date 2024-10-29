@@ -591,9 +591,7 @@ impl State {
         );
         pointer.frame(self);
 
-        // We moved the pointer, show it.
-        self.niri.pointer_hidden = false;
-        self.niri.reset_pointer_inactivity_timer();
+        // We do not show the pointer on programmatic or keyboard movement.
 
         // FIXME: granular
         self.niri.queue_redraw_all();
