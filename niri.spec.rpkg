@@ -122,6 +122,7 @@ sed -i 's/.*please-remove-me$//' .cargo/config.toml
 install -Dm755 -t %{buildroot}%{_bindir} ./resources/niri-session
 install -Dm644 -t %{buildroot}%{_datadir}/wayland-sessions ./resources/niri.desktop
 install -Dm644 -t %{buildroot}%{_datadir}/xdg-desktop-portal ./resources/niri-portals.conf
+install -Dm644 -t %{buildroot}%{_datadir}/xdg-desktop-portal/portals ./resources/niri.portal
 install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri.service
 install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri-shutdown.target
 
@@ -140,6 +141,7 @@ install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri-shutdown.target
 %{_datadir}/wayland-sessions/niri.desktop
 %dir %{_datadir}/xdg-desktop-portal
 %{_datadir}/xdg-desktop-portal/niri-portals.conf
+%{_datadir}/xdg-desktop-portal/portals/niri.portal
 %{_userunitdir}/niri.service
 %{_userunitdir}/niri-shutdown.target
 

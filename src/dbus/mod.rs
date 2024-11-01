@@ -8,6 +8,7 @@ pub mod gnome_shell_introspect;
 pub mod gnome_shell_screenshot;
 pub mod mutter_display_config;
 pub mod mutter_service_channel;
+pub mod xdg_deskop_portal_impl_access;
 
 #[cfg(feature = "xdp-gnome-screencast")]
 pub mod mutter_screen_cast;
@@ -32,6 +33,7 @@ pub struct DBusServers {
     pub conn_introspect: Option<Connection>,
     #[cfg(feature = "xdp-gnome-screencast")]
     pub conn_screen_cast: Option<Connection>,
+    pub conn_portal: Option<Connection>,
 }
 
 impl DBusServers {
@@ -98,6 +100,21 @@ impl DBusServers {
             } else {
                 warn!("disabling screencast support because we couldn't start PipeWire");
             }
+
+            let (to_niri, from_access_dialog) = calloop::channel::channel();
+            niri.event_loop
+                .insert_source(from_access_dialog, {
+                    move |event, _, state| match event {
+                        calloop::channel::Event::Msg(msg) => {
+                            state.niri.access_dialog_ui.enque_request(msg);
+                            state.niri.queue_redraw_all();
+                        }
+                        calloop::channel::Event::Closed => (),
+                    }
+                })
+                .unwrap();
+            let portal = xdg_deskop_portal_impl_access::AccessPortalImpl::new(to_niri);
+            dbus.conn_portal = try_start(portal);
         }
 
         niri.dbus = Some(dbus);

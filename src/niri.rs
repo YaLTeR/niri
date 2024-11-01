@@ -135,6 +135,7 @@ use crate::render_helpers::{
     render_to_dmabuf, render_to_encompassing_texture, render_to_shm, render_to_texture,
     render_to_vec, shaders, RenderTarget,
 };
+use crate::ui::access_dialog::AccessDialog;
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
@@ -286,6 +287,7 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
+    pub access_dialog_ui: AccessDialog,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -1729,6 +1731,8 @@ impl Niri {
             }
         };
 
+        let access_dialog_ui = AccessDialog::new();
+
         event_loop
             .insert_source(
                 Timer::from_duration(Duration::from_secs(1)),
@@ -1892,6 +1896,7 @@ impl Niri {
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
+            access_dialog_ui,
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
@@ -2290,7 +2295,7 @@ impl Niri {
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
-        if self.is_locked() || self.screenshot_ui.is_open() {
+        if self.is_locked() || self.screenshot_ui.is_open() || self.access_dialog_ui.is_visible() {
             return None;
         }
 
@@ -2361,6 +2366,10 @@ impl Niri {
         }
 
         if self.screenshot_ui.is_open() {
+            return rv;
+        }
+
+        if self.access_dialog_ui.is_visible() {
             return rv;
         }
 
@@ -3069,6 +3078,11 @@ impl Niri {
 
         // Draw the hotkey overlay on top.
         if let Some(element) = self.hotkey_overlay.render(renderer, output) {
+            elements.push(element.into());
+        }
+
+        // Draw the access dialogs.
+        if let Some(element) = self.access_dialog_ui.render(renderer, output) {
             elements.push(element.into());
         }
 

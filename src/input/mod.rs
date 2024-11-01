@@ -36,6 +36,7 @@ use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::niri::State;
+use crate::ui::access_dialog::AccessDialog;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
@@ -372,6 +373,7 @@ impl State {
                     pressed,
                     *mods,
                     &this.niri.screenshot_ui,
+                    &this.niri.access_dialog_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
                 )
             },
@@ -2447,6 +2449,7 @@ fn should_intercept_key(
     pressed: bool,
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
+    access_dialog_ui: &AccessDialog,
     disable_power_key_handling: bool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
@@ -2491,6 +2494,12 @@ fn should_intercept_key(
                 });
             }
         }
+    }
+
+    if access_dialog_ui.is_visible() {
+        access_dialog_ui.handle_key(raw, mods);
+        suppressed_keys.insert(key_code);
+        return FilterResult::Intercept(None);
     }
 
     match (final_bind, pressed) {
@@ -2991,6 +3000,7 @@ mod tests {
         let mut suppressed_keys = HashSet::new();
 
         let screenshot_ui = ScreenshotUi::new(Default::default());
+        let access_dialog_ui = AccessDialog::new();
         let disable_power_key_handling = false;
 
         // The key_code we pick is arbitrary, the only thing
@@ -3008,6 +3018,7 @@ mod tests {
                 pressed,
                 mods,
                 &screenshot_ui,
+                &access_dialog_ui,
                 disable_power_key_handling,
             )
         };
@@ -3024,6 +3035,7 @@ mod tests {
                 pressed,
                 mods,
                 &screenshot_ui,
+                &access_dialog_ui,
                 disable_power_key_handling,
             )
         };
