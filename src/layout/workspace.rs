@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{
-    CenterFocusedColumn, OutputName, PresetSize, Struts, Workspace as WorkspaceConfig,
+    CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Struts, Workspace as WorkspaceConfig,
 };
 use niri_ipc::SizeChange;
 use ordered_float::NotNan;
@@ -137,6 +137,7 @@ pub struct InsertHint {
     pub position: InsertPosition,
     pub width: ColumnWidth,
     pub is_full_width: bool,
+    pub corner_radius: CornerRadius,
 }
 
 #[derive(Debug, Clone)]
@@ -566,7 +567,7 @@ impl<W: LayoutElement> Workspace<W> {
                 self.insert_hint_element.update_render_elements(
                     area.size,
                     view_rect,
-                    Default::default(),
+                    insert_hint.corner_radius,
                     self.scale.fractional_scale(),
                 );
             }

@@ -35,7 +35,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{
-    CenterFocusedColumn, Config, FloatOrInt, PresetSize, Struts, Workspace as WorkspaceConfig,
+    CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
+    Workspace as WorkspaceConfig,
 };
 use niri_ipc::SizeChange;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -2260,10 +2261,20 @@ impl<W: LayoutElement> Layout<W> {
                     .unwrap();
 
                 let position = ws.get_insert_position(move_.pointer_pos_within_output - offset);
+
+                let rules = move_.tile.window().rules();
+                let border_width = move_.tile.effective_border_width().unwrap_or(0.);
+                let corner_radius = rules
+                    .geometry_corner_radius
+                    .map_or(CornerRadius::default(), |radius| {
+                        radius.expanded_by(border_width as f32)
+                    });
+
                 ws.set_insert_hint(InsertHint {
                     position,
                     width: move_.width,
                     is_full_width: move_.is_full_width,
+                    corner_radius,
                 });
             }
         }

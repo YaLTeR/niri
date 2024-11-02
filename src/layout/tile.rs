@@ -392,7 +392,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// Returns `None` if the border is hidden and `Some(width)` if it should be shown.
-    fn effective_border_width(&self) -> Option<f64> {
+    pub fn effective_border_width(&self) -> Option<f64> {
         if self.is_fullscreen {
             return None;
         }
