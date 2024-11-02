@@ -72,3 +72,5 @@ pub fn some_function() {
     // Code of the function.
 }
 ```
+
+You can also enable Rust memory allocation profiling with `--features=profile-with-tracy-allocations`.

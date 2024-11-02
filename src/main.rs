@@ -33,6 +33,11 @@ use tracing_subscriber::EnvFilter;
 
 const DEFAULT_LOG_FILTER: &str = "niri=debug,smithay::backend::renderer::gles=error";
 
+#[cfg(feature = "profile-with-tracy-allocations")]
+#[global_allocator]
+static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
+    tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set backtrace defaults if not set.
     if env::var_os("RUST_BACKTRACE").is_none() {
