@@ -8,7 +8,6 @@ use niri_config::{
 };
 use niri_ipc::SizeChange;
 use ordered_float::NotNan;
-use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -17,13 +16,13 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
+use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
@@ -111,8 +110,8 @@ pub struct Workspace<W: LayoutElement> {
     /// Indication where an interactively-moved window is about to be placed.
     insert_hint: Option<InsertHint>,
 
-    /// Buffer for the insert hint.
-    insert_hint_buffer: SolidColorBuffer,
+    /// Insert hint element for rendering.
+    insert_hint_element: InsertHintElement,
 
     /// Configurable properties of the layout as received from the parent monitor.
     pub(super) base_options: Rc<Options>,
@@ -173,6 +172,7 @@ niri_render_elements! {
     WorkspaceRenderElement<R> => {
         Tile = TileRenderElement<R>,
         ClosingWindow = ClosingWindowRenderElement,
+        InsertHint = InsertHintRenderElement,
     }
 }
 
@@ -440,7 +440,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
             insert_hint: None,
-            insert_hint_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            insert_hint_element: InsertHintElement::new(options.insert_hint),
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -480,7 +480,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
             insert_hint: None,
-            insert_hint_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            insert_hint_element: InsertHintElement::new(options.insert_hint),
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -562,8 +562,13 @@ impl<W: LayoutElement> Workspace<W> {
 
         if let Some(insert_hint) = &self.insert_hint {
             if let Some(area) = self.insert_hint_area(insert_hint) {
-                self.insert_hint_buffer
-                    .update(area.size, self.options.insert_hint.color.to_array_premul());
+                let view_rect = Rectangle::from_loc_and_size(area.loc.upscale(-1.), view_size);
+                self.insert_hint_element.update_render_elements(
+                    area.size,
+                    view_rect,
+                    Default::default(),
+                    self.scale.fractional_scale(),
+                );
             }
         }
     }
@@ -577,6 +582,8 @@ impl<W: LayoutElement> Workspace<W> {
             data.update(column);
         }
 
+        self.insert_hint_element.update_config(options.insert_hint);
+
         self.base_options = base_options;
         self.options = options;
     }
@@ -587,6 +594,8 @@ impl<W: LayoutElement> Workspace<W> {
                 tile.update_shaders();
             }
         }
+
+        self.insert_hint_element.update_shaders();
     }
 
     pub fn windows(&self) -> impl Iterator<Item = &W> + '_ {
@@ -2672,14 +2681,10 @@ impl<W: LayoutElement> Workspace<W> {
         // Draw the insert hint.
         if let Some(insert_hint) = &self.insert_hint {
             if let Some(area) = self.insert_hint_area(insert_hint) {
-                rv.push(
-                    TileRenderElement::SolidColor(SolidColorRenderElement::from_buffer(
-                        &self.insert_hint_buffer,
-                        area.loc,
-                        1.,
-                        Kind::Unspecified,
-                    ))
-                    .into(),
+                rv.extend(
+                    self.insert_hint_element
+                        .render(renderer, area.loc)
+                        .map(WorkspaceRenderElement::InsertHint),
                 );
             }
         }

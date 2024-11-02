@@ -64,6 +64,7 @@ use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
 pub mod focus_ring;
+pub mod insert_hint_element;
 pub mod monitor;
 pub mod opening_window;
 pub mod tile;

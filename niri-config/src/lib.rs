@@ -597,6 +597,8 @@ pub struct InsertHint {
     pub off: bool,
     #[knuffel(child, default = Self::default().color)]
     pub color: Color,
+    #[knuffel(child)]
+    pub gradient: Option<Gradient>,
 }
 
 impl Default for InsertHint {
@@ -604,6 +606,7 @@ impl Default for InsertHint {
         Self {
             off: false,
             color: Color::from_rgba8_unpremul(127, 200, 255, 128),
+            gradient: None,
         }
     }
 }
@@ -3051,6 +3054,7 @@ mod tests {
 
                 insert-hint {
                     color "rgb(255, 200, 127)"
+                    gradient from="rgba(10, 20, 30, 1.0)" to="#0080ffff" relative-to="workspace-view"
                 }
             }
 
@@ -3253,6 +3257,16 @@ mod tests {
                     insert_hint: InsertHint {
                         off: false,
                         color: Color::from_rgba8_unpremul(255, 200, 127, 255),
+                        gradient: Some(Gradient {
+                            from: Color::from_rgba8_unpremul(10, 20, 30, 255),
+                            to: Color::from_rgba8_unpremul(0, 128, 255, 255),
+                            angle: 180,
+                            relative_to: GradientRelativeTo::WorkspaceView,
+                            in_: GradientInterpolation {
+                                color_space: GradientColorSpace::Srgb,
+                                hue_interpolation: HueInterpolation::Shorter,
+                            },
+                        }),
                     },
                     preset_column_widths: vec![
                         PresetSize::Proportion(0.25),
