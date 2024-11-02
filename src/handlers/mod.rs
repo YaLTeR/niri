@@ -74,7 +74,7 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
-use crate::utils::{output_size, send_scale_transform};
+use crate::utils::{output_size, send_scale_transform, with_toplevel_role};
 use crate::{
     delegate_foreign_toplevel, delegate_gamma_control, delegate_mutter_x11_interop,
     delegate_output_management, delegate_screencopy,
@@ -459,12 +459,12 @@ impl ForeignToplevelHandler for State {
     fn set_fullscreen(&mut self, wl_surface: WlSurface, wl_output: Option<WlOutput>) {
         if let Some((mapped, current_output)) = self.niri.layout.find_window_and_output(&wl_surface)
         {
-            if !mapped
-                .toplevel()
-                .current_state()
-                .capabilities
-                .contains(xdg_toplevel::WmCapabilities::Fullscreen)
-            {
+            let has_fullscreen_cap = with_toplevel_role(mapped.toplevel(), |role| {
+                role.current
+                    .capabilities
+                    .contains(xdg_toplevel::WmCapabilities::Fullscreen)
+            });
+            if !has_fullscreen_cap {
                 return;
             }
 

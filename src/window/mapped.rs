@@ -571,7 +571,7 @@ impl LayoutElement for Mapped {
 
     fn has_ssd(&self) -> bool {
         let toplevel = self.toplevel();
-        let mode = toplevel.current_state().decoration_mode;
+        let mode = with_toplevel_role(self.toplevel(), |role| role.current.decoration_mode);
 
         match mode {
             Some(zxdg_toplevel_decoration_v1::Mode::ServerSide) => true,
@@ -712,10 +712,11 @@ impl LayoutElement for Mapped {
     }
 
     fn is_fullscreen(&self) -> bool {
-        self.toplevel()
-            .current_state()
-            .states
-            .contains(xdg_toplevel::State::Fullscreen)
+        with_toplevel_role(self.toplevel(), |role| {
+            role.current
+                .states
+                .contains(xdg_toplevel::State::Fullscreen)
+        })
     }
 
     fn is_pending_fullscreen(&self) -> bool {
