@@ -2258,8 +2258,6 @@ impl<W: LayoutElement> Layout<W> {
                     .find(|ws| ws.id() == ws_id)
                     .unwrap();
 
-                // TODO: empty workspaces need to reset their view position right away for this to
-                // look right.
                 let position = ws.get_insert_position(move_.pointer_pos_within_output - offset);
                 ws.set_insert_hint(InsertHint {
                     position,
