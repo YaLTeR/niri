@@ -113,7 +113,7 @@ impl PointerGrab<State> for MoveGrab {
                     .output_under(handle.current_location())
                     .map(|(output, _)| output)
                     .cloned();
-                // TODO: workspace switch gesture.
+                // FIXME: workspace switch gesture.
                 if let Some(output) = output {
                     self.is_moving = true;
                     data.niri.layout.view_offset_gesture_begin(&output, false);
