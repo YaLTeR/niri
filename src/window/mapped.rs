@@ -15,7 +15,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
-use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData};
+use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
 use crate::handlers::KdeDecorationsModeState;
@@ -33,7 +33,7 @@ use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
-use crate::utils::{send_scale_transform, ResizeEdge};
+use crate::utils::{send_scale_transform, with_toplevel_role, ResizeEdge};
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -631,14 +631,7 @@ impl LayoutElement for Mapped {
         let _span =
             trace_span!("configure_intent", surface = ?self.toplevel().wl_surface().id()).entered();
 
-        with_states(self.toplevel().wl_surface(), |states| {
-            let attributes = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-
+        with_toplevel_role(self.toplevel(), |attributes| {
             if let Some(server_pending) = &attributes.server_pending {
                 let current_server = attributes.current_server_state();
                 if server_pending != current_server {

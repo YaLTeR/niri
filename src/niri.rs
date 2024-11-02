@@ -1541,7 +1541,7 @@ impl State {
         to_introspect: &async_channel::Sender<NiriToIntrospect>,
         msg: IntrospectToNiri,
     ) {
-        use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+        use crate::utils::with_toplevel_role;
 
         let IntrospectToNiri::GetWindows = msg;
         let _span = tracy_client::span!("GetWindows");
@@ -1549,21 +1549,8 @@ impl State {
         let mut windows = HashMap::new();
 
         self.niri.layout.with_windows(|mapped, _, _| {
-            let wl_surface = mapped
-                .window
-                .toplevel()
-                .expect("no X11 support")
-                .wl_surface();
-
             let id = mapped.id().get();
-            let props = with_states(wl_surface, |states| {
-                let role = states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-
+            let props = with_toplevel_role(mapped.toplevel(), |role| {
                 gnome_shell_introspect::WindowProperties {
                     title: role.title.clone().unwrap_or_default(),
                     app_id: role.app_id.clone().unwrap_or_default(),
