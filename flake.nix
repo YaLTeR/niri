@@ -32,7 +32,7 @@
           libclang,
           libdisplay-info,
           libinput,
-          libseat,
+          seatd,
           libxkbcommon,
           mesa,
           pango,
@@ -90,7 +90,7 @@
               libGL
               libdisplay-info
               libinput
-              libseat
+              seatd
               libxkbcommon
               mesa # libgbm
               pango
