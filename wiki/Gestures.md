@@ -10,6 +10,8 @@ There are several gestures in niri.
 
 You can move windows by holding <kbd>Mod</kbd> and the left mouse button.
 
+You can customize the look of the window insertion preview in the `insert-hint` [layout config](./Configuration:-Layout.md) section.
+
 #### Interactive Resize
 
 <sup>Since: 0.1.6</sup>
