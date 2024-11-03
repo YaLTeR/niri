@@ -83,7 +83,7 @@ impl XdgShellHandler for State {
                     if focus.id().same_client_as(&wl_surface.id()) {
                         // Deny move requests from DnD grabs to work around
                         // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                        let is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+                        let is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
 
                         if !is_dnd_grab {
                             grab_start_data =
@@ -103,8 +103,7 @@ impl XdgShellHandler for State {
                         if focus.id().same_client_as(&wl_surface.id()) {
                             // Deny move requests from DnD grabs to work around
                             // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                            let is_dnd_grab =
-                                grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+                            let is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
 
                             if !is_dnd_grab {
                                 grab_start_data =
