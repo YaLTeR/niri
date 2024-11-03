@@ -1320,8 +1320,13 @@ impl State {
         self.niri.tablet_cursor_location = None;
 
         // Check if we have an active pointer constraint.
+        //
+        // FIXME: ideally this should use the pointer focus with up-to-date global location.
         let mut pointer_confined = None;
         if let Some(under) = &self.niri.pointer_contents.surface {
+            // No need to check if the pointer focus surface matches, because here we're checking
+            // for an already-active constraint, and the constraint is deactivated when the focused
+            // surface changes.
             let pos_within_surface = pos - under.1;
 
             let mut pointer_locked = false;
@@ -1583,7 +1588,6 @@ impl State {
                             };
                             let grab = MoveGrab::new(start_data, window.clone());
                             pointer.set_grab(self, grab, serial, Focus::Clear);
-                            self.niri.pointer_grab_ongoing = true;
                             self.niri
                                 .cursor_manager
                                 .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
@@ -1649,7 +1653,6 @@ impl State {
                                 };
                                 let grab = ResizeGrab::new(start_data, window.clone());
                                 pointer.set_grab(self, grab, serial, Focus::Clear);
-                                self.niri.pointer_grab_ongoing = true;
                                 self.niri.cursor_manager.set_cursor_image(
                                     CursorImageStatus::Named(edges.cursor_icon()),
                                 );
@@ -1685,7 +1688,6 @@ impl State {
                         };
                         let grab = SpatialMovementGrab::new(start_data, output);
                         pointer.set_grab(self, grab, serial, Focus::Clear);
-                        self.niri.pointer_grab_ongoing = true;
                         self.niri
                             .cursor_manager
                             .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));

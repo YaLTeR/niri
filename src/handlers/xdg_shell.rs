@@ -148,7 +148,6 @@ impl XdgShellHandler for State {
             PointerOrTouchStartData::Pointer(start_data) => {
                 let grab = MoveGrab::new(start_data, window);
                 pointer.set_grab(self, grab, serial, Focus::Clear);
-                self.niri.pointer_grab_ongoing = true;
             }
             PointerOrTouchStartData::Touch(start_data) => {
                 let touch = self.niri.seat.get_touch().unwrap();
@@ -246,7 +245,6 @@ impl XdgShellHandler for State {
             PointerOrTouchStartData::Pointer(start_data) => {
                 let grab = ResizeGrab::new(start_data, window);
                 pointer.set_grab(self, grab, serial, Focus::Clear);
-                self.niri.pointer_grab_ongoing = true;
             }
             PointerOrTouchStartData::Touch(start_data) => {
                 let touch = self.niri.seat.get_touch().unwrap();

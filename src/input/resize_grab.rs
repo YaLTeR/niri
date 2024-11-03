@@ -22,7 +22,6 @@ impl ResizeGrab {
 
     fn on_ungrab(&mut self, state: &mut State) {
         state.niri.layout.interactive_resize_end(&self.window);
-        state.niri.pointer_grab_ongoing = false;
         state
             .niri
             .cursor_manager

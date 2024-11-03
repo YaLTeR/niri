@@ -282,8 +282,6 @@ pub struct Niri {
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
-    // FIXME: this should be able to be removed once PointerFocus takes grabs into account.
-    pub pointer_grab_ongoing: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -1877,7 +1875,6 @@ impl Niri {
             pointer_contents: PointContents::default(),
             pointer_hidden: false,
             pointer_inactivity_timer: None,
-            pointer_grab_ongoing: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -4526,8 +4523,7 @@ impl Niri {
         let Some((surface, surface_loc)) = &self.pointer_contents.surface else {
             return;
         };
-
-        if self.pointer_grab_ongoing {
+        if Some(surface) != pointer.current_focus().as_ref() {
             return;
         }
 

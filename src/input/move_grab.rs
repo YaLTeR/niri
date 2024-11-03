@@ -34,7 +34,6 @@ impl MoveGrab {
         state.niri.layout.interactive_move_end(&self.window);
         // FIXME: only redraw the window output.
         state.niri.queue_redraw_all();
-        state.niri.pointer_grab_ongoing = false;
         state
             .niri
             .cursor_manager
