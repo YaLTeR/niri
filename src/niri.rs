@@ -588,8 +588,6 @@ impl State {
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
         let under = self.niri.contents_under(location);
-        self.niri
-            .maybe_activate_pointer_constraint(location, &under);
         self.niri.pointer_contents.clone_from(&under);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
@@ -603,6 +601,8 @@ impl State {
             },
         );
         pointer.frame(self);
+
+        self.niri.maybe_activate_pointer_constraint();
 
         // We do not show the pointer on programmatic or keyboard movement.
 
@@ -735,9 +735,6 @@ impl State {
             return false;
         }
 
-        self.niri
-            .maybe_activate_pointer_constraint(location, &under);
-
         self.niri.pointer_contents.clone_from(&under);
 
         pointer.motion(
@@ -749,6 +746,8 @@ impl State {
                 time: get_monotonic_time().as_millis() as u32,
             },
         );
+
+        self.niri.maybe_activate_pointer_constraint();
 
         true
     }
@@ -4517,17 +4516,21 @@ impl Niri {
         output_state.lock_surface = Some(surface);
     }
 
-    pub fn maybe_activate_pointer_constraint(
-        &self,
-        new_pos: Point<f64, Logical>,
-        new_under: &PointContents,
-    ) {
-        let Some((surface, surface_loc)) = &new_under.surface else {
+    /// Activates the pointer constraint if necessary according to the current pointer contents.
+    ///
+    /// Make sure the pointer location and contents are up to date before calling this.
+    pub fn maybe_activate_pointer_constraint(&self) {
+        let pointer = self.seat.get_pointer().unwrap();
+        let pointer_pos = pointer.current_location();
+
+        let Some((surface, surface_loc)) = &self.pointer_contents.surface else {
             return;
         };
+
         if self.pointer_grab_ongoing {
             return;
         }
+
         let pointer = &self.seat.get_pointer().unwrap();
         with_pointer_constraint(surface, pointer, |constraint| {
             let Some(constraint) = constraint else { return };
@@ -4538,8 +4541,8 @@ impl Niri {
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
-                let new_pos_within_surface = new_pos - *surface_loc;
-                if !region.contains(new_pos_within_surface.to_i32_round()) {
+                let pos_within_surface = pointer_pos - *surface_loc;
+                if !region.contains(pos_within_surface.to_i32_round()) {
                     return;
                 }
             }

@@ -1448,9 +1448,6 @@ impl State {
 
         self.niri.handle_focus_follows_mouse(&under);
 
-        // Activate a new confinement if necessary.
-        self.niri.maybe_activate_pointer_constraint(new_pos, &under);
-
         self.niri.pointer_contents.clone_from(&under);
 
         pointer.motion(
@@ -1474,6 +1471,9 @@ impl State {
         );
 
         pointer.frame(self);
+
+        // Activate a new confinement if necessary.
+        self.niri.maybe_activate_pointer_constraint();
 
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
@@ -1513,7 +1513,6 @@ impl State {
 
         self.niri.handle_focus_follows_mouse(&under);
 
-        self.niri.maybe_activate_pointer_constraint(pos, &under);
         self.niri.pointer_contents.clone_from(&under);
 
         pointer.motion(
@@ -1527,6 +1526,8 @@ impl State {
         );
 
         pointer.frame(self);
+
+        self.niri.maybe_activate_pointer_constraint();
 
         // We moved the pointer, show it.
         self.niri.pointer_hidden = false;

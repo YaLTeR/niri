@@ -137,11 +137,12 @@ impl TabletSeatHandler for State {
 delegate_tablet_manager!(State);
 
 impl PointerConstraintsHandler for State {
-    fn new_constraint(&mut self, _surface: &WlSurface, pointer: &PointerHandle<Self>) {
-        self.niri.maybe_activate_pointer_constraint(
-            pointer.current_location(),
-            &self.niri.pointer_contents,
-        );
+    fn new_constraint(&mut self, _surface: &WlSurface, _pointer: &PointerHandle<Self>) {
+        // Pointer constraints track pointer focus internally, so make sure it's up to date before
+        // activating a new one.
+        self.refresh_pointer_contents();
+
+        self.niri.maybe_activate_pointer_constraint();
     }
 
     fn cursor_position_hint(
