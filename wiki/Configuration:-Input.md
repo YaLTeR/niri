@@ -144,7 +144,7 @@ A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackb
 - `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
-- `scroll-button`: the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
+- `scroll-button`: <sup>Since: 0.1.10</sup> the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
 - `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
 Settings specific to `touchpad`s:
