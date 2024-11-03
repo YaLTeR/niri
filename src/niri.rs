@@ -110,12 +110,13 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
-use crate::handlers::configure_lock_surface;
+use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
+use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -261,15 +262,26 @@ pub struct Niri {
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
     pub dnd_icon: Option<DndIcon>,
-    pub pointer_focus: PointerFocus,
+    /// Contents under pointer.
+    ///
+    /// Periodically updated: on motion and other events and in the loop callback. If you require
+    /// the real up-to-date contents somewhere, it's better to recompute on the spot.
+    ///
+    /// This is not pointer focus. I.e. during a click grab, the pointer focus remains on the
+    /// client with the grab, but this field will keep updating to the latest contents as if no
+    /// grab was active.
+    ///
+    /// This is primarily useful for emitting pointer motion events for surfaces that move
+    /// underneath the cursor on their own (i.e. when the tiling layout moves). In this case, not
+    /// taking grabs into account is expected, because we pass the information to pointer.motion()
+    /// which passes it down through grabs, which decide what to do with it as they see fit.
+    pub pointer_contents: PointContents,
     /// Whether the pointer is hidden, for example due to a previous touch input.
     ///
     /// When this happens, the pointer also loses any focus. This is so that touch can prevent
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
-    // FIXME: this should be able to be removed once PointerFocus takes grabs into account.
-    pub pointer_grab_ongoing: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -385,10 +397,10 @@ pub enum KeyboardFocus {
 }
 
 #[derive(Default, Clone, PartialEq)]
-pub struct PointerFocus {
-    // Output under pointer.
+pub struct PointContents {
+    // Output under point.
     pub output: Option<Output>,
-    // Surface under pointer and its location in global coordinate space.
+    // Surface under point and its location in the global coordinate space.
     pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
     pub window: Option<Window>,
@@ -552,7 +564,7 @@ impl State {
         self.niri.refresh_pointer_outputs();
         self.niri.global_space.refresh();
         self.niri.refresh_idle_inhibit();
-        self.refresh_pointer_focus();
+        self.refresh_pointer_contents();
         foreign_toplevel::refresh(self);
         self.niri.refresh_window_rules();
         self.refresh_ipc_outputs();
@@ -573,10 +585,8 @@ impl State {
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
-        let under = self.niri.surface_under_and_global_space(location);
-        self.niri
-            .maybe_activate_pointer_constraint(location, &under);
-        self.niri.pointer_focus.clone_from(&under);
+        let under = self.niri.contents_under(location);
+        self.niri.pointer_contents.clone_from(&under);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         pointer.motion(
@@ -590,9 +600,9 @@ impl State {
         );
         pointer.frame(self);
 
-        // We moved the pointer, show it.
-        self.niri.pointer_hidden = false;
-        self.niri.reset_pointer_inactivity_timer();
+        self.niri.maybe_activate_pointer_constraint();
+
+        // We do not show the pointer on programmatic or keyboard movement.
 
         // FIXME: granular
         self.niri.queue_redraw_all();
@@ -677,8 +687,8 @@ impl State {
         self.move_cursor_to_focused_tile(CenterCoords::Both)
     }
 
-    pub fn refresh_pointer_focus(&mut self) {
-        let _span = tracy_client::span!("Niri::refresh_pointer_focus");
+    pub fn refresh_pointer_contents(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_pointer_contents");
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
@@ -693,36 +703,37 @@ impl State {
             }
         }
 
-        if !self.update_pointer_focus() {
+        if !self.update_pointer_contents() {
             return;
         }
 
         pointer.frame(self);
+
+        // Pointer motion from a surface to nothing triggers a cursor change to default, which
+        // means we may need to redraw.
+
         // FIXME: granular
         self.niri.queue_redraw_all();
     }
 
-    pub fn update_pointer_focus(&mut self) -> bool {
-        let _span = tracy_client::span!("Niri::update_pointer_focus");
+    pub fn update_pointer_contents(&mut self) -> bool {
+        let _span = tracy_client::span!("Niri::update_pointer_contents");
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
         let under = if self.niri.pointer_hidden {
-            PointerFocus::default()
+            PointContents::default()
         } else {
-            self.niri.surface_under_and_global_space(location)
+            self.niri.contents_under(location)
         };
 
-        // We're not changing the global cursor location here, so if the focus did not change, then
-        // nothing changed.
-        if self.niri.pointer_focus == under {
+        // We're not changing the global cursor location here, so if the contents did not change,
+        // then nothing changed.
+        if self.niri.pointer_contents == under {
             return false;
         }
 
-        self.niri
-            .maybe_activate_pointer_constraint(location, &under);
-
-        self.niri.pointer_focus.clone_from(&under);
+        self.niri.pointer_contents.clone_from(&under);
 
         pointer.motion(
             self,
@@ -733,6 +744,8 @@ impl State {
                 time: get_monotonic_time().as_millis() as u32,
             },
         );
+
+        self.niri.maybe_activate_pointer_constraint();
 
         true
     }
@@ -1542,7 +1555,7 @@ impl State {
         to_introspect: &async_channel::Sender<NiriToIntrospect>,
         msg: IntrospectToNiri,
     ) {
-        use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+        use crate::utils::with_toplevel_role;
 
         let IntrospectToNiri::GetWindows = msg;
         let _span = tracy_client::span!("GetWindows");
@@ -1550,21 +1563,8 @@ impl State {
         let mut windows = HashMap::new();
 
         self.niri.layout.with_windows(|mapped, _, _| {
-            let wl_surface = mapped
-                .window
-                .toplevel()
-                .expect("no X11 support")
-                .wl_surface();
-
             let id = mapped.id().get();
-            let props = with_states(wl_surface, |states| {
-                let role = states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-
+            let props = with_toplevel_role(mapped.toplevel(), |role| {
                 gnome_shell_introspect::WindowProperties {
                     title: role.title.clone().unwrap_or_default(),
                     app_id: role.app_id.clone().unwrap_or_default(),
@@ -1694,6 +1694,18 @@ impl Niri {
                 is_tty && !client.get_data::<ClientState>().unwrap().restricted
             });
         let activation_state = XdgActivationState::new::<State>(&display_handle);
+        event_loop
+            .insert_source(
+                Timer::from_duration(XDG_ACTIVATION_TOKEN_TIMEOUT),
+                |_, _, state| {
+                    state.niri.activation_state.retain_tokens(|_, token_data| {
+                        token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT
+                    });
+                    TimeoutAction::ToDuration(XDG_ACTIVATION_TOKEN_TIMEOUT)
+                },
+            )
+            .unwrap();
+
         let mutter_x11_interop_state =
             MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
 
@@ -1872,10 +1884,9 @@ impl Niri {
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
             dnd_icon: None,
-            pointer_focus: PointerFocus::default(),
+            pointer_contents: PointContents::default(),
             pointer_hidden: false,
             pointer_inactivity_timer: None,
-            pointer_grab_ongoing: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -2322,13 +2333,14 @@ impl Niri {
         self.window_under(pos)
     }
 
-    /// Returns the surface under cursor and its position in the global space.
+    /// Returns contents under the given point.
     ///
-    /// Pointer needs location in global space, and focused window location compatible with that
-    /// global space. We don't have a global space for all windows, but this function converts the
-    /// window location temporarily to the current global space.
-    pub fn surface_under_and_global_space(&mut self, pos: Point<f64, Logical>) -> PointerFocus {
-        let mut rv = PointerFocus::default();
+    /// We don't have a proper global space for all windows, so this function converts window
+    /// locations to global space according to where they are rendered.
+    ///
+    /// This function does not take pointer or touch grabs into account.
+    pub fn contents_under(&mut self, pos: Point<f64, Logical>) -> PointContents {
+        let mut rv = PointContents::default();
 
         let Some((output, pos_within_output)) = self.output_under(pos) else {
             return rv;
@@ -3076,6 +3088,10 @@ impl Niri {
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
         let monitor_elements: Vec<_> = mon.render_elements(renderer, target).collect();
+        let float_elements: Vec<_> = self
+            .layout
+            .render_floating_for_output(renderer, output, target)
+            .collect();
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
@@ -3106,10 +3122,12 @@ impl Niri {
 
         // Then the regular monitor elements and the top layer in varying order.
         if mon.render_above_top_layer() {
+            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
             extend_from_layer(&mut elements, Layer::Top);
         } else {
             extend_from_layer(&mut elements, Layer::Top);
+            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
         }
 
@@ -3151,11 +3169,7 @@ impl Niri {
                 }
             }
 
-            state.unfinished_animations_remain = self
-                .layout
-                .monitor_for_output(output)
-                .unwrap()
-                .are_animations_ongoing();
+            state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
 
             self.config_error_notification
                 .advance_animations(target_presentation_time);
@@ -4511,17 +4525,20 @@ impl Niri {
         output_state.lock_surface = Some(surface);
     }
 
-    pub fn maybe_activate_pointer_constraint(
-        &self,
-        new_pos: Point<f64, Logical>,
-        new_under: &PointerFocus,
-    ) {
-        let Some((surface, surface_loc)) = &new_under.surface else {
+    /// Activates the pointer constraint if necessary according to the current pointer contents.
+    ///
+    /// Make sure the pointer location and contents are up to date before calling this.
+    pub fn maybe_activate_pointer_constraint(&self) {
+        let pointer = self.seat.get_pointer().unwrap();
+        let pointer_pos = pointer.current_location();
+
+        let Some((surface, surface_loc)) = &self.pointer_contents.surface else {
             return;
         };
-        if self.pointer_grab_ongoing {
+        if Some(surface) != pointer.current_focus().as_ref() {
             return;
         }
+
         let pointer = &self.seat.get_pointer().unwrap();
         with_pointer_constraint(surface, pointer, |constraint| {
             let Some(constraint) = constraint else { return };
@@ -4532,8 +4549,8 @@ impl Niri {
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
-                let new_pos_within_surface = new_pos - *surface_loc;
-                if !region.contains(new_pos_within_surface.to_i32_round()) {
+                let pos_within_surface = pointer_pos - *surface_loc;
+                if !region.contains(pos_within_surface.to_i32_round()) {
                     return;
                 }
             }
@@ -4605,7 +4622,7 @@ impl Niri {
         }
     }
 
-    pub fn handle_focus_follows_mouse(&mut self, new_focus: &PointerFocus) {
+    pub fn handle_focus_follows_mouse(&mut self, new_focus: &PointContents) {
         let Some(ffm) = self.config.borrow().input.focus_follows_mouse else {
             return;
         };
@@ -4616,7 +4633,7 @@ impl Niri {
         }
 
         // Recompute the current pointer focus because we don't update it during animations.
-        let current_focus = self.surface_under_and_global_space(pointer.current_location());
+        let current_focus = self.contents_under(pointer.current_location());
 
         if let Some(output) = &new_focus.output {
             if current_focus.output.as_ref() != Some(output) {
@@ -4797,6 +4814,7 @@ impl ClientData for ClientState {
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
+        Tile = TileRenderElement<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,

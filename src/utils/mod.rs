@@ -17,8 +17,11 @@ use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
-use smithay::wayland::compositor::{send_surface_state, SurfaceData};
+use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
 use smithay::wayland::fractional_scale::with_fractional_scale;
+use smithay::wayland::shell::xdg::{
+    ToplevelSurface, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
+};
 
 pub mod id;
 pub mod scale;
@@ -219,6 +222,22 @@ pub fn write_png_rgba8(
 pub fn output_matches_name(output: &Output, target: &str) -> bool {
     let name = output.user_data().get::<OutputName>().unwrap();
     name.matches(target)
+}
+
+pub fn with_toplevel_role<T>(
+    toplevel: &ToplevelSurface,
+    f: impl FnOnce(&mut XdgToplevelSurfaceRoleAttributes) -> T,
+) -> T {
+    with_states(toplevel.wl_surface(), |states| {
+        let mut role = states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap();
+
+        f(&mut role)
+    })
 }
 
 #[cfg(feature = "dbus")]

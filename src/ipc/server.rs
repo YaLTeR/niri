@@ -19,13 +19,11 @@ use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Resp
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
-use smithay::wayland::compositor::with_states;
-use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 
 use crate::backend::IpcOutputMap;
 use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
-use crate::utils::version;
+use crate::utils::{version, with_toplevel_role};
 use crate::window::Mapped;
 
 // If an event stream client fails to read events fast enough that we accumulate more than this
@@ -361,22 +359,12 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
 }
 
 fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_ipc::Window {
-    let wl_surface = mapped.toplevel().wl_surface();
-    with_states(wl_surface, |states| {
-        let role = states
-            .data_map
-            .get::<XdgToplevelSurfaceData>()
-            .unwrap()
-            .lock()
-            .unwrap();
-
-        niri_ipc::Window {
-            id: mapped.id().get(),
-            title: role.title.clone(),
-            app_id: role.app_id.clone(),
-            workspace_id: workspace_id.map(|id| id.get()),
-            is_focused: mapped.is_focused(),
-        }
+    with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
+        id: mapped.id().get(),
+        title: role.title.clone(),
+        app_id: role.app_id.clone(),
+        workspace_id: workspace_id.map(|id| id.get()),
+        is_focused: mapped.is_focused(),
     })
 }
 
@@ -551,28 +539,20 @@ impl State {
             }
 
             let Some(ipc_win) = state.windows.get(&id) else {
-                let window = make_ipc_window(mapped, Some(ws_id));
+                let window = make_ipc_window(mapped, ws_id);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             };
 
-            let workspace_id = Some(ws_id.get());
+            let workspace_id = ws_id.map(|id| id.get());
             let mut changed = ipc_win.workspace_id != workspace_id;
 
-            let wl_surface = mapped.toplevel().wl_surface();
-            changed |= with_states(wl_surface, |states| {
-                let role = states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-
+            changed |= with_toplevel_role(mapped.toplevel(), |role| {
                 ipc_win.title != role.title || ipc_win.app_id != role.app_id
             });
 
             if changed {
-                let window = make_ipc_window(mapped, Some(ws_id));
+                let window = make_ipc_window(mapped, ws_id);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             }

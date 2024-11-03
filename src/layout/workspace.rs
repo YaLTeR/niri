@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{
-    CenterFocusedColumn, OutputName, PresetSize, Struts, Workspace as WorkspaceConfig,
+    CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Struts, Workspace as WorkspaceConfig,
 };
 use niri_ipc::SizeChange;
 use ordered_float::NotNan;
@@ -16,7 +16,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
-use super::tile::{Tile, TileRenderElement};
+use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
+use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
@@ -106,6 +107,12 @@ pub struct Workspace<W: LayoutElement> {
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
 
+    /// Indication where an interactively-moved window is about to be placed.
+    insert_hint: Option<InsertHint>,
+
+    /// Insert hint element for rendering.
+    insert_hint_element: InsertHintElement,
+
     /// Configurable properties of the layout as received from the parent monitor.
     pub(super) base_options: Rc<Options>,
 
@@ -117,6 +124,20 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum InsertPosition {
+    NewColumn(usize),
+    InColumn(usize, usize),
+}
+
+#[derive(Debug)]
+pub struct InsertHint {
+    pub position: InsertPosition,
+    pub width: ColumnWidth,
+    pub is_full_width: bool,
+    pub corner_radius: CornerRadius,
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +173,7 @@ niri_render_elements! {
     WorkspaceRenderElement<R> => {
         Tile = TileRenderElement<R>,
         ClosingWindow = ClosingWindowRenderElement,
+        InsertHint = InsertHintRenderElement,
     }
 }
 
@@ -418,6 +440,8 @@ impl<W: LayoutElement> Workspace<W> {
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
+            insert_hint: None,
+            insert_hint_element: InsertHintElement::new(options.insert_hint),
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -456,6 +480,8 @@ impl<W: LayoutElement> Workspace<W> {
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
+            insert_hint: None,
+            insert_hint_element: InsertHintElement::new(options.insert_hint),
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -534,6 +560,18 @@ impl<W: LayoutElement> Workspace<W> {
             let view_rect = Rectangle::from_loc_and_size(col_pos, view_size);
             col.update_render_elements(is_active, view_rect);
         }
+
+        if let Some(insert_hint) = &self.insert_hint {
+            if let Some(area) = self.insert_hint_area(insert_hint) {
+                let view_rect = Rectangle::from_loc_and_size(area.loc.upscale(-1.), view_size);
+                self.insert_hint_element.update_render_elements(
+                    area.size,
+                    view_rect,
+                    insert_hint.corner_radius,
+                    self.scale.fractional_scale(),
+                );
+            }
+        }
     }
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
@@ -545,6 +583,8 @@ impl<W: LayoutElement> Workspace<W> {
             data.update(column);
         }
 
+        self.insert_hint_element.update_config(options.insert_hint);
+
         self.base_options = base_options;
         self.options = options;
     }
@@ -555,6 +595,8 @@ impl<W: LayoutElement> Workspace<W> {
                 tile.update_shaders();
             }
         }
+
+        self.insert_hint_element.update_shaders();
     }
 
     pub fn windows(&self) -> impl Iterator<Item = &W> + '_ {
@@ -565,10 +607,11 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn windows_mut(&mut self) -> impl Iterator<Item = &mut W> + '_ {
-        self.columns
-            .iter_mut()
-            .flat_map(|col| col.tiles.iter_mut())
-            .map(Tile::window_mut)
+        self.tiles_mut().map(Tile::window_mut)
+    }
+
+    pub fn tiles_mut(&mut self) -> impl Iterator<Item = &mut Tile<W>> + '_ {
+        self.columns.iter_mut().flat_map(|col| col.tiles.iter_mut())
     }
 
     pub fn current_output(&self) -> Option<&Output> {
@@ -731,13 +774,16 @@ impl<W: LayoutElement> Workspace<W> {
             });
     }
 
-    fn compute_new_view_offset_for_column_fit(&self, current_x: f64, idx: usize) -> f64 {
-        let col = &self.columns[idx];
-        if col.is_fullscreen {
+    fn compute_new_view_offset_fit(
+        &self,
+        current_x: f64,
+        col_x: f64,
+        width: f64,
+        is_fullscreen: bool,
+    ) -> f64 {
+        if is_fullscreen {
             return 0.;
         }
-
-        let new_col_x = self.column_x(idx);
 
         let final_x = if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
             current_x - self.view_offset + anim.to()
@@ -748,8 +794,8 @@ impl<W: LayoutElement> Workspace<W> {
         let new_offset = compute_new_view_offset(
             final_x + self.working_area.loc.x,
             self.working_area.size.w,
-            new_col_x,
-            col.width(),
+            col_x,
+            width,
             self.options.gaps,
         );
 
@@ -757,20 +803,43 @@ impl<W: LayoutElement> Workspace<W> {
         new_offset - self.working_area.loc.x
     }
 
-    fn compute_new_view_offset_for_column_centered(&self, current_x: f64, idx: usize) -> f64 {
-        let col = &self.columns[idx];
-        if col.is_fullscreen {
-            return self.compute_new_view_offset_for_column_fit(current_x, idx);
+    fn compute_new_view_offset_centered(
+        &self,
+        current_x: f64,
+        col_x: f64,
+        width: f64,
+        is_fullscreen: bool,
+    ) -> f64 {
+        if is_fullscreen {
+            return self.compute_new_view_offset_fit(current_x, col_x, width, is_fullscreen);
         }
-
-        let width = col.width();
 
         // Columns wider than the view are left-aligned (the fit code can deal with that).
         if self.working_area.size.w <= width {
-            return self.compute_new_view_offset_for_column_fit(current_x, idx);
+            return self.compute_new_view_offset_fit(current_x, col_x, width, is_fullscreen);
         }
 
         -(self.working_area.size.w - width) / 2. - self.working_area.loc.x
+    }
+
+    fn compute_new_view_offset_for_column_fit(&self, current_x: f64, idx: usize) -> f64 {
+        let col = &self.columns[idx];
+        self.compute_new_view_offset_fit(
+            current_x,
+            self.column_x(idx),
+            col.width(),
+            col.is_fullscreen,
+        )
+    }
+
+    fn compute_new_view_offset_for_column_centered(&self, current_x: f64, idx: usize) -> f64 {
+        let col = &self.columns[idx];
+        self.compute_new_view_offset_centered(
+            current_x,
+            self.column_x(idx),
+            col.width(),
+            col.is_fullscreen,
+        )
     }
 
     fn compute_new_view_offset_for_column(
@@ -958,6 +1027,71 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows_mut().find(|win| win.is_wl_surface(wl_surface))
     }
 
+    pub fn set_insert_hint(&mut self, insert_hint: InsertHint) {
+        if self.options.insert_hint.off {
+            return;
+        }
+        self.insert_hint = Some(insert_hint);
+    }
+
+    pub fn clear_insert_hint(&mut self) {
+        self.insert_hint = None;
+    }
+
+    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
+        if self.columns.is_empty() {
+            return InsertPosition::NewColumn(0);
+        }
+
+        let x = pos.x + self.view_pos();
+
+        // Aim for the center of the gap.
+        let x = x + self.options.gaps / 2.;
+        let y = pos.y + self.options.gaps / 2.;
+
+        // Insert position is before the first column.
+        if x < 0. {
+            return InsertPosition::NewColumn(0);
+        }
+
+        // Find the closest gap between columns.
+        let (closest_col_idx, col_x) = self
+            .column_xs(self.data.iter().copied())
+            .enumerate()
+            .min_by_key(|(_, col_x)| NotNan::new((col_x - x).abs()).unwrap())
+            .unwrap();
+
+        // Find the column containing the position.
+        let (col_idx, _) = self
+            .column_xs(self.data.iter().copied())
+            .enumerate()
+            .take_while(|(_, col_x)| *col_x <= x)
+            .last()
+            .unwrap_or((0, 0.));
+
+        // Insert position is past the last column.
+        if col_idx == self.columns.len() {
+            return InsertPosition::NewColumn(closest_col_idx);
+        }
+
+        // Find the closest gap between tiles.
+        let col = &self.columns[col_idx];
+        let (closest_tile_idx, tile_off) = col
+            .tile_offsets()
+            .enumerate()
+            .min_by_key(|(_, tile_off)| NotNan::new((tile_off.y - y).abs()).unwrap())
+            .unwrap();
+
+        // Return the closest among the vertical and the horizontal gap.
+        let vert_dist = (col_x - x).abs();
+        let hor_dist = (tile_off.y - y).abs();
+        if vert_dist <= hor_dist {
+            InsertPosition::NewColumn(closest_col_idx)
+        } else {
+            InsertPosition::InColumn(col_idx, closest_tile_idx)
+        }
+    }
+
     pub fn add_window(
         &mut self,
         col_idx: Option<usize>,
@@ -970,7 +1104,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.add_tile(col_idx, tile, activate, width, is_full_width, None);
     }
 
-    fn add_tile(
+    pub fn add_tile(
         &mut self,
         col_idx: Option<usize>,
         tile: Tile<W>,
@@ -1488,8 +1622,6 @@ impl<W: LayoutElement> Workspace<W> {
         window: &W::Id,
         blocker: TransactionBlocker,
     ) {
-        let output_scale = Scale::from(self.scale.fractional_scale());
-
         let (tile, mut tile_pos) = self
             .tiles_with_render_positions_mut(false)
             .find(|(tile, _)| tile.window().id() == window)
@@ -1537,6 +1669,19 @@ impl<W: LayoutElement> Workspace<W> {
             tile_pos.x -= offset;
         }
 
+        self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
+    }
+
+    pub fn start_close_animation_for_tile(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        snapshot: TileRenderSnapshot,
+        tile_size: Size<f64, Logical>,
+        tile_pos: Point<f64, Logical>,
+        blocker: TransactionBlocker,
+    ) {
+        let output_scale = Scale::from(self.scale.fractional_scale());
+
         let anim = Animation::new(0., 1., 0., self.options.animations.window_close.anim);
 
         let blocker = if self.options.disable_transactions {
@@ -1565,7 +1710,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     #[cfg(test)]
-    pub fn verify_invariants(&self) {
+    pub fn verify_invariants(&self, move_win_id: Option<&W::Id>) {
         use approx::assert_abs_diff_eq;
 
         let scale = self.scale.fractional_scale();
@@ -1601,7 +1746,11 @@ impl<W: LayoutElement> Workspace<W> {
                 );
             }
 
-            for (_, tile_pos) in self.tiles_with_render_positions() {
+            for (tile, tile_pos) in self.tiles_with_render_positions() {
+                if Some(tile.window().id()) != move_win_id {
+                    assert_eq!(tile.interactive_move_offset, Point::from((0., 0.)));
+                }
+
                 let rounded_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
 
                 // Tile positions must be rounded to physical pixels.
@@ -2046,7 +2195,7 @@ impl<W: LayoutElement> Workspace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    fn view_pos(&self) -> f64 {
+    pub fn view_pos(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset
     }
 
@@ -2123,7 +2272,9 @@ impl<W: LayoutElement> Workspace<W> {
         zip(tiles, offsets)
     }
 
-    fn tiles_with_render_positions(&self) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> {
+    pub fn tiles_with_render_positions(
+        &self,
+    ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> {
         let scale = self.scale.fractional_scale();
         let view_off = Point::from((-self.view_pos(), 0.));
         self.columns_in_render_order()
@@ -2139,7 +2290,7 @@ impl<W: LayoutElement> Workspace<W> {
             })
     }
 
-    fn tiles_with_render_positions_mut(
+    pub fn tiles_with_render_positions_mut(
         &mut self,
         round: bool,
     ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> {
@@ -2160,6 +2311,96 @@ impl<W: LayoutElement> Workspace<W> {
                         (tile, pos)
                     })
             })
+    }
+
+    fn insert_hint_area(&self, insert_hint: &InsertHint) -> Option<Rectangle<f64, Logical>> {
+        let mut hint_area = match insert_hint.position {
+            InsertPosition::NewColumn(column_index) => {
+                if column_index == 0 || column_index == self.columns.len() {
+                    let size =
+                        Size::from((300., self.working_area.size.h - self.options.gaps * 2.));
+                    let mut loc = Point::from((
+                        self.column_x(column_index),
+                        self.working_area.loc.y + self.options.gaps,
+                    ));
+                    if column_index == 0 && !self.columns.is_empty() {
+                        loc.x -= size.w + self.options.gaps;
+                    }
+                    Rectangle::from_loc_and_size(loc, size)
+                } else if column_index > self.columns.len() {
+                    error!("insert hint column index is out of range");
+                    return None;
+                } else {
+                    let size =
+                        Size::from((300., self.working_area.size.h - self.options.gaps * 2.));
+                    let loc = Point::from((
+                        self.column_x(column_index) - size.w / 2. - self.options.gaps / 2.,
+                        self.working_area.loc.y + self.options.gaps,
+                    ));
+                    Rectangle::from_loc_and_size(loc, size)
+                }
+            }
+            InsertPosition::InColumn(column_index, tile_index) => {
+                if column_index > self.columns.len() {
+                    error!("insert hint column index is out of range");
+                    return None;
+                }
+                if tile_index > self.columns[column_index].tiles.len() {
+                    error!("insert hint tile index is out of range");
+                    return None;
+                }
+
+                let (height, y) = if tile_index == 0 {
+                    (150., self.columns[column_index].tile_offset(tile_index).y)
+                } else if tile_index == self.columns[column_index].tiles.len() {
+                    (
+                        150.,
+                        self.columns[column_index].tile_offset(tile_index).y
+                            - self.options.gaps
+                            - 150.,
+                    )
+                } else {
+                    (
+                        300.,
+                        self.columns[column_index].tile_offset(tile_index).y
+                            - self.options.gaps / 2.
+                            - 150.,
+                    )
+                };
+
+                let size = Size::from((self.data[column_index].width, height));
+                let loc = Point::from((self.column_x(column_index), y));
+                Rectangle::from_loc_and_size(loc, size)
+            }
+        };
+
+        // First window on an empty workspace will cancel out any view offset. Replicate this
+        // effect here.
+        if self.columns.is_empty() {
+            let view_offset = if self.is_centering_focused_column() {
+                self.compute_new_view_offset_centered(0., 0., hint_area.size.w, false)
+            } else {
+                self.compute_new_view_offset_fit(0., 0., hint_area.size.w, false)
+            };
+            hint_area.loc.x -= view_offset;
+        } else {
+            hint_area.loc.x -= self.view_pos();
+        }
+
+        let view_size = self.view_size();
+
+        // Make sure the hint is at least partially visible.
+        if matches!(insert_hint.position, InsertPosition::NewColumn(_)) {
+            hint_area.loc.x = hint_area.loc.x.max(-hint_area.size.w / 2.);
+            hint_area.loc.x = hint_area.loc.x.min(view_size.w - hint_area.size.w / 2.);
+        }
+
+        // Round to physical pixels.
+        hint_area = hint_area
+            .to_physical_precise_round(self.scale.fractional_scale())
+            .to_logical(self.scale.fractional_scale());
+
+        Some(hint_area)
     }
 
     /// Returns the geometry of the active tile relative to and clamped to the view.
@@ -2438,7 +2679,18 @@ impl<W: LayoutElement> Workspace<W> {
 
         let mut rv = vec![];
 
-        // Draw the closing windows on top.
+        // Draw the insert hint.
+        if let Some(insert_hint) = &self.insert_hint {
+            if let Some(area) = self.insert_hint_area(insert_hint) {
+                rv.extend(
+                    self.insert_hint_element
+                        .render(renderer, area.loc)
+                        .map(WorkspaceRenderElement::InsertHint),
+                );
+            }
+        }
+
+        // Draw the closing windows on top of the other windows.
         let view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0.), self.view_size);
         for closing in self.closing_windows.iter().rev() {
             let elem = closing.render(renderer.as_gles_renderer(), view_rect, output_scale, target);
@@ -2732,6 +2984,10 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
+        if self.interactive_resize.is_some() {
+            return false;
+        }
+
         let col = self
             .columns
             .iter_mut()

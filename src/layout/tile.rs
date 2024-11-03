@@ -64,6 +64,9 @@ pub struct Tile<W: LayoutElement> {
     /// The animation of a tile visually moving vertically.
     move_y_animation: Option<MoveAnimation>,
 
+    /// Offset during the initial interactive move rubberband.
+    pub(super) interactive_move_offset: Point<f64, Logical>,
+
     /// Snapshot of the last render for use in the close animation.
     unmap_snapshot: Option<TileRenderSnapshot>,
 
@@ -90,7 +93,7 @@ niri_render_elements! {
     }
 }
 
-type TileRenderSnapshot =
+pub type TileRenderSnapshot =
     RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
 #[derive(Debug)]
@@ -123,6 +126,7 @@ impl<W: LayoutElement> Tile<W> {
             resize_animation: None,
             move_x_animation: None,
             move_y_animation: None,
+            interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
             scale,
@@ -305,6 +309,8 @@ impl<W: LayoutElement> Tile<W> {
             offset.y += move_.from * move_.anim.value();
         }
 
+        offset += self.interactive_move_offset;
+
         offset
     }
 
@@ -364,6 +370,11 @@ impl<W: LayoutElement> Tile<W> {
         });
     }
 
+    pub fn stop_move_animations(&mut self) {
+        self.move_x_animation = None;
+        self.move_y_animation = None;
+    }
+
     pub fn window(&self) -> &W {
         &self.window
     }
@@ -381,7 +392,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// Returns `None` if the border is hidden and `Some(width)` if it should be shown.
-    fn effective_border_width(&self) -> Option<f64> {
+    pub fn effective_border_width(&self) -> Option<f64> {
         if self.is_fullscreen {
             return None;
         }

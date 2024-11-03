@@ -15,7 +15,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
-use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData};
+use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 
 use super::{ResolvedWindowRules, WindowRef};
 use crate::handlers::KdeDecorationsModeState;
@@ -33,7 +33,7 @@ use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
-use crate::utils::{send_scale_transform, ResizeEdge};
+use crate::utils::{send_scale_transform, with_toplevel_role, ResizeEdge};
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -571,7 +571,7 @@ impl LayoutElement for Mapped {
 
     fn has_ssd(&self) -> bool {
         let toplevel = self.toplevel();
-        let mode = toplevel.current_state().decoration_mode;
+        let mode = with_toplevel_role(self.toplevel(), |role| role.current.decoration_mode);
 
         match mode {
             Some(zxdg_toplevel_decoration_v1::Mode::ServerSide) => true,
@@ -631,14 +631,7 @@ impl LayoutElement for Mapped {
         let _span =
             trace_span!("configure_intent", surface = ?self.toplevel().wl_surface().id()).entered();
 
-        with_states(self.toplevel().wl_surface(), |states| {
-            let attributes = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-
+        with_toplevel_role(self.toplevel(), |attributes| {
             if let Some(server_pending) = &attributes.server_pending {
                 let current_server = attributes.current_server_state();
                 if server_pending != current_server {
@@ -719,10 +712,11 @@ impl LayoutElement for Mapped {
     }
 
     fn is_fullscreen(&self) -> bool {
-        self.toplevel()
-            .current_state()
-            .states
-            .contains(xdg_toplevel::State::Fullscreen)
+        with_toplevel_role(self.toplevel(), |role| {
+            role.current
+                .states
+                .contains(xdg_toplevel::State::Fullscreen)
+        })
     }
 
     fn is_pending_fullscreen(&self) -> bool {

@@ -32,7 +32,7 @@
           libclang,
           libdisplay-info,
           libinput,
-          libseat,
+          seatd,
           libxkbcommon,
           mesa,
           pango,
@@ -90,7 +90,7 @@
               libGL
               libdisplay-info
               libinput
-              libseat
+              seatd
               libxkbcommon
               mesa # libgbm
               pango
@@ -123,7 +123,7 @@
 
             # Force linking with libEGL and libwayland-client
             # so they can be discovered by `dlopen()`
-            CARGO_BUILD_RUSTFLAGS = toString (
+            RUSTFLAGS = toString (
               map (arg: "-C link-arg=" + arg) [
                 "-Wl,--push-state,--no-as-needed"
                 "-lEGL"
@@ -208,7 +208,7 @@
               # in the package expression
               #
               # This should only be set with `CARGO_BUILD_RUSTFLAGS="$CARGO_BUILD_RUSTFLAGS -C your-flags"`
-              inherit (niri) CARGO_BUILD_RUSTFLAGS;
+              CARGO_BUILD_RUSTFLAGS = niri.RUSTFLAGS;
             };
           };
         }

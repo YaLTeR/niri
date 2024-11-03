@@ -423,6 +423,8 @@ pub struct Layout {
     pub focus_ring: FocusRing,
     #[knuffel(child, default)]
     pub border: Border,
+    #[knuffel(child, default)]
+    pub insert_hint: InsertHint,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetSize>,
     #[knuffel(child)]
@@ -444,6 +446,7 @@ impl Default for Layout {
         Self {
             focus_ring: Default::default(),
             border: Default::default(),
+            insert_hint: Default::default(),
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
             center_focused_column: Default::default(),
@@ -590,6 +593,26 @@ impl From<FocusRing> for Border {
     }
 }
 
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct InsertHint {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, default = Self::default().color)]
+    pub color: Color,
+    #[knuffel(child)]
+    pub gradient: Option<Gradient>,
+}
+
+impl Default for InsertHint {
+    fn default() -> Self {
+        Self {
+            off: false,
+            color: Color::from_rgba8_unpremul(127, 200, 255, 128),
+            gradient: None,
+        }
+    }
+}
+
 /// RGB color in [0, 1] with unpremultiplied alpha.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Color {
@@ -648,7 +671,7 @@ pub struct Cursor {
     #[knuffel(child, unwrap(argument), default = 24)]
     pub xcursor_size: u8,
     #[knuffel(child)]
-    pub hide_on_key_press: bool,
+    pub hide_when_typing: bool,
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
 }
@@ -658,7 +681,7 @@ impl Default for Cursor {
         Self {
             xcursor_theme: String::from("default"),
             xcursor_size: 24,
-            hide_on_key_press: false,
+            hide_when_typing: false,
             hide_after_inactive_ms: None,
         }
     }
@@ -3030,6 +3053,11 @@ mod tests {
                 }
 
                 center-focused-column "on-overflow"
+
+                insert-hint {
+                    color "rgb(255, 200, 127)"
+                    gradient from="rgba(10, 20, 30, 1.0)" to="#0080ffff" relative-to="workspace-view"
+                }
             }
 
             spawn-at-startup "alacritty" "-e" "fish"
@@ -3039,7 +3067,7 @@ mod tests {
             cursor {
                 xcursor-theme "breeze_cursors"
                 xcursor-size 16
-                hide-on-key-press
+                hide-when-typing
                 hide-after-inactive-ms 3000
             }
 
@@ -3228,6 +3256,20 @@ mod tests {
                         active_gradient: None,
                         inactive_gradient: None,
                     },
+                    insert_hint: InsertHint {
+                        off: false,
+                        color: Color::from_rgba8_unpremul(255, 200, 127, 255),
+                        gradient: Some(Gradient {
+                            from: Color::from_rgba8_unpremul(10, 20, 30, 255),
+                            to: Color::from_rgba8_unpremul(0, 128, 255, 255),
+                            angle: 180,
+                            relative_to: GradientRelativeTo::WorkspaceView,
+                            in_: GradientInterpolation {
+                                color_space: GradientColorSpace::Srgb,
+                                hue_interpolation: HueInterpolation::Shorter,
+                            },
+                        }),
+                    },
                     preset_column_widths: vec![
                         PresetSize::Proportion(0.25),
                         PresetSize::Proportion(0.5),
@@ -3260,7 +3302,7 @@ mod tests {
                 cursor: Cursor {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,
-                    hide_on_key_press: true,
+                    hide_when_typing: true,
                     hide_after_inactive_ms: Some(3000),
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),

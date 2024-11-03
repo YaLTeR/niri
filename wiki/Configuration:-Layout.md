@@ -42,6 +42,12 @@ layout {
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
     }
 
+    insert-hint {
+        // off
+        color "#ffc87f80"
+        // gradient from="#ffbb6680" to="#ffc88080" angle=45 relative-to="workspace-view"
+    }
+
     struts {
         // left 64
         // right 64
@@ -299,6 +305,26 @@ For example, `active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer 
 layout {
     border {
         active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer hue"
+    }
+}
+```
+
+### `insert-hint`
+
+<sup>Since: 0.1.10</sup> 
+
+Settings for the window insert position hint during an interactive window move.
+
+`off` disables the insert hint altogether.
+
+`color` and `gradient` let you change the color of the hint and have the same syntax as colors and gradients in border and focus ring.
+
+```kdl
+layout {
+    insert-hint {
+        // off
+        color "#ffc87f80"
+        gradient from="#ffbb6680" to="#ffc88080" angle=45 relative-to="workspace-view"
     }
 }
 ```

@@ -21,7 +21,7 @@ cursor {
     xcursor-theme "breeze_cursors"
     xcursor-size 48
 
-    hide-on-key-press
+    hide-when-typing
     hide-after-inactive-ms 1000
 }
 
@@ -111,7 +111,7 @@ cursor {
 }
 ```
 
-#### `hide-on-key-press`
+#### `hide-when-typing`
 
 <sup>Since: 0.1.10</sup>
 
@@ -119,7 +119,7 @@ If set, hides the cursor when pressing a key on the keyboard.
 
 ```kdl
 cursor {
-    hide-on-key-press
+    hide-when-typing
 }
 ```
 

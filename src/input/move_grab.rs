@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use smithay::backend::input::ButtonState;
 use smithay::desktop::Window;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
@@ -10,18 +13,27 @@ use smithay::utils::{IsAlive, Logical, Point};
 
 use crate::niri::State;
 
-pub struct ResizeGrab {
+pub struct MoveGrab {
     start_data: PointerGrabStartData<State>,
+    last_location: Point<f64, Logical>,
     window: Window,
+    is_moving: bool,
 }
 
-impl ResizeGrab {
+impl MoveGrab {
     pub fn new(start_data: PointerGrabStartData<State>, window: Window) -> Self {
-        Self { start_data, window }
+        Self {
+            last_location: start_data.location,
+            start_data,
+            window,
+            is_moving: false,
+        }
     }
 
     fn on_ungrab(&mut self, state: &mut State) {
-        state.niri.layout.interactive_resize_end(&self.window);
+        state.niri.layout.interactive_move_end(&self.window);
+        // FIXME: only redraw the window output.
+        state.niri.queue_redraw_all();
         state
             .niri
             .cursor_manager
@@ -29,7 +41,7 @@ impl ResizeGrab {
     }
 }
 
-impl PointerGrab<State> for ResizeGrab {
+impl PointerGrab<State> for MoveGrab {
     fn motion(
         &mut self,
         data: &mut State,
@@ -41,17 +53,35 @@ impl PointerGrab<State> for ResizeGrab {
         handle.motion(data, None, event);
 
         if self.window.alive() {
-            let delta = event.location - self.start_data.location;
-            let ongoing = data
-                .niri
-                .layout
-                .interactive_resize_update(&self.window, delta);
-            if ongoing {
+            if let Some((output, pos_within_output)) = data.niri.output_under(event.location) {
+                let output = output.clone();
+                let event_delta = event.location - self.last_location;
+                self.last_location = event.location;
+                let ongoing = data.niri.layout.interactive_move_update(
+                    &self.window,
+                    event_delta,
+                    output,
+                    pos_within_output,
+                );
+                if ongoing {
+                    let timestamp = Duration::from_millis(u64::from(event.time));
+                    if self.is_moving {
+                        data.niri.layout.view_offset_gesture_update(
+                            -event_delta.x,
+                            timestamp,
+                            false,
+                        );
+                    }
+                    // FIXME: only redraw the previous and the new output.
+                    data.niri.queue_redraw_all();
+                    return;
+                }
+            } else {
                 return;
             }
         }
 
-        // The resize is no longer ongoing.
+        // The move is no longer ongoing.
         handle.unset_grab(self, data, event.serial, event.time, true);
     }
 
@@ -73,6 +103,25 @@ impl PointerGrab<State> for ResizeGrab {
         event: &ButtonEvent,
     ) {
         handle.button(data, event);
+
+        // MouseButton::Middle
+        if event.button == 0x112 {
+            if event.state == ButtonState::Pressed {
+                let output = data
+                    .niri
+                    .output_under(handle.current_location())
+                    .map(|(output, _)| output)
+                    .cloned();
+                // FIXME: workspace switch gesture.
+                if let Some(output) = output {
+                    self.is_moving = true;
+                    data.niri.layout.view_offset_gesture_begin(&output, false);
+                }
+            } else if event.state == ButtonState::Released {
+                self.is_moving = false;
+                data.niri.layout.view_offset_gesture_end(false, None);
+            }
+        }
 
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.

@@ -1,11 +1,9 @@
 use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, WindowRule};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::wayland::compositor::with_states;
-use smithay::wayland::shell::xdg::{
-    ToplevelSurface, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
-};
+use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceRoleAttributes};
 
 use crate::layout::workspace::ColumnWidth;
+use crate::utils::with_toplevel_role;
 
 pub mod mapped;
 pub use mapped::Mapped;
@@ -144,15 +142,7 @@ impl ResolvedWindowRules {
 
         let mut resolved = ResolvedWindowRules::empty();
 
-        let toplevel = window.toplevel();
-        with_states(toplevel.wl_surface(), |states| {
-            let mut role = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-
+        with_toplevel_role(window.toplevel(), |role| {
             // Ensure server_pending like in Smithay's with_pending_state().
             if role.server_pending.is_none() {
                 role.server_pending = Some(role.current_server_state().clone());
@@ -169,7 +159,7 @@ impl ResolvedWindowRules {
                         }
                     }
 
-                    window_matches(window, &role, m)
+                    window_matches(window, role, m)
                 };
 
                 if !(rule.matches.is_empty() || rule.matches.iter().any(matches)) {

@@ -50,7 +50,6 @@ impl SpatialMovementGrab {
             state.niri.queue_redraw(&output);
         }
 
-        state.niri.pointer_grab_ongoing = false;
         state
             .niri
             .cursor_manager

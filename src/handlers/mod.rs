@@ -7,6 +7,7 @@ use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
@@ -74,11 +75,13 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
-use crate::utils::{output_size, send_scale_transform};
+use crate::utils::{output_size, send_scale_transform, with_toplevel_role};
 use crate::{
     delegate_foreign_toplevel, delegate_gamma_control, delegate_mutter_x11_interop,
     delegate_output_management, delegate_screencopy,
 };
+
+pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -137,11 +140,12 @@ impl TabletSeatHandler for State {
 delegate_tablet_manager!(State);
 
 impl PointerConstraintsHandler for State {
-    fn new_constraint(&mut self, _surface: &WlSurface, pointer: &PointerHandle<Self>) {
-        self.niri.maybe_activate_pointer_constraint(
-            pointer.current_location(),
-            &self.niri.pointer_focus,
-        );
+    fn new_constraint(&mut self, _surface: &WlSurface, _pointer: &PointerHandle<Self>) {
+        // Pointer constraints track pointer focus internally, so make sure it's up to date before
+        // activating a new one.
+        self.refresh_pointer_contents();
+
+        self.niri.maybe_activate_pointer_constraint();
     }
 
     fn cursor_position_hint(
@@ -158,19 +162,20 @@ impl PointerConstraintsHandler for State {
             return;
         }
 
-        // Logically the following two checks should always succeed (so, they should print
-        // error!()s if they fail). However, currently both can fail because niri's pointer focus
-        // doesn't take pointer grabs into account. So if you start, say, a middle-drag in Blender,
-        // then touchpad-swipe the window away, the niri pointer focus will change, even though the
-        // real pointer focus remains on the Blender surface due to the click grab.
+        // Note: this is surface under pointer, not pointer focus. So if you start, say, a
+        // middle-drag in Blender, then touchpad-swipe the window away, the surface under pointer
+        // will change, even though the real pointer focus remains on the Blender surface due to
+        // the click grab.
         //
-        // FIXME: add error!()s when niri pointer focus takes grabs into account. Alternatively,
-        // recompute the surface origin here (but that is a bit clunky).
-        let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface else {
+        // Ideally we would just use the constraint surface, but we need its origin. So this is
+        // more of a hack because pointer contents has the surface origin available.
+        //
+        // FIXME: use the constraint surface somehow, don't use pointer contents.
+        let Some((ref surface_under_pointer, origin)) = self.niri.pointer_contents.surface else {
             return;
         };
 
-        if focused_surface != surface {
+        if surface_under_pointer != surface {
             return;
         }
 
@@ -459,12 +464,12 @@ impl ForeignToplevelHandler for State {
     fn set_fullscreen(&mut self, wl_surface: WlSurface, wl_output: Option<WlOutput>) {
         if let Some((mapped, current_output)) = self.niri.layout.find_window_and_output(&wl_surface)
         {
-            if !mapped
-                .toplevel()
-                .current_state()
-                .capabilities
-                .contains(xdg_toplevel::WmCapabilities::Fullscreen)
-            {
+            let has_fullscreen_cap = with_toplevel_role(mapped.toplevel(), |role| {
+                role.current
+                    .capabilities
+                    .contains(xdg_toplevel::WmCapabilities::Fullscreen)
+            });
+            if !has_fullscreen_cap {
                 return;
             }
 
@@ -622,16 +627,18 @@ impl XdgActivationHandler for State {
 
     fn request_activation(
         &mut self,
-        _token: XdgActivationToken,
+        token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,
     ) {
-        if token_data.timestamp.elapsed().as_secs() < 10 {
+        if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&surface) {
                 let window = mapped.window.clone();
                 self.niri.layout.activate_window(&window);
                 self.niri.layer_shell_on_demand_focus = None;
                 self.niri.queue_redraw_all();
+
+                self.niri.activation_state.remove_token(&token);
             }
         }
     }
