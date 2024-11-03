@@ -262,7 +262,7 @@ pub struct Niri {
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
     pub dnd_icon: Option<DndIcon>,
-    pub pointer_focus: PointerFocus,
+    pub pointer_focus: PointContents,
     /// Whether the pointer is hidden, for example due to a previous touch input.
     ///
     /// When this happens, the pointer also loses any focus. This is so that touch can prevent
@@ -386,10 +386,10 @@ pub enum KeyboardFocus {
 }
 
 #[derive(Default, Clone, PartialEq)]
-pub struct PointerFocus {
-    // Output under pointer.
+pub struct PointContents {
+    // Output under point.
     pub output: Option<Output>,
-    // Surface under pointer and its location in global coordinate space.
+    // Surface under point and its location in the global coordinate space.
     pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
     pub window: Option<Window>,
@@ -574,7 +574,7 @@ impl State {
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
-        let under = self.niri.surface_under_and_global_space(location);
+        let under = self.niri.contents_under(location);
         self.niri
             .maybe_activate_pointer_constraint(location, &under);
         self.niri.pointer_focus.clone_from(&under);
@@ -707,9 +707,9 @@ impl State {
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
         let under = if self.niri.pointer_hidden {
-            PointerFocus::default()
+            PointContents::default()
         } else {
-            self.niri.surface_under_and_global_space(location)
+            self.niri.contents_under(location)
         };
 
         // We're not changing the global cursor location here, so if the focus did not change, then
@@ -1858,7 +1858,7 @@ impl Niri {
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
             dnd_icon: None,
-            pointer_focus: PointerFocus::default(),
+            pointer_focus: PointContents::default(),
             pointer_hidden: false,
             pointer_inactivity_timer: None,
             pointer_grab_ongoing: false,
@@ -2308,13 +2308,14 @@ impl Niri {
         self.window_under(pos)
     }
 
-    /// Returns the surface under cursor and its position in the global space.
+    /// Returns contents under the given point.
     ///
-    /// Pointer needs location in global space, and focused window location compatible with that
-    /// global space. We don't have a global space for all windows, but this function converts the
-    /// window location temporarily to the current global space.
-    pub fn surface_under_and_global_space(&mut self, pos: Point<f64, Logical>) -> PointerFocus {
-        let mut rv = PointerFocus::default();
+    /// We don't have a proper global space for all windows, so this function converts window
+    /// locations to global space according to where they are rendered.
+    ///
+    /// This function does not take pointer or touch grabs into account.
+    pub fn contents_under(&mut self, pos: Point<f64, Logical>) -> PointContents {
+        let mut rv = PointContents::default();
 
         let Some((output, pos_within_output)) = self.output_under(pos) else {
             return rv;
@@ -4502,7 +4503,7 @@ impl Niri {
     pub fn maybe_activate_pointer_constraint(
         &self,
         new_pos: Point<f64, Logical>,
-        new_under: &PointerFocus,
+        new_under: &PointContents,
     ) {
         let Some((surface, surface_loc)) = &new_under.surface else {
             return;
@@ -4593,7 +4594,7 @@ impl Niri {
         }
     }
 
-    pub fn handle_focus_follows_mouse(&mut self, new_focus: &PointerFocus) {
+    pub fn handle_focus_follows_mouse(&mut self, new_focus: &PointContents) {
         let Some(ffm) = self.config.borrow().input.focus_follows_mouse else {
             return;
         };
@@ -4604,7 +4605,7 @@ impl Niri {
         }
 
         // Recompute the current pointer focus because we don't update it during animations.
-        let current_focus = self.surface_under_and_global_space(pointer.current_location());
+        let current_focus = self.contents_under(pointer.current_location());
 
         if let Some(output) = &new_focus.output {
             if current_focus.output.as_ref() != Some(output) {

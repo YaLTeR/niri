@@ -1410,7 +1410,7 @@ impl State {
             self.niri.screenshot_ui.pointer_motion(point);
         }
 
-        let under = self.niri.surface_under_and_global_space(new_pos);
+        let under = self.niri.contents_under(new_pos);
 
         // Handle confined pointer.
         if let Some((focus_surface, region)) = pointer_confined {
@@ -1509,7 +1509,7 @@ impl State {
             self.niri.screenshot_ui.pointer_motion(point);
         }
 
-        let under = self.niri.surface_under_and_global_space(pos);
+        let under = self.niri.contents_under(pos);
 
         self.niri.handle_focus_follows_mouse(&under);
 
@@ -1929,7 +1929,7 @@ impl State {
             return;
         };
 
-        let under = self.niri.surface_under_and_global_space(pos);
+        let under = self.niri.contents_under(pos);
 
         let tablet_seat = self.niri.seat.tablet_seat();
         let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
@@ -1981,7 +1981,7 @@ impl State {
                     tool.tip_down(serial, event.time_msec());
 
                     if let Some(pos) = self.niri.tablet_cursor_location {
-                        let under = self.niri.surface_under_and_global_space(pos);
+                        let under = self.niri.contents_under(pos);
                         if let Some(window) = under.window {
                             self.niri.layout.activate_window(&window);
 
@@ -2011,7 +2011,7 @@ impl State {
             return;
         };
 
-        let under = self.niri.surface_under_and_global_space(pos);
+        let under = self.niri.contents_under(pos);
 
         let tablet_seat = self.niri.seat.tablet_seat();
         let display_handle = self.niri.display_handle.clone();
@@ -2340,7 +2340,7 @@ impl State {
             return;
         };
 
-        let under = self.niri.surface_under_and_global_space(touch_location);
+        let under = self.niri.contents_under(touch_location);
 
         if !handle.is_grabbed() {
             if let Some(window) = under.window {
@@ -2393,7 +2393,7 @@ impl State {
         let Some(touch_location) = self.compute_touch_location(&evt) else {
             return;
         };
-        let under = self.niri.surface_under_and_global_space(touch_location);
+        let under = self.niri.contents_under(touch_location);
         handle.motion(
             self,
             under.surface,
