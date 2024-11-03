@@ -62,6 +62,17 @@ input {
         // middle-emulation
     }
 
+    trackball {
+        // off
+        // natural-scroll
+        // accel-speed 0.2
+        // accel-profile "flat"
+        // scroll-method "on-button-down"
+        // scroll-button 273
+        // left-handed
+        // middle-emulation
+    }
+
     tablet {
         // off
         map-to-output "eDP-1"
