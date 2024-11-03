@@ -1882,8 +1882,8 @@ impl State {
         }
 
         let scroll_factor = match source {
-            AxisSource::Wheel => self.niri.config.borrow().input.mouse.scroll_factor,
-            AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor,
+            AxisSource::Wheel => self.niri.config.borrow().input.mouse.scroll_factor.0,
+            AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor.0,
             _ => 1.0,
         };
 

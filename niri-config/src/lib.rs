@@ -188,8 +188,8 @@ pub struct Touchpad {
     pub disabled_on_external_mouse: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
-    #[knuffel(child, unwrap(argument), default = 1.0)]
-    pub scroll_factor: f64,
+    #[knuffel(child, unwrap(argument), default = FloatOrInt(1.0))]
+    pub scroll_factor: FloatOrInt<0, 100>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -210,8 +210,8 @@ pub struct Mouse {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
-    #[knuffel(child, unwrap(argument), default = 1.0)]
-    pub scroll_factor: f64,
+    #[knuffel(child, unwrap(argument), default = FloatOrInt(1.0))]
+    pub scroll_factor: FloatOrInt<0, 100>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -3175,7 +3175,7 @@ mod tests {
                         left_handed: false,
                         disabled_on_external_mouse: true,
                         middle_emulation: false,
-                        scroll_factor: 0.9,
+                        scroll_factor: FloatOrInt(0.9),
                     },
                     mouse: Mouse {
                         off: false,
@@ -3186,7 +3186,7 @@ mod tests {
                         scroll_button: Some(273),
                         left_handed: false,
                         middle_emulation: true,
-                        scroll_factor: 0.2,
+                        scroll_factor: FloatOrInt(0.2),
                     },
                     trackpoint: Trackpoint {
                         off: true,

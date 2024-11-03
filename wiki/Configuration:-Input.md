@@ -32,6 +32,7 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-factor 1.0
         // scroll-method "two-finger"
         // tap-button-map "left-middle-right"
         // click-method "clickfinger"
@@ -45,6 +46,7 @@ input {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-factor 1.0
         // scroll-method "no-scroll"
         // left-handed
         // middle-emulation
@@ -153,6 +155,10 @@ Settings specific to `touchpad`s:
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
+
+Settings specific to `touchpad` and `mouse`:
+
+- `scroll-factor`: scales the scrolling by this value.
 
 Settings specific to `touchpad`, `mouse` and `tablet`:
 
