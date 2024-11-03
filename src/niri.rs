@@ -110,7 +110,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
-use crate::handlers::configure_lock_surface;
+use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
@@ -1694,6 +1694,18 @@ impl Niri {
                 is_tty && !client.get_data::<ClientState>().unwrap().restricted
             });
         let activation_state = XdgActivationState::new::<State>(&display_handle);
+        event_loop
+            .insert_source(
+                Timer::from_duration(XDG_ACTIVATION_TOKEN_TIMEOUT),
+                |_, _, state| {
+                    state.niri.activation_state.retain_tokens(|_, token_data| {
+                        token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT
+                    });
+                    TimeoutAction::ToDuration(XDG_ACTIVATION_TOKEN_TIMEOUT)
+                },
+            )
+            .unwrap();
+
         let mutter_x11_interop_state =
             MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
 
