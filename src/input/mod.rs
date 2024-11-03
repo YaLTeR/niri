@@ -520,7 +520,8 @@ impl State {
                 self.niri.debug_toggle_damage();
             }
             Action::Spawn(command) => {
-                spawn(command);
+                let (token, _) = self.niri.activation_state.create_external_token(None);
+                spawn(command, Some(token.clone()));
             }
             Action::DoScreenTransition(delay_ms) => {
                 self.backend.with_primary_renderer(|renderer| {
