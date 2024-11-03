@@ -236,10 +236,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Spawn commands from cli and auto-start.
-    spawn(cli.command);
+    spawn(cli.command, None);
 
     for elem in spawn_at_startup {
-        spawn(elem.command);
+        spawn(elem.command, None);
     }
 
     // Show the config error notification right away if needed.
