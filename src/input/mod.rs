@@ -1896,6 +1896,9 @@ impl State {
             vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
         }) * scroll_factor;
 
+        let horizontal_amount_v120 = horizontal_amount_v120.map(|x| x * scroll_factor);
+        let vertical_amount_v120 = vertical_amount_v120.map(|x| x * scroll_factor);
+
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {
             frame = frame
