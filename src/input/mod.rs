@@ -1881,14 +1881,23 @@ impl State {
             }
         }
 
+        let scroll_factor = match source {
+            AxisSource::Wheel => self.niri.config.borrow().input.mouse.scroll_factor.0,
+            AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor.0,
+            _ => 1.0,
+        };
+
         let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
             horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
-        });
+        }) * scroll_factor;
         let vertical_amount = vertical_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
             vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
-        });
+        }) * scroll_factor;
+
+        let horizontal_amount_v120 = horizontal_amount_v120.map(|x| x * scroll_factor);
+        let vertical_amount_v120 = vertical_amount_v120.map(|x| x * scroll_factor);
 
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {
