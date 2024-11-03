@@ -262,7 +262,20 @@ pub struct Niri {
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
     pub dnd_icon: Option<DndIcon>,
-    pub pointer_focus: PointContents,
+    /// Contents under pointer.
+    ///
+    /// Periodically updated: on motion and other events and in the loop callback. If you require
+    /// the real up-to-date contents somewhere, it's better to recompute on the spot.
+    ///
+    /// This is not pointer focus. I.e. during a click grab, the pointer focus remains on the
+    /// client with the grab, but this field will keep updating to the latest contents as if no
+    /// grab was active.
+    ///
+    /// This is primarily useful for emitting pointer motion events for surfaces that move
+    /// underneath the cursor on their own (i.e. when the tiling layout moves). In this case, not
+    /// taking grabs into account is expected, because we pass the information to pointer.motion()
+    /// which passes it down through grabs, which decide what to do with it as they see fit.
+    pub pointer_contents: PointContents,
     /// Whether the pointer is hidden, for example due to a previous touch input.
     ///
     /// When this happens, the pointer also loses any focus. This is so that touch can prevent
@@ -553,7 +566,7 @@ impl State {
         self.niri.refresh_pointer_outputs();
         self.niri.global_space.refresh();
         self.niri.refresh_idle_inhibit();
-        self.refresh_pointer_focus();
+        self.refresh_pointer_contents();
         foreign_toplevel::refresh(self);
         self.niri.refresh_window_rules();
         self.refresh_ipc_outputs();
@@ -577,7 +590,7 @@ impl State {
         let under = self.niri.contents_under(location);
         self.niri
             .maybe_activate_pointer_constraint(location, &under);
-        self.niri.pointer_focus.clone_from(&under);
+        self.niri.pointer_contents.clone_from(&under);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         pointer.motion(
@@ -676,8 +689,8 @@ impl State {
         self.move_cursor_to_focused_tile(CenterCoords::Both)
     }
 
-    pub fn refresh_pointer_focus(&mut self) {
-        let _span = tracy_client::span!("Niri::refresh_pointer_focus");
+    pub fn refresh_pointer_contents(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_pointer_contents");
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
@@ -692,7 +705,7 @@ impl State {
             }
         }
 
-        if !self.update_pointer_focus() {
+        if !self.update_pointer_contents() {
             return;
         }
 
@@ -701,8 +714,8 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn update_pointer_focus(&mut self) -> bool {
-        let _span = tracy_client::span!("Niri::update_pointer_focus");
+    pub fn update_pointer_contents(&mut self) -> bool {
+        let _span = tracy_client::span!("Niri::update_pointer_contents");
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
@@ -712,16 +725,16 @@ impl State {
             self.niri.contents_under(location)
         };
 
-        // We're not changing the global cursor location here, so if the focus did not change, then
-        // nothing changed.
-        if self.niri.pointer_focus == under {
+        // We're not changing the global cursor location here, so if the contents did not change,
+        // then nothing changed.
+        if self.niri.pointer_contents == under {
             return false;
         }
 
         self.niri
             .maybe_activate_pointer_constraint(location, &under);
 
-        self.niri.pointer_focus.clone_from(&under);
+        self.niri.pointer_contents.clone_from(&under);
 
         pointer.motion(
             self,
@@ -1858,7 +1871,7 @@ impl Niri {
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
             dnd_icon: None,
-            pointer_focus: PointContents::default(),
+            pointer_contents: PointContents::default(),
             pointer_hidden: false,
             pointer_inactivity_timer: None,
             pointer_grab_ongoing: false,

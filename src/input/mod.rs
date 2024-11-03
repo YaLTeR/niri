@@ -1321,11 +1321,11 @@ impl State {
 
         // Check if we have an active pointer constraint.
         let mut pointer_confined = None;
-        if let Some(focus) = &self.niri.pointer_focus.surface {
-            let pos_within_surface = pos - focus.1;
+        if let Some(under) = &self.niri.pointer_contents.surface {
+            let pos_within_surface = pos - under.1;
 
             let mut pointer_locked = false;
-            with_pointer_constraint(&focus.0, &pointer, |constraint| {
+            with_pointer_constraint(&under.0, &pointer, |constraint| {
                 let Some(constraint) = constraint else { return };
                 if !constraint.is_active() {
                     return;
@@ -1343,7 +1343,7 @@ impl State {
                         pointer_locked = true;
                     }
                     PointerConstraint::Confined(confine) => {
-                        pointer_confined = Some((focus.clone(), confine.region().cloned()));
+                        pointer_confined = Some((under.clone(), confine.region().cloned()));
                     }
                 }
             });
@@ -1352,7 +1352,7 @@ impl State {
             if pointer_locked {
                 pointer.relative_motion(
                     self,
-                    Some(focus.clone()),
+                    Some(under.clone()),
                     &RelativeMotionEvent {
                         delta: event.delta(),
                         delta_unaccel: event.delta_unaccel(),
@@ -1451,7 +1451,7 @@ impl State {
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint(new_pos, &under);
 
-        self.niri.pointer_focus.clone_from(&under);
+        self.niri.pointer_contents.clone_from(&under);
 
         pointer.motion(
             self,
@@ -1514,7 +1514,7 @@ impl State {
         self.niri.handle_focus_follows_mouse(&under);
 
         self.niri.maybe_activate_pointer_constraint(pos, &under);
-        self.niri.pointer_focus.clone_from(&under);
+        self.niri.pointer_contents.clone_from(&under);
 
         pointer.motion(
             self,
@@ -1693,11 +1693,11 @@ impl State {
             }
         };
 
-        self.update_pointer_focus();
+        self.update_pointer_contents();
 
         if ButtonState::Pressed == button_state {
-            let layer_focus = self.niri.pointer_focus.layer.clone();
-            self.niri.focus_layer_surface_if_on_demand(layer_focus);
+            let layer_under = self.niri.pointer_contents.layer.clone();
+            self.niri.focus_layer_surface_if_on_demand(layer_under);
         }
 
         if let Some(button) = event.button() {
@@ -1914,7 +1914,7 @@ impl State {
             }
         }
 
-        self.update_pointer_focus();
+        self.update_pointer_contents();
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         pointer.axis(self, frame);
@@ -2077,7 +2077,7 @@ impl State {
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if self.update_pointer_focus() {
+        if self.update_pointer_contents() {
             pointer.frame(self);
         }
 
@@ -2168,7 +2168,7 @@ impl State {
 
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if self.update_pointer_focus() {
+        if self.update_pointer_contents() {
             pointer.frame(self);
         }
 
@@ -2211,7 +2211,7 @@ impl State {
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if self.update_pointer_focus() {
+        if self.update_pointer_contents() {
             pointer.frame(self);
         }
 
@@ -2229,7 +2229,7 @@ impl State {
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if self.update_pointer_focus() {
+        if self.update_pointer_contents() {
             pointer.frame(self);
         }
 
@@ -2246,7 +2246,7 @@ impl State {
     fn on_gesture_pinch_update<I: InputBackend>(&mut self, event: I::GesturePinchUpdateEvent) {
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if self.update_pointer_focus() {
+        if self.update_pointer_contents() {
             pointer.frame(self);
         }
 
@@ -2265,7 +2265,7 @@ impl State {
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if self.update_pointer_focus() {
+        if self.update_pointer_contents() {
             pointer.frame(self);
         }
 
@@ -2283,7 +2283,7 @@ impl State {
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if self.update_pointer_focus() {
+        if self.update_pointer_contents() {
             pointer.frame(self);
         }
 
@@ -2301,7 +2301,7 @@ impl State {
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if self.update_pointer_focus() {
+        if self.update_pointer_contents() {
             pointer.frame(self);
         }
 

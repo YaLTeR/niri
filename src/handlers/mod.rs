@@ -140,7 +140,7 @@ impl PointerConstraintsHandler for State {
     fn new_constraint(&mut self, _surface: &WlSurface, pointer: &PointerHandle<Self>) {
         self.niri.maybe_activate_pointer_constraint(
             pointer.current_location(),
-            &self.niri.pointer_focus,
+            &self.niri.pointer_contents,
         );
     }
 
@@ -158,19 +158,20 @@ impl PointerConstraintsHandler for State {
             return;
         }
 
-        // Logically the following two checks should always succeed (so, they should print
-        // error!()s if they fail). However, currently both can fail because niri's pointer focus
-        // doesn't take pointer grabs into account. So if you start, say, a middle-drag in Blender,
-        // then touchpad-swipe the window away, the niri pointer focus will change, even though the
-        // real pointer focus remains on the Blender surface due to the click grab.
+        // Note: this is surface under pointer, not pointer focus. So if you start, say, a
+        // middle-drag in Blender, then touchpad-swipe the window away, the surface under pointer
+        // will change, even though the real pointer focus remains on the Blender surface due to
+        // the click grab.
         //
-        // FIXME: add error!()s when niri pointer focus takes grabs into account. Alternatively,
-        // recompute the surface origin here (but that is a bit clunky).
-        let Some((ref focused_surface, origin)) = self.niri.pointer_focus.surface else {
+        // Ideally we would just use the constraint surface, but we need its origin. So this is
+        // more of a hack because pointer contents has the surface origin available.
+        //
+        // FIXME: use the constraint surface somehow, don't use pointer contents.
+        let Some((ref surface_under_pointer, origin)) = self.niri.pointer_contents.surface else {
             return;
         };
 
-        if focused_surface != surface {
+        if surface_under_pointer != surface {
             return;
         }
 
