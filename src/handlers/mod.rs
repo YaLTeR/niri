@@ -7,6 +7,7 @@ use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
@@ -79,6 +80,8 @@ use crate::{
     delegate_foreign_toplevel, delegate_gamma_control, delegate_mutter_x11_interop,
     delegate_output_management, delegate_screencopy,
 };
+
+pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -624,16 +627,18 @@ impl XdgActivationHandler for State {
 
     fn request_activation(
         &mut self,
-        _token: XdgActivationToken,
+        token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,
     ) {
-        if token_data.timestamp.elapsed().as_secs() < 10 {
+        if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&surface) {
                 let window = mapped.window.clone();
                 self.niri.layout.activate_window(&window);
                 self.niri.layer_shell_on_demand_focus = None;
                 self.niri.queue_redraw_all();
+
+                self.niri.activation_state.remove_token(&token);
             }
         }
     }
