@@ -710,6 +710,10 @@ impl State {
         }
 
         pointer.frame(self);
+
+        // Pointer motion from a surface to nothing triggers a cursor change to default, which
+        // means we may need to redraw.
+
         // FIXME: granular
         self.niri.queue_redraw_all();
     }
