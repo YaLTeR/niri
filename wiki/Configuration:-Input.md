@@ -158,7 +158,7 @@ Settings specific to `touchpad`s:
 
 Settings specific to `touchpad` and `mouse`:
 
-- `scroll-factor`: scales the scrolling by this value.
+- `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
 
 Settings specific to `touchpad`, `mouse` and `tablet`:
 
