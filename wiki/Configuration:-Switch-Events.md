@@ -1,5 +1,7 @@
 ### Overview
 
+<sup>Since: 0.1.10</sup>
+
 Switch event bindings are declared in the `switch-events {}` section of the config.
 
 Here are all the events that you can bind at a glance:
@@ -14,7 +16,7 @@ switch-events {
 ```
 
 The syntax is similar to key bindings.
-Currently only the `spawn` action are supported.
+Currently, only the `spawn` action are supported.
 
 > [!NOTE]
 > In contrast to key bindings, switch event bindings are *always* executed, even when the session is locked.
