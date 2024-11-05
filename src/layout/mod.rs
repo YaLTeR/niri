@@ -87,59 +87,6 @@ niri_render_elements! {
 pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
 
-#[derive(Debug)]
-enum InteractiveMoveState<W: LayoutElement> {
-    /// Initial rubberbanding; the window remains in the layout.
-    Starting {
-        /// The window we're moving.
-        window_id: W::Id,
-        /// Current pointer delta from the starting location.
-        pointer_delta: Point<f64, Logical>,
-        /// Pointer location within the visual window geometry as ratio from geometry size.
-        ///
-        /// This helps the pointer remain inside the window as it resizes.
-        pointer_ratio_within_window: (f64, f64),
-    },
-    /// Moving; the window is no longer in the layout.
-    Moving(InteractiveMoveData<W>),
-}
-
-#[derive(Debug)]
-struct InteractiveMoveData<W: LayoutElement> {
-    /// The window being moved.
-    pub(self) tile: Tile<W>,
-    /// Output where the window is currently located/rendered.
-    pub(self) output: Output,
-    /// Current pointer position within output.
-    pub(self) pointer_pos_within_output: Point<f64, Logical>,
-    /// Window column width.
-    pub(self) width: ColumnWidth,
-    /// Whether the window column was full-width.
-    pub(self) is_full_width: bool,
-    /// Pointer location within the visual window geometry as ratio from geometry size.
-    ///
-    /// This helps the pointer remain inside the window as it resizes.
-    pub(self) pointer_ratio_within_window: (f64, f64),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct InteractiveResizeData {
-    pub(self) edges: ResizeEdge,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ConfigureIntent {
-    /// A configure is not needed (no changes to server pending state).
-    NotNeeded,
-    /// A configure is throttled (due to resizing too fast for example).
-    Throttled,
-    /// Can send the configure if it isn't throttled externally (only size changed).
-    CanSend,
-    /// Should send the configure regardless of external throttling (something other than size
-    /// changed).
-    ShouldSend,
-}
-
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
     type Id: PartialEq + std::fmt::Debug + Clone;
@@ -331,6 +278,59 @@ impl Default for Options {
             ],
         }
     }
+}
+
+#[derive(Debug)]
+enum InteractiveMoveState<W: LayoutElement> {
+    /// Initial rubberbanding; the window remains in the layout.
+    Starting {
+        /// The window we're moving.
+        window_id: W::Id,
+        /// Current pointer delta from the starting location.
+        pointer_delta: Point<f64, Logical>,
+        /// Pointer location within the visual window geometry as ratio from geometry size.
+        ///
+        /// This helps the pointer remain inside the window as it resizes.
+        pointer_ratio_within_window: (f64, f64),
+    },
+    /// Moving; the window is no longer in the layout.
+    Moving(InteractiveMoveData<W>),
+}
+
+#[derive(Debug)]
+struct InteractiveMoveData<W: LayoutElement> {
+    /// The window being moved.
+    pub(self) tile: Tile<W>,
+    /// Output where the window is currently located/rendered.
+    pub(self) output: Output,
+    /// Current pointer position within output.
+    pub(self) pointer_pos_within_output: Point<f64, Logical>,
+    /// Window column width.
+    pub(self) width: ColumnWidth,
+    /// Whether the window column was full-width.
+    pub(self) is_full_width: bool,
+    /// Pointer location within the visual window geometry as ratio from geometry size.
+    ///
+    /// This helps the pointer remain inside the window as it resizes.
+    pub(self) pointer_ratio_within_window: (f64, f64),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InteractiveResizeData {
+    pub(self) edges: ResizeEdge,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ConfigureIntent {
+    /// A configure is not needed (no changes to server pending state).
+    NotNeeded,
+    /// A configure is throttled (due to resizing too fast for example).
+    Throttled,
+    /// Can send the configure if it isn't throttled externally (only size changed).
+    CanSend,
+    /// Should send the configure regardless of external throttling (something other than size
+    /// changed).
+    ShouldSend,
 }
 
 /// Tile that was just removed from the layout.
