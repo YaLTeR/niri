@@ -143,8 +143,9 @@ use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRende
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
-    make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
+    center, center_f64, get_monotonic_time, ipc_transform_to_smithay, is_laptop_panel,
+    logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
+    write_png_rgba8,
 };
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 use crate::{animation, niri_render_elements};
@@ -206,6 +207,12 @@ pub struct Niri {
 
     // When false, we're idling with monitors powered off.
     pub monitors_active: bool,
+
+    /// Whether the laptop lid is closed.
+    ///
+    /// Libinput guarantees that the lid switch starts in open state, and if it was closed during
+    /// startup, libinput will immediately send a closed event.
+    pub is_lid_closed: bool,
 
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
@@ -1101,6 +1108,12 @@ impl State {
 
         if config.debug != old_config.debug {
             debug_config_changed = true;
+
+            if config.debug.keep_laptop_panel_on_when_lid_is_closed
+                != old_config.debug.keep_laptop_panel_on_when_lid_is_closed
+            {
+                output_config_changed = true;
+            }
         }
 
         *old_config = config;
@@ -1831,6 +1844,7 @@ impl Niri {
             blocker_cleared_tx,
             blocker_cleared_rx,
             monitors_active: true,
+            is_lid_closed: false,
 
             devices: HashSet::new(),
             tablets: HashMap::new(),
@@ -4796,6 +4810,22 @@ impl Niri {
             })
             .unwrap();
         self.pointer_inactivity_timer = Some(token);
+    }
+
+    pub fn should_enable_laptop_panel(&self, connector: &str) -> bool {
+        // Make sure the output config is reloaded when any of the conditions in this function
+        // change.
+
+        let config = self.config.borrow();
+
+        // We reload the output config when this flag changes.
+        if config.debug.keep_laptop_panel_on_when_lid_is_closed {
+            return true;
+        }
+
+        // We reload the output config when the lid switch is toggled, and the connector name is
+        // static.
+        !(self.is_lid_closed && is_laptop_panel(connector))
     }
 }
 

@@ -783,6 +783,10 @@ impl Tty {
             debug!("output is disabled in the config");
             return Ok(());
         }
+        if !niri.should_enable_laptop_panel(&output_name.connector) {
+            debug!("output is disabled because it is a laptop panel and the lid is closed");
+            return Ok(());
+        }
 
         for m in connector.modes() {
             trace!("{m:?}");
@@ -1723,7 +1727,7 @@ impl Tty {
                     .find(&surface.name)
                     .cloned()
                     .unwrap_or_default();
-                if config.off {
+                if config.off || !niri.should_enable_laptop_panel(&surface.name.connector) {
                     to_disconnect.push((node, crtc));
                     continue;
                 }
@@ -1833,7 +1837,7 @@ impl Tty {
                     .cloned()
                     .unwrap_or_default();
 
-                if !config.off {
+                if !config.off && niri.should_enable_laptop_panel(&output_name.connector) {
                     to_connect.push((node, connector.clone(), crtc));
                 }
             }

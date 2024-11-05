@@ -2434,6 +2434,13 @@ impl State {
             return;
         };
 
+        if switch == Switch::Lid {
+            let is_closed = evt.state() == SwitchState::On;
+            debug!("lid switch {}", if is_closed { "closed" } else { "opened" });
+            self.niri.is_lid_closed = is_closed;
+            self.reload_output_config();
+        }
+
         let action = {
             let bindings = &self.niri.config.borrow().switch_events;
             find_configured_switch_action(bindings, switch, evt.state())
