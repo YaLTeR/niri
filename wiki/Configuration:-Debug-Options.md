@@ -23,6 +23,7 @@ debug {
     disable-resize-throttling
     disable-transactions
     keep-laptop-panel-on-when-lid-is-closed
+    disable-monitor-names
 }
 
 binds {
@@ -176,6 +177,20 @@ This flag turns off this behavior and will leave the internal laptop monitor on.
 ```kdl
 debug {
     keep-laptop-panel-on-when-lid-is-closed
+}
+```
+
+### `disable-monitor-names`
+
+<sup>Since: 0.1.10</sup>
+
+Disables the make/model/serial monitor names, as if niri fails to read them from the EDID.
+
+Use this flag to work around a crash present in 0.1.9 and 0.1.10 when connecting two monitors with matching make/model/serial.
+
+```kdl
+debug {
+    disable-monitor-names
 }
 ```
 

@@ -749,7 +749,12 @@ impl Tty {
 
         let device = self.devices.get_mut(&node).context("missing device")?;
 
-        let output_name = make_output_name(&device.drm, connector.handle(), connector_name.clone());
+        let output_name = make_output_name(
+            &device.drm,
+            connector.handle(),
+            connector_name.clone(),
+            self.config.borrow().debug.disable_monitor_names,
+        );
 
         let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
@@ -1568,8 +1573,12 @@ impl Tty {
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 let connector_name = format_connector_name(connector);
                 let physical_size = connector.size();
-                let output_name =
-                    make_output_name(&device.drm, connector.handle(), connector_name.clone());
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name.clone(),
+                    self.config.borrow().debug.disable_monitor_names,
+                );
 
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
@@ -1828,7 +1837,12 @@ impl Tty {
                 }
 
                 let connector_name = format_connector_name(connector);
-                let output_name = make_output_name(&device.drm, connector.handle(), connector_name);
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name,
+                    self.config.borrow().debug.disable_monitor_names,
+                );
                 let config = self
                     .config
                     .borrow()
@@ -1887,7 +1901,12 @@ impl Tty {
                 }
 
                 let connector_name = format_connector_name(connector);
-                let output_name = make_output_name(&device.drm, connector.handle(), connector_name);
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name,
+                    self.config.borrow().debug.disable_monitor_names,
+                );
                 if output_name.matches(target) {
                     return Some(output_name);
                 }
@@ -2485,7 +2504,17 @@ fn make_output_name(
     device: &DrmDevice,
     connector: connector::Handle,
     connector_name: String,
+    disable_monitor_names: bool,
 ) -> OutputName {
+    if disable_monitor_names {
+        return OutputName {
+            connector: connector_name,
+            make: None,
+            model: None,
+            serial: None,
+        };
+    }
+
     let info = get_edid_info(device, connector)
         .map_err(|err| warn!("error getting EDID info for {connector_name}: {err:?}"))
         .ok();
