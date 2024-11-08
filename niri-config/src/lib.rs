@@ -147,6 +147,8 @@ pub enum CenterFocusedColumn {
     /// Focusing a column will center it if it doesn't fit on the screen together with the
     /// previously focused column.
     OnOverflow,
+    /// The focused column will be centered if it is the only one column in the workspace.
+    OnSingle,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]

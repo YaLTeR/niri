@@ -892,6 +892,13 @@ impl<W: LayoutElement> Workspace<W> {
             CenterFocusedColumn::Never => {
                 self.compute_new_view_offset_for_column_fit(current_x, idx)
             }
+            CenterFocusedColumn::OnSingle => {
+                if self.columns.len() > 1 {
+                    self.compute_new_view_offset_for_column_fit(current_x, idx)
+                } else {
+                    self.compute_new_view_offset_for_column_centered(current_x, idx)
+                }
+            }
         }
     }
 

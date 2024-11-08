@@ -5823,6 +5823,7 @@ mod tests {
             Just(CenterFocusedColumn::Never),
             Just(CenterFocusedColumn::OnOverflow),
             Just(CenterFocusedColumn::Always),
+            Just(CenterFocusedColumn::OnSingle),
         ]
     }
 
