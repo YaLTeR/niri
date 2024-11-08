@@ -1918,11 +1918,15 @@ impl OutputName {
         if self.make.is_none() && self.model.is_none() && self.serial.is_none() {
             self.connector.to_string()
         } else {
-            let make = self.make.as_deref().unwrap_or("Unknown");
-            let model = self.model.as_deref().unwrap_or("Unknown");
-            let serial = self.serial.as_deref().unwrap_or("Unknown");
-            format!("{make} {model} {serial}")
+            self.format_make_model_serial()
         }
+    }
+
+    pub fn format_make_model_serial(&self) -> String {
+        let make = self.make.as_deref().unwrap_or("Unknown");
+        let model = self.model.as_deref().unwrap_or("Unknown");
+        let serial = self.serial.as_deref().unwrap_or("Unknown");
+        format!("{make} {model} {serial}")
     }
 
     pub fn matches(&self, target: &str) -> bool {
