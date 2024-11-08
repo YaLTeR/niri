@@ -10,6 +10,7 @@ To exit niri, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.
 
 If you're not using a display manager, you should run `niri-session` (systemd/dinit) or `niri --session` (others) from a TTY.
 The `--session` flag will make niri import its environment variables globally into the system manager and D-Bus, and start its D-Bus services.
+The `niri-session` script will additionally start niri as a systemd/dinit service, which starts up a graphical session target required by some services like portals.
 
 You can also run `niri` inside an existing desktop session.
 Then it will open as a window, where you can give it a try.
@@ -22,20 +23,12 @@ Finally, the [Xwayland](./Xwayland.md) page explains how to run X11 applications
 
 ### NVIDIA
 
-NVIDIA GPUs tend to have problems running niri (for example, the screen remains black upon starting from a TTY).
+NVIDIA GPUs can have problems running niri (for example, the screen remains black upon starting from a TTY).
 Sometimes, the problems can be fixed.
 You can try the following:
 
 1. Update NVIDIA drivers. You need a GPU and drivers recent enough to support GBM.
 2. Make sure kernel modesetting is enabled. This usually involves adding `nvidia-drm.modeset=1` to the kernel command line. Find and follow a guide for your distribution. Guides from other Wayland compositors can help.
-
-If niri runs but the screen flickers, try adding this into your niri config:
-
-```
-debug {
-    wait-for-frame-completion-before-queueing
-}
-```
 
 ### Asahi, ARM, and other kmsro devices
 
@@ -69,6 +62,7 @@ If you still get a black screen, try using each of the `card` devices.
 ### Nix/NixOS
 
 There's a common problem of mesa drivers going out of sync with niri, so make sure your system mesa version matches the niri mesa version.
+When this happens, you usually see a black screen when trying to start niri from a TTY.
 
 Also, on Intel graphics, you may need a workaround described [here](https://nixos.wiki/wiki/Intel_Graphics).
 
