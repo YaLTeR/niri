@@ -4510,8 +4510,16 @@ impl Niri {
         self.cursor_manager
             .set_cursor_image(CursorImageStatus::default_named());
 
-        self.lock_state = LockState::Locking(confirmation);
-        self.queue_redraw_all();
+        if self.output_state.is_empty() {
+            // There are no outputs, lock the session right away.
+            let lock = confirmation.ext_session_lock().clone();
+            confirmation.lock();
+            self.lock_state = LockState::Locked(lock);
+        } else {
+            // There are outputs, which we need to redraw before locking.
+            self.lock_state = LockState::Locking(confirmation);
+            self.queue_redraw_all();
+        }
     }
 
     pub fn unlock(&mut self) {
