@@ -34,6 +34,7 @@ input {
         // accel-profile "flat"
         // scroll-factor 1.0
         // scroll-method "two-finger"
+        // scroll-button 273
         // tap-button-map "left-middle-right"
         // click-method "clickfinger"
         // left-handed
@@ -48,6 +49,7 @@ input {
         // accel-profile "flat"
         // scroll-factor 1.0
         // scroll-method "no-scroll"
+        // scroll-button 273
         // left-handed
         // middle-emulation
     }
