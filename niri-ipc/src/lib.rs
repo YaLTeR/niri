@@ -26,6 +26,13 @@
 //! [dependencies]
 //! niri-ipc = "=0.1.10"
 //! ```
+//!
+//! ## Features
+//!
+//! This crate defines the following features:
+//! - `json-schema`: derives the [schemars](https://lib.rs/crates/schemars) `JsonSchema` trait for
+//!   the types.
+//! - `clap`: derives the clap CLI parsing traits for some types. Used internally by niri itself.
 #![warn(missing_docs)]
 
 use std::collections::HashMap;
