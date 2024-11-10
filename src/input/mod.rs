@@ -1882,10 +1882,11 @@ impl State {
         }
 
         let scroll_factor = match source {
-            AxisSource::Wheel => self.niri.config.borrow().input.mouse.scroll_factor.0,
-            AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor.0,
-            _ => 1.0,
+            AxisSource::Wheel => self.niri.config.borrow().input.mouse.scroll_factor,
+            AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor,
+            _ => None,
         };
+        let scroll_factor = scroll_factor.map(|x| x.0).unwrap_or(1.);
 
         let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
