@@ -46,3 +46,10 @@ hotkey-overlay {
     skip-at-startup
 }
 ```
+
+### How to run X11 apps like Steam or Discord?
+
+To run X11 apps, you can use [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
+Check [the Xwayland wiki page](./Xwayland.md) for instructions.
+
+Keep in mind that you can run many Electron apps such as VSCode natively on Wayland by passing the right flags, e.g. `code --ozone-platform-hint=auto`

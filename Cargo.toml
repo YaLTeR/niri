@@ -2,7 +2,7 @@
 members = ["niri-visual-tests"]
 
 [workspace.package]
-version = "0.1.9"
+version = "0.1.10"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -11,11 +11,11 @@ repository = "https://github.com/YaLTeR/niri"
 rust-version = "1.77"
 
 [workspace.dependencies]
-anyhow = "1.0.90"
+anyhow = "1.0.93"
 bitflags = "2.6.0"
 clap = { version = "4.5.20", features = ["derive"] }
 k9 = "0.12.0"
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
@@ -55,19 +55,19 @@ calloop = { version = "0.14.1", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
 directories = "5.0.1"
 drm-ffi = "0.9.0"
-fastrand = "2.1.1"
+fastrand = "2.2.0"
 futures-util = { version = "0.3.31", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.29.0"
+glam = "0.29.2"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.161"
+libc = "0.2.162"
 libdisplay-info = "0.1.0"
 log = { version = "0.4.22", features = ["max_level_trace", "release_max_level_debug"] }
-niri-config = { version = "0.1.9", path = "niri-config" }
-niri-ipc = { version = "0.1.9", path = "niri-ipc", features = ["clap"] }
+niri-config = { version = "0.1.10", path = "niri-config" }
+niri-ipc = { version = "0.1.10", path = "niri-ipc", features = ["clap"] }
 notify-rust = { version = "~4.10.0", optional = true }
-ordered-float = "4.4.0"
+ordered-float = "4.5.0"
 pango = { version = "0.20.4", features = ["v1_44"] }
 pangocairo = "0.20.4"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
@@ -81,7 +81,7 @@ smithay-drm-extras.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
-url = { version = "2.5.2", optional = true }
+url = { version = "2.5.3", optional = true }
 wayland-backend = "0.3.7"
 wayland-scanner = "0.31.5"
 xcursor = "0.3.8"
@@ -139,7 +139,7 @@ lto = "thin"
 debug = false
 
 [package.metadata.generate-rpm]
-version = "0.1.9"
+version = "0.1.10"
 assets = [
     { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
     { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },

@@ -190,6 +190,8 @@ pub struct Touchpad {
     pub disabled_on_external_mouse: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor: Option<FloatOrInt<0, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -210,6 +212,8 @@ pub struct Mouse {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor: Option<FloatOrInt<0, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -1531,6 +1535,10 @@ pub struct DebugConfig {
     pub disable_resize_throttling: bool,
     #[knuffel(child)]
     pub disable_transactions: bool,
+    #[knuffel(child)]
+    pub keep_laptop_panel_on_when_lid_is_closed: bool,
+    #[knuffel(child)]
+    pub disable_monitor_names: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
@@ -1912,11 +1920,15 @@ impl OutputName {
         if self.make.is_none() && self.model.is_none() && self.serial.is_none() {
             self.connector.to_string()
         } else {
-            let make = self.make.as_deref().unwrap_or("Unknown");
-            let model = self.model.as_deref().unwrap_or("Unknown");
-            let serial = self.serial.as_deref().unwrap_or("Unknown");
-            format!("{make} {model} {serial}")
+            self.format_make_model_serial()
         }
+    }
+
+    pub fn format_make_model_serial(&self) -> String {
+        let make = self.make.as_deref().unwrap_or("Unknown");
+        let model = self.model.as_deref().unwrap_or("Unknown");
+        let serial = self.serial.as_deref().unwrap_or("Unknown");
+        format!("{make} {model} {serial}")
     }
 
     pub fn matches(&self, target: &str) -> bool {
@@ -2960,6 +2972,7 @@ mod tests {
                     scroll-button 272
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
+                    scroll-factor 0.9
                 }
 
                 mouse {
@@ -2969,6 +2982,7 @@ mod tests {
                     scroll-method "no-scroll"
                     scroll-button 273
                     middle-emulation
+                    scroll-factor 0.2
                 }
 
                 trackpoint {
@@ -3171,6 +3185,7 @@ mod tests {
                         left_handed: false,
                         disabled_on_external_mouse: true,
                         middle_emulation: false,
+                        scroll_factor: Some(FloatOrInt(0.9)),
                     },
                     mouse: Mouse {
                         off: false,
@@ -3181,6 +3196,7 @@ mod tests {
                         scroll_button: Some(273),
                         left_handed: false,
                         middle_emulation: true,
+                        scroll_factor: Some(FloatOrInt(0.2)),
                     },
                     trackpoint: Trackpoint {
                         off: true,

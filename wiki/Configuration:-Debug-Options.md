@@ -22,6 +22,8 @@ debug {
     emulate-zero-presentation-time
     disable-resize-throttling
     disable-transactions
+    keep-laptop-panel-on-when-lid-is-closed
+    disable-monitor-names
 }
 
 binds {
@@ -162,6 +164,33 @@ For them to work properly, resize throttling shouldn't be disabled (with the pre
 ```kdl
 debug {
     disable-transactions
+}
+```
+
+### `keep-laptop-panel-on-when-lid-is-closed`
+
+<sup>Since: 0.1.10</sup>
+
+By default, niri will disable the internal laptop monitor when the laptop lid is closed.
+This flag turns off this behavior and will leave the internal laptop monitor on.
+
+```kdl
+debug {
+    keep-laptop-panel-on-when-lid-is-closed
+}
+```
+
+### `disable-monitor-names`
+
+<sup>Since: 0.1.10</sup>
+
+Disables the make/model/serial monitor names, as if niri fails to read them from the EDID.
+
+Use this flag to work around a crash present in 0.1.9 and 0.1.10 when connecting two monitors with matching make/model/serial.
+
+```kdl
+debug {
+    disable-monitor-names
 }
 ```
 

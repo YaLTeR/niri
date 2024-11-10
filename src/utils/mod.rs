@@ -224,6 +224,10 @@ pub fn output_matches_name(output: &Output, target: &str) -> bool {
     name.matches(target)
 }
 
+pub fn is_laptop_panel(connector: &str) -> bool {
+    matches!(connector.get(..4), Some("eDP-" | "LVDS" | "DSI-"))
+}
+
 pub fn with_toplevel_role<T>(
     toplevel: &ToplevelSurface,
     f: impl FnOnce(&mut XdgToplevelSurfaceRoleAttributes) -> T,

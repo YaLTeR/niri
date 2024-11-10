@@ -8,6 +8,7 @@ use zbus::{dbus_interface, fdo, SignalContext};
 
 use super::Start;
 use crate::backend::IpcOutputMap;
+use crate::utils::is_laptop_panel;
 
 pub struct DisplayConfig {
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
@@ -63,7 +64,7 @@ impl DisplayConfig {
             .map(|output| {
                 // Loosely matches the check in Mutter.
                 let c = &output.name;
-                let is_laptop_panel = matches!(c.get(..4), Some("eDP-" | "LVDS" | "DSI-"));
+                let is_laptop_panel = is_laptop_panel(c);
                 let display_name = make_display_name(output, is_laptop_panel);
 
                 let mut properties = HashMap::new();

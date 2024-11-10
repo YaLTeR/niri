@@ -30,6 +30,7 @@
 //! making the primary output their original output.
 
 use std::cmp::min;
+use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
@@ -86,59 +87,6 @@ niri_render_elements! {
 
 pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
-
-#[derive(Debug)]
-enum InteractiveMoveState<W: LayoutElement> {
-    /// Initial rubberbanding; the window remains in the layout.
-    Starting {
-        /// The window we're moving.
-        window_id: W::Id,
-        /// Current pointer delta from the starting location.
-        pointer_delta: Point<f64, Logical>,
-        /// Pointer location within the visual window geometry as ratio from geometry size.
-        ///
-        /// This helps the pointer remain inside the window as it resizes.
-        pointer_ratio_within_window: (f64, f64),
-    },
-    /// Moving; the window is no longer in the layout.
-    Moving(InteractiveMoveData<W>),
-}
-
-#[derive(Debug)]
-struct InteractiveMoveData<W: LayoutElement> {
-    /// The window being moved.
-    pub(self) tile: Tile<W>,
-    /// Output where the window is currently located/rendered.
-    pub(self) output: Output,
-    /// Current pointer position within output.
-    pub(self) pointer_pos_within_output: Point<f64, Logical>,
-    /// Window column width.
-    pub(self) width: ColumnWidth,
-    /// Whether the window column was full-width.
-    pub(self) is_full_width: bool,
-    /// Pointer location within the visual window geometry as ratio from geometry size.
-    ///
-    /// This helps the pointer remain inside the window as it resizes.
-    pub(self) pointer_ratio_within_window: (f64, f64),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct InteractiveResizeData {
-    pub(self) edges: ResizeEdge,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ConfigureIntent {
-    /// A configure is not needed (no changes to server pending state).
-    NotNeeded,
-    /// A configure is throttled (due to resizing too fast for example).
-    Throttled,
-    /// Can send the configure if it isn't throttled externally (only size changed).
-    CanSend,
-    /// Should send the configure regardless of external throttling (something other than size
-    /// changed).
-    ShouldSend,
-}
 
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
@@ -258,6 +206,14 @@ pub struct Layout<W: LayoutElement> {
     /// This normally indicates that the layout has keyboard focus, but not always. E.g. when the
     /// screenshot UI is open, it keeps the layout drawing as active.
     is_active: bool,
+    /// Map from monitor name to id of its last active workspace.
+    ///
+    /// This data is stored upon monitor removal and is used to restore the active workspace when
+    /// the monitor is reconnected.
+    ///
+    /// The workspace id does not necessarily point to a valid workspace. If it doesn't, then it is
+    /// simply ignored.
+    last_active_workspace_id: HashMap<String, WorkspaceId>,
     /// Ongoing interactive move.
     interactive_move: Option<InteractiveMoveState<W>>,
     /// Configurable properties of the layout.
@@ -331,6 +287,59 @@ impl Default for Options {
             ],
         }
     }
+}
+
+#[derive(Debug)]
+enum InteractiveMoveState<W: LayoutElement> {
+    /// Initial rubberbanding; the window remains in the layout.
+    Starting {
+        /// The window we're moving.
+        window_id: W::Id,
+        /// Current pointer delta from the starting location.
+        pointer_delta: Point<f64, Logical>,
+        /// Pointer location within the visual window geometry as ratio from geometry size.
+        ///
+        /// This helps the pointer remain inside the window as it resizes.
+        pointer_ratio_within_window: (f64, f64),
+    },
+    /// Moving; the window is no longer in the layout.
+    Moving(InteractiveMoveData<W>),
+}
+
+#[derive(Debug)]
+struct InteractiveMoveData<W: LayoutElement> {
+    /// The window being moved.
+    pub(self) tile: Tile<W>,
+    /// Output where the window is currently located/rendered.
+    pub(self) output: Output,
+    /// Current pointer position within output.
+    pub(self) pointer_pos_within_output: Point<f64, Logical>,
+    /// Window column width.
+    pub(self) width: ColumnWidth,
+    /// Whether the window column was full-width.
+    pub(self) is_full_width: bool,
+    /// Pointer location within the visual window geometry as ratio from geometry size.
+    ///
+    /// This helps the pointer remain inside the window as it resizes.
+    pub(self) pointer_ratio_within_window: (f64, f64),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InteractiveResizeData {
+    pub(self) edges: ResizeEdge,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ConfigureIntent {
+    /// A configure is not needed (no changes to server pending state).
+    NotNeeded,
+    /// A configure is throttled (due to resizing too fast for example).
+    Throttled,
+    /// Can send the configure if it isn't throttled externally (only size changed).
+    CanSend,
+    /// Should send the configure regardless of external throttling (something other than size
+    /// changed).
+    ShouldSend,
 }
 
 /// Tile that was just removed from the layout.
@@ -432,6 +441,7 @@ impl<W: LayoutElement> Layout<W> {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
             is_active: true,
+            last_active_workspace_id: HashMap::new(),
             interactive_move: None,
             options: Rc::new(options),
         }
@@ -449,6 +459,7 @@ impl<W: LayoutElement> Layout<W> {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces },
             is_active: true,
+            last_active_workspace_id: HashMap::new(),
             interactive_move: None,
             options: opts,
         }
@@ -462,6 +473,9 @@ impl<W: LayoutElement> Layout<W> {
                 active_monitor_idx,
             } => {
                 let primary = &mut monitors[primary_idx];
+
+                let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
+                let mut active_workspace_idx = None;
 
                 let mut stopped_primary_ws_switch = false;
 
@@ -482,6 +496,10 @@ impl<W: LayoutElement> Layout<W> {
                         // another monitor. However, we will add an empty workspace in the end
                         // instead.
                         if ws.has_windows() || ws.name.is_some() {
+                            if Some(ws.id()) == ws_id_to_activate {
+                                active_workspace_idx = Some(workspaces.len());
+                            }
+
                             workspaces.push(ws);
                         }
 
@@ -499,6 +517,10 @@ impl<W: LayoutElement> Layout<W> {
 
                 workspaces.reverse();
 
+                if let Some(idx) = &mut active_workspace_idx {
+                    *idx = workspaces.len() - *idx - 1;
+                }
+
                 // Make sure there's always an empty workspace.
                 workspaces.push(Workspace::new(output.clone(), self.options.clone()));
 
@@ -506,7 +528,10 @@ impl<W: LayoutElement> Layout<W> {
                     ws.set_output(Some(output.clone()));
                 }
 
-                monitors.push(Monitor::new(output, workspaces, self.options.clone()));
+                let mut monitor = Monitor::new(output, workspaces, self.options.clone());
+                monitor.active_workspace_idx = active_workspace_idx.unwrap_or(0);
+                monitors.push(monitor);
+
                 MonitorSet::Normal {
                     monitors,
                     primary_idx,
@@ -517,11 +542,19 @@ impl<W: LayoutElement> Layout<W> {
                 // We know there are no empty workspaces there, so add one.
                 workspaces.push(Workspace::new(output.clone(), self.options.clone()));
 
-                for workspace in &mut workspaces {
+                let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
+                let mut active_workspace_idx = 0;
+
+                for (i, workspace) in workspaces.iter_mut().enumerate() {
                     workspace.set_output(Some(output.clone()));
+
+                    if Some(workspace.id()) == ws_id_to_activate {
+                        active_workspace_idx = i;
+                    }
                 }
 
-                let monitor = Monitor::new(output, workspaces, self.options.clone());
+                let mut monitor = Monitor::new(output, workspaces, self.options.clone());
+                monitor.active_workspace_idx = active_workspace_idx;
 
                 MonitorSet::Normal {
                     monitors: vec![monitor],
@@ -544,6 +577,12 @@ impl<W: LayoutElement> Layout<W> {
                     .position(|mon| &mon.output == output)
                     .expect("trying to remove non-existing output");
                 let monitor = monitors.remove(idx);
+
+                self.last_active_workspace_id.insert(
+                    monitor.output_name().clone(),
+                    monitor.workspaces[monitor.active_workspace_idx].id(),
+                );
+
                 let mut workspaces = monitor.workspaces;
 
                 for ws in &mut workspaces {
@@ -5682,6 +5721,69 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn output_active_workspace_is_preserved() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FocusWorkspaceDown,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::RemoveOutput(1),
+            Op::AddOutput(1),
+        ];
+
+        let mut layout = Layout::default();
+        for op in ops {
+            op.apply(&mut layout);
+        }
+
+        let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+            unreachable!()
+        };
+
+        assert_eq!(monitors[0].active_workspace_idx, 1);
+    }
+
+    #[test]
+    fn output_active_workspace_is_preserved_with_other_outputs() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FocusWorkspaceDown,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::RemoveOutput(1),
+            Op::AddOutput(1),
+        ];
+
+        let mut layout = Layout::default();
+        for op in ops {
+            op.apply(&mut layout);
+        }
+
+        let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+            unreachable!()
+        };
+
+        assert_eq!(monitors[1].active_workspace_idx, 1);
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {

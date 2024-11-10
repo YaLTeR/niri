@@ -207,6 +207,12 @@ pub struct Niri {
     // When false, we're idling with monitors powered off.
     pub monitors_active: bool,
 
+    /// Whether the laptop lid is closed.
+    ///
+    /// Libinput guarantees that the lid switch starts in open state, and if it was closed during
+    /// startup, libinput will immediately send a closed event.
+    pub is_lid_closed: bool,
+
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
@@ -1101,6 +1107,12 @@ impl State {
 
         if config.debug != old_config.debug {
             debug_config_changed = true;
+
+            if config.debug.keep_laptop_panel_on_when_lid_is_closed
+                != old_config.debug.keep_laptop_panel_on_when_lid_is_closed
+            {
+                output_config_changed = true;
+            }
         }
 
         *old_config = config;
@@ -1831,6 +1843,7 @@ impl Niri {
             blocker_cleared_tx,
             blocker_cleared_rx,
             monitors_active: true,
+            is_lid_closed: false,
 
             devices: HashSet::new(),
             tablets: HashMap::new(),
@@ -4497,8 +4510,16 @@ impl Niri {
         self.cursor_manager
             .set_cursor_image(CursorImageStatus::default_named());
 
-        self.lock_state = LockState::Locking(confirmation);
-        self.queue_redraw_all();
+        if self.output_state.is_empty() {
+            // There are no outputs, lock the session right away.
+            let lock = confirmation.ext_session_lock().clone();
+            confirmation.lock();
+            self.lock_state = LockState::Locked(lock);
+        } else {
+            // There are outputs, which we need to redraw before locking.
+            self.lock_state = LockState::Locking(confirmation);
+            self.queue_redraw_all();
+        }
     }
 
     pub fn unlock(&mut self) {

@@ -61,7 +61,7 @@ use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
-use crate::utils::{get_monotonic_time, logical_output};
+use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output};
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
@@ -636,22 +636,31 @@ impl Tty {
                     connector,
                     crtc: Some(crtc),
                 } => {
-                    if let Err(err) = self.connector_connected(niri, node, connector, crtc) {
-                        warn!("error connecting connector: {err:?}");
-                    }
+                    let connector_name = format_connector_name(&connector);
+                    let output_name =
+                        make_output_name(&device.drm, connector.handle(), connector_name, false);
+                    debug!(
+                        "new connector: {} \"{}\"",
+                        &output_name.connector,
+                        output_name.format_make_model_serial(),
+                    );
+
+                    // Assign an id to this crtc.
+                    device.output_ids.insert(crtc, OutputId::next());
                 }
                 DrmScanEvent::Disconnected {
                     crtc: Some(crtc), ..
                 } => {
-                    self.connector_disconnected(niri, node, crtc);
                     removed.push(crtc);
                 }
                 _ => (),
             }
         }
 
-        // FIXME: this is better done in connector_disconnected(), but currently we call that to
-        // turn off outputs temporarily, too. So we can't do this there.
+        for crtc in &removed {
+            self.connector_disconnected(niri, node, *crtc);
+        }
+
         let Some(device) = self.devices.get_mut(&node) else {
             error!("device disappeared");
             return;
@@ -663,7 +672,12 @@ impl Tty {
             }
         }
 
-        self.refresh_ipc_outputs(niri);
+        // This will connect any new connectors if needed, and apply other changes, such as
+        // connecting back the internal laptop monitor once it becomes the only monitor left.
+        //
+        // It will also call refresh_ipc_outputs(), which will catch the disconnected connectors
+        // above.
+        self.on_output_config_changed(niri);
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
@@ -749,7 +763,12 @@ impl Tty {
 
         let device = self.devices.get_mut(&node).context("missing device")?;
 
-        let output_name = make_output_name(&device.drm, connector.handle(), connector_name.clone());
+        let output_name = make_output_name(
+            &device.drm,
+            connector.handle(),
+            connector_name.clone(),
+            self.config.borrow().debug.disable_monitor_names,
+        );
 
         let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
@@ -767,10 +786,6 @@ impl Tty {
             return Ok(());
         }
 
-        // This should be unique per CRTC connection, however currently we can call
-        // connector_connected() multiple times for turning the output off and on.
-        device.output_ids.entry(crtc).or_insert_with(OutputId::next);
-
         let config = self
             .config
             .borrow()
@@ -778,11 +793,6 @@ impl Tty {
             .find(&output_name)
             .cloned()
             .unwrap_or_default();
-
-        if config.off {
-            debug!("output is disabled in the config");
-            return Ok(());
-        }
 
         for m in connector.modes() {
             trace!("{m:?}");
@@ -1564,8 +1574,12 @@ impl Tty {
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 let connector_name = format_connector_name(connector);
                 let physical_size = connector.size();
-                let output_name =
-                    make_output_name(&device.drm, connector.handle(), connector_name.clone());
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name.clone(),
+                    self.config.borrow().debug.disable_monitor_names,
+                );
 
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
@@ -1711,6 +1725,24 @@ impl Tty {
         }
         self.update_output_config_on_resume = false;
 
+        // Figure out if we should disable laptop panels.
+        let mut disable_laptop_panels = false;
+        if niri.is_lid_closed {
+            let config = self.config.borrow();
+            if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
+                // Check if any external monitor is connected.
+                'outer: for device in self.devices.values() {
+                    for (connector, _crtc) in device.drm_scanner.crtcs() {
+                        if !is_laptop_panel(&format_connector_name(connector)) {
+                            disable_laptop_panels = true;
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+        let should_disable = |connector: &str| disable_laptop_panels && is_laptop_panel(connector);
+
         let mut to_disconnect = vec![];
         let mut to_connect = vec![];
 
@@ -1723,7 +1755,7 @@ impl Tty {
                     .find(&surface.name)
                     .cloned()
                     .unwrap_or_default();
-                if config.off {
+                if config.off || should_disable(&surface.name.connector) {
                     to_disconnect.push((node, crtc));
                     continue;
                 }
@@ -1819,12 +1851,21 @@ impl Tty {
                 }
 
                 // Check if already enabled.
-                if device.surfaces.contains_key(&crtc) {
+                if device.surfaces.contains_key(&crtc)
+                    || device
+                        .non_desktop_connectors
+                        .contains(&(connector.handle(), crtc))
+                {
                     continue;
                 }
 
                 let connector_name = format_connector_name(connector);
-                let output_name = make_output_name(&device.drm, connector.handle(), connector_name);
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name,
+                    self.config.borrow().debug.disable_monitor_names,
+                );
                 let config = self
                     .config
                     .borrow()
@@ -1833,8 +1874,8 @@ impl Tty {
                     .cloned()
                     .unwrap_or_default();
 
-                if !config.off {
-                    to_connect.push((node, connector.clone(), crtc));
+                if !(config.off || should_disable(&output_name.connector)) {
+                    to_connect.push((node, connector.clone(), crtc, output_name));
                 }
             }
         }
@@ -1843,7 +1884,11 @@ impl Tty {
             self.connector_disconnected(niri, node, crtc);
         }
 
-        for (node, connector, crtc) in to_connect {
+        // Sort by output name to get more predictable first focused output at initial compositor
+        // startup, when multiple connectors appear at once.
+        to_connect.sort_unstable_by(|a, b| a.3.compare(&b.3));
+
+        for (node, connector, crtc, _name) in to_connect {
             if let Err(err) = self.connector_connected(niri, node, connector, crtc) {
                 warn!("error connecting connector: {err:?}");
             }
@@ -1878,12 +1923,21 @@ impl Tty {
                 }
 
                 // Check if already enabled.
-                if device.surfaces.contains_key(&crtc) {
+                if device.surfaces.contains_key(&crtc)
+                    || device
+                        .non_desktop_connectors
+                        .contains(&(connector.handle(), crtc))
+                {
                     continue;
                 }
 
                 let connector_name = format_connector_name(connector);
-                let output_name = make_output_name(&device.drm, connector.handle(), connector_name);
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name,
+                    self.config.borrow().debug.disable_monitor_names,
+                );
                 if output_name.matches(target) {
                     return Some(output_name);
                 }
@@ -2481,7 +2535,17 @@ fn make_output_name(
     device: &DrmDevice,
     connector: connector::Handle,
     connector_name: String,
+    disable_monitor_names: bool,
 ) -> OutputName {
+    if disable_monitor_names {
+        return OutputName {
+            connector: connector_name,
+            make: None,
+            model: None,
+            serial: None,
+        };
+    }
+
     let info = get_edid_info(device, connector)
         .map_err(|err| warn!("error getting EDID info for {connector_name}: {err:?}"))
         .ok();

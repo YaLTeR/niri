@@ -33,3 +33,10 @@ systemctl --user edit --full plasma-polkit-agent.service
 ```
 
 Then add `After=graphical-session.target`.
+
+### Xwayland
+
+To run X11 apps like Steam or Discord, you can use [xwayland-satellite].
+Check [the Xwayland wiki page](./Xwayland.md) for instructions.
+
+[xwayland-satellite]: https://github.com/Supreeeme/xwayland-satellite

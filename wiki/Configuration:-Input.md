@@ -32,7 +32,9 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-factor 1.0
         // scroll-method "two-finger"
+        // scroll-button 273
         // tap-button-map "left-middle-right"
         // click-method "clickfinger"
         // left-handed
@@ -45,7 +47,9 @@ input {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-factor 1.0
         // scroll-method "no-scroll"
+        // scroll-button 273
         // left-handed
         // middle-emulation
     }
@@ -57,6 +61,17 @@ input {
         // accel-profile "flat"
         // scroll-method "on-button-down"
         // scroll-button 273
+        // middle-emulation
+    }
+
+    trackball {
+        // off
+        // natural-scroll
+        // accel-speed 0.2
+        // accel-profile "flat"
+        // scroll-method "on-button-down"
+        // scroll-button 273
+        // left-handed
         // middle-emulation
     }
 
@@ -142,7 +157,7 @@ A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackb
 - `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
-- `scroll-button`: the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
+- `scroll-button`: <sup>Since: 0.1.10</sup> the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
 - `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
 Settings specific to `touchpad`s:
@@ -153,6 +168,10 @@ Settings specific to `touchpad`s:
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
+
+Settings specific to `touchpad` and `mouse`:
+
+- `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
 
 Settings specific to `touchpad`, `mouse` and `tablet`:
 
