@@ -31,6 +31,7 @@ use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
+use touch_move_grab::TouchMoveGrab;
 
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
@@ -2353,11 +2354,39 @@ impl State {
             return;
         };
 
+        let serial = SERIAL_COUNTER.next_serial();
+
         let under = self.niri.contents_under(touch_location);
 
         if !handle.is_grabbed() {
             if let Some(window) = under.window {
                 self.niri.layout.activate_window(&window);
+
+                // Check if we need to start an interactive move.
+                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                let mod_down = match self.backend.mod_key() {
+                    CompositorMod::Super => mods.logo,
+                    CompositorMod::Alt => mods.alt,
+                };
+                if mod_down {
+                    let (output, pos_within_output) =
+                        self.niri.output_under(touch_location).unwrap();
+                    let output = output.clone();
+
+                    if self.niri.layout.interactive_move_begin(
+                        window.clone(),
+                        &output,
+                        pos_within_output,
+                    ) {
+                        let start_data = TouchGrabStartData {
+                            focus: None,
+                            slot: evt.slot(),
+                            location: touch_location,
+                        };
+                        let grab = TouchMoveGrab::new(start_data, window.clone());
+                        handle.set_grab(self, grab, serial);
+                    }
+                }
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
@@ -2370,7 +2399,6 @@ impl State {
             self.niri.focus_layer_surface_if_on_demand(under.layer);
         };
 
-        let serial = SERIAL_COUNTER.next_serial();
         handle.down(
             self,
             under.surface,
