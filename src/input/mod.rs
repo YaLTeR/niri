@@ -1744,6 +1744,12 @@ impl State {
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
         let source = event.source();
 
+        // We received an event for the regular pointer, so show it now. This is also needed for
+        // update_pointer_contents() below to return the real contents, necessary for the pointer
+        // axis event to reach the window.
+        self.niri.pointer_hidden = false;
+        self.niri.tablet_cursor_location = None;
+
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
