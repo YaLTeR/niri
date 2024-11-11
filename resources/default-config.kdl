@@ -447,9 +447,9 @@ binds {
     Mod+BracketLeft  { consume-or-expel-window-left; }
     Mod+BracketRight { consume-or-expel-window-right; }
 
-    // Consume one window from the right into the focused column.
+    // Consume one window from the right to the bottom of the focused column.
     Mod+Comma  { consume-window-into-column; }
-    // Expel one window from the focused column to the right.
+    // Expel the bottom window from the focused column to the right.
     Mod+Period { expel-window-from-column; }
 
     Mod+R { switch-preset-column-width; }
