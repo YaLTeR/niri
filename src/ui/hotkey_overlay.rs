@@ -201,8 +201,8 @@ fn render(
     actions.extend(&[
         &Action::SwitchPresetColumnWidth,
         &Action::MaximizeColumn,
-        &Action::ConsumeWindowIntoColumn,
-        &Action::ExpelWindowFromColumn,
+        &Action::ConsumeOrExpelWindowLeft,
+        &Action::ConsumeOrExpelWindowRight,
     ]);
 
     // Screenshot is not as important, can omit if not bound.
@@ -376,8 +376,8 @@ fn action_name(action: &Action) -> String {
         Action::MoveWindowToWorkspaceUp => String::from("Move Window to Workspace Up"),
         Action::SwitchPresetColumnWidth => String::from("Switch Preset Column Widths"),
         Action::MaximizeColumn => String::from("Maximize Column"),
-        Action::ConsumeWindowIntoColumn => String::from("Consume Window Into Column"),
-        Action::ExpelWindowFromColumn => String::from("Expel Window From Column"),
+        Action::ConsumeOrExpelWindowLeft => String::from("Consume or Expel Window Left"),
+        Action::ConsumeOrExpelWindowRight => String::from("Consume or Expel Window Right"),
         Action::Screenshot => String::from("Take a Screenshot"),
         Action::Spawn(args) => format!(
             "Spawn <span face='monospace' bgcolor='#000000'>{}</span>",
@@ -437,6 +437,8 @@ fn prettify_keysym_name(name: &str) -> String {
         "minus" => "-",
         "equal" => "=",
         "grave" => "`",
+        "bracketleft" => "[",
+        "bracketright" => "]",
         "Next" => "Page Down",
         "Prior" => "Page Up",
         "Print" => "PrtSc",
