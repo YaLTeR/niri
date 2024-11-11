@@ -1744,6 +1744,9 @@ impl State {
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
         let source = event.source();
 
+        self.niri.pointer_hidden = false;
+        self.niri.tablet_cursor_location = None;
+
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
