@@ -4,7 +4,7 @@
 * [Important Software](./Important-Software.md)
 * [Layer‐Shell Components](./Layer%E2%80%90Shell-Components.md)
 * [IPC, `niri msg`](./IPC.md)
-* [VSCode, Chromium, WezTerm](./Application-Issues.md)
+* [Application-Specific Issues](./Application-Issues.md)
 * [Xwayland](./Xwayland.md)
 * [Gestures](./Gestures.md)
 * [FAQ](./FAQ.md)
