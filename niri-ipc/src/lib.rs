@@ -695,6 +695,11 @@ pub struct Window {
     pub title: Option<String>,
     /// Application ID, if set.
     pub app_id: Option<String>,
+    /// Process ID that created the Wayland connection for this window, if known.
+    ///
+    /// Currently, windows created by xdg-desktop-portal-gnome will have a `None` PID, but this may
+    /// change in the future.
+    pub pid: Option<i32>,
     /// Id of the workspace this window is on, if any.
     pub workspace_id: Option<u64>,
     /// Whether this window is currently focused.

@@ -16,12 +16,16 @@ use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{DisplayHandle, Resource as _};
 use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::shell::xdg::{
     ToplevelSurface, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
 };
+use wayland_backend::server::Credentials;
+
+use crate::niri::ClientState;
 
 pub mod id;
 pub mod scale;
@@ -242,6 +246,19 @@ pub fn with_toplevel_role<T>(
 
         f(&mut role)
     })
+}
+
+pub fn get_credentials_for_surface(surface: &WlSurface) -> Option<Credentials> {
+    let handle = surface.handle().upgrade()?;
+    let dh = DisplayHandle::from(handle);
+
+    let client = dh.get_client(surface.id()).ok()?;
+    let data = client.get_data::<ClientState>().unwrap();
+    if data.credentials_unknown {
+        return None;
+    }
+
+    client.get_credentials(&dh).ok()
 }
 
 #[cfg(feature = "dbus")]

@@ -363,6 +363,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
         id: mapped.id().get(),
         title: role.title.clone(),
         app_id: role.app_id.clone(),
+        pid: mapped.credentials().map(|c| c.pid),
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
     })

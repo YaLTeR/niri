@@ -1773,6 +1773,7 @@ impl Niri {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
                     restricted: false,
+                    credentials_unknown: false,
                 });
 
                 if let Err(err) = state.niri.display_handle.insert_client(client, data) {
@@ -4825,6 +4826,8 @@ pub struct ClientState {
     pub can_view_decoration_globals: bool,
     /// Whether this client is denied from the restricted protocols such as security-context.
     pub restricted: bool,
+    /// We cannot retrieve this client's socket credentials.
+    pub credentials_unknown: bool,
 }
 
 impl ClientData for ClientState {

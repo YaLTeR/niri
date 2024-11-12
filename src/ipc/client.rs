@@ -449,6 +449,12 @@ fn print_window(window: &Window) {
         println!("  App ID: (unset)");
     }
 
+    if let Some(pid) = window.pid {
+        println!("  PID: {pid}");
+    } else {
+        println!("  PID: (unknown)");
+    }
+
     if let Some(workspace_id) = window.workspace_id {
         println!("  Workspace ID: {workspace_id}");
     } else {
