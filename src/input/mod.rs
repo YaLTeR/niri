@@ -541,6 +541,10 @@ impl State {
                 }
             }
             Action::ConfirmScreenshot => {
+                if !self.niri.screenshot_ui.is_open() {
+                    return;
+                }
+
                 self.backend.with_primary_renderer(|renderer| {
                     match self.niri.screenshot_ui.capture(renderer) {
                         Ok((size, pixels)) => {
@@ -561,6 +565,10 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::CancelScreenshot => {
+                if !self.niri.screenshot_ui.is_open() {
+                    return;
+                }
+
                 self.niri.screenshot_ui.close();
                 self.niri
                     .cursor_manager
