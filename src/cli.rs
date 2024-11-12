@@ -64,6 +64,8 @@ pub enum Msg {
     Workspaces,
     /// List open windows.
     Windows,
+    /// List open layer-shell surfaces.
+    Layers,
     /// Get the configured keyboard layouts.
     KeyboardLayouts,
     /// Print information about the focused output.

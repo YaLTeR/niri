@@ -55,6 +55,8 @@ pub enum Request {
     Workspaces,
     /// Request information about open windows.
     Windows,
+    /// Request information about layer-shell surfaces.
+    Layers,
     /// Request information about the configured keyboard layouts.
     KeyboardLayouts,
     /// Request information about the focused output.
@@ -119,6 +121,8 @@ pub enum Response {
     Workspaces(Vec<Workspace>),
     /// Information about open windows.
     Windows(Vec<Window>),
+    /// Information about layer-shell surfaces.
+    Layers(Vec<LayerSurface>),
     /// Information about the keyboard layout.
     KeyboardLayouts(KeyboardLayouts),
     /// Information about the focused output.
@@ -765,6 +769,46 @@ pub struct KeyboardLayouts {
     pub names: Vec<String>,
     /// Index of the currently active layout in `names`.
     pub current_idx: u8,
+}
+
+/// A layer-shell layer.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Layer {
+    /// The background layer.
+    Background,
+    /// The bottom layer.
+    Bottom,
+    /// The top layer.
+    Top,
+    /// The overlay layer.
+    Overlay,
+}
+
+/// Keyboard interactivity modes for a layer-shell surface.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum LayerSurfaceKeyboardInteractivity {
+    /// Surface cannot receive keyboard focus.
+    None,
+    /// Surface receives keyboard focus whenever possible.
+    Exclusive,
+    /// Surface receives keyboard focus on demand, e.g. when clicked.
+    OnDemand,
+}
+
+/// A layer-shell surface.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct LayerSurface {
+    /// Namespace provided by the layer-shell client.
+    pub namespace: String,
+    /// Name of the output the surface is on.
+    pub output: String,
+    /// Layer that the surface is on.
+    pub layer: Layer,
+    /// The surface's keyboard interactivity mode.
+    pub keyboard_interactivity: LayerSurfaceKeyboardInteractivity,
 }
 
 /// A compositor event.
