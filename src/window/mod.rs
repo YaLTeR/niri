@@ -262,7 +262,7 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         let Some(app_id) = &role.app_id else {
             return false;
         };
-        if !app_id_re.is_match(app_id) {
+        if !app_id_re.0.is_match(app_id) {
             return false;
         }
     }
@@ -271,7 +271,7 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         let Some(title) = &role.title else {
             return false;
         };
-        if !title_re.is_match(title) {
+        if !title_re.0.is_match(title) {
             return false;
         }
     }
