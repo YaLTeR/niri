@@ -11,6 +11,7 @@ pub mod frame_clock;
 pub mod handlers;
 pub mod input;
 pub mod ipc;
+pub mod layer;
 pub mod layout;
 pub mod niri;
 pub mod protocols;

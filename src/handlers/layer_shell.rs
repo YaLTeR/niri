@@ -11,6 +11,7 @@ use smithay::wayland::shell::wlr_layer::{
 };
 use smithay::wayland::shell::xdg::PopupSurface;
 
+use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::State;
 use crate::utils::send_scale_transform;
 
@@ -60,6 +61,7 @@ impl WlrLayerShellHandler for State {
                 layer.map(|layer| (o.clone(), map, layer))
             }) {
             map.unmap_layer(&layer);
+            self.niri.mapped_layer_surfaces.remove(&layer);
             Some(output)
         } else {
             None
@@ -128,6 +130,21 @@ impl State {
                 if is_mapped {
                     let was_unmapped = self.niri.unmapped_layer_surfaces.remove(surface);
 
+                    // Resolve rules for newly mapped layer surfaces.
+                    if was_unmapped {
+                        let rules = &self.niri.config.borrow().layer_rules;
+                        let rules =
+                            ResolvedLayerRules::compute(rules, layer, self.niri.is_at_startup);
+                        let mapped = MappedLayer::new(layer.clone(), rules);
+                        let prev = self
+                            .niri
+                            .mapped_layer_surfaces
+                            .insert(layer.clone(), mapped);
+                        if prev.is_some() {
+                            error!("MappedLayer was present for an unmapped surface");
+                        }
+                    }
+
                     // Give focus to newly mapped on-demand surfaces. Some launchers like
                     // lxqt-runner rely on this behavior. While this behavior doesn't make much
                     // sense for other clients like panels, the consensus seems to be that it's not
@@ -151,6 +168,7 @@ impl State {
                         self.niri.layer_shell_on_demand_focus = Some(layer.clone());
                     }
                 } else {
+                    self.niri.mapped_layer_surfaces.remove(layer);
                     self.niri.unmapped_layer_surfaces.insert(surface.clone());
                 }
             } else {

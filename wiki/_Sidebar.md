@@ -19,6 +19,7 @@
 * [Named Workspaces](./Configuration:-Named-Workspaces.md)
 * [Miscellaneous](./Configuration:-Miscellaneous.md)
 * [Window Rules](./Configuration:-Window-Rules.md)
+* [Layer Rules](./Configuration:-Layer-Rules.md)
 * [Animations](./Configuration:-Animations.md)
 * [Debug Options](./Configuration:-Debug-Options.md)
 
