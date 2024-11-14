@@ -41,8 +41,8 @@ use smithay::desktop::utils::{
     under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
 use smithay::desktop::{
-    layer_map_for_output, LayerSurface, PopupGrab, PopupManager, PopupUngrabStrategy, Space,
-    Window, WindowSurfaceType,
+    layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager, PopupUngrabStrategy,
+    Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
@@ -3110,25 +3110,7 @@ impl Niri {
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
         let mut extend_from_layer = |elements: &mut Vec<OutputRenderElements<R>>, layer| {
-            let iter = layer_map
-                .layers_on(layer)
-                .filter_map(|surface| {
-                    layer_map
-                        .layer_geometry(surface)
-                        .map(|geo| (geo.loc, surface))
-                })
-                .flat_map(|(loc, surface)| {
-                    surface
-                        .render_elements(
-                            renderer,
-                            loc.to_physical_precise_round(output_scale),
-                            output_scale,
-                            1.,
-                        )
-                        .into_iter()
-                        .map(OutputRenderElements::Wayland)
-                });
-            elements.extend(iter);
+            self.render_layer(renderer, output_scale, &layer_map, layer, elements);
         };
 
         // The upper layer-shell elements go next.
@@ -3157,6 +3139,35 @@ impl Niri {
         }
 
         elements
+    }
+
+    fn render_layer<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        output_scale: Scale<f64>,
+        layer_map: &LayerMap,
+        layer: Layer,
+        elements: &mut Vec<OutputRenderElements<R>>,
+    ) {
+        let iter = layer_map
+            .layers_on(layer)
+            .filter_map(|surface| {
+                layer_map
+                    .layer_geometry(surface)
+                    .map(|geo| (geo.loc, surface))
+            })
+            .flat_map(|(loc, surface)| {
+                surface
+                    .render_elements(
+                        renderer,
+                        loc.to_physical_precise_round(output_scale),
+                        output_scale,
+                        1.,
+                    )
+                    .into_iter()
+                    .map(OutputRenderElements::Wayland)
+            });
+        elements.extend(iter);
     }
 
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
