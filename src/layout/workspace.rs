@@ -2153,20 +2153,18 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let mut offset = Point::from((source_column.render_offset().x, 0.));
-        let prev_off = source_column.tile_offset(source_column.active_tile_idx);
+        let source_tile_idx = source_column.tiles.len() - 1;
 
-        let removed = self.remove_tile_by_idx(
-            source_col_idx,
-            source_column.active_tile_idx,
-            Transaction::new(),
-            None,
-        );
+        let mut offset = Point::from((source_column.render_offset().x, 0.));
+        let prev_off = source_column.tile_offset(source_tile_idx);
+
+        let removed =
+            self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
 
         self.add_tile(
             Some(target_col_idx),
             removed.tile,
-            true,
+            false,
             removed.width,
             removed.is_full_width,
             Some(self.options.animations.window_movement.0),

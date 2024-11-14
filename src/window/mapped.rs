@@ -15,7 +15,9 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
+use wayland_backend::server::Credentials;
 
 use super::{ResolvedWindowRules, WindowRef};
 use crate::handlers::KdeDecorationsModeState;
@@ -33,7 +35,9 @@ use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
-use crate::utils::{send_scale_transform, with_toplevel_role, ResizeEdge};
+use crate::utils::{
+    get_credentials_for_surface, send_scale_transform, with_toplevel_role, ResizeEdge,
+};
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -41,6 +45,9 @@ pub struct Mapped {
 
     /// Unique ID of this `Mapped`.
     id: MappedId,
+
+    /// Credentials of the process that created the Wayland connection.
+    credentials: Option<Credentials>,
 
     /// Pre-commit hook that we have on all mapped toplevel surfaces.
     pre_commit_hook: HookId,
@@ -136,9 +143,13 @@ impl InteractiveResize {
 
 impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
+        let surface = window.wl_surface().expect("no X11 support");
+        let credentials = get_credentials_for_surface(&surface);
+
         Self {
             window,
             id: MappedId::next(),
+            credentials,
             pre_commit_hook: hook,
             rules,
             need_to_recompute_rules: false,
@@ -186,6 +197,10 @@ impl Mapped {
 
     pub fn id(&self) -> MappedId {
         self.id
+    }
+
+    pub fn credentials(&self) -> Option<&Credentials> {
+        self.credentials.as_ref()
     }
 
     pub fn is_focused(&self) -> bool {

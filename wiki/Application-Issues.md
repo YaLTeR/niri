@@ -16,3 +16,8 @@ window-rule {
 ```
 
 This empty default column width lets WezTerm pick its own initial width which makes it show up properly.
+
+### Ghidra
+
+Some Java apps like Ghidra can show up blank under xwayland-satellite.
+To fix this, run them with the `_JAVA_AWT_WM_NONREPARENTING=1` environment variable

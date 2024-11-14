@@ -16,9 +16,11 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
+use smithay::desktop::layer_map_for_output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
+use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 
 use crate::backend::IpcOutputMap;
 use crate::layout::workspace::WorkspaceId;
@@ -254,6 +256,47 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let windows = state.windows.windows.values().cloned().collect();
             Response::Windows(windows)
         }
+        Request::Layers => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let mut layers = Vec::new();
+                for output in state.niri.global_space.outputs() {
+                    let name = output.name();
+                    for surface in layer_map_for_output(output).layers() {
+                        let layer = match surface.layer() {
+                            Layer::Background => niri_ipc::Layer::Background,
+                            Layer::Bottom => niri_ipc::Layer::Bottom,
+                            Layer::Top => niri_ipc::Layer::Top,
+                            Layer::Overlay => niri_ipc::Layer::Overlay,
+                        };
+                        let keyboard_interactivity =
+                            match surface.cached_state().keyboard_interactivity {
+                                KeyboardInteractivity::None => {
+                                    niri_ipc::LayerSurfaceKeyboardInteractivity::None
+                                }
+                                KeyboardInteractivity::Exclusive => {
+                                    niri_ipc::LayerSurfaceKeyboardInteractivity::Exclusive
+                                }
+                                KeyboardInteractivity::OnDemand => {
+                                    niri_ipc::LayerSurfaceKeyboardInteractivity::OnDemand
+                                }
+                            };
+
+                        layers.push(niri_ipc::LayerSurface {
+                            namespace: surface.namespace().to_owned(),
+                            output: name.clone(),
+                            layer,
+                            keyboard_interactivity,
+                        });
+                    }
+                }
+
+                let _ = tx.send_blocking(layers);
+            });
+            let result = rx.recv().await;
+            let layers = result.map_err(|_| String::from("error getting layers info"))?;
+            Response::Layers(layers)
+        }
         Request::KeyboardLayouts => {
             let state = ctx.event_stream_state.borrow();
             let layout = state.keyboard_layouts.keyboard_layouts.clone();
@@ -363,6 +406,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
         id: mapped.id().get(),
         title: role.title.clone(),
         app_id: role.app_id.clone(),
+        pid: mapped.credentials().map(|c| c.pid),
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
     })

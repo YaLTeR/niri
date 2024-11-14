@@ -1,3 +1,6 @@
+use std::iter::Peekable;
+use std::slice;
+
 use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
@@ -23,6 +26,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         },
         Msg::Workspaces => Request::Workspaces,
         Msg::Windows => Request::Windows,
+        Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
@@ -166,6 +170,69 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             for window in windows {
                 print_window(&window);
                 println!();
+            }
+        }
+        Msg::Layers => {
+            let Response::Layers(mut layers) = response else {
+                bail!("unexpected response: expected Layers, got {response:?}");
+            };
+
+            if json {
+                let layers = serde_json::to_string(&layers).context("error formatting response")?;
+                println!("{layers}");
+                return Ok(());
+            }
+
+            layers.sort_by(|a, b| {
+                Ord::cmp(&a.output, &b.output)
+                    .then_with(|| Ord::cmp(&a.layer, &b.layer))
+                    .then_with(|| Ord::cmp(&a.namespace, &b.namespace))
+            });
+            let mut iter = layers.iter().peekable();
+
+            let print = |surface: &niri_ipc::LayerSurface| {
+                println!("    Surface:");
+                println!("      Namespace: \"{}\"", &surface.namespace);
+
+                let interactivity = match surface.keyboard_interactivity {
+                    niri_ipc::LayerSurfaceKeyboardInteractivity::None => "none",
+                    niri_ipc::LayerSurfaceKeyboardInteractivity::Exclusive => "exclusive",
+                    niri_ipc::LayerSurfaceKeyboardInteractivity::OnDemand => "on-demand",
+                };
+                println!("      Keyboard interactivity: {interactivity}");
+            };
+
+            let print_layer = |iter: &mut Peekable<slice::Iter<niri_ipc::LayerSurface>>,
+                               output: &str,
+                               layer| {
+                let mut empty = true;
+                while let Some(surface) = iter.next_if(|s| s.output == output && s.layer == layer) {
+                    empty = false;
+                    println!();
+                    print(surface);
+                }
+                if empty {
+                    println!(" (empty)\n");
+                } else {
+                    println!();
+                }
+            };
+
+            while let Some(surface) = iter.peek() {
+                let output = &surface.output;
+                println!("Output \"{output}\":");
+
+                print!("  Background layer:");
+                print_layer(&mut iter, output, niri_ipc::Layer::Background);
+
+                print!("  Bottom layer:");
+                print_layer(&mut iter, output, niri_ipc::Layer::Bottom);
+
+                print!("  Top layer:");
+                print_layer(&mut iter, output, niri_ipc::Layer::Top);
+
+                print!("  Overlay layer:");
+                print_layer(&mut iter, output, niri_ipc::Layer::Overlay);
             }
         }
         Msg::FocusedOutput => {
@@ -447,6 +514,12 @@ fn print_window(window: &Window) {
         println!("  App ID: \"{app_id}\"");
     } else {
         println!("  App ID: (unset)");
+    }
+
+    if let Some(pid) = window.pid {
+        println!("  PID: {pid}");
+    } else {
+        println!("  PID: (unknown)");
     }
 
     if let Some(workspace_id) = window.workspace_id {

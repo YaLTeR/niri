@@ -28,8 +28,8 @@ use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, AsRenderElements, Element as _, Id, Kind,
-    PrimaryScanoutOutput, RenderElementStates,
+    default_primary_scanout_output_compare, Element as _, Id, Kind, PrimaryScanoutOutput,
+    RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -41,8 +41,8 @@ use smithay::desktop::utils::{
     under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
 use smithay::desktop::{
-    layer_map_for_output, LayerSurface, PopupGrab, PopupManager, PopupUngrabStrategy, Space,
-    Window, WindowSurfaceType,
+    layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager, PopupUngrabStrategy,
+    Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
@@ -116,6 +116,8 @@ use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
+use crate::layer::mapped::LayerSurfaceRenderElement;
+use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
@@ -190,6 +192,9 @@ pub struct Niri {
 
     /// Layer surfaces which don't have a buffer attached yet.
     pub unmapped_layer_surfaces: HashSet<WlSurface>,
+
+    /// Extra data for mapped layer surfaces.
+    pub mapped_layer_surfaces: HashMap<LayerSurface, MappedLayer>,
 
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
@@ -1012,6 +1017,7 @@ impl State {
         let mut output_config_changed = false;
         let mut preserved_output_config = None;
         let mut window_rules_changed = false;
+        let mut layer_rules_changed = false;
         let mut debug_config_changed = false;
         let mut shaders_changed = false;
         let mut cursor_inactivity_timeout_changed = false;
@@ -1069,6 +1075,10 @@ impl State {
 
         if config.window_rules != old_config.window_rules {
             window_rules_changed = true;
+        }
+
+        if config.layer_rules != old_config.layer_rules {
+            layer_rules_changed = true;
         }
 
         if config.animations.window_resize.custom_shader
@@ -1151,6 +1161,10 @@ impl State {
 
         if window_rules_changed {
             self.niri.recompute_window_rules();
+        }
+
+        if layer_rules_changed {
+            self.niri.recompute_layer_rules();
         }
 
         if shaders_changed {
@@ -1773,6 +1787,7 @@ impl Niri {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
                     restricted: false,
+                    credentials_unknown: false,
                 });
 
                 if let Err(err) = state.niri.display_handle.insert_client(client, data) {
@@ -1815,6 +1830,7 @@ impl Niri {
                     let _span = tracy_client::span!("startup timeout");
                     state.niri.is_at_startup = false;
                     state.niri.recompute_window_rules();
+                    state.niri.recompute_layer_rules();
                     TimeoutAction::Drop
                 },
             )
@@ -1838,6 +1854,7 @@ impl Niri {
             output_state: HashMap::new(),
             unmapped_windows: HashMap::new(),
             unmapped_layer_surfaces: HashSet::new(),
+            mapped_layer_surfaces: HashMap::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
             blocker_cleared_tx,
@@ -3109,25 +3126,7 @@ impl Niri {
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
         let mut extend_from_layer = |elements: &mut Vec<OutputRenderElements<R>>, layer| {
-            let iter = layer_map
-                .layers_on(layer)
-                .filter_map(|surface| {
-                    layer_map
-                        .layer_geometry(surface)
-                        .map(|geo| (geo.loc, surface))
-                })
-                .flat_map(|(loc, surface)| {
-                    surface
-                        .render_elements(
-                            renderer,
-                            loc.to_physical_precise_round(output_scale),
-                            output_scale,
-                            1.,
-                        )
-                        .into_iter()
-                        .map(OutputRenderElements::Wayland)
-                });
-            elements.extend(iter);
+            self.render_layer(renderer, target, output_scale, &layer_map, layer, elements);
         };
 
         // The upper layer-shell elements go next.
@@ -3156,6 +3155,29 @@ impl Niri {
         }
 
         elements
+    }
+
+    fn render_layer<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        target: RenderTarget,
+        scale: Scale<f64>,
+        layer_map: &LayerMap,
+        layer: Layer,
+        elements: &mut Vec<OutputRenderElements<R>>,
+    ) {
+        let iter = layer_map
+            .layers_on(layer)
+            .filter_map(|surface| {
+                let mapped = self.mapped_layer_surfaces.get(surface)?;
+                let geo = layer_map.layer_geometry(surface)?;
+                Some((mapped, geo))
+            })
+            .flat_map(|(mapped, geo)| {
+                let elements = mapped.render(renderer, geo, scale, target);
+                elements.into_iter().map(OutputRenderElements::LayerSurface)
+            });
+        elements.extend(iter);
     }
 
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
@@ -4793,6 +4815,26 @@ impl Niri {
         }
     }
 
+    pub fn recompute_layer_rules(&mut self) {
+        let _span = tracy_client::span!("Niri::recompute_layer_rules");
+
+        let mut changed = false;
+        {
+            let rules = &self.config.borrow().layer_rules;
+
+            for mapped in self.mapped_layer_surfaces.values_mut() {
+                if mapped.recompute_layer_rules(rules, self.is_at_startup) {
+                    changed = true;
+                }
+            }
+        }
+
+        if changed {
+            // FIXME: granular.
+            self.queue_redraw_all();
+        }
+    }
+
     pub fn reset_pointer_inactivity_timer(&mut self) {
         let _span = tracy_client::span!("Niri::reset_pointer_inactivity_timer");
 
@@ -4825,6 +4867,8 @@ pub struct ClientState {
     pub can_view_decoration_globals: bool,
     /// Whether this client is denied from the restricted protocols such as security-context.
     pub restricted: bool,
+    /// We cannot retrieve this client's socket credentials.
+    pub credentials_unknown: bool,
 }
 
 impl ClientData for ClientState {
@@ -4836,6 +4880,7 @@ niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
         Tile = TileRenderElement<R>,
+        LayerSurface = LayerSurfaceRenderElement<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,

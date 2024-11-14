@@ -410,6 +410,7 @@ impl SecurityContextHandler for State {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
                     restricted: true,
+                    credentials_unknown: false,
                 });
 
                 if let Err(err) = state.niri.display_handle.insert_client(client, data) {
