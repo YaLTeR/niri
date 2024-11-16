@@ -1,6 +1,7 @@
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::wayland::shell::xdg::ToplevelSurface;
+use smithay::wayland::xdg_activation::XdgActivationTokenData;
 
 use super::ResolvedWindowRules;
 use crate::layout::workspace::ColumnWidth;
@@ -9,6 +10,8 @@ use crate::layout::workspace::ColumnWidth;
 pub struct Unmapped {
     pub window: Window,
     pub state: InitialConfigureState,
+    /// Activation token, if one was used on this unmapped window.
+    pub activation_token_data: Option<XdgActivationTokenData>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -57,6 +60,7 @@ impl Unmapped {
             state: InitialConfigureState::NotConfigured {
                 wants_fullscreen: None,
             },
+            activation_token_data: None,
         }
     }
 
