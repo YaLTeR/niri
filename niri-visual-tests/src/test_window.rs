@@ -264,4 +264,10 @@ impl LayoutElement for TestWindow {
     fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
         None
     }
+
+    fn previous_focus_id(&self) -> Option<Self::Id> {
+        None
+    }
+
+    fn set_previous_focus_id(&mut self, _id: Option<Self::Id>) {}
 }

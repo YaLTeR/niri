@@ -36,6 +36,7 @@ use touch_move_grab::TouchMoveGrab;
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
+use crate::layout::LayoutElement as _;
 use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
@@ -636,22 +637,14 @@ impl State {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
                 let window = window.map(|(_, m)| m.window.clone());
                 if let Some(window) = window {
-                    let active_output = self.niri.layout.active_output().cloned();
-
-                    self.niri.layout.activate_window(&window);
-
-                    let new_active = self.niri.layout.active_output().cloned();
-                    #[allow(clippy::collapsible_if)]
-                    if new_active != active_output {
-                        if !self.maybe_warp_cursor_to_focus_centered() {
-                            self.move_cursor_to_output(&new_active.unwrap());
-                        }
-                    } else {
-                        self.maybe_warp_cursor_to_focus();
-                    }
-
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
+                    self.focus_window(&window);
+                }
+            }
+            Action::FocusWindowPrevious => {
+                let window = self.niri.layout.active_window();
+                let window = window.and_then(|(m, _)| m.previous_focus_id());
+                if let Some(window) = window {
+                    self.focus_window(&window);
                 }
             }
             Action::SwitchLayout(action) => {

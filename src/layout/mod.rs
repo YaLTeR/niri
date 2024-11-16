@@ -195,6 +195,9 @@ pub trait LayoutElement {
     fn cancel_interactive_resize(&mut self);
     fn update_interactive_resize(&mut self, serial: Serial);
     fn interactive_resize_data(&self) -> Option<InteractiveResizeData>;
+
+    fn previous_focus_id(&self) -> Option<Self::Id>;
+    fn set_previous_focus_id(&mut self, id: Option<Self::Id>);
 }
 
 #[derive(Debug)]
@@ -3796,6 +3799,12 @@ mod tests {
         fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
             None
         }
+
+        fn previous_focus_id(&self) -> Option<Self::Id> {
+            None
+        }
+
+        fn set_previous_focus_id(&mut self, _id: Option<Self::Id>) {}
     }
 
     fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {

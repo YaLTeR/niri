@@ -682,6 +682,27 @@ impl State {
         rv
     }
 
+    /// Focus a specific [`Window`], taking care of a potential active output change and cursor
+    /// warp.
+    pub fn focus_window(&mut self, window: &Window) {
+        let active_output = self.niri.layout.active_output().cloned();
+
+        self.niri.layout.activate_window(window);
+
+        let new_active = self.niri.layout.active_output().cloned();
+        #[allow(clippy::collapsible_if)]
+        if new_active != active_output {
+            if !self.maybe_warp_cursor_to_focus_centered() {
+                self.move_cursor_to_output(&new_active.unwrap());
+            }
+        } else {
+            self.maybe_warp_cursor_to_focus();
+        }
+
+        // FIXME: granular
+        self.niri.queue_redraw_all();
+    }
+
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
         if !self.niri.config.borrow().input.warp_mouse_to_focus {
             return false;
@@ -891,12 +912,14 @@ impl State {
             );
 
             // Tell the windows their new focus state for window rule purposes.
+            let mut previous_focus_id = None;
             if let KeyboardFocus::Layout {
                 surface: Some(surface),
             } = &self.niri.keyboard_focus
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(false);
+                    previous_focus_id = Some(mapped.window.clone());
                 }
             }
             if let KeyboardFocus::Layout {
@@ -905,6 +928,19 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
+
+                    // Switching keyboard focus to layer-shell and back will result in None
+                    // previous_focus_id (since we're not switching straight from another layout
+                    // window). In order to preserve the previous focus in the common case of
+                    // opening and closing a layer-shell launcher without any layout focus changes
+                    // in-between, ignore None previous_focus_id here.
+                    //
+                    // FIXME: this doesn't work entirely correctly if there are layout focus
+                    // changes while layer-shell has keyboard focus. Figure out some good way to do
+                    // it right.
+                    if previous_focus_id.is_some() {
+                        mapped.set_previous_focus_id(previous_focus_id)
+                    }
                 }
             }
 
