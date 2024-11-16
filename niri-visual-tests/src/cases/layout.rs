@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use niri::animation::Clock;
 use niri::layout::workspace::ColumnWidth;
-use niri::layout::{LayoutElement as _, Options};
+use niri::layout::{ActivateWindow, LayoutElement as _, Options};
 use niri::render_helpers::RenderTarget;
 use niri_config::{Color, FloatOrInt, OutputName};
 use smithay::backend::renderer::element::RenderElement;
@@ -162,7 +162,8 @@ impl Layout {
         window.request_size(ws.new_window_size(width, window.rules()), false, None);
         window.communicate();
 
-        self.layout.add_window(window.clone(), width, false);
+        self.layout
+            .add_window(window.clone(), width, false, ActivateWindow::default());
         self.windows.push(window);
     }
 

@@ -752,7 +752,7 @@ impl State {
             self.niri.is_at_startup,
         );
 
-        let Unmapped { window, state } = unmapped;
+        let Unmapped { window, state, .. } = unmapped;
 
         let InitialConfigureState::NotConfigured { wants_fullscreen } = state else {
             error!("window must not be already configured in send_initial_configure()");

@@ -358,6 +358,18 @@ pub struct RemovedTile<W: LayoutElement> {
     is_full_width: bool,
 }
 
+/// Whether to activate a newly added window.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ActivateWindow {
+    /// Activate unconditionally.
+    Yes,
+    /// Activate based on heuristics.
+    #[default]
+    Smart,
+    /// Do not activate.
+    No,
+}
+
 impl<W: LayoutElement> InteractiveMoveState<W> {
     fn moving(&self) -> Option<&InteractiveMoveData<W>> {
         match self {
@@ -380,6 +392,16 @@ impl<W: LayoutElement> InteractiveMoveData<W> {
                 + self.tile.render_offset();
         // Round to physical pixels.
         pos.to_physical_precise_round(scale).to_logical(scale)
+    }
+}
+
+impl ActivateWindow {
+    pub fn map_smart(self, f: impl FnOnce() -> bool) -> bool {
+        match self {
+            ActivateWindow::Yes => true,
+            ActivateWindow::Smart => f(),
+            ActivateWindow::No => false,
+        }
     }
 }
 
@@ -753,6 +775,7 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         width: Option<ColumnWidth>,
         is_full_width: bool,
+        activate: ActivateWindow,
     ) -> Option<&Output> {
         let width = self.resolve_default_width(&window, width);
 
@@ -771,20 +794,27 @@ impl<W: LayoutElement> Layout<W> {
                     })
                     .unwrap();
 
-                // Don't steal focus from an active fullscreen window.
-                let mut activate = true;
-                let ws = &mon.workspaces[ws_idx];
-                if mon_idx == *active_monitor_idx
-                    && !ws.columns.is_empty()
-                    && ws.columns[ws.active_column_idx].is_fullscreen
-                {
-                    activate = false;
+                if activate == ActivateWindow::Yes {
+                    *active_monitor_idx = mon_idx;
                 }
 
-                // Don't activate if on a different workspace.
-                if mon.active_workspace_idx != ws_idx {
-                    activate = false;
-                }
+                let activate = activate.map_smart(|| {
+                    // Don't steal focus from an active fullscreen window.
+                    let ws = &mon.workspaces[ws_idx];
+                    if mon_idx == *active_monitor_idx
+                        && !ws.columns.is_empty()
+                        && ws.columns[ws.active_column_idx].is_fullscreen
+                    {
+                        return false;
+                    }
+
+                    // Don't activate if on a different workspace.
+                    if mon.active_workspace_idx != ws_idx {
+                        return false;
+                    }
+
+                    true
+                });
 
                 mon.add_window(ws_idx, window, activate, width, is_full_width);
                 Some(&mon.output)
@@ -798,7 +828,8 @@ impl<W: LayoutElement> Layout<W> {
                             .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
                     })
                     .unwrap();
-                ws.add_window(None, window, true, width, is_full_width);
+                let activate = activate.map_smart(|| true);
+                ws.add_window(None, window, activate, width, is_full_width);
                 None
             }
         }
@@ -835,6 +866,7 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         width: Option<ColumnWidth>,
         is_full_width: bool,
+        activate: ActivateWindow,
     ) -> Option<&Output> {
         let width = self.resolve_default_width(&window, width);
 
@@ -846,12 +878,11 @@ impl<W: LayoutElement> Layout<W> {
             } => {
                 let mon = &mut monitors[*active_monitor_idx];
 
-                // Don't steal focus from an active fullscreen window.
-                let mut activate = true;
-                let ws = &mon.workspaces[mon.active_workspace_idx];
-                if !ws.columns.is_empty() && ws.columns[ws.active_column_idx].is_fullscreen {
-                    activate = false;
-                }
+                let activate = activate.map_smart(|| {
+                    // Don't steal focus from an active fullscreen window.
+                    let ws = &mon.workspaces[mon.active_workspace_idx];
+                    ws.columns.is_empty() || !ws.columns[ws.active_column_idx].is_fullscreen
+                });
 
                 mon.add_window(
                     mon.active_workspace_idx,
@@ -872,7 +903,8 @@ impl<W: LayoutElement> Layout<W> {
                     ));
                     &mut workspaces[0]
                 };
-                ws.add_window(None, window, true, width, is_full_width);
+                let activate = activate.map_smart(|| true);
+                ws.add_window(None, window, activate, width, is_full_width);
                 None
             }
         }
@@ -893,11 +925,12 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if right_of == move_.tile.window().id() {
                 let output = move_.output.clone();
+                let activate = ActivateWindow::default();
                 if self.monitor_for_output(&output).is_some() {
-                    self.add_window_on_output(&output, window, width, is_full_width);
+                    self.add_window_on_output(&output, window, width, is_full_width, activate);
                     return Some(&self.monitor_for_output(&output).unwrap().output);
                 } else {
-                    return self.add_window(window, width, is_full_width);
+                    return self.add_window(window, width, is_full_width, activate);
                 }
             }
         }
@@ -932,6 +965,7 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         width: Option<ColumnWidth>,
         is_full_width: bool,
+        activate: ActivateWindow,
     ) {
         let width = self.resolve_default_width(&window, width);
 
@@ -950,15 +984,21 @@ impl<W: LayoutElement> Layout<W> {
             .find(|(_, mon)| mon.output == *output)
             .unwrap();
 
-        // Don't steal focus from an active fullscreen window.
-        let mut activate = true;
-        let ws = &mon.workspaces[mon.active_workspace_idx];
-        if mon_idx == *active_monitor_idx
-            && !ws.columns.is_empty()
-            && ws.columns[ws.active_column_idx].is_fullscreen
-        {
-            activate = false;
+        if activate == ActivateWindow::Yes {
+            *active_monitor_idx = mon_idx;
         }
+
+        let activate = activate.map_smart(|| {
+            // Don't steal focus from an active fullscreen window.
+            let ws = &mon.workspaces[mon.active_workspace_idx];
+            if mon_idx == *active_monitor_idx
+                && !ws.columns.is_empty()
+                && ws.columns[ws.active_column_idx].is_fullscreen
+            {
+                return false;
+            }
+            true
+        });
 
         mon.add_window(
             mon.active_workspace_idx,
@@ -4365,7 +4405,7 @@ mod tests {
                     }
 
                     let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
-                    layout.add_window(win, None, false);
+                    layout.add_window(win, None, false, ActivateWindow::default());
                 }
                 Op::AddWindowRightOf {
                     id,
@@ -4482,7 +4522,13 @@ mod tests {
                     }
 
                     let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
-                    layout.add_window_to_named_workspace(&ws_name, win, None, false);
+                    layout.add_window_to_named_workspace(
+                        &ws_name,
+                        win,
+                        None,
+                        false,
+                        ActivateWindow::default(),
+                    );
                 }
                 Op::CloseWindow(id) => {
                     layout.remove_window(&id, Transaction::new());
