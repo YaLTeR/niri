@@ -23,11 +23,13 @@ tracy-client = { version = "0.17.4", default-features = false }
 
 [workspace.dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
+branch = "fix/non_grabbing_popup_parent"
 # path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 git = "https://github.com/Smithay/smithay.git"
+branch = "fix/non_grabbing_popup_parent"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
