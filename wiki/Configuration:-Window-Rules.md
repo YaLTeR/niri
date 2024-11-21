@@ -323,6 +323,7 @@ You can block out windows from xdg-desktop-portal screencasts.
 They will be replaced with solid black rectangles.
 
 This can be useful for password managers or messenger windows, etc.
+For layer-shell notification pop-ups and the like, you can use a `block-out-from` [layer rule](./Configuration:-Layer-Rules.md).
 
 ![Screenshot showing a window visible normally, but blocked out on OBS.](./img/block-out-from-screencast.png)
 
