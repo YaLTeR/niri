@@ -266,6 +266,7 @@ pub struct Niri {
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
+    pub previously_focused_window: Option<Window>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
 
@@ -912,14 +913,14 @@ impl State {
             );
 
             // Tell the windows their new focus state for window rule purposes.
-            let mut previous_focus_id = None;
+            let mut previous_focus = None;
             if let KeyboardFocus::Layout {
                 surface: Some(surface),
             } = &self.niri.keyboard_focus
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(false);
-                    previous_focus_id = Some(mapped.window.clone());
+                    previous_focus = Some(mapped.window.clone());
                 }
             }
             if let KeyboardFocus::Layout {
@@ -928,20 +929,30 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
-
-                    // Switching keyboard focus to layer-shell and back will result in None
-                    // previous_focus_id (since we're not switching straight from another layout
-                    // window). In order to preserve the previous focus in the common case of
-                    // opening and closing a layer-shell launcher without any layout focus changes
-                    // in-between, ignore None previous_focus_id here.
-                    //
-                    // FIXME: this doesn't work entirely correctly if there are layout focus
-                    // changes while layer-shell has keyboard focus. Figure out some good way to do
-                    // it right.
-                    if previous_focus_id.is_some() {
-                        mapped.set_previous_focus_id(previous_focus_id)
-                    }
                 }
+            }
+
+            // Update the previous focus but only when staying focused on the layout.
+            //
+            // Case 1: opening and closing exclusive-keyboard layer-shell (e.g. app launcher). This
+            // involves going from Layout to LayerShell, then from LayerShell to Layout. The
+            // previously focused window should stay unchanged.
+            //
+            //     Case 1.5: opening layer-shell, in the background switching layout focus, closing
+            //     layer-shell. With the current logic, this won't update the previously focused
+            //     window, which is incorrect. But this case should be rare.
+            //
+            // Case 2: switching to an empty workspace, then hitting FocusWindowPrevious. The focus
+            // should go to the window that was just focused. The keyboard focus goes from Layout
+            // (with Some surface) to Layout (with None surface), so we update the previously
+            // focused window.
+            //
+            // FIXME: Ideally this should happen inside Layout itself, then there wouldn't be any
+            // problems with layer-shell, etc.
+            if matches!(self.niri.keyboard_focus, KeyboardFocus::Layout { .. })
+                && matches!(focus, KeyboardFocus::Layout { .. })
+            {
+                self.niri.previously_focused_window = previous_focus;
             }
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
@@ -1944,6 +1955,7 @@ impl Niri {
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
             layer_shell_on_demand_focus: None,
+            previously_focused_window: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             cursor_manager,

@@ -36,7 +36,6 @@ use touch_move_grab::TouchMoveGrab;
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
-use crate::layout::LayoutElement as _;
 use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
@@ -641,9 +640,7 @@ impl State {
                 }
             }
             Action::FocusWindowPrevious => {
-                let window = self.niri.layout.active_window();
-                let window = window.and_then(|(m, _)| m.previous_focus_id());
-                if let Some(window) = window {
+                if let Some(window) = self.niri.previously_focused_window.clone() {
                     self.focus_window(&window);
                 }
             }

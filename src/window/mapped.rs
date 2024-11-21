@@ -64,9 +64,6 @@ pub struct Mapped {
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
-    /// The id of the previously focused window.
-    previous_focus_id: Option<Window>,
-
     /// Whether this window is the active window in its column.
     is_active_in_column: bool,
 
@@ -157,7 +154,6 @@ impl Mapped {
             rules,
             need_to_recompute_rules: false,
             is_focused: false,
-            previous_focus_id: None,
             is_active_in_column: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
@@ -801,13 +797,5 @@ impl LayoutElement for Mapped {
 
     fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
         Some(self.interactive_resize.as_ref()?.data())
-    }
-
-    fn previous_focus_id(&self) -> Option<Self::Id> {
-        self.previous_focus_id.clone()
-    }
-
-    fn set_previous_focus_id(&mut self, id: Option<Self::Id>) {
-        self.previous_focus_id = id;
     }
 }
