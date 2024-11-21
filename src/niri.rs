@@ -682,7 +682,7 @@ impl State {
         rv
     }
 
-    /// Focus a specific [`Window`], taking care of a potential active output change and cursor
+    /// Focus a specific window, taking care of a potential active output change and cursor
     /// warp.
     pub fn focus_window(&mut self, window: &Window) {
         let active_output = self.niri.layout.active_output().cloned();
