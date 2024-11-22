@@ -204,6 +204,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Focus the previously focused window.
+    FocusWindowPrevious {},
     /// Focus the column to the left.
     FocusColumnLeft {},
     /// Focus the column to the right.

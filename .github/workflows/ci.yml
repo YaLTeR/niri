@@ -23,8 +23,7 @@ jobs:
             release-flag: '--release'
 
     name: test - ${{ matrix.configuration }}
-    runs-on: ubuntu-22.04
-    container: ubuntu:23.10
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -33,8 +32,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
+          sudo apt-get update -y
+          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -74,8 +73,7 @@ jobs:
       fail-fast: false
 
     name: visual tests
-    runs-on: ubuntu-22.04
-    container: ubuntu:23.10
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -84,8 +82,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
+          sudo apt-get update -y
+          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -99,8 +97,7 @@ jobs:
       fail-fast: false
 
     name: 'msrv - 1.77.0'
-    runs-on: ubuntu-22.04
-    container: ubuntu:23.10
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -109,8 +106,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
+          sudo apt-get update -y
+          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
 
       - uses: dtolnay/rust-toolchain@1.77.0
 
@@ -123,8 +120,7 @@ jobs:
       fail-fast: false
 
     name: clippy
-    runs-on: ubuntu-22.04
-    container: ubuntu:23.10
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -133,8 +129,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt-get update -y
-          apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
+          sudo apt-get update -y
+          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -146,7 +142,7 @@ jobs:
         run: cargo clippy --all --all-targets
 
   rustfmt:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -161,8 +157,8 @@ jobs:
         run: cargo fmt --all -- --check
 
   fedora:
-    runs-on: ubuntu-22.04
-    container: fedora:39
+    runs-on: ubuntu-24.04
+    container: fedora:41
 
     steps:
       - uses: actions/checkout@v4
@@ -178,7 +174,7 @@ jobs:
       - run: cargo build --all
 
   nix:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -200,7 +196,7 @@ jobs:
     needs: build
     permissions:
       contents: write
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -212,7 +208,7 @@ jobs:
     needs: build
     permissions:
       contents: write
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:

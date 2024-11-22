@@ -1165,6 +1165,7 @@ pub enum Action {
     FullscreenWindowById(u64),
     #[knuffel(skip)]
     FocusWindow(u64),
+    FocusWindowPrevious,
     FocusColumnLeft,
     FocusColumnRight,
     FocusColumnFirst,
@@ -1271,6 +1272,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
             niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
+            niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
             niri_ipc::Action::FocusColumnLeft {} => Self::FocusColumnLeft,
             niri_ipc::Action::FocusColumnRight {} => Self::FocusColumnRight,
             niri_ipc::Action::FocusColumnFirst {} => Self::FocusColumnFirst,

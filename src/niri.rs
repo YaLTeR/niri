@@ -266,6 +266,7 @@ pub struct Niri {
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
+    pub previously_focused_window: Option<Window>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
 
@@ -682,6 +683,27 @@ impl State {
         rv
     }
 
+    /// Focus a specific window, taking care of a potential active output change and cursor
+    /// warp.
+    pub fn focus_window(&mut self, window: &Window) {
+        let active_output = self.niri.layout.active_output().cloned();
+
+        self.niri.layout.activate_window(window);
+
+        let new_active = self.niri.layout.active_output().cloned();
+        #[allow(clippy::collapsible_if)]
+        if new_active != active_output {
+            if !self.maybe_warp_cursor_to_focus_centered() {
+                self.move_cursor_to_output(&new_active.unwrap());
+            }
+        } else {
+            self.maybe_warp_cursor_to_focus();
+        }
+
+        // FIXME: granular
+        self.niri.queue_redraw_all();
+    }
+
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
         if !self.niri.config.borrow().input.warp_mouse_to_focus {
             return false;
@@ -891,12 +913,14 @@ impl State {
             );
 
             // Tell the windows their new focus state for window rule purposes.
+            let mut previous_focus = None;
             if let KeyboardFocus::Layout {
                 surface: Some(surface),
             } = &self.niri.keyboard_focus
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(false);
+                    previous_focus = Some(mapped.window.clone());
                 }
             }
             if let KeyboardFocus::Layout {
@@ -906,6 +930,29 @@ impl State {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
                 }
+            }
+
+            // Update the previous focus but only when staying focused on the layout.
+            //
+            // Case 1: opening and closing exclusive-keyboard layer-shell (e.g. app launcher). This
+            // involves going from Layout to LayerShell, then from LayerShell to Layout. The
+            // previously focused window should stay unchanged.
+            //
+            //     Case 1.5: opening layer-shell, in the background switching layout focus, closing
+            //     layer-shell. With the current logic, this won't update the previously focused
+            //     window, which is incorrect. But this case should be rare.
+            //
+            // Case 2: switching to an empty workspace, then hitting FocusWindowPrevious. The focus
+            // should go to the window that was just focused. The keyboard focus goes from Layout
+            // (with Some surface) to Layout (with None surface), so we update the previously
+            // focused window.
+            //
+            // FIXME: Ideally this should happen inside Layout itself, then there wouldn't be any
+            // problems with layer-shell, etc.
+            if matches!(self.niri.keyboard_focus, KeyboardFocus::Layout { .. })
+                && matches!(focus, KeyboardFocus::Layout { .. })
+            {
+                self.niri.previously_focused_window = previous_focus;
             }
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
@@ -1908,6 +1955,7 @@ impl Niri {
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
             layer_shell_on_demand_focus: None,
+            previously_focused_window: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             cursor_manager,
