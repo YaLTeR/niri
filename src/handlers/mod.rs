@@ -306,7 +306,39 @@ impl ClientDndGrabHandler for State {
         self.niri.queue_redraw_all();
     }
 
-    fn dropped(&mut self, _seat: Seat<Self>) {
+    fn dropped(&mut self, target: Option<WlSurface>, validated: bool, _seat: Seat<Self>) {
+        trace!("client dropped, target: {target:?}, validated: {validated}");
+
+        // Activate the target output, since that's how Firefox drag-tab-into-new-window works for
+        // example. On successful drop, additionally activate the target window.
+        let mut activate_output = true;
+        if let Some(target) = validated.then_some(target).flatten() {
+            if let Some(root) = self.niri.root_surface.get(&target) {
+                if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+                    let window = mapped.window.clone();
+                    self.niri.layout.activate_window(&window);
+                    activate_output = false;
+                }
+            }
+        }
+
+        if activate_output {
+            // Find the output from cursor coordinates.
+            //
+            // FIXME: uhhh, we can't actually properly tell if the DnD comes from pointer or touch,
+            // and if it comes from touch, then what the coordinates are. Need to pass more
+            // parameters from Smithay I guess.
+            //
+            // Assume that hidden pointer means touch DnD.
+            if !self.niri.pointer_hidden {
+                // We can't even get the current pointer location because it's locked (we're deep
+                // in the grab call stack here). So use the last known one.
+                if let Some(output) = &self.niri.pointer_contents.output {
+                    self.niri.layout.activate_output(output);
+                }
+            }
+        }
+
         self.niri.dnd_icon = None;
         // FIXME: more granular
         self.niri.queue_redraw_all();
