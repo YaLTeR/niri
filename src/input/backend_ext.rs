@@ -3,6 +3,8 @@ use smithay::backend::input;
 use smithay::backend::winit::WinitVirtualDevice;
 use smithay::output::Output;
 
+use crate::backend::Backend;
+use crate::niri::State;
 use crate::protocols::virtual_pointer::VirtualPointer;
 
 pub trait NiriInputBackend: input::InputBackend<Device = Self::NiriDevice> {
@@ -16,29 +18,33 @@ where
 }
 
 pub trait NiriInputDevice: input::Device {
-    // FIXME: should this be per-event? logically yes,
-    // but right now we only use it for virtual pointers, which have static outputs.
-    fn output(&self) -> Option<Output>;
+    // FIXME: this should maybe be per-event, not per-device,
+    // but it's not clear that this matters in practice?
+    // it might be more obvious once we implement it for libinput
+    fn output(&self, state: &State) -> Option<Output>;
 }
 
 impl NiriInputDevice for libinput::Device {
-    fn output(&self) -> Option<Output> {
+    fn output(&self, _state: &State) -> Option<Output> {
         // FIXME: Allow specifying the output per-device?
-        // In that case, change the method to take a reference to our state or config or something
-        // (because we can't easily change the libinput Device struct)
         None
     }
 }
 
 impl NiriInputDevice for WinitVirtualDevice {
-    fn output(&self) -> Option<Output> {
-        // here it's actually *correct* to return None, because there is only one output.
-        None
+    fn output(&self, state: &State) -> Option<Output> {
+        match state.backend {
+            Backend::Winit(ref winit) => Some(winit.single_output().clone()),
+            // returning None over panicking here because it's not worth panicking over
+            // and also, foreseeably, someone might want to, at some point, use `WinitInputBackend`
+            // for dirty hacks or mocking or whatever, in which case this will be useful.
+            _ => None,
+        }
     }
 }
 
 impl NiriInputDevice for VirtualPointer {
-    fn output(&self) -> Option<Output> {
+    fn output(&self, _: &State) -> Option<Output> {
         self.output().cloned()
     }
 }
