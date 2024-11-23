@@ -15,7 +15,7 @@ use super::workspace::{
     WorkspaceRenderElement,
 };
 use super::{LayoutElement, Options};
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
@@ -45,6 +45,8 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
     pub(super) workspace_switch: Option<WorkspaceSwitch>,
+    /// Clock for driving animations.
+    pub(super) clock: Clock,
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
 }
@@ -94,7 +96,12 @@ impl WorkspaceSwitch {
 }
 
 impl<W: LayoutElement> Monitor<W> {
-    pub fn new(output: Output, workspaces: Vec<Workspace<W>>, options: Rc<Options>) -> Self {
+    pub fn new(
+        output: Output,
+        workspaces: Vec<Workspace<W>>,
+        clock: Clock,
+        options: Rc<Options>,
+    ) -> Self {
         Self {
             output_name: output.name(),
             output,
@@ -102,6 +109,7 @@ impl<W: LayoutElement> Monitor<W> {
             active_workspace_idx: 0,
             previous_workspace_id: None,
             workspace_switch: None,
+            clock,
             options,
         }
     }
@@ -151,7 +159,11 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn add_workspace_bottom(&mut self) {
-        let ws = Workspace::new(self.output.clone(), self.options.clone());
+        let ws = Workspace::new(
+            self.output.clone(),
+            self.clock.clone(),
+            self.options.clone(),
+        );
         self.workspaces.push(ws);
     }
 
@@ -172,6 +184,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace_idx = idx;
 
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
+            self.clock.now(),
             current_idx,
             idx as f64,
             0.,
@@ -1099,6 +1112,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
+            self.clock.now(),
             gesture.current_idx,
             new_idx as f64,
             velocity,

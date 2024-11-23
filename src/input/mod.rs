@@ -3024,6 +3024,7 @@ pub fn mods_with_finger_scroll_binds(comp_mod: CompositorMod, binds: &Binds) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::Clock;
 
     #[test]
     fn bindings_suppress_keys() {
@@ -3042,7 +3043,7 @@ mod tests {
         let comp_mod = CompositorMod::Super;
         let mut suppressed_keys = HashSet::new();
 
-        let screenshot_ui = ScreenshotUi::new(Default::default());
+        let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
         let disable_power_key_handling = false;
 
         // The key_code we pick is arbitrary, the only thing

@@ -1,8 +1,9 @@
 use std::time::Duration;
 
+use niri::animation::Clock;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Physical, Size};
+use smithay::utils::{Logical, Physical, Size};
 
 pub mod gradient_angle;
 pub mod gradient_area;
@@ -20,6 +21,11 @@ pub mod gradient_srgblinear_alpha;
 pub mod layout;
 pub mod tile;
 pub mod window;
+
+pub struct Args {
+    pub size: Size<i32, Logical>,
+    pub clock: Clock,
+}
 
 pub trait TestCase {
     fn resize(&mut self, _width: i32, _height: i32) {}

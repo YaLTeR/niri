@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use niri::animation::Clock;
 use niri::layout::workspace::ColumnWidth;
 use niri::layout::{LayoutElement as _, Options};
 use niri::render_helpers::RenderTarget;
-use niri::utils::get_monotonic_time;
 use niri_config::{Color, FloatOrInt, OutputName};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::layer_map_for_output;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
-use smithay::utils::{Logical, Physical, Size};
+use smithay::utils::{Physical, Size};
 
-use super::TestCase;
+use super::{Args, TestCase};
 use crate::test_window::TestWindow;
 
 type DynStepFn = Box<dyn FnOnce(&mut Layout)>;
@@ -20,13 +20,16 @@ type DynStepFn = Box<dyn FnOnce(&mut Layout)>;
 pub struct Layout {
     output: Output,
     windows: Vec<TestWindow>,
+    clock: Clock,
     layout: niri::layout::Layout<TestWindow>,
     start_time: Duration,
     steps: HashMap<Duration, DynStepFn>,
 }
 
 impl Layout {
-    pub fn new(size: Size<i32, Logical>) -> Self {
+    pub fn new(args: Args) -> Self {
+        let Args { size, clock } = args;
+
         let output = Output::new(
             String::new(),
             PhysicalProperties {
@@ -63,20 +66,23 @@ impl Layout {
             },
             ..Default::default()
         };
-        let mut layout = niri::layout::Layout::with_options(options);
+        let mut layout = niri::layout::Layout::with_options(clock.clone(), options);
         layout.add_output(output.clone());
+
+        let start_time = clock.now();
 
         Self {
             output,
             windows: Vec::new(),
+            clock,
             layout,
-            start_time: get_monotonic_time(),
+            start_time,
             steps: HashMap::new(),
         }
     }
 
-    pub fn open_in_between(size: Size<i32, Logical>) -> Self {
-        let mut rv = Self::new(size);
+    pub fn open_in_between(args: Args) -> Self {
+        let mut rv = Self::new(args);
 
         rv.add_window(TestWindow::freeform(0), Some(ColumnWidth::Proportion(0.3)));
         rv.add_window(TestWindow::freeform(1), Some(ColumnWidth::Proportion(0.3)));
@@ -91,8 +97,8 @@ impl Layout {
         rv
     }
 
-    pub fn open_multiple_quickly(size: Size<i32, Logical>) -> Self {
-        let mut rv = Self::new(size);
+    pub fn open_multiple_quickly(args: Args) -> Self {
+        let mut rv = Self::new(args);
 
         for delay in [100, 200, 300] {
             rv.add_step(delay, move |l| {
@@ -105,8 +111,8 @@ impl Layout {
         rv
     }
 
-    pub fn open_multiple_quickly_big(size: Size<i32, Logical>) -> Self {
-        let mut rv = Self::new(size);
+    pub fn open_multiple_quickly_big(args: Args) -> Self {
+        let mut rv = Self::new(args);
 
         for delay in [100, 200, 300] {
             rv.add_step(delay, move |l| {
@@ -119,8 +125,8 @@ impl Layout {
         rv
     }
 
-    pub fn open_to_the_left(size: Size<i32, Logical>) -> Self {
-        let mut rv = Self::new(size);
+    pub fn open_to_the_left(args: Args) -> Self {
+        let mut rv = Self::new(args);
 
         rv.add_window(TestWindow::freeform(0), Some(ColumnWidth::Proportion(0.3)));
         rv.add_window(TestWindow::freeform(1), Some(ColumnWidth::Proportion(0.3)));
@@ -135,8 +141,8 @@ impl Layout {
         rv
     }
 
-    pub fn open_to_the_left_big(size: Size<i32, Logical>) -> Self {
-        let mut rv = Self::new(size);
+    pub fn open_to_the_left_big(args: Args) -> Self {
+        let mut rv = Self::new(args);
 
         rv.add_window(TestWindow::freeform(0), Some(ColumnWidth::Proportion(0.3)));
         rv.add_window(TestWindow::freeform(1), Some(ColumnWidth::Proportion(0.8)));
@@ -201,21 +207,23 @@ impl TestCase for Layout {
         self.layout.are_animations_ongoing(Some(&self.output)) || !self.steps.is_empty()
     }
 
-    fn advance_animations(&mut self, mut current_time: Duration) {
+    fn advance_animations(&mut self, current_time: Duration) {
         let run = self
             .steps
             .keys()
             .copied()
             .filter(|delay| self.start_time + *delay <= current_time)
             .collect::<Vec<_>>();
-        for key in &run {
-            let f = self.steps.remove(key).unwrap();
+        for delay in &run {
+            let now = self.start_time + *delay;
+            self.clock.set_time_override(Some(now));
+            self.layout.advance_animations(now);
+
+            let f = self.steps.remove(delay).unwrap();
             f(self);
         }
-        if !run.is_empty() {
-            current_time = get_monotonic_time();
-        }
 
+        self.clock.set_time_override(None);
         self.layout.advance_animations(current_time);
     }
 

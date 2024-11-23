@@ -7,9 +7,9 @@ use niri::render_helpers::border::BorderRenderElement;
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Rectangle, Size};
+use smithay::utils::{Physical, Rectangle, Size};
 
-use super::TestCase;
+use super::{Args, TestCase};
 
 pub struct GradientAngle {
     angle: f32,
@@ -17,7 +17,7 @@ pub struct GradientAngle {
 }
 
 impl GradientAngle {
-    pub fn new(_size: Size<i32, Logical>) -> Self {
+    pub fn new(_args: Args) -> Self {
         Self {
             angle: 0.,
             prev_time: Duration::ZERO,

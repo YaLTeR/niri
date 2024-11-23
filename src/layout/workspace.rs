@@ -19,7 +19,7 @@ use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -112,6 +112,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Insert hint element for rendering.
     insert_hint_element: InsertHintElement,
+
+    /// Clock for driving animations.
+    pub(super) clock: Clock,
 
     /// Configurable properties of the layout as received from the parent monitor.
     pub(super) base_options: Rc<Options>,
@@ -293,6 +296,9 @@ pub struct Column<W: LayoutElement> {
     /// Scale of the output the column is on (and rounds its sizes to).
     scale: f64,
 
+    /// Clock for driving animations.
+    clock: Clock,
+
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -403,13 +409,14 @@ impl TileData {
 }
 
 impl<W: LayoutElement> Workspace<W> {
-    pub fn new(output: Output, options: Rc<Options>) -> Self {
-        Self::new_with_config(output, None, options)
+    pub fn new(output: Output, clock: Clock, options: Rc<Options>) -> Self {
+        Self::new_with_config(output, None, clock, options)
     }
 
     pub fn new_with_config(
         output: Output,
         config: Option<WorkspaceConfig>,
+        clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
         let original_output = config
@@ -442,6 +449,7 @@ impl<W: LayoutElement> Workspace<W> {
             closing_windows: vec![],
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.insert_hint),
+            clock,
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -451,6 +459,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn new_with_config_no_outputs(
         config: Option<WorkspaceConfig>,
+        clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
         let original_output = OutputId(
@@ -482,6 +491,7 @@ impl<W: LayoutElement> Workspace<W> {
             closing_windows: vec![],
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.insert_hint),
+            clock,
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -489,8 +499,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn new_no_outputs(options: Rc<Options>) -> Self {
-        Self::new_with_config_no_outputs(None, options)
+    pub fn new_no_outputs(clock: Clock, options: Rc<Options>) -> Self {
+        Self::new_with_config_no_outputs(None, clock, options)
     }
 
     pub fn id(&self) -> WorkspaceId {
@@ -941,6 +951,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         // FIXME: also compute and use current velocity.
         self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
+            self.clock.now(),
             self.view_offset,
             new_view_offset,
             0.,
@@ -1100,7 +1111,12 @@ impl<W: LayoutElement> Workspace<W> {
         width: ColumnWidth,
         is_full_width: bool,
     ) {
-        let tile = Tile::new(window, self.scale.fractional_scale(), self.options.clone());
+        let tile = Tile::new(
+            window,
+            self.scale.fractional_scale(),
+            self.clock.clone(),
+            self.options.clone(),
+        );
         self.add_tile(col_idx, tile, activate, width, is_full_width, None);
     }
 
@@ -1118,7 +1134,6 @@ impl<W: LayoutElement> Workspace<W> {
             self.view_size,
             self.working_area,
             self.scale.fractional_scale(),
-            self.options.clone(),
             width,
             is_full_width,
             true,
@@ -1682,7 +1697,13 @@ impl<W: LayoutElement> Workspace<W> {
     ) {
         let output_scale = Scale::from(self.scale.fractional_scale());
 
-        let anim = Animation::new(0., 1., 0., self.options.animations.window_close.anim);
+        let anim = Animation::new(
+            self.clock.now(),
+            0.,
+            1.,
+            0.,
+            self.options.animations.window_close.anim,
+        );
 
         let blocker = if self.options.disable_transactions {
             TransactionBlocker::completed()
@@ -1725,6 +1746,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             for (column, data) in zip(&self.columns, &self.data) {
                 assert!(Rc::ptr_eq(&self.options, &column.options));
+                assert_eq!(self.clock, column.clock);
                 assert_eq!(self.scale.fractional_scale(), column.scale);
                 column.verify_invariants();
 
@@ -2619,7 +2641,6 @@ impl<W: LayoutElement> Workspace<W> {
                 self.view_size,
                 self.working_area,
                 self.scale.fractional_scale(),
-                self.options.clone(),
                 removed.width,
                 removed.is_full_width,
                 false,
@@ -2969,6 +2990,7 @@ impl<W: LayoutElement> Workspace<W> {
         let target_view_offset = target_snap.view_pos - new_col_x;
 
         self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
+            self.clock.now(),
             current_view_offset + delta,
             target_view_offset,
             velocity,
@@ -3174,7 +3196,6 @@ impl<W: LayoutElement> Column<W> {
         view_size: Size<f64, Logical>,
         working_area: Rectangle<f64, Logical>,
         scale: f64,
-        options: Rc<Options>,
         width: ColumnWidth,
         is_full_width: bool,
         animate_resize: bool,
@@ -3190,7 +3211,8 @@ impl<W: LayoutElement> Column<W> {
             view_size,
             working_area,
             scale,
-            options,
+            clock: tile.clock.clone(),
+            options: tile.options.clone(),
         };
 
         let is_pending_fullscreen = tile.window().is_pending_fullscreen();
@@ -3313,6 +3335,7 @@ impl<W: LayoutElement> Column<W> {
         let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
 
         self.move_animation = Some(Animation::new(
+            self.clock.now(),
             from_x_offset + current_offset,
             0.,
             0.,
@@ -3716,6 +3739,7 @@ impl<W: LayoutElement> Column<W> {
         let mut total_min_height = 0.;
         for (tile, data) in zip(&self.tiles, &self.data) {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
+            assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
             assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
 
