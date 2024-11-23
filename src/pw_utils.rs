@@ -769,7 +769,11 @@ impl Cast {
         let timer = Timer::from_duration(duration);
         let token = event_loop
             .insert_source(timer, move |_, _, state| {
-                state.niri.queue_redraw(&output);
+                // Guard against output disconnecting before the timer has a chance to run.
+                if state.niri.output_state.contains_key(&output) {
+                    state.niri.queue_redraw(&output);
+                }
+
                 TimeoutAction::Drop
             })
             .unwrap();
