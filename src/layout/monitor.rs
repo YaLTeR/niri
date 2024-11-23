@@ -150,6 +150,11 @@ impl<W: LayoutElement> Monitor<W> {
         self.windows().any(|win| win.id() == window)
     }
 
+    pub fn add_workspace_bottom(&mut self) {
+        let ws = Workspace::new(self.output.clone(), self.options.clone());
+        self.workspaces.push(ws);
+    }
+
     fn activate_workspace(&mut self, idx: usize) {
         if self.active_workspace_idx == idx {
             return;
@@ -191,8 +196,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
         }
 
         if activate {
@@ -233,8 +237,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
         }
 
         if activate {
@@ -260,8 +263,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
         }
 
         if activate {
@@ -818,8 +820,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         if new_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
         }
 
         let previous_workspace_id = self.previous_workspace_id;
@@ -840,8 +841,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         if self.active_workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
         }
 
         let previous_workspace_id = self.previous_workspace_id;

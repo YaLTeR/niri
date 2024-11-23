@@ -2617,8 +2617,7 @@ impl<W: LayoutElement> Layout<W> {
         let current = &mut monitors[*active_monitor_idx];
         if current.active_workspace_idx == current.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(current.output.clone(), current.options.clone());
-            current.workspaces.push(ws);
+            current.add_workspace_bottom();
         }
         let mut ws = current.workspaces.remove(current.active_workspace_idx);
         current.active_workspace_idx = current.active_workspace_idx.saturating_sub(1);
