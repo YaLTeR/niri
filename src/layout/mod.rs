@@ -5724,6 +5724,36 @@ mod tests {
     }
 
     #[test]
+    fn interactive_move_onto_empty_output() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::InteractiveMoveBegin {
+                window: 0,
+                output_idx: 1,
+                px: 0.,
+                py: 0.,
+            },
+            Op::AddOutput(2),
+            Op::InteractiveMoveUpdate {
+                window: 0,
+                dx: 1000.,
+                dy: 0.,
+                output_idx: 2,
+                px: 0.,
+                py: 0.,
+            },
+            Op::InteractiveMoveEnd { window: 0 },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
     fn output_active_workspace_is_preserved() {
         let ops = [
             Op::AddOutput(1),
