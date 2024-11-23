@@ -7,8 +7,8 @@ use smithay::backend::input::{
     PointerMotionAbsoluteEvent, PointerMotionEvent, UnusedEvent,
 };
 use smithay::input::pointer::AxisFrame;
+use smithay::output::Output;
 use smithay::reexports::wayland_protocols_wlr;
-use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_pointer;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::{
@@ -41,7 +41,7 @@ pub struct VirtualPointer {
 #[derive(Debug)]
 pub struct VirtualPointerUserData {
     seat: Option<WlSeat>,
-    output: Option<WlOutput>,
+    output: Option<Output>,
 
     axis_frame: Mutex<Option<AxisFrame>>,
 }
@@ -55,7 +55,7 @@ impl VirtualPointer {
         self.data().seat.as_ref()
     }
 
-    pub fn output(&self) -> Option<&WlOutput> {
+    pub fn output(&self) -> Option<&Output> {
         self.data().output.as_ref()
     }
 
@@ -355,7 +355,7 @@ where
                 seat,
                 output,
                 id,
-            } => (id, seat, output),
+            } => (id, seat, output.as_ref().and_then(Output::from_resource)),
             zwlr_virtual_pointer_manager_v1::Request::Destroy => return,
             _ => unreachable!(),
         };
