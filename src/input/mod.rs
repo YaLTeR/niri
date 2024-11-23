@@ -87,7 +87,7 @@ impl State {
         // doesn't always trigger due to damage, etc. So run it here right before it might prove
         // important. Besides, animations affect the input, so it's best to have up-to-date values
         // here.
-        self.niri.layout.advance_animations(get_monotonic_time());
+        self.niri.advance_animations(get_monotonic_time());
 
         if self.niri.monitors_active {
             // Notify the idle-notifier of activity.

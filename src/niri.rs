@@ -3036,6 +3036,22 @@ impl Niri {
         }
     }
 
+    pub fn advance_animations(&mut self, target_time: Duration) {
+        self.layout.advance_animations(target_time);
+        self.config_error_notification
+            .advance_animations(target_time);
+        self.screenshot_ui.advance_animations(target_time);
+
+        for state in self.output_state.values_mut() {
+            if let Some(transition) = &mut state.screen_transition {
+                transition.advance_animations(target_time);
+                if transition.is_done() {
+                    state.screen_transition = None;
+                }
+            }
+        }
+    }
+
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
         self.layout.update_render_elements(output);
 
@@ -3243,33 +3259,19 @@ impl Niri {
         let mut res = RenderResult::Skipped;
         if self.monitors_active {
             // Update from the config and advance the animations.
-            self.layout.advance_animations(target_presentation_time);
+            self.advance_animations(target_presentation_time);
 
-            if let Some(transition) = &mut state.screen_transition {
-                transition.advance_animations(target_presentation_time);
-                if transition.is_done() {
-                    state.screen_transition = None;
-                }
-            }
-
+            let state = self.output_state.get_mut(output).unwrap();
             state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
-
-            self.config_error_notification
-                .advance_animations(target_presentation_time);
             state.unfinished_animations_remain |=
                 self.config_error_notification.are_animations_ongoing();
-
-            self.screenshot_ui
-                .advance_animations(target_presentation_time);
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
+            state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             // Also keep redrawing if the current cursor is animated.
             state.unfinished_animations_remain |= self
                 .cursor_manager
                 .is_current_cursor_animated(output.current_scale().integer_scale());
-
-            // Also keep redrawing during a screen transition.
-            state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             self.update_render_elements(Some(output));
 
