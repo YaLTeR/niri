@@ -13,7 +13,7 @@ use super::{
     LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
     RESIZE_ANIMATION_THRESHOLD,
 };
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
@@ -76,6 +76,9 @@ pub struct Tile<W: LayoutElement> {
     /// Scale of the output the tile is on (and rounds its sizes to).
     scale: f64,
 
+    /// Clock for driving animations.
+    pub(super) clock: Clock,
+
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
 }
@@ -110,7 +113,7 @@ struct MoveAnimation {
 }
 
 impl<W: LayoutElement> Tile<W> {
-    pub fn new(window: W, scale: f64, options: Rc<Options>) -> Self {
+    pub fn new(window: W, scale: f64, clock: Clock, options: Rc<Options>) -> Self {
         let rules = window.rules();
         let border_config = rules.border.resolve_against(options.border);
         let focus_ring_config = rules.focus_ring.resolve_against(options.focus_ring.into());
@@ -130,6 +133,7 @@ impl<W: LayoutElement> Tile<W> {
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
             scale,
+            clock,
             options,
         }
     }
@@ -180,7 +184,13 @@ impl<W: LayoutElement> Tile<W> {
             let change = self.window.size().to_f64().to_point() - size_from.to_point();
             let change = f64::max(change.x.abs(), change.y.abs());
             if change > RESIZE_ANIMATION_THRESHOLD {
-                let anim = Animation::new(0., 1., 0., self.options.animations.window_resize.anim);
+                let anim = Animation::new(
+                    self.clock.now(),
+                    0.,
+                    1.,
+                    0.,
+                    self.options.animations.window_resize.anim,
+                );
                 self.resize_animation = Some(ResizeAnimation {
                     anim,
                     size_from,
@@ -316,6 +326,7 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn start_open_animation(&mut self) {
         self.open_animation = Some(OpenAnimation::new(Animation::new(
+            self.clock.now(),
             0.,
             1.,
             0.,
@@ -342,8 +353,8 @@ impl<W: LayoutElement> Tile<W> {
         // Preserve the previous config if ongoing.
         let anim = self.move_x_animation.take().map(|move_| move_.anim);
         let anim = anim
-            .map(|anim| anim.restarted(1., 0., 0.))
-            .unwrap_or_else(|| Animation::new(1., 0., 0., config));
+            .map(|anim| anim.restarted(self.clock.now(), 1., 0., 0.))
+            .unwrap_or_else(|| Animation::new(self.clock.now(), 1., 0., 0., config));
 
         self.move_x_animation = Some(MoveAnimation {
             anim,
@@ -361,8 +372,8 @@ impl<W: LayoutElement> Tile<W> {
         // Preserve the previous config if ongoing.
         let anim = self.move_y_animation.take().map(|move_| move_.anim);
         let anim = anim
-            .map(|anim| anim.restarted(1., 0., 0.))
-            .unwrap_or_else(|| Animation::new(1., 0., 0., config));
+            .map(|anim| anim.restarted(self.clock.now(), 1., 0., 0.))
+            .unwrap_or_else(|| Animation::new(self.clock.now(), 1., 0., 0., config));
 
         self.move_y_animation = Some(MoveAnimation {
             anim,

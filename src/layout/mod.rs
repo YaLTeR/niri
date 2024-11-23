@@ -52,6 +52,7 @@ use workspace::WorkspaceId;
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{compute_working_area, Column, ColumnWidth, InsertHint, OutputId, Workspace};
+use crate::animation::Clock;
 use crate::layout::workspace::InsertPosition;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -216,6 +217,8 @@ pub struct Layout<W: LayoutElement> {
     last_active_workspace_id: HashMap<String, WorkspaceId>,
     /// Ongoing interactive move.
     interactive_move: Option<InteractiveMoveState<W>>,
+    /// Clock for driving animations.
+    clock: Clock,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -433,27 +436,30 @@ impl Options {
 }
 
 impl<W: LayoutElement> Layout<W> {
-    pub fn new(config: &Config) -> Self {
-        Self::with_options_and_workspaces(config, Options::from_config(config))
+    pub fn new(clock: Clock, config: &Config) -> Self {
+        Self::with_options_and_workspaces(clock, config, Options::from_config(config))
     }
 
-    pub fn with_options(options: Options) -> Self {
+    pub fn with_options(clock: Clock, options: Options) -> Self {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
             is_active: true,
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
+            clock,
             options: Rc::new(options),
         }
     }
 
-    fn with_options_and_workspaces(config: &Config, options: Options) -> Self {
+    fn with_options_and_workspaces(clock: Clock, config: &Config, options: Options) -> Self {
         let opts = Rc::new(options);
 
         let workspaces = config
             .workspaces
             .iter()
-            .map(|ws| Workspace::new_with_config_no_outputs(Some(ws.clone()), opts.clone()))
+            .map(|ws| {
+                Workspace::new_with_config_no_outputs(Some(ws.clone()), clock.clone(), opts.clone())
+            })
             .collect();
 
         Self {
@@ -461,6 +467,7 @@ impl<W: LayoutElement> Layout<W> {
             is_active: true,
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
+            clock,
             options: opts,
         }
     }
@@ -522,13 +529,18 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 // Make sure there's always an empty workspace.
-                workspaces.push(Workspace::new(output.clone(), self.options.clone()));
+                workspaces.push(Workspace::new(
+                    output.clone(),
+                    self.clock.clone(),
+                    self.options.clone(),
+                ));
 
                 for ws in &mut workspaces {
                     ws.set_output(Some(output.clone()));
                 }
 
-                let mut monitor = Monitor::new(output, workspaces, self.options.clone());
+                let mut monitor =
+                    Monitor::new(output, workspaces, self.clock.clone(), self.options.clone());
                 monitor.active_workspace_idx = active_workspace_idx.unwrap_or(0);
                 monitors.push(monitor);
 
@@ -540,7 +552,11 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { mut workspaces } => {
                 // We know there are no empty workspaces there, so add one.
-                workspaces.push(Workspace::new(output.clone(), self.options.clone()));
+                workspaces.push(Workspace::new(
+                    output.clone(),
+                    self.clock.clone(),
+                    self.options.clone(),
+                ));
 
                 let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
                 let mut active_workspace_idx = 0;
@@ -553,7 +569,8 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 }
 
-                let mut monitor = Monitor::new(output, workspaces, self.options.clone());
+                let mut monitor =
+                    Monitor::new(output, workspaces, self.clock.clone(), self.options.clone());
                 monitor.active_workspace_idx = active_workspace_idx;
 
                 MonitorSet::Normal {
@@ -785,7 +802,10 @@ impl<W: LayoutElement> Layout<W> {
                 let ws = if let Some(ws) = workspaces.get_mut(0) {
                     ws
                 } else {
-                    workspaces.push(Workspace::new_no_outputs(self.options.clone()));
+                    workspaces.push(Workspace::new_no_outputs(
+                        self.clock.clone(),
+                        self.options.clone(),
+                    ));
                     &mut workspaces[0]
                 };
                 ws.add_window(None, window, true, width, is_full_width);
@@ -1992,6 +2012,8 @@ impl<W: LayoutElement> Layout<W> {
                     move_win_id = Some(window_id.clone());
                 }
                 InteractiveMoveState::Moving(move_) => {
+                    assert_eq!(self.clock, move_.tile.clock);
+
                     let scale = move_.output.current_scale().fractional_scale();
                     let options = Options::clone(&self.options).adjusted_for_scale(scale);
                     assert_eq!(
@@ -2025,6 +2047,8 @@ impl<W: LayoutElement> Layout<W> {
                         workspace.has_windows() || workspace.name.is_some(),
                         "with no outputs there cannot be empty unnamed workspaces"
                     );
+
+                    assert_eq!(self.clock, workspace.clock);
 
                     assert_eq!(
                         workspace.base_options, self.options,
@@ -2070,6 +2094,7 @@ impl<W: LayoutElement> Layout<W> {
             );
             assert!(monitor.active_workspace_idx < monitor.workspaces.len());
 
+            assert_eq!(self.clock, monitor.clock);
             assert_eq!(
                 monitor.options, self.options,
                 "monitor options must be synchronized with layout"
@@ -2135,6 +2160,8 @@ impl<W: LayoutElement> Layout<W> {
             // exists.
 
             for workspace in &monitor.workspaces {
+                assert_eq!(self.clock, workspace.clock);
+
                 assert_eq!(
                     workspace.base_options, self.options,
                     "workspace options must be synchronized with layout"
@@ -2326,6 +2353,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
+        let clock = self.clock.clone();
         let options = self.options.clone();
 
         match &mut self.monitor_set {
@@ -2349,6 +2377,7 @@ impl<W: LayoutElement> Layout<W> {
                 let ws = Workspace::new_with_config(
                     mon.output.clone(),
                     Some(ws_config.clone()),
+                    clock,
                     options,
                 );
                 mon.workspaces.insert(0, ws);
@@ -2357,7 +2386,8 @@ impl<W: LayoutElement> Layout<W> {
                 mon.clean_up_workspaces();
             }
             MonitorSet::NoOutputs { workspaces } => {
-                let ws = Workspace::new_with_config_no_outputs(Some(ws_config.clone()), options);
+                let ws =
+                    Workspace::new_with_config_no_outputs(Some(ws_config.clone()), clock, options);
                 workspaces.insert(0, ws);
             }
         }
@@ -3161,7 +3191,10 @@ impl<W: LayoutElement> Layout<W> {
                 let ws = if let Some(ws) = workspaces.get_mut(0) {
                     ws
                 } else {
-                    workspaces.push(Workspace::new_no_outputs(self.options.clone()));
+                    workspaces.push(Workspace::new_no_outputs(
+                        self.clock.clone(),
+                        self.options.clone(),
+                    ));
                     &mut workspaces[0]
                 };
 
@@ -3620,7 +3653,7 @@ mod tests {
 
     impl<W: LayoutElement> Default for Layout<W> {
         fn default() -> Self {
-            Self::with_options(Default::default())
+            Self::with_options(Clock::with_override(Duration::ZERO), Default::default())
         }
     }
 
@@ -3854,6 +3887,16 @@ mod tests {
         prop_oneof![Just(1.), Just(1.5), Just(2.),]
     }
 
+    fn arbitrary_msec_delta() -> impl Strategy<Value = i32> {
+        prop_oneof![
+            1 => Just(-1000),
+            2 => Just(-10),
+            1 => Just(0),
+            2 => Just(10),
+            6 => Just(1000),
+        ]
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -3996,6 +4039,10 @@ mod tests {
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
         Refresh {
             is_active: bool,
+        },
+        AdvanceAnimations {
+            #[proptest(strategy = "arbitrary_msec_delta()")]
+            msec_delta: i32,
         },
         MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
         ViewOffsetGestureBegin {
@@ -4505,6 +4552,16 @@ mod tests {
                 Op::Refresh { is_active } => {
                     layout.refresh(is_active);
                 }
+                Op::AdvanceAnimations { msec_delta } => {
+                    let mut now = layout.clock.now();
+                    if msec_delta >= 0 {
+                        now = now.saturating_add(Duration::from_millis(msec_delta as u64));
+                    } else {
+                        now = now.saturating_sub(Duration::from_millis(-msec_delta as u64));
+                    }
+                    layout.clock.set_time_override(Some(now));
+                    layout.advance_animations(now);
+                }
                 Op::MoveWorkspaceToOutput(id) => {
                     let name = format!("output{id}");
                     let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
@@ -4617,7 +4674,7 @@ mod tests {
 
     #[track_caller]
     fn check_ops_with_options(options: Options, ops: &[Op]) {
-        let mut layout = Layout::with_options(options);
+        let mut layout = Layout::with_options(Clock::with_override(Duration::ZERO), options);
 
         for op in ops {
             op.apply(&mut layout);
@@ -5440,7 +5497,7 @@ mod tests {
         config.layout.border.off = false;
         config.layout.border.width = FloatOrInt(2.);
 
-        let mut layout = Layout::new(&config);
+        let mut layout = Layout::new(Clock::default(), &config);
 
         Op::AddWindow {
             id: 1,
@@ -5460,7 +5517,7 @@ mod tests {
         let mut config = Config::default();
         config.layout.preset_window_heights = vec![PresetSize::Fixed(1), PresetSize::Fixed(2)];
 
-        let mut layout = Layout::new(&config);
+        let mut layout = Layout::new(Clock::default(), &config);
 
         let ops = [
             Op::AddOutput(1),
@@ -5746,6 +5803,37 @@ mod tests {
                 px: 0.,
                 py: 0.,
             },
+            Op::InteractiveMoveEnd { window: 0 },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn interactive_move_onto_last_workspace() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::InteractiveMoveBegin {
+                window: 0,
+                output_idx: 1,
+                px: 0.,
+                py: 0.,
+            },
+            Op::InteractiveMoveUpdate {
+                window: 0,
+                dx: 1000.,
+                dy: 0.,
+                output_idx: 1,
+                px: 0.,
+                py: 0.,
+            },
+            Op::FocusWorkspaceDown,
+            Op::AdvanceAnimations { msec_delta: 1000 },
             Op::InteractiveMoveEnd { window: 0 },
         ];
 

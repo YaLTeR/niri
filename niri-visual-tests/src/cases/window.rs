@@ -2,9 +2,9 @@ use niri::layout::LayoutElement;
 use niri::render_helpers::RenderTarget;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Point, Scale, Size};
+use smithay::utils::{Physical, Point, Scale, Size};
 
-use super::TestCase;
+use super::{Args, TestCase};
 use crate::test_window::TestWindow;
 
 pub struct Window {
@@ -12,24 +12,24 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn freeform(size: Size<i32, Logical>) -> Self {
+    pub fn freeform(args: Args) -> Self {
         let mut window = TestWindow::freeform(0);
-        window.request_size(size, false, None);
+        window.request_size(args.size, false, None);
         window.communicate();
         Self { window }
     }
 
-    pub fn fixed_size(size: Size<i32, Logical>) -> Self {
+    pub fn fixed_size(args: Args) -> Self {
         let mut window = TestWindow::fixed_size(0);
-        window.request_size(size, false, None);
+        window.request_size(args.size, false, None);
         window.communicate();
         Self { window }
     }
 
-    pub fn fixed_size_with_csd_shadow(size: Size<i32, Logical>) -> Self {
+    pub fn fixed_size_with_csd_shadow(args: Args) -> Self {
         let mut window = TestWindow::fixed_size(0);
         window.set_csd_shadow_width(64);
-        window.request_size(size, false, None);
+        window.request_size(args.size, false, None);
         window.communicate();
         Self { window }
     }

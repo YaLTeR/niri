@@ -142,8 +142,7 @@ impl ClosingWindow {
         match &mut self.anim_state {
             AnimationState::Waiting { blocker, anim } => {
                 if blocker.state() != BlockerState::Pending {
-                    let mut anim = anim.restarted(0., 1., 0.);
-                    anim.set_current_time(current_time);
+                    let anim = anim.restarted(current_time, 0., 1., 0.);
                     self.anim_state = AnimationState::Animating(anim);
                 }
             }

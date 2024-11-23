@@ -100,6 +100,7 @@ use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 
+use crate::animation::Clock;
 use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
@@ -178,6 +179,9 @@ pub struct Niri {
 
     /// Whether the at-startup=true window rules are active.
     pub is_at_startup: bool,
+
+    /// Clock for driving animations.
+    pub clock: Clock,
 
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
     // however it may have none (when there are no outputs connected) or multiple (when mirroring).
@@ -1671,7 +1675,8 @@ impl Niri {
         let config_ = config.borrow();
         let config_file_output_config = config_.outputs.clone();
 
-        let layout = Layout::new(&config_);
+        let clock = Clock::default();
+        let layout = Layout::new(clock.clone(), &config_);
 
         let (blocker_cleared_tx, blocker_cleared_rx) = mpsc::channel();
 
@@ -1799,8 +1804,8 @@ impl Niri {
         let mods_with_finger_scroll_binds =
             mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
 
-        let screenshot_ui = ScreenshotUi::new(config.clone());
-        let config_error_notification = ConfigErrorNotification::new(config.clone());
+        let screenshot_ui = ScreenshotUi::new(clock.clone(), config.clone());
+        let config_error_notification = ConfigErrorNotification::new(clock.clone(), config.clone());
 
         let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
         if !config_.hotkey_overlay.skip_at_startup {
@@ -1895,6 +1900,7 @@ impl Niri {
             display_handle,
             start_time: Instant::now(),
             is_at_startup: true,
+            clock,
 
             layout,
             global_space: Space::default(),
@@ -3044,6 +3050,7 @@ impl Niri {
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
+                // Screen transition uses real time so that it's not affected by animation slowdown.
                 transition.advance_animations(target_time);
                 if transition.is_done() {
                     state.screen_transition = None;
@@ -4819,6 +4826,8 @@ impl Niri {
         let delay = delay_ms.map_or(screen_transition::DELAY, |d| {
             Duration::from_millis(u64::from(d))
         });
+
+        // Screen transition uses real time so that it's not affected by animation slowdown.
         let start_at = get_monotonic_time() + delay;
         for (output, from_texture) in textures {
             let state = self.output_state.get_mut(&output).unwrap();

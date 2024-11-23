@@ -4,10 +4,11 @@ use keyframe::functions::{EaseOutCubic, EaseOutQuad};
 use keyframe::EasingFunction;
 use portable_atomic::{AtomicF64, Ordering};
 
-use crate::utils::get_monotonic_time;
-
 mod spring;
 pub use spring::{Spring, SpringParams};
+
+mod clock;
+pub use clock::Clock;
 
 pub static ANIMATION_SLOWDOWN: AtomicF64 = AtomicF64::new(1.);
 
@@ -48,11 +49,24 @@ pub enum Curve {
 }
 
 impl Animation {
-    pub fn new(from: f64, to: f64, initial_velocity: f64, config: niri_config::Animation) -> Self {
+    pub fn new(
+        current_time: Duration,
+        from: f64,
+        to: f64,
+        initial_velocity: f64,
+        config: niri_config::Animation,
+    ) -> Self {
         // Scale the velocity by slowdown to keep the touchpad gestures feeling right.
         let initial_velocity = initial_velocity * ANIMATION_SLOWDOWN.load(Ordering::Relaxed);
 
-        let mut rv = Self::ease(from, to, initial_velocity, 0, Curve::EaseOutCubic);
+        let mut rv = Self::ease(
+            current_time,
+            from,
+            to,
+            initial_velocity,
+            0,
+            Curve::EaseOutCubic,
+        );
         if config.off {
             rv.is_off = true;
             return rv;
@@ -83,10 +97,11 @@ impl Animation {
                     initial_velocity: self.initial_velocity,
                     params,
                 };
-                *self = Self::spring(spring);
+                *self = Self::spring(current_time, spring);
             }
             niri_config::AnimationKind::Easing(p) => {
                 *self = Self::ease(
+                    current_time,
                     self.from,
                     self.to,
                     self.initial_velocity,
@@ -101,7 +116,13 @@ impl Animation {
     }
 
     /// Restarts the animation using the previous config.
-    pub fn restarted(&self, from: f64, to: f64, initial_velocity: f64) -> Self {
+    pub fn restarted(
+        &self,
+        current_time: Duration,
+        from: f64,
+        to: f64,
+        initial_velocity: f64,
+    ) -> Self {
         if self.is_off {
             return self.clone();
         }
@@ -111,6 +132,7 @@ impl Animation {
 
         match self.kind {
             Kind::Easing { curve } => Self::ease(
+                current_time,
                 from,
                 to,
                 initial_velocity,
@@ -124,23 +146,32 @@ impl Animation {
                     initial_velocity: self.initial_velocity,
                     params: spring.params,
                 };
-                Self::spring(spring)
+                Self::spring(current_time, spring)
             }
             Kind::Deceleration {
                 initial_velocity,
                 deceleration_rate,
             } => {
                 let threshold = 0.001; // FIXME
-                Self::decelerate(from, initial_velocity, deceleration_rate, threshold)
+                Self::decelerate(
+                    current_time,
+                    from,
+                    initial_velocity,
+                    deceleration_rate,
+                    threshold,
+                )
             }
         }
     }
 
-    pub fn ease(from: f64, to: f64, initial_velocity: f64, duration_ms: u64, curve: Curve) -> Self {
-        // FIXME: ideally we shouldn't use current time here because animations started within the
-        // same frame cycle should have the same start time to be synchronized.
-        let now = get_monotonic_time();
-
+    pub fn ease(
+        current_time: Duration,
+        from: f64,
+        to: f64,
+        initial_velocity: f64,
+        duration_ms: u64,
+        curve: Curve,
+    ) -> Self {
         let duration = Duration::from_millis(duration_ms);
         let kind = Kind::Easing { curve };
 
@@ -152,18 +183,14 @@ impl Animation {
             duration,
             // Our current curves never overshoot.
             clamped_duration: duration,
-            start_time: now,
-            current_time: now,
+            start_time: current_time,
+            current_time,
             kind,
         }
     }
 
-    pub fn spring(spring: Spring) -> Self {
+    pub fn spring(current_time: Duration, spring: Spring) -> Self {
         let _span = tracy_client::span!("Animation::spring");
-
-        // FIXME: ideally we shouldn't use current time here because animations started within the
-        // same frame cycle should have the same start time to be synchronized.
-        let now = get_monotonic_time();
 
         let duration = spring.duration();
         let clamped_duration = spring.clamped_duration().unwrap_or(duration);
@@ -176,22 +203,19 @@ impl Animation {
             is_off: false,
             duration,
             clamped_duration,
-            start_time: now,
-            current_time: now,
+            start_time: current_time,
+            current_time,
             kind,
         }
     }
 
     pub fn decelerate(
+        current_time: Duration,
         from: f64,
         initial_velocity: f64,
         deceleration_rate: f64,
         threshold: f64,
     ) -> Self {
-        // FIXME: ideally we shouldn't use current time here because animations started within the
-        // same frame cycle should have the same start time to be synchronized.
-        let now = get_monotonic_time();
-
         let duration_s = if initial_velocity == 0. {
             0.
         } else {
@@ -214,8 +238,8 @@ impl Animation {
             is_off: false,
             duration,
             clamped_duration: duration,
-            start_time: now,
-            current_time: now,
+            start_time: current_time,
+            current_time,
             kind,
         }
     }

@@ -8,9 +8,9 @@ use niri::render_helpers::border::BorderRenderElement;
 use niri_config::{Color, CornerRadius, FloatOrInt, GradientInterpolation};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
+use smithay::utils::{Physical, Point, Rectangle, Size};
 
-use super::TestCase;
+use super::{Args, TestCase};
 
 pub struct GradientArea {
     progress: f32,
@@ -19,7 +19,7 @@ pub struct GradientArea {
 }
 
 impl GradientArea {
-    pub fn new(_size: Size<i32, Logical>) -> Self {
+    pub fn new(_args: Args) -> Self {
         let border = FocusRing::new(niri_config::FocusRing {
             off: false,
             width: FloatOrInt(1.),

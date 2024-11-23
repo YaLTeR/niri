@@ -5,12 +5,12 @@ use std::env;
 use std::sync::atomic::Ordering;
 
 use adw::prelude::{AdwApplicationWindowExt, NavigationPageExt};
+use cases::Args;
 use gtk::prelude::{
     AdjustmentExt, ApplicationExt, ApplicationExtManual, BoxExt, GtkWindowExt, WidgetExt,
 };
 use gtk::{gdk, gio, glib};
 use niri::animation::ANIMATION_SLOWDOWN;
-use smithay::utils::{Logical, Size};
 use smithay_view::SmithayView;
 use tracing_subscriber::EnvFilter;
 
@@ -72,11 +72,7 @@ fn build_ui(app: &adw::Application) {
     }
 
     impl S {
-        fn add<T: TestCase + 'static>(
-            &self,
-            make: impl Fn(Size<i32, Logical>) -> T + 'static,
-            title: &str,
-        ) {
+        fn add<T: TestCase + 'static>(&self, make: impl Fn(Args) -> T + 'static, title: &str) {
             let view = SmithayView::new(make);
             self.stack.add_titled(&view, None, title);
         }

@@ -14,7 +14,7 @@ use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Point, Transform};
 
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
@@ -35,6 +35,7 @@ pub struct ConfigErrorNotification {
     // notification.
     created_path: Option<PathBuf>,
 
+    clock: Clock,
     config: Rc<RefCell<Config>>,
 }
 
@@ -46,18 +47,25 @@ enum State {
 }
 
 impl ConfigErrorNotification {
-    pub fn new(config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(clock: Clock, config: Rc<RefCell<Config>>) -> Self {
         Self {
             state: State::Hidden,
             buffers: RefCell::new(HashMap::new()),
             created_path: None,
+            clock,
             config,
         }
     }
 
     fn animation(&self, from: f64, to: f64) -> Animation {
         let c = self.config.borrow();
-        Animation::new(from, to, 0., c.animations.config_notification_open_close.0)
+        Animation::new(
+            self.clock.now(),
+            from,
+            to,
+            0.,
+            c.animations.config_notification_open_close.0,
+        )
     }
 
     pub fn show_created(&mut self, created_path: PathBuf) {
