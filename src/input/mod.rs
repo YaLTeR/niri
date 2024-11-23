@@ -11,7 +11,7 @@ use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
-    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
+    InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
     TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
     TabletToolTipState, TouchEvent,
@@ -28,6 +28,7 @@ use smithay::input::touch::{
     DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
 };
 use smithay::input::SeatHandler;
+use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
@@ -43,6 +44,7 @@ use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
+pub mod backend_ext;
 pub mod move_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
@@ -50,6 +52,8 @@ pub mod spatial_movement_grab;
 pub mod swipe_tracker;
 pub mod touch_move_grab;
 pub mod touch_resize_grab;
+
+use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
@@ -265,8 +269,10 @@ impl State {
     where
         I::Device: 'static,
     {
+        let device_output = event.device().output();
+        let device_output = device_output.as_ref();
         let (target_geo, keep_ratio, px, transform) =
-            if let Some(output) = self.niri.output_for_tablet() {
+            if let Some(output) = device_output.or_else(|| self.niri.output_for_tablet()) {
                 (
                     self.niri.global_space.output_geometry(output).unwrap(),
                     true,
@@ -1760,11 +1766,13 @@ impl State {
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
-        let Some(output_geo) = self.global_bounding_rectangle() else {
+        let Some(pos) = self.compute_absolute_location(&event, None).or_else(|| {
+            self.global_bounding_rectangle().map(|output_geo| {
+                event.position_transformed(output_geo.size) + output_geo.loc.to_f64()
+            })
+        }) else {
             return;
         };
-
-        let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -2642,14 +2650,13 @@ impl State {
         );
     }
 
-    /// Computes the cursor position for the touch event.
-    ///
-    /// This function handles the touch output mapping, as well as coordinate transform
-    fn compute_touch_location<I: InputBackend, E: AbsolutePositionEvent<I>>(
+    fn compute_absolute_location<I: InputBackend>(
         &self,
-        evt: &E,
+        evt: &impl AbsolutePositionEvent<I>,
+        fallback_output: Option<&Output>,
     ) -> Option<Point<f64, Logical>> {
-        let output = self.niri.output_for_touch()?;
+        let output = evt.device().output();
+        let output = output.as_ref().or(fallback_output)?;
         let output_geo = self.niri.global_space.output_geometry(output).unwrap();
         let transform = output.current_transform();
         let size = transform.invert().transform_size(output_geo.size);
@@ -2657,6 +2664,16 @@ impl State {
             transform.transform_point_in(evt.position_transformed(size), &size.to_f64())
                 + output_geo.loc.to_f64(),
         )
+    }
+
+    /// Computes the cursor position for the touch event.
+    ///
+    /// This function handles the touch output mapping, as well as coordinate transform
+    fn compute_touch_location<I: InputBackend>(
+        &self,
+        evt: &impl AbsolutePositionEvent<I>,
+    ) -> Option<Point<f64, Logical>> {
+        self.compute_absolute_location(evt, self.niri.output_for_touch())
     }
 
     fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
