@@ -60,7 +60,7 @@ impl ConfigErrorNotification {
     fn animation(&self, from: f64, to: f64) -> Animation {
         let c = self.config.borrow();
         Animation::new(
-            self.clock.now(),
+            self.clock.clone(),
             from,
             to,
             0.,
@@ -96,11 +96,10 @@ impl ConfigErrorNotification {
         self.state = State::Hiding(self.animation(1., 0.));
     }
 
-    pub fn advance_animations(&mut self, target_presentation_time: Duration) {
+    pub fn advance_animations(&mut self) {
         match &mut self.state {
             State::Hidden => (),
             State::Showing(anim) => {
-                anim.set_current_time(target_presentation_time);
                 if anim.is_done() {
                     let duration = if self.created_path.is_some() {
                         // Make this quite a bit longer because it comes with a monitor modeset
@@ -110,16 +109,15 @@ impl ConfigErrorNotification {
                     } else {
                         Duration::from_secs(4)
                     };
-                    self.state = State::Shown(target_presentation_time + duration);
+                    self.state = State::Shown(self.clock.now() + duration);
                 }
             }
             State::Shown(deadline) => {
-                if target_presentation_time >= *deadline {
+                if self.clock.now() >= *deadline {
                     self.hide();
                 }
             }
             State::Hiding(anim) => {
-                anim.set_current_time(target_presentation_time);
                 if anim.is_clamped_done() {
                     self.state = State::Hidden;
                 }

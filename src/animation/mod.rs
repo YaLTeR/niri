@@ -2,15 +2,12 @@ use std::time::Duration;
 
 use keyframe::functions::{EaseOutCubic, EaseOutQuad};
 use keyframe::EasingFunction;
-use portable_atomic::{AtomicF64, Ordering};
 
 mod spring;
 pub use spring::{Spring, SpringParams};
 
 mod clock;
 pub use clock::Clock;
-
-pub static ANIMATION_SLOWDOWN: AtomicF64 = AtomicF64::new(1.);
 
 #[derive(Debug, Clone)]
 pub struct Animation {
@@ -24,7 +21,7 @@ pub struct Animation {
     /// Best effort; not always exactly precise.
     clamped_duration: Duration,
     start_time: Duration,
-    current_time: Duration,
+    clock: Clock,
     kind: Kind,
 }
 
@@ -50,23 +47,16 @@ pub enum Curve {
 
 impl Animation {
     pub fn new(
-        current_time: Duration,
+        clock: Clock,
         from: f64,
         to: f64,
         initial_velocity: f64,
         config: niri_config::Animation,
     ) -> Self {
-        // Scale the velocity by slowdown to keep the touchpad gestures feeling right.
-        let initial_velocity = initial_velocity * ANIMATION_SLOWDOWN.load(Ordering::Relaxed);
+        // Scale the velocity by rate to keep the touchpad gestures feeling right.
+        let initial_velocity = initial_velocity / clock.rate().max(0.001);
 
-        let mut rv = Self::ease(
-            current_time,
-            from,
-            to,
-            initial_velocity,
-            0,
-            Curve::EaseOutCubic,
-        );
+        let mut rv = Self::ease(clock, from, to, initial_velocity, 0, Curve::EaseOutCubic);
         if config.off {
             rv.is_off = true;
             return rv;
@@ -85,7 +75,6 @@ impl Animation {
         }
 
         let start_time = self.start_time;
-        let current_time = self.current_time;
 
         match config.kind {
             niri_config::AnimationKind::Spring(p) => {
@@ -97,11 +86,11 @@ impl Animation {
                     initial_velocity: self.initial_velocity,
                     params,
                 };
-                *self = Self::spring(current_time, spring);
+                *self = Self::spring(self.clock.clone(), spring);
             }
             niri_config::AnimationKind::Easing(p) => {
                 *self = Self::ease(
-                    current_time,
+                    self.clock.clone(),
                     self.from,
                     self.to,
                     self.initial_velocity,
@@ -112,27 +101,20 @@ impl Animation {
         }
 
         self.start_time = start_time;
-        self.current_time = current_time;
     }
 
     /// Restarts the animation using the previous config.
-    pub fn restarted(
-        &self,
-        current_time: Duration,
-        from: f64,
-        to: f64,
-        initial_velocity: f64,
-    ) -> Self {
+    pub fn restarted(&self, from: f64, to: f64, initial_velocity: f64) -> Self {
         if self.is_off {
             return self.clone();
         }
 
-        // Scale the velocity by slowdown to keep the touchpad gestures feeling right.
-        let initial_velocity = initial_velocity * ANIMATION_SLOWDOWN.load(Ordering::Relaxed);
+        // Scale the velocity by rate to keep the touchpad gestures feeling right.
+        let initial_velocity = initial_velocity / self.clock.rate().max(0.001);
 
         match self.kind {
             Kind::Easing { curve } => Self::ease(
-                current_time,
+                self.clock.clone(),
                 from,
                 to,
                 initial_velocity,
@@ -146,7 +128,7 @@ impl Animation {
                     initial_velocity: self.initial_velocity,
                     params: spring.params,
                 };
-                Self::spring(current_time, spring)
+                Self::spring(self.clock.clone(), spring)
             }
             Kind::Deceleration {
                 initial_velocity,
@@ -154,7 +136,7 @@ impl Animation {
             } => {
                 let threshold = 0.001; // FIXME
                 Self::decelerate(
-                    current_time,
+                    self.clock.clone(),
                     from,
                     initial_velocity,
                     deceleration_rate,
@@ -165,7 +147,7 @@ impl Animation {
     }
 
     pub fn ease(
-        current_time: Duration,
+        clock: Clock,
         from: f64,
         to: f64,
         initial_velocity: f64,
@@ -183,13 +165,13 @@ impl Animation {
             duration,
             // Our current curves never overshoot.
             clamped_duration: duration,
-            start_time: current_time,
-            current_time,
+            start_time: clock.now(),
+            clock,
             kind,
         }
     }
 
-    pub fn spring(current_time: Duration, spring: Spring) -> Self {
+    pub fn spring(clock: Clock, spring: Spring) -> Self {
         let _span = tracy_client::span!("Animation::spring");
 
         let duration = spring.duration();
@@ -203,14 +185,14 @@ impl Animation {
             is_off: false,
             duration,
             clamped_duration,
-            start_time: current_time,
-            current_time,
+            start_time: clock.now(),
+            clock,
             kind,
         }
     }
 
     pub fn decelerate(
-        current_time: Duration,
+        clock: Clock,
         from: f64,
         initial_velocity: f64,
         deceleration_rate: f64,
@@ -238,77 +220,26 @@ impl Animation {
             is_off: false,
             duration,
             clamped_duration: duration,
-            start_time: current_time,
-            current_time,
+            start_time: clock.now(),
+            clock,
             kind,
         }
     }
 
-    pub fn set_current_time(&mut self, time: Duration) {
-        if self.duration.is_zero() {
-            self.current_time = time;
-            return;
-        }
-
-        let end_time = self.start_time + self.duration;
-        if end_time <= self.current_time {
-            return;
-        }
-
-        let slowdown = ANIMATION_SLOWDOWN.load(Ordering::Relaxed);
-        if slowdown <= f64::EPSILON {
-            // Zero slowdown will cause the animation to end right away.
-            self.current_time = end_time;
-            return;
-        }
-
-        // We can't change current_time (since the incoming time values are always real-time), so
-        // apply the slowdown by shifting the start time to compensate.
-        if self.current_time <= time {
-            let delta = time - self.current_time;
-
-            let max_delta = end_time - self.current_time;
-            let min_slowdown = delta.as_secs_f64() / max_delta.as_secs_f64();
-            if slowdown <= min_slowdown {
-                // Our slowdown value will cause the animation to end right away.
-                self.current_time = end_time;
-                return;
-            }
-
-            let adjusted_delta = delta.div_f64(slowdown);
-            if adjusted_delta >= delta {
-                self.start_time -= adjusted_delta - delta;
-            } else {
-                self.start_time += delta - adjusted_delta;
-            }
-        } else {
-            let delta = self.current_time - time;
-
-            let min_slowdown = delta.as_secs_f64() / self.current_time.as_secs_f64();
-            if slowdown <= min_slowdown {
-                // Current time was about to jump to before the animation had started; let's just
-                // cancel the animation in this case.
-                self.current_time = end_time;
-                return;
-            }
-
-            let adjusted_delta = delta.div_f64(slowdown);
-            if adjusted_delta >= delta {
-                self.start_time += adjusted_delta - delta;
-            } else {
-                self.start_time -= delta - adjusted_delta;
-            }
-        }
-
-        self.current_time = time;
-    }
-
     pub fn is_done(&self) -> bool {
-        self.current_time >= self.start_time + self.duration
+        if self.clock.should_complete_instantly() {
+            return true;
+        }
+
+        self.clock.now() >= self.start_time + self.duration
     }
 
     pub fn is_clamped_done(&self) -> bool {
-        self.current_time >= self.start_time + self.clamped_duration
+        if self.clock.should_complete_instantly() {
+            return true;
+        }
+
+        self.clock.now() >= self.start_time + self.clamped_duration
     }
 
     pub fn value(&self) -> f64 {
@@ -316,7 +247,7 @@ impl Animation {
             return self.to;
         }
 
-        let passed = self.current_time.saturating_sub(self.start_time);
+        let passed = self.clock.now().saturating_sub(self.start_time);
 
         match self.kind {
             Kind::Easing { curve } => {

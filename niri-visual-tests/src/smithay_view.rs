@@ -1,4 +1,5 @@
 use gtk::glib;
+use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use smithay::utils::Size;
 
@@ -7,13 +8,13 @@ use crate::cases::{Args, TestCase};
 mod imp {
     use std::cell::{Cell, OnceCell, RefCell};
     use std::ptr::null;
+    use std::time::Duration;
 
     use anyhow::{ensure, Context};
     use gtk::gdk;
     use gtk::prelude::*;
     use niri::animation::Clock;
     use niri::render_helpers::{resources, shaders};
-    use niri::utils::get_monotonic_time;
     use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
     use smithay::backend::renderer::gles::GlesRenderer;
@@ -31,7 +32,7 @@ mod imp {
         renderer: RefCell<Option<Result<GlesRenderer, ()>>>,
         pub make_test_case: OnceCell<DynMakeTestCase>,
         test_case: RefCell<Option<Box<dyn TestCase>>>,
-        clock: RefCell<Clock>,
+        pub clock: RefCell<Clock>,
     }
 
     #[glib::object_subclass]
@@ -127,6 +128,10 @@ mod imp {
 
             let size = self.size.get();
 
+            let frame_clock = self.obj().frame_clock().unwrap();
+            let time = Duration::from_micros(frame_clock.frame_time() as u64);
+            self.clock.borrow_mut().set_unadjusted(time);
+
             // Create the test case if missing.
             let mut case = self.test_case.borrow_mut();
             let case = case.get_or_insert_with(|| {
@@ -138,7 +143,7 @@ mod imp {
                 make(args)
             });
 
-            case.advance_animations(get_monotonic_time());
+            case.advance_animations(self.clock.borrow_mut().now());
 
             let rect: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((0, 0), size);
 
@@ -238,12 +243,32 @@ glib::wrapper! {
 }
 
 impl SmithayView {
-    pub fn new<T: TestCase + 'static>(make_test_case: impl Fn(Args) -> T + 'static) -> Self {
+    pub fn new<T: TestCase + 'static>(
+        make_test_case: impl Fn(Args) -> T + 'static,
+        anim_adjustment: &gtk::Adjustment,
+    ) -> Self {
         let obj: Self = glib::Object::builder().build();
 
         let make = move |args| Box::new(make_test_case(args)) as Box<dyn TestCase>;
         let make_test_case = Box::new(make) as _;
         let _ = obj.imp().make_test_case.set(make_test_case);
+
+        anim_adjustment.connect_value_changed({
+            let obj = obj.downgrade();
+            move |adj| {
+                if let Some(obj) = obj.upgrade() {
+                    let mut clock = obj.imp().clock.borrow_mut();
+                    let instantly = adj.value() == 0.0;
+                    let rate = if instantly {
+                        1.0
+                    } else {
+                        1.0 / adj.value().max(0.001)
+                    };
+                    clock.set_rate(rate);
+                    clock.set_complete_instantly(instantly);
+                }
+            }
+        });
 
         obj
     }

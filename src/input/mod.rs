@@ -83,11 +83,8 @@ impl State {
     {
         let _span = tracy_client::span!("process_input_event");
 
-        // A bit of a hack, but animation end runs some logic (i.e. workspace clean-up) and it
-        // doesn't always trigger due to damage, etc. So run it here right before it might prove
-        // important. Besides, animations affect the input, so it's best to have up-to-date values
-        // here.
-        self.niri.advance_animations(get_monotonic_time());
+        // Make sure some logic like workspace clean-up has a chance to run before doing actions.
+        self.niri.advance_animations();
 
         if self.niri.monitors_active {
             // Notify the idle-notifier of activity.

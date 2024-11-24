@@ -1,5 +1,4 @@
 use std::rc::Rc;
-use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use smithay::backend::allocator::Fourcc;
@@ -185,7 +184,7 @@ impl<W: LayoutElement> Tile<W> {
             let change = f64::max(change.x.abs(), change.y.abs());
             if change > RESIZE_ANIMATION_THRESHOLD {
                 let anim = Animation::new(
-                    self.clock.now(),
+                    self.clock.clone(),
                     0.,
                     1.,
                     0.,
@@ -218,29 +217,25 @@ impl<W: LayoutElement> Tile<W> {
         self.rounded_corner_damage.set_size(window_size);
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self) {
         if let Some(open) = &mut self.open_animation {
-            open.advance_animations(current_time);
             if open.is_done() {
                 self.open_animation = None;
             }
         }
 
         if let Some(resize) = &mut self.resize_animation {
-            resize.anim.set_current_time(current_time);
             if resize.anim.is_done() {
                 self.resize_animation = None;
             }
         }
 
         if let Some(move_) = &mut self.move_x_animation {
-            move_.anim.set_current_time(current_time);
             if move_.anim.is_done() {
                 self.move_x_animation = None;
             }
         }
         if let Some(move_) = &mut self.move_y_animation {
-            move_.anim.set_current_time(current_time);
             if move_.anim.is_done() {
                 self.move_y_animation = None;
             }
@@ -326,7 +321,7 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn start_open_animation(&mut self) {
         self.open_animation = Some(OpenAnimation::new(Animation::new(
-            self.clock.now(),
+            self.clock.clone(),
             0.,
             1.,
             0.,
@@ -353,8 +348,8 @@ impl<W: LayoutElement> Tile<W> {
         // Preserve the previous config if ongoing.
         let anim = self.move_x_animation.take().map(|move_| move_.anim);
         let anim = anim
-            .map(|anim| anim.restarted(self.clock.now(), 1., 0., 0.))
-            .unwrap_or_else(|| Animation::new(self.clock.now(), 1., 0., 0., config));
+            .map(|anim| anim.restarted(1., 0., 0.))
+            .unwrap_or_else(|| Animation::new(self.clock.clone(), 1., 0., 0., config));
 
         self.move_x_animation = Some(MoveAnimation {
             anim,
@@ -372,8 +367,8 @@ impl<W: LayoutElement> Tile<W> {
         // Preserve the previous config if ongoing.
         let anim = self.move_y_animation.take().map(|move_| move_.anim);
         let anim = anim
-            .map(|anim| anim.restarted(self.clock.now(), 1., 0., 0.))
-            .unwrap_or_else(|| Animation::new(self.clock.now(), 1., 0., 0., config));
+            .map(|anim| anim.restarted(1., 0., 0.))
+            .unwrap_or_else(|| Animation::new(self.clock.clone(), 1., 0., 0., config));
 
         self.move_y_animation = Some(MoveAnimation {
             anim,
