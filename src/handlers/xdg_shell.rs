@@ -374,7 +374,6 @@ impl XdgShellHandler for State {
         }
 
         trace!("new grab for root {:?}", root);
-        keyboard.set_focus(self, grab.current_grab(), serial);
         keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
         pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
         self.niri.popup_grab = Some(PopupGrabState { root, grab });
