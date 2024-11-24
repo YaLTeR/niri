@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
@@ -41,9 +40,7 @@ impl OpenAnimation {
         }
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
-        self.anim.set_current_time(current_time);
-    }
+    pub fn advance_animations(&mut self) {}
 
     pub fn is_done(&self) -> bool {
         self.anim.is_done()

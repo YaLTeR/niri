@@ -184,7 +184,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace_idx = idx;
 
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
-            self.clock.now(),
+            self.clock.clone(),
             current_idx,
             idx as f64,
             0.,
@@ -734,9 +734,8 @@ impl<W: LayoutElement> Monitor<W> {
         Some(column.tiles[column.active_tile_idx].window())
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self) {
         if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
-            anim.set_current_time(current_time);
             if anim.is_done() {
                 self.workspace_switch = None;
                 self.clean_up_workspaces();
@@ -744,7 +743,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         for ws in &mut self.workspaces {
-            ws.advance_animations(current_time);
+            ws.advance_animations();
         }
     }
 
@@ -1112,7 +1111,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
-            self.clock.now(),
+            self.clock.clone(),
             gesture.current_idx,
             new_idx as f64,
             velocity,

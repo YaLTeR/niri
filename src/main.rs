@@ -11,7 +11,6 @@ use std::{env, mem};
 
 use clap::Parser;
 use directories::ProjectDirs;
-use niri::animation;
 use niri::cli::{Cli, Sub};
 #[cfg(feature = "dbus")]
 use niri::dbus;
@@ -163,13 +162,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             config_errored = true;
         })
         .unwrap_or_default();
-
-    let slowdown = if config.animations.off {
-        0.
-    } else {
-        config.animations.slowdown.clamp(0., 100.)
-    };
-    animation::ANIMATION_SLOWDOWN.store(slowdown, Ordering::Relaxed);
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
     *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);

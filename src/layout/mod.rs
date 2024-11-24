@@ -219,6 +219,8 @@ pub struct Layout<W: LayoutElement> {
     interactive_move: Option<InteractiveMoveState<W>>,
     /// Clock for driving animations.
     clock: Clock,
+    /// Time that we last updated render elements for.
+    update_render_elements_time: Duration,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -447,6 +449,7 @@ impl<W: LayoutElement> Layout<W> {
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
             clock,
+            update_render_elements_time: Duration::ZERO,
             options: Rc::new(options),
         }
     }
@@ -468,6 +471,7 @@ impl<W: LayoutElement> Layout<W> {
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
             clock,
+            update_render_elements_time: Duration::ZERO,
             options: opts,
         }
     }
@@ -2194,22 +2198,22 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self) {
         let _span = tracy_client::span!("Layout::advance_animations");
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            move_.tile.advance_animations(current_time);
+            move_.tile.advance_animations();
         }
 
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
-                    mon.advance_animations(current_time);
+                    mon.advance_animations();
                 }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
-                    ws.advance_animations(current_time);
+                    ws.advance_animations();
                 }
             }
         }
@@ -2241,6 +2245,8 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
         let _span = tracy_client::span!("Layout::update_render_elements");
+
+        self.update_render_elements_time = self.clock.now();
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if output.map_or(true, |output| move_.output == *output) {
@@ -3475,6 +3481,10 @@ impl<W: LayoutElement> Layout<W> {
         output: &Output,
         target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> {
+        if self.update_render_elements_time != self.clock.now() {
+            error!("clock moved between updating render elements and rendering");
+        }
+
         let mut rv = None;
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
@@ -3653,7 +3663,7 @@ mod tests {
 
     impl<W: LayoutElement> Default for Layout<W> {
         fn default() -> Self {
-            Self::with_options(Clock::with_override(Duration::ZERO), Default::default())
+            Self::with_options(Clock::with_time(Duration::ZERO), Default::default())
         }
     }
 
@@ -4553,14 +4563,14 @@ mod tests {
                     layout.refresh(is_active);
                 }
                 Op::AdvanceAnimations { msec_delta } => {
-                    let mut now = layout.clock.now();
+                    let mut now = layout.clock.now_unadjusted();
                     if msec_delta >= 0 {
                         now = now.saturating_add(Duration::from_millis(msec_delta as u64));
                     } else {
                         now = now.saturating_sub(Duration::from_millis(-msec_delta as u64));
                     }
-                    layout.clock.set_time_override(Some(now));
-                    layout.advance_animations(now);
+                    layout.clock.set_unadjusted(now);
+                    layout.advance_animations();
                 }
                 Op::MoveWorkspaceToOutput(id) => {
                     let name = format!("output{id}");
@@ -4674,7 +4684,7 @@ mod tests {
 
     #[track_caller]
     fn check_ops_with_options(options: Options, ops: &[Op]) {
-        let mut layout = Layout::with_options(Clock::with_override(Duration::ZERO), options);
+        let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
 
         for op in ops {
             op.apply(&mut layout);

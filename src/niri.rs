@@ -122,6 +122,7 @@ use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
+use crate::niri_render_elements;
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
@@ -150,7 +151,6 @@ use crate::utils::{
     make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
 };
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
-use crate::{animation, niri_render_elements};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 
@@ -553,12 +553,21 @@ impl State {
 
         self.refresh();
 
+        // Advance animations to the current time (not target render time) before rendering outputs
+        // in order to clear completed animations and render elements. Even if we're not rendering,
+        // it's good to advance every now and then so the workspace clean-up and animations don't
+        // build up (the 1 second frame callback timer will call this line).
+        self.niri.advance_animations();
+
         self.niri.redraw_queued_outputs(&mut self.backend);
 
         {
             let _span = tracy_client::span!("flush_clients");
             self.niri.display_handle.flush_clients().unwrap();
         }
+
+        // Clear the time so it's fetched afresh next iteration.
+        self.niri.clock.clear();
     }
 
     fn refresh(&mut self) {
@@ -1054,12 +1063,11 @@ impl State {
             self.niri.layout.ensure_named_workspace(ws_config);
         }
 
-        let slowdown = if config.animations.off {
-            0.
-        } else {
-            config.animations.slowdown.clamp(0., 100.)
-        };
-        animation::ANIMATION_SLOWDOWN.store(slowdown, Ordering::Relaxed);
+        let rate = 1.0 / config.animations.slowdown.max(0.001);
+        self.niri.clock.set_rate(rate);
+        self.niri
+            .clock
+            .set_complete_instantly(config.animations.off);
 
         *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
 
@@ -1675,8 +1683,13 @@ impl Niri {
         let config_ = config.borrow();
         let config_file_output_config = config_.outputs.clone();
 
-        let clock = Clock::default();
-        let layout = Layout::new(clock.clone(), &config_);
+        let mut animation_clock = Clock::default();
+
+        let rate = 1.0 / config_.animations.slowdown.max(0.001);
+        animation_clock.set_rate(rate);
+        animation_clock.set_complete_instantly(config_.animations.off);
+
+        let layout = Layout::new(animation_clock.clone(), &config_);
 
         let (blocker_cleared_tx, blocker_cleared_rx) = mpsc::channel();
 
@@ -1804,8 +1817,9 @@ impl Niri {
         let mods_with_finger_scroll_binds =
             mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
 
-        let screenshot_ui = ScreenshotUi::new(clock.clone(), config.clone());
-        let config_error_notification = ConfigErrorNotification::new(clock.clone(), config.clone());
+        let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
+        let config_error_notification =
+            ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
         let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
         if !config_.hotkey_overlay.skip_at_startup {
@@ -1900,7 +1914,7 @@ impl Niri {
             display_handle,
             start_time: Instant::now(),
             is_at_startup: true,
-            clock,
+            clock: animation_clock,
 
             layout,
             global_space: Space::default(),
@@ -3042,16 +3056,15 @@ impl Niri {
         }
     }
 
-    pub fn advance_animations(&mut self, target_time: Duration) {
-        self.layout.advance_animations(target_time);
-        self.config_error_notification
-            .advance_animations(target_time);
-        self.screenshot_ui.advance_animations(target_time);
+    pub fn advance_animations(&mut self) {
+        let _span = tracy_client::span!("Niri::advance_animations");
+
+        self.layout.advance_animations();
+        self.config_error_notification.advance_animations();
+        self.screenshot_ui.advance_animations();
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
-                // Screen transition uses real time so that it's not affected by animation slowdown.
-                transition.advance_animations(target_time);
                 if transition.is_done() {
                     state.screen_transition = None;
                 }
@@ -3263,11 +3276,13 @@ impl Niri {
 
         let target_presentation_time = state.frame_clock.next_presentation_time();
 
+        // Freeze the clock at the target time.
+        self.clock.set_unadjusted(target_presentation_time);
+
+        self.update_render_elements(Some(output));
+
         let mut res = RenderResult::Skipped;
         if self.monitors_active {
-            // Update from the config and advance the animations.
-            self.advance_animations(target_presentation_time);
-
             let state = self.output_state.get_mut(output).unwrap();
             state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
             state.unfinished_animations_remain |=
@@ -3279,8 +3294,6 @@ impl Niri {
             state.unfinished_animations_remain |= self
                 .cursor_manager
                 .is_current_cursor_animated(output.current_scale().integer_scale());
-
-            self.update_render_elements(Some(output));
 
             // Render.
             res = backend.render(self, output, target_presentation_time);
@@ -4827,11 +4840,13 @@ impl Niri {
             Duration::from_millis(u64::from(d))
         });
 
-        // Screen transition uses real time so that it's not affected by animation slowdown.
-        let start_at = get_monotonic_time() + delay;
         for (output, from_texture) in textures {
             let state = self.output_state.get_mut(&output).unwrap();
-            state.screen_transition = Some(ScreenTransition::new(from_texture, start_at));
+            state.screen_transition = Some(ScreenTransition::new(
+                from_texture,
+                delay,
+                self.clock.clone(),
+            ));
         }
 
         // We don't actually need to queue a redraw because the point is to freeze the screen for a

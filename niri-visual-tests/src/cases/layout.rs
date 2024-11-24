@@ -69,7 +69,7 @@ impl Layout {
         let mut layout = niri::layout::Layout::with_options(clock.clone(), options);
         layout.add_output(output.clone());
 
-        let start_time = clock.now();
+        let start_time = clock.now_unadjusted();
 
         Self {
             output,
@@ -207,24 +207,25 @@ impl TestCase for Layout {
         self.layout.are_animations_ongoing(Some(&self.output)) || !self.steps.is_empty()
     }
 
-    fn advance_animations(&mut self, current_time: Duration) {
+    fn advance_animations(&mut self, _current_time: Duration) {
+        let now_unadjusted = self.clock.now_unadjusted();
         let run = self
             .steps
             .keys()
             .copied()
-            .filter(|delay| self.start_time + *delay <= current_time)
+            .filter(|delay| self.start_time + *delay <= now_unadjusted)
             .collect::<Vec<_>>();
         for delay in &run {
             let now = self.start_time + *delay;
-            self.clock.set_time_override(Some(now));
-            self.layout.advance_animations(now);
+            self.clock.set_unadjusted(now);
+            self.layout.advance_animations();
 
             let f = self.steps.remove(delay).unwrap();
             f(self);
         }
 
-        self.clock.set_time_override(None);
-        self.layout.advance_animations(current_time);
+        self.clock.set_unadjusted(now_unadjusted);
+        self.layout.advance_animations();
     }
 
     fn render(

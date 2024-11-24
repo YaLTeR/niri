@@ -90,8 +90,8 @@ impl TestCase for Tile {
         self.tile.are_animations_ongoing()
     }
 
-    fn advance_animations(&mut self, current_time: Duration) {
-        self.tile.advance_animations(current_time);
+    fn advance_animations(&mut self, _current_time: Duration) {
+        self.tile.advance_animations();
     }
 
     fn render(

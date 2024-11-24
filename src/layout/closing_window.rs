@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
@@ -138,15 +137,15 @@ impl ClosingWindow {
         })
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self) {
         match &mut self.anim_state {
             AnimationState::Waiting { blocker, anim } => {
                 if blocker.state() != BlockerState::Pending {
-                    let anim = anim.restarted(current_time, 0., 1., 0.);
+                    let anim = anim.restarted(0., 1., 0.);
                     self.anim_state = AnimationState::Animating(anim);
                 }
             }
-            AnimationState::Animating(anim) => anim.set_current_time(current_time),
+            AnimationState::Animating(_anim) => (),
         }
     }
 

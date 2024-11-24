@@ -3,7 +3,6 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::iter::zip;
 use std::rc::Rc;
-use std::time::Duration;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
@@ -185,7 +184,7 @@ impl ScreenshotUi {
 
         let open_anim = {
             let c = config.borrow();
-            Animation::new(clock.now(), 0., 1., 0., c.animations.screenshot_ui_open.0)
+            Animation::new(clock.clone(), 0., 1., 0., c.animations.screenshot_ui_open.0)
         };
 
         *self = Self::Open {
@@ -238,13 +237,7 @@ impl ScreenshotUi {
         matches!(self, ScreenshotUi::Open { .. })
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
-        let Self::Open { open_anim, .. } = self else {
-            return;
-        };
-
-        open_anim.set_current_time(current_time);
-    }
+    pub fn advance_animations(&mut self) {}
 
     pub fn are_animations_ongoing(&self) -> bool {
         let Self::Open { open_anim, .. } = self else {
