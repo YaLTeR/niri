@@ -360,6 +360,17 @@ impl XdgShellHandler for State {
         let keyboard = seat.get_keyboard().unwrap();
         let pointer = seat.get_pointer().unwrap();
 
+        let can_receive_keyboard_focus = self
+            .niri
+            .layout
+            .active_output()
+            .and_then(|output| {
+                layer_map_for_output(output)
+                    .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
+                    .map(|layer_surface| layer_surface.can_receive_keyboard_focus())
+            })
+            .unwrap_or(true);
+
         let keyboard_grab_mismatches = keyboard.is_grabbed()
             && !(keyboard.has_grab(serial)
                 || grab
@@ -368,15 +379,21 @@ impl XdgShellHandler for State {
         let pointer_grab_mismatches = pointer.is_grabbed()
             && !(pointer.has_grab(serial)
                 || grab.previous_serial().map_or(true, |s| pointer.has_grab(s)));
-        if keyboard_grab_mismatches || pointer_grab_mismatches {
+        if (can_receive_keyboard_focus && keyboard_grab_mismatches) || pointer_grab_mismatches {
             grab.ungrab(PopupUngrabStrategy::All);
             return;
         }
 
         trace!("new grab for root {:?}", root);
-        keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
+        if can_receive_keyboard_focus {
+            keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
+        }
         pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
-        self.niri.popup_grab = Some(PopupGrabState { root, grab });
+        self.niri.popup_grab = Some(PopupGrabState {
+            root,
+            grab,
+            has_keyboard_grab: can_receive_keyboard_focus,
+        });
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {

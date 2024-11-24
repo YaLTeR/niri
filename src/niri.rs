@@ -409,6 +409,7 @@ pub enum RedrawState {
 pub struct PopupGrabState {
     pub root: WlSurface,
     pub grab: PopupGrab<State>,
+    pub has_keyboard_grab: bool,
 }
 
 // The surfaces here are always toplevel surfaces focused as far as niri's logic is concerned, even
@@ -865,7 +866,7 @@ impl State {
             let layer_grab = self.niri.popup_grab.as_ref().and_then(|g| {
                 layers
                     .layer_for_surface(&g.root, WindowSurfaceType::TOPLEVEL)
-                    .map(|l| (&g.root, l.layer()))
+                    .and_then(|l| l.can_receive_keyboard_focus().then(|| (&g.root, l.layer())))
             });
             let grab_on_layer = |layer: Layer| {
                 layer_grab
@@ -984,7 +985,7 @@ impl State {
             }
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
-                if Some(&grab.root) != focus.surface() {
+                if grab.has_keyboard_grab && Some(&grab.root) != focus.surface() {
                     trace!(
                         "grab root {:?} is not the new focus {:?}, ungrabbing",
                         grab.root,
