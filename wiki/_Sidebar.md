@@ -28,3 +28,4 @@
 * [Developing niri](./Developing-niri.md)
 * [Fractional Layout](./Fractional-Layout.md)
 * [Redraw Loop](./Redraw-Loop.md)
+* [Animation Timing](./Animation-Timing.md)
