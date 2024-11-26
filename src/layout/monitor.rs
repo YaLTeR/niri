@@ -828,6 +828,17 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
+        if self.options.empty_workspace_above_first != options.empty_workspace_above_first
+            && self.workspaces.len() > 1
+        {
+            if options.empty_workspace_above_first {
+                self.add_workspace_top();
+            } else if self.workspace_switch.is_none() {
+                self.workspaces.remove(0);
+                self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
+            }
+        }
+
         for ws in &mut self.workspaces {
             ws.update_config(options.clone());
         }
