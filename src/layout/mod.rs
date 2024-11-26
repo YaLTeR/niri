@@ -6233,6 +6233,45 @@ mod tests {
         check_ops_with_options(options, &ops);
     }
 
+    #[test]
+    fn switch_ewaf_on() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+        ];
+
+        let mut layout = check_ops(&ops);
+        layout.update_options(Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        });
+        layout.verify_invariants();
+    }
+
+    #[test]
+    fn switch_ewaf_off() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+        ];
+
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        let mut layout = check_ops_with_options(options, &ops);
+        layout.update_options(Options::default());
+        layout.verify_invariants();
+    }
+
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {
         // Give equal weight to:
         // - 0: the element is disabled
