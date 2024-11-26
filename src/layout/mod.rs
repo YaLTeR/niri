@@ -2408,7 +2408,10 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             let scale = move_.output.current_scale().fractional_scale();
-            move_.tile.update_config(scale, options.clone());
+            move_.tile.update_config(
+                scale,
+                Rc::new(Options::clone(&options).adjusted_for_scale(scale)),
+            );
         }
 
         match &mut self.monitor_set {
