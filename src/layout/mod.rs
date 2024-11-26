@@ -4023,12 +4023,12 @@ mod tests {
         MoveWindowToOutput {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
             window_id: Option<usize>,
-            #[proptest(strategy = "1..=5u8")]
-            output_id: u8,
+            #[proptest(strategy = "1..=5usize")]
+            output_id: usize,
             #[proptest(strategy = "proptest::option::of(0..=4usize)")]
             target_ws_idx: Option<usize>,
         },
-        MoveColumnToOutput(#[proptest(strategy = "1..=5u8")] u8),
+        MoveColumnToOutput(#[proptest(strategy = "1..=5usize")] usize),
         SwitchPresetColumnWidth,
         SwitchPresetWindowHeight {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -4054,7 +4054,7 @@ mod tests {
             #[proptest(strategy = "arbitrary_msec_delta()")]
             msec_delta: i32,
         },
-        MoveWorkspaceToOutput(#[proptest(strategy = "1..=5u8")] u8),
+        MoveWorkspaceToOutput(#[proptest(strategy = "1..=5usize")] usize),
         ViewOffsetGestureBegin {
             #[proptest(strategy = "1..=5usize")]
             output_idx: usize,
