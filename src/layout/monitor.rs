@@ -828,11 +828,15 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
+        let mut stop_workspace_switch = false;
         if self.options.empty_workspace_above_first != options.empty_workspace_above_first
             && self.workspaces.len() > 1
         {
             if options.empty_workspace_above_first {
                 self.add_workspace_top();
+                // We just modified workspace indices by adding a workspace on top, so we must stop
+                // the workspace switch which uses indices.
+                stop_workspace_switch = true;
             } else if self.workspace_switch.is_none() && self.active_workspace_idx != 0 {
                 self.workspaces.remove(0);
                 self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
@@ -855,6 +859,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         self.options = options;
+
+        if stop_workspace_switch && self.workspace_switch.is_some() {
+            self.workspace_switch = None;
+            self.clean_up_workspaces();
+        }
     }
 
     pub fn toggle_width(&mut self) {
