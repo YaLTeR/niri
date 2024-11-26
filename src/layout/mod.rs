@@ -3294,6 +3294,8 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 }
 
+                // needed because empty_workspace_above_first could have modified the idx
+                let ws_idx = mon.active_workspace_idx();
                 let ws = &mut mon.workspaces[ws_idx];
                 let (tile, tile_render_loc) = ws
                     .tiles_with_render_positions_mut(false)
