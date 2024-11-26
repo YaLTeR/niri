@@ -4682,22 +4682,25 @@ mod tests {
     }
 
     #[track_caller]
-    fn check_ops(ops: &[Op]) {
+    fn check_ops(ops: &[Op]) -> Layout<TestWindow> {
         let mut layout = Layout::default();
         for op in ops {
             op.apply(&mut layout);
             layout.verify_invariants();
         }
+        layout
     }
 
     #[track_caller]
-    fn check_ops_with_options(options: Options, ops: &[Op]) {
+    fn check_ops_with_options(options: Options, ops: &[Op]) -> Layout<TestWindow> {
         let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
 
         for op in ops {
             op.apply(&mut layout);
             layout.verify_invariants();
         }
+
+        layout
     }
 
     #[test]
@@ -5066,10 +5069,7 @@ mod tests {
             Op::RemoveOutput(1),
         ];
 
-        let mut layout = Layout::default();
-        for op in ops {
-            op.apply(&mut layout);
-        }
+        let layout = check_ops(&ops);
 
         let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
             unreachable!()
@@ -5103,10 +5103,7 @@ mod tests {
             },
         ];
 
-        let mut layout = Layout::default();
-        for op in ops {
-            op.apply(&mut layout);
-        }
+        let layout = check_ops(&ops);
 
         let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
             unreachable!()
@@ -5272,10 +5269,7 @@ mod tests {
             Op::MoveWorkspaceToOutput(2),
         ];
 
-        let mut layout = Layout::default();
-        for op in ops {
-            op.apply(&mut layout);
-        }
+        let layout = check_ops(&ops);
 
         let MonitorSet::Normal {
             monitors,
@@ -5356,10 +5350,7 @@ mod tests {
             },
         ];
 
-        let mut layout = Layout::default();
-        for op in ops {
-            op.apply(&mut layout);
-        }
+        let layout = check_ops(&ops);
 
         let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
             unreachable!()
@@ -5497,10 +5488,7 @@ mod tests {
             Op::RemoveOutput(1),
         ];
 
-        let mut layout = Layout::default();
-        for op in ops {
-            op.apply(&mut layout);
-        }
+        let layout = check_ops(&ops);
 
         let MonitorSet::NoOutputs { workspaces } = layout.monitor_set else {
             unreachable!()
@@ -5877,10 +5865,7 @@ mod tests {
             Op::AddOutput(1),
         ];
 
-        let mut layout = Layout::default();
-        for op in ops {
-            op.apply(&mut layout);
-        }
+        let layout = check_ops(&ops);
 
         let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
             unreachable!()
@@ -5909,10 +5894,7 @@ mod tests {
             Op::AddOutput(1),
         ];
 
-        let mut layout = Layout::default();
-        for op in ops {
-            op.apply(&mut layout);
-        }
+        let layout = check_ops(&ops);
 
         let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
             unreachable!()
