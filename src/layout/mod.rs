@@ -2400,7 +2400,11 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn update_config(&mut self, config: &Config) {
-        let options = Rc::new(Options::from_config(config));
+        self.update_options(Options::from_config(config));
+    }
+
+    fn update_options(&mut self, options: Options) {
+        let options = Rc::new(options);
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             let scale = move_.output.current_scale().fractional_scale();
