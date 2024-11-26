@@ -6005,9 +6005,18 @@ mod tests {
         })]
 
         #[test]
-        fn random_operations_dont_panic(ops: Vec<Op>, options in arbitrary_options()) {
+        fn random_operations_dont_panic(
+            ops: Vec<Op>,
+            options in arbitrary_options(),
+            post_options in prop::option::of(arbitrary_options()),
+        ) {
             // eprintln!("{ops:?}");
-            check_ops_with_options(options, &ops);
+            let mut layout = check_ops_with_options(options, &ops);
+
+            if let Some(post_options) = post_options {
+                layout.update_options(post_options);
+                layout.verify_invariants();
+            }
         }
     }
 }
