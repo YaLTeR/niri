@@ -4248,8 +4248,12 @@ mod tests {
                     let mut found_right_of = false;
 
                     if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
-                        if move_.tile.window().0.id == id {
+                        let win_id = move_.tile.window().0.id;
+                        if win_id == id {
                             return;
+                        }
+                        if win_id == right_of_id {
+                            found_right_of = true;
                         }
                     }
 
