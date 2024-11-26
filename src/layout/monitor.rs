@@ -833,7 +833,7 @@ impl<W: LayoutElement> Monitor<W> {
         {
             if options.empty_workspace_above_first {
                 self.add_workspace_top();
-            } else if self.workspace_switch.is_none() {
+            } else if self.workspace_switch.is_none() && self.active_workspace_idx != 0 {
                 self.workspaces.remove(0);
                 self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
             }
