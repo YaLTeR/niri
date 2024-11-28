@@ -517,7 +517,20 @@ impl<W: LayoutElement> Layout<W> {
                             workspaces.push(ws);
                         }
 
-                        if i <= primary.active_workspace_idx {
+                        if i <= primary.active_workspace_idx
+                            // Generally when moving the currently active workspace, we want to
+                            // fall back to the workspace above, so as not to end up on the last
+                            // empty workspace. However, with empty workspace above first, when
+                            // moving the workspace at index 1 (first non-empty), we want to stay
+                            // at index 1, so as once again not to end up on an empty workspace.
+                            //
+                            // This comes into play at compositor startup when having named
+                            // workspaces set up across multiple monitors. Without this check, the
+                            // first monitor to connect can end up with the first empty workspace
+                            // focused instead of the first named workspace.
+                            && !(self.options.empty_workspace_above_first
+                                && primary.active_workspace_idx == 1)
+                        {
                             primary.active_workspace_idx =
                                 primary.active_workspace_idx.saturating_sub(1);
                         }
@@ -541,6 +554,7 @@ impl<W: LayoutElement> Layout<W> {
                 if let Some(idx) = &mut active_workspace_idx {
                     *idx = workspaces.len() - *idx - 1;
                 }
+                let mut active_workspace_idx = active_workspace_idx.unwrap_or(0);
 
                 // Make sure there's always an empty workspace.
                 workspaces.push(Workspace::new(
@@ -554,6 +568,7 @@ impl<W: LayoutElement> Layout<W> {
                         0,
                         Workspace::new(output.clone(), self.clock.clone(), self.options.clone()),
                     );
+                    active_workspace_idx += 1;
                 }
 
                 for ws in &mut workspaces {
@@ -562,7 +577,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 let mut monitor =
                     Monitor::new(output, workspaces, self.clock.clone(), self.options.clone());
-                monitor.active_workspace_idx = active_workspace_idx.unwrap_or(0);
+                monitor.active_workspace_idx = active_workspace_idx;
                 monitors.push(monitor);
 
                 MonitorSet::Normal {
@@ -579,15 +594,16 @@ impl<W: LayoutElement> Layout<W> {
                     self.options.clone(),
                 ));
 
+                let mut active_workspace_idx = 0;
                 if self.options.empty_workspace_above_first && workspaces.len() > 1 {
                     workspaces.insert(
                         0,
                         Workspace::new(output.clone(), self.clock.clone(), self.options.clone()),
                     );
+                    active_workspace_idx += 1;
                 }
 
                 let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
-                let mut active_workspace_idx = 0;
 
                 for (i, workspace) in workspaces.iter_mut().enumerate() {
                     workspace.set_output(Some(output.clone()));
