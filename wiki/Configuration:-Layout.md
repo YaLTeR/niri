@@ -9,6 +9,7 @@ layout {
     gaps 16
     center-focused-column "never"
     always-center-single-column
+    empty-workspace-above-first
 
     preset-column-widths {
         proportion 0.33333
@@ -97,6 +98,18 @@ If set, niri will always center a single column on a workspace, regardless of th
 ```kdl
 layout {
     always-center-single-column
+}
+```
+
+### `empty-workspace-above-first`
+
+<sup>Since: 0.1.11</sup>
+
+If set, niri will always add an empty workspace at the very start, in addition to the empty workspace at the very end.
+
+```kdl
+layout {
+    empty-workspace-above-first
 }
 ```
 
