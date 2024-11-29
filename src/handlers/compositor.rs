@@ -145,7 +145,14 @@ impl CompositorHandler for State {
                         .filter(|token| token.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT)
                     {
                         Some(_) => ActivateWindow::Yes,
-                        None => ActivateWindow::Smart,
+                        None => {
+                            let config = self.niri.config.borrow();
+                            if config.debug.strict_new_window_focus_policy {
+                                ActivateWindow::No
+                            } else {
+                                ActivateWindow::Smart
+                            }
+                        }
                     };
 
                     let output = if let Some(p) = parent {

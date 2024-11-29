@@ -24,6 +24,7 @@ debug {
     disable-transactions
     keep-laptop-panel-on-when-lid-is-closed
     disable-monitor-names
+    strict-new-window-focus-policy
 }
 
 binds {
@@ -191,6 +192,19 @@ Use this flag to work around a crash present in 0.1.9 and 0.1.10 when connecting
 ```kdl
 debug {
     disable-monitor-names
+}
+```
+
+### `strict-new-window-focus-policy`
+
+<sup>Since: 0.1.11</sup>
+
+Disables heuristic automatic focusing for new windows.
+Only windows that activate themselves with a valid xdg-activation token will be focused.
+
+```kdl
+debug {
+    strict-new-window-focus-policy
 }
 ```
 
