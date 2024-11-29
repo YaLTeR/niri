@@ -1537,6 +1537,8 @@ pub struct DebugConfig {
     pub keep_laptop_panel_on_when_lid_is_closed: bool,
     #[knuffel(child)]
     pub disable_monitor_names: bool,
+    #[knuffel(child)]
+    pub strict_new_window_focus_policy: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
