@@ -165,6 +165,19 @@ impl CompositorHandler for State {
 
                         self.niri.queue_redraw(&output);
                     }
+
+                    for _ in 0..3 {
+                        let toplevel = window.toplevel().expect("no X11 support");
+                        if let Err(err) =
+                            crate::utils::spawning::test_scope(toplevel, &self.niri.display_handle)
+                        {
+                            tracing::warn!(?err, "failed to test scope");
+                            continue;
+                        };
+
+                        break;
+                    }
+
                     return;
                 }
 

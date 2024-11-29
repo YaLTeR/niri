@@ -1,14 +1,20 @@
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 use std::{io, thread};
 
+use anyhow::Context;
 use atomic::Atomic;
 use libc::{getrlimit, rlim_t, rlimit, setrlimit, RLIMIT_NOFILE};
 use niri_config::Environment;
+use smithay::reexports::wayland_server::{DisplayHandle, Resource};
+use smithay::wayland::compositor;
+use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceData};
+use zbus::zvariant::Value;
 
 use crate::utils::expand_home;
 
@@ -173,9 +179,12 @@ use systemd::do_spawn;
 mod systemd {
     use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 
+    use serde::{Deserialize, Serialize};
     use smithay::reexports::rustix;
     use smithay::reexports::rustix::io::{close, read, retry_on_intr, write};
     use smithay::reexports::rustix::pipe::{pipe_with, PipeFlags};
+    use zbus::dbus_proxy;
+    use zbus::zvariant::{OwnedObjectPath, OwnedValue, Type, Value};
 
     use super::*;
 
@@ -382,6 +391,20 @@ mod systemd {
 
         let _ = write!(scope_name, "-{child_pid}.scope");
 
+        let mut slice_name = format!("app-niri-");
+
+        // Escape for systemd similarly to libgnome-desktop, which says it had adapted this from
+        // systemd source.
+        for &c in name.as_bytes() {
+            if c.is_ascii_alphanumeric() || matches!(c, b':' | b'_' | b'.') {
+                slice_name.push(char::from(c));
+            } else {
+                let _ = write!(slice_name, "\\x{c:02x}");
+            }
+        }
+
+        let _ = write!(slice_name, ".slice");
+
         // Ask systemd to start a transient scope.
         static CONNECTION: OnceLock<zbus::Result<zbus::blocking::Connection>> = OnceLock::new();
         let conn = CONNECTION
@@ -405,6 +428,7 @@ mod systemd {
         let properties: &[_] = &[
             ("PIDs", Value::new(pids)),
             ("CollectMode", Value::new("inactive-or-failed")),
+            ("Slice", Value::new(&slice_name)),
         ];
         let aux: &[(&str, &[(&str, Value)])] = &[];
 
@@ -425,4 +449,232 @@ mod systemd {
 
         Ok(())
     }
+
+    #[dbus_proxy(
+        interface = "org.freedesktop.systemd1.Manager",
+        default_service = "org.freedesktop.systemd1",
+        default_path = "/org/freedesktop/systemd1"
+    )]
+    trait Manager {
+        #[dbus_proxy(name = "GetUnitByPID")]
+        fn get_unit_by_pid(&self, pid: u32) -> zbus::Result<OwnedObjectPath>;
+
+        #[dbus_proxy(name = "StartTransientUnit")]
+        fn start_transient_unit(
+            &self,
+            name: &str,
+            mode: &str,
+            properties: &[(&str, Value<'_>)],
+            aux: &[(&str, &[(&str, Value<'_>)])],
+        ) -> zbus::Result<OwnedObjectPath>;
+
+        #[dbus_proxy(signal)]
+        fn job_removed(
+            &self,
+            id: u32,
+            job: zbus::zvariant::ObjectPath<'_>,
+            unit: &str,
+            result: &str,
+        ) -> zbus::Result<()>;
+    }
+
+    /// A process spawned by systemd for a unit.
+    #[derive(Debug, PartialEq, Eq, Clone, Type, Serialize, Deserialize, Value, OwnedValue)]
+    pub struct Process {
+        /// The cgroup controller of the process.
+        pub cgroup_controller: String,
+
+        /// The PID of the process.
+        pub pid: u32,
+
+        /// The command line of the process.
+        pub command_line: String,
+    }
+
+    #[dbus_proxy(
+        interface = "org.freedesktop.systemd1.Scope",
+        default_service = "org.freedesktop.systemd1"
+    )]
+    trait Scope {
+        #[dbus_proxy(property)]
+        fn control_group(&self) -> zbus::Result<String>;
+
+        fn get_processes(&self) -> zbus::Result<Vec<Process>>;
+    }
+
+    #[dbus_proxy(
+        interface = "org.freedesktop.systemd1.Unit",
+        default_service = "org.freedesktop.systemd1",
+        default_path = "/org/freedesktop/systemd1/unit"
+    )]
+    trait Unit {
+        fn freeze(&self) -> zbus::Result<()>;
+        fn thaw(&self) -> zbus::Result<()>;
+    }
+}
+
+pub fn test_scope(toplevel: &ToplevelSurface, dh: &DisplayHandle) -> anyhow::Result<()> {
+    static CONNECTION: OnceLock<zbus::Result<zbus::blocking::Connection>> = OnceLock::new();
+    let conn = CONNECTION
+        .get_or_init(zbus::blocking::Connection::session)
+        .clone()
+        .context("error connecting to session bus")?;
+
+    let manager = systemd::ManagerProxyBlocking::new(&conn).context("error creating a Proxy")?;
+
+    let wl_surface = toplevel.wl_surface();
+    let Some(client) = wl_surface.client() else {
+        return Ok(());
+    };
+
+    let credentials = client.get_credentials(dh)?;
+    let pid = credentials.pid as u32;
+
+    let Some(app_id) = compositor::with_states(&wl_surface, |states| {
+        states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .and_then(|surface_data| surface_data.lock().unwrap().app_id.clone())
+    }) else {
+        return Ok(());
+    };
+
+    let unit_path = manager.get_unit_by_pid(pid)?;
+
+    use std::fmt::Write;
+    let mut expected_scope_name = format!("app-niri-");
+
+    // Escape for systemd similarly to libgnome-desktop, which says it had adapted this from
+    // systemd source.
+    for &c in app_id.as_bytes() {
+        if c.is_ascii_alphanumeric() || matches!(c, b':' | b'_' | b'.') {
+            expected_scope_name.push(char::from(c));
+        } else {
+            let _ = write!(expected_scope_name, "\\x{c:02x}");
+        }
+    }
+
+    let _ = write!(expected_scope_name, "-{pid}.scope");
+
+    let scope = systemd::ScopeProxyBlocking::builder(&conn)
+        .path(&unit_path)?
+        .build()
+        .with_context(|| format!("failed to get scope for: {unit_path:?}"))?;
+    let control_group = scope.control_group()?;
+
+    let existing_scope_name = control_group.split_terminator('/').last().unwrap();
+
+    if existing_scope_name.eq_ignore_ascii_case(&expected_scope_name)
+        || !existing_scope_name.starts_with("app-niri-")
+    {
+        return Ok(());
+    }
+
+    let unit = systemd::UnitProxyBlocking::builder(&conn)
+        .path(&unit_path)?
+        .build()?;
+
+    let frozen = match unit.freeze() {
+        Ok(_) => true,
+        Err(err) => {
+            tracing::warn!(?unit_path, ?err, "failed to freeze unit");
+            false
+        }
+    };
+
+    let apply = || {
+        let processes = scope.get_processes()?;
+
+        let mut pids = processes
+            .iter()
+            .map(|process| process.pid)
+            .collect::<Vec<_>>();
+
+        let mut ppid_map: HashMap<u32, u32> = HashMap::new();
+
+        let mut i = 0;
+        while i < pids.len() {
+            // self check
+            if pids[i] == pid {
+                i += 1;
+                continue;
+            }
+
+            let pid: u32 = pids[i];
+
+            let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid))
+                .context("failed to parse stat")?;
+            let ppid_start = stat.rfind(')').unwrap_or_default() + 4;
+            let ppid_end = ppid_start + stat[ppid_start..].find(' ').unwrap_or(0);
+            let ppid = &stat[ppid_start..ppid_end];
+            let ppid = ppid
+                .parse::<u32>()
+                .with_context(|| format!("failed to parse ppid from stat: {stat}"))?;
+
+            if !pids.contains(&ppid) {
+                pids.remove(i);
+            } else {
+                ppid_map.insert(pid, ppid);
+                i += 1;
+            }
+        }
+
+        let mut i = 0;
+        while i < pids.len() {
+            // self check
+            if pids[i] == pid {
+                i += 1;
+                continue;
+            }
+
+            let mut root_pid = pids[i];
+            while let Some(&ppid) = ppid_map.get(&root_pid) {
+                root_pid = ppid;
+            }
+
+            if root_pid != pid {
+                pids.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
+        let mut slice_name = format!("app-niri-");
+
+        // Escape for systemd similarly to libgnome-desktop, which says it had adapted this from
+        // systemd source.
+        for &c in app_id.as_bytes() {
+            if c.is_ascii_alphanumeric() || matches!(c, b':' | b'_' | b'.') {
+                slice_name.push(char::from(c));
+            } else {
+                let _ = write!(slice_name, "\\x{c:02x}");
+            }
+        }
+
+        let _ = write!(slice_name, ".slice");
+
+        let properties: &[_] = &[
+            ("PIDs", Value::new(pids)),
+            ("CollectMode", Value::new("inactive-or-failed")),
+            ("Slice", Value::new(&slice_name)),
+        ];
+
+        tracing::info!(
+            ?expected_scope_name,
+            ?existing_scope_name,
+            "trying to move to different scope"
+        );
+
+        manager.start_transient_unit(&expected_scope_name, "fail", properties, &[])?;
+        Result::<(), anyhow::Error>::Ok(())
+    };
+
+    let res = apply();
+
+    if frozen {
+        let _ = unit.thaw();
+    }
+
+    res?;
+    Ok(())
 }
