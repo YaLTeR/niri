@@ -430,6 +430,16 @@ pub enum Action {
     DebugToggleOpaqueRegions {},
     /// Toggle visualization of output damage.
     DebugToggleDamage {},
+    /// Move the focused window between the floating and the tiling layout.
+    ToggleWindowFloating {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Toggles the focus between the floating and the tiling layout.
+    SwitchFocusBetweenFloatingAndTiling,
 }
 
 /// Change in window or column size.
