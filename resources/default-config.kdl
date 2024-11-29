@@ -474,6 +474,9 @@ binds {
     Mod+Shift+Minus { set-window-height "-10%"; }
     Mod+Shift+Equal { set-window-height "+10%"; }
 
+    Mod+V      { switch-focus-between-floating-and-tiling; }
+    Mod+Ctrl+V { toggle-window-floating; }
+
     // Actions to switch layouts.
     // Note: if you uncomment these, make sure you do NOT have
     // a matching layout switch hotkey configured in xkb options above.

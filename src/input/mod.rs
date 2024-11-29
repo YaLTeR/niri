@@ -1294,6 +1294,25 @@ impl State {
                     }
                 }
             }
+            Action::ToggleWindowFloating => {
+                self.niri.layout.toggle_window_floating(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::ToggleWindowFloatingById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_floating(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SwitchFocusBetweenFloatingAndTiling => {
+                self.niri.layout.switch_focus_floating_tiling();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
         }
     }
 
