@@ -26,6 +26,11 @@ use crate::window::ResolvedWindowRules;
 /// Amount of touchpad movement to scroll the view for the width of one working area.
 const VIEW_GESTURE_WORKING_AREA_MOVEMENT: f64 = 1200.;
 
+/// Maximum distance to the target position for an interactively moved window.
+///
+/// If the distance is higher than this, the window will instead remain floating.
+const WINDOW_INSERT_MAX_DISTANCE: f64 = 50.;
+
 /// A scrollable-tiling space for windows.
 #[derive(Debug)]
 pub struct ScrollingSpace<W: LayoutElement> {
@@ -102,6 +107,7 @@ niri_render_elements! {
 pub enum InsertPosition {
     NewColumn(usize),
     InColumn(usize, usize),
+    Floating,
 }
 
 #[derive(Debug)]
@@ -357,6 +363,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn tiles_mut(&mut self) -> impl Iterator<Item = &mut Tile<W>> + '_ {
         self.columns.iter_mut().flat_map(|col| col.tiles.iter_mut())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.columns.is_empty()
     }
 
     pub fn active_window(&self) -> Option<&W> {
@@ -652,9 +662,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.insert_hint = None;
     }
 
-    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
+    fn compute_insert_position(&self, pos: Point<f64, Logical>) -> (InsertPosition, f64) {
         if self.columns.is_empty() {
-            return InsertPosition::NewColumn(0);
+            return (InsertPosition::NewColumn(0), pos.x.abs());
         }
 
         let x = pos.x + self.view_pos();
@@ -665,7 +675,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Insert position is before the first column.
         if x < 0. {
-            return InsertPosition::NewColumn(0);
+            return (InsertPosition::NewColumn(0), -x);
         }
 
         // Find the closest gap between columns.
@@ -685,7 +695,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Insert position is past the last column.
         if col_idx == self.columns.len() {
-            return InsertPosition::NewColumn(closest_col_idx);
+            // col_x should be what we expect if pos.x is past the last column.
+            return (InsertPosition::NewColumn(closest_col_idx), x - col_x);
         }
 
         // Find the closest gap between tiles.
@@ -700,10 +711,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let vert_dist = (col_x - x).abs();
         let hor_dist = (tile_off.y - y).abs();
         if vert_dist <= hor_dist {
-            InsertPosition::NewColumn(closest_col_idx)
+            (InsertPosition::NewColumn(closest_col_idx), vert_dist)
         } else {
-            InsertPosition::InColumn(col_idx, closest_tile_idx)
+            (
+                InsertPosition::InColumn(col_idx, closest_tile_idx),
+                hor_dist,
+            )
         }
+    }
+
+    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
+        let (position, distance) = self.compute_insert_position(pos);
+        if distance > WINDOW_INSERT_MAX_DISTANCE {
+            return InsertPosition::Floating;
+        }
+        position
     }
 
     pub fn add_tile(
@@ -894,6 +916,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 tile: column.tiles.remove(tile_idx),
                 width: column.width,
                 is_full_width: column.is_full_width,
+                is_floating: false,
             };
         }
 
@@ -929,6 +952,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             tile,
             width: column.width,
             is_full_width: column.is_full_width,
+            is_floating: false,
         };
 
         column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
@@ -1244,7 +1268,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
     }
 
-    pub fn start_close_animation_for_tile(
+    fn start_close_animation_for_tile(
         &mut self,
         renderer: &mut GlesRenderer,
         snapshot: TileRenderSnapshot,
@@ -1934,6 +1958,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let loc = Point::from((self.column_x(column_index), y));
                 Rectangle::from_loc_and_size(loc, size)
             }
+            InsertPosition::Floating => return None,
         };
 
         // First window on an empty workspace will cancel out any view offset. Replicate this
@@ -2738,7 +2763,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     .iter()
                     .flat_map(|col| &col.tiles)
                     .any(|tile| tile.window().id() == &resize.window),
-                "interactive resize window must be present on the workspace"
+                "interactive resize window must be present in the layout"
             );
         }
     }

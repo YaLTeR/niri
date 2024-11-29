@@ -119,6 +119,11 @@ impl CompositorHandler for State {
                             (ResolvedWindowRules::empty(), None, false, None, None)
                         };
 
+                    // The GTK about dialog sets min/max size after the initial configure but
+                    // before mapping, so we need to compute open_floating at the last possible
+                    // moment, that is here.
+                    let is_floating = rules.compute_open_floating(toplevel);
+
                     let parent = toplevel
                         .parent()
                         .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
@@ -160,15 +165,20 @@ impl CompositorHandler for State {
                         //
                         // FIXME: do we want to use activate here? How do we want things to behave
                         // exactly?
-                        self.niri
-                            .layout
-                            .add_window_right_of(&p, mapped, width, is_full_width)
+                        self.niri.layout.add_window_right_of(
+                            &p,
+                            mapped,
+                            width,
+                            is_full_width,
+                            is_floating,
+                        )
                     } else if let Some(workspace_name) = &workspace_name {
                         self.niri.layout.add_window_to_named_workspace(
                             workspace_name,
                             mapped,
                             width,
                             is_full_width,
+                            is_floating,
                             activate,
                         )
                     } else if let Some(output) = &output {
@@ -177,13 +187,18 @@ impl CompositorHandler for State {
                             mapped,
                             width,
                             is_full_width,
+                            is_floating,
                             activate,
                         );
                         Some(output)
                     } else {
-                        self.niri
-                            .layout
-                            .add_window(mapped, width, is_full_width, activate)
+                        self.niri.layout.add_window(
+                            mapped,
+                            width,
+                            is_full_width,
+                            is_floating,
+                            activate,
+                        )
                     };
 
                     if let Some(output) = output.cloned() {
