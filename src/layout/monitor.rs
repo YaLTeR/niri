@@ -1043,7 +1043,7 @@ impl<W: LayoutElement> Monitor<W> {
         &'a self,
         renderer: &'a mut R,
         target: RenderTarget,
-    ) -> impl Iterator<Item = MonitorRenderElement<R>> + '_ {
+    ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Monitor::render_elements");
 
         let scale = self.output.current_scale().fractional_scale();
