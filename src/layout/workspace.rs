@@ -2289,8 +2289,8 @@ impl<W: LayoutElement> Workspace<W> {
         let (first, rest) = self.columns.split_at(self.active_column_idx);
         let (active, rest) = rest.split_at(1);
 
-        let tiles = active.iter().chain(first).chain(rest);
-        zip(tiles, offsets)
+        let columns = active.iter().chain(first).chain(rest);
+        zip(columns, offsets)
     }
 
     fn columns_in_render_order_mut(&mut self) -> impl Iterator<Item = (&mut Column<W>, f64)> + '_ {
@@ -2299,8 +2299,8 @@ impl<W: LayoutElement> Workspace<W> {
         let (first, rest) = self.columns.split_at_mut(self.active_column_idx);
         let (active, rest) = rest.split_at_mut(1);
 
-        let tiles = active.iter_mut().chain(first).chain(rest);
-        zip(tiles, offsets)
+        let columns = active.iter_mut().chain(first).chain(rest);
+        zip(columns, offsets)
     }
 
     pub fn tiles_with_render_positions(
