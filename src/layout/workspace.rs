@@ -1644,12 +1644,10 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn clear_unmap_snapshot(&mut self, window: &W::Id) {
-        for col in &mut self.columns {
-            for tile in &mut col.tiles {
-                if tile.window().id() == window {
-                    let _ = tile.take_unmap_snapshot();
-                    return;
-                }
+        for tile in self.tiles_mut() {
+            if tile.window().id() == window {
+                let _ = tile.take_unmap_snapshot();
+                return;
             }
         }
     }
