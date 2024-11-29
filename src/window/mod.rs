@@ -3,7 +3,10 @@ use std::cmp::{max, min};
 use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, WindowRule};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Size};
-use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceRoleAttributes};
+use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::xdg::{
+    SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceRoleAttributes,
+};
 
 use crate::layout::scrolling::ColumnWidth;
 use crate::utils::with_toplevel_role;
@@ -42,6 +45,9 @@ pub struct ResolvedWindowRules {
 
     /// Whether the window should open fullscreen.
     pub open_fullscreen: Option<bool>,
+
+    /// Whether the window should open floating.
+    pub open_floating: Option<bool>,
 
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
@@ -109,6 +115,7 @@ impl ResolvedWindowRules {
             open_on_workspace: None,
             open_maximized: None,
             open_fullscreen: None,
+            open_floating: None,
             min_width: None,
             min_height: None,
             max_width: None,
@@ -197,6 +204,10 @@ impl ResolvedWindowRules {
                     resolved.open_fullscreen = Some(x);
                 }
 
+                if let Some(x) = rule.open_floating {
+                    resolved.open_floating = Some(x);
+                }
+
                 if let Some(x) = rule.min_width {
                     resolved.min_width = Some(x);
                 }
@@ -272,6 +283,28 @@ impl ResolvedWindowRules {
         }
 
         size
+    }
+
+    pub fn compute_open_floating(&self, toplevel: &ToplevelSurface) -> bool {
+        if let Some(res) = self.open_floating {
+            return res;
+        }
+
+        // Windows with a parent (usually dialogs) open as floating by default.
+        if toplevel.parent().is_some() {
+            return true;
+        }
+
+        let (mut min_size, mut max_size) = with_states(toplevel.wl_surface(), |state| {
+            let mut guard = state.cached_state.get::<SurfaceCachedState>();
+            let current = guard.current();
+            (current.min_size, current.max_size)
+        });
+        min_size = self.apply_min_size(min_size);
+        max_size = self.apply_max_size(max_size);
+
+        // We open fixed-height windows as floating.
+        min_size.h > 0 && min_size.h == max_size.h
     }
 }
 

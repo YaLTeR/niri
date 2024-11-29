@@ -4813,7 +4813,7 @@ impl Niri {
                     }
                 }
 
-                self.layout.activate_window(window);
+                self.layout.activate_window_without_raising(window);
                 self.layer_shell_on_demand_focus = None;
             }
         }
