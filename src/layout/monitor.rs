@@ -322,6 +322,35 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn add_floating_tile(
+        &mut self,
+        mut workspace_idx: usize,
+        tile: Tile<W>,
+        pos: Point<f64, Logical>,
+        activate: bool,
+    ) {
+        let workspace = &mut self.workspaces[workspace_idx];
+
+        workspace.add_floating_tile(tile, pos, activate);
+
+        // After adding a new window, workspace becomes this output's own.
+        workspace.original_output = OutputId::new(&self.output);
+
+        if workspace_idx == self.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            self.add_workspace_bottom();
+        }
+
+        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+            self.add_workspace_top();
+            workspace_idx += 1;
+        }
+
+        if activate {
+            self.activate_workspace(workspace_idx);
+        }
+    }
+
     pub fn add_tile_to_column(
         &mut self,
         workspace_idx: usize,

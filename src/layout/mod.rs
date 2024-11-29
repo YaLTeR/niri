@@ -66,6 +66,7 @@ use crate::utils::{output_matches_name, output_size, round_logical_in_physical_m
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
+pub mod floating;
 pub mod focus_ring;
 pub mod insert_hint_element;
 pub mod monitor;
@@ -1390,6 +1391,42 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn activate_window_without_raising(&mut self, window: &W::Id) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+
+        for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
+            for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
+                if ws.activate_window_without_raising(window) {
+                    *active_monitor_idx = monitor_idx;
+
+                    // If currently in the middle of a vertical swipe between the target workspace
+                    // and some other, don't switch the workspace.
+                    match &mon.workspace_switch {
+                        Some(WorkspaceSwitch::Gesture(gesture))
+                            if gesture.current_idx.floor() == workspace_idx as f64
+                                || gesture.current_idx.ceil() == workspace_idx as f64 => {}
+                        _ => mon.switch_workspace(workspace_idx),
+                    }
+
+                    return;
+                }
+            }
+        }
+    }
+
     pub fn activate_output(&mut self, output: &Output) {
         let MonitorSet::Normal {
             monitors,
@@ -2596,6 +2633,36 @@ impl<W: LayoutElement> Layout<W> {
         workspace.reset_window_height(window);
     }
 
+    pub fn toggle_window_floating(&mut self, window: Option<&W::Id>) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
+                return;
+            }
+        }
+
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.toggle_window_floating(window);
+    }
+
+    pub fn switch_focus_floating_tiling(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.switch_focus_floating_tiling();
+    }
+
     pub fn focus_output(&mut self, output: &Output) {
         if let MonitorSet::Normal {
             monitors,
@@ -3040,10 +3107,17 @@ impl<W: LayoutElement> Layout<W> {
                 }
                 .band(sq_dist / INTERACTIVE_MOVE_START_THRESHOLD);
 
-                let tile = self
+                let (is_floating, tile) = self
                     .workspaces_mut()
-                    .flat_map(|ws| ws.tiles_mut())
-                    .find(|tile| *tile.window().id() == window_id)
+                    .find(|ws| ws.has_window(&window_id))
+                    .map(|ws| {
+                        (
+                            ws.is_floating(&window_id),
+                            ws.tiles_mut()
+                                .find(|tile| *tile.window().id() == window_id)
+                                .unwrap(),
+                        )
+                    })
                     .unwrap();
                 tile.interactive_move_offset = pointer_delta.upscale(factor);
 
@@ -3054,7 +3128,7 @@ impl<W: LayoutElement> Layout<W> {
                     pointer_ratio_within_window,
                 });
 
-                if sq_dist < INTERACTIVE_MOVE_START_THRESHOLD {
+                if !is_floating && sq_dist < INTERACTIVE_MOVE_START_THRESHOLD {
                     return true;
                 }
 
@@ -3063,8 +3137,8 @@ impl<W: LayoutElement> Layout<W> {
                 // to the pointer. Otherwise, we just teleport it as the layout code is not aware
                 // of monitor positions.
                 //
-                // FIXME: with floating layer, the layout code will know about monitor positions,
-                // so this will be potentially animatable.
+                // FIXME: when and if the layout code knows about monitor positions, this will be
+                // potentially animatable.
                 let mut tile_pos = None;
                 if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
                     if let Some((mon, (ws, ws_offset))) = monitors.iter().find_map(|mon| {
@@ -3105,6 +3179,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 // Unfullscreen and let the window pick a natural size.
                 //
+                // TODO
                 // When we have floating, we will want to always send a (0, 0) size here, not just
                 // to unfullscreen. However, when implementing that, remember to check how GTK
                 // tiled window size restoration works. It seems to remember *some* last size with
@@ -3264,6 +3339,10 @@ impl<W: LayoutElement> Layout<W> {
                             move_.tile,
                             true,
                         );
+                    }
+                    InsertPosition::Floating => {
+                        let pos = move_.tile_render_location() - offset;
+                        mon.add_floating_tile(ws_idx, move_.tile, pos, true);
                     }
                 }
 
@@ -3911,6 +3990,8 @@ mod tests {
             (0f64..).prop_map(SizeChange::SetProportion),
             any::<i32>().prop_map(SizeChange::AdjustFixed),
             any::<f64>().prop_map(SizeChange::AdjustProportion),
+            // Interactive resize can have negative values here.
+            Just(SizeChange::SetFixed(-100)),
         ]
     }
 
@@ -4103,6 +4184,11 @@ mod tests {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
             id: Option<usize>,
         },
+        ToggleWindowFloating {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
+        SwitchFocusFloatingTiling,
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
         Refresh {
             is_active: bool,
@@ -4574,6 +4660,13 @@ mod tests {
                 Op::ResetWindowHeight { id } => {
                     let id = id.filter(|id| layout.has_window(id));
                     layout.reset_window_height(id.as_ref());
+                }
+                Op::ToggleWindowFloating { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.toggle_window_floating(id.as_ref());
+                }
+                Op::SwitchFocusFloatingTiling => {
+                    layout.switch_focus_floating_tiling();
                 }
                 Op::Communicate(id) => {
                     let mut update = false;
@@ -6187,6 +6280,62 @@ mod tests {
             },
             Op::RemoveOutput(4),
             Op::InteractiveMoveEnd { window: 3 },
+        ];
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn set_width_fixed_negative() {
+        let ops = [
+            Op::AddOutput(3),
+            Op::AddWindow {
+                id: 3,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ToggleWindowFloating { id: Some(3) },
+            Op::SetColumnWidth(SizeChange::SetFixed(-100)),
+        ];
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn set_height_fixed_negative() {
+        let ops = [
+            Op::AddOutput(3),
+            Op::AddWindow {
+                id: 3,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ToggleWindowFloating { id: Some(3) },
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(-100),
+            },
+        ];
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn interactive_resize_to_negative() {
+        let ops = [
+            Op::AddOutput(3),
+            Op::AddWindow {
+                id: 3,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::ToggleWindowFloating { id: Some(3) },
+            Op::InteractiveResizeBegin {
+                window: 3,
+                edges: ResizeEdge::BOTTOM_RIGHT,
+            },
+            Op::InteractiveResizeUpdate {
+                window: 3,
+                dx: -10000.,
+                dy: -10000.,
+            },
         ];
         check_ops(&ops);
     }

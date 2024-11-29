@@ -1254,6 +1254,10 @@ pub enum Action {
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,
     MoveWorkspaceToMonitorUp,
+    ToggleWindowFloating,
+    #[knuffel(skip)]
+    ToggleWindowFloatingById(u64),
+    SwitchFocusBetweenFloatingAndTiling,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1386,6 +1390,13 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,
+            niri_ipc::Action::ToggleWindowFloating { id: None } => Self::ToggleWindowFloating,
+            niri_ipc::Action::ToggleWindowFloating { id: Some(id) } => {
+                Self::ToggleWindowFloatingById(id)
+            }
+            niri_ipc::Action::SwitchFocusBetweenFloatingAndTiling {} => {
+                Self::SwitchFocusBetweenFloatingAndTiling
+            }
         }
     }
 }
