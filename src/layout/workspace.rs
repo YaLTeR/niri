@@ -660,14 +660,15 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn windows(&self) -> impl Iterator<Item = &W> + '_ {
-        self.columns
-            .iter()
-            .flat_map(|col| col.tiles.iter())
-            .map(Tile::window)
+        self.tiles().map(Tile::window)
     }
 
     pub fn windows_mut(&mut self) -> impl Iterator<Item = &mut W> + '_ {
         self.tiles_mut().map(Tile::window_mut)
+    }
+
+    pub fn tiles(&self) -> impl Iterator<Item = &Tile<W>> + '_ {
+        self.columns.iter().flat_map(|col| col.tiles.iter())
     }
 
     pub fn tiles_mut(&mut self) -> impl Iterator<Item = &mut Tile<W>> + '_ {
