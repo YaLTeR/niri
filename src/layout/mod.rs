@@ -254,6 +254,7 @@ pub struct Options {
     pub insert_hint: niri_config::InsertHint,
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
+    pub empty_workspace_above_first: bool,
     /// Column widths that `toggle_width()` switches between.
     pub preset_column_widths: Vec<ColumnWidth>,
     /// Initial width for new columns.
@@ -276,6 +277,7 @@ impl Default for Options {
             insert_hint: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
+            empty_workspace_above_first: false,
             preset_column_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
                 ColumnWidth::Proportion(0.5),
@@ -417,6 +419,7 @@ impl Options {
             insert_hint: layout.insert_hint,
             center_focused_column: layout.center_focused_column,
             always_center_single_column: layout.always_center_single_column,
+            empty_workspace_above_first: layout.empty_workspace_above_first,
             preset_column_widths,
             default_column_width,
             animations: config.animations.clone(),
@@ -506,7 +509,7 @@ impl<W: LayoutElement> Layout<W> {
                         // The user could've closed a window while remaining on this workspace, on
                         // another monitor. However, we will add an empty workspace in the end
                         // instead.
-                        if ws.has_windows() || ws.name.is_some() {
+                        if ws.has_windows_or_name() {
                             if Some(ws.id()) == ws_id_to_activate {
                                 active_workspace_idx = Some(workspaces.len());
                             }
@@ -514,7 +517,20 @@ impl<W: LayoutElement> Layout<W> {
                             workspaces.push(ws);
                         }
 
-                        if i <= primary.active_workspace_idx {
+                        if i <= primary.active_workspace_idx
+                            // Generally when moving the currently active workspace, we want to
+                            // fall back to the workspace above, so as not to end up on the last
+                            // empty workspace. However, with empty workspace above first, when
+                            // moving the workspace at index 1 (first non-empty), we want to stay
+                            // at index 1, so as once again not to end up on an empty workspace.
+                            //
+                            // This comes into play at compositor startup when having named
+                            // workspaces set up across multiple monitors. Without this check, the
+                            // first monitor to connect can end up with the first empty workspace
+                            // focused instead of the first named workspace.
+                            && !(self.options.empty_workspace_above_first
+                                && primary.active_workspace_idx == 1)
+                        {
                             primary.active_workspace_idx =
                                 primary.active_workspace_idx.saturating_sub(1);
                         }
@@ -522,7 +538,14 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 // If we stopped a workspace switch, then we might need to clean up workspaces.
-                if stopped_primary_ws_switch {
+                // Also if empty_workspace_above_first is set and there are only 2 workspaces left,
+                // both will be empty and one of them needs to be removed. clean_up_workspaces
+                // takes care of this.
+
+                if stopped_primary_ws_switch
+                    || (primary.options.empty_workspace_above_first
+                        && primary.workspaces.len() == 2)
+                {
                     primary.clean_up_workspaces();
                 }
 
@@ -531,6 +554,7 @@ impl<W: LayoutElement> Layout<W> {
                 if let Some(idx) = &mut active_workspace_idx {
                     *idx = workspaces.len() - *idx - 1;
                 }
+                let mut active_workspace_idx = active_workspace_idx.unwrap_or(0);
 
                 // Make sure there's always an empty workspace.
                 workspaces.push(Workspace::new(
@@ -539,13 +563,21 @@ impl<W: LayoutElement> Layout<W> {
                     self.options.clone(),
                 ));
 
+                if self.options.empty_workspace_above_first && workspaces.len() > 1 {
+                    workspaces.insert(
+                        0,
+                        Workspace::new(output.clone(), self.clock.clone(), self.options.clone()),
+                    );
+                    active_workspace_idx += 1;
+                }
+
                 for ws in &mut workspaces {
                     ws.set_output(Some(output.clone()));
                 }
 
                 let mut monitor =
                     Monitor::new(output, workspaces, self.clock.clone(), self.options.clone());
-                monitor.active_workspace_idx = active_workspace_idx.unwrap_or(0);
+                monitor.active_workspace_idx = active_workspace_idx;
                 monitors.push(monitor);
 
                 MonitorSet::Normal {
@@ -562,8 +594,16 @@ impl<W: LayoutElement> Layout<W> {
                     self.options.clone(),
                 ));
 
-                let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
                 let mut active_workspace_idx = 0;
+                if self.options.empty_workspace_above_first && workspaces.len() > 1 {
+                    workspaces.insert(
+                        0,
+                        Workspace::new(output.clone(), self.clock.clone(), self.options.clone()),
+                    );
+                    active_workspace_idx += 1;
+                }
+
+                let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
 
                 for (i, workspace) in workspaces.iter_mut().enumerate() {
                     workspace.set_output(Some(output.clone()));
@@ -611,7 +651,7 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 // Get rid of empty workspaces.
-                workspaces.retain(|ws| ws.has_windows() || ws.name.is_some());
+                workspaces.retain(|ws| ws.has_windows_or_name());
 
                 if monitors.is_empty() {
                     // Removed the last monitor.
@@ -650,6 +690,14 @@ impl<W: LayoutElement> Layout<W> {
                     let empty = primary.workspaces.remove(primary.workspaces.len() - 1);
                     primary.workspaces.extend(workspaces);
                     primary.workspaces.push(empty);
+
+                    // If empty_workspace_above_first is set and the first workspace is now no
+                    // longer empty, add a new empty workspace on top.
+                    if primary.options.empty_workspace_above_first
+                        && primary.workspaces[0].has_windows_or_name()
+                    {
+                        primary.add_workspace_top();
+                    }
 
                     // If the empty workspace was focused on the primary monitor, keep it focused.
                     if empty_was_focused {
@@ -958,8 +1006,7 @@ impl<W: LayoutElement> Layout<W> {
                             let removed = ws.remove_tile(window, transaction);
 
                             // Clean up empty workspaces that are not active and not last.
-                            if !ws.has_windows()
-                                && ws.name.is_none()
+                            if !ws.has_windows_or_name()
                                 && idx != mon.active_workspace_idx
                                 && idx != mon.workspaces.len() - 1
                                 && mon.workspace_switch.is_none()
@@ -971,6 +1018,17 @@ impl<W: LayoutElement> Layout<W> {
                                 }
                             }
 
+                            // Special case handling when empty_workspace_above_first is set and all
+                            // workspaces are empty.
+                            if mon.options.empty_workspace_above_first
+                                && mon.workspaces.len() == 2
+                                && mon.workspace_switch.is_none()
+                            {
+                                assert!(!mon.workspaces[0].has_windows_or_name());
+                                assert!(!mon.workspaces[1].has_windows_or_name());
+                                mon.workspaces.remove(1);
+                                mon.active_workspace_idx = 0;
+                            }
                             return Some(removed);
                         }
                     }
@@ -982,7 +1040,7 @@ impl<W: LayoutElement> Layout<W> {
                         let removed = ws.remove_tile(window, transaction);
 
                         // Clean up empty workspaces.
-                        if !ws.has_windows() && ws.name.is_none() {
+                        if !ws.has_windows_or_name() {
                             workspaces.remove(idx);
                         }
 
@@ -2060,7 +2118,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces } => {
                 for workspace in workspaces {
                     assert!(
-                        workspace.has_windows() || workspace.name.is_some(),
+                        workspace.has_windows_or_name(),
                         "with no outputs there cannot be empty unnamed workspaces"
                     );
 
@@ -2153,19 +2211,52 @@ impl<W: LayoutElement> Layout<W> {
                 monitor.workspaces.last().unwrap().columns.is_empty(),
                 "monitor must have an empty workspace in the end"
             );
+            if monitor.options.empty_workspace_above_first {
+                assert!(
+                    monitor.workspaces.first().unwrap().columns.is_empty(),
+                    "first workspace must be empty when empty_workspace_above_first is set"
+                )
+            }
 
             assert!(
                 monitor.workspaces.last().unwrap().name.is_none(),
                 "monitor must have an unnamed workspace in the end"
             );
+            if monitor.options.empty_workspace_above_first {
+                assert!(
+                    monitor.workspaces.first().unwrap().name.is_none(),
+                    "first workspace must be unnamed when empty_workspace_above_first is set"
+                )
+            }
+
+            if monitor.options.empty_workspace_above_first {
+                assert!(
+                    monitor.workspaces.len() != 2,
+                    "if empty_workspace_above_first is set there must be just 1 or 3+ workspaces"
+                )
+            }
 
             // If there's no workspace switch in progress, there can't be any non-last non-active
-            // empty workspaces.
+            // empty workspaces. If empty_workspace_above_first is set then the first workspace
+            // will be empty too.
+            let pre_skip = if monitor.options.empty_workspace_above_first {
+                1
+            } else {
+                0
+            };
             if monitor.workspace_switch.is_none() {
-                for (idx, ws) in monitor.workspaces.iter().enumerate().rev().skip(1) {
+                for (idx, ws) in monitor
+                    .workspaces
+                    .iter()
+                    .enumerate()
+                    .skip(pre_skip)
+                    .rev()
+                    // skip last
+                    .skip(1)
+                {
                     if idx != monitor.active_workspace_idx {
                         assert!(
-                            !ws.columns.is_empty() || ws.name.is_some(),
+                            ws.has_windows_or_name(),
                             "non-active workspace can't be empty and unnamed except the last one"
                         );
                     }
@@ -2392,14 +2483,22 @@ impl<W: LayoutElement> Layout<W> {
                     .unwrap_or(*active_monitor_idx);
                 let mon = &mut monitors[mon_idx];
 
+                let mut insert_idx = 0;
+                if mon.options.empty_workspace_above_first {
+                    // need to insert new empty workspace on top
+                    mon.add_workspace_top();
+                    insert_idx += 1;
+                }
+
                 let ws = Workspace::new_with_config(
                     mon.output.clone(),
                     Some(ws_config.clone()),
                     clock,
                     options,
                 );
-                mon.workspaces.insert(0, ws);
+                mon.workspaces.insert(insert_idx, ws);
                 mon.active_workspace_idx += 1;
+
                 mon.workspace_switch = None;
                 mon.clean_up_workspaces();
             }
@@ -2674,6 +2773,10 @@ impl<W: LayoutElement> Layout<W> {
             // Insert a new empty workspace.
             current.add_workspace_bottom();
         }
+        if current.options.empty_workspace_above_first && current.active_workspace_idx == 0 {
+            current.add_workspace_top();
+        }
+
         let mut ws = current.workspaces.remove(current.active_workspace_idx);
         current.active_workspace_idx = current.active_workspace_idx.saturating_sub(1);
         current.workspace_switch = None;
@@ -2690,6 +2793,10 @@ impl<W: LayoutElement> Layout<W> {
 
         target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
 
+        if target.options.empty_workspace_above_first && target.workspaces.len() == 1 {
+            // Insert a new empty workspace on top to prepare for insertion of new workspce.
+            target.add_workspace_top();
+        }
         // Insert the workspace after the currently active one. Unless the currently active one is
         // the last empty workspace, then insert before.
         let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
@@ -3203,6 +3310,8 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 }
 
+                // needed because empty_workspace_above_first could have modified the idx
+                let ws_idx = mon.active_workspace_idx();
                 let ws = &mut mon.workspaces[ws_idx];
                 let (tile, tile_render_loc) = ws
                     .tiles_with_render_positions_mut(false)
@@ -5383,6 +5492,51 @@ mod tests {
     }
 
     #[test]
+    // empty_workspace_above_first = true
+    fn open_right_of_on_different_workspace_ewaf() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::FocusWorkspaceDown,
+            Op::AddWindow {
+                id: 2,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+            Op::AddWindowRightOf {
+                id: 3,
+                right_of_id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+            },
+        ];
+
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        let layout = check_ops_with_options(options, &ops);
+
+        let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+            unreachable!()
+        };
+
+        let mon = monitors.into_iter().next().unwrap();
+        assert_eq!(
+            mon.active_workspace_idx, 2,
+            "the second workspace must remain active"
+        );
+        assert_eq!(
+            mon.workspaces[1].active_column_idx, 1,
+            "the new window must become active"
+        );
+    }
+
+    #[test]
     fn unfullscreen_view_offset_not_reset_on_removal() {
         let ops = [
             Op::AddOutput(1),
@@ -5831,6 +5985,40 @@ mod tests {
     }
 
     #[test]
+    fn interactive_move_onto_empty_output_ewaf() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 0,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::InteractiveMoveBegin {
+                window: 0,
+                output_idx: 1,
+                px: 0.,
+                py: 0.,
+            },
+            Op::AddOutput(2),
+            Op::InteractiveMoveUpdate {
+                window: 0,
+                dx: 1000.,
+                dy: 0.,
+                output_idx: 2,
+                px: 0.,
+                py: 0.,
+            },
+            Op::InteractiveMoveEnd { window: 0 },
+        ];
+
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
     fn interactive_move_onto_last_workspace() {
         let ops = [
             Op::AddOutput(1),
@@ -5859,6 +6047,40 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn interactive_move_onto_first_empty_workspace() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::InteractiveMoveBegin {
+                window: 1,
+                output_idx: 1,
+                px: 0.,
+                py: 0.,
+            },
+            Op::InteractiveMoveUpdate {
+                window: 1,
+                dx: 1000.,
+                dy: 0.,
+                output_idx: 1,
+                px: 0.,
+                py: 0.,
+            },
+            Op::FocusWorkspaceUp,
+            Op::AdvanceAnimations { msec_delta: 1000 },
+            Op::InteractiveMoveEnd { window: 1 },
+        ];
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
     }
 
     #[test]
@@ -5916,6 +6138,154 @@ mod tests {
         };
 
         assert_eq!(monitors[1].active_workspace_idx, 1);
+    }
+
+    #[test]
+    fn named_workspace_to_output() {
+        let ops = [
+            Op::AddNamedWorkspace {
+                ws_name: 1,
+                output_name: None,
+            },
+            Op::AddOutput(1),
+            Op::MoveWorkspaceToOutput(1),
+            Op::FocusWorkspaceUp,
+        ];
+        check_ops(&ops);
+    }
+
+    #[test]
+    // empty_workspace_above_first = true
+    fn named_workspace_to_output_ewaf() {
+        let ops = [
+            Op::AddNamedWorkspace {
+                ws_name: 1,
+                output_name: Some(2),
+            },
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+        ];
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
+    fn move_window_to_empty_workspace_above_first() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::MoveWorkspaceUp,
+            Op::MoveWorkspaceDown,
+            Op::FocusWorkspaceUp,
+            Op::MoveWorkspaceDown,
+        ];
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
+    fn move_window_to_different_output() {
+        let ops = [
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::MoveWorkspaceToOutput(2),
+        ];
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
+    fn close_window_empty_ws_above_first() {
+        let ops = [
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::AddOutput(1),
+            Op::CloseWindow(1),
+        ];
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
+    fn add_and_remove_output() {
+        let ops = [
+            Op::AddOutput(2),
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::RemoveOutput(2),
+        ];
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
+    fn switch_ewaf_on() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+        ];
+
+        let mut layout = check_ops(&ops);
+        layout.update_options(Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        });
+        layout.verify_invariants();
+    }
+
+    #[test]
+    fn switch_ewaf_off() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                id: 1,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+        ];
+
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        let mut layout = check_ops_with_options(options, &ops);
+        layout.update_options(Options::default());
+        layout.verify_invariants();
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {
@@ -5992,12 +6362,14 @@ mod tests {
             border in arbitrary_border(),
             center_focused_column in arbitrary_center_focused_column(),
             always_center_single_column in any::<bool>(),
+            empty_workspace_above_first in any::<bool>(),
         ) -> Options {
             Options {
                 gaps,
                 struts,
                 center_focused_column,
                 always_center_single_column,
+                empty_workspace_above_first,
                 focus_ring,
                 border,
                 ..Default::default()
