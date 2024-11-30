@@ -670,10 +670,12 @@ impl XdgActivationHandler for State {
                 self.niri.layout.activate_window(&window);
                 self.niri.layer_shell_on_demand_focus = None;
                 self.niri.queue_redraw_all();
-
-                self.niri.activation_state.remove_token(&token);
+            } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(&surface) {
+                unmapped.activation_token_data = Some(token_data);
             }
         }
+
+        self.niri.activation_state.remove_token(&token);
     }
 }
 delegate_xdg_activation!(State);

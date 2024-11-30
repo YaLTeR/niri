@@ -18,6 +18,8 @@ use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
+use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
+use crate::layout::ActivateWindow;
 use crate::niri::{ClientState, State};
 use crate::utils::send_scale_transform;
 use crate::utils::transaction::Transaction;
@@ -84,7 +86,11 @@ impl CompositorHandler for State {
 
                 if is_mapped {
                     // The toplevel got mapped.
-                    let Unmapped { window, state } = entry.remove();
+                    let Unmapped {
+                        window,
+                        state,
+                        activation_token_data,
+                    } = entry.remove();
 
                     window.on_commit();
 
@@ -133,8 +139,27 @@ impl CompositorHandler for State {
                     let mapped = Mapped::new(window, rules, hook);
                     let window = mapped.window.clone();
 
+                    // Check the token timestamp again in case the window took a while between
+                    // requesting activation and mapping.
+                    let activate = match activation_token_data
+                        .filter(|token| token.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT)
+                    {
+                        Some(_) => ActivateWindow::Yes,
+                        None => {
+                            let config = self.niri.config.borrow();
+                            if config.debug.strict_new_window_focus_policy {
+                                ActivateWindow::No
+                            } else {
+                                ActivateWindow::Smart
+                            }
+                        }
+                    };
+
                     let output = if let Some(p) = parent {
                         // Open dialogs immediately to the right of their parent window.
+                        //
+                        // FIXME: do we want to use activate here? How do we want things to behave
+                        // exactly?
                         self.niri
                             .layout
                             .add_window_right_of(&p, mapped, width, is_full_width)
@@ -144,14 +169,21 @@ impl CompositorHandler for State {
                             mapped,
                             width,
                             is_full_width,
+                            activate,
                         )
                     } else if let Some(output) = &output {
-                        self.niri
-                            .layout
-                            .add_window_on_output(output, mapped, width, is_full_width);
+                        self.niri.layout.add_window_on_output(
+                            output,
+                            mapped,
+                            width,
+                            is_full_width,
+                            activate,
+                        );
                         Some(output)
                     } else {
-                        self.niri.layout.add_window(mapped, width, is_full_width)
+                        self.niri
+                            .layout
+                            .add_window(mapped, width, is_full_width, activate)
                     };
 
                     if let Some(output) = output.cloned() {

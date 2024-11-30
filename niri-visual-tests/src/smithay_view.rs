@@ -1,18 +1,20 @@
 use gtk::glib;
+use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use smithay::utils::{Logical, Size};
+use smithay::utils::Size;
 
-use crate::cases::TestCase;
+use crate::cases::{Args, TestCase};
 
 mod imp {
     use std::cell::{Cell, OnceCell, RefCell};
     use std::ptr::null;
+    use std::time::Duration;
 
     use anyhow::{ensure, Context};
     use gtk::gdk;
     use gtk::prelude::*;
+    use niri::animation::Clock;
     use niri::render_helpers::{resources, shaders};
-    use niri::utils::get_monotonic_time;
     use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
     use smithay::backend::renderer::gles::GlesRenderer;
@@ -21,7 +23,7 @@ mod imp {
 
     use super::*;
 
-    type DynMakeTestCase = Box<dyn Fn(Size<i32, Logical>) -> Box<dyn TestCase>>;
+    type DynMakeTestCase = Box<dyn Fn(Args) -> Box<dyn TestCase>>;
 
     #[derive(Default)]
     pub struct SmithayView {
@@ -30,6 +32,7 @@ mod imp {
         renderer: RefCell<Option<Result<GlesRenderer, ()>>>,
         pub make_test_case: OnceCell<DynMakeTestCase>,
         test_case: RefCell<Option<Box<dyn TestCase>>>,
+        pub clock: RefCell<Clock>,
     }
 
     #[glib::object_subclass]
@@ -125,14 +128,22 @@ mod imp {
 
             let size = self.size.get();
 
+            let frame_clock = self.obj().frame_clock().unwrap();
+            let time = Duration::from_micros(frame_clock.frame_time() as u64);
+            self.clock.borrow_mut().set_unadjusted(time);
+
             // Create the test case if missing.
             let mut case = self.test_case.borrow_mut();
             let case = case.get_or_insert_with(|| {
                 let make = self.make_test_case.get().unwrap();
-                make(Size::from(size))
+                let args = Args {
+                    size: Size::from(size),
+                    clock: self.clock.borrow().clone(),
+                };
+                make(args)
             });
 
-            case.advance_animations(get_monotonic_time());
+            case.advance_animations(self.clock.borrow_mut().now());
 
             let rect: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((0, 0), size);
 
@@ -233,13 +244,31 @@ glib::wrapper! {
 
 impl SmithayView {
     pub fn new<T: TestCase + 'static>(
-        make_test_case: impl Fn(Size<i32, Logical>) -> T + 'static,
+        make_test_case: impl Fn(Args) -> T + 'static,
+        anim_adjustment: &gtk::Adjustment,
     ) -> Self {
         let obj: Self = glib::Object::builder().build();
 
-        let make = move |size| Box::new(make_test_case(size)) as Box<dyn TestCase>;
+        let make = move |args| Box::new(make_test_case(args)) as Box<dyn TestCase>;
         let make_test_case = Box::new(make) as _;
         let _ = obj.imp().make_test_case.set(make_test_case);
+
+        anim_adjustment.connect_value_changed({
+            let obj = obj.downgrade();
+            move |adj| {
+                if let Some(obj) = obj.upgrade() {
+                    let mut clock = obj.imp().clock.borrow_mut();
+                    let instantly = adj.value() == 0.0;
+                    let rate = if instantly {
+                        1.0
+                    } else {
+                        1.0 / adj.value().max(0.001)
+                    };
+                    clock.set_rate(rate);
+                    clock.set_complete_instantly(instantly);
+                }
+            }
+        });
 
         obj
     }

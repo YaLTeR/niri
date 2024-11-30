@@ -15,7 +15,7 @@ use super::workspace::{
     WorkspaceRenderElement,
 };
 use super::{LayoutElement, Options};
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
@@ -45,6 +45,8 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
     pub(super) workspace_switch: Option<WorkspaceSwitch>,
+    /// Clock for driving animations.
+    pub(super) clock: Clock,
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
 }
@@ -84,6 +86,20 @@ impl WorkspaceSwitch {
         }
     }
 
+    pub fn offset(&mut self, delta: isize) {
+        match self {
+            WorkspaceSwitch::Animation(anim) => anim.offset(delta as f64),
+            WorkspaceSwitch::Gesture(gesture) => {
+                if delta >= 0 {
+                    gesture.center_idx += delta as usize;
+                } else {
+                    gesture.center_idx -= (-delta) as usize;
+                }
+                gesture.current_idx += delta as f64;
+            }
+        }
+    }
+
     /// Returns `true` if the workspace switch is [`Animation`].
     ///
     /// [`Animation`]: WorkspaceSwitch::Animation
@@ -94,7 +110,12 @@ impl WorkspaceSwitch {
 }
 
 impl<W: LayoutElement> Monitor<W> {
-    pub fn new(output: Output, workspaces: Vec<Workspace<W>>, options: Rc<Options>) -> Self {
+    pub fn new(
+        output: Output,
+        workspaces: Vec<Workspace<W>>,
+        clock: Clock,
+        options: Rc<Options>,
+    ) -> Self {
         Self {
             output_name: output.name(),
             output,
@@ -102,6 +123,7 @@ impl<W: LayoutElement> Monitor<W> {
             active_workspace_idx: 0,
             previous_workspace_id: None,
             workspace_switch: None,
+            clock,
             options,
         }
     }
@@ -150,6 +172,29 @@ impl<W: LayoutElement> Monitor<W> {
         self.windows().any(|win| win.id() == window)
     }
 
+    pub fn add_workspace_top(&mut self) {
+        let ws = Workspace::new(
+            self.output.clone(),
+            self.clock.clone(),
+            self.options.clone(),
+        );
+        self.workspaces.insert(0, ws);
+        self.active_workspace_idx += 1;
+
+        if let Some(switch) = &mut self.workspace_switch {
+            switch.offset(1);
+        }
+    }
+
+    pub fn add_workspace_bottom(&mut self) {
+        let ws = Workspace::new(
+            self.output.clone(),
+            self.clock.clone(),
+            self.options.clone(),
+        );
+        self.workspaces.push(ws);
+    }
+
     fn activate_workspace(&mut self, idx: usize) {
         if self.active_workspace_idx == idx {
             return;
@@ -167,6 +212,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace_idx = idx;
 
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
+            self.clock.clone(),
             current_idx,
             idx as f64,
             0.,
@@ -176,7 +222,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn add_window(
         &mut self,
-        workspace_idx: usize,
+        mut workspace_idx: usize,
         window: W,
         activate: bool,
         width: ColumnWidth,
@@ -190,9 +236,12 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.original_output = OutputId::new(&self.output);
 
         if workspace_idx == self.workspaces.len() - 1 {
-            // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
+        }
+
+        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+            self.add_workspace_top();
+            workspace_idx += 1;
         }
 
         if activate {
@@ -223,7 +272,7 @@ impl<W: LayoutElement> Monitor<W> {
         // cannot be the last one, so we never need to insert a new empty workspace.
     }
 
-    pub fn add_column(&mut self, workspace_idx: usize, column: Column<W>, activate: bool) {
+    pub fn add_column(&mut self, mut workspace_idx: usize, column: Column<W>, activate: bool) {
         let workspace = &mut self.workspaces[workspace_idx];
 
         workspace.add_column(None, column, activate, None);
@@ -232,9 +281,11 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.original_output = OutputId::new(&self.output);
 
         if workspace_idx == self.workspaces.len() - 1 {
-            // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
+        }
+        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+            self.add_workspace_top();
+            workspace_idx += 1;
         }
 
         if activate {
@@ -244,7 +295,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn add_tile(
         &mut self,
-        workspace_idx: usize,
+        mut workspace_idx: usize,
         column_idx: Option<usize>,
         tile: Tile<W>,
         activate: bool,
@@ -260,8 +311,12 @@ impl<W: LayoutElement> Monitor<W> {
 
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
+        }
+
+        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+            self.add_workspace_top();
+            workspace_idx += 1;
         }
 
         if activate {
@@ -295,17 +350,31 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn clean_up_workspaces(&mut self) {
         assert!(self.workspace_switch.is_none());
 
-        for idx in (0..self.workspaces.len() - 1).rev() {
+        let range_start = if self.options.empty_workspace_above_first {
+            1
+        } else {
+            0
+        };
+        for idx in (range_start..self.workspaces.len() - 1).rev() {
             if self.active_workspace_idx == idx {
                 continue;
             }
 
-            if !self.workspaces[idx].has_windows() && self.workspaces[idx].name.is_none() {
+            if !self.workspaces[idx].has_windows_or_name() {
                 self.workspaces.remove(idx);
                 if self.active_workspace_idx > idx {
                     self.active_workspace_idx -= 1;
                 }
             }
+        }
+
+        // Special case handling when empty_workspace_above_first is set and all workspaces
+        // are empty.
+        if self.options.empty_workspace_above_first && self.workspaces.len() == 2 {
+            assert!(!self.workspaces[0].has_windows_or_name());
+            assert!(!self.workspaces[1].has_windows_or_name());
+            self.workspaces.remove(1);
+            self.active_workspace_idx = 0;
         }
     }
 
@@ -719,9 +788,8 @@ impl<W: LayoutElement> Monitor<W> {
         Some(column.tiles[column.active_tile_idx].window())
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self) {
         if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
-            anim.set_current_time(current_time);
             if anim.is_done() {
                 self.workspace_switch = None;
                 self.clean_up_workspaces();
@@ -729,7 +797,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         for ws in &mut self.workspaces {
-            ws.advance_animations(current_time);
+            ws.advance_animations();
         }
     }
 
@@ -778,6 +846,17 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
+        if self.options.empty_workspace_above_first != options.empty_workspace_above_first
+            && self.workspaces.len() > 1
+        {
+            if options.empty_workspace_above_first {
+                self.add_workspace_top();
+            } else if self.workspace_switch.is_none() && self.active_workspace_idx != 0 {
+                self.workspaces.remove(0);
+                self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
+            }
+        }
+
         for ws in &mut self.workspaces {
             ws.update_config(options.clone());
         }
@@ -809,7 +888,7 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_workspace_down(&mut self) {
-        let new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
+        let mut new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
         if new_idx == self.active_workspace_idx {
             return;
         }
@@ -818,8 +897,12 @@ impl<W: LayoutElement> Monitor<W> {
 
         if new_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
+        }
+
+        if self.options.empty_workspace_above_first && self.active_workspace_idx == 0 {
+            self.add_workspace_top();
+            new_idx += 1;
         }
 
         let previous_workspace_id = self.previous_workspace_id;
@@ -831,7 +914,7 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_workspace_up(&mut self) {
-        let new_idx = self.active_workspace_idx.saturating_sub(1);
+        let mut new_idx = self.active_workspace_idx.saturating_sub(1);
         if new_idx == self.active_workspace_idx {
             return;
         }
@@ -840,8 +923,12 @@ impl<W: LayoutElement> Monitor<W> {
 
         if self.active_workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
-            let ws = Workspace::new(self.output.clone(), self.options.clone());
-            self.workspaces.push(ws);
+            self.add_workspace_bottom();
+        }
+
+        if self.options.empty_workspace_above_first && new_idx == 0 {
+            self.add_workspace_top();
+            new_idx += 1;
         }
 
         let previous_workspace_id = self.previous_workspace_id;
@@ -956,7 +1043,7 @@ impl<W: LayoutElement> Monitor<W> {
         &'a self,
         renderer: &'a mut R,
         target: RenderTarget,
-    ) -> impl Iterator<Item = MonitorRenderElement<R>> + '_ {
+    ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Monitor::render_elements");
 
         let scale = self.output.current_scale().fractional_scale();
@@ -1099,6 +1186,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
+            self.clock.clone(),
             gesture.current_idx,
             new_idx as f64,
             velocity,

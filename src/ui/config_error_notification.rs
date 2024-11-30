@@ -14,7 +14,7 @@ use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Point, Transform};
 
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
@@ -35,6 +35,7 @@ pub struct ConfigErrorNotification {
     // notification.
     created_path: Option<PathBuf>,
 
+    clock: Clock,
     config: Rc<RefCell<Config>>,
 }
 
@@ -46,18 +47,25 @@ enum State {
 }
 
 impl ConfigErrorNotification {
-    pub fn new(config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(clock: Clock, config: Rc<RefCell<Config>>) -> Self {
         Self {
             state: State::Hidden,
             buffers: RefCell::new(HashMap::new()),
             created_path: None,
+            clock,
             config,
         }
     }
 
     fn animation(&self, from: f64, to: f64) -> Animation {
         let c = self.config.borrow();
-        Animation::new(from, to, 0., c.animations.config_notification_open_close.0)
+        Animation::new(
+            self.clock.clone(),
+            from,
+            to,
+            0.,
+            c.animations.config_notification_open_close.0,
+        )
     }
 
     pub fn show_created(&mut self, created_path: PathBuf) {
@@ -88,11 +96,10 @@ impl ConfigErrorNotification {
         self.state = State::Hiding(self.animation(1., 0.));
     }
 
-    pub fn advance_animations(&mut self, target_presentation_time: Duration) {
+    pub fn advance_animations(&mut self) {
         match &mut self.state {
             State::Hidden => (),
             State::Showing(anim) => {
-                anim.set_current_time(target_presentation_time);
                 if anim.is_done() {
                     let duration = if self.created_path.is_some() {
                         // Make this quite a bit longer because it comes with a monitor modeset
@@ -102,16 +109,15 @@ impl ConfigErrorNotification {
                     } else {
                         Duration::from_secs(4)
                     };
-                    self.state = State::Shown(target_presentation_time + duration);
+                    self.state = State::Shown(self.clock.now() + duration);
                 }
             }
             State::Shown(deadline) => {
-                if target_presentation_time >= *deadline {
+                if self.clock.now() >= *deadline {
                     self.hide();
                 }
             }
             State::Hiding(anim) => {
-                anim.set_current_time(target_presentation_time);
                 if anim.is_clamped_done() {
                     self.state = State::Hidden;
                 }

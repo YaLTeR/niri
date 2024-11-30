@@ -19,7 +19,7 @@ use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -84,10 +84,7 @@ pub struct Workspace<W: LayoutElement> {
     /// Any gaps, including left padding from work area left exclusive zone, is handled
     /// with this view offset (rather than added as a constant elsewhere in the code). This allows
     /// for natural handling of fullscreen windows, which must ignore work area padding.
-    view_offset: f64,
-
-    /// Adjustment of the view offset, if one is currently ongoing.
-    view_offset_adj: Option<ViewOffsetAdjustment>,
+    view_offset: ViewOffset,
 
     /// Whether to activate the previous, rather than the next, column upon column removal.
     ///
@@ -112,6 +109,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Insert hint element for rendering.
     insert_hint_element: InsertHintElement,
+
+    /// Clock for driving animations.
+    pub(super) clock: Clock,
 
     /// Configurable properties of the layout as received from the parent monitor.
     pub(super) base_options: Rc<Options>,
@@ -185,8 +185,12 @@ struct ColumnData {
 }
 
 #[derive(Debug)]
-enum ViewOffsetAdjustment {
+enum ViewOffset {
+    /// The view offset is static.
+    Static(f64),
+    /// The view offset is animating.
     Animation(Animation),
+    /// The view offset is controlled by the ongoing gesture.
     Gesture(ViewGesture),
 }
 
@@ -196,7 +200,7 @@ struct ViewGesture {
     tracker: SwipeTracker,
     delta_from_tracker: f64,
     // The view offset we'll use if needed for activate_prev_column_on_removal.
-    static_view_offset: f64,
+    stationary_view_offset: f64,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
 }
@@ -293,6 +297,9 @@ pub struct Column<W: LayoutElement> {
     /// Scale of the output the column is on (and rounds its sizes to).
     scale: f64,
 
+    /// Clock for driving animations.
+    clock: Clock,
+
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -319,16 +326,69 @@ impl OutputId {
     }
 }
 
-impl ViewOffsetAdjustment {
+impl ViewOffset {
+    /// Returns the current view offset.
+    pub fn current(&self) -> f64 {
+        match self {
+            ViewOffset::Static(offset) => *offset,
+            ViewOffset::Animation(anim) => anim.value(),
+            ViewOffset::Gesture(gesture) => gesture.current_view_offset,
+        }
+    }
+
+    /// Returns the target view offset suitable for computing the new view offset.
+    pub fn target(&self) -> f64 {
+        match self {
+            ViewOffset::Static(offset) => *offset,
+            ViewOffset::Animation(anim) => anim.to(),
+            // This can be used for example if a gesture is interrupted.
+            ViewOffset::Gesture(gesture) => gesture.current_view_offset,
+        }
+    }
+
+    /// Returns a view offset value suitable for saving and later restoration.
+    ///
+    /// This means that it shouldn't return an in-progress animation or gesture value.
+    fn stationary(&self) -> f64 {
+        match self {
+            ViewOffset::Static(offset) => *offset,
+            // For animations we can return the final value.
+            ViewOffset::Animation(anim) => anim.to(),
+            ViewOffset::Gesture(gesture) => gesture.stationary_view_offset,
+        }
+    }
+
+    pub fn is_static(&self) -> bool {
+        matches!(self, Self::Static(_))
+    }
+
     pub fn is_animation(&self) -> bool {
         matches!(self, Self::Animation(_))
     }
 
-    pub fn target_view_offset(&self) -> f64 {
+    pub fn is_gesture(&self) -> bool {
+        matches!(self, Self::Gesture(_))
+    }
+
+    pub fn offset(&mut self, delta: f64) {
         match self {
-            ViewOffsetAdjustment::Animation(anim) => anim.to(),
-            ViewOffsetAdjustment::Gesture(gesture) => gesture.current_view_offset,
+            ViewOffset::Static(offset) => *offset += delta,
+            ViewOffset::Animation(anim) => anim.offset(delta),
+            ViewOffset::Gesture(_gesture) => {
+                // Is this needed?
+                error!("cancel gesture before offsetting");
+            }
         }
+    }
+
+    pub fn cancel_gesture(&mut self) {
+        if let ViewOffset::Gesture(gesture) = self {
+            *self = ViewOffset::Static(gesture.current_view_offset);
+        }
+    }
+
+    pub fn stop_anim_and_gesture(&mut self) {
+        *self = ViewOffset::Static(self.current());
     }
 }
 
@@ -403,13 +463,14 @@ impl TileData {
 }
 
 impl<W: LayoutElement> Workspace<W> {
-    pub fn new(output: Output, options: Rc<Options>) -> Self {
-        Self::new_with_config(output, None, options)
+    pub fn new(output: Output, clock: Clock, options: Rc<Options>) -> Self {
+        Self::new_with_config(output, None, clock, options)
     }
 
     pub fn new_with_config(
         output: Output,
         config: Option<WorkspaceConfig>,
+        clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
         let original_output = config
@@ -435,13 +496,13 @@ impl<W: LayoutElement> Workspace<W> {
             data: vec![],
             active_column_idx: 0,
             interactive_resize: None,
-            view_offset: 0.,
-            view_offset_adj: None,
+            view_offset: ViewOffset::Static(0.),
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.insert_hint),
+            clock,
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -451,6 +512,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn new_with_config_no_outputs(
         config: Option<WorkspaceConfig>,
+        clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
         let original_output = OutputId(
@@ -475,13 +537,13 @@ impl<W: LayoutElement> Workspace<W> {
             data: vec![],
             active_column_idx: 0,
             interactive_resize: None,
-            view_offset: 0.,
-            view_offset_adj: None,
+            view_offset: ViewOffset::Static(0.),
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: vec![],
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.insert_hint),
+            clock,
             base_options,
             options,
             name: config.map(|c| c.name.0),
@@ -489,8 +551,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn new_no_outputs(options: Rc<Options>) -> Self {
-        Self::new_with_config_no_outputs(None, options)
+    pub fn new_no_outputs(clock: Clock, options: Rc<Options>) -> Self {
+        Self::new_with_config_no_outputs(None, clock, options)
     }
 
     pub fn id(&self) -> WorkspaceId {
@@ -505,6 +567,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.name = None;
     }
 
+    pub fn has_windows_or_name(&self) -> bool {
+        self.has_windows() || self.name.is_some()
+    }
+
     pub fn scale(&self) -> smithay::output::Scale {
         self.scale
     }
@@ -514,37 +580,31 @@ impl<W: LayoutElement> Workspace<W> {
             || (self.options.always_center_single_column && self.columns.len() <= 1)
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
-        if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
-            anim.set_current_time(current_time);
-            self.view_offset = anim.value();
+    pub fn advance_animations(&mut self) {
+        if let ViewOffset::Animation(anim) = &self.view_offset {
             if anim.is_done() {
-                self.view_offset_adj = None;
+                self.view_offset = ViewOffset::Static(anim.to());
             }
-        } else if let Some(ViewOffsetAdjustment::Gesture(gesture)) = &self.view_offset_adj {
-            self.view_offset = gesture.current_view_offset;
         }
 
         for col in &mut self.columns {
-            col.advance_animations(current_time);
+            col.advance_animations();
         }
 
         self.closing_windows.retain_mut(|closing| {
-            closing.advance_animations(current_time);
+            closing.advance_animations();
             closing.are_animations_ongoing()
         });
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.view_offset_adj
-            .as_ref()
-            .is_some_and(|s| s.is_animation())
+        self.view_offset.is_animation()
             || self.columns.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
-        self.view_offset_adj.is_some()
+        !self.view_offset.is_static()
             || self.columns.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
     }
@@ -776,7 +836,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn compute_new_view_offset_fit(
         &self,
-        current_x: f64,
+        target_x: Option<f64>,
         col_x: f64,
         width: f64,
         is_fullscreen: bool,
@@ -785,14 +845,10 @@ impl<W: LayoutElement> Workspace<W> {
             return 0.;
         }
 
-        let final_x = if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
-            current_x - self.view_offset + anim.to()
-        } else {
-            current_x
-        };
+        let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
 
         let new_offset = compute_new_view_offset(
-            final_x + self.working_area.loc.x,
+            target_x + self.working_area.loc.x,
             self.working_area.size.w,
             col_x,
             width,
@@ -805,37 +861,41 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn compute_new_view_offset_centered(
         &self,
-        current_x: f64,
+        target_x: Option<f64>,
         col_x: f64,
         width: f64,
         is_fullscreen: bool,
     ) -> f64 {
         if is_fullscreen {
-            return self.compute_new_view_offset_fit(current_x, col_x, width, is_fullscreen);
+            return self.compute_new_view_offset_fit(target_x, col_x, width, is_fullscreen);
         }
 
         // Columns wider than the view are left-aligned (the fit code can deal with that).
         if self.working_area.size.w <= width {
-            return self.compute_new_view_offset_fit(current_x, col_x, width, is_fullscreen);
+            return self.compute_new_view_offset_fit(target_x, col_x, width, is_fullscreen);
         }
 
         -(self.working_area.size.w - width) / 2. - self.working_area.loc.x
     }
 
-    fn compute_new_view_offset_for_column_fit(&self, current_x: f64, idx: usize) -> f64 {
+    fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
         let col = &self.columns[idx];
         self.compute_new_view_offset_fit(
-            current_x,
+            target_x,
             self.column_x(idx),
             col.width(),
             col.is_fullscreen,
         )
     }
 
-    fn compute_new_view_offset_for_column_centered(&self, current_x: f64, idx: usize) -> f64 {
+    fn compute_new_view_offset_for_column_centered(
+        &self,
+        target_x: Option<f64>,
+        idx: usize,
+    ) -> f64 {
         let col = &self.columns[idx];
         self.compute_new_view_offset_centered(
-            current_x,
+            target_x,
             self.column_x(idx),
             col.width(),
             col.is_fullscreen,
@@ -844,21 +904,21 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn compute_new_view_offset_for_column(
         &self,
-        current_x: f64,
+        target_x: Option<f64>,
         idx: usize,
         prev_idx: Option<usize>,
     ) -> f64 {
         if self.is_centering_focused_column() {
-            return self.compute_new_view_offset_for_column_centered(current_x, idx);
+            return self.compute_new_view_offset_for_column_centered(target_x, idx);
         }
 
         match self.options.center_focused_column {
             CenterFocusedColumn::Always => {
-                self.compute_new_view_offset_for_column_centered(current_x, idx)
+                self.compute_new_view_offset_for_column_centered(target_x, idx)
             }
             CenterFocusedColumn::OnOverflow => {
                 let Some(prev_idx) = prev_idx else {
-                    return self.compute_new_view_offset_for_column_fit(current_x, idx);
+                    return self.compute_new_view_offset_for_column_fit(target_x, idx);
                 };
 
                 // Always take the left or right neighbor of the target as the source.
@@ -868,36 +928,35 @@ impl<W: LayoutElement> Workspace<W> {
                     idx.saturating_sub(1)
                 };
 
-                let source_x = self.column_x(source_idx);
-                let source_width = self.columns[source_idx].width();
+                let source_col_x = self.column_x(source_idx);
+                let source_col_width = self.columns[source_idx].width();
 
-                let target_x = self.column_x(idx);
-                let target_width = self.columns[idx].width();
+                let target_col_x = self.column_x(idx);
+                let target_col_width = self.columns[idx].width();
 
-                let total_width = if source_x < target_x {
+                let total_width = if source_col_x < target_col_x {
                     // Source is left from target.
-                    target_x - source_x + target_width
+                    target_col_x - source_col_x + target_col_width
                 } else {
                     // Source is right from target.
-                    source_x - target_x + source_width
+                    source_col_x - target_col_x + source_col_width
                 } + self.options.gaps * 2.;
 
                 // If it fits together, do a normal animation, otherwise center the new column.
                 if total_width <= self.working_area.size.w {
-                    self.compute_new_view_offset_for_column_fit(current_x, idx)
+                    self.compute_new_view_offset_for_column_fit(target_x, idx)
                 } else {
-                    self.compute_new_view_offset_for_column_centered(current_x, idx)
+                    self.compute_new_view_offset_for_column_centered(target_x, idx)
                 }
             }
             CenterFocusedColumn::Never => {
-                self.compute_new_view_offset_for_column_fit(current_x, idx)
+                self.compute_new_view_offset_for_column_fit(target_x, idx)
             }
         }
     }
 
-    fn animate_view_offset(&mut self, current_x: f64, idx: usize, new_view_offset: f64) {
+    fn animate_view_offset(&mut self, idx: usize, new_view_offset: f64) {
         self.animate_view_offset_with_config(
-            current_x,
             idx,
             new_view_offset,
             self.options.animations.horizontal_view_movement.0,
@@ -906,77 +965,67 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn animate_view_offset_with_config(
         &mut self,
-        current_x: f64,
         idx: usize,
         new_view_offset: f64,
         config: niri_config::Animation,
     ) {
+        self.view_offset.cancel_gesture();
+
         let new_col_x = self.column_x(idx);
-        let old_col_x = current_x - self.view_offset;
+        let old_col_x = self.column_x(self.active_column_idx);
         let offset_delta = old_col_x - new_col_x;
-        self.view_offset += offset_delta;
+        self.view_offset.offset(offset_delta);
 
         let pixel = 1. / self.scale.fractional_scale();
 
-        // If we're already animating towards that, don't restart it.
-        if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
-            // Offset the animation for the active column change.
-            anim.offset(offset_delta);
-
-            let to_diff = new_view_offset - anim.to();
-            if (anim.value() - self.view_offset).abs() < pixel && to_diff.abs() < pixel {
-                // Correct for any inaccuracy.
-                anim.offset(to_diff);
-                return;
-            }
-        }
-
-        // If our view offset is already this, we don't need to do anything.
-        if (self.view_offset - new_view_offset).abs() < pixel {
+        // If our view offset is already this or animating towards this, we don't need to do
+        // anything.
+        let to_diff = new_view_offset - self.view_offset.target();
+        if to_diff.abs() < pixel {
             // Correct for any inaccuracy.
-            self.view_offset = new_view_offset;
-            self.view_offset_adj = None;
+            self.view_offset.offset(to_diff);
             return;
         }
 
         // FIXME: also compute and use current velocity.
-        self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
-            self.view_offset,
+        self.view_offset = ViewOffset::Animation(Animation::new(
+            self.clock.clone(),
+            self.view_offset.current(),
             new_view_offset,
             0.,
             config,
-        )));
+        ));
     }
 
     fn animate_view_offset_to_column_centered(
         &mut self,
-        current_x: f64,
+        target_x: Option<f64>,
         idx: usize,
         config: niri_config::Animation,
     ) {
-        let new_view_offset = self.compute_new_view_offset_for_column_centered(current_x, idx);
-        self.animate_view_offset_with_config(current_x, idx, new_view_offset, config);
+        let new_view_offset = self.compute_new_view_offset_for_column_centered(target_x, idx);
+        self.animate_view_offset_with_config(idx, new_view_offset, config);
     }
 
     fn animate_view_offset_to_column_with_config(
         &mut self,
-        current_x: f64,
+        target_x: Option<f64>,
         idx: usize,
         prev_idx: Option<usize>,
         config: niri_config::Animation,
     ) {
-        let new_view_offset = self.compute_new_view_offset_for_column(current_x, idx, prev_idx);
-        self.animate_view_offset_with_config(current_x, idx, new_view_offset, config);
+        let new_view_offset = self.compute_new_view_offset_for_column(target_x, idx, prev_idx);
+        self.animate_view_offset_with_config(idx, new_view_offset, config);
     }
 
     fn animate_view_offset_to_column(
         &mut self,
-        current_x: f64,
+        target_x: Option<f64>,
         idx: usize,
         prev_idx: Option<usize>,
     ) {
         self.animate_view_offset_to_column_with_config(
-            current_x,
+            target_x,
             idx,
             prev_idx,
             self.options.animations.horizontal_view_movement.0,
@@ -995,9 +1044,8 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let current_x = self.view_pos();
         self.animate_view_offset_to_column_with_config(
-            current_x,
+            None,
             idx,
             Some(self.active_column_idx),
             config,
@@ -1100,7 +1148,12 @@ impl<W: LayoutElement> Workspace<W> {
         width: ColumnWidth,
         is_full_width: bool,
     ) {
-        let tile = Tile::new(window, self.scale.fractional_scale(), self.options.clone());
+        let tile = Tile::new(
+            window,
+            self.scale.fractional_scale(),
+            self.clock.clone(),
+            self.options.clone(),
+        );
         self.add_tile(col_idx, tile, activate, width, is_full_width, None);
     }
 
@@ -1118,7 +1171,6 @@ impl<W: LayoutElement> Workspace<W> {
             self.view_size,
             self.working_area,
             self.scale.fractional_scale(),
-            self.options.clone(),
             width,
             is_full_width,
             true,
@@ -1225,14 +1277,13 @@ impl<W: LayoutElement> Workspace<W> {
             // If this is the first window on an empty workspace, remove the effect of whatever
             // view_offset was left over and skip the animation.
             if was_empty {
-                self.view_offset = 0.;
-                self.view_offset_adj = None;
+                self.view_offset = ViewOffset::Static(0.);
                 self.view_offset =
-                    self.compute_new_view_offset_for_column(self.view_pos(), idx, None);
+                    ViewOffset::Static(self.compute_new_view_offset_for_column(None, idx, None));
             }
 
             let prev_offset = (!was_empty && idx == self.active_column_idx + 1)
-                .then(|| self.static_view_offset());
+                .then(|| self.view_offset.stationary());
 
             let anim_config =
                 anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
@@ -1401,15 +1452,13 @@ impl<W: LayoutElement> Workspace<W> {
 
                 // Restore the view offset but make sure to scroll the view in case the
                 // previous window had resized.
-                let current_x = self.view_pos();
                 self.animate_view_offset_with_config(
-                    current_x,
                     self.active_column_idx,
                     prev_offset,
                     view_config,
                 );
                 self.animate_view_offset_to_column_with_config(
-                    current_x,
+                    None,
                     self.active_column_idx,
                     None,
                     view_config,
@@ -1494,6 +1543,9 @@ impl<W: LayoutElement> Workspace<W> {
             // the Resizing state, which can trigger this code path for a while.
             let resize = if offset != 0. { resize } else { None };
             if let Some(resize) = resize {
+                // Don't bother with the gesture.
+                self.view_offset.cancel_gesture();
+
                 // If this is an interactive resize commit of an active window, then we need to
                 // either preserve the view offset or adjust it accordingly.
                 let centered = self.is_centering_focused_column();
@@ -1503,33 +1555,24 @@ impl<W: LayoutElement> Workspace<W> {
                     // FIXME: when view_offset becomes fractional, this can be made additive too.
                     let new_offset =
                         -(self.working_area.size.w - width) / 2. - self.working_area.loc.x;
-                    new_offset - self.view_offset
+                    new_offset - self.view_offset.target()
                 } else if resize.edges.contains(ResizeEdge::LEFT) {
                     -offset
                 } else {
                     0.
                 };
 
-                self.view_offset += offset;
-                if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
-                    anim.offset(offset);
-                } else {
-                    // Don't bother with the gesture.
-                    self.view_offset_adj = None;
-                }
+                self.view_offset.offset(offset);
             }
 
-            if self.interactive_resize.is_none()
-                && !matches!(self.view_offset_adj, Some(ViewOffsetAdjustment::Gesture(_)))
-            {
+            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
                 // We might need to move the view to ensure the resized window is still visible.
-                let current_x = self.view_pos();
 
                 // Upon unfullscreening, restore the view offset.
                 let is_fullscreen = self.columns[col_idx].tiles[tile_idx].is_fullscreen();
                 if was_fullscreen && !is_fullscreen {
                     if let Some(prev_offset) = self.view_offset_before_fullscreen.take() {
-                        self.animate_view_offset(current_x, col_idx, prev_offset);
+                        self.animate_view_offset(col_idx, prev_offset);
                     }
                 }
 
@@ -1543,7 +1586,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                 // FIXME: we will want to skip the animation in some cases here to make continuously
                 // resizing windows not look janky.
-                self.animate_view_offset_to_column_with_config(current_x, col_idx, None, config);
+                self.animate_view_offset_to_column_with_config(None, col_idx, None, config);
             }
         }
     }
@@ -1559,22 +1602,16 @@ impl<W: LayoutElement> Workspace<W> {
             return 0.;
         }
 
-        let current_x = self.view_pos();
+        // Consider the end of an ongoing animation because that's what compute to fit does too.
+        let target_x = self.target_view_pos();
         let new_view_offset = self.compute_new_view_offset_for_column(
-            current_x,
+            Some(target_x),
             column_idx,
             Some(self.active_column_idx),
         );
 
-        // Consider the end of an ongoing animation because that's what compute to fit does too.
-        let final_x = if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
-            current_x - self.view_offset + anim.to()
-        } else {
-            current_x
-        };
-
         let new_col_x = self.column_x(column_idx);
-        let from_view_offset = final_x - new_col_x;
+        let from_view_offset = target_x - new_col_x;
 
         (from_view_offset - new_view_offset).abs() / self.working_area.size.w
     }
@@ -1682,7 +1719,13 @@ impl<W: LayoutElement> Workspace<W> {
     ) {
         let output_scale = Scale::from(self.scale.fractional_scale());
 
-        let anim = Animation::new(0., 1., 0., self.options.animations.window_close.anim);
+        let anim = Animation::new(
+            self.clock.clone(),
+            0.,
+            1.,
+            0.,
+            self.options.animations.window_close.anim,
+        );
 
         let blocker = if self.options.disable_transactions {
             TransactionBlocker::completed()
@@ -1725,6 +1768,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             for (column, data) in zip(&self.columns, &self.data) {
                 assert!(Rc::ptr_eq(&self.options, &column.options));
+                assert_eq!(self.clock, column.clock);
                 assert_eq!(self.scale.fractional_scale(), column.scale);
                 column.verify_invariants();
 
@@ -1848,10 +1892,8 @@ impl<W: LayoutElement> Workspace<W> {
 
         // Preserve the camera position when moving to the left.
         let view_offset_delta = -self.column_x(self.active_column_idx) + current_col_x;
-        self.view_offset += view_offset_delta;
-        if let Some(ViewOffsetAdjustment::Animation(anim)) = &mut self.view_offset_adj {
-            anim.offset(view_offset_delta);
-        }
+        self.view_offset.cancel_gesture();
+        self.view_offset.offset(view_offset_delta);
 
         // The column we just moved is offset by the difference between its new and old position.
         let new_col_x = self.column_x(new_idx);
@@ -1965,7 +2007,8 @@ impl<W: LayoutElement> Workspace<W> {
 
             if source_tile_was_active {
                 // Make sure the previous (target) column is activated so the animation looks right.
-                self.activate_prev_column_on_removal = Some(self.static_view_offset() + offset.x);
+                self.activate_prev_column_on_removal =
+                    Some(self.view_offset.stationary() + offset.x);
             }
 
             offset.x += self.columns[source_col_idx].render_offset().x;
@@ -2182,9 +2225,8 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        let center_x = self.view_pos();
         self.animate_view_offset_to_column_centered(
-            center_x,
+            None,
             self.active_column_idx,
             self.options.animations.horizontal_view_movement.0,
         );
@@ -2194,19 +2236,11 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn view_pos(&self) -> f64 {
-        self.column_x(self.active_column_idx) + self.view_offset
+        self.column_x(self.active_column_idx) + self.view_offset.current()
     }
 
-    /// Returns a view offset value suitable for saving and later restoration.
-    ///
-    /// This means that it shouldn't return an in-progress animation or gesture value.
-    fn static_view_offset(&self) -> f64 {
-        match &self.view_offset_adj {
-            // For animations we can return the final value.
-            Some(ViewOffsetAdjustment::Animation(anim)) => anim.to(),
-            Some(ViewOffsetAdjustment::Gesture(gesture)) => gesture.static_view_offset,
-            _ => self.view_offset,
-        }
+    pub fn target_view_pos(&self) -> f64 {
+        self.column_x(self.active_column_idx) + self.view_offset.target()
     }
 
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
@@ -2376,9 +2410,9 @@ impl<W: LayoutElement> Workspace<W> {
         // effect here.
         if self.columns.is_empty() {
             let view_offset = if self.is_centering_focused_column() {
-                self.compute_new_view_offset_centered(0., 0., hint_area.size.w, false)
+                self.compute_new_view_offset_centered(Some(0.), 0., hint_area.size.w, false)
             } else {
-                self.compute_new_view_offset_fit(0., 0., hint_area.size.w, false)
+                self.compute_new_view_offset_fit(Some(0.), 0., hint_area.size.w, false)
             };
             hint_area.loc.x -= view_offset;
         } else {
@@ -2407,10 +2441,7 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
         let col = self.columns.get(self.active_column_idx)?;
 
-        let final_view_offset = self
-            .view_offset_adj
-            .as_ref()
-            .map_or(self.view_offset, |adj| adj.target_view_offset());
+        let final_view_offset = self.view_offset.target();
         let view_off = Point::from((-final_view_offset, 0.));
 
         let (tile, tile_off) = col.tiles().nth(col.active_tile_idx).unwrap();
@@ -2601,7 +2632,7 @@ impl<W: LayoutElement> Workspace<W> {
             && col_idx == self.active_column_idx
             && self.columns[col_idx].tiles.len() == 1
         {
-            self.view_offset_before_fullscreen = Some(self.static_view_offset());
+            self.view_offset_before_fullscreen = Some(self.view_offset.stationary());
         }
 
         let mut col = &mut self.columns[col_idx];
@@ -2619,7 +2650,6 @@ impl<W: LayoutElement> Workspace<W> {
                 self.view_size,
                 self.working_area,
                 self.scale.fractional_scale(),
-                self.options.clone(),
                 removed.width,
                 removed.is_full_width,
                 false,
@@ -2661,7 +2691,7 @@ impl<W: LayoutElement> Workspace<W> {
             return false;
         }
 
-        if self.view_offset_adj.is_some() {
+        if !self.view_offset.is_static() {
             return false;
         }
 
@@ -2724,13 +2754,13 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let gesture = ViewGesture {
-            current_view_offset: self.view_offset,
+            current_view_offset: self.view_offset.current(),
             tracker: SwipeTracker::new(),
-            delta_from_tracker: self.view_offset,
-            static_view_offset: self.static_view_offset(),
+            delta_from_tracker: self.view_offset.current(),
+            stationary_view_offset: self.view_offset.stationary(),
             is_touchpad,
         };
-        self.view_offset_adj = Some(ViewOffsetAdjustment::Gesture(gesture));
+        self.view_offset = ViewOffset::Gesture(gesture);
     }
 
     pub fn view_offset_gesture_update(
@@ -2739,7 +2769,7 @@ impl<W: LayoutElement> Workspace<W> {
         timestamp: Duration,
         is_touchpad: bool,
     ) -> Option<bool> {
-        let Some(ViewOffsetAdjustment::Gesture(gesture)) = &mut self.view_offset_adj else {
+        let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
             return None;
         };
 
@@ -2762,7 +2792,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn view_offset_gesture_end(&mut self, _cancelled: bool, is_touchpad: Option<bool>) -> bool {
-        let Some(ViewOffsetAdjustment::Gesture(gesture)) = &self.view_offset_adj else {
+        let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
             return false;
         };
 
@@ -2785,8 +2815,7 @@ impl<W: LayoutElement> Workspace<W> {
         let current_view_offset = pos + gesture.delta_from_tracker;
 
         if self.columns.is_empty() {
-            self.view_offset = current_view_offset;
-            self.view_offset_adj = None;
+            self.view_offset = ViewOffset::Static(current_view_offset);
             return true;
         }
 
@@ -2958,7 +2987,6 @@ impl<W: LayoutElement> Workspace<W> {
 
         let new_col_x = self.column_x(new_col_idx);
         let delta = active_col_x - new_col_x;
-        self.view_offset = current_view_offset + delta;
 
         if self.active_column_idx != new_col_idx {
             self.view_offset_before_fullscreen = None;
@@ -2968,15 +2996,16 @@ impl<W: LayoutElement> Workspace<W> {
 
         let target_view_offset = target_snap.view_pos - new_col_x;
 
-        self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
+        self.view_offset = ViewOffset::Animation(Animation::new(
+            self.clock.clone(),
             current_view_offset + delta,
             target_view_offset,
             velocity,
             self.options.animations.horizontal_view_movement.0,
-        )));
+        ));
 
         // HACK: deal with things like snapping to the right edge of a larger-than-view window.
-        self.animate_view_offset_to_column(self.view_pos(), new_col_idx, None);
+        self.animate_view_offset_to_column(None, new_col_idx, None);
 
         true
     }
@@ -3011,8 +3040,7 @@ impl<W: LayoutElement> Workspace<W> {
         };
         self.interactive_resize = Some(resize);
 
-        // Stop ongoing animation.
-        self.view_offset_adj = None;
+        self.view_offset.stop_anim_and_gesture();
 
         true
     }
@@ -3090,7 +3118,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             // Animate the active window into view right away.
             if self.columns[self.active_column_idx].contains(window) {
-                self.animate_view_offset_to_column(self.view_pos(), self.active_column_idx, None);
+                self.animate_view_offset_to_column(None, self.active_column_idx, None);
             }
         }
 
@@ -3174,7 +3202,6 @@ impl<W: LayoutElement> Column<W> {
         view_size: Size<f64, Logical>,
         working_area: Rectangle<f64, Logical>,
         scale: f64,
-        options: Rc<Options>,
         width: ColumnWidth,
         is_full_width: bool,
         animate_resize: bool,
@@ -3190,7 +3217,8 @@ impl<W: LayoutElement> Column<W> {
             view_size,
             working_area,
             scale,
-            options,
+            clock: tile.clock.clone(),
+            options: tile.options.clone(),
         };
 
         let is_pending_fullscreen = tile.window().is_pending_fullscreen();
@@ -3260,16 +3288,15 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(animate);
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self) {
         if let Some(anim) = &mut self.move_animation {
-            anim.set_current_time(current_time);
             if anim.is_done() {
                 self.move_animation = None;
             }
         }
 
         for tile in &mut self.tiles {
-            tile.advance_animations(current_time);
+            tile.advance_animations();
         }
     }
 
@@ -3313,6 +3340,7 @@ impl<W: LayoutElement> Column<W> {
         let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
 
         self.move_animation = Some(Animation::new(
+            self.clock.clone(),
             from_x_offset + current_offset,
             0.,
             0.,
@@ -3716,6 +3744,7 @@ impl<W: LayoutElement> Column<W> {
         let mut total_min_height = 0.;
         for (tile, data) in zip(&self.tiles, &self.data) {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
+            assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
             assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
 

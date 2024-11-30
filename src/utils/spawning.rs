@@ -9,6 +9,7 @@ use std::{io, thread};
 use atomic::Atomic;
 use libc::{getrlimit, rlim_t, rlimit, setrlimit, RLIMIT_NOFILE};
 use niri_config::Environment;
+use smithay::wayland::xdg_activation::XdgActivationToken;
 
 use crate::utils::expand_home;
 
@@ -61,7 +62,7 @@ pub fn restore_nofile_rlimit() {
 }
 
 /// Spawns the command to run independently of the compositor.
-pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>) {
+pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>, token: Option<XdgActivationToken>) {
     let _span = tracy_client::span!();
 
     if command.is_empty() {
@@ -73,7 +74,7 @@ pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>) {
         .name("Command Spawner".to_owned())
         .spawn(move || {
             let (command, args) = command.split_first().unwrap();
-            spawn_sync(command, args);
+            spawn_sync(command, args, token);
         });
 
     if let Err(err) = res {
@@ -81,7 +82,11 @@ pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>) {
     }
 }
 
-fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl AsRef<OsStr>>) {
+fn spawn_sync(
+    command: impl AsRef<OsStr>,
+    args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+    token: Option<XdgActivationToken>,
+) {
     let _span = tracy_client::span!();
 
     let mut command = command.as_ref();
@@ -121,6 +126,11 @@ fn spawn_sync(command: impl AsRef<OsStr>, args: impl IntoIterator<Item = impl As
         }
     }
     drop(env);
+
+    if let Some(token) = token.as_ref() {
+        process.env("XDG_ACTIVATION_TOKEN", token.as_str());
+        process.env("DESKTOP_STARTUP_ID", token.as_str());
+    }
 
     let Some(mut child) = do_spawn(command, process) else {
         return;

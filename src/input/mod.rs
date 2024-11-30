@@ -83,11 +83,8 @@ impl State {
     {
         let _span = tracy_client::span!("process_input_event");
 
-        // A bit of a hack, but animation end runs some logic (i.e. workspace clean-up) and it
-        // doesn't always trigger due to damage, etc. So run it here right before it might prove
-        // important. Besides, animations affect the input, so it's best to have up-to-date values
-        // here.
-        self.niri.layout.advance_animations(get_monotonic_time());
+        // Make sure some logic like workspace clean-up has a chance to run before doing actions.
+        self.niri.advance_animations();
 
         if self.niri.monitors_active {
             // Notify the idle-notifier of activity.
@@ -523,7 +520,8 @@ impl State {
                 self.niri.debug_toggle_damage();
             }
             Action::Spawn(command) => {
-                spawn(command);
+                let (token, _) = self.niri.activation_state.create_external_token(None);
+                spawn(command, Some(token.clone()));
             }
             Action::DoScreenTransition(delay_ms) => {
                 self.backend.with_primary_renderer(|renderer| {
@@ -3024,6 +3022,7 @@ pub fn mods_with_finger_scroll_binds(comp_mod: CompositorMod, binds: &Binds) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::Clock;
 
     #[test]
     fn bindings_suppress_keys() {
@@ -3042,7 +3041,7 @@ mod tests {
         let comp_mod = CompositorMod::Super;
         let mut suppressed_keys = HashSet::new();
 
-        let screenshot_ui = ScreenshotUi::new(Default::default());
+        let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
         let disable_power_key_handling = false;
 
         // The key_code we pick is arbitrary, the only thing

@@ -1,15 +1,13 @@
 use std::f32::consts::{FRAC_PI_2, PI};
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use niri::animation::ANIMATION_SLOWDOWN;
 use niri::render_helpers::border::BorderRenderElement;
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Rectangle, Size};
+use smithay::utils::{Physical, Rectangle, Size};
 
-use super::TestCase;
+use super::{Args, TestCase};
 
 pub struct GradientAngle {
     angle: f32,
@@ -17,7 +15,7 @@ pub struct GradientAngle {
 }
 
 impl GradientAngle {
-    pub fn new(_size: Size<i32, Logical>) -> Self {
+    pub fn new(_args: Args) -> Self {
         Self {
             angle: 0.,
             prev_time: Duration::ZERO,
@@ -31,19 +29,12 @@ impl TestCase for GradientAngle {
     }
 
     fn advance_animations(&mut self, current_time: Duration) {
-        let mut delta = if self.prev_time.is_zero() {
+        let delta = if self.prev_time.is_zero() {
             Duration::ZERO
         } else {
             current_time.saturating_sub(self.prev_time)
         };
         self.prev_time = current_time;
-
-        let slowdown = ANIMATION_SLOWDOWN.load(Ordering::SeqCst);
-        if slowdown == 0. {
-            delta = Duration::ZERO
-        } else {
-            delta = delta.div_f64(slowdown);
-        }
 
         self.angle += delta.as_secs_f32() * PI;
 

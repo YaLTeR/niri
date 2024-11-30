@@ -2,16 +2,16 @@ use niri::render_helpers::border::BorderRenderElement;
 use niri_config::{Color, CornerRadius, GradientColorSpace, GradientInterpolation};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Rectangle, Size};
+use smithay::utils::{Physical, Rectangle, Size};
 
-use super::TestCase;
+use super::{Args, TestCase};
 
 pub struct GradientSrgbLinearAlpha {
     gradient_format: GradientInterpolation,
 }
 
 impl GradientSrgbLinearAlpha {
-    pub fn new(_size: Size<i32, Logical>) -> Self {
+    pub fn new(_args: Args) -> Self {
         Self {
             gradient_format: GradientInterpolation {
                 color_space: GradientColorSpace::SrgbLinear,
