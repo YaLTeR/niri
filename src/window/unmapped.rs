@@ -4,7 +4,7 @@ use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::xdg_activation::XdgActivationTokenData;
 
 use super::ResolvedWindowRules;
-use crate::layout::workspace::ColumnWidth;
+use crate::layout::scrolling::ColumnWidth;
 
 #[derive(Debug)]
 pub struct Unmapped {
