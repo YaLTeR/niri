@@ -581,8 +581,8 @@ impl State {
                 self.open_screenshot_ui();
             }
             Action::ScreenshotWindow => {
-                let active = self.niri.layout.active_window();
-                if let Some((mapped, output)) = active {
+                let focus = self.niri.layout.focus_with_output();
+                if let Some((mapped, output)) = focus {
                     self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot_window(renderer, output, mapped) {
                             warn!("error taking screenshot: {err:?}");
@@ -990,8 +990,8 @@ impl State {
                             self.niri.layout.move_to_workspace(Some(&window), index);
 
                             // If we focused the target window.
-                            let new_active_win = self.niri.layout.active_window();
-                            if new_active_win.map_or(false, |(win, _)| win.window == window) {
+                            let new_focus = self.niri.layout.focus();
+                            if new_focus.map_or(false, |win| win.window == window) {
                                 self.maybe_warp_cursor_to_focus();
                             }
                         }

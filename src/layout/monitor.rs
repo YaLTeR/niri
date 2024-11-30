@@ -9,11 +9,9 @@ use smithay::backend::renderer::element::utils::{
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
 
+use super::scrolling::{Column, ColumnWidth};
 use super::tile::Tile;
-use super::workspace::{
-    compute_working_area, Column, ColumnWidth, OutputId, Workspace, WorkspaceId,
-    WorkspaceRenderElement,
-};
+use super::workspace::{OutputId, Workspace, WorkspaceId, WorkspaceRenderElement};
 use super::{LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
@@ -230,7 +228,7 @@ impl<W: LayoutElement> Monitor<W> {
     ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_window(None, window, activate, width, is_full_width);
+        workspace.add_window(window, activate, width, is_full_width);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -275,7 +273,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn add_column(&mut self, mut workspace_idx: usize, column: Column<W>, activate: bool) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_column(None, column, activate, None);
+        workspace.add_column(column, activate);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -304,7 +302,7 @@ impl<W: LayoutElement> Monitor<W> {
     ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_tile(column_idx, tile, activate, width, is_full_width, None);
+        workspace.add_tile(column_idx, tile, activate, width, is_full_width);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -392,12 +390,12 @@ impl<W: LayoutElement> Monitor<W> {
         false
     }
 
-    pub fn move_left(&mut self) {
-        self.active_workspace().move_left();
+    pub fn move_left(&mut self) -> bool {
+        self.active_workspace().move_left()
     }
 
-    pub fn move_right(&mut self) {
-        self.active_workspace().move_right();
+    pub fn move_right(&mut self) -> bool {
+        self.active_workspace().move_right()
     }
 
     pub fn move_column_to_first(&mut self) {
@@ -417,40 +415,23 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_down_or_to_workspace_down(&mut self) {
-        let workspace = self.active_workspace();
-        if workspace.columns.is_empty() {
-            return;
-        }
-        let column = &mut workspace.columns[workspace.active_column_idx];
-        let curr_idx = column.active_tile_idx;
-        let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
-        if curr_idx == new_idx {
+        if !self.active_workspace().move_down() {
             self.move_to_workspace_down();
-        } else {
-            workspace.move_down();
         }
     }
 
     pub fn move_up_or_to_workspace_up(&mut self) {
-        let workspace = self.active_workspace();
-        if workspace.columns.is_empty() {
-            return;
-        }
-        let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
-        let new_idx = curr_idx.saturating_sub(1);
-        if curr_idx == new_idx {
+        if !self.active_workspace().move_up() {
             self.move_to_workspace_up();
-        } else {
-            workspace.move_up();
         }
     }
 
-    pub fn focus_left(&mut self) {
-        self.active_workspace().focus_left();
+    pub fn focus_left(&mut self) -> bool {
+        self.active_workspace().focus_left()
     }
 
-    pub fn focus_right(&mut self) {
-        self.active_workspace().focus_right();
+    pub fn focus_right(&mut self) -> bool {
+        self.active_workspace().focus_right()
     }
 
     pub fn focus_column_first(&mut self) {
@@ -469,98 +450,39 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().focus_column_left_or_last();
     }
 
-    pub fn focus_down(&mut self) {
-        self.active_workspace().focus_down();
+    pub fn focus_down(&mut self) -> bool {
+        self.active_workspace().focus_down()
     }
 
-    pub fn focus_up(&mut self) {
-        self.active_workspace().focus_up();
+    pub fn focus_up(&mut self) -> bool {
+        self.active_workspace().focus_up()
     }
 
     pub fn focus_down_or_left(&mut self) {
-        let workspace = self.active_workspace();
-        if !workspace.columns.is_empty() {
-            let column = &workspace.columns[workspace.active_column_idx];
-            let curr_idx = column.active_tile_idx;
-            let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
-            if curr_idx == new_idx {
-                self.focus_left();
-            } else {
-                workspace.focus_down();
-            }
-        }
+        self.active_workspace().focus_down_or_left();
     }
 
     pub fn focus_down_or_right(&mut self) {
-        let workspace = self.active_workspace();
-        if !workspace.columns.is_empty() {
-            let column = &workspace.columns[workspace.active_column_idx];
-            let curr_idx = column.active_tile_idx;
-            let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
-            if curr_idx == new_idx {
-                self.focus_right();
-            } else {
-                workspace.focus_down();
-            }
-        }
+        self.active_workspace().focus_down_or_right();
     }
 
     pub fn focus_up_or_left(&mut self) {
-        let workspace = self.active_workspace();
-        if !workspace.columns.is_empty() {
-            let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
-            let new_idx = curr_idx.saturating_sub(1);
-            if curr_idx == new_idx {
-                self.focus_left();
-            } else {
-                workspace.focus_up();
-            }
-        }
+        self.active_workspace().focus_up_or_left();
     }
 
     pub fn focus_up_or_right(&mut self) {
-        let workspace = self.active_workspace();
-        if workspace.columns.is_empty() {
-            self.switch_workspace_up();
-        } else {
-            let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
-            let new_idx = curr_idx.saturating_sub(1);
-            if curr_idx == new_idx {
-                self.focus_right();
-            } else {
-                workspace.focus_up();
-            }
-        }
+        self.active_workspace().focus_up_or_right();
     }
 
     pub fn focus_window_or_workspace_down(&mut self) {
-        let workspace = self.active_workspace();
-        if workspace.columns.is_empty() {
+        if !self.active_workspace().focus_down() {
             self.switch_workspace_down();
-        } else {
-            let column = &workspace.columns[workspace.active_column_idx];
-            let curr_idx = column.active_tile_idx;
-            let new_idx = min(column.active_tile_idx + 1, column.tiles.len() - 1);
-            if curr_idx == new_idx {
-                self.switch_workspace_down();
-            } else {
-                workspace.focus_down();
-            }
         }
     }
 
     pub fn focus_window_or_workspace_up(&mut self) {
-        let workspace = self.active_workspace();
-        if workspace.columns.is_empty() {
+        if !self.active_workspace().focus_up() {
             self.switch_workspace_up();
-        } else {
-            let curr_idx = workspace.columns[workspace.active_column_idx].active_tile_idx;
-            let new_idx = curr_idx.saturating_sub(1);
-            if curr_idx == new_idx {
-                self.switch_workspace_up();
-            } else {
-                workspace.focus_up();
-            }
         }
     }
 
@@ -573,17 +495,9 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
-        if workspace.columns.is_empty() {
+        let Some(removed) = workspace.remove_active_tile(Transaction::new()) else {
             return;
-        }
-
-        let column = &workspace.columns[workspace.active_column_idx];
-        let removed = workspace.remove_tile_by_idx(
-            workspace.active_column_idx,
-            column.active_tile_idx,
-            Transaction::new(),
-            None,
-        );
+        };
 
         self.add_window(
             new_idx,
@@ -603,17 +517,9 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
-        if workspace.columns.is_empty() {
+        let Some(removed) = workspace.remove_active_tile(Transaction::new()) else {
             return;
-        }
-
-        let column = &workspace.columns[workspace.active_column_idx];
-        let removed = workspace.remove_tile_by_idx(
-            workspace.active_column_idx,
-            column.active_tile_idx,
-            Transaction::new(),
-            None,
-        );
+        };
 
         self.add_window(
             new_idx,
@@ -625,30 +531,13 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
-        let (source_workspace_idx, col_idx, tile_idx) = if let Some(window) = window {
+        let source_workspace_idx = if let Some(window) = window {
             self.workspaces
                 .iter()
-                .enumerate()
-                .find_map(|(ws_idx, ws)| {
-                    ws.columns.iter().enumerate().find_map(|(col_idx, col)| {
-                        col.tiles
-                            .iter()
-                            .position(|tile| tile.window().id() == window)
-                            .map(|tile_idx| (ws_idx, col_idx, tile_idx))
-                    })
-                })
+                .position(|ws| ws.has_window(window))
                 .unwrap()
         } else {
-            let ws_idx = self.active_workspace_idx;
-
-            let ws = &self.workspaces[ws_idx];
-            if ws.columns.is_empty() {
-                return;
-            }
-
-            let col_idx = ws.active_column_idx;
-            let tile_idx = ws.columns[col_idx].active_tile_idx;
-            (ws_idx, col_idx, tile_idx)
+            self.active_workspace_idx
         };
 
         let new_idx = min(idx, self.workspaces.len() - 1);
@@ -656,13 +545,19 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let workspace = &mut self.workspaces[source_workspace_idx];
-        let column = &workspace.columns[col_idx];
-        let activate = source_workspace_idx == self.active_workspace_idx
-            && col_idx == workspace.active_column_idx
-            && tile_idx == column.active_tile_idx;
+        let activate = window.map_or(true, |win| {
+            self.active_window().map(|win| win.id()) == Some(win)
+        });
 
-        let removed = workspace.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        let transaction = Transaction::new();
+        let removed = if let Some(window) = window {
+            workspace.remove_tile(window, transaction)
+        } else if let Some(removed) = workspace.remove_active_tile(transaction) {
+            removed
+        } else {
+            return;
+        };
 
         self.add_window(
             new_idx,
@@ -686,11 +581,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
-        if workspace.columns.is_empty() {
+        let Some(column) = workspace.remove_active_column() else {
             return;
-        }
+        };
 
-        let column = workspace.remove_column_by_idx(workspace.active_column_idx, None);
         self.add_column(new_idx, column, true);
     }
 
@@ -703,11 +597,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
-        if workspace.columns.is_empty() {
+        let Some(column) = workspace.remove_active_column() else {
             return;
-        }
+        };
 
-        let column = workspace.remove_column_by_idx(workspace.active_column_idx, None);
         self.add_column(new_idx, column, true);
     }
 
@@ -720,11 +613,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
-        if workspace.columns.is_empty() {
+        let Some(column) = workspace.remove_active_column() else {
             return;
-        }
+        };
 
-        let column = workspace.remove_column_by_idx(workspace.active_column_idx, None);
         self.add_column(new_idx, column, true);
     }
 
@@ -778,14 +670,12 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().center_column();
     }
 
-    pub fn focus(&self) -> Option<&W> {
-        let workspace = &self.workspaces[self.active_workspace_idx];
-        if !workspace.has_windows() {
-            return None;
-        }
+    pub fn active_window(&self) -> Option<&W> {
+        self.active_workspace_ref().active_window()
+    }
 
-        let column = &workspace.columns[workspace.active_column_idx];
-        Some(column.tiles[column.active_tile_idx].window())
+    pub fn is_active_fullscreen(&self) -> bool {
+        self.active_workspace_ref().is_active_fullscreen()
     }
 
     pub fn advance_animations(&mut self) {
@@ -859,17 +749,6 @@ impl<W: LayoutElement> Monitor<W> {
 
         for ws in &mut self.workspaces {
             ws.update_config(options.clone());
-        }
-
-        if self.options.struts != options.struts {
-            let scale = self.output.current_scale();
-            let transform = self.output.current_transform();
-            let view_size = output_size(&self.output);
-            let working_area = compute_working_area(&self.output, options.struts);
-
-            for ws in &mut self.workspaces {
-                ws.set_view_size(scale, transform, view_size, working_area);
-            }
         }
 
         self.options = options;
@@ -1070,7 +949,6 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspaces_with_render_positions()
             .flat_map(move |(ws, offset)| {
                 ws.render_elements(renderer, target)
-                    .into_iter()
                     .filter_map(move |elem| {
                         CropRenderElement::from_element(elem, scale, crop_bounds)
                     })

@@ -2,7 +2,7 @@ use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, WindowRule};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceRoleAttributes};
 
-use crate::layout::workspace::ColumnWidth;
+use crate::layout::scrolling::ColumnWidth;
 use crate::utils::with_toplevel_role;
 
 pub mod mapped;

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use niri::animation::Clock;
-use niri::layout::workspace::ColumnWidth;
+use niri::layout::scrolling::ColumnWidth;
 use niri::layout::{ActivateWindow, LayoutElement as _, Options};
 use niri::render_helpers::RenderTarget;
 use niri_config::{Color, FloatOrInt, OutputName};
