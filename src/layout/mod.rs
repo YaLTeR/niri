@@ -3313,15 +3313,15 @@ impl<W: LayoutElement> Layout<W> {
                     (mon, ws_idx, position, offset)
                 } else {
                     let mon = &mut monitors[*active_monitor_idx];
-                    let ws_id = mon.active_workspace().id();
-                    let (_, offset) = mon
-                        .workspaces_with_render_positions()
-                        .find(|(ws, _)| ws.id() == ws_id)
-                        .unwrap();
-                    let ws_idx = mon.active_workspace_idx();
-                    let ws = &mut mon.workspaces[ws_idx];
                     // No point in trying to use the pointer position on the wrong output.
-                    let position = InsertPosition::NewColumn(ws.columns.len());
+                    let (ws, offset) = mon.workspaces_with_render_positions().next().unwrap();
+                    let position = ws.get_insert_position(Point::from((0., 0.)));
+                    let ws_id = ws.id();
+                    let ws_idx = mon
+                        .workspaces
+                        .iter_mut()
+                        .position(|ws| ws.id() == ws_id)
+                        .unwrap();
                     (mon, ws_idx, position, offset)
                 };
 
@@ -6332,6 +6332,37 @@ mod tests {
         let mut layout = check_ops_with_options(options, &ops);
         layout.update_options(Options::default());
         layout.verify_invariants();
+    }
+
+    #[test]
+    fn interactive_move_drop_on_other_output_during_animation() {
+        let ops = [
+            Op::AddOutput(3),
+            Op::AddWindow {
+                id: 3,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::InteractiveMoveBegin {
+                window: 3,
+                output_idx: 3,
+                px: 0.0,
+                py: 0.0,
+            },
+            Op::FocusWorkspaceDown,
+            Op::AddOutput(4),
+            Op::InteractiveMoveUpdate {
+                window: 3,
+                dx: 0.0,
+                dy: 8300.68619826683,
+                output_idx: 4,
+                px: 0.0,
+                py: 0.0,
+            },
+            Op::RemoveOutput(4),
+            Op::InteractiveMoveEnd { window: 3 },
+        ];
+        check_ops(&ops);
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {
