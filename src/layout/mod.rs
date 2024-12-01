@@ -3840,6 +3840,7 @@ mod tests {
         min_size: Size<i32, Logical>,
         max_size: Size<i32, Logical>,
         pending_fullscreen: Cell<bool>,
+        pending_activated: Cell<bool>,
     }
 
     #[derive(Debug, Clone)]
@@ -3860,6 +3861,7 @@ mod tests {
                 min_size,
                 max_size,
                 pending_fullscreen: Cell::new(false),
+                pending_activated: Cell::new(false),
             }))
         }
 
@@ -3954,7 +3956,9 @@ mod tests {
 
         fn set_offscreen_element_id(&self, _id: Option<Id>) {}
 
-        fn set_activated(&mut self, _active: bool) {}
+        fn set_activated(&mut self, active: bool) {
+            self.0.pending_activated.set(active);
+        }
 
         fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
@@ -6359,6 +6363,24 @@ mod tests {
             Op::InteractiveMoveEnd { window: 3 },
         ];
         check_ops(&ops);
+    }
+
+    #[test]
+    fn windows_on_other_workspaces_remain_activated() {
+        let ops = [
+            Op::AddOutput(3),
+            Op::AddWindow {
+                id: 3,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            },
+            Op::FocusWorkspaceDown,
+            Op::Refresh { is_active: true },
+        ];
+
+        let layout = check_ops(&ops);
+        let (_, win) = layout.windows().next().unwrap();
+        assert!(win.0.pending_activated.get());
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {
