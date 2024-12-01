@@ -3692,14 +3692,10 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 for (idx, mon) in monitors.iter_mut().enumerate() {
-                    let is_active = self.is_active && idx == *active_monitor_idx;
+                    let is_active = self.is_active
+                        && idx == *active_monitor_idx
+                        && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                        let is_active = is_active
-                            && ws_idx == mon.active_workspace_idx
-                            && !matches!(
-                                self.interactive_move,
-                                Some(InteractiveMoveState::Moving(_))
-                            );
                         ws.refresh(is_active);
 
                         // Cancel the view offset gesture after workspace switches, moves, etc.
