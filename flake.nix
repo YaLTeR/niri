@@ -26,10 +26,8 @@
         {
           lib,
           cairo,
-          clang,
           dbus,
           libGL,
-          libclang,
           libdisplay-info,
           libinput,
           seatd,
@@ -79,7 +77,7 @@
           strictDeps = true;
 
           nativeBuildInputs = [
-            clang
+            rustPlatform.bindgenHook
             pkg-config
           ];
 
@@ -119,8 +117,6 @@
             '';
 
           env = {
-            LIBCLANG_PATH = lib.getLib libclang + "/lib";
-
             # Force linking with libEGL and libwayland-client
             # so they can be discovered by `dlopen()`
             RUSTFLAGS = toString (
@@ -191,7 +187,7 @@
             ];
 
             nativeBuildInputs = [
-              pkgs.clang
+              pkgs.rustPlatform.bindgenHook
               pkgs.pkg-config
               pkgs.wrapGAppsHook4 # For `niri-visual-tests`
             ];
@@ -201,8 +197,6 @@
             ];
 
             env = {
-              inherit (niri) LIBCLANG_PATH;
-
               # WARN: Do not overwrite this variable in your shell!
               # It is required for `dlopen()` to work on some libraries; see the comment
               # in the package expression
