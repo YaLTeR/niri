@@ -20,6 +20,11 @@ debug {
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
     emulate-zero-presentation-time
+    disable-resize-throttling
+    disable-transactions
+    keep-laptop-panel-on-when-lid-is-closed
+    disable-monitor-names
+    strict-new-window-focus-policy
 }
 
 binds {
@@ -125,6 +130,81 @@ This is a thing on NVIDIA proprietary drivers, so this flag can be used to test 
 ```kdl
 debug {
     emulate-zero-presentation-time
+}
+```
+
+### `disable-resize-throttling`
+
+<sup>Since: 0.1.9</sup>
+
+Disable throttling resize events sent to windows.
+
+By default, when resizing quickly (e.g. interactively), a window will only receive the next size once it has made a commit for the previously requested size.
+This is required for resize transactions to work properly, and it also helps certain clients which don't batch incoming resizes from the compositor.
+
+Disabling resize throttling will send resizes to windows as fast as possible, which is potentially very fast (for example, on a 1000 Hz mouse).
+
+```kdl
+debug {
+    disable-resize-throttling
+}
+```
+
+### `disable-transactions`
+
+<sup>Since: 0.1.9</sup>
+
+Disable transactions (resize and close).
+
+By default, windows which must resize together, do resize together.
+For example, all windows in a column must resize at the same time to maintain the combined column height equal to the screen height, and to maintain the same window width.
+
+Transactions make niri wait until all windows finish resizing before showing them all on screen in one, synchronized frame.
+For them to work properly, resize throttling shouldn't be disabled (with the previous debug flag).
+
+```kdl
+debug {
+    disable-transactions
+}
+```
+
+### `keep-laptop-panel-on-when-lid-is-closed`
+
+<sup>Since: 0.1.10</sup>
+
+By default, niri will disable the internal laptop monitor when the laptop lid is closed.
+This flag turns off this behavior and will leave the internal laptop monitor on.
+
+```kdl
+debug {
+    keep-laptop-panel-on-when-lid-is-closed
+}
+```
+
+### `disable-monitor-names`
+
+<sup>Since: 0.1.10</sup>
+
+Disables the make/model/serial monitor names, as if niri fails to read them from the EDID.
+
+Use this flag to work around a crash present in 0.1.9 and 0.1.10 when connecting two monitors with matching make/model/serial.
+
+```kdl
+debug {
+    disable-monitor-names
+}
+```
+
+### `strict-new-window-focus-policy`
+
+<sup>Since: 0.1.11</sup>
+
+Disables heuristic automatic focusing for new windows.
+Only windows that activate themselves with a valid xdg-activation token will be focused.
+
+```kdl
+debug {
+    strict-new-window-focus-policy
 }
 ```
 

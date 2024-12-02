@@ -12,14 +12,18 @@ use smithay::output::{self, Output};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
+use wayland_backend::server::Credentials;
 
 use super::{ResolvedWindowRules, WindowRef};
 use crate::handlers::KdeDecorationsModeState;
 use crate::layout::{
-    InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
+    ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
+    LayoutElementRenderSnapshot,
 };
 use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
@@ -30,7 +34,10 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
-use crate::utils::{send_scale_transform, ResizeEdge};
+use crate::utils::transaction::Transaction;
+use crate::utils::{
+    get_credentials_for_surface, send_scale_transform, with_toplevel_role, ResizeEdge,
+};
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -38,6 +45,9 @@ pub struct Mapped {
 
     /// Unique ID of this `Mapped`.
     id: MappedId,
+
+    /// Credentials of the process that created the Wayland connection.
+    credentials: Option<Credentials>,
 
     /// Pre-commit hook that we have on all mapped toplevel surfaces.
     pre_commit_hook: HookId,
@@ -69,6 +79,12 @@ pub struct Mapped {
     /// Snapshot right before an animated commit.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
 
+    /// Transaction that the next configure should take part in, if any.
+    transaction_for_next_configure: Option<Transaction>,
+
+    /// Pending transactions that have not been added as blockers for this window yet.
+    pending_transactions: Vec<(Serial, Transaction)>,
+
     /// State of an ongoing interactive resize.
     interactive_resize: Option<InteractiveResize>,
 
@@ -89,14 +105,14 @@ niri_render_elements! {
 static MAPPED_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MappedId(u32);
+pub struct MappedId(u64);
 
 impl MappedId {
     fn next() -> MappedId {
         MappedId(MAPPED_ID_COUNTER.next())
     }
 
-    pub fn get(self) -> u32 {
+    pub fn get(self) -> u64 {
         self.0
     }
 }
@@ -127,9 +143,13 @@ impl InteractiveResize {
 
 impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
+        let surface = window.wl_surface().expect("no X11 support");
+        let credentials = get_credentials_for_surface(&surface);
+
         Self {
             window,
             id: MappedId::next(),
+            credentials,
             pre_commit_hook: hook,
             rules,
             need_to_recompute_rules: false,
@@ -139,6 +159,8 @@ impl Mapped {
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
+            transaction_for_next_configure: None,
+            pending_transactions: Vec::new(),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
         }
@@ -175,6 +197,10 @@ impl Mapped {
 
     pub fn id(&self) -> MappedId {
         self.id
+    }
+
+    pub fn credentials(&self) -> Option<&Credentials> {
+        self.credentials.as_ref()
     }
 
     pub fn is_focused(&self) -> bool {
@@ -253,6 +279,40 @@ impl Mapped {
         self.animation_snapshot = Some(self.render_snapshot(renderer));
     }
 
+    pub fn take_pending_transaction(&mut self, commit_serial: Serial) -> Option<Transaction> {
+        let mut rv = None;
+
+        // Pending transactions are appended in order by serial, so we can loop from the start
+        // until we hit a serial that is too new.
+        while let Some((serial, _)) = self.pending_transactions.first() {
+            // In this loop, we will complete the transaction corresponding to the commit, as well
+            // as all transactions corresponding to previous serials. This can happen when we
+            // request resizes too quickly, and the surface only responds to the last one.
+            //
+            // Note that in this case, completing the previous transactions can result in an
+            // inconsistent visual state, if another window is waiting for this window to assume a
+            // specific size (in a previous transaction), which is now different (in this commit).
+            //
+            // However, there isn't really a good way to deal with that. We cannot cancel any
+            // transactions because we need to keep sending frame callbacks, and cancelling a
+            // transaction will make the corresponding frame callbacks get lost, and the window
+            // will hang.
+            //
+            // This is why resize throttling (implemented separately) is important: it prevents
+            // visually inconsistent states by way of never having more than one transaction in
+            // flight.
+            if commit_serial.is_no_older_than(serial) {
+                let (_, transaction) = self.pending_transactions.remove(0);
+                // Previous transaction is dropped here, signaling completion.
+                rv = Some(transaction);
+            } else {
+                break;
+            }
+        }
+
+        rv
+    }
+
     pub fn last_interactive_resize_start(&self) -> &Cell<Option<(Duration, ResizeEdge)>> {
         &self.last_interactive_resize_start
     }
@@ -290,8 +350,8 @@ impl Mapped {
                         geo.size,
                         Rectangle::from_loc_and_size((0., 0.), geo.size),
                         GradientInterpolation::default(),
-                        Color::from_array_premul(elem.color()),
-                        Color::from_array_premul(elem.color()),
+                        Color::from_color32f(elem.color()),
+                        Color::from_color32f(elem.color()),
                         0.,
                         Rectangle::from_loc_and_size((0., 0.), geo.size),
                         0.,
@@ -440,7 +500,12 @@ impl LayoutElement for Mapped {
         }
     }
 
-    fn request_size(&mut self, size: Size<i32, Logical>, animate: bool) {
+    fn request_size(
+        &mut self,
+        size: Size<i32, Logical>,
+        animate: bool,
+        transaction: Option<Transaction>,
+    ) {
         let changed = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
@@ -450,6 +515,15 @@ impl LayoutElement for Mapped {
 
         if changed && animate {
             self.animate_next_configure = true;
+        }
+
+        // Store the transaction regardless of whether the size changed. This is because with 3+
+        // windows in a column, the size may change among windows 1 and 2 and then right away among
+        // windows 2 and 3, and we want all windows 1, 2 and 3 to use the last transaction, rather
+        // than window 1 getting stuck with the previous transaction that is immediately released
+        // by 2.
+        if let Some(transaction) = transaction {
+            self.transaction_for_next_configure = Some(transaction);
         }
     }
 
@@ -512,7 +586,7 @@ impl LayoutElement for Mapped {
 
     fn has_ssd(&self) -> bool {
         let toplevel = self.toplevel();
-        let mode = toplevel.current_state().decoration_mode;
+        let mode = with_toplevel_role(self.toplevel(), |role| role.current.decoration_mode);
 
         match mode {
             Some(zxdg_toplevel_decoration_v1::Mode::ServerSide) => true,
@@ -568,10 +642,69 @@ impl LayoutElement for Mapped {
         });
     }
 
+    fn configure_intent(&self) -> ConfigureIntent {
+        let _span =
+            trace_span!("configure_intent", surface = ?self.toplevel().wl_surface().id()).entered();
+
+        with_toplevel_role(self.toplevel(), |attributes| {
+            if let Some(server_pending) = &attributes.server_pending {
+                let current_server = attributes.current_server_state();
+                if server_pending != current_server {
+                    // Something changed. Check if the only difference is the size, and if the
+                    // current server size matches the current committed size.
+                    let mut current_server_same_size = current_server.clone();
+                    current_server_same_size.size = server_pending.size;
+                    if current_server_same_size == *server_pending {
+                        // Only the size changed. Check if the window committed our previous size
+                        // request.
+                        if attributes.current.size == current_server.size {
+                            // The window had committed for our previous size change, so we can
+                            // change the size again.
+                            trace!(
+                                "current size matches server size: {:?}",
+                                attributes.current.size
+                            );
+                            ConfigureIntent::CanSend
+                        } else {
+                            // The window had not committed for our previous size change yet. Since
+                            // nothing else changed, do not send the new size request yet. This
+                            // throttling is done because some clients do not batch size requests,
+                            // leading to bad behavior with very fast input devices (i.e. a 1000 Hz
+                            // mouse). This throttling also helps interactive resize transactions
+                            // preserve visual consistency.
+                            trace!("throttling resize");
+                            ConfigureIntent::Throttled
+                        }
+                    } else {
+                        // Something else changed other than the size; send it.
+                        trace!("something changed other than the size");
+                        ConfigureIntent::ShouldSend
+                    }
+                } else {
+                    // Nothing changed since the last configure.
+                    ConfigureIntent::NotNeeded
+                }
+            } else {
+                // Nothing changed since the last configure.
+                ConfigureIntent::NotNeeded
+            }
+        })
+    }
+
     fn send_pending_configure(&mut self) {
+        let _span =
+            trace_span!("send_pending_configure", surface = ?self.toplevel().wl_surface().id())
+                .entered();
+
         if let Some(serial) = self.toplevel().send_pending_configure() {
+            trace!(?serial, "sending configure");
+
             if self.animate_next_configure {
                 self.animate_serials.push(serial);
+            }
+
+            if let Some(transaction) = self.transaction_for_next_configure.take() {
+                self.pending_transactions.push((serial, transaction));
             }
 
             self.interactive_resize = match self.interactive_resize.take() {
@@ -590,18 +723,24 @@ impl LayoutElement for Mapped {
         }
 
         self.animate_next_configure = false;
+        self.transaction_for_next_configure = None;
     }
 
     fn is_fullscreen(&self) -> bool {
-        self.toplevel()
-            .current_state()
-            .states
-            .contains(xdg_toplevel::State::Fullscreen)
+        with_toplevel_role(self.toplevel(), |role| {
+            role.current
+                .states
+                .contains(xdg_toplevel::State::Fullscreen)
+        })
     }
 
     fn is_pending_fullscreen(&self) -> bool {
         self.toplevel()
             .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
+    }
+
+    fn requested_size(&self) -> Option<Size<i32, Logical>> {
+        self.toplevel().with_pending_state(|state| state.size)
     }
 
     fn refresh(&self) {

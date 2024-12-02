@@ -10,19 +10,27 @@ use anyhow::{ensure, Context};
 use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
-use niri_config::Config;
+use niri_config::{Config, OutputName};
 use smithay::input::pointer::CursorIcon;
 use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{DisplayHandle, Resource as _};
 use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
-use smithay::wayland::compositor::{send_surface_state, SurfaceData};
+use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
 use smithay::wayland::fractional_scale::with_fractional_scale;
+use smithay::wayland::shell::xdg::{
+    ToplevelSurface, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
+};
+use wayland_backend::server::Credentials;
+
+use crate::niri::ClientState;
 
 pub mod id;
 pub mod scale;
 pub mod spawning;
+pub mod transaction;
 pub mod watcher;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
@@ -213,6 +221,44 @@ pub fn write_png_rgba8(
 
     let mut writer = encoder.write_header()?;
     writer.write_image_data(pixels)
+}
+
+pub fn output_matches_name(output: &Output, target: &str) -> bool {
+    let name = output.user_data().get::<OutputName>().unwrap();
+    name.matches(target)
+}
+
+pub fn is_laptop_panel(connector: &str) -> bool {
+    matches!(connector.get(..4), Some("eDP-" | "LVDS" | "DSI-"))
+}
+
+pub fn with_toplevel_role<T>(
+    toplevel: &ToplevelSurface,
+    f: impl FnOnce(&mut XdgToplevelSurfaceRoleAttributes) -> T,
+) -> T {
+    with_states(toplevel.wl_surface(), |states| {
+        let mut role = states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap();
+
+        f(&mut role)
+    })
+}
+
+pub fn get_credentials_for_surface(surface: &WlSurface) -> Option<Credentials> {
+    let handle = surface.handle().upgrade()?;
+    let dh = DisplayHandle::from(handle);
+
+    let client = dh.get_client(surface.id()).ok()?;
+    let data = client.get_data::<ClientState>().unwrap();
+    if data.credentials_unknown {
+        return None;
+    }
+
+    client.get_credentials(&dh).ok()
 }
 
 #[cfg(feature = "dbus")]

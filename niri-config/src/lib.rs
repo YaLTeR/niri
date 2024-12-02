@@ -10,13 +10,21 @@ use std::time::Duration;
 use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
+use layer_rule::LayerRule;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform, WorkspaceReferenceArg};
-use regex::Regex;
+use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 use smithay::reexports::input;
+
+pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
+
+pub mod layer_rule;
+
+mod utils;
+pub use utils::RegexEq;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
@@ -48,8 +56,12 @@ pub struct Config {
     pub environment: Environment,
     #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
+    #[knuffel(children(name = "layer-rule"))]
+    pub layer_rules: Vec<LayerRule>,
     #[knuffel(child, default)]
     pub binds: Binds,
+    #[knuffel(child, default)]
+    pub switch_events: SwitchBinds,
     #[knuffel(child, default)]
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
@@ -66,6 +78,8 @@ pub struct Input {
     pub mouse: Mouse,
     #[knuffel(child, default)]
     pub trackpoint: Trackpoint,
+    #[knuffel(child, default)]
+    pub trackball: Trackball,
     #[knuffel(child, default)]
     pub tablet: Tablet,
     #[knuffel(child, default)]
@@ -171,6 +185,8 @@ pub struct Touchpad {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
     #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
     #[knuffel(child)]
@@ -179,6 +195,8 @@ pub struct Touchpad {
     pub disabled_on_external_mouse: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor: Option<FloatOrInt<0, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -193,10 +211,14 @@ pub struct Mouse {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
     #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor: Option<FloatOrInt<0, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -211,6 +233,28 @@ pub struct Trackpoint {
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
+    #[knuffel(child)]
+    pub middle_emulation: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+pub struct Trackball {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub natural_scroll: bool,
+    #[knuffel(child, unwrap(argument), default)]
+    pub accel_speed: f64,
+    #[knuffel(child, unwrap(argument, str))]
+    pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub scroll_method: Option<ScrollMethod>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_button: Option<u32>,
+    #[knuffel(child)]
+    pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
 }
@@ -322,7 +366,23 @@ pub struct Output {
     #[knuffel(child, unwrap(argument, str))]
     pub mode: Option<ConfiguredMode>,
     #[knuffel(child)]
-    pub variable_refresh_rate: bool,
+    pub variable_refresh_rate: Option<Vrr>,
+    #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
+    pub background_color: Color,
+}
+
+impl Output {
+    pub fn is_vrr_always_on(&self) -> bool {
+        self.variable_refresh_rate == Some(Vrr { on_demand: false })
+    }
+
+    pub fn is_vrr_on_demand(&self) -> bool {
+        self.variable_refresh_rate == Some(Vrr { on_demand: true })
+    }
+
+    pub fn is_vrr_always_off(&self) -> bool {
+        self.variable_refresh_rate.is_none()
+    }
 }
 
 impl Default for Output {
@@ -334,9 +394,18 @@ impl Default for Output {
             transform: Transform::Normal,
             position: None,
             mode: None,
-            variable_refresh_rate: false,
+            variable_refresh_rate: None,
+            background_color: DEFAULT_BACKGROUND_COLOR,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct OutputName {
+    pub connector: String,
+    pub make: Option<String>,
+    pub model: Option<String>,
+    pub serial: Option<String>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Eq)]
@@ -345,6 +414,12 @@ pub struct Position {
     pub x: i32,
     #[knuffel(property)]
     pub y: i32,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Default)]
+pub struct Vrr {
+    #[knuffel(property, default = false)]
+    pub on_demand: bool,
 }
 
 // MIN and MAX generics are only used during parsing to check the value.
@@ -357,12 +432,20 @@ pub struct Layout {
     pub focus_ring: FocusRing,
     #[knuffel(child, default)]
     pub border: Border,
+    #[knuffel(child, default)]
+    pub insert_hint: InsertHint,
     #[knuffel(child, unwrap(children), default)]
-    pub preset_column_widths: Vec<PresetWidth>,
+    pub preset_column_widths: Vec<PresetSize>,
     #[knuffel(child)]
-    pub default_column_width: Option<DefaultColumnWidth>,
+    pub default_column_width: Option<DefaultPresetSize>,
+    #[knuffel(child, unwrap(children), default)]
+    pub preset_window_heights: Vec<PresetSize>,
     #[knuffel(child, unwrap(argument), default)]
     pub center_focused_column: CenterFocusedColumn,
+    #[knuffel(child)]
+    pub always_center_single_column: bool,
+    #[knuffel(child)]
+    pub empty_workspace_above_first: bool,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
     pub gaps: FloatOrInt<0, 65535>,
     #[knuffel(child, default)]
@@ -374,11 +457,15 @@ impl Default for Layout {
         Self {
             focus_ring: Default::default(),
             border: Default::default(),
+            insert_hint: Default::default(),
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
             center_focused_column: Default::default(),
+            always_center_single_column: false,
+            empty_workspace_above_first: false,
             gaps: FloatOrInt(16.),
             struts: Default::default(),
+            preset_window_heights: Default::default(),
         }
     }
 }
@@ -518,6 +605,26 @@ impl From<FocusRing> for Border {
     }
 }
 
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct InsertHint {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, default = Self::default().color)]
+    pub color: Color,
+    #[knuffel(child)]
+    pub gradient: Option<Gradient>,
+}
+
+impl Default for InsertHint {
+    fn default() -> Self {
+        Self {
+            off: false,
+            color: Color::from_rgba8_unpremul(127, 200, 255, 128),
+            gradient: None,
+        }
+    }
+}
+
 /// RGB color in [0, 1] with unpremultiplied alpha.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Color {
@@ -551,8 +658,12 @@ impl Color {
         }
     }
 
-    pub fn from_array_unpremul([r, g, b, a]: [f32; 4]) -> Self {
+    pub const fn from_array_unpremul([r, g, b, a]: [f32; 4]) -> Self {
         Self { r, g, b, a }
+    }
+
+    pub fn from_color32f(color: Color32F) -> Self {
+        Self::from_array_premul(color.components())
     }
 
     pub fn to_array_unpremul(self) -> [f32; 4] {
@@ -571,6 +682,10 @@ pub struct Cursor {
     pub xcursor_theme: String,
     #[knuffel(child, unwrap(argument), default = 24)]
     pub xcursor_size: u8,
+    #[knuffel(child)]
+    pub hide_when_typing: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub hide_after_inactive_ms: Option<u32>,
 }
 
 impl Default for Cursor {
@@ -578,18 +693,20 @@ impl Default for Cursor {
         Self {
             xcursor_theme: String::from("default"),
             xcursor_size: 24,
+            hide_when_typing: false,
+            hide_after_inactive_ms: None,
         }
     }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
-pub enum PresetWidth {
+pub enum PresetSize {
     Proportion(#[knuffel(argument)] f64),
     Fixed(#[knuffel(argument)] i32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DefaultColumnWidth(pub Option<PresetWidth>);
+pub struct DefaultPresetSize(pub Option<PresetSize>);
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Struts {
@@ -857,7 +974,7 @@ pub struct WindowRule {
 
     // Rules applied at initial configure.
     #[knuffel(child)]
-    pub default_column_width: Option<DefaultColumnWidth>,
+    pub default_column_width: Option<DefaultPresetSize>,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
     #[knuffel(child, unwrap(argument))]
@@ -891,15 +1008,16 @@ pub struct WindowRule {
     pub clip_to_geometry: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,
+    #[knuffel(child, unwrap(argument))]
+    pub variable_refresh_rate: Option<bool>,
 }
 
-// Remember to update the PartialEq impl when adding fields!
-#[derive(knuffel::Decode, Debug, Default, Clone)]
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Match {
     #[knuffel(property, str)]
-    pub app_id: Option<Regex>,
+    pub app_id: Option<RegexEq>,
     #[knuffel(property, str)]
-    pub title: Option<Regex>,
+    pub title: Option<RegexEq>,
     #[knuffel(property)]
     pub is_active: Option<bool>,
     #[knuffel(property)]
@@ -908,17 +1026,6 @@ pub struct Match {
     pub is_active_in_column: Option<bool>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
-}
-
-impl PartialEq for Match {
-    fn eq(&self, other: &Self) -> bool {
-        self.is_active == other.is_active
-            && self.is_focused == other.is_focused
-            && self.is_active_in_column == other.is_active_in_column
-            && self.at_startup == other.at_startup
-            && self.app_id.as_ref().map(Regex::as_str) == other.app_id.as_ref().map(Regex::as_str)
-            && self.title.as_ref().map(Regex::as_str) == other.title.as_ref().map(Regex::as_str)
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -999,12 +1106,31 @@ bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Modifiers : u8 {
         const CTRL = 1;
-        const SHIFT = 2;
-        const ALT = 4;
-        const SUPER = 8;
-        const ISO_LEVEL3_SHIFT = 16;
-        const COMPOSITOR = 32;
+        const SHIFT = 1 << 1;
+        const ALT = 1 << 2;
+        const SUPER = 1 << 3;
+        const ISO_LEVEL3_SHIFT = 1 << 4;
+        const ISO_LEVEL5_SHIFT = 1 << 5;
+        const COMPOSITOR = 1 << 6;
     }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct SwitchBinds {
+    #[knuffel(child)]
+    pub lid_open: Option<SwitchAction>,
+    #[knuffel(child)]
+    pub lid_close: Option<SwitchAction>,
+    #[knuffel(child)]
+    pub tablet_mode_on: Option<SwitchAction>,
+    #[knuffel(child)]
+    pub tablet_mode_off: Option<SwitchAction>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct SwitchAction {
+    #[knuffel(child, unwrap(arguments))]
+    pub spawn: Vec<String>,
 }
 
 // Remember to add new actions to the CLI enum too.
@@ -1015,6 +1141,7 @@ pub enum Action {
     ChangeVt(i32),
     Suspend,
     PowerOffMonitors,
+    PowerOnMonitors,
     ToggleDebugTint,
     DebugToggleOpaqueRegions,
     DebugToggleDamage,
@@ -1029,8 +1156,17 @@ pub enum Action {
     Screenshot,
     ScreenshotScreen,
     ScreenshotWindow,
+    #[knuffel(skip)]
+    ScreenshotWindowById(u64),
     CloseWindow,
+    #[knuffel(skip)]
+    CloseWindowById(u64),
     FullscreenWindow,
+    #[knuffel(skip)]
+    FullscreenWindowById(u64),
+    #[knuffel(skip)]
+    FocusWindow(u64),
+    FocusWindowPrevious,
     FocusColumnLeft,
     FocusColumnRight,
     FocusColumnFirst,
@@ -1060,7 +1196,11 @@ pub enum Action {
     MoveWindowDownOrToWorkspaceDown,
     MoveWindowUpOrToWorkspaceUp,
     ConsumeOrExpelWindowLeft,
+    #[knuffel(skip)]
+    ConsumeOrExpelWindowLeftById(u64),
     ConsumeOrExpelWindowRight,
+    #[knuffel(skip)]
+    ConsumeOrExpelWindowRightById(u64),
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
     CenterColumn,
@@ -1071,6 +1211,11 @@ pub enum Action {
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
     MoveWindowToWorkspace(#[knuffel(argument)] WorkspaceReference),
+    #[knuffel(skip)]
+    MoveWindowToWorkspaceById {
+        window_id: u64,
+        reference: WorkspaceReference,
+    },
     MoveColumnToWorkspaceDown,
     MoveColumnToWorkspaceUp,
     MoveColumnToWorkspace(#[knuffel(argument)] WorkspaceReference),
@@ -1089,8 +1234,18 @@ pub enum Action {
     MoveColumnToMonitorDown,
     MoveColumnToMonitorUp,
     SetWindowHeight(#[knuffel(argument, str)] SizeChange),
+    #[knuffel(skip)]
+    SetWindowHeightById {
+        id: u64,
+        change: SizeChange,
+    },
     ResetWindowHeight,
+    #[knuffel(skip)]
+    ResetWindowHeightById(u64),
     SwitchPresetColumnWidth,
+    SwitchPresetWindowHeight,
+    #[knuffel(skip)]
+    SwitchPresetWindowHeightById(u64),
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
@@ -1105,101 +1260,139 @@ impl From<niri_ipc::Action> for Action {
     fn from(value: niri_ipc::Action) -> Self {
         match value {
             niri_ipc::Action::Quit { skip_confirmation } => Self::Quit(skip_confirmation),
-            niri_ipc::Action::PowerOffMonitors => Self::PowerOffMonitors,
+            niri_ipc::Action::PowerOffMonitors {} => Self::PowerOffMonitors,
+            niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
-            niri_ipc::Action::Screenshot => Self::Screenshot,
-            niri_ipc::Action::ScreenshotScreen => Self::ScreenshotScreen,
-            niri_ipc::Action::ScreenshotWindow => Self::ScreenshotWindow,
-            niri_ipc::Action::CloseWindow => Self::CloseWindow,
-            niri_ipc::Action::FullscreenWindow => Self::FullscreenWindow,
-            niri_ipc::Action::FocusColumnLeft => Self::FocusColumnLeft,
-            niri_ipc::Action::FocusColumnRight => Self::FocusColumnRight,
-            niri_ipc::Action::FocusColumnFirst => Self::FocusColumnFirst,
-            niri_ipc::Action::FocusColumnLast => Self::FocusColumnLast,
-            niri_ipc::Action::FocusColumnRightOrFirst => Self::FocusColumnRightOrFirst,
-            niri_ipc::Action::FocusColumnLeftOrLast => Self::FocusColumnLeftOrLast,
-            niri_ipc::Action::FocusWindowOrMonitorUp => Self::FocusWindowOrMonitorUp,
-            niri_ipc::Action::FocusWindowOrMonitorDown => Self::FocusWindowOrMonitorDown,
-            niri_ipc::Action::FocusColumnOrMonitorLeft => Self::FocusColumnOrMonitorLeft,
-            niri_ipc::Action::FocusColumnOrMonitorRight => Self::FocusColumnOrMonitorRight,
-            niri_ipc::Action::FocusWindowDown => Self::FocusWindowDown,
-            niri_ipc::Action::FocusWindowUp => Self::FocusWindowUp,
-            niri_ipc::Action::FocusWindowDownOrColumnLeft => Self::FocusWindowDownOrColumnLeft,
-            niri_ipc::Action::FocusWindowDownOrColumnRight => Self::FocusWindowDownOrColumnRight,
-            niri_ipc::Action::FocusWindowUpOrColumnLeft => Self::FocusWindowUpOrColumnLeft,
-            niri_ipc::Action::FocusWindowUpOrColumnRight => Self::FocusWindowUpOrColumnRight,
-            niri_ipc::Action::FocusWindowOrWorkspaceDown => Self::FocusWindowOrWorkspaceDown,
-            niri_ipc::Action::FocusWindowOrWorkspaceUp => Self::FocusWindowOrWorkspaceUp,
-            niri_ipc::Action::MoveColumnLeft => Self::MoveColumnLeft,
-            niri_ipc::Action::MoveColumnRight => Self::MoveColumnRight,
-            niri_ipc::Action::MoveColumnToFirst => Self::MoveColumnToFirst,
-            niri_ipc::Action::MoveColumnToLast => Self::MoveColumnToLast,
-            niri_ipc::Action::MoveColumnLeftOrToMonitorLeft => Self::MoveColumnLeftOrToMonitorLeft,
-            niri_ipc::Action::MoveColumnRightOrToMonitorRight => {
+            niri_ipc::Action::Screenshot {} => Self::Screenshot,
+            niri_ipc::Action::ScreenshotScreen {} => Self::ScreenshotScreen,
+            niri_ipc::Action::ScreenshotWindow { id: None } => Self::ScreenshotWindow,
+            niri_ipc::Action::ScreenshotWindow { id: Some(id) } => Self::ScreenshotWindowById(id),
+            niri_ipc::Action::CloseWindow { id: None } => Self::CloseWindow,
+            niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
+            niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
+            niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
+            niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
+            niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
+            niri_ipc::Action::FocusColumnLeft {} => Self::FocusColumnLeft,
+            niri_ipc::Action::FocusColumnRight {} => Self::FocusColumnRight,
+            niri_ipc::Action::FocusColumnFirst {} => Self::FocusColumnFirst,
+            niri_ipc::Action::FocusColumnLast {} => Self::FocusColumnLast,
+            niri_ipc::Action::FocusColumnRightOrFirst {} => Self::FocusColumnRightOrFirst,
+            niri_ipc::Action::FocusColumnLeftOrLast {} => Self::FocusColumnLeftOrLast,
+            niri_ipc::Action::FocusWindowOrMonitorUp {} => Self::FocusWindowOrMonitorUp,
+            niri_ipc::Action::FocusWindowOrMonitorDown {} => Self::FocusWindowOrMonitorDown,
+            niri_ipc::Action::FocusColumnOrMonitorLeft {} => Self::FocusColumnOrMonitorLeft,
+            niri_ipc::Action::FocusColumnOrMonitorRight {} => Self::FocusColumnOrMonitorRight,
+            niri_ipc::Action::FocusWindowDown {} => Self::FocusWindowDown,
+            niri_ipc::Action::FocusWindowUp {} => Self::FocusWindowUp,
+            niri_ipc::Action::FocusWindowDownOrColumnLeft {} => Self::FocusWindowDownOrColumnLeft,
+            niri_ipc::Action::FocusWindowDownOrColumnRight {} => Self::FocusWindowDownOrColumnRight,
+            niri_ipc::Action::FocusWindowUpOrColumnLeft {} => Self::FocusWindowUpOrColumnLeft,
+            niri_ipc::Action::FocusWindowUpOrColumnRight {} => Self::FocusWindowUpOrColumnRight,
+            niri_ipc::Action::FocusWindowOrWorkspaceDown {} => Self::FocusWindowOrWorkspaceDown,
+            niri_ipc::Action::FocusWindowOrWorkspaceUp {} => Self::FocusWindowOrWorkspaceUp,
+            niri_ipc::Action::MoveColumnLeft {} => Self::MoveColumnLeft,
+            niri_ipc::Action::MoveColumnRight {} => Self::MoveColumnRight,
+            niri_ipc::Action::MoveColumnToFirst {} => Self::MoveColumnToFirst,
+            niri_ipc::Action::MoveColumnToLast {} => Self::MoveColumnToLast,
+            niri_ipc::Action::MoveColumnLeftOrToMonitorLeft {} => {
+                Self::MoveColumnLeftOrToMonitorLeft
+            }
+            niri_ipc::Action::MoveColumnRightOrToMonitorRight {} => {
                 Self::MoveColumnRightOrToMonitorRight
             }
-            niri_ipc::Action::MoveWindowDown => Self::MoveWindowDown,
-            niri_ipc::Action::MoveWindowUp => Self::MoveWindowUp,
-            niri_ipc::Action::MoveWindowDownOrToWorkspaceDown => {
+            niri_ipc::Action::MoveWindowDown {} => Self::MoveWindowDown,
+            niri_ipc::Action::MoveWindowUp {} => Self::MoveWindowUp,
+            niri_ipc::Action::MoveWindowDownOrToWorkspaceDown {} => {
                 Self::MoveWindowDownOrToWorkspaceDown
             }
-            niri_ipc::Action::MoveWindowUpOrToWorkspaceUp => Self::MoveWindowUpOrToWorkspaceUp,
-            niri_ipc::Action::ConsumeOrExpelWindowLeft => Self::ConsumeOrExpelWindowLeft,
-            niri_ipc::Action::ConsumeOrExpelWindowRight => Self::ConsumeOrExpelWindowRight,
-            niri_ipc::Action::ConsumeWindowIntoColumn => Self::ConsumeWindowIntoColumn,
-            niri_ipc::Action::ExpelWindowFromColumn => Self::ExpelWindowFromColumn,
-            niri_ipc::Action::CenterColumn => Self::CenterColumn,
-            niri_ipc::Action::FocusWorkspaceDown => Self::FocusWorkspaceDown,
-            niri_ipc::Action::FocusWorkspaceUp => Self::FocusWorkspaceUp,
+            niri_ipc::Action::MoveWindowUpOrToWorkspaceUp {} => Self::MoveWindowUpOrToWorkspaceUp,
+            niri_ipc::Action::ConsumeOrExpelWindowLeft { id: None } => {
+                Self::ConsumeOrExpelWindowLeft
+            }
+            niri_ipc::Action::ConsumeOrExpelWindowLeft { id: Some(id) } => {
+                Self::ConsumeOrExpelWindowLeftById(id)
+            }
+            niri_ipc::Action::ConsumeOrExpelWindowRight { id: None } => {
+                Self::ConsumeOrExpelWindowRight
+            }
+            niri_ipc::Action::ConsumeOrExpelWindowRight { id: Some(id) } => {
+                Self::ConsumeOrExpelWindowRightById(id)
+            }
+            niri_ipc::Action::ConsumeWindowIntoColumn {} => Self::ConsumeWindowIntoColumn,
+            niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,
+            niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
+            niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
+            niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
             niri_ipc::Action::FocusWorkspace { reference } => {
                 Self::FocusWorkspace(WorkspaceReference::from(reference))
             }
-            niri_ipc::Action::FocusWorkspacePrevious => Self::FocusWorkspacePrevious,
-            niri_ipc::Action::MoveWindowToWorkspaceDown => Self::MoveWindowToWorkspaceDown,
-            niri_ipc::Action::MoveWindowToWorkspaceUp => Self::MoveWindowToWorkspaceUp,
-            niri_ipc::Action::MoveWindowToWorkspace { reference } => {
-                Self::MoveWindowToWorkspace(WorkspaceReference::from(reference))
-            }
-            niri_ipc::Action::MoveColumnToWorkspaceDown => Self::MoveColumnToWorkspaceDown,
-            niri_ipc::Action::MoveColumnToWorkspaceUp => Self::MoveColumnToWorkspaceUp,
+            niri_ipc::Action::FocusWorkspacePrevious {} => Self::FocusWorkspacePrevious,
+            niri_ipc::Action::MoveWindowToWorkspaceDown {} => Self::MoveWindowToWorkspaceDown,
+            niri_ipc::Action::MoveWindowToWorkspaceUp {} => Self::MoveWindowToWorkspaceUp,
+            niri_ipc::Action::MoveWindowToWorkspace {
+                window_id: None,
+                reference,
+            } => Self::MoveWindowToWorkspace(WorkspaceReference::from(reference)),
+            niri_ipc::Action::MoveWindowToWorkspace {
+                window_id: Some(window_id),
+                reference,
+            } => Self::MoveWindowToWorkspaceById {
+                window_id,
+                reference: WorkspaceReference::from(reference),
+            },
+            niri_ipc::Action::MoveColumnToWorkspaceDown {} => Self::MoveColumnToWorkspaceDown,
+            niri_ipc::Action::MoveColumnToWorkspaceUp {} => Self::MoveColumnToWorkspaceUp,
             niri_ipc::Action::MoveColumnToWorkspace { reference } => {
                 Self::MoveColumnToWorkspace(WorkspaceReference::from(reference))
             }
-            niri_ipc::Action::MoveWorkspaceDown => Self::MoveWorkspaceDown,
-            niri_ipc::Action::MoveWorkspaceUp => Self::MoveWorkspaceUp,
-            niri_ipc::Action::FocusMonitorLeft => Self::FocusMonitorLeft,
-            niri_ipc::Action::FocusMonitorRight => Self::FocusMonitorRight,
-            niri_ipc::Action::FocusMonitorDown => Self::FocusMonitorDown,
-            niri_ipc::Action::FocusMonitorUp => Self::FocusMonitorUp,
-            niri_ipc::Action::MoveWindowToMonitorLeft => Self::MoveWindowToMonitorLeft,
-            niri_ipc::Action::MoveWindowToMonitorRight => Self::MoveWindowToMonitorRight,
-            niri_ipc::Action::MoveWindowToMonitorDown => Self::MoveWindowToMonitorDown,
-            niri_ipc::Action::MoveWindowToMonitorUp => Self::MoveWindowToMonitorUp,
-            niri_ipc::Action::MoveColumnToMonitorLeft => Self::MoveColumnToMonitorLeft,
-            niri_ipc::Action::MoveColumnToMonitorRight => Self::MoveColumnToMonitorRight,
-            niri_ipc::Action::MoveColumnToMonitorDown => Self::MoveColumnToMonitorDown,
-            niri_ipc::Action::MoveColumnToMonitorUp => Self::MoveColumnToMonitorUp,
-            niri_ipc::Action::SetWindowHeight { change } => Self::SetWindowHeight(change),
-            niri_ipc::Action::ResetWindowHeight => Self::ResetWindowHeight,
-            niri_ipc::Action::SwitchPresetColumnWidth => Self::SwitchPresetColumnWidth,
-            niri_ipc::Action::MaximizeColumn => Self::MaximizeColumn,
+            niri_ipc::Action::MoveWorkspaceDown {} => Self::MoveWorkspaceDown,
+            niri_ipc::Action::MoveWorkspaceUp {} => Self::MoveWorkspaceUp,
+            niri_ipc::Action::FocusMonitorLeft {} => Self::FocusMonitorLeft,
+            niri_ipc::Action::FocusMonitorRight {} => Self::FocusMonitorRight,
+            niri_ipc::Action::FocusMonitorDown {} => Self::FocusMonitorDown,
+            niri_ipc::Action::FocusMonitorUp {} => Self::FocusMonitorUp,
+            niri_ipc::Action::MoveWindowToMonitorLeft {} => Self::MoveWindowToMonitorLeft,
+            niri_ipc::Action::MoveWindowToMonitorRight {} => Self::MoveWindowToMonitorRight,
+            niri_ipc::Action::MoveWindowToMonitorDown {} => Self::MoveWindowToMonitorDown,
+            niri_ipc::Action::MoveWindowToMonitorUp {} => Self::MoveWindowToMonitorUp,
+            niri_ipc::Action::MoveColumnToMonitorLeft {} => Self::MoveColumnToMonitorLeft,
+            niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
+            niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
+            niri_ipc::Action::MoveColumnToMonitorUp {} => Self::MoveColumnToMonitorUp,
+            niri_ipc::Action::SetWindowHeight { id: None, change } => Self::SetWindowHeight(change),
+            niri_ipc::Action::SetWindowHeight {
+                id: Some(id),
+                change,
+            } => Self::SetWindowHeightById { id, change },
+            niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
+            niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
+            niri_ipc::Action::SwitchPresetColumnWidth {} => Self::SwitchPresetColumnWidth,
+            niri_ipc::Action::SwitchPresetWindowHeight { id: None } => {
+                Self::SwitchPresetWindowHeight
+            }
+            niri_ipc::Action::SwitchPresetWindowHeight { id: Some(id) } => {
+                Self::SwitchPresetWindowHeightById(id)
+            }
+            niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),
-            niri_ipc::Action::ShowHotkeyOverlay => Self::ShowHotkeyOverlay,
-            niri_ipc::Action::MoveWorkspaceToMonitorLeft => Self::MoveWorkspaceToMonitorLeft,
-            niri_ipc::Action::MoveWorkspaceToMonitorRight => Self::MoveWorkspaceToMonitorRight,
-            niri_ipc::Action::MoveWorkspaceToMonitorDown => Self::MoveWorkspaceToMonitorDown,
-            niri_ipc::Action::MoveWorkspaceToMonitorUp => Self::MoveWorkspaceToMonitorUp,
-            niri_ipc::Action::ToggleDebugTint => Self::ToggleDebugTint,
-            niri_ipc::Action::DebugToggleOpaqueRegions => Self::DebugToggleOpaqueRegions,
-            niri_ipc::Action::DebugToggleDamage => Self::DebugToggleDamage,
+            niri_ipc::Action::ShowHotkeyOverlay {} => Self::ShowHotkeyOverlay,
+            niri_ipc::Action::MoveWorkspaceToMonitorLeft {} => Self::MoveWorkspaceToMonitorLeft,
+            niri_ipc::Action::MoveWorkspaceToMonitorRight {} => Self::MoveWorkspaceToMonitorRight,
+            niri_ipc::Action::MoveWorkspaceToMonitorDown {} => Self::MoveWorkspaceToMonitorDown,
+            niri_ipc::Action::MoveWorkspaceToMonitorUp {} => Self::MoveWorkspaceToMonitorUp,
+            niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
+            niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
+            niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum WorkspaceReference {
+    Id(u64),
     Index(u8),
     Name(String),
 }
@@ -1207,6 +1400,7 @@ pub enum WorkspaceReference {
 impl From<WorkspaceReferenceArg> for WorkspaceReference {
     fn from(reference: WorkspaceReferenceArg) -> WorkspaceReference {
         match reference {
+            WorkspaceReferenceArg::Id(id) => Self::Id(id),
             WorkspaceReferenceArg::Index(i) => Self::Index(i),
             WorkspaceReferenceArg::Name(n) => Self::Name(n),
         }
@@ -1335,6 +1529,16 @@ pub struct DebugConfig {
     pub render_drm_device: Option<PathBuf>,
     #[knuffel(child)]
     pub emulate_zero_presentation_time: bool,
+    #[knuffel(child)]
+    pub disable_resize_throttling: bool,
+    #[knuffel(child)]
+    pub disable_transactions: bool,
+    #[knuffel(child)]
+    pub keep_laptop_panel_on_when_lid_is_closed: bool,
+    #[knuffel(child)]
+    pub disable_monitor_names: bool,
+    #[knuffel(child)]
+    pub strict_new_window_focus_policy: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
@@ -1547,7 +1751,7 @@ impl FromStr for Color {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let color = csscolorparser::parse(s).into_diagnostic()?.to_array();
-        Ok(Self::from_array_unpremul(color.map(|x| x as f32)))
+        Ok(Self::from_array_unpremul(color))
     }
 }
 
@@ -1681,18 +1885,123 @@ impl FromIterator<Output> for Outputs {
 }
 
 impl Outputs {
-    pub fn find(&self, name: &str) -> Option<&Output> {
-        self.0.iter().find(|o| o.name.eq_ignore_ascii_case(name))
+    pub fn find(&self, name: &OutputName) -> Option<&Output> {
+        self.0.iter().find(|o| name.matches(&o.name))
     }
 
-    pub fn find_mut(&mut self, name: &str) -> Option<&mut Output> {
-        self.0
-            .iter_mut()
-            .find(|o| o.name.eq_ignore_ascii_case(name))
+    pub fn find_mut(&mut self, name: &OutputName) -> Option<&mut Output> {
+        self.0.iter_mut().find(|o| name.matches(&o.name))
     }
 }
 
-impl<S> knuffel::Decode<S> for DefaultColumnWidth
+impl OutputName {
+    pub fn from_ipc_output(output: &niri_ipc::Output) -> Self {
+        Self {
+            connector: output.name.clone(),
+            make: (output.make != "Unknown").then(|| output.make.clone()),
+            model: (output.model != "Unknown").then(|| output.model.clone()),
+            serial: output.serial.clone(),
+        }
+    }
+
+    /// Returns an output description matching what Smithay's `Output::new()` does.
+    pub fn format_description(&self) -> String {
+        format!(
+            "{} - {} - {}",
+            self.make.as_deref().unwrap_or("Unknown"),
+            self.model.as_deref().unwrap_or("Unknown"),
+            self.connector,
+        )
+    }
+
+    /// Returns an output name that will match by make/model/serial or, if they are missing, by
+    /// connector.
+    pub fn format_make_model_serial_or_connector(&self) -> String {
+        if self.make.is_none() && self.model.is_none() && self.serial.is_none() {
+            self.connector.to_string()
+        } else {
+            self.format_make_model_serial()
+        }
+    }
+
+    pub fn format_make_model_serial(&self) -> String {
+        let make = self.make.as_deref().unwrap_or("Unknown");
+        let model = self.model.as_deref().unwrap_or("Unknown");
+        let serial = self.serial.as_deref().unwrap_or("Unknown");
+        format!("{make} {model} {serial}")
+    }
+
+    pub fn matches(&self, target: &str) -> bool {
+        // Match by connector.
+        if target.eq_ignore_ascii_case(&self.connector) {
+            return true;
+        }
+
+        // If no other fields are available, don't try to match by them.
+        //
+        // This is used by niri msg output.
+        if self.make.is_none() && self.model.is_none() && self.serial.is_none() {
+            return false;
+        }
+
+        // Match by "make model serial" with Unknown if something is missing.
+        let make = self.make.as_deref().unwrap_or("Unknown");
+        let model = self.model.as_deref().unwrap_or("Unknown");
+        let serial = self.serial.as_deref().unwrap_or("Unknown");
+
+        let Some(target_make) = target.get(..make.len()) else {
+            return false;
+        };
+        let rest = &target[make.len()..];
+        if !target_make.eq_ignore_ascii_case(make) {
+            return false;
+        }
+        if !rest.starts_with(' ') {
+            return false;
+        }
+        let rest = &rest[1..];
+
+        let Some(target_model) = rest.get(..model.len()) else {
+            return false;
+        };
+        let rest = &rest[model.len()..];
+        if !target_model.eq_ignore_ascii_case(model) {
+            return false;
+        }
+        if !rest.starts_with(' ') {
+            return false;
+        }
+
+        let rest = &rest[1..];
+        if !rest.eq_ignore_ascii_case(serial) {
+            return false;
+        }
+
+        true
+    }
+
+    // Similar in spirit to Ord, but I don't want to derive Eq to avoid mistakes (you should use
+    // `Self::match`, not Eq).
+    pub fn compare(&self, other: &Self) -> std::cmp::Ordering {
+        let self_missing_mms = self.make.is_none() && self.model.is_none() && self.serial.is_none();
+        let other_missing_mms =
+            other.make.is_none() && other.model.is_none() && other.serial.is_none();
+
+        match (self_missing_mms, other_missing_mms) {
+            (true, true) => self.connector.cmp(&other.connector),
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            (false, false) => self
+                .make
+                .cmp(&other.make)
+                .then_with(|| self.model.cmp(&other.model))
+                .then_with(|| self.serial.cmp(&other.serial))
+                .then_with(|| self.connector.cmp(&other.connector)),
+        }
+    }
+}
+
+impl<S> knuffel::Decode<S> for DefaultPresetSize
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -1712,7 +2021,7 @@ where
                     "expected no more than one child",
                 ));
             }
-            PresetWidth::decode_node(child, ctx).map(Some).map(Self)
+            PresetSize::decode_node(child, ctx).map(Some).map(Self)
         } else {
             Ok(Self(None))
         }
@@ -2504,6 +2813,10 @@ impl FromStr for Key {
                 || part.eq_ignore_ascii_case("mod5")
             {
                 modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
+            } else if part.eq_ignore_ascii_case("iso_level5_shift")
+                || part.eq_ignore_ascii_case("mod3")
+            {
+                modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
             } else {
                 return Err(miette!("invalid modifier: {part}"));
             }
@@ -2618,6 +2931,7 @@ pub fn set_miette_hook() -> Result<(), miette::InstallError> {
 
 #[cfg(test)]
 mod tests {
+    use k9::snapshot;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -2655,8 +2969,10 @@ mod tests {
                     accel-speed 0.2
                     accel-profile "flat"
                     scroll-method "two-finger"
+                    scroll-button 272
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
+                    scroll-factor 0.9
                 }
 
                 mouse {
@@ -2664,7 +2980,9 @@ mod tests {
                     accel-speed 0.4
                     accel-profile "flat"
                     scroll-method "no-scroll"
+                    scroll-button 273
                     middle-emulation
+                    scroll-factor 0.2
                 }
 
                 trackpoint {
@@ -2673,6 +2991,18 @@ mod tests {
                     accel-speed 0.0
                     accel-profile "flat"
                     scroll-method "on-button-down"
+                    scroll-button 274
+                }
+
+                trackball {
+                    off
+                    natural-scroll
+                    accel-speed 0.0
+                    accel-profile "flat"
+                    scroll-method "edge"
+                    scroll-button 275
+                    left-handed
+                    middle-emulation
                 }
 
                 tablet {
@@ -2695,7 +3025,8 @@ mod tests {
                 transform "flipped-90"
                 position x=10 y=20
                 mode "1920x1080@144"
-                variable-refresh-rate
+                variable-refresh-rate on-demand=true
+                background-color "rgba(25, 25, 102, 1.0)"
             }
 
             layout {
@@ -2718,6 +3049,13 @@ mod tests {
                     fixed 1280
                 }
 
+                preset-window-heights {
+                    proportion 0.25
+                    proportion 0.5
+                    fixed 960
+                    fixed 1280
+                }
+
                 default-column-width { proportion 0.25; }
 
                 gaps 8
@@ -2729,6 +3067,11 @@ mod tests {
                 }
 
                 center-focused-column "on-overflow"
+
+                insert-hint {
+                    color "rgb(255, 200, 127)"
+                    gradient from="rgba(10, 20, 30, 1.0)" to="#0080ffff" relative-to="workspace-view"
+                }
             }
 
             spawn-at-startup "alacritty" "-e" "fish"
@@ -2738,6 +3081,8 @@ mod tests {
             cursor {
                 xcursor-theme "breeze_cursors"
                 xcursor-size 16
+                hide-when-typing
+                hide-after-inactive-ms 3000
             }
 
             screenshot-path "~/Screenshots/screenshot.png"
@@ -2786,6 +3131,11 @@ mod tests {
                 }
             }
 
+            layer-rule {
+                match namespace="^notifications$"
+                block-out-from "screencast"
+            }
+
             binds {
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
                 Mod+Q { close-window; }
@@ -2796,6 +3146,11 @@ mod tests {
                 Mod+Shift+1 { focus-workspace "workspace-1"; }
                 Mod+Shift+E { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
+            }
+
+            switch-events {
+                tablet-mode-on { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }
+                tablet-mode-off { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false"; }
             }
 
             debug {
@@ -2830,10 +3185,12 @@ mod tests {
                         accel_speed: 0.2,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::TwoFinger),
+                        scroll_button: Some(272),
                         tap_button_map: Some(TapButtonMap::LeftMiddleRight),
                         left_handed: false,
                         disabled_on_external_mouse: true,
                         middle_emulation: false,
+                        scroll_factor: Some(FloatOrInt(0.9)),
                     },
                     mouse: Mouse {
                         off: false,
@@ -2841,8 +3198,10 @@ mod tests {
                         accel_speed: 0.4,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::NoScroll),
+                        scroll_button: Some(273),
                         left_handed: false,
                         middle_emulation: true,
+                        scroll_factor: Some(FloatOrInt(0.2)),
                     },
                     trackpoint: Trackpoint {
                         off: true,
@@ -2850,7 +3209,18 @@ mod tests {
                         accel_speed: 0.0,
                         accel_profile: Some(AccelProfile::Flat),
                         scroll_method: Some(ScrollMethod::OnButtonDown),
+                        scroll_button: Some(274),
                         middle_emulation: false,
+                    },
+                    trackball: Trackball {
+                        off: true,
+                        natural_scroll: true,
+                        accel_speed: 0.0,
+                        accel_profile: Some(AccelProfile::Flat),
+                        scroll_method: Some(ScrollMethod::Edge),
+                        scroll_button: Some(275),
+                        left_handed: true,
+                        middle_emulation: true,
                     },
                     tablet: Tablet {
                         off: false,
@@ -2878,7 +3248,8 @@ mod tests {
                         height: 1080,
                         refresh: Some(144.),
                     }),
-                    variable_refresh_rate: true,
+                    variable_refresh_rate: Some(Vrr { on_demand: true }),
+                    background_color: Color::from_rgba8_unpremul(25, 25, 102, 255),
                 }]),
                 layout: Layout {
                     focus_ring: FocusRing {
@@ -2906,15 +3277,35 @@ mod tests {
                         active_gradient: None,
                         inactive_gradient: None,
                     },
+                    insert_hint: InsertHint {
+                        off: false,
+                        color: Color::from_rgba8_unpremul(255, 200, 127, 255),
+                        gradient: Some(Gradient {
+                            from: Color::from_rgba8_unpremul(10, 20, 30, 255),
+                            to: Color::from_rgba8_unpremul(0, 128, 255, 255),
+                            angle: 180,
+                            relative_to: GradientRelativeTo::WorkspaceView,
+                            in_: GradientInterpolation {
+                                color_space: GradientColorSpace::Srgb,
+                                hue_interpolation: HueInterpolation::Shorter,
+                            },
+                        }),
+                    },
                     preset_column_widths: vec![
-                        PresetWidth::Proportion(0.25),
-                        PresetWidth::Proportion(0.5),
-                        PresetWidth::Fixed(960),
-                        PresetWidth::Fixed(1280),
+                        PresetSize::Proportion(0.25),
+                        PresetSize::Proportion(0.5),
+                        PresetSize::Fixed(960),
+                        PresetSize::Fixed(1280),
                     ],
-                    default_column_width: Some(DefaultColumnWidth(Some(PresetWidth::Proportion(
+                    default_column_width: Some(DefaultPresetSize(Some(PresetSize::Proportion(
                         0.25,
                     )))),
+                    preset_window_heights: vec![
+                        PresetSize::Proportion(0.25),
+                        PresetSize::Proportion(0.5),
+                        PresetSize::Fixed(960),
+                        PresetSize::Fixed(1280),
+                    ],
                     gaps: FloatOrInt(8.),
                     struts: Struts {
                         left: FloatOrInt(1.),
@@ -2923,6 +3314,8 @@ mod tests {
                         bottom: FloatOrInt(0.),
                     },
                     center_focused_column: CenterFocusedColumn::OnOverflow,
+                    always_center_single_column: false,
+                    empty_workspace_above_first: false,
                 },
                 spawn_at_startup: vec![SpawnAtStartup {
                     command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
@@ -2931,6 +3324,8 @@ mod tests {
                 cursor: Cursor {
                     xcursor_theme: String::from("breeze_cursors"),
                     xcursor_size: 16,
+                    hide_when_typing: true,
+                    hide_after_inactive_ms: Some(3000),
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
                 hotkey_overlay: HotkeyOverlay {
@@ -2974,7 +3369,7 @@ mod tests {
                 ]),
                 window_rules: vec![WindowRule {
                     matches: vec![Match {
-                        app_id: Some(Regex::new(".*alacritty").unwrap()),
+                        app_id: Some(RegexEq::from_str(".*alacritty").unwrap()),
                         title: None,
                         is_active: None,
                         is_focused: None,
@@ -2984,7 +3379,7 @@ mod tests {
                     excludes: vec![
                         Match {
                             app_id: None,
-                            title: Some(Regex::new("~").unwrap()),
+                            title: Some(RegexEq::from_str("~").unwrap()),
                             is_active: None,
                             is_focused: None,
                             is_active_in_column: None,
@@ -3014,6 +3409,17 @@ mod tests {
                     },
                     ..Default::default()
                 }],
+                layer_rules: vec![
+                    LayerRule {
+                        matches: vec![layer_rule::Match {
+                            namespace: Some(RegexEq::from_str("^notifications$").unwrap()),
+                            at_startup: None,
+                        }],
+                        excludes: vec![],
+                        opacity: None,
+                        block_out_from: Some(BlockOutFrom::Screencast),
+                    }
+                ],
                 workspaces: vec![
                     Workspace {
                         name: WorkspaceName("workspace-1".to_string()),
@@ -3122,6 +3528,24 @@ mod tests {
                         allow_when_locked: false,
                     },
                 ]),
+                switch_events: SwitchBinds {
+                    lid_open: None,
+                    lid_close: None,
+                    tablet_mode_on: Some(SwitchAction {
+                        spawn: vec![
+                            "bash".to_owned(),
+                            "-c".to_owned(),
+                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true".to_owned(),
+                        ],
+                    }),
+                    tablet_mode_off: Some(SwitchAction {
+                        spawn: vec![
+                            "bash".to_owned(),
+                            "-c".to_owned(),
+                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false".to_owned(),
+                        ],
+                    }),
+                },
                 debug: DebugConfig {
                     render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
@@ -3268,7 +3692,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_iso_level3_shift() {
+    fn parse_iso_level_shifts() {
         assert_eq!(
             "ISO_Level3_Shift+A".parse::<Key>().unwrap(),
             Key {
@@ -3283,6 +3707,21 @@ mod tests {
                 modifiers: Modifiers::ISO_LEVEL3_SHIFT
             },
         );
+
+        assert_eq!(
+            "ISO_Level5_Shift+A".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::a),
+                modifiers: Modifiers::ISO_LEVEL5_SHIFT
+            },
+        );
+        assert_eq!(
+            "Mod3+A".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::a),
+                modifiers: Modifiers::ISO_LEVEL5_SHIFT
+            },
+        );
     }
 
     #[test]
@@ -3290,5 +3729,124 @@ mod tests {
         let config = Config::parse("config.kdl", "").unwrap();
         assert_eq!(config.input.keyboard.repeat_delay, 600);
         assert_eq!(config.input.keyboard.repeat_rate, 25);
+    }
+
+    fn make_output_name(
+        connector: &str,
+        make: Option<&str>,
+        model: Option<&str>,
+        serial: Option<&str>,
+    ) -> OutputName {
+        OutputName {
+            connector: connector.to_string(),
+            make: make.map(|x| x.to_string()),
+            model: model.map(|x| x.to_string()),
+            serial: serial.map(|x| x.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_output_name_match() {
+        fn check(
+            target: &str,
+            connector: &str,
+            make: Option<&str>,
+            model: Option<&str>,
+            serial: Option<&str>,
+        ) -> bool {
+            let name = make_output_name(connector, make, model, serial);
+            name.matches(target)
+        }
+
+        assert!(check("dp-2", "DP-2", None, None, None));
+        assert!(!check("dp-1", "DP-2", None, None, None));
+        assert!(check("dp-2", "DP-2", Some("a"), Some("b"), Some("c")));
+        assert!(check(
+            "some company some monitor 1234",
+            "DP-2",
+            Some("Some Company"),
+            Some("Some Monitor"),
+            Some("1234")
+        ));
+        assert!(!check(
+            "some other company some monitor 1234",
+            "DP-2",
+            Some("Some Company"),
+            Some("Some Monitor"),
+            Some("1234")
+        ));
+        assert!(!check(
+            "make model serial ",
+            "DP-2",
+            Some("make"),
+            Some("model"),
+            Some("serial")
+        ));
+        assert!(check(
+            "make  serial",
+            "DP-2",
+            Some("make"),
+            Some(""),
+            Some("serial")
+        ));
+        assert!(check(
+            "make model unknown",
+            "DP-2",
+            Some("Make"),
+            Some("Model"),
+            None
+        ));
+        assert!(check(
+            "unknown unknown serial",
+            "DP-2",
+            None,
+            None,
+            Some("Serial")
+        ));
+        assert!(!check("unknown unknown unknown", "DP-2", None, None, None));
+    }
+
+    #[test]
+    fn test_output_name_sorting() {
+        let mut names = vec![
+            make_output_name("DP-2", None, None, None),
+            make_output_name("DP-1", None, None, None),
+            make_output_name("DP-3", Some("B"), Some("A"), Some("A")),
+            make_output_name("DP-3", Some("A"), Some("B"), Some("A")),
+            make_output_name("DP-3", Some("A"), Some("A"), Some("B")),
+            make_output_name("DP-3", None, Some("A"), Some("A")),
+            make_output_name("DP-3", Some("A"), None, Some("A")),
+            make_output_name("DP-3", Some("A"), Some("A"), None),
+            make_output_name("DP-5", Some("A"), Some("A"), Some("A")),
+            make_output_name("DP-4", Some("A"), Some("A"), Some("A")),
+        ];
+        names.sort_by(|a, b| a.compare(b));
+        let names = names
+            .into_iter()
+            .map(|name| {
+                format!(
+                    "{} | {}",
+                    name.format_make_model_serial_or_connector(),
+                    name.connector,
+                )
+            })
+            .collect::<Vec<_>>();
+        snapshot!(
+            names,
+            r#"
+[
+    "Unknown A A | DP-3",
+    "A Unknown A | DP-3",
+    "A A Unknown | DP-3",
+    "A A A | DP-4",
+    "A A A | DP-5",
+    "A A B | DP-3",
+    "A B A | DP-3",
+    "B A A | DP-3",
+    "DP-1 | DP-1",
+    "DP-2 | DP-2",
+]
+"#
+        );
     }
 }

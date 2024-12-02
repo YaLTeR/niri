@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::mem;
 
-use niri_config::FloatOrInt;
+use niri_config::{FloatOrInt, OutputName, Vrr};
 use niri_ipc::Transform;
 use smithay::reexports::wayland_protocols_wlr::output_management::v1::server::{
     zwlr_output_configuration_head_v1, zwlr_output_configuration_v1, zwlr_output_head_v1,
@@ -403,12 +403,13 @@ where
                         return;
                     }
                     Entry::Vacant(entry) => {
+                        let name = OutputName::from_ipc_output(current_config);
                         let mut config = g_state
                             .current_config
-                            .find(&current_config.name)
+                            .find(&name)
                             .cloned()
                             .unwrap_or_else(|| niri_config::Output {
-                                name: current_config.name.clone(),
+                                name: name.format_make_model_serial_or_connector(),
                                 ..Default::default()
                             });
                         config.off = false;
@@ -452,12 +453,13 @@ where
                         );
                     }
                     Entry::Vacant(entry) => {
+                        let name = OutputName::from_ipc_output(current_config);
                         let mut config = g_state
                             .current_config
-                            .find(&current_config.name)
+                            .find(&name)
                             .cloned()
                             .unwrap_or_else(|| niri_config::Output {
-                                name: current_config.name.clone(),
+                                name: name.format_make_model_serial_or_connector(),
                                 ..Default::default()
                             });
                         config.off = true;
@@ -693,9 +695,9 @@ where
                 new_config.scale = Some(FloatOrInt(scale));
             }
             zwlr_output_configuration_head_v1::Request::SetAdaptiveSync { state } => {
-                let enabled = match state {
-                    WEnum::Value(AdaptiveSyncState::Enabled) => true,
-                    WEnum::Value(AdaptiveSyncState::Disabled) => false,
+                let vrr = match state {
+                    WEnum::Value(AdaptiveSyncState::Enabled) => Some(Vrr { on_demand: false }),
+                    WEnum::Value(AdaptiveSyncState::Disabled) => None,
                     _ => {
                         warn!("SetAdaptativeSync: unknown requested adaptative sync");
                         conf_head.post_error(
@@ -705,7 +707,7 @@ where
                         return;
                     }
                 };
-                new_config.variable_refresh_rate = enabled;
+                new_config.variable_refresh_rate = vrr;
             }
             _ => unreachable!(),
         }
@@ -841,6 +843,7 @@ fn send_new_head<D>(
         .unwrap();
     client_data.manager.head(&new_head);
     new_head.name(conf.name.clone());
+    // Format matches what Output::new() does internally.
     new_head.description(format!("{} - {} - {}", conf.make, conf.model, conf.name));
     if let Some((width, height)) = conf.physical_size {
         if let (Ok(a), Ok(b)) = (width.try_into(), height.try_into()) {
@@ -876,6 +879,11 @@ fn send_new_head<D>(
     }
     if new_head.version() >= zwlr_output_head_v1::EVT_MODEL_SINCE {
         new_head.model(conf.model.clone());
+    }
+    if new_head.version() >= zwlr_output_head_v1::EVT_SERIAL_NUMBER_SINCE {
+        if let Some(serial) = &conf.serial {
+            new_head.serial_number(serial.clone());
+        }
     }
 
     if new_head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE {

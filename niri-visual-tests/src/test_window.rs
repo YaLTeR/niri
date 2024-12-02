@@ -3,11 +3,13 @@ use std::cmp::{max, min};
 use std::rc::Rc;
 
 use niri::layout::{
-    InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
+    ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
+    LayoutElementRenderSnapshot,
 };
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use niri::render_helpers::{RenderTarget, SplitElements};
+use niri::utils::transaction::Transaction;
 use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::output::{self, Output};
@@ -85,7 +87,7 @@ impl TestWindow {
 
         let mut new_size = inner.size;
 
-        if let Some(size) = inner.requested_size.take() {
+        if let Some(size) = inner.requested_size {
             assert!(size.w >= 0);
             assert!(size.h >= 0);
 
@@ -176,7 +178,12 @@ impl LayoutElement for TestWindow {
         }
     }
 
-    fn request_size(&mut self, size: Size<i32, Logical>, _animate: bool) {
+    fn request_size(
+        &mut self,
+        size: Size<i32, Logical>,
+        _animate: bool,
+        _transaction: Option<Transaction>,
+    ) {
         self.inner.borrow_mut().requested_size = Some(size);
         self.inner.borrow_mut().pending_fullscreen = false;
     }
@@ -215,6 +222,10 @@ impl LayoutElement for TestWindow {
 
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
+    fn configure_intent(&self) -> ConfigureIntent {
+        ConfigureIntent::CanSend
+    }
+
     fn send_pending_configure(&mut self) {}
 
     fn is_fullscreen(&self) -> bool {
@@ -223,6 +234,10 @@ impl LayoutElement for TestWindow {
 
     fn is_pending_fullscreen(&self) -> bool {
         self.inner.borrow().pending_fullscreen
+    }
+
+    fn requested_size(&self) -> Option<Size<i32, Logical>> {
+        self.inner.borrow().requested_size
     }
 
     fn refresh(&self) {}

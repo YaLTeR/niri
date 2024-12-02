@@ -1,11 +1,9 @@
 use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, WindowRule};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::wayland::compositor::with_states;
-use smithay::wayland::shell::xdg::{
-    ToplevelSurface, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
-};
+use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceRoleAttributes};
 
-use crate::layout::workspace::ColumnWidth;
+use crate::layout::scrolling::ColumnWidth;
+use crate::utils::with_toplevel_role;
 
 pub mod mapped;
 pub use mapped::Mapped;
@@ -72,6 +70,9 @@ pub struct ResolvedWindowRules {
 
     /// Whether to block out this window from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
+
+    /// Whether to enable VRR on this window's primary output if it is on-demand.
+    pub variable_refresh_rate: Option<bool>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -132,6 +133,7 @@ impl ResolvedWindowRules {
             geometry_corner_radius: None,
             clip_to_geometry: None,
             block_out_from: None,
+            variable_refresh_rate: None,
         }
     }
 
@@ -140,15 +142,7 @@ impl ResolvedWindowRules {
 
         let mut resolved = ResolvedWindowRules::empty();
 
-        let toplevel = window.toplevel();
-        with_states(toplevel.wl_surface(), |states| {
-            let mut role = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-
+        with_toplevel_role(window.toplevel(), |role| {
             // Ensure server_pending like in Smithay's with_pending_state().
             if role.server_pending.is_none() {
                 role.server_pending = Some(role.current_server_state().clone());
@@ -165,7 +159,7 @@ impl ResolvedWindowRules {
                         }
                     }
 
-                    window_matches(window, &role, m)
+                    window_matches(window, role, m)
                 };
 
                 if !(rule.matches.is_empty() || rule.matches.iter().any(matches)) {
@@ -231,6 +225,9 @@ impl ResolvedWindowRules {
                 if let Some(x) = rule.block_out_from {
                     resolved.block_out_from = Some(x);
                 }
+                if let Some(x) = rule.variable_refresh_rate {
+                    resolved.variable_refresh_rate = Some(x);
+                }
             }
 
             resolved.open_on_output = open_on_output.map(|x| x.to_owned());
@@ -265,7 +262,7 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         let Some(app_id) = &role.app_id else {
             return false;
         };
-        if !app_id_re.is_match(app_id) {
+        if !app_id_re.0.is_match(app_id) {
             return false;
         }
     }
@@ -274,7 +271,7 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         let Some(title) = &role.title else {
             return false;
         };
-        if !title_re.is_match(title) {
+        if !title_re.0.is_match(title) {
             return false;
         }
     }

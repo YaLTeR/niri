@@ -3,7 +3,6 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::iter::zip;
 use std::rc::Rc;
-use std::time::Duration;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
@@ -20,7 +19,7 @@ use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -49,6 +48,7 @@ const TEXT_SHOW_P: &str =
 pub enum ScreenshotUi {
     Closed {
         last_selection: Option<(WeakOutput, Rectangle<i32, Physical>)>,
+        clock: Clock,
         config: Rc<RefCell<Config>>,
     },
     Open {
@@ -57,6 +57,7 @@ pub enum ScreenshotUi {
         mouse_down: bool,
         show_pointer: bool,
         open_anim: Animation,
+        clock: Clock,
         config: Rc<RefCell<Config>>,
     },
 }
@@ -86,9 +87,10 @@ niri_render_elements! {
 }
 
 impl ScreenshotUi {
-    pub fn new(config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(clock: Clock, config: Rc<RefCell<Config>>) -> Self {
         Self::Closed {
             last_selection: None,
+            clock,
             config,
         }
     }
@@ -106,6 +108,7 @@ impl ScreenshotUi {
 
         let Self::Closed {
             last_selection,
+            clock,
             config,
         } = self
         else {
@@ -181,7 +184,7 @@ impl ScreenshotUi {
 
         let open_anim = {
             let c = config.borrow();
-            Animation::new(0., 1., 0., c.animations.screenshot_ui_open.0)
+            Animation::new(clock.clone(), 0., 1., 0., c.animations.screenshot_ui_open.0)
         };
 
         *self = Self::Open {
@@ -190,6 +193,7 @@ impl ScreenshotUi {
             mouse_down: false,
             show_pointer: true,
             open_anim,
+            clock: clock.clone(),
             config: config.clone(),
         };
 
@@ -200,7 +204,10 @@ impl ScreenshotUi {
 
     pub fn close(&mut self) -> bool {
         let Self::Open {
-            selection, config, ..
+            selection,
+            clock,
+            config,
+            ..
         } = self
         else {
             return false;
@@ -213,6 +220,7 @@ impl ScreenshotUi {
 
         *self = Self::Closed {
             last_selection,
+            clock: clock.clone(),
             config: config.clone(),
         };
 
@@ -229,13 +237,7 @@ impl ScreenshotUi {
         matches!(self, ScreenshotUi::Open { .. })
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
-        let Self::Open { open_anim, .. } = self else {
-            return;
-        };
-
-        open_anim.set_current_time(current_time);
-    }
+    pub fn advance_animations(&mut self) {}
 
     pub fn are_animations_ongoing(&self) -> bool {
         let Self::Open { open_anim, .. } = self else {

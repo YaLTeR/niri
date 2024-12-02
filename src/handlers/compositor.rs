@@ -1,15 +1,16 @@
 use std::collections::hash_map::Entry;
 
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
-use smithay::input::pointer::CursorImageStatus;
+use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
-    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
-    BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
+    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, remove_pre_commit_hook,
+    with_states, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
+    SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
@@ -17,8 +18,11 @@ use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
+use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
+use crate::layout::ActivateWindow;
 use crate::niri::{ClientState, State};
 use crate::utils::send_scale_transform;
+use crate::utils::transaction::Transaction;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
 impl CompositorHandler for State {
@@ -46,44 +50,12 @@ impl CompositorHandler for State {
     }
 
     fn new_surface(&mut self, surface: &WlSurface) {
-        add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
-            let maybe_dmabuf = with_states(surface, |surface_data| {
-                surface_data
-                    .cached_state
-                    .get::<SurfaceAttributes>()
-                    .pending()
-                    .buffer
-                    .as_ref()
-                    .and_then(|assignment| match assignment {
-                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
-                        _ => None,
-                    })
-            });
-            if let Some(dmabuf) = maybe_dmabuf {
-                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
-                    if let Some(client) = surface.client() {
-                        let res =
-                            state
-                                .niri
-                                .event_loop
-                                .insert_source(source, move |_, _, state| {
-                                    let display_handle = state.niri.display_handle.clone();
-                                    state
-                                        .client_compositor_state(&client)
-                                        .blocker_cleared(state, &display_handle);
-                                    Ok(())
-                                });
-                        if res.is_ok() {
-                            add_blocker(surface, blocker);
-                        }
-                    }
-                }
-            }
-        });
+        self.add_default_dmabuf_pre_commit_hook(surface);
     }
 
     fn commit(&mut self, surface: &WlSurface) {
         let _span = tracy_client::span!("CompositorHandler::commit");
+        trace!(surface = ?surface.id(), "commit");
 
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);
@@ -114,7 +86,11 @@ impl CompositorHandler for State {
 
                 if is_mapped {
                     // The toplevel got mapped.
-                    let Unmapped { window, state } = entry.remove();
+                    let Unmapped {
+                        window,
+                        state,
+                        activation_token_data,
+                    } = entry.remove();
 
                     window.on_commit();
 
@@ -157,12 +133,33 @@ impl CompositorHandler for State {
                         })
                         .map(|(mapped, _)| mapped.window.clone());
 
+                    // The mapped pre-commit hook deals with dma-bufs on its own.
+                    self.remove_default_dmabuf_pre_commit_hook(toplevel.wl_surface());
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
                     let mapped = Mapped::new(window, rules, hook);
                     let window = mapped.window.clone();
 
+                    // Check the token timestamp again in case the window took a while between
+                    // requesting activation and mapping.
+                    let activate = match activation_token_data
+                        .filter(|token| token.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT)
+                    {
+                        Some(_) => ActivateWindow::Yes,
+                        None => {
+                            let config = self.niri.config.borrow();
+                            if config.debug.strict_new_window_focus_policy {
+                                ActivateWindow::No
+                            } else {
+                                ActivateWindow::Smart
+                            }
+                        }
+                    };
+
                     let output = if let Some(p) = parent {
                         // Open dialogs immediately to the right of their parent window.
+                        //
+                        // FIXME: do we want to use activate here? How do we want things to behave
+                        // exactly?
                         self.niri
                             .layout
                             .add_window_right_of(&p, mapped, width, is_full_width)
@@ -172,22 +169,28 @@ impl CompositorHandler for State {
                             mapped,
                             width,
                             is_full_width,
+                            activate,
                         )
                     } else if let Some(output) = &output {
-                        self.niri
-                            .layout
-                            .add_window_on_output(output, mapped, width, is_full_width);
+                        self.niri.layout.add_window_on_output(
+                            output,
+                            mapped,
+                            width,
+                            is_full_width,
+                            activate,
+                        );
                         Some(output)
                     } else {
-                        self.niri.layout.add_window(mapped, width, is_full_width)
+                        self.niri
+                            .layout
+                            .add_window(mapped, width, is_full_width, activate)
                     };
 
                     if let Some(output) = output.cloned() {
                         self.niri.layout.start_open_animation_for_window(&window);
 
-                        let new_active_window =
-                            self.niri.layout.active_window().map(|(m, _)| &m.window);
-                        if new_active_window == Some(&window) {
+                        let new_focus = self.niri.layout.focus().map(|m| &m.window);
+                        if new_focus == Some(&window) {
                             self.maybe_warp_cursor_to_focus();
                         }
 
@@ -222,11 +225,13 @@ impl CompositorHandler for State {
                         });
 
                 // Must start the close animation before window.on_commit().
+                let transaction = Transaction::new();
                 if !is_mapped {
+                    let blocker = transaction.blocker();
                     self.backend.with_primary_renderer(|renderer| {
                         self.niri
                             .layout
-                            .start_close_animation_for_window(renderer, &window);
+                            .start_close_animation_for_window(renderer, &window, blocker);
                     });
                 }
 
@@ -236,16 +241,23 @@ impl CompositorHandler for State {
                     // The toplevel got unmapped.
                     //
                     // Test client: wleird-unmap.
-                    let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
+                    let active_window = self.niri.layout.focus().map(|m| &m.window);
                     let was_active = active_window == Some(&window);
 
                     #[cfg(feature = "xdp-gnome-screencast")]
                     self.niri
                         .stop_casts_for_target(crate::pw_utils::CastTarget::Window {
-                            id: u64::from(id.get()),
+                            id: id.get(),
                         });
 
-                    self.niri.layout.remove_window(&window);
+                    self.niri.layout.remove_window(&window, transaction.clone());
+                    self.add_default_dmabuf_pre_commit_hook(surface);
+
+                    // If this is the only instance, then this transaction will complete
+                    // immediately, so no need to set the timer.
+                    if !transaction.is_last() {
+                        transaction.register_deadline_timer(&self.niri.event_loop);
+                    }
 
                     if was_active {
                         self.maybe_warp_cursor_to_focus();
@@ -277,7 +289,7 @@ impl CompositorHandler for State {
                 self.niri.layout.update_window(&window, serial);
 
                 // Popup placement depends on window size which might have changed.
-                self.update_reactive_popups(&window, &output);
+                self.update_reactive_popups(&window);
 
                 self.niri.queue_redraw(&output);
                 return;
@@ -303,22 +315,68 @@ impl CompositorHandler for State {
             if let Some(output) = self.output_for_popup(&popup) {
                 self.niri.queue_redraw(&output.clone());
             }
+            return;
         }
 
         // This might be a layer-shell surface.
-        self.layer_shell_handle_commit(surface);
+        if self.layer_shell_handle_commit(surface) {
+            return;
+        }
 
         // This might be a cursor surface.
-        if matches!(&self.niri.cursor_manager.cursor_image(), CursorImageStatus::Surface(s) if s == surface)
-        {
+        if matches!(
+            &self.niri.cursor_manager.cursor_image(),
+            CursorImageStatus::Surface(s) if s == &root_surface
+        ) {
+            // In case the cursor surface has been committed handle the role specific
+            // buffer offset by applying the offset on the cursor image hotspot
+            if surface == &root_surface {
+                with_states(surface, |states| {
+                    let cursor_image_attributes = states.data_map.get::<CursorImageSurfaceData>();
+
+                    if let Some(mut cursor_image_attributes) =
+                        cursor_image_attributes.map(|attrs| attrs.lock().unwrap())
+                    {
+                        let buffer_delta = states
+                            .cached_state
+                            .get::<SurfaceAttributes>()
+                            .current()
+                            .buffer_delta
+                            .take();
+                        if let Some(buffer_delta) = buffer_delta {
+                            cursor_image_attributes.hotspot -= buffer_delta;
+                        }
+                    }
+                });
+            }
+
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
+            return;
         }
 
         // This might be a DnD icon surface.
-        if self.niri.dnd_icon.as_ref() == Some(surface) {
+        if matches!(&self.niri.dnd_icon, Some(icon) if icon.surface == root_surface) {
+            let dnd_icon = self.niri.dnd_icon.as_mut().unwrap();
+
+            // In case the dnd surface has been committed handle the role specific
+            // buffer offset by applying the offset on the dnd icon offset
+            if surface == &dnd_icon.surface {
+                with_states(&dnd_icon.surface, |states| {
+                    let buffer_delta = states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .current()
+                        .buffer_delta
+                        .take()
+                        .unwrap_or_default();
+                    dnd_icon.offset += buffer_delta;
+                });
+            }
+
             // FIXME: granular redraws for cursors.
             self.niri.queue_redraw_all();
+            return;
         }
 
         // This might be a lock surface.
@@ -327,7 +385,7 @@ impl CompositorHandler for State {
                 if let Some(lock_surface) = &state.lock_surface {
                     if lock_surface.wl_surface() == &root_surface {
                         self.niri.queue_redraw(&output.clone());
-                        break;
+                        return;
                     }
                 }
             }
@@ -356,6 +414,8 @@ impl CompositorHandler for State {
         self.niri
             .root_surface
             .retain(|k, v| k != surface && v != surface);
+
+        self.niri.dmabuf_pre_commit_hook.remove(surface);
     }
 }
 
@@ -371,3 +431,57 @@ impl ShmHandler for State {
 
 delegate_compositor!(State);
 delegate_shm!(State);
+
+impl State {
+    pub fn add_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        let hook = add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
+            let maybe_dmabuf = with_states(surface, |surface_data| {
+                surface_data
+                    .cached_state
+                    .get::<SurfaceAttributes>()
+                    .pending()
+                    .buffer
+                    .as_ref()
+                    .and_then(|assignment| match assignment {
+                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
+                        _ => None,
+                    })
+            });
+            if let Some(dmabuf) = maybe_dmabuf {
+                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
+                    if let Some(client) = surface.client() {
+                        let res =
+                            state
+                                .niri
+                                .event_loop
+                                .insert_source(source, move |_, _, state| {
+                                    let display_handle = state.niri.display_handle.clone();
+                                    state
+                                        .client_compositor_state(&client)
+                                        .blocker_cleared(state, &display_handle);
+                                    Ok(())
+                                });
+                        if res.is_ok() {
+                            add_blocker(surface, blocker);
+                            trace!("added default dmabuf blocker");
+                        }
+                    }
+                }
+            }
+        });
+
+        let s = surface.clone();
+        if let Some(prev) = self.niri.dmabuf_pre_commit_hook.insert(s, hook) {
+            error!("tried to add dmabuf pre-commit hook when there was already one");
+            remove_pre_commit_hook(surface, prev);
+        }
+    }
+
+    pub fn remove_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
+            remove_pre_commit_hook(surface, hook);
+        } else {
+            error!("tried to remove dmabuf pre-commit hook but there was none");
+        }
+    }
+}

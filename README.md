@@ -35,6 +35,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
     - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts
 - [Touchpad](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515) and [mouse](https://github.com/YaLTeR/niri/assets/1794388/8464e65d-4bf2-44fa-8c8e-5883355bd000) gestures
 - Configurable layout: gaps, borders, struts, window sizes
+- [Gradient borders](https://github.com/YaLTeR/niri/wiki/Configuration:-Layout#gradients) with Oklab and Oklch support
 - [Animations](https://github.com/YaLTeR/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e) with support for [custom shaders](https://github.com/YaLTeR/niri/assets/1794388/27a238d6-0a22-4692-b794-30dc7a626fad)
 - Live-reloading config
 
@@ -48,14 +49,22 @@ A lot of the essential functionality is implemented, plus some goodies on top.
 Feel free to give niri a try: follow the instructions on the [Getting Started](https://github.com/YaLTeR/niri/wiki/Getting-Started) wiki page.
 Have your [waybar]s and [fuzzel]s ready: niri is not a complete desktop environment.
 
-Note that NVIDIA GPUs may have issues.
-
 ## Inspiration
 
 Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top of GNOME Shell.
 
 One of the reasons that prompted me to try writing my own compositor is being able to properly separate the monitors.
 Being a GNOME Shell extension, PaperWM has to work against Shell's global window coordinate space to prevent windows from overflowing.
+
+## Tile Scrollably Elsewhere
+
+Here are some other projects which implement a similar workflow:
+
+- [PaperWM]: scrollable tiling on top of GNOME Shell.
+- [karousel]: scrollable tiling on top of KDE.
+- [papersway]: scrollable tiling on top of sway/i3.
+- [hyprscroller] and [hyprslidr]: scrollable tiling on top of Hyprland.
+- [PaperWM.spoon]: scrollable tiling on top of macOS.
 
 ## Contact
 
@@ -64,4 +73,8 @@ We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#
 [PaperWM]: https://github.com/paperwm/PaperWM
 [waybar]: https://github.com/Alexays/Waybar
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
-
+[karousel]: https://github.com/peterfajdiga/karousel
+[papersway]: https://spwhitton.name/tech/code/papersway/
+[hyprscroller]: https://github.com/dawsers/hyprscroller
+[hyprslidr]: https://gitlab.com/magus/hyprslidr
+[PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon

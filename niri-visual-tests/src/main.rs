@@ -2,15 +2,11 @@
 extern crate tracing;
 
 use std::env;
-use std::sync::atomic::Ordering;
 
 use adw::prelude::{AdwApplicationWindowExt, NavigationPageExt};
-use gtk::prelude::{
-    AdjustmentExt, ApplicationExt, ApplicationExtManual, BoxExt, GtkWindowExt, WidgetExt,
-};
+use cases::Args;
+use gtk::prelude::{ApplicationExt, ApplicationExtManual, BoxExt, GtkWindowExt, WidgetExt};
 use gtk::{gdk, gio, glib};
-use niri::animation::ANIMATION_SLOWDOWN;
-use smithay::utils::{Logical, Size};
 use smithay_view::SmithayView;
 use tracing_subscriber::EnvFilter;
 
@@ -66,24 +62,23 @@ fn on_startup(_app: &adw::Application) {
 
 fn build_ui(app: &adw::Application) {
     let stack = gtk::Stack::new();
+    let anim_adjustment = gtk::Adjustment::new(1., 0., 10., 0.1, 0.5, 0.);
 
     struct S {
         stack: gtk::Stack,
+        anim_adjustment: gtk::Adjustment,
     }
 
     impl S {
-        fn add<T: TestCase + 'static>(
-            &self,
-            make: impl Fn(Size<i32, Logical>) -> T + 'static,
-            title: &str,
-        ) {
-            let view = SmithayView::new(make);
+        fn add<T: TestCase + 'static>(&self, make: impl Fn(Args) -> T + 'static, title: &str) {
+            let view = SmithayView::new(make, &self.anim_adjustment);
             self.stack.add_titled(&view, None, title);
         }
     }
 
     let s = S {
         stack: stack.clone(),
+        anim_adjustment: anim_adjustment.clone(),
     };
 
     s.add(Window::freeform, "Freeform Window");
@@ -137,9 +132,6 @@ fn build_ui(app: &adw::Application) {
 
     let content_headerbar = adw::HeaderBar::new();
 
-    let anim_adjustment = gtk::Adjustment::new(1., 0., 10., 0.1, 0.5, 0.);
-    anim_adjustment
-        .connect_value_changed(|adj| ANIMATION_SLOWDOWN.store(adj.value(), Ordering::SeqCst));
     let anim_scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&anim_adjustment));
     anim_scale.set_hexpand(true);
 

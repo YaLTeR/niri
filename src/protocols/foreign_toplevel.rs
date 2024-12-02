@@ -11,10 +11,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
-use smithay::wayland::compositor::with_states;
-use smithay::wayland::shell::xdg::{
-    ToplevelStateSet, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
-};
+use smithay::wayland::shell::xdg::{ToplevelStateSet, XdgToplevelSurfaceRoleAttributes};
 use wayland_protocols_wlr::foreign_toplevel::v1::server::{
     zwlr_foreign_toplevel_handle_v1, zwlr_foreign_toplevel_manager_v1,
 };
@@ -22,6 +19,7 @@ use zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1;
 use zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
 
 use crate::niri::State;
+use crate::utils::with_toplevel_role;
 
 const VERSION: u32 = 3;
 
@@ -95,38 +93,24 @@ pub fn refresh(state: &mut State) {
     // Save the focused window for last, this way when the focus changes, we will first deactivate
     // the previous window and only then activate the newly focused window.
     let mut focused = None;
-    state.niri.layout.with_windows(|mapped, output| {
-        let wl_surface = mapped.toplevel().wl_surface();
-
-        with_states(wl_surface, |states| {
-            let role = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-
+    state.niri.layout.with_windows(|mapped, output, _| {
+        let toplevel = mapped.toplevel();
+        let wl_surface = toplevel.wl_surface();
+        with_toplevel_role(toplevel, |role| {
             if state.niri.keyboard_focus.surface() == Some(wl_surface) {
                 focused = Some((mapped.window.clone(), output.cloned()));
             } else {
-                refresh_toplevel(protocol_state, wl_surface, &role, output, false);
+                refresh_toplevel(protocol_state, wl_surface, role, output, false);
             }
         });
     });
 
     // Finally, refresh the focused window.
     if let Some((window, output)) = focused {
-        let wl_surface = window.toplevel().expect("no x11 support").wl_surface();
-
-        with_states(wl_surface, |states| {
-            let role = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-
-            refresh_toplevel(protocol_state, wl_surface, &role, output.as_ref(), true);
+        let toplevel = window.toplevel().expect("no X11 support");
+        let wl_surface = toplevel.wl_surface();
+        with_toplevel_role(toplevel, |role| {
+            refresh_toplevel(protocol_state, wl_surface, role, output.as_ref(), true);
         });
     }
 }

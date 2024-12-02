@@ -8,8 +8,9 @@ After installing, start niri from your display manager like GDM.
 Press <kbd>Super</kbd><kbd>T</kbd> to run a terminal ([Alacritty]) and <kbd>Super</kbd><kbd>D</kbd> to run an application launcher ([fuzzel]).
 To exit niri, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.
 
-If you're not using a display manager, you should run `niri-session` (systemd) or `niri --session` (not systemd) from a TTY.
-The `--session` flag will make niri import its environment variables globally into systemd and D-Bus, and start its D-Bus services.
+If you're not using a display manager, you should run `niri-session` (systemd/dinit) or `niri --session` (others) from a TTY.
+The `--session` flag will make niri import its environment variables globally into the system manager and D-Bus, and start its D-Bus services.
+The `niri-session` script will additionally start niri as a systemd/dinit service, which starts up a graphical session target required by some services like portals.
 
 You can also run `niri` inside an existing desktop session.
 Then it will open as a window, where you can give it a try.
@@ -22,20 +23,12 @@ Finally, the [Xwayland](./Xwayland.md) page explains how to run X11 applications
 
 ### NVIDIA
 
-NVIDIA GPUs tend to have problems running niri (for example, the screen remains black upon starting from a TTY).
+NVIDIA GPUs can have problems running niri (for example, the screen remains black upon starting from a TTY).
 Sometimes, the problems can be fixed.
 You can try the following:
 
 1. Update NVIDIA drivers. You need a GPU and drivers recent enough to support GBM.
 2. Make sure kernel modesetting is enabled. This usually involves adding `nvidia-drm.modeset=1` to the kernel command line. Find and follow a guide for your distribution. Guides from other Wayland compositors can help.
-
-If niri runs but the screen flickers, try adding this into your niri config:
-
-```
-debug {
-    wait-for-frame-completion-before-queueing
-}
-```
 
 ### Asahi, ARM, and other kmsro devices
 
@@ -69,6 +62,7 @@ If you still get a black screen, try using each of the `card` devices.
 ### Nix/NixOS
 
 There's a common problem of mesa drivers going out of sync with niri, so make sure your system mesa version matches the niri mesa version.
+When this happens, you usually see a black screen when trying to start niri from a TTY.
 
 Also, on Intel graphics, you may need a workaround described [here](https://nixos.wiki/wiki/Intel_Graphics).
 
@@ -88,7 +82,7 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>/</kbd> | Show a list of important niri hotkeys |
 | <kbd>Mod</kbd><kbd>T</kbd> | Spawn `alacritty` (terminal) |
 | <kbd>Mod</kbd><kbd>D</kbd> | Spawn `fuzzel` (application launcher) |
-| <kbd>Mod</kbd><kbd>Alt</kbd><kbd>L</kbd> | Spawn `swaylock` (screen locker) |
+| <kbd>Super</kbd><kbd>Alt</kbd><kbd>L</kbd> | Spawn `swaylock` (screen locker) |
 | <kbd>Mod</kbd><kbd>Q</kbd> | Close the focused window |
 | <kbd>Mod</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>←</kbd> | Focus the column to the left |
 | <kbd>Mod</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>→</kbd> | Focus the column to the right |
@@ -112,6 +106,8 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageUp</kbd> | Move the focused workspace up |
 | <kbd>Mod</kbd><kbd>,</kbd> | Consume the window to the right into the focused column |
 | <kbd>Mod</kbd><kbd>.</kbd> | Expel the focused window into its own column |
+| <kbd>Mod</kbd><kbd>[</kbd> | Consume or expel the focused window to the left |
+| <kbd>Mod</kbd><kbd>]</kbd> | Consume or expel the focused window to the right |
 | <kbd>Mod</kbd><kbd>R</kbd> | Toggle between preset column widths |
 | <kbd>Mod</kbd><kbd>F</kbd> | Maximize column |
 | <kbd>Mod</kbd><kbd>C</kbd> | Center column within view |
@@ -119,6 +115,7 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>=</kbd> | Increase column width by 10% |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>-</kbd> | Decrease window height by 10% |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>=</kbd> | Increase window height by 10% |
+| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>R</kbd> | Reset window height back to automatic |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd> | Toggle full-screen on the focused window |
 | <kbd>PrtSc</kbd> | Take an area screenshot. Select the area to screenshot with mouse, then press Space to save the screenshot, or Escape to cancel |
 | <kbd>Alt</kbd><kbd>PrtSc</kbd> | Take a screenshot of the focused window to clipboard and to `~/Pictures/Screenshots/` |
@@ -132,13 +129,13 @@ First, install the dependencies for your distribution.
 - Ubuntu 23.10:
 
     ```sh
-    sudo apt-get install -y gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev
+    sudo apt-get install -y gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
     ```
 
 - Fedora:
 
     ```sh
-    sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang
+    sudo dnf install gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang libdisplay-info-devel
     ```
 
 Next, get latest stable Rust: https://rustup.rs/
@@ -175,8 +172,10 @@ To do that, put files into the correct directories according to this table.
 | `resources/niri-session` | `/usr/bin/` |
 | `resources/niri.desktop` | `/usr/share/wayland-sessions/` |
 | `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |
-| `resources/niri.service` | `/usr/lib/systemd/user/` |
-| `resources/niri-shutdown.target` | `/usr/lib/systemd/user/` |
+| `resources/niri.service` (systemd) | `/usr/lib/systemd/user/` |
+| `resources/niri-shutdown.target` (systemd) | `/usr/lib/systemd/user/` |
+| `resources/dinit/niri` (dinit) | `/usr/lib/dinit.d/user/` |
+| `resources/dinit/niri-shutdown` (dinit) | `/usr/lib/dinit.d/user/` |
 
 Doing this will make niri appear in GDM and other display managers.
 
@@ -192,8 +191,10 @@ These may vary depending on your distribution.
 | `resources/niri-session` | `/usr/local/bin/` |
 | `resources/niri.desktop`  | `/usr/local/share/wayland-sessions/` |
 | `resources/niri-portals.conf` | `/usr/local/share/xdg-desktop-portal/` |
-| `resources/niri.service` | `/etc/systemd/user/` |
-| `resources/niri-shutdown.target` | `/etc/systemd/user/` |
+| `resources/niri.service` (systemd) | `/etc/systemd/user/` |
+| `resources/niri-shutdown.target` (systemd) | `/etc/systemd/user/` |
+| `resources/dinit/niri` (dinit) | `/etc/dinit.d/user/` |
+| `resources/dinit/niri-shutdown` (dinit) | `/etc/dinit.d/user/` |
 
 [Alacritty]: https://github.com/alacritty/alacritty
 [fuzzel]: https://codeberg.org/dnkl/fuzzel

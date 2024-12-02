@@ -8,6 +8,8 @@ Here are the contents of this section at a glance:
 layout {
     gaps 16
     center-focused-column "never"
+    always-center-single-column
+    empty-workspace-above-first
 
     preset-column-widths {
         proportion 0.33333
@@ -16,6 +18,12 @@ layout {
     }
 
     default-column-width { proportion 0.5; }
+
+    preset-window-heights {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
 
     focus-ring {
         // off
@@ -33,6 +41,12 @@ layout {
         inactive-color "#505050"
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
+    }
+
+    insert-hint {
+        // off
+        color "#ffc87f80"
+        // gradient from="#ffbb6680" to="#ffc88080" angle=45 relative-to="workspace-view"
     }
 
     struts {
@@ -72,6 +86,30 @@ This can be set to:
 ```kdl
 layout {
     center-focused-column "always"
+}
+```
+
+### `always-center-single-column`
+
+<sup>Since: 0.1.9</sup>
+
+If set, niri will always center a single column on a workspace, regardless of the `center-focused-column` option.
+
+```kdl
+layout {
+    always-center-single-column
+}
+```
+
+### `empty-workspace-above-first`
+
+<sup>Since: 0.1.11</sup>
+
+If set, niri will always add an empty workspace at the very start, in addition to the empty workspace at the very end.
+
+```kdl
+layout {
+    empty-workspace-above-first
 }
 ```
 
@@ -133,6 +171,29 @@ layout {
 > In practice, the only problematic client I saw is [foot](https://codeberg.org/dnkl/foot/), which takes this as a request to have a literal zero width.
 >
 > Either way, `default-column-width {}` is most useful for specific windows, in form of a [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules) with the same syntax.
+
+### `preset-window-heights`
+
+<sup>Since: 0.1.9</sup>
+
+Set the heights that the `switch-preset-window-height` action (Mod+Shift+R) toggles between.
+
+`proportion` sets the height as a fraction of the output height, taking gaps into account.
+The default preset heights are <sup>1</sup>&frasl;<sub>3</sub>, <sup>1</sup>&frasl;<sub>2</sub> and <sup>2</sup>&frasl;<sub>3</sub> of the output.
+
+`fixed` sets the height in logical pixels exactly.
+
+```kdl
+layout {
+    // Cycle between 1/3, 1/2, 2/3 of the output, and a fixed 720 logical pixels.
+    preset-window-heights {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+        fixed 720
+    }
+}
+```
 
 ### `focus-ring` and `border`
 
@@ -257,6 +318,26 @@ For example, `active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer 
 layout {
     border {
         active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer hue"
+    }
+}
+```
+
+### `insert-hint`
+
+<sup>Since: 0.1.10</sup> 
+
+Settings for the window insert position hint during an interactive window move.
+
+`off` disables the insert hint altogether.
+
+`color` and `gradient` let you change the color of the hint and have the same syntax as colors and gradients in border and focus ring.
+
+```kdl
+layout {
+    insert-hint {
+        // off
+        color "#ffc87f80"
+        gradient from="#ffbb6680" to="#ffc88080" angle=45 relative-to="workspace-view"
     }
 }
 ```

@@ -4,7 +4,6 @@ use std::fmt::Write;
 use std::iter::zip;
 use std::num::NonZeroU64;
 use std::os::fd::AsFd;
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -14,7 +13,7 @@ use std::{io, mem};
 use anyhow::{anyhow, bail, ensure, Context};
 use bytemuck::cast_slice_mut;
 use libc::dev_t;
-use niri_config::Config;
+use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
@@ -52,7 +51,6 @@ use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
-use smithay_drm_extras::edid::EdidInfo;
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
@@ -63,7 +61,7 @@ use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
-use crate::utils::{get_monotonic_time, logical_output};
+use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output};
 
 const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
 
@@ -178,8 +176,9 @@ struct TtyOutputState {
 }
 
 struct Surface {
-    name: String,
+    name: OutputName,
     compositor: GbmDrmCompositor,
+    connector: connector::Handle,
     dmabuf_feedback: Option<SurfaceDmabufFeedback>,
     gamma_props: Option<GammaProps>,
     /// Gamma change to apply upon session resume.
@@ -426,18 +425,6 @@ impl Tty {
                         }
 
                         // Restore VRR.
-                        let Some(connector) =
-                            surface.compositor.pending_connectors().into_iter().next()
-                        else {
-                            error!("surface pending connectors is empty");
-                            continue;
-                        };
-                        let Some(connector) = device.drm_scanner.connectors().get(&connector)
-                        else {
-                            error!("missing enabled connector in drm_scanner");
-                            continue;
-                        };
-
                         let output = niri
                             .global_space
                             .outputs()
@@ -451,13 +438,13 @@ impl Tty {
                             continue;
                         };
                         let Some(output_state) = niri.output_state.get_mut(&output) else {
-                            error!("missing state for output {:?}", surface.name);
+                            error!("missing state for output {:?}", surface.name.connector);
                             continue;
                         };
 
                         try_to_change_vrr(
                             &device.drm,
-                            connector,
+                            surface.connector,
                             *crtc,
                             surface,
                             output_state,
@@ -634,29 +621,46 @@ impl Tty {
             return;
         };
 
+        let scan_result = match device.drm_scanner.scan_connectors(&device.drm) {
+            Ok(x) => x,
+            Err(err) => {
+                warn!("error scanning connectors: {err:?}");
+                return;
+            }
+        };
+
         let mut removed = Vec::new();
-        for event in device.drm_scanner.scan_connectors(&device.drm) {
+        for event in scan_result {
             match event {
                 DrmScanEvent::Connected {
                     connector,
                     crtc: Some(crtc),
                 } => {
-                    if let Err(err) = self.connector_connected(niri, node, connector, crtc) {
-                        warn!("error connecting connector: {err:?}");
-                    }
+                    let connector_name = format_connector_name(&connector);
+                    let output_name =
+                        make_output_name(&device.drm, connector.handle(), connector_name, false);
+                    debug!(
+                        "new connector: {} \"{}\"",
+                        &output_name.connector,
+                        output_name.format_make_model_serial(),
+                    );
+
+                    // Assign an id to this crtc.
+                    device.output_ids.insert(crtc, OutputId::next());
                 }
                 DrmScanEvent::Disconnected {
                     crtc: Some(crtc), ..
                 } => {
-                    self.connector_disconnected(niri, node, crtc);
                     removed.push(crtc);
                 }
                 _ => (),
             }
         }
 
-        // FIXME: this is better done in connector_disconnected(), but currently we call that to
-        // turn off outputs temporarily, too. So we can't do this there.
+        for crtc in &removed {
+            self.connector_disconnected(niri, node, *crtc);
+        }
+
         let Some(device) = self.devices.get_mut(&node) else {
             error!("device disappeared");
             return;
@@ -668,7 +672,12 @@ impl Tty {
             }
         }
 
-        self.refresh_ipc_outputs(niri);
+        // This will connect any new connectors if needed, and apply other changes, such as
+        // connecting back the internal laptop monitor once it becomes the only monitor left.
+        //
+        // It will also call refresh_ipc_outputs(), which will catch the disconnected connectors
+        // above.
+        self.on_output_config_changed(niri);
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
@@ -749,14 +758,17 @@ impl Tty {
         connector: connector::Info,
         crtc: crtc::Handle,
     ) -> anyhow::Result<()> {
-        let output_name = format!(
-            "{}-{}",
-            connector.interface().as_str(),
-            connector.interface_id(),
-        );
-        debug!("connecting connector: {output_name}");
+        let connector_name = format_connector_name(&connector);
+        debug!("connecting connector: {connector_name}");
 
         let device = self.devices.get_mut(&node).context("missing device")?;
+
+        let output_name = make_output_name(
+            &device.drm,
+            connector.handle(),
+            connector_name.clone(),
+            self.config.borrow().debug.disable_monitor_names,
+        );
 
         let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
@@ -764,21 +776,15 @@ impl Tty {
 
         if non_desktop {
             debug!("output is non desktop");
-            let description = get_edid_info(&device.drm, connector.handle())
-                .map(|info| truncate_to_nul(info.model))
-                .unwrap_or_else(|| "Unknown".into());
+            let description = output_name.format_description();
             if let Some(lease_state) = &mut device.drm_lease_state {
-                lease_state.add_connector::<State>(connector.handle(), output_name, description);
+                lease_state.add_connector::<State>(connector.handle(), connector_name, description);
             }
             device
                 .non_desktop_connectors
                 .insert((connector.handle(), crtc));
             return Ok(());
         }
-
-        // This should be unique per CRTC connection, however currently we can call
-        // connector_connected() multiple times for turning the output off and on.
-        device.output_ids.entry(crtc).or_insert_with(OutputId::next);
 
         let config = self
             .config
@@ -787,11 +793,6 @@ impl Tty {
             .find(&output_name)
             .cloned()
             .unwrap_or_default();
-
-        if config.off {
-            debug!("output is disabled in the config");
-            return Ok(());
-        }
 
         for m in connector.modes() {
             trace!("{m:?}");
@@ -824,15 +825,13 @@ impl Tty {
         let mut vrr_enabled = false;
         if let Some(capable) = is_vrr_capable(&device.drm, connector.handle()) {
             if capable {
-                let word = if config.variable_refresh_rate {
-                    "enabling"
-                } else {
-                    "disabling"
-                };
+                // Even if on-demand, we still disable it until later checks.
+                let vrr = config.is_vrr_always_on();
+                let word = if vrr { "enabling" } else { "disabling" };
 
-                match set_vrr_enabled(&device.drm, crtc, config.variable_refresh_rate) {
+                match set_vrr_enabled(&device.drm, crtc, vrr) {
                     Ok(enabled) => {
-                        if enabled != config.variable_refresh_rate {
+                        if enabled != vrr {
                             warn!("failed {} VRR", word);
                         }
 
@@ -843,13 +842,13 @@ impl Tty {
                     }
                 }
             } else {
-                if config.variable_refresh_rate {
+                if !config.is_vrr_always_off() {
                     warn!("cannot enable VRR because connector is not vrr_capable");
                 }
 
                 // Try to disable it anyway to work around a bug where resetting DRM state causes
                 // vrr_capable to be reset to 0, potentially leaving VRR_ENABLED at 1.
-                let res = set_vrr_enabled(&device.drm, crtc, config.variable_refresh_rate);
+                let res = set_vrr_enabled(&device.drm, crtc, false);
                 if matches!(res, Ok(true)) {
                     warn!("error disabling VRR");
 
@@ -857,7 +856,7 @@ impl Tty {
                     vrr_enabled = true;
                 }
             }
-        } else if config.variable_refresh_rate {
+        } else if !config.is_vrr_always_off() {
             warn!("cannot enable VRR because connector is not vrr_capable");
         }
 
@@ -886,22 +885,13 @@ impl Tty {
         // Update the output mode.
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
 
-        let (make, model) = get_edid_info(&device.drm, connector.handle())
-            .map(|info| {
-                (
-                    truncate_to_nul(info.manufacturer),
-                    truncate_to_nul(info.model),
-                )
-            })
-            .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
-
         let output = Output::new(
-            output_name.clone(),
+            connector_name.clone(),
             PhysicalProperties {
                 size: (physical_width as i32, physical_height as i32).into(),
                 subpixel: connector.subpixel().into(),
-                model,
-                make,
+                model: output_name.model.as_deref().unwrap_or("Unknown").to_owned(),
+                make: output_name.make.as_deref().unwrap_or("Unknown").to_owned(),
             },
         );
 
@@ -912,6 +902,7 @@ impl Tty {
         output
             .user_data()
             .insert_if_missing(|| TtyOutputState { node, crtc });
+        output.user_data().insert_if_missing(|| output_name.clone());
 
         let mut planes = surface.planes().clone();
 
@@ -936,6 +927,11 @@ impl Tty {
 
         // Filter out the CCS modifiers as they have increased bandwidth, causing some monitor
         // configurations to stop working.
+        //
+        // The invalid modifier attempt below should make this unnecessary in some cases, but it
+        // would still be a bad idea to remove this until Smithay has some kind of full-device
+        // modesetting test that is able to "downgrade" existing connector modifiers to get enough
+        // bandwidth for a newly connected one.
         let render_formats = render_formats
             .iter()
             .copied()
@@ -960,19 +956,55 @@ impl Tty {
             .collect::<FormatSet>();
 
         // Create the compositor.
-        let mut compositor = DrmCompositor::new(
+        let res = DrmCompositor::new(
             OutputModeSource::Auto(output.clone()),
             surface,
             Some(planes),
-            allocator,
+            allocator.clone(),
             device.gbm.clone(),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
             render_formats.clone(),
             device.drm.cursor_size(),
-            cursor_plane_gbm,
-        )?;
+            cursor_plane_gbm.clone(),
+        );
+
+        let mut compositor = match res {
+            Ok(x) => x,
+            Err(err) => {
+                warn!("error creating DRM compositor, will try with invalid modifier: {err:?}");
+
+                let render_formats = render_formats
+                    .iter()
+                    .copied()
+                    .filter(|format| format.modifier == Modifier::Invalid)
+                    .collect::<FormatSet>();
+
+                // DrmCompositor::new() consumed the surface...
+                let surface = device
+                    .drm
+                    .create_surface(crtc, mode, &[connector.handle()])?;
+                let mut planes = surface.planes().clone();
+                if !config.debug.enable_overlay_planes {
+                    planes.overlay.clear();
+                }
+
+                DrmCompositor::new(
+                    OutputModeSource::Auto(output.clone()),
+                    surface,
+                    Some(planes),
+                    allocator,
+                    device.gbm.clone(),
+                    SUPPORTED_COLOR_FORMATS,
+                    render_formats,
+                    device.drm.cursor_size(),
+                    cursor_plane_gbm,
+                )
+                .context("error creating DRM compositor")?
+            }
+        };
+
         if self.debug_tint {
             compositor.set_debug_flags(DebugFlags::TINT);
         }
@@ -997,18 +1029,28 @@ impl Tty {
             }
         }
 
+        // Some buggy monitors replug upon powering off, so powering on here would prevent such
+        // monitors from powering off. Therefore, we avoid unconditionally powering on.
+        if !niri.monitors_active {
+            if let Err(err) = compositor.clear() {
+                warn!("error clearing drm surface: {err:?}");
+            }
+        }
+
         let vblank_frame_name =
-            tracy_client::FrameName::new_leak(format!("vblank on {output_name}"));
-        let time_since_presentation_plot_name =
-            tracy_client::PlotName::new_leak(format!("{output_name} time since presentation, ms"));
+            tracy_client::FrameName::new_leak(format!("vblank on {connector_name}"));
+        let time_since_presentation_plot_name = tracy_client::PlotName::new_leak(format!(
+            "{connector_name} time since presentation, ms"
+        ));
         let presentation_misprediction_plot_name = tracy_client::PlotName::new_leak(format!(
-            "{output_name} presentation misprediction, ms"
+            "{connector_name} presentation misprediction, ms"
         ));
         let sequence_delta_plot_name =
-            tracy_client::PlotName::new_leak(format!("{output_name} sequence delta"));
+            tracy_client::PlotName::new_leak(format!("{connector_name} sequence delta"));
 
         let surface = Surface {
-            name: output_name.clone(),
+            name: output_name,
+            connector: connector.handle(),
             compositor,
             dmabuf_feedback,
             gamma_props,
@@ -1026,15 +1068,14 @@ impl Tty {
 
         niri.add_output(output.clone(), Some(refresh_interval(mode)), vrr_enabled);
 
-        // Some buggy monitors replug upon powering off, so powering on here would prevent such
-        // monitors from powering off. Therefore, we avoid unconditionally powering on.
         if niri.monitors_active {
             // Redraw the new monitor.
             niri.event_loop.insert_idle(move |state| {
-                state.niri.queue_redraw(&output);
+                // Guard against output disconnecting before the idle has a chance to run.
+                if state.niri.output_state.contains_key(&output) {
+                    state.niri.queue_redraw(&output);
+                }
             });
-        } else {
-            set_crtc_active(&device.drm, crtc, false);
         }
 
         Ok(())
@@ -1070,7 +1111,7 @@ impl Tty {
             return;
         };
 
-        debug!("disconnecting connector: {:?}", surface.name);
+        debug!("disconnecting connector: {:?}", surface.name.connector);
 
         let output = niri
             .global_space
@@ -1112,7 +1153,7 @@ impl Tty {
         // Finish the Tracy frame, if any.
         drop(surface.vblank_frame.take());
 
-        let name = &surface.name;
+        let name = &surface.name.connector;
         trace!("vblank on {name} {meta:?}");
         span.emit_text(name);
 
@@ -1170,6 +1211,25 @@ impl Tty {
             return;
         };
 
+        let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
+            RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
+            state @ (RedrawState::Idle
+            | RedrawState::Queued
+            | RedrawState::WaitingForEstimatedVBlank(_)
+            | RedrawState::WaitingForEstimatedVBlankAndQueued(_)) => {
+                // This is an error!() because it shouldn't happen, but on some systems it somehow
+                // does. Kernel sending rogue vblank events?
+                //
+                // https://github.com/YaLTeR/niri/issues/556
+                // https://github.com/YaLTeR/niri/issues/615
+                error!(
+                    "unexpected redraw state for output {name} (should be WaitingForVBlank); \
+                     can happen when resuming from sleep or powering on monitors: {state:?}"
+                );
+                true
+            }
+        };
+
         // Mark the last frame as submitted.
         match surface.compositor.frame_submitted() {
             Ok(Some((mut feedback, target_presentation_time))) => {
@@ -1215,14 +1275,6 @@ impl Tty {
         output_state.last_drm_sequence = Some(meta.sequence);
 
         output_state.frame_clock.presented(presentation_time);
-
-        let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
-            RedrawState::Idle => unreachable!(),
-            RedrawState::Queued => unreachable!(),
-            RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
-            RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
-            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
-        };
 
         if redraw_needed || output_state.unfinished_animations_remain {
             let vblank_frame = tracy_client::Client::running()
@@ -1305,7 +1357,7 @@ impl Tty {
             return rv;
         };
 
-        span.emit_text(&surface.name);
+        span.emit_text(&surface.name.connector);
 
         if !device.drm.is_active() {
             warn!("device is inactive");
@@ -1338,12 +1390,13 @@ impl Tty {
         let drm_compositor = &mut surface.compositor;
         match drm_compositor.render_frame::<_, _>(&mut renderer, &elements, [0.; 4]) {
             Ok(res) => {
-                if self
-                    .config
-                    .borrow()
-                    .debug
-                    .wait_for_frame_completion_before_queueing
-                {
+                let needs_sync = res.needs_sync()
+                    || self
+                        .config
+                        .borrow()
+                        .debug
+                        .wait_for_frame_completion_before_queueing;
+                if needs_sync {
                     if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
                         let _span = tracy_client::span!("wait for completion");
                         if let Err(err) = element.sync.wait() {
@@ -1519,22 +1572,14 @@ impl Tty {
 
         for (node, device) in &self.devices {
             for (connector, crtc) in device.drm_scanner.crtcs() {
-                let name = format!(
-                    "{}-{}",
-                    connector.interface().as_str(),
-                    connector.interface_id(),
-                );
-
+                let connector_name = format_connector_name(connector);
                 let physical_size = connector.size();
-
-                let (make, model) = get_edid_info(&device.drm, connector.handle())
-                    .map(|info| {
-                        (
-                            truncate_to_nul(info.manufacturer),
-                            truncate_to_nul(info.model),
-                        )
-                    })
-                    .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name.clone(),
+                    self.config.borrow().debug.disable_monitor_names,
+                );
 
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
@@ -1582,9 +1627,10 @@ impl Tty {
                     .map(logical_output);
 
                 let ipc_output = niri_ipc::Output {
-                    name,
-                    make,
-                    model,
+                    name: connector_name,
+                    make: output_name.make.unwrap_or_else(|| "Unknown".into()),
+                    model: output_name.model.unwrap_or_else(|| "Unknown".into()),
+                    serial: output_name.serial,
                     physical_size,
                     modes,
                     current_mode,
@@ -1634,10 +1680,36 @@ impl Tty {
         }
 
         for device in self.devices.values_mut() {
-            for (crtc, surface) in device.surfaces.iter_mut() {
-                set_crtc_active(&device.drm, *crtc, false);
-                if let Err(err) = surface.compositor.reset_state() {
-                    warn!("error resetting surface state: {err:?}");
+            for surface in device.surfaces.values_mut() {
+                if let Err(err) = surface.compositor.clear() {
+                    warn!("error clearing drm surface: {err:?}");
+                }
+            }
+        }
+    }
+
+    pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
+        let _span = tracy_client::span!("Tty::set_output_on_demand_vrr");
+
+        let output_state = niri.output_state.get_mut(output).unwrap();
+        output_state.on_demand_vrr_enabled = enable_vrr;
+        if output_state.frame_clock.vrr() == enable_vrr {
+            return;
+        }
+        for (&node, device) in self.devices.iter_mut() {
+            for (&crtc, surface) in device.surfaces.iter_mut() {
+                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                if tty_state.node == node && tty_state.crtc == crtc {
+                    try_to_change_vrr(
+                        &device.drm,
+                        surface.connector,
+                        crtc,
+                        surface,
+                        output_state,
+                        enable_vrr,
+                    );
+                    self.refresh_ipc_outputs(niri);
+                    return;
                 }
             }
         }
@@ -1653,13 +1725,29 @@ impl Tty {
         }
         self.update_output_config_on_resume = false;
 
+        // Figure out if we should disable laptop panels.
+        let mut disable_laptop_panels = false;
+        if niri.is_lid_closed {
+            let config = self.config.borrow();
+            if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
+                // Check if any external monitor is connected.
+                'outer: for device in self.devices.values() {
+                    for (connector, _crtc) in device.drm_scanner.crtcs() {
+                        if !is_laptop_panel(&format_connector_name(connector)) {
+                            disable_laptop_panels = true;
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+        let should_disable = |connector: &str| disable_laptop_panels && is_laptop_panel(connector);
+
         let mut to_disconnect = vec![];
         let mut to_connect = vec![];
 
         for (&node, device) in &mut self.devices {
-            for surface in device.surfaces.values_mut() {
-                let crtc = surface.compositor.crtc();
-
+            for (&crtc, surface) in device.surfaces.iter_mut() {
                 let config = self
                     .config
                     .borrow()
@@ -1667,18 +1755,14 @@ impl Tty {
                     .find(&surface.name)
                     .cloned()
                     .unwrap_or_default();
-                if config.off {
+                if config.off || should_disable(&surface.name.connector) {
                     to_disconnect.push((node, crtc));
                     continue;
                 }
 
                 // Check if we need to change the mode.
-                let Some(connector) = surface.compositor.pending_connectors().into_iter().next()
+                let Some(connector) = device.drm_scanner.connectors().get(&surface.connector)
                 else {
-                    error!("surface pending connectors is empty");
-                    continue;
-                };
-                let Some(connector) = device.drm_scanner.connectors().get(&connector) else {
                     error!("missing enabled connector in drm_scanner");
                     continue;
                 };
@@ -1689,8 +1773,9 @@ impl Tty {
                 };
 
                 let change_mode = surface.compositor.pending_mode() != mode;
-                let change_vrr = surface.vrr_enabled != config.variable_refresh_rate;
-                if !change_mode && !change_vrr {
+                let change_always_vrr = surface.vrr_enabled != config.is_vrr_always_on();
+                let is_on_demand_vrr = config.is_vrr_on_demand();
+                if !change_mode && !change_always_vrr && !is_on_demand_vrr {
                     continue;
                 }
 
@@ -1707,18 +1792,20 @@ impl Tty {
                     continue;
                 };
                 let Some(output_state) = niri.output_state.get_mut(&output) else {
-                    error!("missing state for output {:?}", surface.name);
+                    error!("missing state for output {:?}", surface.name.connector);
                     continue;
                 };
 
-                if change_vrr {
+                if (is_on_demand_vrr && surface.vrr_enabled != output_state.on_demand_vrr_enabled)
+                    || (!is_on_demand_vrr && change_always_vrr)
+                {
                     try_to_change_vrr(
                         &device.drm,
-                        connector,
+                        connector.handle(),
                         crtc,
                         surface,
                         output_state,
-                        config.variable_refresh_rate,
+                        !surface.vrr_enabled,
                     );
                 }
 
@@ -1728,7 +1815,7 @@ impl Tty {
                         warn!(
                             "output {:?}: configured mode {}x{}{} could not be found, \
                              falling back to preferred",
-                            surface.name,
+                            surface.name.connector,
                             target.width,
                             target.height,
                             if let Some(refresh) = target.refresh {
@@ -1739,7 +1826,10 @@ impl Tty {
                         );
                     }
 
-                    debug!("output {:?}: picking mode: {mode:?}", surface.name);
+                    debug!(
+                        "output {:?}: picking mode: {mode:?}",
+                        surface.name.connector
+                    );
                     if let Err(err) = surface.compositor.use_mode(mode) {
                         warn!("error changing mode: {err:?}");
                         continue;
@@ -1761,16 +1851,21 @@ impl Tty {
                 }
 
                 // Check if already enabled.
-                if device.surfaces.contains_key(&crtc) {
+                if device.surfaces.contains_key(&crtc)
+                    || device
+                        .non_desktop_connectors
+                        .contains(&(connector.handle(), crtc))
+                {
                     continue;
                 }
 
-                let output_name = format!(
-                    "{}-{}",
-                    connector.interface().as_str(),
-                    connector.interface_id(),
+                let connector_name = format_connector_name(connector);
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name,
+                    self.config.borrow().debug.disable_monitor_names,
                 );
-
                 let config = self
                     .config
                     .borrow()
@@ -1779,8 +1874,8 @@ impl Tty {
                     .cloned()
                     .unwrap_or_default();
 
-                if !config.off {
-                    to_connect.push((node, connector.clone(), crtc));
+                if !(config.off || should_disable(&output_name.connector)) {
+                    to_connect.push((node, connector.clone(), crtc, output_name));
                 }
             }
         }
@@ -1789,7 +1884,11 @@ impl Tty {
             self.connector_disconnected(niri, node, crtc);
         }
 
-        for (node, connector, crtc) in to_connect {
+        // Sort by output name to get more predictable first focused output at initial compositor
+        // startup, when multiple connectors appear at once.
+        to_connect.sort_unstable_by(|a, b| a.3.compare(&b.3));
+
+        for (node, connector, crtc, _name) in to_connect {
             if let Err(err) = self.connector_connected(niri, node, connector, crtc) {
                 warn!("error connecting connector: {err:?}");
             }
@@ -1813,6 +1912,39 @@ impl Tty {
 
     pub fn get_device_from_node(&mut self, node: DrmNode) -> Option<&mut OutputDevice> {
         self.devices.get_mut(&node)
+    }
+
+    pub fn disconnected_connector_name_by_name_match(&self, target: &str) -> Option<OutputName> {
+        for device in self.devices.values() {
+            for (connector, crtc) in device.drm_scanner.crtcs() {
+                // Check if connected.
+                if connector.state() != connector::State::Connected {
+                    continue;
+                }
+
+                // Check if already enabled.
+                if device.surfaces.contains_key(&crtc)
+                    || device
+                        .non_desktop_connectors
+                        .contains(&(connector.handle(), crtc))
+                {
+                    continue;
+                }
+
+                let connector_name = format_connector_name(connector);
+                let output_name = make_output_name(
+                    &device.drm,
+                    connector.handle(),
+                    connector_name,
+                    self.config.borrow().debug.disable_monitor_names,
+                );
+                if output_name.matches(target) {
+                    return Some(output_name);
+                }
+            }
+        }
+
+        None
     }
 }
 
@@ -1919,14 +2051,13 @@ impl GammaProps {
                     property::Value::Blob(blob).into(),
                 )
                 .context("error setting GAMMA_LUT")
-                .map_err(|err| {
+                .inspect_err(|_| {
                     if blob != 0 {
                         // Destroy the blob we just allocated.
                         if let Err(err) = device.destroy_property_blob(blob) {
                             warn!("error destroying GAMMA_LUT property blob: {err:?}");
                         }
                     }
-                    err
                 })?;
         }
 
@@ -2083,17 +2214,6 @@ fn get_drm_property(
         .find_map(|(handle, value)| (handle == prop).then_some(value))
 }
 
-fn set_crtc_active(drm: &DrmDevice, crtc: crtc::Handle, active: bool) {
-    let Some((prop, _, _)) = find_drm_property(drm, crtc, "ACTIVE") else {
-        return;
-    };
-
-    let value = property::Value::Boolean(active);
-    if let Err(err) = drm.set_property(crtc, prop, value.into()) {
-        warn!("error setting CRTC property: {err:?}");
-    }
-}
-
 fn refresh_interval(mode: DrmMode) -> Duration {
     let clock = mode.clock() as u64;
     let htotal = mode.hsync().2 as u64;
@@ -2246,23 +2366,21 @@ fn pick_mode(
     mode.map(|m| (*m, fallback))
 }
 
-fn truncate_to_nul(mut s: String) -> String {
-    if let Some(index) = s.find('\0') {
-        s.truncate(index);
-    }
-    s
-}
-
-fn get_edid_info(device: &DrmDevice, connector: connector::Handle) -> Option<EdidInfo> {
-    match catch_unwind(AssertUnwindSafe(move || {
-        EdidInfo::for_connector(device, connector)
-    })) {
-        Ok(info) => info,
-        Err(err) => {
-            warn!("edid-rs panicked: {err:?}");
-            None
-        }
-    }
+fn get_edid_info(
+    device: &DrmDevice,
+    connector: connector::Handle,
+) -> anyhow::Result<libdisplay_info::info::Info> {
+    let (_, info, value) =
+        find_drm_property(device, connector, "EDID").context("no EDID property")?;
+    let blob = info
+        .value_type()
+        .convert_value(value)
+        .as_blob()
+        .context("EDID was not blob type")?;
+    let data = device
+        .get_property_blob(blob)
+        .context("error getting EDID blob value")?;
+    libdisplay_info::info::Info::parse_edid(&data).context("error parsing EDID")
 }
 
 fn set_max_bpc(device: &DrmDevice, connector: connector::Handle, bpc: u64) -> anyhow::Result<u64> {
@@ -2370,7 +2488,7 @@ pub fn set_gamma_for_crtc(
 
 fn try_to_change_vrr(
     device: &DrmDevice,
-    connector: &connector::Info,
+    connector: connector::Handle,
     crtc: crtc::Handle,
     surface: &mut Surface,
     output_state: &mut crate::niri::OutputState,
@@ -2378,47 +2496,63 @@ fn try_to_change_vrr(
 ) {
     let _span = tracy_client::span!("try_to_change_vrr");
 
-    if is_vrr_capable(device, connector.handle()) == Some(true) {
+    if is_vrr_capable(device, connector) == Some(true) {
         let word = if enable_vrr { "enabling" } else { "disabling" };
 
         match set_vrr_enabled(device, crtc, enable_vrr) {
             Ok(enabled) => {
                 if enabled != enable_vrr {
-                    warn!("output {:?}: failed {} VRR", surface.name, word);
+                    warn!("output {:?}: failed {} VRR", surface.name.connector, word);
                 }
 
                 surface.vrr_enabled = enabled;
                 output_state.frame_clock.set_vrr(enabled);
             }
             Err(err) => {
-                warn!("output {:?}: error {} VRR: {err:?}", surface.name, word);
+                warn!(
+                    "output {:?}: error {} VRR: {err:?}",
+                    surface.name.connector, word
+                );
             }
         }
     } else if enable_vrr {
         warn!(
             "output {:?}: cannot enable VRR because connector is not vrr_capable",
-            surface.name
+            surface.name.connector
         );
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn format_connector_name(connector: &connector::Info) -> String {
+    format!(
+        "{}-{}",
+        connector.interface().as_str(),
+        connector.interface_id(),
+    )
+}
 
-    #[track_caller]
-    fn check(input: &str, expected: &str) {
-        let input = String::from(input);
-        assert_eq!(truncate_to_nul(input), expected);
+fn make_output_name(
+    device: &DrmDevice,
+    connector: connector::Handle,
+    connector_name: String,
+    disable_monitor_names: bool,
+) -> OutputName {
+    if disable_monitor_names {
+        return OutputName {
+            connector: connector_name,
+            make: None,
+            model: None,
+            serial: None,
+        };
     }
 
-    #[test]
-    fn truncate_to_nul_works() {
-        check("", "");
-        check("qwer", "qwer");
-        check("abc\0def", "abc");
-        check("\0as", "");
-        check("a\0\0\0b", "a");
-        check("bb😁\0cc", "bb😁");
+    let info = get_edid_info(device, connector)
+        .map_err(|err| warn!("error getting EDID info for {connector_name}: {err:?}"))
+        .ok();
+    OutputName {
+        connector: connector_name,
+        make: info.as_ref().and_then(|info| info.make()),
+        model: info.as_ref().and_then(|info| info.model()),
+        serial: info.as_ref().and_then(|info| info.serial()),
     }
 }

@@ -6,7 +6,7 @@
 #extension GL_OES_EGL_image_external : require
 #endif
 
-precision mediump float;
+precision highp float;
 #if defined(EXTERNAL)
 uniform samplerExternalOES tex;
 #else

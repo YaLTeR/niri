@@ -49,10 +49,19 @@ The `niri-visual-tests` sub-crate is a GTK application that runs hard-coded test
 We have integration with the [Tracy](https://github.com/wolfpld/tracy) profiler which you can enable by building niri with a feature flag:
 
 ```
-cargo build --release --features=profile-with-tracy
+cargo build --release --features=profile-with-tracy-ondemand
 ```
 
-Then you can open Tracy (you will need the latest stable release) and attach to a running niri instance to collect profiling data. This is **not** currently "on-demand" (until the next Tracy release), so niri will always collect profiling data when compiled this way, and you can't run a build like this as your main compositor.
+Then you can open Tracy (you will need the latest stable release) and attach to a running niri instance to collect profiling data. Profiling data is collected "on demand"—that is, only when Tracy is connected. You can run a niri build like this as your main compositor if you'd like.
+
+> [!NOTE]
+> If you need to profile niri startup or the niri CLI, you can opt for "always on" profiling instead, using this feature flag:
+>
+> ```
+> cargo build --release --features=profile-with-tracy
+> ```
+>
+> When compiled this way, niri will **always** collect profiling data, so you can't run a build like this as your main compositor.
 
 To make a niri function show up in Tracy, instrument it like this:
 
@@ -63,3 +72,5 @@ pub fn some_function() {
     // Code of the function.
 }
 ```
+
+You can also enable Rust memory allocation profiling with `--features=profile-with-tracy-allocations`.

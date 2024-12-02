@@ -28,7 +28,7 @@ By default, Waybar is on the `bottom` layer, which is behind windows, so Waybar 
 
 Put this window rule in your config:
 
-```
+```kdl
 window-rule {
     geometry-corner-radius 12
     clip-to-geometry true
@@ -36,3 +36,20 @@ window-rule {
 ```
 
 For more information, check [this wiki section](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#geometry-corner-radius).
+
+### How to hide the "Important Hotkeys" pop-up at the start?
+
+Put this into your config:
+
+```kdl
+hotkey-overlay {
+    skip-at-startup
+}
+```
+
+### How to run X11 apps like Steam or Discord?
+
+To run X11 apps, you can use [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
+Check [the Xwayland wiki page](./Xwayland.md) for instructions.
+
+Keep in mind that you can run many Electron apps such as VSCode natively on Wayland by passing the right flags, e.g. `code --ozone-platform-hint=auto`

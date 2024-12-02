@@ -30,6 +30,8 @@ impl ServiceChannel {
             // Would be nice to thread config here but for now it's fine.
             can_view_decoration_globals: false,
             restricted: false,
+            // FIXME: maybe you can get the PID from D-Bus somehow?
+            credentials_unknown: true,
         });
         self.display.insert_client(sock2, data).unwrap();
         Ok(unsafe { zbus::zvariant::OwnedFd::from_raw_fd(sock1.into_raw_fd()) })

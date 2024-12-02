@@ -1,4 +1,38 @@
 //! Types for communicating with niri via IPC.
+//!
+//! After connecting to the niri socket, you can send a single [`Request`] and receive a single
+//! [`Reply`], which is a `Result` wrapping a [`Response`]. If you requested an event stream, you
+//! can keep reading [`Event`]s from the socket after the response.
+//!
+//! You can use the [`socket::Socket`] helper if you're fine with blocking communication. However,
+//! it is a fairly simple helper, so if you need async, or if you're using a different language,
+//! you are encouraged to communicate with the socket manually.
+//!
+//! 1. Read the socket filesystem path from [`socket::SOCKET_PATH_ENV`] (`$NIRI_SOCKET`).
+//! 2. Connect to the socket and write a JSON-formatted [`Request`] on a single line. You can follow
+//!    up with a line break and a flush, or just flush and shutdown the write end of the socket.
+//! 3. Niri will respond with a single line JSON-formatted [`Reply`].
+//! 4. If you requested an event stream, niri will keep responding with JSON-formatted [`Event`]s,
+//!    on a single line each.
+//!
+//! ## Backwards compatibility
+//!
+//! This crate follows the niri version. It is **not** API-stable in terms of the Rust semver. In
+//! particular, expect new struct fields and enum variants to be added in patch version bumps.
+//!
+//! Use an exact version requirement to avoid breaking changes:
+//!
+//! ```toml
+//! [dependencies]
+//! niri-ipc = "=0.1.10"
+//! ```
+//!
+//! ## Features
+//!
+//! This crate defines the following features:
+//! - `json-schema`: derives the [schemars](https://lib.rs/crates/schemars) `JsonSchema` trait for
+//!   the types.
+//! - `clap`: derives the clap CLI parsing traits for some types. Used internally by niri itself.
 #![warn(missing_docs)]
 
 use std::collections::HashMap;
@@ -6,8 +40,8 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-mod socket;
-pub use socket::{Socket, SOCKET_PATH_ENV};
+pub mod socket;
+pub mod state;
 
 /// Request from client to niri.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -17,6 +51,16 @@ pub enum Request {
     Version,
     /// Request information about connected outputs.
     Outputs,
+    /// Request information about workspaces.
+    Workspaces,
+    /// Request information about open windows.
+    Windows,
+    /// Request information about layer-shell surfaces.
+    Layers,
+    /// Request information about the configured keyboard layouts.
+    KeyboardLayouts,
+    /// Request information about the focused output.
+    FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
     /// Perform an action.
@@ -32,10 +76,21 @@ pub enum Request {
         /// Configuration to apply.
         action: OutputAction,
     },
-    /// Request information about workspaces.
-    Workspaces,
-    /// Request information about the focused output.
-    FocusedOutput,
+    /// Start continuously receiving events from the compositor.
+    ///
+    /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
+    /// [`Event`]s, one per line.
+    ///
+    /// The event stream will always give you the full current state up-front. For example, the
+    /// first workspace-related event you will receive will be [`Event::WorkspacesChanged`]
+    /// containing the full current workspaces state. You *do not* need to separately send
+    /// [`Request::Workspaces`] when using the event stream.
+    ///
+    /// Where reasonable, event stream state updates are atomic, though this is not always the
+    /// case. For example, a window may end up with a workspace id for a workspace that had already
+    /// been removed. This can happen if the corresponding [`Event::WorkspacesChanged`] arrives
+    /// before the corresponding [`Event::WindowOpenedOrChanged`].
+    EventStream,
     /// Respond with an error (for testing error handling).
     ReturnError,
 }
@@ -60,16 +115,22 @@ pub enum Response {
     Version(String),
     /// Information about connected outputs.
     ///
-    /// Map from connector name to output info.
+    /// Map from output name to output info.
     Outputs(HashMap<String, Output>),
+    /// Information about workspaces.
+    Workspaces(Vec<Workspace>),
+    /// Information about open windows.
+    Windows(Vec<Window>),
+    /// Information about layer-shell surfaces.
+    Layers(Vec<LayerSurface>),
+    /// Information about the keyboard layout.
+    KeyboardLayouts(KeyboardLayouts),
+    /// Information about the focused output.
+    FocusedOutput(Option<Output>),
     /// Information about the focused window.
     FocusedWindow(Option<Window>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
-    /// Information about workspaces.
-    Workspaces(Vec<Workspace>),
-    /// Information about the focused output.
-    FocusedOutput(Option<Output>),
 }
 
 /// Actions that niri can perform.
@@ -88,7 +149,9 @@ pub enum Action {
         skip_confirmation: bool,
     },
     /// Power off all monitors via DPMS.
-    PowerOffMonitors,
+    PowerOffMonitors {},
+    /// Power on all monitors via DPMS.
+    PowerOnMonitors {},
     /// Spawn a command.
     Spawn {
         /// Command to spawn.
@@ -102,85 +165,137 @@ pub enum Action {
         delay_ms: Option<u16>,
     },
     /// Open the screenshot UI.
-    Screenshot,
+    Screenshot {},
     /// Screenshot the focused screen.
-    ScreenshotScreen,
-    /// Screenshot the focused window.
-    ScreenshotWindow,
-    /// Close the focused window.
-    CloseWindow,
-    /// Toggle fullscreen on the focused window.
-    FullscreenWindow,
+    ScreenshotScreen {},
+    /// Screenshot a window.
+    #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
+    ScreenshotWindow {
+        /// Id of the window to screenshot.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Close a window.
+    #[cfg_attr(feature = "clap", clap(about = "Close the focused window"))]
+    CloseWindow {
+        /// Id of the window to close.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Toggle fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Toggle fullscreen on the focused window")
+    )]
+    FullscreenWindow {
+        /// Id of the window to toggle fullscreen of.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Focus a window by id.
+    FocusWindow {
+        /// Id of the window to focus.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
+    /// Focus the previously focused window.
+    FocusWindowPrevious {},
     /// Focus the column to the left.
-    FocusColumnLeft,
+    FocusColumnLeft {},
     /// Focus the column to the right.
-    FocusColumnRight,
+    FocusColumnRight {},
     /// Focus the first column.
-    FocusColumnFirst,
+    FocusColumnFirst {},
     /// Focus the last column.
-    FocusColumnLast,
+    FocusColumnLast {},
     /// Focus the next column to the right, looping if at end.
-    FocusColumnRightOrFirst,
+    FocusColumnRightOrFirst {},
     /// Focus the next column to the left, looping if at start.
-    FocusColumnLeftOrLast,
+    FocusColumnLeftOrLast {},
     /// Focus the window or the monitor above.
-    FocusWindowOrMonitorUp,
+    FocusWindowOrMonitorUp {},
     /// Focus the window or the monitor below.
-    FocusWindowOrMonitorDown,
+    FocusWindowOrMonitorDown {},
     /// Focus the column or the monitor to the left.
-    FocusColumnOrMonitorLeft,
+    FocusColumnOrMonitorLeft {},
     /// Focus the column or the monitor to the right.
-    FocusColumnOrMonitorRight,
+    FocusColumnOrMonitorRight {},
     /// Focus the window below.
-    FocusWindowDown,
+    FocusWindowDown {},
     /// Focus the window above.
-    FocusWindowUp,
+    FocusWindowUp {},
     /// Focus the window below or the column to the left.
-    FocusWindowDownOrColumnLeft,
+    FocusWindowDownOrColumnLeft {},
     /// Focus the window below or the column to the right.
-    FocusWindowDownOrColumnRight,
+    FocusWindowDownOrColumnRight {},
     /// Focus the window above or the column to the left.
-    FocusWindowUpOrColumnLeft,
+    FocusWindowUpOrColumnLeft {},
     /// Focus the window above or the column to the right.
-    FocusWindowUpOrColumnRight,
+    FocusWindowUpOrColumnRight {},
     /// Focus the window or the workspace above.
-    FocusWindowOrWorkspaceDown,
+    FocusWindowOrWorkspaceDown {},
     /// Focus the window or the workspace above.
-    FocusWindowOrWorkspaceUp,
+    FocusWindowOrWorkspaceUp {},
     /// Move the focused column to the left.
-    MoveColumnLeft,
+    MoveColumnLeft {},
     /// Move the focused column to the right.
-    MoveColumnRight,
+    MoveColumnRight {},
     /// Move the focused column to the start of the workspace.
-    MoveColumnToFirst,
+    MoveColumnToFirst {},
     /// Move the focused column to the end of the workspace.
-    MoveColumnToLast,
+    MoveColumnToLast {},
     /// Move the focused column to the left or to the monitor to the left.
-    MoveColumnLeftOrToMonitorLeft,
+    MoveColumnLeftOrToMonitorLeft {},
     /// Move the focused column to the right or to the monitor to the right.
-    MoveColumnRightOrToMonitorRight,
+    MoveColumnRightOrToMonitorRight {},
     /// Move the focused window down in a column.
-    MoveWindowDown,
+    MoveWindowDown {},
     /// Move the focused window up in a column.
-    MoveWindowUp,
+    MoveWindowUp {},
     /// Move the focused window down in a column or to the workspace below.
-    MoveWindowDownOrToWorkspaceDown,
+    MoveWindowDownOrToWorkspaceDown {},
     /// Move the focused window up in a column or to the workspace above.
-    MoveWindowUpOrToWorkspaceUp,
-    /// Consume or expel the focused window left.
-    ConsumeOrExpelWindowLeft,
-    /// Consume or expel the focused window right.
-    ConsumeOrExpelWindowRight,
+    MoveWindowUpOrToWorkspaceUp {},
+    /// Consume or expel a window left.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Consume or expel the focused window left")
+    )]
+    ConsumeOrExpelWindowLeft {
+        /// Id of the window to consume or expel.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Consume or expel a window right.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Consume or expel the focused window right")
+    )]
+    ConsumeOrExpelWindowRight {
+        /// Id of the window to consume or expel.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Consume the window to the right into the focused column.
-    ConsumeWindowIntoColumn,
+    ConsumeWindowIntoColumn {},
     /// Expel the focused window from the column.
-    ExpelWindowFromColumn,
+    ExpelWindowFromColumn {},
     /// Center the focused column on the screen.
-    CenterColumn,
+    CenterColumn {},
     /// Focus the workspace below.
-    FocusWorkspaceDown,
+    FocusWorkspaceDown {},
     /// Focus the workspace above.
-    FocusWorkspaceUp,
+    FocusWorkspaceUp {},
     /// Focus a workspace by reference (index or name).
     FocusWorkspace {
         /// Reference (index or name) of the workspace to focus.
@@ -188,21 +303,31 @@ pub enum Action {
         reference: WorkspaceReferenceArg,
     },
     /// Focus the previous workspace.
-    FocusWorkspacePrevious,
+    FocusWorkspacePrevious {},
     /// Move the focused window to the workspace below.
-    MoveWindowToWorkspaceDown,
+    MoveWindowToWorkspaceDown {},
     /// Move the focused window to the workspace above.
-    MoveWindowToWorkspaceUp,
-    /// Move the focused window to a workspace by reference (index or name).
+    MoveWindowToWorkspaceUp {},
+    /// Move a window to a workspace.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move the focused window to a workspace by reference (index or name)")
+    )]
     MoveWindowToWorkspace {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        window_id: Option<u64>,
+
         /// Reference (index or name) of the workspace to move the window to.
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
     },
     /// Move the focused column to the workspace below.
-    MoveColumnToWorkspaceDown,
+    MoveColumnToWorkspaceDown {},
     /// Move the focused column to the workspace above.
-    MoveColumnToWorkspaceUp,
+    MoveColumnToWorkspaceUp {},
     /// Move the focused column to a workspace by reference (index or name).
     MoveColumnToWorkspace {
         /// Reference (index or name) of the workspace to move the column to.
@@ -210,45 +335,73 @@ pub enum Action {
         reference: WorkspaceReferenceArg,
     },
     /// Move the focused workspace down.
-    MoveWorkspaceDown,
+    MoveWorkspaceDown {},
     /// Move the focused workspace up.
-    MoveWorkspaceUp,
+    MoveWorkspaceUp {},
     /// Focus the monitor to the left.
-    FocusMonitorLeft,
+    FocusMonitorLeft {},
     /// Focus the monitor to the right.
-    FocusMonitorRight,
+    FocusMonitorRight {},
     /// Focus the monitor below.
-    FocusMonitorDown,
+    FocusMonitorDown {},
     /// Focus the monitor above.
-    FocusMonitorUp,
+    FocusMonitorUp {},
     /// Move the focused window to the monitor to the left.
-    MoveWindowToMonitorLeft,
+    MoveWindowToMonitorLeft {},
     /// Move the focused window to the monitor to the right.
-    MoveWindowToMonitorRight,
+    MoveWindowToMonitorRight {},
     /// Move the focused window to the monitor below.
-    MoveWindowToMonitorDown,
+    MoveWindowToMonitorDown {},
     /// Move the focused window to the monitor above.
-    MoveWindowToMonitorUp,
+    MoveWindowToMonitorUp {},
     /// Move the focused column to the monitor to the left.
-    MoveColumnToMonitorLeft,
+    MoveColumnToMonitorLeft {},
     /// Move the focused column to the monitor to the right.
-    MoveColumnToMonitorRight,
+    MoveColumnToMonitorRight {},
     /// Move the focused column to the monitor below.
-    MoveColumnToMonitorDown,
+    MoveColumnToMonitorDown {},
     /// Move the focused column to the monitor above.
-    MoveColumnToMonitorUp,
-    /// Change the height of the focused window.
+    MoveColumnToMonitorUp {},
+    /// Change the height of a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Change the height of the focused window")
+    )]
     SetWindowHeight {
+        /// Id of the window whose height to set.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
         /// How to change the height.
         #[cfg_attr(feature = "clap", arg())]
         change: SizeChange,
     },
-    /// Reset the height of the focused window back to automatic.
-    ResetWindowHeight,
+    /// Reset the height of a window back to automatic.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Reset the height of the focused window back to automatic")
+    )]
+    ResetWindowHeight {
+        /// Id of the window whose height to reset.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Switch between preset column widths.
-    SwitchPresetColumnWidth,
+    SwitchPresetColumnWidth {},
+    /// Switch between preset window heights.
+    SwitchPresetWindowHeight {
+        /// Id of the window whose height to switch.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Toggle the maximized state of the focused column.
-    MaximizeColumn,
+    MaximizeColumn {},
     /// Change the width of the focused column.
     SetColumnWidth {
         /// How to change the width.
@@ -262,21 +415,21 @@ pub enum Action {
         layout: LayoutSwitchTarget,
     },
     /// Show the hotkey overlay.
-    ShowHotkeyOverlay,
+    ShowHotkeyOverlay {},
     /// Move the focused workspace to the monitor to the left.
-    MoveWorkspaceToMonitorLeft,
+    MoveWorkspaceToMonitorLeft {},
     /// Move the focused workspace to the monitor to the right.
-    MoveWorkspaceToMonitorRight,
+    MoveWorkspaceToMonitorRight {},
     /// Move the focused workspace to the monitor below.
-    MoveWorkspaceToMonitorDown,
+    MoveWorkspaceToMonitorDown {},
     /// Move the focused workspace to the monitor above.
-    MoveWorkspaceToMonitorUp,
+    MoveWorkspaceToMonitorUp {},
     /// Toggle a debug tint on windows.
-    ToggleDebugTint,
+    ToggleDebugTint {},
     /// Toggle visualization of render element opaque regions.
-    DebugToggleOpaqueRegions,
+    DebugToggleOpaqueRegions {},
     /// Toggle visualization of output damage.
-    DebugToggleDamage,
+    DebugToggleDamage {},
 }
 
 /// Change in window or column size.
@@ -293,10 +446,12 @@ pub enum SizeChange {
     AdjustProportion(f64),
 }
 
-/// Workspace reference (index or name) to operate on.
+/// Workspace reference (id, index or name) to operate on.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum WorkspaceReferenceArg {
+    /// Id of the workspace.
+    Id(u64),
     /// Index of the workspace.
     Index(u8),
     /// Name of the workspace.
@@ -352,18 +507,11 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", command(subcommand))]
         position: PositionToSet,
     },
-    /// Toggle variable refresh rate.
+    /// Set the variable refresh rate mode.
     Vrr {
-        /// Whether to enable variable refresh rate.
-        #[cfg_attr(
-            feature = "clap",
-            arg(
-                value_name = "ON|OFF",
-                action = clap::ArgAction::Set,
-                value_parser = clap::builder::BoolishValueParser::new(),
-            ),
-        )]
-        enable: bool,
+        /// Variable refresh rate mode to set.
+        #[cfg_attr(feature = "clap", command(flatten))]
+        vrr: VrrToSet,
     },
 }
 
@@ -425,6 +573,27 @@ pub struct ConfiguredPosition {
     pub y: i32,
 }
 
+/// Output VRR to set.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct VrrToSet {
+    /// Whether to enable variable refresh rate.
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            value_name = "ON|OFF",
+            action = clap::ArgAction::Set,
+            value_parser = clap::builder::BoolishValueParser::new(),
+            hide_possible_values = true,
+        ),
+    )]
+    pub vrr: bool,
+    /// Only enable when the output shows a window matching the variable-refresh-rate window rule.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub on_demand: bool,
+}
+
 /// Connected output.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -435,6 +604,8 @@ pub struct Output {
     pub make: String,
     /// Textual description of the model.
     pub model: String,
+    /// Serial of the output, if known.
+    pub serial: Option<String>,
     /// Physical width and height of the output in millimeters, if known.
     pub physical_size: Option<(u32, u32)>,
     /// Available modes for the output.
@@ -518,10 +689,29 @@ pub enum Transform {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Window {
+    /// Unique id of this window.
+    ///
+    /// This id remains constant while this window is open.
+    ///
+    /// Do not assume that window ids will always increase without wrapping, or start at 1. That is
+    /// an implementation detail subject to change. For example, ids may change to be randomly
+    /// generated for each new window.
+    pub id: u64,
     /// Title, if set.
     pub title: Option<String>,
     /// Application ID, if set.
     pub app_id: Option<String>,
+    /// Process ID that created the Wayland connection for this window, if known.
+    ///
+    /// Currently, windows created by xdg-desktop-portal-gnome will have a `None` PID, but this may
+    /// change in the future.
+    pub pid: Option<i32>,
+    /// Id of the workspace this window is on, if any.
+    pub workspace_id: Option<u64>,
+    /// Whether this window is currently focused.
+    ///
+    /// There can be either one focused window or zero (e.g. when a layer-shell surface has focus).
+    pub is_focused: bool,
 }
 
 /// Output configuration change result.
@@ -538,9 +728,22 @@ pub enum OutputConfigChanged {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Workspace {
+    /// Unique id of this workspace.
+    ///
+    /// This id remains constant regardless of the workspace moving around and across monitors.
+    ///
+    /// Do not assume that workspace ids will always increase without wrapping, or start at 1. That
+    /// is an implementation detail subject to change. For example, ids may change to be randomly
+    /// generated for each new workspace.
+    pub id: u64,
     /// Index of the workspace on its monitor.
     ///
     /// This is the same index you can use for requests like `niri msg action focus-workspace`.
+    ///
+    /// This index *will change* as you move and re-order workspace. It is merely the workspace's
+    /// current position on its monitor. Workspaces on different monitors can have the same index.
+    ///
+    /// If you need a unique workspace id that doesn't change, see [`Self::id`].
     pub idx: u8,
     /// Optional name of the workspace.
     pub name: Option<String>,
@@ -549,7 +752,136 @@ pub struct Workspace {
     /// Can be `None` if no outputs are currently connected.
     pub output: Option<String>,
     /// Whether the workspace is currently active on its output.
+    ///
+    /// Every output has one active workspace, the one that is currently visible on that output.
     pub is_active: bool,
+    /// Whether the workspace is currently focused.
+    ///
+    /// There's only one focused workspace across all outputs.
+    pub is_focused: bool,
+    /// Id of the active window on this workspace, if any.
+    pub active_window_id: Option<u64>,
+}
+
+/// Configured keyboard layouts.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct KeyboardLayouts {
+    /// XKB names of the configured layouts.
+    pub names: Vec<String>,
+    /// Index of the currently active layout in `names`.
+    pub current_idx: u8,
+}
+
+/// A layer-shell layer.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Layer {
+    /// The background layer.
+    Background,
+    /// The bottom layer.
+    Bottom,
+    /// The top layer.
+    Top,
+    /// The overlay layer.
+    Overlay,
+}
+
+/// Keyboard interactivity modes for a layer-shell surface.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum LayerSurfaceKeyboardInteractivity {
+    /// Surface cannot receive keyboard focus.
+    None,
+    /// Surface receives keyboard focus whenever possible.
+    Exclusive,
+    /// Surface receives keyboard focus on demand, e.g. when clicked.
+    OnDemand,
+}
+
+/// A layer-shell surface.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct LayerSurface {
+    /// Namespace provided by the layer-shell client.
+    pub namespace: String,
+    /// Name of the output the surface is on.
+    pub output: String,
+    /// Layer that the surface is on.
+    pub layer: Layer,
+    /// The surface's keyboard interactivity mode.
+    pub keyboard_interactivity: LayerSurfaceKeyboardInteractivity,
+}
+
+/// A compositor event.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Event {
+    /// The workspace configuration has changed.
+    WorkspacesChanged {
+        /// The new workspace configuration.
+        ///
+        /// This configuration completely replaces the previous configuration. I.e. if any
+        /// workspaces are missing from here, then they were deleted.
+        workspaces: Vec<Workspace>,
+    },
+    /// A workspace was activated on an output.
+    ///
+    /// This doesn't always mean the workspace became focused, just that it's now the active
+    /// workspace on its output. All other workspaces on the same output become inactive.
+    WorkspaceActivated {
+        /// Id of the newly active workspace.
+        id: u64,
+        /// Whether this workspace also became focused.
+        ///
+        /// If `true`, this is now the single focused workspace. All other workspaces are no longer
+        /// focused, but they may remain active on their respective outputs.
+        focused: bool,
+    },
+    /// An active window changed on a workspace.
+    WorkspaceActiveWindowChanged {
+        /// Id of the workspace on which the active window changed.
+        workspace_id: u64,
+        /// Id of the new active window, if any.
+        active_window_id: Option<u64>,
+    },
+    /// The window configuration has changed.
+    WindowsChanged {
+        /// The new window configuration.
+        ///
+        /// This configuration completely replaces the previous configuration. I.e. if any windows
+        /// are missing from here, then they were closed.
+        windows: Vec<Window>,
+    },
+    /// A new toplevel window was opened, or an existing toplevel window changed.
+    WindowOpenedOrChanged {
+        /// The new or updated window.
+        ///
+        /// If the window is focused, all other windows are no longer focused.
+        window: Window,
+    },
+    /// A toplevel window was closed.
+    WindowClosed {
+        /// Id of the removed window.
+        id: u64,
+    },
+    /// Window focus changed.
+    ///
+    /// All other windows are no longer focused.
+    WindowFocusChanged {
+        /// Id of the newly focused window, or `None` if no window is now focused.
+        id: Option<u64>,
+    },
+    /// The configured keyboard layouts have changed.
+    KeyboardLayoutsChanged {
+        /// The new keyboard layout configuration.
+        keyboard_layouts: KeyboardLayouts,
+    },
+    /// The keyboard layout switched.
+    KeyboardLayoutSwitched {
+        /// Index of the newly active layout.
+        idx: u8,
+    },
 }
 
 impl FromStr for WorkspaceReferenceArg {
@@ -560,7 +892,7 @@ impl FromStr for WorkspaceReferenceArg {
             if let Ok(idx) = u8::try_from(index) {
                 Self::Index(idx)
             } else {
-                return Err("workspace indexes must be between 0 and 255");
+                return Err("workspace index must be between 0 and 255");
             }
         } else {
             Self::Name(s.to_string())

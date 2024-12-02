@@ -7,22 +7,26 @@ use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::input::TabletToolDescriptor;
 use smithay::desktop::{PopupKind, PopupManager};
-use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
+use smithay::input::pointer::{
+    CursorIcon, CursorImageStatus, CursorImageSurfaceData, PointerHandle,
+};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Rectangle, Size};
-use smithay::wayland::compositor::with_states;
+use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -32,7 +36,7 @@ use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
+use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler};
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
 };
@@ -63,18 +67,21 @@ use smithay::{
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
-use crate::niri::{ClientState, State};
+use crate::niri::{ClientState, DndIcon, State};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
+use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
-use crate::protocols::screencopy::{Screencopy, ScreencopyHandler};
-use crate::utils::{output_size, send_scale_transform};
+use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
+use crate::utils::{output_size, send_scale_transform, with_toplevel_role};
 use crate::{
-    delegate_foreign_toplevel, delegate_gamma_control, delegate_output_management,
-    delegate_screencopy,
+    delegate_foreign_toplevel, delegate_gamma_control, delegate_mutter_x11_interop,
+    delegate_output_management, delegate_screencopy,
 };
+
+pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -133,11 +140,66 @@ impl TabletSeatHandler for State {
 delegate_tablet_manager!(State);
 
 impl PointerConstraintsHandler for State {
-    fn new_constraint(&mut self, _surface: &WlSurface, pointer: &PointerHandle<Self>) {
-        self.niri.maybe_activate_pointer_constraint(
-            pointer.current_location(),
-            &self.niri.pointer_focus,
-        );
+    fn new_constraint(&mut self, _surface: &WlSurface, _pointer: &PointerHandle<Self>) {
+        // Pointer constraints track pointer focus internally, so make sure it's up to date before
+        // activating a new one.
+        self.refresh_pointer_contents();
+
+        self.niri.maybe_activate_pointer_constraint();
+    }
+
+    fn cursor_position_hint(
+        &mut self,
+        surface: &WlSurface,
+        pointer: &PointerHandle<Self>,
+        location: Point<f64, Logical>,
+    ) {
+        let is_constraint_active = with_pointer_constraint(surface, pointer, |constraint| {
+            constraint.map_or(false, |c| c.is_active())
+        });
+
+        if !is_constraint_active {
+            return;
+        }
+
+        // Note: this is surface under pointer, not pointer focus. So if you start, say, a
+        // middle-drag in Blender, then touchpad-swipe the window away, the surface under pointer
+        // will change, even though the real pointer focus remains on the Blender surface due to
+        // the click grab.
+        //
+        // Ideally we would just use the constraint surface, but we need its origin. So this is
+        // more of a hack because pointer contents has the surface origin available.
+        //
+        // FIXME: use the constraint surface somehow, don't use pointer contents.
+        let Some((ref surface_under_pointer, origin)) = self.niri.pointer_contents.surface else {
+            return;
+        };
+
+        if surface_under_pointer != surface {
+            return;
+        }
+
+        let mut root = surface.clone();
+        while let Some(parent) = get_parent(&root) {
+            root = parent;
+        }
+
+        let target = self
+            .niri
+            .output_for_root(&root)
+            .and_then(|output| self.niri.global_space.output_geometry(output))
+            .map_or(origin + location, |mut output_geometry| {
+                // i32 sizes are exclusive, but f64 sizes are inclusive.
+                output_geometry.size -= (1, 1).into();
+                (origin + location).constrain(output_geometry.to_f64())
+            });
+        pointer.set_location(target);
+
+        // Redraw to update the cursor position if it's visible.
+        if !self.niri.pointer_hidden {
+            // FIXME: redraw only outputs overlapping the cursor.
+            self.niri.queue_redraw_all();
+        }
     }
 }
 delegate_pointer_constraints!(State);
@@ -223,12 +285,60 @@ impl ClientDndGrabHandler for State {
         icon: Option<WlSurface>,
         _seat: Seat<Self>,
     ) {
-        self.niri.dnd_icon = icon;
+        let offset = if let CursorImageStatus::Surface(ref surface) =
+            self.niri.cursor_manager.cursor_image()
+        {
+            with_states(surface, |states| {
+                let hotspot = states
+                    .data_map
+                    .get::<CursorImageSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .hotspot;
+                Point::from((-hotspot.x, -hotspot.y))
+            })
+        } else {
+            (0, 0).into()
+        };
+        self.niri.dnd_icon = icon.map(|surface| DndIcon { surface, offset });
         // FIXME: more granular
         self.niri.queue_redraw_all();
     }
 
-    fn dropped(&mut self, _seat: Seat<Self>) {
+    fn dropped(&mut self, target: Option<WlSurface>, validated: bool, _seat: Seat<Self>) {
+        trace!("client dropped, target: {target:?}, validated: {validated}");
+
+        // Activate the target output, since that's how Firefox drag-tab-into-new-window works for
+        // example. On successful drop, additionally activate the target window.
+        let mut activate_output = true;
+        if let Some(target) = validated.then_some(target).flatten() {
+            if let Some(root) = self.niri.root_surface.get(&target) {
+                if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+                    let window = mapped.window.clone();
+                    self.niri.layout.activate_window(&window);
+                    activate_output = false;
+                }
+            }
+        }
+
+        if activate_output {
+            // Find the output from cursor coordinates.
+            //
+            // FIXME: uhhh, we can't actually properly tell if the DnD comes from pointer or touch,
+            // and if it comes from touch, then what the coordinates are. Need to pass more
+            // parameters from Smithay I guess.
+            //
+            // Assume that hidden pointer means touch DnD.
+            if !self.niri.pointer_hidden {
+                // We can't even get the current pointer location because it's locked (we're deep
+                // in the grab call stack here). So use the last known one.
+                if let Some(output) = &self.niri.pointer_contents.output {
+                    self.niri.layout.activate_output(output);
+                }
+            }
+        }
+
         self.niri.dnd_icon = None;
         // FIXME: more granular
         self.niri.queue_redraw_all();
@@ -332,6 +442,7 @@ impl SecurityContextHandler for State {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
                     restricted: true,
+                    credentials_unknown: false,
                 });
 
                 if let Err(err) = state.niri.display_handle.insert_client(client, data) {
@@ -386,12 +497,12 @@ impl ForeignToplevelHandler for State {
     fn set_fullscreen(&mut self, wl_surface: WlSurface, wl_output: Option<WlOutput>) {
         if let Some((mapped, current_output)) = self.niri.layout.find_window_and_output(&wl_surface)
         {
-            if !mapped
-                .toplevel()
-                .current_state()
-                .capabilities
-                .contains(xdg_toplevel::WmCapabilities::Fullscreen)
-            {
+            let has_fullscreen_cap = with_toplevel_role(mapped.toplevel(), |role| {
+                role.current
+                    .capabilities
+                    .contains(xdg_toplevel::WmCapabilities::Fullscreen)
+            });
+            if !has_fullscreen_cap {
                 return;
             }
 
@@ -401,7 +512,7 @@ impl ForeignToplevelHandler for State {
                 if &requested_output != current_output {
                     self.niri
                         .layout
-                        .move_window_to_output(&window, &requested_output);
+                        .move_to_output(Some(&window), &requested_output, None);
                 }
             }
 
@@ -419,13 +530,29 @@ impl ForeignToplevelHandler for State {
 delegate_foreign_toplevel!(State);
 
 impl ScreencopyHandler for State {
-    fn frame(&mut self, screencopy: Screencopy) {
-        if let Err(err) = self
-            .niri
-            .render_for_screencopy(&mut self.backend, screencopy)
-        {
-            warn!("error rendering for screencopy: {err:?}");
+    fn frame(&mut self, manager: &ZwlrScreencopyManagerV1, screencopy: Screencopy) {
+        // If with_damage then push it onto the queue for redraw of the output,
+        // otherwise render it immediately.
+        if screencopy.with_damage() {
+            let Some(queue) = self.niri.screencopy_state.get_queue_mut(manager) else {
+                trace!("screencopy manager destroyed already");
+                return;
+            };
+            queue.push(screencopy);
+        } else {
+            self.backend.with_primary_renderer(|renderer| {
+                if let Err(err) = self
+                    .niri
+                    .render_for_screencopy_without_damage(renderer, manager, screencopy)
+                {
+                    warn!("error rendering for screencopy: {err:?}");
+                }
+            });
         }
+    }
+
+    fn screencopy_state(&mut self) -> &mut ScreencopyManagerState {
+        &mut self.niri.screencopy_state
     }
 }
 delegate_screencopy!(State);
@@ -533,18 +660,22 @@ impl XdgActivationHandler for State {
 
     fn request_activation(
         &mut self,
-        _token: XdgActivationToken,
+        token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,
     ) {
-        if token_data.timestamp.elapsed().as_secs() < 10 {
+        if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&surface) {
                 let window = mapped.window.clone();
                 self.niri.layout.activate_window(&window);
                 self.niri.layer_shell_on_demand_focus = None;
                 self.niri.queue_redraw_all();
+            } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(&surface) {
+                unmapped.activation_token_data = Some(token_data);
             }
         }
+
+        self.niri.activation_state.remove_token(&token);
     }
 }
 delegate_xdg_activation!(State);
@@ -563,3 +694,6 @@ impl OutputManagementHandler for State {
     }
 }
 delegate_output_management!(State);
+
+impl MutterX11InteropHandler for State {}
+delegate_mutter_x11_interop!(State);

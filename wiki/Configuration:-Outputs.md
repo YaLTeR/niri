@@ -12,19 +12,28 @@ output "eDP-1" {
     scale 2.0
     transform "90"
     position x=1280 y=0
-    variable-refresh-rate
+    variable-refresh-rate // on-demand=true
+    background-color "#003300"
 }
 
 output "HDMI-A-1" {
     // ...settings for HDMI-A-1...
 }
+
+output "Some Company CoolMonitor 1234" {
+    // ...settings for CoolMonitor...
+}
 ```
 
-Outputs are matched by connector name (i.e. `eDP-1`, `HDMI-A-1`) which you can find by running `niri msg outputs`.
+Outputs are matched by connector name (i.e. `eDP-1`, `HDMI-A-1`), or by monitor manufacturer, model, and serial, separated by a single space each.
+You can find all of these by running `niri msg outputs`.
+
 Usually, the built-in monitor in laptops will be called `eDP-1`.
-Matching by output manufacturer and model is planned, but blocked on Smithay adopting libdisplay-info instead of edid-rs.
 
 <sup>Since: 0.1.6</sup> The output name is case-insensitive.
+
+<sup>Since: 0.1.9</sup> Outputs can be matched by manufacturer, model, and serial.
+Before, they could be matched only by the connector name.
 
 ### `off`
 
@@ -143,5 +152,29 @@ You can check whether an output supports VRR in `niri msg outputs`.
 ```kdl
 output "HDMI-A-1" {
     variable-refresh-rate
+}
+```
+
+<sup>Since: 0.1.9</sup> You can also set the `on-demand=true` property, which will only enable VRR when this output shows a window matching the `variable-refresh-rate` window rule.
+This is helpful to avoid various issues with VRR, since it can be disabled most of the time, and only enabled for specific windows, like games or video players.
+
+```kdl
+output "HDMI-A-1" {
+    variable-refresh-rate on-demand=true
+}
+```
+
+### `background-color`
+
+<sup>Since: 0.1.8</sup>
+
+Set the background color that niri draws for this output.
+This is visible when you're not using any background tools like swaybg.
+
+The alpha channel for this color will be ignored.
+
+```kdl
+output "HDMI-A-1" {
+    background-color "#003300"
 }
 ```

@@ -1,5 +1,4 @@
 use std::rc::Rc;
-use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use smithay::backend::allocator::Fourcc;
@@ -13,7 +12,7 @@ use super::{
     LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
     RESIZE_ANIMATION_THRESHOLD,
 };
-use crate::animation::Animation;
+use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
@@ -23,6 +22,7 @@ use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
+use crate::utils::transaction::Transaction;
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -63,6 +63,9 @@ pub struct Tile<W: LayoutElement> {
     /// The animation of a tile visually moving vertically.
     move_y_animation: Option<MoveAnimation>,
 
+    /// Offset during the initial interactive move rubberband.
+    pub(super) interactive_move_offset: Point<f64, Logical>,
+
     /// Snapshot of the last render for use in the close animation.
     unmap_snapshot: Option<TileRenderSnapshot>,
 
@@ -72,8 +75,11 @@ pub struct Tile<W: LayoutElement> {
     /// Scale of the output the tile is on (and rounds its sizes to).
     scale: f64,
 
+    /// Clock for driving animations.
+    pub(super) clock: Clock,
+
     /// Configurable properties of the layout.
-    pub options: Rc<Options>,
+    pub(super) options: Rc<Options>,
 }
 
 niri_render_elements! {
@@ -89,7 +95,7 @@ niri_render_elements! {
     }
 }
 
-type TileRenderSnapshot =
+pub type TileRenderSnapshot =
     RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
 #[derive(Debug)]
@@ -106,7 +112,7 @@ struct MoveAnimation {
 }
 
 impl<W: LayoutElement> Tile<W> {
-    pub fn new(window: W, scale: f64, options: Rc<Options>) -> Self {
+    pub fn new(window: W, scale: f64, clock: Clock, options: Rc<Options>) -> Self {
         let rules = window.rules();
         let border_config = rules.border.resolve_against(options.border);
         let focus_ring_config = rules.focus_ring.resolve_against(options.focus_ring.into());
@@ -122,9 +128,11 @@ impl<W: LayoutElement> Tile<W> {
             resize_animation: None,
             move_x_animation: None,
             move_y_animation: None,
+            interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
             scale,
+            clock,
             options,
         }
     }
@@ -175,7 +183,13 @@ impl<W: LayoutElement> Tile<W> {
             let change = self.window.size().to_f64().to_point() - size_from.to_point();
             let change = f64::max(change.x.abs(), change.y.abs());
             if change > RESIZE_ANIMATION_THRESHOLD {
-                let anim = Animation::new(0., 1., 0., self.options.animations.window_resize.anim);
+                let anim = Animation::new(
+                    self.clock.clone(),
+                    0.,
+                    1.,
+                    0.,
+                    self.options.animations.window_resize.anim,
+                );
                 self.resize_animation = Some(ResizeAnimation {
                     anim,
                     size_from,
@@ -203,29 +217,25 @@ impl<W: LayoutElement> Tile<W> {
         self.rounded_corner_damage.set_size(window_size);
     }
 
-    pub fn advance_animations(&mut self, current_time: Duration) {
+    pub fn advance_animations(&mut self) {
         if let Some(open) = &mut self.open_animation {
-            open.advance_animations(current_time);
             if open.is_done() {
                 self.open_animation = None;
             }
         }
 
         if let Some(resize) = &mut self.resize_animation {
-            resize.anim.set_current_time(current_time);
             if resize.anim.is_done() {
                 self.resize_animation = None;
             }
         }
 
         if let Some(move_) = &mut self.move_x_animation {
-            move_.anim.set_current_time(current_time);
             if move_.anim.is_done() {
                 self.move_x_animation = None;
             }
         }
         if let Some(move_) = &mut self.move_y_animation {
-            move_.anim.set_current_time(current_time);
             if move_.anim.is_done() {
                 self.move_y_animation = None;
             }
@@ -304,11 +314,14 @@ impl<W: LayoutElement> Tile<W> {
             offset.y += move_.from * move_.anim.value();
         }
 
+        offset += self.interactive_move_offset;
+
         offset
     }
 
     pub fn start_open_animation(&mut self) {
         self.open_animation = Some(OpenAnimation::new(Animation::new(
+            self.clock.clone(),
             0.,
             1.,
             0.,
@@ -336,7 +349,7 @@ impl<W: LayoutElement> Tile<W> {
         let anim = self.move_x_animation.take().map(|move_| move_.anim);
         let anim = anim
             .map(|anim| anim.restarted(1., 0., 0.))
-            .unwrap_or_else(|| Animation::new(1., 0., 0., config));
+            .unwrap_or_else(|| Animation::new(self.clock.clone(), 1., 0., 0., config));
 
         self.move_x_animation = Some(MoveAnimation {
             anim,
@@ -355,12 +368,17 @@ impl<W: LayoutElement> Tile<W> {
         let anim = self.move_y_animation.take().map(|move_| move_.anim);
         let anim = anim
             .map(|anim| anim.restarted(1., 0., 0.))
-            .unwrap_or_else(|| Animation::new(1., 0., 0., config));
+            .unwrap_or_else(|| Animation::new(self.clock.clone(), 1., 0., 0., config));
 
         self.move_y_animation = Some(MoveAnimation {
             anim,
             from: from + current_offset,
         });
+    }
+
+    pub fn stop_move_animations(&mut self) {
+        self.move_x_animation = None;
+        self.move_y_animation = None;
     }
 
     pub fn window(&self) -> &W {
@@ -380,7 +398,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// Returns `None` if the border is hidden and `Some(width)` if it should be shown.
-    fn effective_border_width(&self) -> Option<f64> {
+    pub fn effective_border_width(&self) -> Option<f64> {
         if self.is_fullscreen {
             return None;
         }
@@ -503,7 +521,12 @@ impl<W: LayoutElement> Tile<W> {
         activation_region.contains(point)
     }
 
-    pub fn request_tile_size(&mut self, mut size: Size<f64, Logical>, animate: bool) {
+    pub fn request_tile_size(
+        &mut self,
+        mut size: Size<f64, Logical>,
+        animate: bool,
+        transaction: Option<Transaction>,
+    ) {
         // Can't go through effective_border_width() because we might be fullscreen.
         if !self.border.is_off() {
             let width = self.border.width();
@@ -514,7 +537,8 @@ impl<W: LayoutElement> Tile<W> {
         // The size request has to be i32 unfortunately, due to Wayland. We floor here instead of
         // round to avoid situations where proportionally-sized columns don't fit on the screen
         // exactly.
-        self.window.request_size(size.to_i32_floor(), animate);
+        self.window
+            .request_size(size.to_i32_floor(), animate, transaction);
     }
 
     pub fn tile_width_for_window_width(&self, size: f64) -> f64 {
@@ -758,8 +782,8 @@ impl<W: LayoutElement> Tile<W> {
                             geo.size,
                             Rectangle::from_loc_and_size((0., 0.), geo.size),
                             GradientInterpolation::default(),
-                            Color::from_array_premul(elem.color()),
-                            Color::from_array_premul(elem.color()),
+                            Color::from_color32f(elem.color()),
+                            Color::from_color32f(elem.color()),
                             0.,
                             Rectangle::from_loc_and_size((0., 0.), geo.size),
                             0.,

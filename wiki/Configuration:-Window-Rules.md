@@ -37,7 +37,7 @@ window-rule {
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
-    open-on-output "eDP-1"
+    open-on-output "Some Company CoolMonitor 1234"
     open-on-workspace "chat"
     open-maximized true
     open-fullscreen true
@@ -47,6 +47,7 @@ window-rule {
     opacity 0.5
     block-out-from "screencast"
     // block-out-from "screen-capture"
+    variable-refresh-rate true
 
     focus-ring {
         // off
@@ -251,8 +252,13 @@ window-rule {
     exclude app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
 
     open-on-output "HDMI-A-1"
+    // Or:
+    // open-on-output "Some Company CoolMonitor 1234"
 }
 ```
+
+<sup>Since: 0.1.9</sup> `open-on-output` can now use monitor manufacturer, model, and serial.
+Before, it could only use the connector name.
 
 #### `open-on-workspace`
 
@@ -317,6 +323,7 @@ You can block out windows from xdg-desktop-portal screencasts.
 They will be replaced with solid black rectangles.
 
 This can be useful for password managers or messenger windows, etc.
+For layer-shell notification pop-ups and the like, you can use a `block-out-from` [layer rule](./Configuration:-Layer-Rules.md).
 
 ![Screenshot showing a window visible normally, but blocked out on OBS.](./img/block-out-from-screencast.png)
 
@@ -388,6 +395,26 @@ window-rule {
     match is-active=false
 
     opacity 0.95
+}
+```
+
+#### `variable-refresh-rate`
+
+<sup>Since: 0.1.9</sup>
+
+If set to true, whenever this window displays on an output with on-demand VRR, it will enable VRR on that output.
+
+```kdl
+// Configure some output with on-demand VRR.
+output "HDMI-A-1" {
+    variable-refresh-rate on-demand=true
+}
+
+// Enable on-demand VRR when mpv displays on the output.
+window-rule {
+    match app-id="^mpv$"
+
+    variable-refresh-rate true
 }
 ```
 

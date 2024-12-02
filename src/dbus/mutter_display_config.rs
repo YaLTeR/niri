@@ -8,6 +8,7 @@ use zbus::{dbus_interface, fdo, SignalContext};
 
 use super::Start;
 use crate::backend::IpcOutputMap;
+use crate::utils::is_laptop_panel;
 
 pub struct DisplayConfig {
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
@@ -63,19 +64,14 @@ impl DisplayConfig {
             .map(|output| {
                 // Loosely matches the check in Mutter.
                 let c = &output.name;
-                let is_laptop_panel = matches!(c.get(..4), Some("eDP-" | "LVDS" | "DSI-"));
-
-                // FIXME: use proper serial when we have libdisplay-info.
-                // A serial is required for correct session restore by xdp-gnome.
-                let serial = c.clone();
+                let is_laptop_panel = is_laptop_panel(c);
+                let display_name = make_display_name(output, is_laptop_panel);
 
                 let mut properties = HashMap::new();
-                if is_laptop_panel {
-                    properties.insert(
-                        String::from("display-name"),
-                        OwnedValue::from(zvariant::Str::from_static("Built-in display")),
-                    );
-                }
+                properties.insert(
+                    String::from("display-name"),
+                    OwnedValue::from(zvariant::Str::from(display_name)),
+                );
                 properties.insert(
                     String::from("is-builtin"),
                     OwnedValue::from(is_laptop_panel),
@@ -111,8 +107,16 @@ impl DisplayConfig {
                     .properties
                     .insert(String::from("is-current"), OwnedValue::from(true));
 
+                let connector = c.clone();
+                let model = output.model.clone();
+                let make = output.make.clone();
+
+                // Serial is used for session restore, so fall back to the connector name if it's
+                // not available.
+                let serial = output.serial.as_ref().unwrap_or(&connector).clone();
+
                 let monitor = Monitor {
-                    names: (c.clone(), String::new(), String::new(), serial),
+                    names: (connector, make, model, serial),
                     modes,
                     properties,
                 };
@@ -144,15 +148,8 @@ impl DisplayConfig {
             })
             .collect();
 
-        // Sort the built-in monitor first, then by connector name.
-        monitors.sort_unstable_by(|a, b| {
-            let a_is_builtin = a.0.properties.contains_key("display-name");
-            let b_is_builtin = b.0.properties.contains_key("display-name");
-            a_is_builtin
-                .cmp(&b_is_builtin)
-                .reverse()
-                .then_with(|| a.0.names.0.cmp(&b.0.names.0))
-        });
+        // Sort by connector.
+        monitors.sort_unstable_by(|a, b| a.0.names.0.cmp(&b.0.names.0));
 
         let (monitors, logical_monitors) = monitors.into_iter().unzip();
         let properties = HashMap::from([(String::from("layout-mode"), OwnedValue::from(1u32))]);
@@ -181,5 +178,50 @@ impl Start for DisplayConfig {
         conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)?;
 
         Ok(conn)
+    }
+}
+
+// Adapted from Mutter.
+fn make_display_name(output: &niri_ipc::Output, is_laptop_panel: bool) -> String {
+    if is_laptop_panel {
+        return String::from("Built-in display");
+    }
+
+    let make = &output.make;
+    let model = &output.model;
+    if let Some(diagonal) = output.physical_size.map(|(width_mm, height_mm)| {
+        let diagonal = f64::hypot(f64::from(width_mm), f64::from(height_mm)) / 25.4;
+        format_diagonal(diagonal)
+    }) {
+        format!("{make} {diagonal}")
+    } else if model != "Unknown" {
+        format!("{make} {model}")
+    } else {
+        make.clone()
+    }
+}
+
+fn format_diagonal(diagonal_inches: f64) -> String {
+    let known = [12.1, 13.3, 15.6];
+    if let Some(d) = known.iter().find(|d| (*d - diagonal_inches).abs() < 0.1) {
+        format!("{d:.1}″")
+    } else {
+        format!("{}″", diagonal_inches.round() as u32)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use k9::snapshot;
+
+    use super::*;
+
+    #[test]
+    fn test_format_diagonal() {
+        snapshot!(format_diagonal(12.11), "12.1″");
+        snapshot!(format_diagonal(13.28), "13.3″");
+        snapshot!(format_diagonal(15.6), "15.6″");
+        snapshot!(format_diagonal(23.2), "23″");
+        snapshot!(format_diagonal(24.8), "25″");
     }
 }

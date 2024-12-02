@@ -8,7 +8,7 @@ You can declare named workspaces at the top level of the config:
 workspace "browser"
 
 workspace "chat" {
-    open-on-output "DP-2"
+    open-on-output "Some Company CoolMonitor 1234"
 }
 ```
 
@@ -24,7 +24,7 @@ workspace "chat" {
     open-on-output "DP-2"
 }
 
-// Open Fractal on the "chat" workspace at niri startup.
+// Open Fractal on the "chat" workspace, if it runs at niri startup.
 window-rule {
     match at-startup=true app-id=r#"^org\.gnome\.Fractal$"#
     open-on-workspace "chat"
@@ -36,3 +36,6 @@ When editing the config while niri is running, newly declared named workspaces w
 
 If you delete some named workspace from the config, the workspace will become normal (unnamed), and if there are no windows on it, it will be removed (as any other normal workspace).
 There's no way to give a name to an already existing workspace, but you can simply move windows that you want to a new, empty named workspace.
+
+<sup>Since: 0.1.9</sup> `open-on-output` can now use monitor manufacturer, model, and serial.
+Before, it could only use the connector name.

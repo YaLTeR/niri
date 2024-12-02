@@ -37,14 +37,14 @@ pub type IpcOutputMap = HashMap<OutputId, niri_ipc::Output>;
 static OUTPUT_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct OutputId(u32);
+pub struct OutputId(u64);
 
 impl OutputId {
     fn next() -> OutputId {
         OutputId(OUTPUT_ID_COUNTER.next())
     }
 
-    pub fn get(self) -> u32 {
+    pub fn get(self) -> u64 {
         self.0
     }
 }
@@ -153,6 +153,13 @@ impl Backend {
         }
     }
 
+    pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
+        match self {
+            Backend::Tty(tty) => tty.set_output_on_demand_vrr(niri, output, enable_vrr),
+            Backend::Winit(_) => (),
+        }
+    }
+
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         match self {
             Backend::Tty(tty) => tty.on_output_config_changed(niri),
@@ -164,6 +171,14 @@ impl Backend {
         match self {
             Backend::Tty(tty) => tty.on_debug_config_changed(),
             Backend::Winit(_) => (),
+        }
+    }
+
+    pub fn tty_checked(&mut self) -> Option<&mut Tty> {
+        if let Self::Tty(v) = self {
+            Some(v)
+        } else {
+            None
         }
     }
 

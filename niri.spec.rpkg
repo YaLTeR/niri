@@ -68,6 +68,7 @@ BuildRequires:  pkgconfig(libinput)
 BuildRequires:  pkgconfig(dbus-1)
 BuildRequires:  pkgconfig(systemd)
 BuildRequires:  pkgconfig(libseat)
+BuildRequires:  pkgconfig(libdisplay-info)
 BuildRequires:  pipewire-devel
 BuildRequires:  pango-devel
 BuildRequires:  cairo-gobject-devel
@@ -75,6 +76,7 @@ BuildRequires:  cairo-gobject-devel
 BuildRequires:  clang
 
 Requires:       mesa-dri-drivers
+Requires:       mesa-libEGL
 
 # Portal implementations used by niri
 Recommends:     xdg-desktop-portal-gtk

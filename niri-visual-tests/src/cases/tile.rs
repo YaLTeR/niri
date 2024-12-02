@@ -6,9 +6,9 @@ use niri::render_helpers::RenderTarget;
 use niri_config::{Color, FloatOrInt};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Physical, Point, Rectangle, Scale, Size};
 
-use super::TestCase;
+use super::{Args, TestCase};
 use crate::test_window::TestWindow;
 
 pub struct Tile {
@@ -17,53 +17,44 @@ pub struct Tile {
 }
 
 impl Tile {
-    pub fn freeform(size: Size<i32, Logical>) -> Self {
+    pub fn freeform(args: Args) -> Self {
         let window = TestWindow::freeform(0);
-        let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size.to_f64(), false);
-        rv.window.communicate();
-        rv
+        Self::with_window(args, window)
     }
 
-    pub fn fixed_size(size: Size<i32, Logical>) -> Self {
+    pub fn fixed_size(args: Args) -> Self {
         let window = TestWindow::fixed_size(0);
-        let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size.to_f64(), false);
-        rv.window.communicate();
-        rv
+        Self::with_window(args, window)
     }
 
-    pub fn fixed_size_with_csd_shadow(size: Size<i32, Logical>) -> Self {
+    pub fn fixed_size_with_csd_shadow(args: Args) -> Self {
         let window = TestWindow::fixed_size(0);
         window.set_csd_shadow_width(64);
-        let mut rv = Self::with_window(window);
-        rv.tile.request_tile_size(size.to_f64(), false);
-        rv.window.communicate();
-        rv
+        Self::with_window(args, window)
     }
 
-    pub fn freeform_open(size: Size<i32, Logical>) -> Self {
-        let mut rv = Self::freeform(size);
+    pub fn freeform_open(args: Args) -> Self {
+        let mut rv = Self::freeform(args);
         rv.window.set_color([0.1, 0.1, 0.1, 1.]);
         rv.tile.start_open_animation();
         rv
     }
 
-    pub fn fixed_size_open(size: Size<i32, Logical>) -> Self {
-        let mut rv = Self::fixed_size(size);
+    pub fn fixed_size_open(args: Args) -> Self {
+        let mut rv = Self::fixed_size(args);
         rv.window.set_color([0.1, 0.1, 0.1, 1.]);
         rv.tile.start_open_animation();
         rv
     }
 
-    pub fn fixed_size_with_csd_shadow_open(size: Size<i32, Logical>) -> Self {
-        let mut rv = Self::fixed_size_with_csd_shadow(size);
+    pub fn fixed_size_with_csd_shadow_open(args: Args) -> Self {
+        let mut rv = Self::fixed_size_with_csd_shadow(args);
         rv.window.set_color([0.1, 0.1, 0.1, 1.]);
         rv.tile.start_open_animation();
         rv
     }
 
-    pub fn with_window(window: TestWindow) -> Self {
+    pub fn with_window(args: Args, window: TestWindow) -> Self {
         let options = Options {
             focus_ring: niri_config::FocusRing {
                 off: true,
@@ -77,7 +68,13 @@ impl Tile {
             },
             ..Default::default()
         };
-        let tile = niri::layout::tile::Tile::new(window.clone(), 1., Rc::new(options));
+
+        let mut tile =
+            niri::layout::tile::Tile::new(window.clone(), 1., args.clock, Rc::new(options));
+
+        tile.request_tile_size(args.size.to_f64(), false, None);
+        window.communicate();
+
         Self { window, tile }
     }
 }
@@ -85,7 +82,7 @@ impl Tile {
 impl TestCase for Tile {
     fn resize(&mut self, width: i32, height: i32) {
         self.tile
-            .request_tile_size(Size::from((width, height)).to_f64(), false);
+            .request_tile_size(Size::from((width, height)).to_f64(), false, None);
         self.window.communicate();
     }
 
@@ -93,8 +90,8 @@ impl TestCase for Tile {
         self.tile.are_animations_ongoing()
     }
 
-    fn advance_animations(&mut self, current_time: Duration) {
-        self.tile.advance_animations(current_time);
+    fn advance_animations(&mut self, _current_time: Duration) {
+        self.tile.advance_animations();
     }
 
     fn render(
