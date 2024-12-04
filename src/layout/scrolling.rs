@@ -328,7 +328,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn update_render_elements(&mut self, is_active: bool) {
         let view_pos = Point::from((self.view_pos(), 0.));
-        let view_size = self.view_size();
+        let view_size = self.view_size;
         let active_idx = self.active_column_idx;
         for (col_idx, (col, col_x)) in self.columns_mut().enumerate() {
             let is_active = is_active && col_idx == active_idx;
@@ -1948,7 +1948,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             hint_area.loc.x -= self.view_pos();
         }
 
-        let view_size = self.view_size();
+        let view_size = self.view_size;
 
         // Make sure the hint is at least partially visible.
         if matches!(insert_hint.position, InsertPosition::NewColumn(_)) {
@@ -2671,14 +2671,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    #[cfg(test)]
     pub fn view_size(&self) -> Size<f64, Logical> {
         self.view_size
     }
 
+    #[cfg(test)]
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
 
+    #[cfg(test)]
     pub fn options(&self) -> &Rc<Options> {
         &self.options
     }
