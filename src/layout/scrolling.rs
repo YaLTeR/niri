@@ -3772,8 +3772,6 @@ impl<W: LayoutElement> Column<W> {
 
     #[cfg(test)]
     fn verify_invariants(&self) {
-        use approx::assert_abs_diff_eq;
-
         assert!(!self.tiles.is_empty(), "columns can't be empty");
         assert!(self.active_tile_idx < self.tiles.len());
         assert_eq!(self.tiles.len(), self.data.len());
@@ -3800,16 +3798,11 @@ impl<W: LayoutElement> Column<W> {
             assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
             assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
+            tile.verify_invariants();
 
             let mut data2 = *data;
             data2.update(tile);
             assert_eq!(data, &data2, "tile data must be up to date");
-
-            let scale = tile.scale();
-            let size = tile.tile_size();
-            let rounded = size.to_physical_precise_round(scale).to_logical(scale);
-            assert_abs_diff_eq!(size.w, rounded.w, epsilon = 1e-5);
-            assert_abs_diff_eq!(size.h, rounded.h, epsilon = 1e-5);
 
             if matches!(data.height, WindowHeight::Fixed(_)) {
                 assert!(
