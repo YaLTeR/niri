@@ -11,7 +11,7 @@ use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
-    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
+    InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
     TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
     TabletToolTipState, TouchEvent,
@@ -28,7 +28,9 @@ use smithay::input::touch::{
     DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
 };
 use smithay::input::SeatHandler;
+use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
+use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_move_grab::TouchMoveGrab;
@@ -41,6 +43,7 @@ use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
+pub mod backend_ext;
 pub mod move_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
@@ -48,6 +51,8 @@ pub mod spatial_movement_grab;
 pub mod swipe_tracker;
 pub mod touch_move_grab;
 pub mod touch_resize_grab;
+
+use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
@@ -263,8 +268,10 @@ impl State {
     where
         I::Device: 'static,
     {
+        let device_output = event.device().output(self);
+        let device_output = device_output.as_ref();
         let (target_geo, keep_ratio, px, transform) =
-            if let Some(output) = self.niri.output_for_tablet() {
+            if let Some(output) = device_output.or_else(|| self.niri.output_for_tablet()) {
                 (
                     self.niri.global_space.output_geometry(output).unwrap(),
                     true,
@@ -317,6 +324,18 @@ impl State {
         Some(pos + target_geo.loc.to_f64())
     }
 
+    fn is_inhibiting_shortcuts(&self) -> bool {
+        self.niri
+            .keyboard_focus
+            .surface()
+            .and_then(|surface| {
+                self.niri
+                    .keyboard_shortcuts_inhibiting_surfaces
+                    .get(surface)
+            })
+            .map_or(false, KeyboardShortcutsInhibitor::is_active)
+    }
+
     fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
         let comp_mod = self.backend.mod_key();
 
@@ -340,6 +359,8 @@ impl State {
         if pressed {
             self.hide_cursor_if_needed();
         }
+
+        let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
@@ -371,6 +392,7 @@ impl State {
                     *mods,
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
+                    is_inhibiting_shortcuts,
                 )
             },
         ) else {
@@ -600,6 +622,19 @@ impl State {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
+                }
+            }
+            Action::ToggleKeyboardShortcutsInhibit => {
+                if let Some(inhibitor) = self.niri.keyboard_focus.surface().and_then(|surface| {
+                    self.niri
+                        .keyboard_shortcuts_inhibiting_surfaces
+                        .get(surface)
+                }) {
+                    if inhibitor.is_active() {
+                        inhibitor.inactivate();
+                    } else {
+                        inhibitor.activate();
+                    }
                 }
             }
             Action::CloseWindow => {
@@ -1486,11 +1521,13 @@ impl State {
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
-        let Some(output_geo) = self.global_bounding_rectangle() else {
+        let Some(pos) = self.compute_absolute_location(&event, None).or_else(|| {
+            self.global_bounding_rectangle().map(|output_geo| {
+                event.position_transformed(output_geo.size) + output_geo.loc.to_f64()
+            })
+        }) else {
             return;
         };
-
-        let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -2331,14 +2368,13 @@ impl State {
         );
     }
 
-    /// Computes the cursor position for the touch event.
-    ///
-    /// This function handles the touch output mapping, as well as coordinate transform
-    fn compute_touch_location<I: InputBackend, E: AbsolutePositionEvent<I>>(
+    fn compute_absolute_location<I: InputBackend>(
         &self,
-        evt: &E,
+        evt: &impl AbsolutePositionEvent<I>,
+        fallback_output: Option<&Output>,
     ) -> Option<Point<f64, Logical>> {
-        let output = self.niri.output_for_touch()?;
+        let output = evt.device().output(self);
+        let output = output.as_ref().or(fallback_output)?;
         let output_geo = self.niri.global_space.output_geometry(output).unwrap();
         let transform = output.current_transform();
         let size = transform.invert().transform_size(output_geo.size);
@@ -2346,6 +2382,16 @@ impl State {
             transform.transform_point_in(evt.position_transformed(size), &size.to_f64())
                 + output_geo.loc.to_f64(),
         )
+    }
+
+    /// Computes the cursor position for the touch event.
+    ///
+    /// This function handles the touch output mapping, as well as coordinate transform
+    fn compute_touch_location<I: InputBackend>(
+        &self,
+        evt: &impl AbsolutePositionEvent<I>,
+    ) -> Option<Point<f64, Logical>> {
+        self.compute_absolute_location(evt, self.niri.output_for_touch())
     }
 
     fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
@@ -2498,6 +2544,7 @@ fn should_intercept_key(
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
+    is_inhibiting_shortcuts: bool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -2538,6 +2585,10 @@ fn should_intercept_key(
                     repeat: true,
                     cooldown: None,
                     allow_when_locked: false,
+                    // The screenshot UI owns the focus anyway, so this doesn't really matter.
+                    // But logically, nothing can inhibit its actions. Only opening it can be
+                    // inhibited.
+                    allow_inhibiting: false,
                 });
             }
         }
@@ -2545,10 +2596,19 @@ fn should_intercept_key(
 
     match (final_bind, pressed) {
         (Some(bind), true) => {
-            suppressed_keys.insert(key_code);
-            FilterResult::Intercept(Some(bind))
+            if is_inhibiting_shortcuts && bind.allow_inhibiting {
+                FilterResult::Forward
+            } else {
+                suppressed_keys.insert(key_code);
+                FilterResult::Intercept(Some(bind))
+            }
         }
         (_, false) => {
+            // By this point, we know that the key was supressed on press. Even if we're inhibiting
+            // shortcuts, we should still suppress the release.
+            // But we don't need to check for shortcuts inhibition here, because
+            // if it was inhibited on press (forwarded to the client), it wouldn't be suppressed,
+            // so the release would already have been forwarded at the start of this function.
             suppressed_keys.remove(&key_code);
             FilterResult::Intercept(None)
         }
@@ -2588,6 +2648,12 @@ fn find_bind(
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
+            // In a worst-case scenario, the user has no way to unlock the compositor and a
+            // misbehaving client has a keyboard shortcuts inhibitor, "jailing" the user.
+            // The user must always be able to change VTs to recover from such a situation.
+            // It also makes no sense to inhibit the default power key handling.
+            // Hardcoded binds must never be inhibited.
+            allow_inhibiting: false,
         });
     }
 
@@ -3036,6 +3102,7 @@ mod tests {
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
+            allow_inhibiting: true,
         }]);
 
         let comp_mod = CompositorMod::Super;
@@ -3060,6 +3127,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                false,
             )
         };
 
@@ -3076,6 +3144,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                false,
             )
         };
 
@@ -3170,6 +3239,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -3180,6 +3250,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -3190,6 +3261,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -3200,6 +3272,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
             Bind {
                 key: Key {
@@ -3210,6 +3283,7 @@ mod tests {
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
+                allow_inhibiting: true,
             },
         ]);
 
