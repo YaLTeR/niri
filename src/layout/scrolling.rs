@@ -1175,16 +1175,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         (from_view_offset - new_view_offset).abs() / self.working_area.size.w
     }
 
-    pub fn activate_window(&mut self, window: &W::Id) {
-        let column_idx = self
-            .columns
-            .iter()
-            .position(|col| col.contains(window))
-            .unwrap();
+    pub fn activate_window(&mut self, window: &W::Id) -> bool {
+        let column_idx = self.columns.iter().position(|col| col.contains(window));
+        let Some(column_idx) = column_idx else {
+            return false;
+        };
         let column = &mut self.columns[column_idx];
 
         column.activate_window(window);
         self.activate_column(column_idx);
+
+        true
     }
 
     pub fn start_close_animation_for_window(

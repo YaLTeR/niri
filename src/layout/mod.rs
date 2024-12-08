@@ -1372,9 +1372,8 @@ impl<W: LayoutElement> Layout<W> {
 
         for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                if ws.has_window(window) {
+                if ws.activate_window(window) {
                     *active_monitor_idx = monitor_idx;
-                    ws.activate_window(window);
 
                     // If currently in the middle of a vertical swipe between the target workspace
                     // and some other, don't switch the workspace.

@@ -840,8 +840,8 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.scroll_amount_to_activate(window)
     }
 
-    pub fn activate_window(&mut self, window: &W::Id) {
-        self.scrolling.activate_window(window);
+    pub fn activate_window(&mut self, window: &W::Id) -> bool {
+        self.scrolling.activate_window(window)
     }
 
     pub fn set_insert_hint(&mut self, insert_hint: InsertHint) {
