@@ -1384,7 +1384,7 @@ impl<W: LayoutElement> Layout<W> {
                         _ => mon.switch_workspace(workspace_idx),
                     }
 
-                    break;
+                    return;
                 }
             }
         }
