@@ -1372,9 +1372,8 @@ impl<W: LayoutElement> Layout<W> {
 
         for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                if ws.has_window(window) {
+                if ws.activate_window(window) {
                     *active_monitor_idx = monitor_idx;
-                    ws.activate_window(window);
 
                     // If currently in the middle of a vertical swipe between the target workspace
                     // and some other, don't switch the workspace.
@@ -1385,7 +1384,7 @@ impl<W: LayoutElement> Layout<W> {
                         _ => mon.switch_workspace(workspace_idx),
                     }
 
-                    break;
+                    return;
                 }
             }
         }
@@ -1664,7 +1663,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if window == Some(move_.tile.window().id()) {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
             }
         }
@@ -1687,7 +1686,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if window == Some(move_.tile.window().id()) {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
             }
         }
@@ -1866,7 +1865,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if window == Some(move_.tile.window().id()) {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
             }
         }
@@ -2516,7 +2515,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if window == Some(move_.tile.window().id()) {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
             }
         }
@@ -2553,7 +2552,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn set_window_height(&mut self, window: Option<&W::Id>, change: SizeChange) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if window == Some(move_.tile.window().id()) {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
             }
         }
@@ -2576,7 +2575,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn reset_window_height(&mut self, window: Option<&W::Id>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if window == Some(move_.tile.window().id()) {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
             }
         }
@@ -2620,7 +2619,7 @@ impl<W: LayoutElement> Layout<W> {
         target_ws_idx: Option<usize>,
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if window == Some(move_.tile.window().id()) {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
             }
         }

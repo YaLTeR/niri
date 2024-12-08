@@ -328,7 +328,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn update_render_elements(&mut self, is_active: bool) {
         let view_pos = Point::from((self.view_pos(), 0.));
-        let view_size = self.view_size();
+        let view_size = self.view_size;
         let active_idx = self.active_column_idx;
         for (col_idx, (col, col_x)) in self.columns_mut().enumerate() {
             let is_active = is_active && col_idx == active_idx;
@@ -1175,16 +1175,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         (from_view_offset - new_view_offset).abs() / self.working_area.size.w
     }
 
-    pub fn activate_window(&mut self, window: &W::Id) {
-        let column_idx = self
-            .columns
-            .iter()
-            .position(|col| col.contains(window))
-            .unwrap();
+    pub fn activate_window(&mut self, window: &W::Id) -> bool {
+        let column_idx = self.columns.iter().position(|col| col.contains(window));
+        let Some(column_idx) = column_idx else {
+            return false;
+        };
         let column = &mut self.columns[column_idx];
 
         column.activate_window(window);
         self.activate_column(column_idx);
+
+        true
     }
 
     pub fn start_close_animation_for_window(
@@ -1948,7 +1949,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             hint_area.loc.x -= self.view_pos();
         }
 
-        let view_size = self.view_size();
+        let view_size = self.view_size;
 
         // Make sure the hint is at least partially visible.
         if matches!(insert_hint.position, InsertPosition::NewColumn(_)) {
@@ -2671,14 +2672,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    #[cfg(test)]
     pub fn view_size(&self) -> Size<f64, Logical> {
         self.view_size
     }
 
+    #[cfg(test)]
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
 
+    #[cfg(test)]
     pub fn options(&self) -> &Rc<Options> {
         &self.options
     }
@@ -3769,8 +3773,6 @@ impl<W: LayoutElement> Column<W> {
 
     #[cfg(test)]
     fn verify_invariants(&self) {
-        use approx::assert_abs_diff_eq;
-
         assert!(!self.tiles.is_empty(), "columns can't be empty");
         assert!(self.active_tile_idx < self.tiles.len());
         assert_eq!(self.tiles.len(), self.data.len());
@@ -3797,16 +3799,11 @@ impl<W: LayoutElement> Column<W> {
             assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
             assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
+            tile.verify_invariants();
 
             let mut data2 = *data;
             data2.update(tile);
             assert_eq!(data, &data2, "tile data must be up to date");
-
-            let scale = tile.scale();
-            let size = tile.tile_size();
-            let rounded = size.to_physical_precise_round(scale).to_logical(scale);
-            assert_abs_diff_eq!(size.w, rounded.w, epsilon = 1e-5);
-            assert_abs_diff_eq!(size.h, rounded.h, epsilon = 1e-5);
 
             if matches!(data.height, WindowHeight::Fixed(_)) {
                 assert!(
