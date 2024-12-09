@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use zbus::fdo::{self, RequestNameFlags};
+use zbus::interface;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{SerializeDict, Type, Value};
-use zbus::{dbus_interface, SignalContext};
 
 use super::Start;
 
@@ -33,7 +34,7 @@ pub struct WindowProperties {
     pub app_id: String,
 }
 
-#[dbus_interface(name = "org.gnome.Shell.Introspect")]
+#[interface(name = "org.gnome.Shell.Introspect")]
 impl Introspect {
     async fn get_windows(&self) -> fdo::Result<HashMap<u64, WindowProperties>> {
         if let Err(err) = self.to_niri.send(IntrospectToNiri::GetWindows) {
@@ -52,8 +53,8 @@ impl Introspect {
 
     // FIXME: call this upon window changes, once more of the infrastructure is there (will be
     // needed for the event stream IPC anyway).
-    #[dbus_interface(signal)]
-    pub async fn windows_changed(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    #[zbus(signal)]
+    pub async fn windows_changed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 impl Introspect {

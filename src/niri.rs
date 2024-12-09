@@ -2067,7 +2067,7 @@ impl Niri {
 
         use smithay::reexports::rustix::io::{fcntl_setfd, FdFlags};
 
-        let conn = zbus::blocking::ConnectionBuilder::system()?.build()?;
+        let conn = zbus::blocking::Connection::system()?;
 
         let message = conn.call_method(
             Some("org.freedesktop.login1"),
@@ -2077,7 +2077,7 @@ impl Niri {
             &("handle-power-key", "niri", "Power key handling", "block"),
         )?;
 
-        let fd: zbus::zvariant::OwnedFd = message.body()?;
+        let fd: zbus::zvariant::OwnedFd = message.body().deserialize()?;
 
         // Don't leak the fd to child processes.
         let borrowed = unsafe { BorrowedFd::borrow_raw(fd.as_raw_fd()) };
@@ -4294,7 +4294,7 @@ impl Niri {
             async_io::block_on(async move {
                 iface
                     .get()
-                    .stop(&server, iface.signal_context().clone())
+                    .stop(server.inner(), iface.signal_emitter().clone())
                     .await
             });
         }
@@ -4774,7 +4774,7 @@ impl Niri {
                 };
 
                 async_io::block_on(async move {
-                    if let Err(err) = DisplayConfig::monitors_changed(iface.signal_context()).await
+                    if let Err(err) = DisplayConfig::monitors_changed(iface.signal_emitter()).await
                     {
                         warn!("error emitting MonitorsChanged: {err:?}");
                     }

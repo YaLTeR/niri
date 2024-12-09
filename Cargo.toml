@@ -48,7 +48,7 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 anyhow.workspace = true
 arrayvec = "0.7.6"
 async-channel = "2.3.1"
-async-io = { version = "1.13.0", optional = true }
+async-io = { version = "2.4.0", optional = true }
 atomic = "0.6.0"
 bitflags.workspace = true
 bytemuck = { version = "1.19.0", features = ["derive"] }
@@ -86,7 +86,7 @@ url = { version = "2.5.3", optional = true }
 wayland-backend = "0.3.7"
 wayland-scanner = "0.31.5"
 xcursor = "0.3.8"
-zbus = { version = "~3.15.2", optional = true }
+zbus = { version = "5.2.0", optional = true }
 
 [dependencies.smithay]
 workspace = true

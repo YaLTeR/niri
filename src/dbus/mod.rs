@@ -1,5 +1,5 @@
 use zbus::blocking::Connection;
-use zbus::Interface;
+use zbus::object_server::Interface;
 
 use crate::niri::State;
 
