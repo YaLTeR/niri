@@ -41,7 +41,7 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
 use smithay::utils::{Physical, Scale, Size, Transform};
-use zbus::SignalContext;
+use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::State;
@@ -188,7 +188,7 @@ impl PipeWire {
         refresh: u32,
         alpha: bool,
         cursor_mode: CursorMode,
-        signal_ctx: SignalContext<'static>,
+        signal_ctx: SignalEmitter<'static>,
     ) -> anyhow::Result<Cast> {
         let _span = tracy_client::span!("PipeWire::start_cast");
 

@@ -1,9 +1,8 @@
-use std::os::fd::{FromRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 
 use smithay::reexports::wayland_server::DisplayHandle;
-use zbus::dbus_interface;
+use zbus::interface;
 
 use super::Start;
 use crate::niri::ClientState;
@@ -12,7 +11,7 @@ pub struct ServiceChannel {
     display: DisplayHandle,
 }
 
-#[dbus_interface(name = "org.gnome.Mutter.ServiceChannel")]
+#[interface(name = "org.gnome.Mutter.ServiceChannel")]
 impl ServiceChannel {
     async fn open_wayland_service_connection(
         &mut self,
@@ -34,7 +33,9 @@ impl ServiceChannel {
             credentials_unknown: true,
         });
         self.display.insert_client(sock2, data).unwrap();
-        Ok(unsafe { zbus::zvariant::OwnedFd::from_raw_fd(sock1.into_raw_fd()) })
+        Ok(zbus::zvariant::OwnedFd::from(std::os::fd::OwnedFd::from(
+            sock1,
+        )))
     }
 }
 
@@ -46,7 +47,7 @@ impl ServiceChannel {
 
 impl Start for ServiceChannel {
     fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
-        let conn = zbus::blocking::ConnectionBuilder::session()?
+        let conn = zbus::blocking::connection::Builder::session()?
             .name("org.gnome.Mutter.ServiceChannel")?
             .serve_at("/org/gnome/Mutter/ServiceChannel", self)?
             .build()?;

@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use anyhow::Context;
 use futures_util::StreamExt;
 use zbus::fdo::{self, RequestNameFlags};
+use zbus::message::Header;
 use zbus::names::{OwnedUniqueName, UniqueName};
 use zbus::zvariant::NoneValue;
-use zbus::{dbus_interface, MessageHeader, Task};
+use zbus::{interface, Task};
 
 use super::Start;
 
@@ -20,11 +21,11 @@ pub struct ScreenSaver {
     monitor_task: Arc<OnceLock<Task<()>>>,
 }
 
-#[dbus_interface(name = "org.freedesktop.ScreenSaver")]
+#[interface(name = "org.freedesktop.ScreenSaver")]
 impl ScreenSaver {
     async fn inhibit(
         &mut self,
-        #[zbus(header)] hdr: MessageHeader<'_>,
+        #[zbus(header)] hdr: Header<'_>,
         application_name: &str,
         reason_for_inhibit: &str,
     ) -> fdo::Result<u32> {
@@ -33,7 +34,7 @@ impl ScreenSaver {
             hdr.sender()
         );
 
-        let Ok(Some(name)) = hdr.sender() else {
+        let Some(name) = hdr.sender() else {
             return Err(fdo::Error::Failed(String::from("no sender")));
         };
         let name = OwnedUniqueName::from(name.to_owned());
