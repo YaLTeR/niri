@@ -115,7 +115,7 @@ xshell = "0.2.6"
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
 # Enables D-Bus support (serve various freedesktop and GNOME interfaces, power button handling).
-dbus = ["zbus", "async-io", "notify-rust", "url"]
+dbus = ["dep:zbus", "dep:async-io", "dep:notify-rust", "dep:url"]
 # Enables systemd integration (global environment, apps in transient scopes).
 systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
