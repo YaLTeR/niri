@@ -1,5 +1,4 @@
 use std::cell::{Cell, RefCell};
-use std::cmp::{max, min};
 use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
@@ -535,43 +534,21 @@ impl LayoutElement for Mapped {
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
-        let mut size = with_states(self.toplevel().wl_surface(), |state| {
+        let min_size = with_states(self.toplevel().wl_surface(), |state| {
             let mut guard = state.cached_state.get::<SurfaceCachedState>();
             guard.current().min_size
         });
 
-        if let Some(x) = self.rules.min_width {
-            size.w = max(size.w, i32::from(x));
-        }
-        if let Some(x) = self.rules.min_height {
-            size.h = max(size.h, i32::from(x));
-        }
-
-        size
+        self.rules.apply_min_size(min_size)
     }
 
     fn max_size(&self) -> Size<i32, Logical> {
-        let mut size = with_states(self.toplevel().wl_surface(), |state| {
+        let max_size = with_states(self.toplevel().wl_surface(), |state| {
             let mut guard = state.cached_state.get::<SurfaceCachedState>();
             guard.current().max_size
         });
 
-        if let Some(x) = self.rules.max_width {
-            if size.w == 0 {
-                size.w = i32::from(x);
-            } else if x > 0 {
-                size.w = min(size.w, i32::from(x));
-            }
-        }
-        if let Some(x) = self.rules.max_height {
-            if size.h == 0 {
-                size.h = i32::from(x);
-            } else if x > 0 {
-                size.h = min(size.h, i32::from(x));
-            }
-        }
-
-        size
+        self.rules.apply_max_size(max_size)
     }
 
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool {
