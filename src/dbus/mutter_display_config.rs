@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use zbus::fdo::RequestNameFlags;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{self, OwnedValue, Type};
-use zbus::{dbus_interface, fdo, SignalContext};
+use zbus::{fdo, interface};
 
 use super::Start;
 use crate::backend::IpcOutputMap;
@@ -43,7 +44,7 @@ pub struct LogicalMonitor {
     properties: HashMap<String, OwnedValue>,
 }
 
-#[dbus_interface(name = "org.gnome.Mutter.DisplayConfig")]
+#[interface(name = "org.gnome.Mutter.DisplayConfig")]
 impl DisplayConfig {
     async fn get_current_state(
         &self,
@@ -156,8 +157,8 @@ impl DisplayConfig {
         Ok((0, monitors, logical_monitors, properties))
     }
 
-    #[dbus_interface(signal)]
-    pub async fn monitors_changed(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    #[zbus(signal)]
+    pub async fn monitors_changed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 impl DisplayConfig {

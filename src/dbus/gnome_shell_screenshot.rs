@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use zbus::dbus_interface;
 use zbus::fdo::{self, RequestNameFlags};
+use zbus::interface;
 
 use super::Start;
 
@@ -18,7 +18,7 @@ pub enum NiriToScreenshot {
     ScreenshotResult(Option<PathBuf>),
 }
 
-#[dbus_interface(name = "org.gnome.Shell.Screenshot")]
+#[interface(name = "org.gnome.Shell.Screenshot")]
 impl Screenshot {
     async fn screenshot(
         &self,
