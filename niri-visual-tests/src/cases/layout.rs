@@ -159,8 +159,10 @@ impl Layout {
 
     fn add_window(&mut self, mut window: TestWindow, width: Option<ColumnWidth>) {
         let ws = self.layout.active_workspace().unwrap();
+        let min_size = window.min_size();
+        let max_size = window.max_size();
         window.request_size(
-            ws.new_window_size(width, false, window.rules()),
+            ws.new_window_size(width, false, window.rules(), (min_size, max_size)),
             false,
             None,
         );
@@ -183,8 +185,10 @@ impl Layout {
         width: Option<ColumnWidth>,
     ) {
         let ws = self.layout.active_workspace().unwrap();
+        let min_size = window.min_size();
+        let max_size = window.max_size();
         window.request_size(
-            ws.new_window_size(width, false, window.rules()),
+            ws.new_window_size(width, false, window.rules(), (min_size, max_size)),
             false,
             None,
         );

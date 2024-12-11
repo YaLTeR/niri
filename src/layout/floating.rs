@@ -1,4 +1,4 @@
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
@@ -16,7 +16,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::transaction::TransactionBlocker;
-use crate::utils::ResizeEdge;
+use crate::utils::{ensure_min_max_size, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
 /// Space for floating windows.
@@ -332,13 +332,25 @@ impl<W: LayoutElement> FloatingSpace<W> {
     ) {
         tile.update_config(self.scale, self.options.clone());
 
-        if tile.window().is_pending_fullscreen() {
-            tile.window_mut()
-                .request_size(Size::from((0, 0)), true, None);
+        let win = tile.window_mut();
+        if win.is_pending_fullscreen() {
+            let mut size = Size::from((0, 0));
+
+            // Make sure fixed-size through window rules keeps working.
+            let min_size = win.min_size();
+            let max_size = win.max_size();
+            if min_size.w == max_size.w {
+                size.w = min_size.w;
+            }
+            if min_size.h == max_size.h {
+                size.h = min_size.h;
+            }
+
+            win.request_size(size, true, None);
         }
 
         if activate || self.tiles.is_empty() {
-            self.active_window_id = Some(tile.window().id().clone());
+            self.active_window_id = Some(win.id().clone());
         }
 
         let mut pos = pos.unwrap_or_else(|| {
@@ -500,15 +512,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let tile = &mut self.tiles[idx];
         let win = tile.window_mut();
-        let min_w = win.min_size().w;
-        let max_w = win.max_size().w;
+        let min_size = win.min_size();
+        let max_size = win.max_size();
 
-        if max_w > 0 {
-            win_width = min(win_width, max_w);
-        }
-        if min_w > 0 {
-            win_width = max(win_width, min_w);
-        }
+        win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
         win_width = max(1, win_width);
 
         let win_height = win
@@ -517,6 +524,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
             // If we requested height = 0, then switch to the current height.
             .filter(|h| *h != 0)
             .unwrap_or_else(|| win.size().h);
+        let win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
+
         let win_size = Size::from((win_width, win_height));
         win.request_size(win_size, animate, None);
     }
@@ -534,15 +543,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let tile = &mut self.tiles[idx];
         let win = tile.window_mut();
-        let min_h = win.min_size().h;
-        let max_h = win.max_size().h;
+        let min_size = win.min_size();
+        let max_size = win.max_size();
 
-        if max_h > 0 {
-            win_height = min(win_height, max_h);
-        }
-        if min_h > 0 {
-            win_height = max(win_height, min_h);
-        }
+        win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
         win_height = max(1, win_height);
 
         let win_width = win
@@ -551,6 +555,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
             // If we requested width = 0, then switch to the current width.
             .filter(|w| *w != 0)
             .unwrap_or_else(|| win.size().w);
+        let win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
+
         let win_size = Size::from((win_width, win_height));
         win.request_size(win_size, animate, None);
     }
