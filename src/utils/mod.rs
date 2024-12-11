@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use std::ffi::{CString, OsStr};
 use std::io::Write;
 use std::os::unix::prelude::OsStrExt;
@@ -259,6 +260,16 @@ pub fn get_credentials_for_surface(surface: &WlSurface) -> Option<Credentials> {
     }
 
     client.get_credentials(&dh).ok()
+}
+
+pub fn ensure_min_max_size(mut x: i32, min_size: i32, max_size: i32) -> i32 {
+    if max_size > 0 {
+        x = min(x, max_size);
+    }
+    if min_size > 0 {
+        x = max(x, min_size);
+    }
+    x
 }
 
 #[cfg(feature = "dbus")]

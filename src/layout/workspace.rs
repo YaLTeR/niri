@@ -9,6 +9,8 @@ use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
+use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
 use super::scrolling::{
@@ -22,7 +24,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
-use crate::utils::{output_size, send_scale_transform, ResizeEdge};
+use crate::utils::{ensure_min_max_size, output_size, send_scale_transform, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
 #[derive(Debug)]
@@ -680,12 +682,28 @@ impl<W: LayoutElement> Workspace<W> {
         width: Option<ColumnWidth>,
         is_floating: bool,
         rules: &ResolvedWindowRules,
+        (min_size, max_size): (Size<i32, Logical>, Size<i32, Logical>),
     ) -> Size<i32, Logical> {
-        if is_floating {
+        let mut size = if is_floating {
             Size::from((0, 0))
         } else {
             self.scrolling.new_window_size(width, rules)
+        };
+
+        // If the window has a fixed size, or we're picking some fixed size, apply min and max
+        // size. This is to ensure that a fixed-size window rule works on open, while still
+        // allowing the window freedom to pick its default size otherwise.
+        let (min_size, max_size) = rules.apply_min_max_size(min_size, max_size);
+        if size.w > 0 || min_size.w == max_size.w {
+            size.w = ensure_min_max_size(size.w, min_size.w, max_size.w);
         }
+        // For scrolling (where height is > 0) only ensure fixed height, since at runtime scrolling
+        // will only honor fixed height currently.
+        if min_size.h == max_size.h {
+            size.h = ensure_min_max_size(size.h, min_size.h, max_size.h);
+        }
+
+        size
     }
 
     pub fn configure_new_window(
@@ -699,22 +717,26 @@ impl<W: LayoutElement> Workspace<W> {
             send_scale_transform(surface, data, self.scale, self.transform);
         });
 
-        window
-            .toplevel()
-            .expect("no x11 support")
-            .with_pending_state(|state| {
-                if state.states.contains(xdg_toplevel::State::Fullscreen) {
-                    state.size = Some(self.view_size.to_i32_round());
-                } else {
-                    state.size = Some(self.new_window_size(width, is_floating, rules));
-                }
+        let toplevel = window.toplevel().expect("no x11 support");
+        let (min_size, max_size) = with_states(toplevel.wl_surface(), |state| {
+            let mut guard = state.cached_state.get::<SurfaceCachedState>();
+            let current = guard.current();
+            (current.min_size, current.max_size)
+        });
+        toplevel.with_pending_state(|state| {
+            if state.states.contains(xdg_toplevel::State::Fullscreen) {
+                state.size = Some(self.view_size.to_i32_round());
+            } else {
+                let size = self.new_window_size(width, is_floating, rules, (min_size, max_size));
+                state.size = Some(size);
+            }
 
-                if is_floating {
-                    state.bounds = Some(self.floating.toplevel_bounds(rules));
-                } else {
-                    state.bounds = Some(self.scrolling.toplevel_bounds(rules));
-                }
-            });
+            if is_floating {
+                state.bounds = Some(self.floating.toplevel_bounds(rules));
+            } else {
+                state.bounds = Some(self.scrolling.toplevel_bounds(rules));
+            }
+        });
     }
 
     pub fn focus_left(&mut self) -> bool {
