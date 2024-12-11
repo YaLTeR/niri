@@ -3219,9 +3219,21 @@ impl<W: LayoutElement> Layout<W> {
                 // prefer-no-csd, and occasionally that last size can become the full-width size
                 // rather than a smaller size, which is annoying. Need to see if niri can use some
                 // heuristics to make this case behave better.
-                if tile.window().is_pending_fullscreen() {
-                    tile.window_mut()
-                        .request_size(Size::from((0, 0)), true, None);
+                let win = tile.window_mut();
+                if win.is_pending_fullscreen() {
+                    let mut size = Size::from((0, 0));
+
+                    // Make sure fixed-size through window rules keeps working.
+                    let min_size = win.min_size();
+                    let max_size = win.max_size();
+                    if min_size.w == max_size.w {
+                        size.w = min_size.w;
+                    }
+                    if min_size.h == max_size.h {
+                        size.h = min_size.h;
+                    }
+
+                    win.request_size(size, true, None);
                 }
 
                 let mut data = InteractiveMoveData {

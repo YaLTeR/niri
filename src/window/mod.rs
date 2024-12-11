@@ -285,6 +285,16 @@ impl ResolvedWindowRules {
         size
     }
 
+    pub fn apply_min_max_size(
+        &self,
+        min_size: Size<i32, Logical>,
+        max_size: Size<i32, Logical>,
+    ) -> (Size<i32, Logical>, Size<i32, Logical>) {
+        let min_size = self.apply_min_size(min_size);
+        let max_size = self.apply_max_size(max_size);
+        (min_size, max_size)
+    }
+
     pub fn compute_open_floating(&self, toplevel: &ToplevelSurface) -> bool {
         if let Some(res) = self.open_floating {
             return res;
@@ -295,13 +305,12 @@ impl ResolvedWindowRules {
             return true;
         }
 
-        let (mut min_size, mut max_size) = with_states(toplevel.wl_surface(), |state| {
+        let (min_size, max_size) = with_states(toplevel.wl_surface(), |state| {
             let mut guard = state.cached_state.get::<SurfaceCachedState>();
             let current = guard.current();
             (current.min_size, current.max_size)
         });
-        min_size = self.apply_min_size(min_size);
-        max_size = self.apply_max_size(max_size);
+        let (min_size, max_size) = self.apply_min_max_size(min_size, max_size);
 
         // We open fixed-height windows as floating.
         min_size.h > 0 && min_size.h == max_size.h
