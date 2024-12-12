@@ -327,6 +327,8 @@ struct InteractiveMoveData<W: LayoutElement> {
     pub(self) width: ColumnWidth,
     /// Whether the window column was full-width.
     pub(self) is_full_width: bool,
+    /// Whether the window targets the floating layout.
+    pub(self) is_floating: bool,
     /// Pointer location within the visual window geometry as ratio from geometry size.
     ///
     /// This helps the pointer remain inside the window as it resizes.
@@ -2451,6 +2453,12 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
+        // No insert hint when targeting floating.
+        if move_.is_floating {
+            self.interactive_move = Some(InteractiveMoveState::Moving(move_));
+            return;
+        }
+
         let _span = tracy_client::span!("Layout::update_insert_hint::update");
 
         if let Some(mon) = self.monitor_for_output_mut(&move_.output) {
@@ -2661,6 +2669,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn toggle_window_floating(&mut self, window: Option<&W::Id>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
+                move_.is_floating = !move_.is_floating;
                 return;
             }
         }
@@ -3193,7 +3202,7 @@ impl<W: LayoutElement> Layout<W> {
                     mut tile,
                     width,
                     is_full_width,
-                    is_floating: _,
+                    is_floating,
                 } = self.remove_window(window, Transaction::new()).unwrap();
 
                 tile.stop_move_animations();
@@ -3242,6 +3251,7 @@ impl<W: LayoutElement> Layout<W> {
                     pointer_pos_within_output,
                     width,
                     is_full_width,
+                    is_floating,
                     pointer_ratio_within_window,
                 };
 
@@ -3345,14 +3355,25 @@ impl<W: LayoutElement> Layout<W> {
                         .position(|ws| ws.id() == ws_id)
                         .unwrap();
 
-                    let ws = &mut mon.workspaces[ws_idx];
-                    let position = ws.get_insert_position(move_.pointer_pos_within_output - offset);
+                    let position = if move_.is_floating {
+                        InsertPosition::Floating
+                    } else {
+                        let ws = &mut mon.workspaces[ws_idx];
+                        ws.get_insert_position(move_.pointer_pos_within_output - offset)
+                    };
+
                     (mon, ws_idx, position, offset)
                 } else {
                     let mon = &mut monitors[*active_monitor_idx];
                     // No point in trying to use the pointer position on the wrong output.
                     let (ws, offset) = mon.workspaces_with_render_positions().next().unwrap();
-                    let position = ws.get_insert_position(Point::from((0., 0.)));
+
+                    let position = if move_.is_floating {
+                        InsertPosition::Floating
+                    } else {
+                        ws.get_insert_position(Point::from((0., 0.)))
+                    };
+
                     let ws_id = ws.id();
                     let ws_idx = mon
                         .workspaces
