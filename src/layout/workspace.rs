@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -701,6 +702,9 @@ impl<W: LayoutElement> Workspace<W> {
         // will only honor fixed height currently.
         if min_size.h == max_size.h {
             size.h = ensure_min_max_size(size.h, min_size.h, max_size.h);
+        } else if size.h > 0 {
+            // Also always honor min height, scrolling always does.
+            size.h = max(size.h, min_size.h);
         }
 
         size
