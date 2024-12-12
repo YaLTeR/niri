@@ -26,11 +26,6 @@ use crate::window::ResolvedWindowRules;
 /// Amount of touchpad movement to scroll the view for the width of one working area.
 const VIEW_GESTURE_WORKING_AREA_MOVEMENT: f64 = 1200.;
 
-/// Maximum distance to the target position for an interactively moved window.
-///
-/// If the distance is higher than this, the window will instead remain floating.
-const WINDOW_INSERT_MAX_DISTANCE: f64 = 50.;
-
 /// A scrollable-tiling space for windows.
 #[derive(Debug)]
 pub struct ScrollingSpace<W: LayoutElement> {
@@ -662,9 +657,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.insert_hint = None;
     }
 
-    fn compute_insert_position(&self, pos: Point<f64, Logical>) -> (InsertPosition, f64) {
+    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
         if self.columns.is_empty() {
-            return (InsertPosition::NewColumn(0), pos.x.abs());
+            return InsertPosition::NewColumn(0);
         }
 
         let x = pos.x + self.view_pos();
@@ -675,7 +670,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Insert position is before the first column.
         if x < 0. {
-            return (InsertPosition::NewColumn(0), -x);
+            return InsertPosition::NewColumn(0);
         }
 
         // Find the closest gap between columns.
@@ -695,8 +690,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Insert position is past the last column.
         if col_idx == self.columns.len() {
-            // col_x should be what we expect if pos.x is past the last column.
-            return (InsertPosition::NewColumn(closest_col_idx), x - col_x);
+            return InsertPosition::NewColumn(closest_col_idx);
         }
 
         // Find the closest gap between tiles.
@@ -711,21 +705,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let vert_dist = (col_x - x).abs();
         let hor_dist = (tile_off.y - y).abs();
         if vert_dist <= hor_dist {
-            (InsertPosition::NewColumn(closest_col_idx), vert_dist)
+            InsertPosition::NewColumn(closest_col_idx)
         } else {
-            (
-                InsertPosition::InColumn(col_idx, closest_tile_idx),
-                hor_dist,
-            )
+            InsertPosition::InColumn(col_idx, closest_tile_idx)
         }
-    }
-
-    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
-        let (position, distance) = self.compute_insert_position(pos);
-        if distance > WINDOW_INSERT_MAX_DISTANCE {
-            return InsertPosition::Floating;
-        }
-        position
     }
 
     pub fn add_tile(
