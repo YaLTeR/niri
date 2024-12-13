@@ -1127,6 +1127,10 @@ impl<W: LayoutElement> Workspace<W> {
             })
     }
 
+    pub fn descendants_added(&mut self, id: &W::Id) -> bool {
+        self.floating.descendants_added(id)
+    }
+
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
         if !self.floating.update_window(window, serial) {
             self.scrolling.update_window(window, serial);
