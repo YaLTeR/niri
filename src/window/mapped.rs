@@ -720,6 +720,10 @@ impl LayoutElement for Mapped {
         self.toplevel().with_pending_state(|state| state.size)
     }
 
+    fn is_child_of(&self, parent: &Self) -> bool {
+        self.toplevel().parent().as_ref() == Some(parent.toplevel().wl_surface())
+    }
+
     fn refresh(&self) {
         self.window.refresh();
     }
