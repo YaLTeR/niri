@@ -13,6 +13,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::utils::Size;
+use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState};
@@ -102,7 +103,7 @@ impl Headless {
         let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &states);
         presentation_feedbacks.presented::<_, smithay::utils::Monotonic>(
             get_monotonic_time(),
-            std::time::Duration::ZERO,
+            Refresh::Unknown,
             0,
             wp_presentation_feedback::Kind::empty(),
         );

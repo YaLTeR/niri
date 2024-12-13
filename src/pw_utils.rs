@@ -1027,7 +1027,7 @@ fn allocate_buffer(
             .create_buffer_object_with_modifiers2::<()>(w, h, fourcc, modifiers, flags)
             .context("error creating GBM buffer object")?;
 
-        let modifier = bo.modifier().unwrap();
+        let modifier = bo.modifier();
         let buffer = GbmBuffer::from_bo(bo, false);
         Ok((buffer, modifier))
     }
