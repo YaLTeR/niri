@@ -647,6 +647,22 @@ impl XdgShellHandler for State {
     fn title_changed(&mut self, toplevel: ToplevelSurface) {
         self.update_window_rules(&toplevel);
     }
+
+    fn parent_changed(&mut self, toplevel: ToplevelSurface) {
+        let Some(parent) = toplevel.parent() else {
+            return;
+        };
+
+        if let Some((mapped, output)) = self.niri.layout.find_window_and_output_mut(&parent) {
+            let output = output.cloned();
+            let window = mapped.window.clone();
+            if self.niri.layout.descendants_added(&window) {
+                if let Some(output) = output {
+                    self.niri.queue_redraw(&output);
+                }
+            }
+        }
+    }
 }
 
 delegate_xdg_shell!(State);
