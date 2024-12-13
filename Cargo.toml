@@ -22,7 +22,8 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracy-client = { version = "0.17.4", default-features = false }
 
 [workspace.dependencies.smithay]
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/YaLTeR/smithay.git"
+branch = "toplevel-parent-fixes-novrr"
 # path = "../smithay"
 default-features = false
 
