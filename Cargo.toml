@@ -8,7 +8,7 @@ authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 repository = "https://github.com/YaLTeR/niri"
-rust-version = "1.77"
+rust-version = "1.80"
 
 [workspace.dependencies]
 anyhow = "1.0.93"
