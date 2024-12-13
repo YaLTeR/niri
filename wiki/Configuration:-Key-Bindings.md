@@ -99,6 +99,26 @@ binds {
 Both mouse wheel and touchpad scroll binds will prevent applications from receiving any scroll events when their modifiers are held down.
 For example, if you have a `Mod+WheelScrollDown` bind, then while holding `Mod`, all mouse wheel scrolling will be consumed by niri.
 
+### Mouse Click Bindings
+
+<sup>Since: next release</sup>
+
+You can bind mouse clicks using the following syntax.
+
+```kdl
+binds {
+    Mod+MouseLeft    { close-window; }
+    Mod+MouseRight   { close-window; }
+    Mod+MouseMiddle  { close-window; }
+    Mod+MouseForward { close-window; }
+    Mod+MouseBack    { close-window; }
+}
+```
+
+Mouse clicks operate on the window that was focused at the time of the click, not the window you're clicking.
+
+Note that binding `Mod+MouseLeft` or `Mod+MouseRight` will override the corresponding gesture (moving or resizing the window).
+
 ### Actions
 
 Every action that you can bind is also available for programmatic invocation via `niri msg action`.

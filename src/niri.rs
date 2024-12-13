@@ -116,7 +116,8 @@ use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
-    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
+    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
+    mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -277,6 +278,8 @@ pub struct Niri {
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<Keycode>,
+    /// Button codes of the mouse buttons to suppress.
+    pub suppressed_buttons: HashSet<u32>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
@@ -313,6 +316,7 @@ pub struct Niri {
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
+    pub mods_with_mouse_binds: HashSet<Modifiers>,
     pub mods_with_wheel_binds: HashSet<Modifiers>,
     pub vertical_finger_scroll_tracker: ScrollTracker,
     pub horizontal_finger_scroll_tracker: ScrollTracker,
@@ -1142,6 +1146,8 @@ impl State {
 
         if config.binds != old_config.binds {
             self.niri.hotkey_overlay.on_hotkey_config_updated();
+            self.niri.mods_with_mouse_binds =
+                mods_with_mouse_binds(self.backend.mod_key(), &config.binds);
             self.niri.mods_with_wheel_binds =
                 mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
             self.niri.mods_with_finger_scroll_binds =
@@ -1846,6 +1852,7 @@ impl Niri {
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
+        let mods_with_mouse_binds = mods_with_mouse_binds(backend.mod_key(), &config_.binds);
         let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
         let mods_with_finger_scroll_binds =
             mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
@@ -1998,6 +2005,7 @@ impl Niri {
             popups: PopupManager::default(),
             popup_grab: None,
             suppressed_keys: HashSet::new(),
+            suppressed_buttons: HashSet::new(),
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
             presentation_state,
@@ -2025,6 +2033,7 @@ impl Niri {
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
+            mods_with_mouse_binds,
             mods_with_wheel_binds,
 
             // 10 is copied from Clutter: DISCRETE_SCROLL_STEP.
