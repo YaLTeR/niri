@@ -1543,6 +1543,15 @@ impl State {
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
+        // These values are coming from <linux/input-event-codes.h>.
+        const BTN_LEFT: u32 = 0x110;
+        const BTN_RIGHT: u32 = 0x111;
+        const BTN_MIDDLE: u32 = 0x112;
+        const BTN_SIDE: u32 = 0x113;
+        const BTN_EXTRA: u32 = 0x114;
+        const BTN_FORWARD: u32 = 0x115;
+        const BTN_BACK: u32 = 0x116;
+
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -1552,6 +1561,31 @@ impl State {
         let button_state = event.state();
 
         if ButtonState::Pressed == button_state {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let modifiers = modifiers_from_state(mods);
+
+            if self.niri.mods_with_mouse_binds.contains(&modifiers) {
+                let comp_mod = self.backend.mod_key();
+
+                if let Some(bind) = match button {
+                    BTN_LEFT => Some(Trigger::MouseLeft),
+                    BTN_RIGHT => Some(Trigger::MouseRight),
+                    BTN_MIDDLE => Some(Trigger::MouseMiddle),
+                    // Chromium treats these as equivalent: https://chromium.googlesource.com/chromium/src/+/refs/heads/main/ui/ozone/platform/wayland/host/wayland_pointer.cc
+                    BTN_BACK | BTN_SIDE => Some(Trigger::MouseBack),
+                    BTN_FORWARD | BTN_EXTRA => Some(Trigger::MouseForward),
+                    _ => None,
+                }
+                .and_then(|trigger| {
+                    let config = self.niri.config.borrow();
+                    let bindings = &config.binds;
+                    find_configured_bind(bindings, comp_mod, trigger, mods)
+                }) {
+                    self.handle_bind(bind.clone());
+                    return;
+                };
+            }
+
             // We received an event for the regular pointer, so show it now.
             self.niri.pointer_hidden = false;
             self.niri.tablet_cursor_location = None;
@@ -1561,7 +1595,6 @@ impl State {
 
                 // Check if we need to start an interactive move.
                 if event.button() == Some(MouseButton::Left) && !pointer.is_grabbed() {
-                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                     let mod_down = match self.backend.mod_key() {
                         CompositorMod::Super => mods.logo,
                         CompositorMod::Alt => mods.alt,
@@ -1593,7 +1626,6 @@ impl State {
                 }
                 // Check if we need to start an interactive resize.
                 else if event.button() == Some(MouseButton::Right) && !pointer.is_grabbed() {
-                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                     let mod_down = match self.backend.mod_key() {
                         CompositorMod::Super => mods.logo,
                         CompositorMod::Alt => mods.alt,
@@ -1670,7 +1702,6 @@ impl State {
             }
 
             if event.button() == Some(MouseButton::Middle) && !pointer.is_grabbed() {
-                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                 let mod_down = match self.backend.mod_key() {
                     CompositorMod::Super => mods.logo,
                     CompositorMod::Alt => mods.alt,
@@ -2991,6 +3022,20 @@ pub fn mods_with_binds(
     }
 
     rv
+}
+
+pub fn mods_with_mouse_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<Modifiers> {
+    mods_with_binds(
+        comp_mod,
+        binds,
+        &[
+            Trigger::MouseLeft,
+            Trigger::MouseRight,
+            Trigger::MouseMiddle,
+            Trigger::MouseBack,
+            Trigger::MouseForward,
+        ],
+    )
 }
 
 pub fn mods_with_wheel_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<Modifiers> {
