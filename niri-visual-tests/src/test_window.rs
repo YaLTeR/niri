@@ -240,6 +240,10 @@ impl LayoutElement for TestWindow {
         self.inner.borrow().requested_size
     }
 
+    fn is_child_of(&self, _parent: &Self) -> bool {
+        false
+    }
+
     fn refresh(&self) {}
 
     fn rules(&self) -> &ResolvedWindowRules {

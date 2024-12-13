@@ -186,6 +186,8 @@ pub trait LayoutElement {
     /// Size previously requested through [`LayoutElement::request_size()`].
     fn requested_size(&self) -> Option<Size<i32, Logical>>;
 
+    fn is_child_of(&self, parent: &Self) -> bool;
+
     fn rules(&self) -> &ResolvedWindowRules;
 
     /// Runs periodic clean-up tasks.
@@ -1111,6 +1113,16 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         None
+    }
+
+    pub fn descendants_added(&mut self, id: &W::Id) -> bool {
+        for ws in self.workspaces_mut() {
+            if ws.descendants_added(id) {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
@@ -3868,6 +3880,7 @@ mod tests {
     #[derive(Debug)]
     struct TestWindowInner {
         id: usize,
+        parent_id: Cell<Option<usize>>,
         bbox: Cell<Rectangle<i32, Logical>>,
         initial_bbox: Rectangle<i32, Logical>,
         requested_size: Cell<Option<Size<i32, Logical>>>,
@@ -3884,6 +3897,8 @@ mod tests {
     struct TestWindowParams {
         #[proptest(strategy = "1..=5usize")]
         id: usize,
+        #[proptest(strategy = "arbitrary_parent_id()")]
+        parent_id: Option<usize>,
         is_floating: bool,
         #[proptest(strategy = "arbitrary_bbox()")]
         bbox: Rectangle<i32, Logical>,
@@ -3895,6 +3910,7 @@ mod tests {
         pub fn new(id: usize) -> Self {
             Self {
                 id,
+                parent_id: None,
                 is_floating: false,
                 bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
                 min_max_size: Default::default(),
@@ -3906,6 +3922,7 @@ mod tests {
         fn new(params: TestWindowParams) -> Self {
             Self(Rc::new(TestWindowInner {
                 id: params.id,
+                parent_id: Cell::new(params.parent_id),
                 bbox: Cell::new(params.bbox),
                 initial_bbox: params.bbox,
                 requested_size: Cell::new(None),
@@ -4033,6 +4050,10 @@ mod tests {
             self.0.requested_size.get()
         }
 
+        fn is_child_of(&self, parent: &Self) -> bool {
+            self.0.parent_id.get() == Some(parent.0.id)
+        }
+
         fn refresh(&self) {}
 
         fn rules(&self) -> &ResolvedWindowRules {
@@ -4136,6 +4157,13 @@ mod tests {
         ]
     }
 
+    fn arbitrary_parent_id() -> impl Strategy<Value = Option<usize>> {
+        prop_oneof![
+            5 => Just(None),
+            1 => prop::option::of(1..=5usize),
+        ]
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -4195,6 +4223,7 @@ mod tests {
         FocusWindowUpOrColumnRight,
         FocusWindowOrWorkspaceDown,
         FocusWindowOrWorkspaceUp,
+        FocusWindow(#[proptest(strategy = "1..=5usize")] usize),
         MoveColumnLeft,
         MoveColumnRight,
         MoveColumnToFirst,
@@ -4265,6 +4294,12 @@ mod tests {
             id: Option<usize>,
         },
         SwitchFocusFloatingTiling,
+        SetParent {
+            #[proptest(strategy = "1..=5usize")]
+            id: usize,
+            #[proptest(strategy = "prop::option::of(1..=5usize)")]
+            new_parent_id: Option<usize>,
+        },
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
         Refresh {
             is_active: bool,
@@ -4446,9 +4481,14 @@ mod tests {
                 Op::UnnameWorkspace { ws_name } => {
                     layout.unname_workspace(&format!("ws{ws_name}"));
                 }
-                Op::AddWindow { params } => {
+                Op::AddWindow { mut params } => {
                     if layout.has_window(&params.id) {
                         return;
+                    }
+                    if let Some(parent_id) = params.parent_id {
+                        if parent_id_causes_loop(layout, params.id, parent_id) {
+                            params.parent_id = None;
+                        }
                     }
 
                     let win = TestWindow::new(params);
@@ -4461,7 +4501,7 @@ mod tests {
                     );
                 }
                 Op::AddWindowRightOf {
-                    params,
+                    mut params,
                     right_of_id,
                 } => {
                     let mut found_right_of = false;
@@ -4511,10 +4551,19 @@ mod tests {
                         return;
                     }
 
+                    if let Some(parent_id) = params.parent_id {
+                        if parent_id_causes_loop(layout, params.id, parent_id) {
+                            params.parent_id = None;
+                        }
+                    }
+
                     let win = TestWindow::new(params);
                     layout.add_window_right_of(&right_of_id, win, None, false, params.is_floating);
                 }
-                Op::AddWindowToNamedWorkspace { params, ws_name } => {
+                Op::AddWindowToNamedWorkspace {
+                    mut params,
+                    ws_name,
+                } => {
                     let ws_name = format!("ws{ws_name}");
                     let mut found_workspace = false;
 
@@ -4565,6 +4614,12 @@ mod tests {
 
                     if !found_workspace {
                         return;
+                    }
+
+                    if let Some(parent_id) = params.parent_id {
+                        if parent_id_causes_loop(layout, params.id, parent_id) {
+                            params.parent_id = None;
+                        }
                     }
 
                     let win = TestWindow::new(params);
@@ -4635,6 +4690,7 @@ mod tests {
                 Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
                 Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
                 Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
+                Op::FocusWindow(id) => layout.activate_window(&id),
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
                 Op::MoveColumnToFirst => layout.move_column_to_first(),
@@ -4739,6 +4795,62 @@ mod tests {
                 }
                 Op::SwitchFocusFloatingTiling => {
                     layout.switch_focus_floating_tiling();
+                }
+                Op::SetParent {
+                    id,
+                    mut new_parent_id,
+                } => {
+                    if !layout.has_window(&id) {
+                        return;
+                    }
+
+                    if let Some(parent_id) = new_parent_id {
+                        if parent_id_causes_loop(layout, id, parent_id) {
+                            new_parent_id = None;
+                        }
+                    }
+
+                    let mut update = false;
+
+                    if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
+                        if move_.tile.window().0.id == id {
+                            move_.tile.window().0.parent_id.set(new_parent_id);
+                            update = true;
+                        }
+                    }
+
+                    match &mut layout.monitor_set {
+                        MonitorSet::Normal { monitors, .. } => {
+                            'outer: for mon in monitors {
+                                for ws in &mut mon.workspaces {
+                                    for win in ws.windows() {
+                                        if win.0.id == id {
+                                            win.0.parent_id.set(new_parent_id);
+                                            update = true;
+                                            break 'outer;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        MonitorSet::NoOutputs { workspaces, .. } => {
+                            'outer: for ws in workspaces {
+                                for win in ws.windows() {
+                                    if win.0.id == id {
+                                        win.0.parent_id.set(new_parent_id);
+                                        update = true;
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if update {
+                        if let Some(new_parent_id) = new_parent_id {
+                            layout.descendants_added(&new_parent_id);
+                        }
+                    }
                 }
                 Op::Communicate(id) => {
                     let mut update = false;
@@ -6268,6 +6380,147 @@ mod tests {
         let layout = check_ops(&ops);
         let (_, win) = layout.windows().next().unwrap();
         assert!(win.0.pending_activated.get());
+    }
+
+    #[test]
+    fn stacking_add_parent_brings_up_child() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(1),
+                    ..TestWindowParams::new(0)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(1)
+                },
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn stacking_add_parent_brings_up_descendants() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(2),
+                    ..TestWindowParams::new(0)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(0),
+                    ..TestWindowParams::new(1)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(2)
+                },
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn stacking_activate_brings_up_descendants() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(0)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(0),
+                    ..TestWindowParams::new(1)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(1),
+                    ..TestWindowParams::new(2)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(3)
+                },
+            },
+            Op::FocusWindow(0),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn stacking_set_parent_brings_up_child() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(0)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(1)
+                },
+            },
+            Op::SetParent {
+                id: 0,
+                new_parent_id: Some(1),
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
+        if parent_id == id {
+            return true;
+        }
+
+        'outer: loop {
+            for (_, win) in layout.windows() {
+                if win.0.id == parent_id {
+                    match win.0.parent_id.get() {
+                        Some(new_parent_id) => {
+                            if new_parent_id == id {
+                                // Found a loop.
+                                return true;
+                            }
+
+                            parent_id = new_parent_id;
+                            continue 'outer;
+                        }
+                        // Reached window with no parent.
+                        None => return false,
+                    }
+                }
+            }
+
+            // Parent is not in the layout.
+            return false;
+        }
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {

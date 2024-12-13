@@ -325,7 +325,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
     fn add_tile_at(
         &mut self,
-        idx: usize,
+        mut idx: usize,
         mut tile: Tile<W>,
         pos: Option<Point<f64, Logical>>,
         activate: bool,
@@ -353,6 +353,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
             self.active_window_id = Some(win.id().clone());
         }
 
+        // Make sure the tile isn't inserted below its parent.
+        for (i, tile_above) in self.tiles.iter().enumerate().take(idx) {
+            if win.is_child_of(tile_above.window()) {
+                idx = i;
+                break;
+            }
+        }
+
         let mut pos = pos.unwrap_or_else(|| {
             let area_size = self.working_area.size.to_point();
             let tile_size = tile.tile_size().to_point();
@@ -367,6 +375,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let data = Data::new(self.working_area, &tile, pos);
         self.data.insert(idx, data);
         self.tiles.insert(idx, tile);
+
+        self.bring_up_descendants_of(idx);
     }
 
     pub fn add_tile_above(&mut self, above: &W::Id, tile: Tile<W>) {
@@ -380,6 +390,33 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let pos = above_pos + (above_size.to_point() - tile.tile_size().to_point()).downscale(2.);
 
         self.add_tile_at(idx, tile, Some(pos), activate);
+    }
+
+    fn bring_up_descendants_of(&mut self, idx: usize) {
+        let tile = &self.tiles[idx];
+        let win = tile.window();
+
+        // We always maintain the correct stacking order, so walking descendants back to front
+        // should give us all of them.
+        let mut descendants: Vec<usize> = Vec::new();
+        for (i, tile_below) in self.tiles.iter().enumerate().skip(idx + 1).rev() {
+            let win_below = tile_below.window();
+            if win_below.is_child_of(win)
+                || descendants
+                    .iter()
+                    .any(|idx| win_below.is_child_of(self.tiles[*idx].window()))
+            {
+                descendants.push(i);
+            }
+        }
+
+        // Now, descendants is in back-to-front order, and repositioning them in the front-to-back
+        // order will preserve the subsequent indices and work out right.
+        let mut idx = idx;
+        for descendant_idx in descendants.into_iter().rev() {
+            self.raise_window(descendant_idx, idx);
+            idx += 1;
+        }
     }
 
     pub fn remove_active_tile(&mut self) -> Option<RemovedTile<W>> {
@@ -434,13 +471,20 @@ impl<W: LayoutElement> FloatingSpace<W> {
             return false;
         };
 
-        let tile = self.tiles.remove(idx);
-        let data = self.data.remove(idx);
-        self.tiles.insert(0, tile);
-        self.data.insert(0, data);
+        self.raise_window(idx, 0);
         self.active_window_id = Some(id.clone());
+        self.bring_up_descendants_of(0);
 
         true
+    }
+
+    fn raise_window(&mut self, from_idx: usize, to_idx: usize) {
+        assert!(to_idx <= from_idx);
+
+        let tile = self.tiles.remove(from_idx);
+        let data = self.data.remove(from_idx);
+        self.tiles.insert(to_idx, tile);
+        self.data.insert(to_idx, data);
     }
 
     pub fn start_close_animation_for_window(
@@ -559,6 +603,15 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let win_size = Size::from((win_width, win_height));
         win.request_size(win_size, animate, None);
+    }
+
+    pub fn descendants_added(&mut self, id: &W::Id) -> bool {
+        let Some(idx) = self.idx_of(id) else {
+            return false;
+        };
+
+        self.bring_up_descendants_of(idx);
+        true
     }
 
     pub fn update_window(&mut self, id: &W::Id, serial: Option<Serial>) -> bool {
@@ -769,7 +822,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         assert!(self.scale.is_finite());
         assert_eq!(self.tiles.len(), self.data.len());
 
-        for (tile, data) in zip(&self.tiles, &self.data) {
+        for (i, (tile, data)) in zip(&self.tiles, &self.data).enumerate() {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
@@ -786,6 +839,13 @@ impl<W: LayoutElement> FloatingSpace<W> {
             data2.update(tile);
             data2.update_config(self.working_area);
             assert_eq!(data, &data2, "tile data must be up to date");
+
+            for tile_below in &self.tiles[i + 1..] {
+                assert!(
+                    !tile_below.window().is_child_of(tile.window()),
+                    "children must be stacked above parents"
+                );
+            }
         }
 
         if let Some(id) = &self.active_window_id {
