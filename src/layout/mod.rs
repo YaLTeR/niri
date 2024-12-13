@@ -3880,20 +3880,37 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestWindow(Rc<TestWindowInner>);
 
-    impl TestWindow {
-        fn new(
-            id: usize,
-            bbox: Rectangle<i32, Logical>,
-            min_size: Size<i32, Logical>,
-            max_size: Size<i32, Logical>,
-        ) -> Self {
-            Self(Rc::new(TestWindowInner {
+    #[derive(Debug, Clone, Copy, Arbitrary)]
+    struct TestWindowParams {
+        #[proptest(strategy = "1..=5usize")]
+        id: usize,
+        is_floating: bool,
+        #[proptest(strategy = "arbitrary_bbox()")]
+        bbox: Rectangle<i32, Logical>,
+        #[proptest(strategy = "arbitrary_min_max_size()")]
+        min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
+    }
+
+    impl TestWindowParams {
+        pub fn new(id: usize) -> Self {
+            Self {
                 id,
-                bbox: Cell::new(bbox),
-                initial_bbox: bbox,
+                is_floating: false,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            }
+        }
+    }
+
+    impl TestWindow {
+        fn new(params: TestWindowParams) -> Self {
+            Self(Rc::new(TestWindowInner {
+                id: params.id,
+                bbox: Cell::new(params.bbox),
+                initial_bbox: params.bbox,
                 requested_size: Cell::new(None),
-                min_size,
-                max_size,
+                min_size: params.min_max_size.0,
+                max_size: params.min_max_size.1,
                 pending_fullscreen: Cell::new(false),
                 pending_activated: Cell::new(false),
             }))
@@ -4141,32 +4158,17 @@ mod tests {
             ws_name: usize,
         },
         AddWindow {
-            #[proptest(strategy = "1..=5usize")]
-            id: usize,
-            #[proptest(strategy = "arbitrary_bbox()")]
-            bbox: Rectangle<i32, Logical>,
-            #[proptest(strategy = "arbitrary_min_max_size()")]
-            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
+            params: TestWindowParams,
         },
         AddWindowRightOf {
-            #[proptest(strategy = "1..=5usize")]
-            id: usize,
+            params: TestWindowParams,
             #[proptest(strategy = "1..=5usize")]
             right_of_id: usize,
-            #[proptest(strategy = "arbitrary_bbox()")]
-            bbox: Rectangle<i32, Logical>,
-            #[proptest(strategy = "arbitrary_min_max_size()")]
-            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
         },
         AddWindowToNamedWorkspace {
-            #[proptest(strategy = "1..=5usize")]
-            id: usize,
+            params: TestWindowParams,
             #[proptest(strategy = "1..=5usize")]
             ws_name: usize,
-            #[proptest(strategy = "arbitrary_bbox()")]
-            bbox: Rectangle<i32, Logical>,
-            #[proptest(strategy = "arbitrary_min_max_size()")]
-            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
         },
         CloseWindow(#[proptest(strategy = "1..=5usize")] usize),
         FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
@@ -4444,30 +4446,29 @@ mod tests {
                 Op::UnnameWorkspace { ws_name } => {
                     layout.unname_workspace(&format!("ws{ws_name}"));
                 }
-                Op::AddWindow {
-                    id,
-                    bbox,
-                    min_max_size,
-                } => {
-                    if layout.has_window(&id) {
+                Op::AddWindow { params } => {
+                    if layout.has_window(&params.id) {
                         return;
                     }
 
-                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
-                    let is_floating = min_max_size.0.h > 0 && min_max_size.0.h == min_max_size.1.h;
-                    layout.add_window(win, None, false, is_floating, ActivateWindow::default());
+                    let win = TestWindow::new(params);
+                    layout.add_window(
+                        win,
+                        None,
+                        false,
+                        params.is_floating,
+                        ActivateWindow::default(),
+                    );
                 }
                 Op::AddWindowRightOf {
-                    id,
+                    params,
                     right_of_id,
-                    bbox,
-                    min_max_size,
                 } => {
                     let mut found_right_of = false;
 
                     if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
                         let win_id = move_.tile.window().0.id;
-                        if win_id == id {
+                        if win_id == params.id {
                             return;
                         }
                         if win_id == right_of_id {
@@ -4480,7 +4481,7 @@ mod tests {
                             for mon in monitors {
                                 for ws in &mut mon.workspaces {
                                     for win in ws.windows() {
-                                        if win.0.id == id {
+                                        if win.0.id == params.id {
                                             return;
                                         }
 
@@ -4494,7 +4495,7 @@ mod tests {
                         MonitorSet::NoOutputs { workspaces, .. } => {
                             for ws in workspaces {
                                 for win in ws.windows() {
-                                    if win.0.id == id {
+                                    if win.0.id == params.id {
                                         return;
                                     }
 
@@ -4510,21 +4511,15 @@ mod tests {
                         return;
                     }
 
-                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
-                    let is_floating = min_max_size.0.h > 0 && min_max_size.0.h == min_max_size.1.h;
-                    layout.add_window_right_of(&right_of_id, win, None, false, is_floating);
+                    let win = TestWindow::new(params);
+                    layout.add_window_right_of(&right_of_id, win, None, false, params.is_floating);
                 }
-                Op::AddWindowToNamedWorkspace {
-                    id,
-                    ws_name,
-                    bbox,
-                    min_max_size,
-                } => {
+                Op::AddWindowToNamedWorkspace { params, ws_name } => {
                     let ws_name = format!("ws{ws_name}");
                     let mut found_workspace = false;
 
                     if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
-                        if move_.tile.window().0.id == id {
+                        if move_.tile.window().0.id == params.id {
                             return;
                         }
                     }
@@ -4534,7 +4529,7 @@ mod tests {
                             for mon in monitors {
                                 for ws in &mut mon.workspaces {
                                     for win in ws.windows() {
-                                        if win.0.id == id {
+                                        if win.0.id == params.id {
                                             return;
                                         }
                                     }
@@ -4552,7 +4547,7 @@ mod tests {
                         MonitorSet::NoOutputs { workspaces, .. } => {
                             for ws in workspaces {
                                 for win in ws.windows() {
-                                    if win.0.id == id {
+                                    if win.0.id == params.id {
                                         return;
                                     }
                                 }
@@ -4572,14 +4567,13 @@ mod tests {
                         return;
                     }
 
-                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
-                    let is_floating = min_max_size.0.h > 0 && min_max_size.0.h == min_max_size.1.h;
+                    let win = TestWindow::new(params);
                     layout.add_window_to_named_workspace(
                         &ws_name,
                         win,
                         None,
                         false,
-                        is_floating,
+                        params.is_floating,
                         ActivateWindow::default(),
                     );
                 }
@@ -4951,26 +4945,18 @@ mod tests {
             },
             Op::UnnameWorkspace { ws_name: 1 },
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddWindowRightOf {
-                id: 2,
+                params: TestWindowParams::new(2),
                 right_of_id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::AddWindowToNamedWorkspace {
-                id: 3,
+                params: TestWindowParams::new(3),
                 ws_name: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -5058,33 +5044,23 @@ mod tests {
         let setup_ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::MoveWindowToWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::FocusColumnLeft,
             Op::ConsumeWindowIntoColumn,
             Op::AddWindow {
-                id: 4,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(4),
             },
             Op::AddOutput(2),
             Op::AddWindow {
-                id: 5,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(5),
             },
             Op::MoveWindowToOutput {
                 window_id: None,
@@ -5115,37 +5091,25 @@ mod tests {
             },
             Op::UnnameWorkspace { ws_name: 1 },
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::AddWindowRightOf {
-                id: 6,
+                params: TestWindowParams::new(6),
                 right_of_id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::AddWindowRightOf {
-                id: 7,
+                params: TestWindowParams::new(7),
                 right_of_id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::AddWindowToNamedWorkspace {
-                id: 5,
+                params: TestWindowParams::new(5),
                 ws_name: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -5252,15 +5216,11 @@ mod tests {
             Op::AddOutput(2),
             Op::FocusOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FocusOutput(2),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::RemoveOutput(2),
             Op::FocusWorkspace(3),
@@ -5275,9 +5235,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FocusWorkspaceDown,
             Op::CloseWindow(0),
@@ -5291,9 +5249,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -5315,16 +5271,12 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddOutput(2),
             Op::FocusOutput(2),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::RemoveOutput(1),
             Op::MoveWindowToWorkspace {
@@ -5347,15 +5299,11 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -5372,9 +5320,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::SetWindowHeight {
                 id: None,
@@ -5394,9 +5340,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams {
+                    min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                    ..TestWindowParams::new(1)
+                },
             },
         ];
 
@@ -5412,9 +5359,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::CloseWindow(1),
@@ -5428,16 +5373,12 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::AddOutput(2),
             Op::FocusOutput(2),
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(2),
             },
             Op::RemoveOutput(1),
             Op::FocusWorkspaceDown,
@@ -5453,9 +5394,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -5471,9 +5410,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::RemoveOutput(1),
             Op::AddOutput(2),
@@ -5492,9 +5429,7 @@ mod tests {
             Op::AddOutput(2),
             Op::FocusOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::MoveWorkspaceToOutput(2),
         ];
@@ -5523,9 +5458,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::FullscreenWindow(1),
         ];
@@ -5538,14 +5471,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetFullscreenWindow {
@@ -5562,21 +5491,15 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(2),
             },
             Op::AddWindowRightOf {
-                id: 3,
+                params: TestWindowParams::new(3),
                 right_of_id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
             },
         ];
 
@@ -5604,21 +5527,15 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(2),
             },
             Op::AddWindowRightOf {
-                id: 3,
+                params: TestWindowParams::new(3),
                 right_of_id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
             },
         ];
 
@@ -5649,15 +5566,11 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FullscreenWindow(0),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowRight { id: None },
         ];
@@ -5670,15 +5583,11 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FullscreenWindow(0),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeWindowIntoColumn,
         ];
@@ -5691,9 +5600,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FullscreenWindow(0),
             Op::FullscreenWindow(0),
@@ -5707,14 +5614,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::FullscreenWindow(0),
@@ -5728,14 +5631,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (200, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::FullscreenWindow(1),
             Op::ViewOffsetGestureBegin {
@@ -5783,9 +5682,10 @@ mod tests {
         let mut layout = Layout::new(Clock::default(), &config);
 
         Op::AddWindow {
-            id: 1,
-            bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
-            min_max_size: Default::default(),
+            params: TestWindowParams {
+                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
+                ..TestWindowParams::new(1)
+            },
         }
         .apply(&mut layout);
 
@@ -5805,14 +5705,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SwitchPresetWindowHeight { id: None },
@@ -5835,20 +5731,14 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
@@ -5870,20 +5760,14 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
@@ -5909,20 +5793,14 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
@@ -5948,18 +5826,14 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::SetWindowHeight {
                 id: Some(0),
                 change: SizeChange::SetFixed(704),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
         ];
@@ -5981,9 +5855,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::InteractiveMoveBegin {
                 window: 0,
@@ -6002,9 +5874,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::InteractiveMoveBegin {
                 window: 0,
@@ -6032,9 +5902,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::InteractiveMoveBegin {
                 window: 0,
@@ -6066,9 +5934,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::InteractiveMoveBegin {
                 window: 0,
@@ -6097,9 +5963,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::InteractiveMoveBegin {
                 window: 1,
@@ -6131,15 +5995,11 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::RemoveOutput(1),
             Op::AddOutput(1),
@@ -6160,15 +6020,11 @@ mod tests {
             Op::AddOutput(1),
             Op::AddOutput(2),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::RemoveOutput(1),
             Op::AddOutput(1),
@@ -6220,9 +6076,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::MoveWorkspaceUp,
             Op::MoveWorkspaceDown,
@@ -6240,9 +6094,7 @@ mod tests {
     fn move_window_to_different_output() {
         let ops = [
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddOutput(1),
             Op::AddOutput(2),
@@ -6259,9 +6111,7 @@ mod tests {
     fn close_window_empty_ws_above_first() {
         let ops = [
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddOutput(1),
             Op::CloseWindow(1),
@@ -6279,9 +6129,7 @@ mod tests {
             Op::AddOutput(2),
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::RemoveOutput(2),
         ];
@@ -6297,9 +6145,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
         ];
 
@@ -6316,9 +6162,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
         ];
 
@@ -6336,9 +6180,7 @@ mod tests {
         let ops = [
             Op::AddOutput(3),
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::InteractiveMoveBegin {
                 window: 3,
@@ -6367,9 +6209,7 @@ mod tests {
         let ops = [
             Op::AddOutput(3),
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::ToggleWindowFloating { id: Some(3) },
             Op::SetColumnWidth(SizeChange::SetFixed(-100)),
@@ -6382,9 +6222,7 @@ mod tests {
         let ops = [
             Op::AddOutput(3),
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::ToggleWindowFloating { id: Some(3) },
             Op::SetWindowHeight {
@@ -6400,9 +6238,7 @@ mod tests {
         let ops = [
             Op::AddOutput(3),
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::ToggleWindowFloating { id: Some(3) },
             Op::InteractiveResizeBegin {
@@ -6423,9 +6259,7 @@ mod tests {
         let ops = [
             Op::AddOutput(3),
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::FocusWorkspaceDown,
             Op::Refresh { is_active: true },
