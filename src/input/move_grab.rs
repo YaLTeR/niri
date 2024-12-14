@@ -123,8 +123,8 @@ impl PointerGrab<State> for MoveGrab {
             }
         }
 
-        if handle.current_pressed().is_empty() {
-            // No more buttons are pressed, release the grab.
+        if !handle.current_pressed().contains(&self.start_data.button) {
+            // The button that initiated the grab was released.
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
