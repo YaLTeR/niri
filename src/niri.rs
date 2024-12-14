@@ -1128,6 +1128,8 @@ impl State {
 
         if config.binds != old_config.binds {
             self.niri.hotkey_overlay.on_hotkey_config_updated();
+            self.niri.mods_with_mouse_binds =
+                mods_with_mouse_binds(self.backend.mod_key(), &config.binds);
             self.niri.mods_with_wheel_binds =
                 mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
             self.niri.mods_with_finger_scroll_binds =
