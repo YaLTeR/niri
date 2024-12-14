@@ -1543,20 +1543,13 @@ impl State {
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
-        // These values are coming from <linux/input-event-codes.h>.
-        const BTN_LEFT: u32 = 0x110;
-        const BTN_RIGHT: u32 = 0x111;
-        const BTN_MIDDLE: u32 = 0x112;
-        const BTN_SIDE: u32 = 0x113;
-        const BTN_EXTRA: u32 = 0x114;
-        const BTN_FORWARD: u32 = 0x115;
-        const BTN_BACK: u32 = 0x116;
-
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         let serial = SERIAL_COUNTER.next_serial();
 
-        let button = event.button_code();
+        let button = event.button();
+
+        let button_code = event.button_code();
 
         let button_state = event.state();
 
@@ -1568,12 +1561,11 @@ impl State {
                 let comp_mod = self.backend.mod_key();
 
                 if let Some(bind) = match button {
-                    BTN_LEFT => Some(Trigger::MouseLeft),
-                    BTN_RIGHT => Some(Trigger::MouseRight),
-                    BTN_MIDDLE => Some(Trigger::MouseMiddle),
-                    // Chromium treats these as equivalent: https://chromium.googlesource.com/chromium/src/+/refs/heads/main/ui/ozone/platform/wayland/host/wayland_pointer.cc
-                    BTN_BACK | BTN_SIDE => Some(Trigger::MouseBack),
-                    BTN_FORWARD | BTN_EXTRA => Some(Trigger::MouseForward),
+                    Some(MouseButton::Left) => Some(Trigger::MouseLeft),
+                    Some(MouseButton::Right) => Some(Trigger::MouseRight),
+                    Some(MouseButton::Middle) => Some(Trigger::MouseMiddle),
+                    Some(MouseButton::Back) => Some(Trigger::MouseBack),
+                    Some(MouseButton::Forward) => Some(Trigger::MouseForward),
                     _ => None,
                 }
                 .and_then(|trigger| {
@@ -1759,7 +1751,7 @@ impl State {
         pointer.button(
             self,
             &ButtonEvent {
-                button,
+                button: button_code,
                 state: button_state,
                 serial,
                 time: event.time_msec(),
