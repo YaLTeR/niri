@@ -56,6 +56,7 @@ pub fn closest_representable_scale(scale: f64) -> f64 {
 
     (scale * FRACTIONAL_SCALE_DENOM).round() / FRACTIONAL_SCALE_DENOM
 }
+
 #[cfg(test)]
 mod tests {
     use k9::snapshot;
