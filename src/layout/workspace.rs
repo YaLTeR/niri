@@ -909,11 +909,11 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn center_column(&mut self) {
-        // TODO
         if self.floating_is_active {
-            return;
+            self.floating.center_window();
+        } else {
+            self.scrolling.center_column();
         }
-        self.scrolling.center_column();
     }
 
     pub fn toggle_width(&mut self) {
