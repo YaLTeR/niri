@@ -697,13 +697,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let active_idx = self.idx_of(active_id).unwrap();
 
-        let tile = &mut self.tiles[active_idx];
-        let data = &mut self.data[active_idx];
-
-        let prev_pos = data.logical_pos;
-        let new_pos = center_preferring_top_left_in_area(self.working_area, data.size);
-        data.set_logical_pos(new_pos);
-        tile.animate_move_from(prev_pos - new_pos);
+        let new_pos =
+            center_preferring_top_left_in_area(self.working_area, self.data[active_idx].size);
+        self.move_and_animate(active_idx, new_pos);
     }
 
     pub fn descendants_added(&mut self, id: &W::Id) -> bool {
@@ -905,6 +901,23 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let mut rect = Rectangle::from_loc_and_size(pos, size);
         clamp_preferring_top_left_in_area(self.working_area, &mut rect);
         rect.loc
+    }
+
+    fn move_and_animate(&mut self, idx: usize, new_pos: Point<f64, Logical>) {
+        // Moves up to this logical pixel distance are not animated.
+        const ANIMATION_THRESHOLD_SQ: f64 = 10. * 10.;
+
+        let tile = &mut self.tiles[idx];
+        let data = &mut self.data[idx];
+
+        let prev_pos = data.logical_pos;
+        data.set_logical_pos(new_pos);
+        let new_pos = data.logical_pos;
+
+        let diff = prev_pos - new_pos;
+        if diff.x * diff.x + diff.y * diff.y > ANIMATION_THRESHOLD_SQ {
+            tile.animate_move_from(prev_pos - new_pos);
+        }
     }
 
     #[cfg(test)]
