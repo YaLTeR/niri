@@ -22,6 +22,9 @@ use crate::utils::{
 };
 use crate::window::ResolvedWindowRules;
 
+/// By how many logical pixels the directional move commands move floating windows.
+const DIRECTIONAL_MOVE_PX: f64 = 50.;
+
 /// Space for floating windows.
 #[derive(Debug)]
 pub struct FloatingSpace<W: LayoutElement> {
@@ -689,6 +692,32 @@ impl<W: LayoutElement> FloatingSpace<W> {
             let id = tile.window().id().clone();
             self.activate_window(&id);
         }
+    }
+
+    fn move_by(&mut self, amount: Point<f64, Logical>) {
+        let Some(active_id) = &self.active_window_id else {
+            return;
+        };
+        let active_idx = self.idx_of(active_id).unwrap();
+
+        let new_pos = self.data[active_idx].logical_pos + amount;
+        self.move_and_animate(active_idx, new_pos);
+    }
+
+    pub fn move_left(&mut self) {
+        self.move_by(Point::from((-DIRECTIONAL_MOVE_PX, 0.)));
+    }
+
+    pub fn move_right(&mut self) {
+        self.move_by(Point::from((DIRECTIONAL_MOVE_PX, 0.)));
+    }
+
+    pub fn move_up(&mut self) {
+        self.move_by(Point::from((0., -DIRECTIONAL_MOVE_PX)));
+    }
+
+    pub fn move_down(&mut self) {
+        self.move_by(Point::from((0., DIRECTIONAL_MOVE_PX)));
     }
 
     pub fn center_window(&mut self) {
