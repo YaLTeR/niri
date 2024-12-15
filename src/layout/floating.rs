@@ -482,6 +482,26 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
+    pub fn start_close_animation_for_window(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        id: &W::Id,
+        blocker: TransactionBlocker,
+    ) {
+        let (tile, tile_pos) = self
+            .tiles_with_render_positions_mut(false)
+            .find(|(tile, _)| tile.window().id() == id)
+            .unwrap();
+
+        let Some(snapshot) = tile.take_unmap_snapshot() else {
+            return;
+        };
+
+        let tile_size = tile.tile_size();
+
+        self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
+    }
+
     pub fn activate_window_without_raising(&mut self, id: &W::Id) -> bool {
         if !self.contains(id) {
             return false;
@@ -510,26 +530,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let data = self.data.remove(from_idx);
         self.tiles.insert(to_idx, tile);
         self.data.insert(to_idx, data);
-    }
-
-    pub fn start_close_animation_for_window(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        id: &W::Id,
-        blocker: TransactionBlocker,
-    ) {
-        let (tile, tile_pos) = self
-            .tiles_with_render_positions_mut(false)
-            .find(|(tile, _)| tile.window().id() == id)
-            .unwrap();
-
-        let Some(snapshot) = tile.take_unmap_snapshot() else {
-            return;
-        };
-
-        let tile_size = tile.tile_size();
-
-        self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
     }
 
     pub fn start_close_animation_for_tile(
