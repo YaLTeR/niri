@@ -103,7 +103,7 @@ layout {
 
 ### `empty-workspace-above-first`
 
-<sup>Since: 0.1.11</sup>
+<sup>Since: next release</sup>
 
 If set, niri will always add an empty workspace at the very start, in addition to the empty workspace at the very end.
 

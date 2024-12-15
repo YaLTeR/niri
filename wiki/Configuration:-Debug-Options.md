@@ -197,7 +197,7 @@ debug {
 
 ### `strict-new-window-focus-policy`
 
-<sup>Since: 0.1.11</sup>
+<sup>Since: next release</sup>
 
 Disables heuristic automatic focusing for new windows.
 Only windows that activate themselves with a valid xdg-activation token will be focused.
