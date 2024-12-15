@@ -840,16 +840,20 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn move_left(&mut self) -> bool {
         if self.floating_is_active {
-            return true;
+            self.floating.move_left();
+            true
+        } else {
+            self.scrolling.move_left()
         }
-        self.scrolling.move_left()
     }
 
     pub fn move_right(&mut self) -> bool {
         if self.floating_is_active {
-            return true;
+            self.floating.move_right();
+            true
+        } else {
+            self.scrolling.move_right()
         }
-        self.scrolling.move_right()
     }
 
     pub fn move_column_to_first(&mut self) {
@@ -868,16 +872,20 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn move_down(&mut self) -> bool {
         if self.floating_is_active {
-            return true;
+            self.floating.move_down();
+            true
+        } else {
+            self.scrolling.move_down()
         }
-        self.scrolling.move_down()
     }
 
     pub fn move_up(&mut self) -> bool {
         if self.floating_is_active {
-            return true;
+            self.floating.move_up();
+            true
+        } else {
+            self.scrolling.move_up()
         }
-        self.scrolling.move_up()
     }
 
     pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
