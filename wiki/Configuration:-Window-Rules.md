@@ -41,6 +41,7 @@ window-rule {
     open-on-workspace "chat"
     open-maximized true
     open-fullscreen true
+    open-floating true
 
     // Properties that apply continuously.
     draw-border-with-background false
@@ -310,6 +311,30 @@ window-rule {
     match app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
 
     open-fullscreen false
+}
+```
+
+#### `open-floating`
+
+<sup>Since: next release</sup>
+
+Make the window open in the floating layout.
+
+```kdl
+// Open the Firefox picture-in-picture window as floating.
+window-rule {
+    match app-id=r#"^org\.mozilla\.firefox$"# title="^Picture-in-Picture$"
+
+    open-floating true
+}
+```
+
+You can also set this to `false` to *prevent* a window from opening in the floating layout.
+
+```kdl
+// Open all windows in the tiling layout, overriding any auto-floating logic.
+window-rule {
+    open-floating false
 }
 ```
 
