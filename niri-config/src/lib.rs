@@ -1081,6 +1081,7 @@ pub struct Bind {
     pub repeat: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
+    pub allow_inhibiting: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -1158,6 +1159,7 @@ pub enum Action {
     ScreenshotWindow,
     #[knuffel(skip)]
     ScreenshotWindowById(u64),
+    ToggleKeyboardShortcutsInhibit,
     CloseWindow,
     #[knuffel(skip)]
     CloseWindowById(u64),
@@ -2708,6 +2710,7 @@ where
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
+        let mut allow_inhibiting = true;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -2721,6 +2724,9 @@ where
                 "allow-when-locked" => {
                     allow_when_locked = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                     allow_when_locked_node = Some(name);
+                }
+                "allow-inhibiting" => {
+                    allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
@@ -2743,6 +2749,7 @@ where
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
+            allow_inhibiting: true,
         };
 
         if let Some(child) = children.next() {
@@ -2765,12 +2772,19 @@ where
                         }
                     }
 
+                    // The toggle-inhibit action must always be uninhibitable.
+                    // Otherwise, it would be impossible to trigger it.
+                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
+                        allow_inhibiting = false;
+                    }
+
                     Ok(Self {
                         key,
                         action,
                         repeat,
                         cooldown,
                         allow_when_locked,
+                        allow_inhibiting,
                     })
                 }
                 Err(e) => {
@@ -3137,6 +3151,8 @@ mod tests {
             }
 
             binds {
+                Mod+Escape { toggle-keyboard-shortcuts-inhibit; }
+                Mod+Shift+Escape allow-inhibiting=true { toggle-keyboard-shortcuts-inhibit; }
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
                 Mod+Q { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
@@ -3144,7 +3160,7 @@ mod tests {
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
                 Mod+Shift+1 { focus-workspace "workspace-1"; }
-                Mod+Shift+E { quit skip-confirmation=true; }
+                Mod+Shift+E allow-inhibiting=false { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
             }
 
@@ -3437,6 +3453,28 @@ mod tests {
                 binds: Binds(vec![
                     Bind {
                         key: Key {
+                            trigger: Trigger::Keysym(Keysym::Escape),
+                            modifiers: Modifiers::COMPOSITOR,
+                        },
+                        action: Action::ToggleKeyboardShortcutsInhibit,
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Trigger::Keysym(Keysym::Escape),
+                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                        },
+                        action: Action::ToggleKeyboardShortcutsInhibit,
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: false,
+                    },
+                    Bind {
+                        key: Key {
                             trigger: Trigger::Keysym(Keysym::t),
                             modifiers: Modifiers::COMPOSITOR,
                         },
@@ -3444,6 +3482,7 @@ mod tests {
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
+                        allow_inhibiting: true,
                     },
                     Bind {
                         key: Key {
@@ -3454,6 +3493,7 @@ mod tests {
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
+                        allow_inhibiting: true,
                     },
                     Bind {
                         key: Key {
@@ -3464,6 +3504,7 @@ mod tests {
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
+                        allow_inhibiting: true,
                     },
                     Bind {
                         key: Key {
@@ -3474,6 +3515,7 @@ mod tests {
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
+                        allow_inhibiting: true,
                     },
                     Bind {
                         key: Key {
@@ -3484,6 +3526,7 @@ mod tests {
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
+                        allow_inhibiting: true,
                     },
                     Bind {
                         key: Key {
@@ -3494,6 +3537,7 @@ mod tests {
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
+                        allow_inhibiting: true,
                     },
                     Bind {
                         key: Key {
@@ -3506,6 +3550,7 @@ mod tests {
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
+                        allow_inhibiting: true,
                     },
                     Bind {
                         key: Key {
@@ -3516,6 +3561,7 @@ mod tests {
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
+                        allow_inhibiting: false,
                     },
                     Bind {
                         key: Key {
@@ -3526,6 +3572,7 @@ mod tests {
                         repeat: true,
                         cooldown: Some(Duration::from_millis(150)),
                         allow_when_locked: false,
+                        allow_inhibiting: true,
                     },
                 ]),
                 switch_events: SwitchBinds {
