@@ -572,11 +572,14 @@ impl<W: LayoutElement> Workspace<W> {
                     .tiles_with_render_positions()
                     .find(|(tile, _)| tile.window().id() == right_of)
                     .unwrap();
+
                 // Position the new tile in the center above the right_of tile. Think a dialog
                 // opening on top of a window.
+                let tile_size = tile.tile_size();
                 let pos = render_pos
-                    + (right_of_tile.tile_size().to_point() - tile.tile_size().to_point())
-                        .downscale(2.);
+                    + (right_of_tile.tile_size().to_point() - tile_size.to_point()).downscale(2.);
+                let pos = self.floating.clamp_within_working_area(pos, tile_size);
+
                 self.floating.add_tile(tile, Some(pos), activate);
                 if activate {
                     self.floating_is_active = true;
@@ -929,7 +932,10 @@ impl<W: LayoutElement> Workspace<W> {
         } else {
             let mut removed = self.scrolling.remove_tile(&id, Transaction::new());
             removed.tile.stop_move_animations();
-            let pos = render_pos + Point::from((50., 50.));
+            let pos = self.floating.clamp_within_working_area(
+                render_pos + Point::from((50., 50.)),
+                removed.tile.tile_size(),
+            );
             self.floating
                 .add_tile(removed.tile, Some(pos), target_is_active);
             if target_is_active {
