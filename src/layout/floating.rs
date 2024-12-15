@@ -16,7 +16,10 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::transaction::TransactionBlocker;
-use crate::utils::{clamp_preferring_top_left_in_area, ensure_min_max_size, ResizeEdge};
+use crate::utils::{
+    center_preferring_top_left_in_area, clamp_preferring_top_left_in_area, ensure_min_max_size,
+    ResizeEdge,
+};
 use crate::window::ResolvedWindowRules;
 
 /// Space for floating windows.
@@ -386,13 +389,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
 
         let pos = pos.unwrap_or_else(|| {
-            let area_size = self.working_area.size.to_point();
-            let tile_size = tile.tile_size().to_point();
-            let mut offset = (area_size - tile_size).downscale(2.);
-            // Prefer top-left corner if larger than the working area.
-            offset.x = f64::max(offset.x, 0.);
-            offset.y = f64::max(offset.y, 0.);
-            self.working_area.loc + offset
+            center_preferring_top_left_in_area(self.working_area, tile.tile_size())
         });
 
         let data = Data::new(self.working_area, &tile, pos);
