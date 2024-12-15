@@ -691,6 +691,21 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
+    pub fn center_window(&mut self) {
+        let Some(active_id) = &self.active_window_id else {
+            return;
+        };
+        let active_idx = self.idx_of(active_id).unwrap();
+
+        let tile = &mut self.tiles[active_idx];
+        let data = &mut self.data[active_idx];
+
+        let prev_pos = data.logical_pos;
+        let new_pos = center_preferring_top_left_in_area(self.working_area, data.size);
+        data.set_logical_pos(new_pos);
+        tile.animate_move_from(prev_pos - new_pos);
+    }
+
     pub fn descendants_added(&mut self, id: &W::Id) -> bool {
         let Some(idx) = self.idx_of(id) else {
             return false;
