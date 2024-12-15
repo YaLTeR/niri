@@ -16,7 +16,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::transaction::TransactionBlocker;
-use crate::utils::{ensure_min_max_size, ResizeEdge};
+use crate::utils::{clamp_preferring_top_left_in_area, ensure_min_max_size, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
 /// Space for floating windows.
@@ -105,6 +105,24 @@ impl Data {
         logical_pos.x *= self.working_area.size.w;
         logical_pos.y *= self.working_area.size.h;
         logical_pos += self.working_area.loc;
+
+        // Make sure the window doesn't go too much off-screen. Numbers taken from Mutter.
+        let min_on_screen_hor = f64::clamp(self.size.w / 4., 10., 75.);
+        let min_on_screen_ver = f64::clamp(self.size.h / 4., 10., 75.);
+        let max_off_screen_hor = f64::max(0., self.size.w - min_on_screen_hor);
+        let max_off_screen_ver = f64::max(0., self.size.h - min_on_screen_ver);
+
+        logical_pos.x = f64::max(logical_pos.x, -max_off_screen_hor);
+        logical_pos.y = f64::max(logical_pos.y, -max_off_screen_ver);
+        logical_pos.x = f64::min(
+            logical_pos.x,
+            self.working_area.size.w - self.size.w + max_off_screen_hor,
+        );
+        logical_pos.y = f64::min(
+            logical_pos.y,
+            self.working_area.size.h - self.size.h + max_off_screen_ver,
+        );
+
         self.logical_pos = logical_pos;
     }
 
@@ -118,7 +136,13 @@ impl Data {
     }
 
     pub fn update<W: LayoutElement>(&mut self, tile: &Tile<W>) {
-        self.size = tile.tile_size();
+        let size = tile.tile_size();
+        if self.size == size {
+            return;
+        }
+
+        self.size = size;
+        self.recompute_logical_pos();
     }
 
     pub fn set_logical_pos(&mut self, logical_pos: Point<f64, Logical>) {
@@ -129,7 +153,7 @@ impl Data {
 
         self.pos = pos;
 
-        // This should get close to the same result as what we started with.
+        // This will clamp the logical position to the current working area.
         self.recompute_logical_pos();
     }
 
@@ -361,16 +385,15 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         }
 
-        let mut pos = pos.unwrap_or_else(|| {
+        let pos = pos.unwrap_or_else(|| {
             let area_size = self.working_area.size.to_point();
             let tile_size = tile.tile_size().to_point();
-            let offset = (area_size - tile_size).downscale(2.);
+            let mut offset = (area_size - tile_size).downscale(2.);
+            // Prefer top-left corner if larger than the working area.
+            offset.x = f64::max(offset.x, 0.);
+            offset.y = f64::max(offset.y, 0.);
             self.working_area.loc + offset
         });
-        // TODO: also nudge pos + size inside the area.
-        // TODO: smart padding (if doesn't fit, try without padding).
-        pos.x = f64::max(pos.x, self.working_area.loc.x + 8.);
-        pos.y = f64::max(pos.y, self.working_area.loc.y + 8.);
 
         let data = Data::new(self.working_area, &tile, pos);
         self.data.insert(idx, data);
@@ -387,7 +410,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let above_pos = self.data[idx].logical_pos;
         let above_size = self.data[idx].size;
-        let pos = above_pos + (above_size.to_point() - tile.tile_size().to_point()).downscale(2.);
+        let tile_size = tile.tile_size();
+        let pos = above_pos + (above_size.to_point() - tile_size.to_point()).downscale(2.);
+        let pos = self.clamp_within_working_area(pos, tile_size);
 
         self.add_tile_at(idx, tile, Some(pos), activate);
     }
@@ -794,6 +819,16 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             win.refresh();
         }
+    }
+
+    pub fn clamp_within_working_area(
+        &self,
+        pos: Point<f64, Logical>,
+        size: Size<f64, Logical>,
+    ) -> Point<f64, Logical> {
+        let mut rect = Rectangle::from_loc_and_size(pos, size);
+        clamp_preferring_top_left_in_area(self.working_area, &mut rect);
+        rect.loc
     }
 
     #[cfg(test)]
