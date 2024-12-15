@@ -1573,6 +1573,7 @@ impl State {
                     let bindings = &config.binds;
                     find_configured_bind(bindings, comp_mod, trigger, mods)
                 }) {
+                    self.niri.suppressed_buttons.insert(button_code);
                     self.handle_bind(bind.clone());
                     return;
                 };
@@ -1586,7 +1587,7 @@ impl State {
                 let window = mapped.window.clone();
 
                 // Check if we need to start an interactive move.
-                if event.button() == Some(MouseButton::Left) && !pointer.is_grabbed() {
+                if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
                     let mod_down = match self.backend.mod_key() {
                         CompositorMod::Super => mods.logo,
                         CompositorMod::Alt => mods.alt,
@@ -1605,7 +1606,7 @@ impl State {
                         ) {
                             let start_data = PointerGrabStartData {
                                 focus: None,
-                                button: event.button_code(),
+                                button: button_code,
                                 location,
                             };
                             let grab = MoveGrab::new(start_data, window.clone());
@@ -1617,7 +1618,7 @@ impl State {
                     }
                 }
                 // Check if we need to start an interactive resize.
-                else if event.button() == Some(MouseButton::Right) && !pointer.is_grabbed() {
+                else if button == Some(MouseButton::Right) && !pointer.is_grabbed() {
                     let mod_down = match self.backend.mod_key() {
                         CompositorMod::Super => mods.logo,
                         CompositorMod::Alt => mods.alt,
@@ -1669,7 +1670,7 @@ impl State {
                             {
                                 let start_data = PointerGrabStartData {
                                     focus: None,
-                                    button: event.button_code(),
+                                    button: button_code,
                                     location,
                                 };
                                 let grab = ResizeGrab::new(start_data, window.clone());
@@ -1693,7 +1694,7 @@ impl State {
                 self.niri.queue_redraw_all();
             }
 
-            if event.button() == Some(MouseButton::Middle) && !pointer.is_grabbed() {
+            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
                 let mod_down = match self.backend.mod_key() {
                     CompositorMod::Super => mods.logo,
                     CompositorMod::Alt => mods.alt,
@@ -1703,7 +1704,7 @@ impl State {
                         let location = pointer.current_location();
                         let start_data = PointerGrabStartData {
                             focus: None,
-                            button: event.button_code(),
+                            button: button_code,
                             location,
                         };
                         let grab = SpatialMovementGrab::new(start_data, output);
@@ -1723,7 +1724,7 @@ impl State {
             self.niri.focus_layer_surface_if_on_demand(layer_under);
         }
 
-        if let Some(button) = event.button() {
+        if let Some(button) = button {
             let pos = pointer.current_location();
             if let Some((output, _)) = self.niri.output_under(pos) {
                 let output = output.clone();
@@ -1746,6 +1747,10 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+        }
+
+        if self.niri.suppressed_buttons.remove(&button_code) {
+            return;
         }
 
         pointer.button(
