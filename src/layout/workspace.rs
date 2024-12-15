@@ -779,19 +779,15 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_column_right_or_first(&mut self) {
-        // TODO
-        if self.floating_is_active {
-            return;
+        if !self.focus_right() {
+            self.focus_column_first();
         }
-        self.scrolling.focus_column_right_or_first();
     }
 
     pub fn focus_column_left_or_last(&mut self) {
-        // TODO
-        if self.floating_is_active {
-            return;
+        if !self.focus_left() {
+            self.focus_column_last();
         }
-        self.scrolling.focus_column_left_or_last();
     }
 
     pub fn focus_down(&mut self) -> bool {
