@@ -284,6 +284,18 @@ pub fn clamp_preferring_top_left_in_area(
     rect.loc.y = f64::max(rect.loc.y, area.loc.y);
 }
 
+pub fn center_preferring_top_left_in_area(
+    area: Rectangle<f64, Logical>,
+    size: Size<f64, Logical>,
+) -> Point<f64, Logical> {
+    let area_size = area.size.to_point();
+    let size = size.to_point();
+    let mut offset = (area_size - size).downscale(2.);
+    offset.x = f64::max(offset.x, 0.);
+    offset.y = f64::max(offset.y, 0.);
+    area.loc + offset
+}
+
 #[cfg(feature = "dbus")]
 pub fn show_screenshot_notification(image_path: Option<PathBuf>) {
     let mut notification = notify_rust::Notification::new();
