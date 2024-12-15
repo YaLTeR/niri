@@ -747,74 +747,140 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_left(&mut self) -> bool {
+        // TODO
+        if self.floating_is_active {
+            return true;
+        }
         self.scrolling.focus_left()
     }
 
     pub fn focus_right(&mut self) -> bool {
+        // TODO
+        if self.floating_is_active {
+            return true;
+        }
         self.scrolling.focus_right()
     }
 
     pub fn focus_column_first(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.focus_column_first();
     }
 
     pub fn focus_column_last(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.focus_column_last();
     }
 
     pub fn focus_column_right_or_first(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.focus_column_right_or_first();
     }
 
     pub fn focus_column_left_or_last(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.focus_column_left_or_last();
     }
 
     pub fn focus_down(&mut self) -> bool {
+        // TODO
+        if self.floating_is_active {
+            return true;
+        }
         self.scrolling.focus_down()
     }
 
     pub fn focus_up(&mut self) -> bool {
+        // TODO
+        if self.floating_is_active {
+            return true;
+        }
         self.scrolling.focus_up()
     }
 
     pub fn focus_down_or_left(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.focus_down_or_left();
     }
 
     pub fn focus_down_or_right(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.focus_down_or_right();
     }
 
     pub fn focus_up_or_left(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.focus_up_or_left();
     }
 
     pub fn focus_up_or_right(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.focus_up_or_right();
     }
 
     pub fn move_left(&mut self) -> bool {
+        if self.floating_is_active {
+            return true;
+        }
         self.scrolling.move_left()
     }
 
     pub fn move_right(&mut self) -> bool {
+        if self.floating_is_active {
+            return true;
+        }
         self.scrolling.move_right()
     }
 
     pub fn move_column_to_first(&mut self) {
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.move_column_to_first();
     }
 
     pub fn move_column_to_last(&mut self) {
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.move_column_to_last();
     }
 
     pub fn move_down(&mut self) -> bool {
+        if self.floating_is_active {
+            return true;
+        }
         self.scrolling.move_down()
     }
 
     pub fn move_up(&mut self) -> bool {
+        if self.floating_is_active {
+            return true;
+        }
         self.scrolling.move_up()
     }
 
@@ -833,22 +899,40 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn consume_into_column(&mut self) {
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.consume_into_column();
     }
 
     pub fn expel_from_column(&mut self) {
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.expel_from_column();
     }
 
     pub fn center_column(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.center_column();
     }
 
     pub fn toggle_width(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.toggle_width();
     }
 
     pub fn toggle_full_width(&mut self) {
+        // TODO
+        if self.floating_is_active {
+            return;
+        }
         self.scrolling.toggle_full_width();
     }
 
