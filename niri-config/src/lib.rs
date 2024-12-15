@@ -1225,14 +1225,17 @@ pub enum Action {
     FocusMonitorRight,
     FocusMonitorDown,
     FocusMonitorUp,
+    FocusMonitorNext,
     MoveWindowToMonitorLeft,
     MoveWindowToMonitorRight,
     MoveWindowToMonitorDown,
     MoveWindowToMonitorUp,
+    MoveWindowToMonitorNext,
     MoveColumnToMonitorLeft,
     MoveColumnToMonitorRight,
     MoveColumnToMonitorDown,
     MoveColumnToMonitorUp,
+    MoveColumnToMonitorNext,
     SetWindowHeight(#[knuffel(argument, str)] SizeChange),
     #[knuffel(skip)]
     SetWindowHeightById {
@@ -1254,6 +1257,7 @@ pub enum Action {
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,
     MoveWorkspaceToMonitorUp,
+    MoveWorkspaceToMonitorNext,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1353,14 +1357,17 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusMonitorRight {} => Self::FocusMonitorRight,
             niri_ipc::Action::FocusMonitorDown {} => Self::FocusMonitorDown,
             niri_ipc::Action::FocusMonitorUp {} => Self::FocusMonitorUp,
+            niri_ipc::Action::FocusMonitorNext {} => Self::FocusMonitorNext,
             niri_ipc::Action::MoveWindowToMonitorLeft {} => Self::MoveWindowToMonitorLeft,
             niri_ipc::Action::MoveWindowToMonitorRight {} => Self::MoveWindowToMonitorRight,
             niri_ipc::Action::MoveWindowToMonitorDown {} => Self::MoveWindowToMonitorDown,
             niri_ipc::Action::MoveWindowToMonitorUp {} => Self::MoveWindowToMonitorUp,
+            niri_ipc::Action::MoveWindowToMonitorNext {} => Self::MoveWindowToMonitorNext,
             niri_ipc::Action::MoveColumnToMonitorLeft {} => Self::MoveColumnToMonitorLeft,
             niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
             niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
             niri_ipc::Action::MoveColumnToMonitorUp {} => Self::MoveColumnToMonitorUp,
+            niri_ipc::Action::MoveColumnToMonitorNext {} => Self::MoveColumnToMonitorNext,
             niri_ipc::Action::SetWindowHeight { id: None, change } => Self::SetWindowHeight(change),
             niri_ipc::Action::SetWindowHeight {
                 id: Some(id),
@@ -1383,6 +1390,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWorkspaceToMonitorRight {} => Self::MoveWorkspaceToMonitorRight,
             niri_ipc::Action::MoveWorkspaceToMonitorDown {} => Self::MoveWorkspaceToMonitorDown,
             niri_ipc::Action::MoveWorkspaceToMonitorUp {} => Self::MoveWorkspaceToMonitorUp,
+            niri_ipc::Action::MoveWorkspaceToMonitorNext {} => Self::MoveWorkspaceToMonitorNext,
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,

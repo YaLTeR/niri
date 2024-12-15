@@ -2601,6 +2601,17 @@ impl Niri {
             .cloned()
     }
 
+    pub fn output_next(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+
+        self.global_space
+            .outputs()
+            .skip_while(|&output| output != active)
+            .nth(1)
+            .or(self.global_space.outputs().next())
+            .cloned()
+    }
+
     pub fn find_output_and_workspace_index(
         &self,
         workspace_reference: WorkspaceReference,
