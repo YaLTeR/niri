@@ -194,6 +194,9 @@ pub struct Niri {
     // according to their global position.
     pub global_space: Space<Window>,
 
+    /// Mapped outputs, sorted by their name and position.
+    pub sorted_outputs: Vec<Output>,
+
     // Windows which don't have a buffer attached yet.
     pub unmapped_windows: HashMap<WlSurface, Unmapped>,
 
@@ -1959,6 +1962,7 @@ impl Niri {
 
             layout,
             global_space: Space::default(),
+            sorted_outputs: Vec::default(),
             output_state: HashMap::new(),
             unmapped_windows: HashMap::new(),
             unmapped_layer_surfaces: HashSet::new(),
@@ -2147,6 +2151,11 @@ impl Niri {
             "placing outputs in order: {:?}",
             outputs.iter().map(|d| &d.name.connector)
         );
+
+        self.sorted_outputs = outputs
+            .iter()
+            .map(|Data { output, .. }| output.clone())
+            .collect();
 
         for data in outputs.into_iter() {
             let Data {
@@ -2655,6 +2664,31 @@ impl Niri {
             .filter(|(_, geo)| center(*geo).y < center(active_geo).y && geo.overlaps(extended_geo))
             .min_by_key(|(_, geo)| center(active_geo).y - center(*geo).y)
             .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_previous(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+
+        self.sorted_outputs
+            .iter()
+            .rev()
+            .skip_while(|&output| output != active)
+            .nth(1)
+            .or(self.sorted_outputs.last())
+            .filter(|&output| output != active)
+            .cloned()
+    }
+
+    pub fn output_next(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+
+        self.sorted_outputs
+            .iter()
+            .skip_while(|&output| output != active)
+            .nth(1)
+            .or(self.sorted_outputs.first())
+            .filter(|&output| output != active)
             .cloned()
     }
 
