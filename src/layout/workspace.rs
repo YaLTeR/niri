@@ -747,35 +747,35 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_left(&mut self) -> bool {
-        // TODO
         if self.floating_is_active {
-            return true;
+            self.floating.focus_left()
+        } else {
+            self.scrolling.focus_left()
         }
-        self.scrolling.focus_left()
     }
 
     pub fn focus_right(&mut self) -> bool {
-        // TODO
         if self.floating_is_active {
-            return true;
+            self.floating.focus_right()
+        } else {
+            self.scrolling.focus_right()
         }
-        self.scrolling.focus_right()
     }
 
     pub fn focus_column_first(&mut self) {
-        // TODO
         if self.floating_is_active {
-            return;
+            self.floating.focus_leftmost();
+        } else {
+            self.scrolling.focus_column_first();
         }
-        self.scrolling.focus_column_first();
     }
 
     pub fn focus_column_last(&mut self) {
-        // TODO
         if self.floating_is_active {
-            return;
+            self.floating.focus_rightmost();
+        } else {
+            self.scrolling.focus_column_last();
         }
-        self.scrolling.focus_column_last();
     }
 
     pub fn focus_column_right_or_first(&mut self) {
@@ -791,51 +791,51 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_down(&mut self) -> bool {
-        // TODO
         if self.floating_is_active {
-            return true;
+            self.floating.focus_down()
+        } else {
+            self.scrolling.focus_down()
         }
-        self.scrolling.focus_down()
     }
 
     pub fn focus_up(&mut self) -> bool {
-        // TODO
         if self.floating_is_active {
-            return true;
+            self.floating.focus_up()
+        } else {
+            self.scrolling.focus_up()
         }
-        self.scrolling.focus_up()
     }
 
     pub fn focus_down_or_left(&mut self) {
-        // TODO
         if self.floating_is_active {
-            return;
+            self.floating.focus_down();
+        } else {
+            self.scrolling.focus_down_or_left();
         }
-        self.scrolling.focus_down_or_left();
     }
 
     pub fn focus_down_or_right(&mut self) {
-        // TODO
         if self.floating_is_active {
-            return;
+            self.floating.focus_down();
+        } else {
+            self.scrolling.focus_down_or_right();
         }
-        self.scrolling.focus_down_or_right();
     }
 
     pub fn focus_up_or_left(&mut self) {
-        // TODO
         if self.floating_is_active {
-            return;
+            self.floating.focus_up();
+        } else {
+            self.scrolling.focus_up_or_left();
         }
-        self.scrolling.focus_up_or_left();
     }
 
     pub fn focus_up_or_right(&mut self) {
-        // TODO
         if self.floating_is_active {
-            return;
+            self.floating.focus_up();
+        } else {
+            self.scrolling.focus_up_or_right();
         }
-        self.scrolling.focus_up_or_right();
     }
 
     pub fn move_left(&mut self) -> bool {
