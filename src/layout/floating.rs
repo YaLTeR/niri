@@ -160,6 +160,10 @@ impl Data {
         self.recompute_logical_pos();
     }
 
+    pub fn center(&self) -> Point<f64, Logical> {
+        self.logical_pos + self.size.downscale(2.)
+    }
+
     #[cfg(test)]
     fn verify_invariants(&self) {
         let mut temp = *self;
@@ -625,6 +629,66 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let win_size = Size::from((win_width, win_height));
         win.request_size(win_size, animate, None);
+    }
+
+    fn focus_directional(
+        &mut self,
+        distance: impl Fn(Point<f64, Logical>, Point<f64, Logical>) -> f64,
+    ) -> bool {
+        let Some(active_id) = &self.active_window_id else {
+            return false;
+        };
+        let active_idx = self.idx_of(active_id).unwrap();
+        let center = self.data[active_idx].center();
+
+        let result = zip(&self.tiles, &self.data)
+            .filter(|(tile, _)| tile.window().id() != active_id)
+            .map(|(tile, data)| (tile, distance(center, data.center())))
+            .filter(|(_, dist)| *dist > 0.)
+            .min_by(|(_, dist_a), (_, dist_b)| f64::total_cmp(dist_a, dist_b));
+        if let Some((tile, _)) = result {
+            let id = tile.window().id().clone();
+            self.activate_window(&id);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn focus_left(&mut self) -> bool {
+        self.focus_directional(|focus, other| focus.x - other.x)
+    }
+
+    pub fn focus_right(&mut self) -> bool {
+        self.focus_directional(|focus, other| other.x - focus.x)
+    }
+
+    pub fn focus_up(&mut self) -> bool {
+        self.focus_directional(|focus, other| focus.y - other.y)
+    }
+
+    pub fn focus_down(&mut self) -> bool {
+        self.focus_directional(|focus, other| other.y - focus.y)
+    }
+
+    pub fn focus_leftmost(&mut self) {
+        let result = self
+            .tiles_with_offsets()
+            .min_by(|(_, pos_a), (_, pos_b)| f64::total_cmp(&pos_a.x, &pos_b.x));
+        if let Some((tile, _)) = result {
+            let id = tile.window().id().clone();
+            self.activate_window(&id);
+        }
+    }
+
+    pub fn focus_rightmost(&mut self) {
+        let result = self
+            .tiles_with_offsets()
+            .max_by(|(_, pos_a), (_, pos_b)| f64::total_cmp(&pos_a.x, &pos_b.x));
+        if let Some((tile, _)) = result {
+            let id = tile.window().id().clone();
+            self.activate_window(&id);
+        }
     }
 
     pub fn descendants_added(&mut self, id: &W::Id) -> bool {
