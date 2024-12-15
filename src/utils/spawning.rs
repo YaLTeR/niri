@@ -424,8 +424,9 @@ mod systemd {
 
         trace!("waiting for JobRemoved");
         for message in signals {
+            let body = message.body();
             let body: (u32, OwnedObjectPath, &str, &str) =
-                message.body().context("error parsing signal")?;
+                body.deserialize().context("error parsing signal")?;
 
             if body.1 == job {
                 // Our transient unit had started, we're good to exit the intermediate child.

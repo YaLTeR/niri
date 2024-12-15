@@ -5,8 +5,9 @@ use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use zbus::fdo::RequestNameFlags;
+use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
-use zbus::{dbus_interface, fdo, InterfaceRef, ObjectServer, SignalContext};
+use zbus::{fdo, interface, ObjectServer};
 
 use super::Start;
 use crate::backend::IpcOutputMap;
@@ -94,14 +95,14 @@ pub enum ScreenCastToNiri {
         session_id: usize,
         target: StreamTargetId,
         cursor_mode: CursorMode,
-        signal_ctx: SignalContext<'static>,
+        signal_ctx: SignalEmitter<'static>,
     },
     StopCast {
         session_id: usize,
     },
 }
 
-#[dbus_interface(name = "org.gnome.Mutter.ScreenCast")]
+#[interface(name = "org.gnome.Mutter.ScreenCast")]
 impl ScreenCast {
     async fn create_session(
         &self,
@@ -136,26 +137,26 @@ impl ScreenCast {
         Ok(path)
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn version(&self) -> i32 {
         4
     }
 }
 
-#[dbus_interface(name = "org.gnome.Mutter.ScreenCast.Session")]
+#[interface(name = "org.gnome.Mutter.ScreenCast.Session")]
 impl Session {
     async fn start(&self) {
         debug!("start");
 
         for (stream, iface) in &*self.streams.lock().unwrap() {
-            stream.start(self.id, iface.signal_context().clone());
+            stream.start(self.id, iface.signal_emitter().clone());
         }
     }
 
     pub async fn stop(
         &self,
         #[zbus(object_server)] server: &ObjectServer,
-        #[zbus(signal_context)] ctxt: SignalContext<'_>,
+        #[zbus(signal_context)] ctxt: SignalEmitter<'_>,
     ) {
         debug!("stop");
 
@@ -175,7 +176,7 @@ impl Session {
         let streams = mem::take(&mut *self.streams.lock().unwrap());
         for (_, iface) in streams.iter() {
             server
-                .remove::<Stream, _>(iface.signal_context().path())
+                .remove::<Stream, _>(iface.signal_emitter().path())
                 .await
                 .unwrap();
         }
@@ -264,17 +265,17 @@ impl Session {
         Ok(path)
     }
 
-    #[dbus_interface(signal)]
-    async fn closed(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn closed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
-#[dbus_interface(name = "org.gnome.Mutter.ScreenCast.Stream")]
+#[interface(name = "org.gnome.Mutter.ScreenCast.Stream")]
 impl Stream {
-    #[dbus_interface(signal)]
-    pub async fn pipe_wire_stream_added(ctxt: &SignalContext<'_>, node_id: u32)
+    #[zbus(signal)]
+    pub async fn pipe_wire_stream_added(ctxt: &SignalEmitter<'_>, node_id: u32)
         -> zbus::Result<()>;
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn parameters(&self) -> StreamParameters {
         match &self.target {
             StreamTarget::Output(output) => {
@@ -361,7 +362,7 @@ impl Stream {
         }
     }
 
-    fn start(&self, session_id: usize, ctxt: SignalContext<'static>) {
+    fn start(&self, session_id: usize, ctxt: SignalEmitter<'static>) {
         if self.was_started.load(Ordering::SeqCst) {
             return;
         }
