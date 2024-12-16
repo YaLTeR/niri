@@ -123,8 +123,18 @@ impl PointerGrab<State> for MoveGrab {
             }
         }
 
-        if handle.current_pressed().is_empty() {
-            // No more buttons are pressed, release the grab.
+        // When moving with the left button, right toggles floating, and vice versa.
+        let toggle_floating_button = if self.start_data.button == 0x110 {
+            0x111
+        } else {
+            0x110
+        };
+        if event.button == toggle_floating_button && event.state == ButtonState::Pressed {
+            data.niri.layout.toggle_window_floating(Some(&self.window));
+        }
+
+        if !handle.current_pressed().contains(&self.start_data.button) {
+            // The button that initiated the grab was released.
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }

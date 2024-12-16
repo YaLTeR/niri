@@ -66,6 +66,7 @@ use crate::utils::{output_matches_name, output_size, round_logical_in_physical_m
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
+pub mod floating;
 pub mod focus_ring;
 pub mod insert_hint_element;
 pub mod monitor;
@@ -184,6 +185,8 @@ pub trait LayoutElement {
 
     /// Size previously requested through [`LayoutElement::request_size()`].
     fn requested_size(&self) -> Option<Size<i32, Logical>>;
+
+    fn is_child_of(&self, parent: &Self) -> bool;
 
     fn rules(&self) -> &ResolvedWindowRules;
 
@@ -326,6 +329,8 @@ struct InteractiveMoveData<W: LayoutElement> {
     pub(self) width: ColumnWidth,
     /// Whether the window column was full-width.
     pub(self) is_full_width: bool,
+    /// Whether the window targets the floating layout.
+    pub(self) is_floating: bool,
     /// Pointer location within the visual window geometry as ratio from geometry size.
     ///
     /// This helps the pointer remain inside the window as it resizes.
@@ -357,6 +362,8 @@ pub struct RemovedTile<W: LayoutElement> {
     width: ColumnWidth,
     /// Whether the column the tile was in was full-width.
     is_full_width: bool,
+    /// Whether the tile was floating.
+    is_floating: bool,
 }
 
 /// Whether to activate a newly added window.
@@ -744,6 +751,7 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    // TODO: pos
     pub fn add_window_by_idx(
         &mut self,
         monitor_idx: usize,
@@ -752,6 +760,7 @@ impl<W: LayoutElement> Layout<W> {
         activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
+        is_floating: bool,
     ) {
         let MonitorSet::Normal {
             monitors,
@@ -762,7 +771,14 @@ impl<W: LayoutElement> Layout<W> {
             panic!()
         };
 
-        monitors[monitor_idx].add_window(workspace_idx, window, activate, width, is_full_width);
+        monitors[monitor_idx].add_window(
+            workspace_idx,
+            window,
+            activate,
+            width,
+            is_full_width,
+            is_floating,
+        );
 
         if activate {
             *active_monitor_idx = monitor_idx;
@@ -776,6 +792,7 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         width: Option<ColumnWidth>,
         is_full_width: bool,
+        is_floating: bool,
         activate: ActivateWindow,
     ) -> Option<&Output> {
         let width = self.resolve_default_width(&window, width);
@@ -814,7 +831,7 @@ impl<W: LayoutElement> Layout<W> {
                     true
                 });
 
-                mon.add_window(ws_idx, window, activate, width, is_full_width);
+                mon.add_window(ws_idx, window, activate, width, is_full_width, is_floating);
                 Some(&mon.output)
             }
             MonitorSet::NoOutputs { workspaces } => {
@@ -827,7 +844,7 @@ impl<W: LayoutElement> Layout<W> {
                     })
                     .unwrap();
                 let activate = activate.map_smart(|| true);
-                ws.add_window(window, activate, width, is_full_width);
+                ws.add_window(window, activate, width, is_full_width, is_floating);
                 None
             }
         }
@@ -864,6 +881,7 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         width: Option<ColumnWidth>,
         is_full_width: bool,
+        is_floating: bool,
         activate: ActivateWindow,
     ) -> Option<&Output> {
         let width = self.resolve_default_width(&window, width);
@@ -888,6 +906,7 @@ impl<W: LayoutElement> Layout<W> {
                     activate,
                     width,
                     is_full_width,
+                    is_floating,
                 );
                 Some(&mon.output)
             }
@@ -902,7 +921,7 @@ impl<W: LayoutElement> Layout<W> {
                     &mut workspaces[0]
                 };
                 let activate = activate.map_smart(|| true);
-                ws.add_window(window, activate, width, is_full_width);
+                ws.add_window(window, activate, width, is_full_width, is_floating);
                 None
             }
         }
@@ -919,16 +938,24 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         width: Option<ColumnWidth>,
         is_full_width: bool,
+        is_floating: bool,
     ) -> Option<&Output> {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if right_of == move_.tile.window().id() {
                 let output = move_.output.clone();
                 let activate = ActivateWindow::default();
                 if self.monitor_for_output(&output).is_some() {
-                    self.add_window_on_output(&output, window, width, is_full_width, activate);
+                    self.add_window_on_output(
+                        &output,
+                        window,
+                        width,
+                        is_full_width,
+                        is_floating,
+                        activate,
+                    );
                     return Some(&self.monitor_for_output(&output).unwrap().output);
                 } else {
-                    return self.add_window(window, width, is_full_width, activate);
+                    return self.add_window(window, width, is_full_width, is_floating, activate);
                 }
             }
         }
@@ -942,7 +969,7 @@ impl<W: LayoutElement> Layout<W> {
                     .find(|mon| mon.workspaces.iter().any(|ws| ws.has_window(right_of)))
                     .unwrap();
 
-                mon.add_window_right_of(right_of, window, width, is_full_width);
+                mon.add_window_right_of(right_of, window, width, is_full_width, is_floating);
                 Some(&mon.output)
             }
             MonitorSet::NoOutputs { workspaces } => {
@@ -950,7 +977,7 @@ impl<W: LayoutElement> Layout<W> {
                     .iter_mut()
                     .find(|ws| ws.has_window(right_of))
                     .unwrap();
-                ws.add_window_right_of(right_of, window, width, is_full_width);
+                ws.add_window_right_of(right_of, window, width, is_full_width, is_floating);
                 None
             }
         }
@@ -963,6 +990,7 @@ impl<W: LayoutElement> Layout<W> {
         window: W,
         width: Option<ColumnWidth>,
         is_full_width: bool,
+        is_floating: bool,
         activate: ActivateWindow,
     ) {
         let width = self.resolve_default_width(&window, width);
@@ -998,6 +1026,7 @@ impl<W: LayoutElement> Layout<W> {
             activate,
             width,
             is_full_width,
+            is_floating,
         );
     }
 
@@ -1024,6 +1053,7 @@ impl<W: LayoutElement> Layout<W> {
                             tile: move_.tile,
                             width: move_.width,
                             is_full_width: move_.is_full_width,
+                            is_floating: false,
                         });
                     }
                 }
@@ -1083,6 +1113,16 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         None
+    }
+
+    pub fn descendants_added(&mut self, id: &W::Id) -> bool {
+        for ws in self.workspaces_mut() {
+            if ws.descendants_added(id) {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
@@ -1373,6 +1413,42 @@ impl<W: LayoutElement> Layout<W> {
         for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.activate_window(window) {
+                    *active_monitor_idx = monitor_idx;
+
+                    // If currently in the middle of a vertical swipe between the target workspace
+                    // and some other, don't switch the workspace.
+                    match &mon.workspace_switch {
+                        Some(WorkspaceSwitch::Gesture(gesture))
+                            if gesture.current_idx.floor() == workspace_idx as f64
+                                || gesture.current_idx.ceil() == workspace_idx as f64 => {}
+                        _ => mon.switch_workspace(workspace_idx),
+                    }
+
+                    return;
+                }
+            }
+        }
+    }
+
+    pub fn activate_window_without_raising(&mut self, window: &W::Id) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+
+        for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
+            for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
+                if ws.activate_window_without_raising(window) {
                     *active_monitor_idx = monitor_idx;
 
                     // If currently in the middle of a vertical swipe between the target workspace
@@ -2389,6 +2465,12 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
+        // No insert hint when targeting floating.
+        if move_.is_floating {
+            self.interactive_move = Some(InteractiveMoveState::Moving(move_));
+            return;
+        }
+
         let _span = tracy_client::span!("Layout::update_insert_hint::update");
 
         if let Some(mon) = self.monitor_for_output_mut(&move_.output) {
@@ -2596,6 +2678,37 @@ impl<W: LayoutElement> Layout<W> {
         workspace.reset_window_height(window);
     }
 
+    pub fn toggle_window_floating(&mut self, window: Option<&W::Id>) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
+                move_.is_floating = !move_.is_floating;
+                return;
+            }
+        }
+
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.toggle_window_floating(window);
+    }
+
+    pub fn switch_focus_floating_tiling(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.switch_focus_floating_tiling();
+    }
+
     pub fn focus_output(&mut self, output: &Output) {
         if let MonitorSet::Normal {
             monitors,
@@ -2680,6 +2793,7 @@ impl<W: LayoutElement> Layout<W> {
                 activate,
                 removed.width,
                 removed.is_full_width,
+                removed.is_floating,
             );
 
             let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
@@ -2706,6 +2820,12 @@ impl<W: LayoutElement> Layout<W> {
 
             let current = &mut monitors[*active_monitor_idx];
             let ws = current.active_workspace();
+
+            if ws.floating_is_active() {
+                self.move_to_output(None, output, None);
+                return;
+            }
+
             let Some(column) = ws.remove_active_column() else {
                 return;
             };
@@ -3040,10 +3160,17 @@ impl<W: LayoutElement> Layout<W> {
                 }
                 .band(sq_dist / INTERACTIVE_MOVE_START_THRESHOLD);
 
-                let tile = self
+                let (is_floating, tile) = self
                     .workspaces_mut()
-                    .flat_map(|ws| ws.tiles_mut())
-                    .find(|tile| *tile.window().id() == window_id)
+                    .find(|ws| ws.has_window(&window_id))
+                    .map(|ws| {
+                        (
+                            ws.is_floating(&window_id),
+                            ws.tiles_mut()
+                                .find(|tile| *tile.window().id() == window_id)
+                                .unwrap(),
+                        )
+                    })
                     .unwrap();
                 tile.interactive_move_offset = pointer_delta.upscale(factor);
 
@@ -3054,7 +3181,7 @@ impl<W: LayoutElement> Layout<W> {
                     pointer_ratio_within_window,
                 });
 
-                if sq_dist < INTERACTIVE_MOVE_START_THRESHOLD {
+                if !is_floating && sq_dist < INTERACTIVE_MOVE_START_THRESHOLD {
                     return true;
                 }
 
@@ -3063,8 +3190,8 @@ impl<W: LayoutElement> Layout<W> {
                 // to the pointer. Otherwise, we just teleport it as the layout code is not aware
                 // of monitor positions.
                 //
-                // FIXME: with floating layer, the layout code will know about monitor positions,
-                // so this will be potentially animatable.
+                // FIXME: when and if the layout code knows about monitor positions, this will be
+                // potentially animatable.
                 let mut tile_pos = None;
                 if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
                     if let Some((mon, (ws, ws_offset))) = monitors.iter().find_map(|mon| {
@@ -3087,6 +3214,7 @@ impl<W: LayoutElement> Layout<W> {
                     mut tile,
                     width,
                     is_full_width,
+                    mut is_floating,
                 } = self.remove_window(window, Transaction::new()).unwrap();
 
                 tile.stop_move_animations();
@@ -3105,15 +3233,31 @@ impl<W: LayoutElement> Layout<W> {
 
                 // Unfullscreen and let the window pick a natural size.
                 //
+                // TODO
                 // When we have floating, we will want to always send a (0, 0) size here, not just
                 // to unfullscreen. However, when implementing that, remember to check how GTK
                 // tiled window size restoration works. It seems to remember *some* last size with
                 // prefer-no-csd, and occasionally that last size can become the full-width size
                 // rather than a smaller size, which is annoying. Need to see if niri can use some
                 // heuristics to make this case behave better.
-                if tile.window().is_pending_fullscreen() {
-                    tile.window_mut()
-                        .request_size(Size::from((0, 0)), true, None);
+                let win = tile.window_mut();
+                if win.is_pending_fullscreen() {
+                    let mut size = Size::from((0, 0));
+
+                    // Make sure fixed-size through window rules keeps working.
+                    let min_size = win.min_size();
+                    let max_size = win.max_size();
+                    if min_size.w == max_size.w {
+                        size.w = min_size.w;
+                    }
+                    if min_size.h == max_size.h {
+                        size.h = min_size.h;
+                    }
+
+                    win.request_size(size, true, None);
+
+                    // If we're unfullscreening to floating, default to the floating layout.
+                    is_floating = tile.unfullscreen_to_floating();
                 }
 
                 let mut data = InteractiveMoveData {
@@ -3122,6 +3266,7 @@ impl<W: LayoutElement> Layout<W> {
                     pointer_pos_within_output,
                     width,
                     is_full_width,
+                    is_floating,
                     pointer_ratio_within_window,
                 };
 
@@ -3225,14 +3370,25 @@ impl<W: LayoutElement> Layout<W> {
                         .position(|ws| ws.id() == ws_id)
                         .unwrap();
 
-                    let ws = &mut mon.workspaces[ws_idx];
-                    let position = ws.get_insert_position(move_.pointer_pos_within_output - offset);
+                    let position = if move_.is_floating {
+                        InsertPosition::Floating
+                    } else {
+                        let ws = &mut mon.workspaces[ws_idx];
+                        ws.get_insert_position(move_.pointer_pos_within_output - offset)
+                    };
+
                     (mon, ws_idx, position, offset)
                 } else {
                     let mon = &mut monitors[*active_monitor_idx];
                     // No point in trying to use the pointer position on the wrong output.
                     let (ws, offset) = mon.workspaces_with_render_positions().next().unwrap();
-                    let position = ws.get_insert_position(Point::from((0., 0.)));
+
+                    let position = if move_.is_floating {
+                        InsertPosition::Floating
+                    } else {
+                        ws.get_insert_position(Point::from((0., 0.)))
+                    };
+
                     let ws_id = ws.id();
                     let ws_idx = mon
                         .workspaces
@@ -3264,6 +3420,10 @@ impl<W: LayoutElement> Layout<W> {
                             move_.tile,
                             true,
                         );
+                    }
+                    InsertPosition::Floating => {
+                        let pos = move_.tile_render_location() - offset;
+                        mon.add_floating_tile(ws_idx, move_.tile, Some(pos), true);
                     }
                 }
 
@@ -3723,6 +3883,7 @@ mod tests {
     #[derive(Debug)]
     struct TestWindowInner {
         id: usize,
+        parent_id: Cell<Option<usize>>,
         bbox: Cell<Rectangle<i32, Logical>>,
         initial_bbox: Rectangle<i32, Logical>,
         requested_size: Cell<Option<Size<i32, Logical>>>,
@@ -3735,20 +3896,41 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestWindow(Rc<TestWindowInner>);
 
-    impl TestWindow {
-        fn new(
-            id: usize,
-            bbox: Rectangle<i32, Logical>,
-            min_size: Size<i32, Logical>,
-            max_size: Size<i32, Logical>,
-        ) -> Self {
-            Self(Rc::new(TestWindowInner {
+    #[derive(Debug, Clone, Copy, Arbitrary)]
+    struct TestWindowParams {
+        #[proptest(strategy = "1..=5usize")]
+        id: usize,
+        #[proptest(strategy = "arbitrary_parent_id()")]
+        parent_id: Option<usize>,
+        is_floating: bool,
+        #[proptest(strategy = "arbitrary_bbox()")]
+        bbox: Rectangle<i32, Logical>,
+        #[proptest(strategy = "arbitrary_min_max_size()")]
+        min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
+    }
+
+    impl TestWindowParams {
+        pub fn new(id: usize) -> Self {
+            Self {
                 id,
-                bbox: Cell::new(bbox),
-                initial_bbox: bbox,
+                parent_id: None,
+                is_floating: false,
+                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                min_max_size: Default::default(),
+            }
+        }
+    }
+
+    impl TestWindow {
+        fn new(params: TestWindowParams) -> Self {
+            Self(Rc::new(TestWindowInner {
+                id: params.id,
+                parent_id: Cell::new(params.parent_id),
+                bbox: Cell::new(params.bbox),
+                initial_bbox: params.bbox,
                 requested_size: Cell::new(None),
-                min_size,
-                max_size,
+                min_size: params.min_max_size.0,
+                max_size: params.min_max_size.1,
                 pending_fullscreen: Cell::new(false),
                 pending_activated: Cell::new(false),
             }))
@@ -3871,6 +4053,10 @@ mod tests {
             self.0.requested_size.get()
         }
 
+        fn is_child_of(&self, parent: &Self) -> bool {
+            self.0.parent_id.get() == Some(parent.0.id)
+        }
+
         fn refresh(&self) {}
 
         fn rules(&self) -> &ResolvedWindowRules {
@@ -3911,6 +4097,8 @@ mod tests {
             (0f64..).prop_map(SizeChange::SetProportion),
             any::<i32>().prop_map(SizeChange::AdjustFixed),
             any::<f64>().prop_map(SizeChange::AdjustProportion),
+            // Interactive resize can have negative values here.
+            Just(SizeChange::SetFixed(-100)),
         ]
     }
 
@@ -3925,11 +4113,19 @@ mod tests {
     }
 
     fn arbitrary_min_max_size() -> impl Strategy<Value = (Size<i32, Logical>, Size<i32, Logical>)> {
-        (arbitrary_min_max(), arbitrary_min_max()).prop_map(|((min_w, max_w), (min_h, max_h))| {
-            let min_size = Size::from((min_w, min_h));
-            let max_size = Size::from((max_w, max_h));
-            (min_size, max_size)
-        })
+        prop_oneof![
+            5 => (arbitrary_min_max(), arbitrary_min_max()).prop_map(
+                |((min_w, max_w), (min_h, max_h))| {
+                    let min_size = Size::from((min_w, min_h));
+                    let max_size = Size::from((max_w, max_h));
+                    (min_size, max_size)
+                },
+            ),
+            1 => arbitrary_min_max().prop_map(|(w, h)| {
+                let size = Size::from((w, h));
+                (size, size)
+            }),
+        ]
     }
 
     fn arbitrary_view_offset_gesture_delta() -> impl Strategy<Value = f64> {
@@ -3964,6 +4160,13 @@ mod tests {
         ]
     }
 
+    fn arbitrary_parent_id() -> impl Strategy<Value = Option<usize>> {
+        prop_oneof![
+            5 => Just(None),
+            1 => prop::option::of(1..=5usize),
+        ]
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -3986,32 +4189,17 @@ mod tests {
             ws_name: usize,
         },
         AddWindow {
-            #[proptest(strategy = "1..=5usize")]
-            id: usize,
-            #[proptest(strategy = "arbitrary_bbox()")]
-            bbox: Rectangle<i32, Logical>,
-            #[proptest(strategy = "arbitrary_min_max_size()")]
-            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
+            params: TestWindowParams,
         },
         AddWindowRightOf {
-            #[proptest(strategy = "1..=5usize")]
-            id: usize,
+            params: TestWindowParams,
             #[proptest(strategy = "1..=5usize")]
             right_of_id: usize,
-            #[proptest(strategy = "arbitrary_bbox()")]
-            bbox: Rectangle<i32, Logical>,
-            #[proptest(strategy = "arbitrary_min_max_size()")]
-            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
         },
         AddWindowToNamedWorkspace {
-            #[proptest(strategy = "1..=5usize")]
-            id: usize,
+            params: TestWindowParams,
             #[proptest(strategy = "1..=5usize")]
             ws_name: usize,
-            #[proptest(strategy = "arbitrary_bbox()")]
-            bbox: Rectangle<i32, Logical>,
-            #[proptest(strategy = "arbitrary_min_max_size()")]
-            min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
         },
         CloseWindow(#[proptest(strategy = "1..=5usize")] usize),
         FullscreenWindow(#[proptest(strategy = "1..=5usize")] usize),
@@ -4038,6 +4226,7 @@ mod tests {
         FocusWindowUpOrColumnRight,
         FocusWindowOrWorkspaceDown,
         FocusWindowOrWorkspaceUp,
+        FocusWindow(#[proptest(strategy = "1..=5usize")] usize),
         MoveColumnLeft,
         MoveColumnRight,
         MoveColumnToFirst,
@@ -4102,6 +4291,17 @@ mod tests {
         ResetWindowHeight {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
             id: Option<usize>,
+        },
+        ToggleWindowFloating {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
+        SwitchFocusFloatingTiling,
+        SetParent {
+            #[proptest(strategy = "1..=5usize")]
+            id: usize,
+            #[proptest(strategy = "prop::option::of(1..=5usize)")]
+            new_parent_id: Option<usize>,
         },
         Communicate(#[proptest(strategy = "1..=5usize")] usize),
         Refresh {
@@ -4284,29 +4484,34 @@ mod tests {
                 Op::UnnameWorkspace { ws_name } => {
                     layout.unname_workspace(&format!("ws{ws_name}"));
                 }
-                Op::AddWindow {
-                    id,
-                    bbox,
-                    min_max_size,
-                } => {
-                    if layout.has_window(&id) {
+                Op::AddWindow { mut params } => {
+                    if layout.has_window(&params.id) {
                         return;
                     }
+                    if let Some(parent_id) = params.parent_id {
+                        if parent_id_causes_loop(layout, params.id, parent_id) {
+                            params.parent_id = None;
+                        }
+                    }
 
-                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
-                    layout.add_window(win, None, false, ActivateWindow::default());
+                    let win = TestWindow::new(params);
+                    layout.add_window(
+                        win,
+                        None,
+                        false,
+                        params.is_floating,
+                        ActivateWindow::default(),
+                    );
                 }
                 Op::AddWindowRightOf {
-                    id,
+                    mut params,
                     right_of_id,
-                    bbox,
-                    min_max_size,
                 } => {
                     let mut found_right_of = false;
 
                     if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
                         let win_id = move_.tile.window().0.id;
-                        if win_id == id {
+                        if win_id == params.id {
                             return;
                         }
                         if win_id == right_of_id {
@@ -4319,7 +4524,7 @@ mod tests {
                             for mon in monitors {
                                 for ws in &mut mon.workspaces {
                                     for win in ws.windows() {
-                                        if win.0.id == id {
+                                        if win.0.id == params.id {
                                             return;
                                         }
 
@@ -4333,7 +4538,7 @@ mod tests {
                         MonitorSet::NoOutputs { workspaces, .. } => {
                             for ws in workspaces {
                                 for win in ws.windows() {
-                                    if win.0.id == id {
+                                    if win.0.id == params.id {
                                         return;
                                     }
 
@@ -4349,20 +4554,24 @@ mod tests {
                         return;
                     }
 
-                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
-                    layout.add_window_right_of(&right_of_id, win, None, false);
+                    if let Some(parent_id) = params.parent_id {
+                        if parent_id_causes_loop(layout, params.id, parent_id) {
+                            params.parent_id = None;
+                        }
+                    }
+
+                    let win = TestWindow::new(params);
+                    layout.add_window_right_of(&right_of_id, win, None, false, params.is_floating);
                 }
                 Op::AddWindowToNamedWorkspace {
-                    id,
+                    mut params,
                     ws_name,
-                    bbox,
-                    min_max_size,
                 } => {
                     let ws_name = format!("ws{ws_name}");
                     let mut found_workspace = false;
 
                     if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
-                        if move_.tile.window().0.id == id {
+                        if move_.tile.window().0.id == params.id {
                             return;
                         }
                     }
@@ -4372,7 +4581,7 @@ mod tests {
                             for mon in monitors {
                                 for ws in &mut mon.workspaces {
                                     for win in ws.windows() {
-                                        if win.0.id == id {
+                                        if win.0.id == params.id {
                                             return;
                                         }
                                     }
@@ -4390,7 +4599,7 @@ mod tests {
                         MonitorSet::NoOutputs { workspaces, .. } => {
                             for ws in workspaces {
                                 for win in ws.windows() {
-                                    if win.0.id == id {
+                                    if win.0.id == params.id {
                                         return;
                                     }
                                 }
@@ -4410,12 +4619,19 @@ mod tests {
                         return;
                     }
 
-                    let win = TestWindow::new(id, bbox, min_max_size.0, min_max_size.1);
+                    if let Some(parent_id) = params.parent_id {
+                        if parent_id_causes_loop(layout, params.id, parent_id) {
+                            params.parent_id = None;
+                        }
+                    }
+
+                    let win = TestWindow::new(params);
                     layout.add_window_to_named_workspace(
                         &ws_name,
                         win,
                         None,
                         false,
+                        params.is_floating,
                         ActivateWindow::default(),
                     );
                 }
@@ -4477,6 +4693,7 @@ mod tests {
                 Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
                 Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
                 Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
+                Op::FocusWindow(id) => layout.activate_window(&id),
                 Op::MoveColumnLeft => layout.move_left(),
                 Op::MoveColumnRight => layout.move_right(),
                 Op::MoveColumnToFirst => layout.move_column_to_first(),
@@ -4574,6 +4791,69 @@ mod tests {
                 Op::ResetWindowHeight { id } => {
                     let id = id.filter(|id| layout.has_window(id));
                     layout.reset_window_height(id.as_ref());
+                }
+                Op::ToggleWindowFloating { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.toggle_window_floating(id.as_ref());
+                }
+                Op::SwitchFocusFloatingTiling => {
+                    layout.switch_focus_floating_tiling();
+                }
+                Op::SetParent {
+                    id,
+                    mut new_parent_id,
+                } => {
+                    if !layout.has_window(&id) {
+                        return;
+                    }
+
+                    if let Some(parent_id) = new_parent_id {
+                        if parent_id_causes_loop(layout, id, parent_id) {
+                            new_parent_id = None;
+                        }
+                    }
+
+                    let mut update = false;
+
+                    if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
+                        if move_.tile.window().0.id == id {
+                            move_.tile.window().0.parent_id.set(new_parent_id);
+                            update = true;
+                        }
+                    }
+
+                    match &mut layout.monitor_set {
+                        MonitorSet::Normal { monitors, .. } => {
+                            'outer: for mon in monitors {
+                                for ws in &mut mon.workspaces {
+                                    for win in ws.windows() {
+                                        if win.0.id == id {
+                                            win.0.parent_id.set(new_parent_id);
+                                            update = true;
+                                            break 'outer;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        MonitorSet::NoOutputs { workspaces, .. } => {
+                            'outer: for ws in workspaces {
+                                for win in ws.windows() {
+                                    if win.0.id == id {
+                                        win.0.parent_id.set(new_parent_id);
+                                        update = true;
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if update {
+                        if let Some(new_parent_id) = new_parent_id {
+                            layout.descendants_added(&new_parent_id);
+                        }
+                    }
                 }
                 Op::Communicate(id) => {
                     let mut update = false;
@@ -4780,26 +5060,18 @@ mod tests {
             },
             Op::UnnameWorkspace { ws_name: 1 },
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddWindowRightOf {
-                id: 2,
+                params: TestWindowParams::new(2),
                 right_of_id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::AddWindowToNamedWorkspace {
-                id: 3,
+                params: TestWindowParams::new(3),
                 ws_name: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -4887,33 +5159,23 @@ mod tests {
         let setup_ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::MoveWindowToWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::FocusColumnLeft,
             Op::ConsumeWindowIntoColumn,
             Op::AddWindow {
-                id: 4,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(4),
             },
             Op::AddOutput(2),
             Op::AddWindow {
-                id: 5,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(5),
             },
             Op::MoveWindowToOutput {
                 window_id: None,
@@ -4944,37 +5206,25 @@ mod tests {
             },
             Op::UnnameWorkspace { ws_name: 1 },
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::AddWindowRightOf {
-                id: 6,
+                params: TestWindowParams::new(6),
                 right_of_id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::AddWindowRightOf {
-                id: 7,
+                params: TestWindowParams::new(7),
                 right_of_id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::AddWindowToNamedWorkspace {
-                id: 5,
+                params: TestWindowParams::new(5),
                 ws_name: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
             },
             Op::CloseWindow(0),
             Op::CloseWindow(1),
@@ -5081,15 +5331,11 @@ mod tests {
             Op::AddOutput(2),
             Op::FocusOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FocusOutput(2),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::RemoveOutput(2),
             Op::FocusWorkspace(3),
@@ -5104,9 +5350,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FocusWorkspaceDown,
             Op::CloseWindow(0),
@@ -5120,9 +5364,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -5144,16 +5386,12 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddOutput(2),
             Op::FocusOutput(2),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::RemoveOutput(1),
             Op::MoveWindowToWorkspace {
@@ -5176,15 +5414,11 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -5201,9 +5435,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::SetWindowHeight {
                 id: None,
@@ -5223,9 +5455,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams {
+                    min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                    ..TestWindowParams::new(1)
+                },
             },
         ];
 
@@ -5241,9 +5474,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::CloseWindow(1),
@@ -5257,16 +5488,12 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::AddOutput(2),
             Op::FocusOutput(2),
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(2),
             },
             Op::RemoveOutput(1),
             Op::FocusWorkspaceDown,
@@ -5282,9 +5509,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::AddOutput(2),
             Op::RemoveOutput(1),
@@ -5300,9 +5525,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::RemoveOutput(1),
             Op::AddOutput(2),
@@ -5321,9 +5544,7 @@ mod tests {
             Op::AddOutput(2),
             Op::FocusOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::MoveWorkspaceToOutput(2),
         ];
@@ -5352,9 +5573,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::FullscreenWindow(1),
         ];
@@ -5367,14 +5586,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetFullscreenWindow {
@@ -5391,21 +5606,15 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(2),
             },
             Op::AddWindowRightOf {
-                id: 3,
+                params: TestWindowParams::new(3),
                 right_of_id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
             },
         ];
 
@@ -5433,21 +5642,15 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
+                params: TestWindowParams::new(2),
             },
             Op::AddWindowRightOf {
-                id: 3,
+                params: TestWindowParams::new(3),
                 right_of_id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: (Size::from((0, 0)), Size::from((i32::MAX, i32::MAX))),
             },
         ];
 
@@ -5478,15 +5681,11 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FullscreenWindow(0),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowRight { id: None },
         ];
@@ -5499,15 +5698,11 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FullscreenWindow(0),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeWindowIntoColumn,
         ];
@@ -5520,9 +5715,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::FullscreenWindow(0),
             Op::FullscreenWindow(0),
@@ -5536,14 +5729,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::FullscreenWindow(0),
@@ -5557,14 +5746,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (200, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::FullscreenWindow(1),
             Op::ViewOffsetGestureBegin {
@@ -5612,9 +5797,10 @@ mod tests {
         let mut layout = Layout::new(Clock::default(), &config);
 
         Op::AddWindow {
-            id: 1,
-            bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
-            min_max_size: Default::default(),
+            params: TestWindowParams {
+                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
+                ..TestWindowParams::new(1)
+            },
         }
         .apply(&mut layout);
 
@@ -5634,14 +5820,10 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SwitchPresetWindowHeight { id: None },
@@ -5664,20 +5846,14 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
@@ -5699,20 +5875,14 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
@@ -5738,20 +5908,14 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
             Op::SetWindowHeight {
@@ -5777,18 +5941,14 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::SetWindowHeight {
                 id: Some(0),
                 change: SizeChange::SetFixed(704),
             },
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::ConsumeOrExpelWindowLeft { id: None },
         ];
@@ -5810,9 +5970,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::InteractiveMoveBegin {
                 window: 0,
@@ -5831,9 +5989,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::InteractiveMoveBegin {
                 window: 0,
@@ -5861,9 +6017,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::InteractiveMoveBegin {
                 window: 0,
@@ -5895,9 +6049,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 0,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(0),
             },
             Op::InteractiveMoveBegin {
                 window: 0,
@@ -5926,9 +6078,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::InteractiveMoveBegin {
                 window: 1,
@@ -5960,15 +6110,11 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::RemoveOutput(1),
             Op::AddOutput(1),
@@ -5989,15 +6135,11 @@ mod tests {
             Op::AddOutput(1),
             Op::AddOutput(2),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::FocusWorkspaceDown,
             Op::AddWindow {
-                id: 2,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(2),
             },
             Op::RemoveOutput(1),
             Op::AddOutput(1),
@@ -6049,9 +6191,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::MoveWorkspaceUp,
             Op::MoveWorkspaceDown,
@@ -6069,9 +6209,7 @@ mod tests {
     fn move_window_to_different_output() {
         let ops = [
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddOutput(1),
             Op::AddOutput(2),
@@ -6088,9 +6226,7 @@ mod tests {
     fn close_window_empty_ws_above_first() {
         let ops = [
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::AddOutput(1),
             Op::CloseWindow(1),
@@ -6108,9 +6244,7 @@ mod tests {
             Op::AddOutput(2),
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
             Op::RemoveOutput(2),
         ];
@@ -6126,9 +6260,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
         ];
 
@@ -6145,9 +6277,7 @@ mod tests {
         let ops = [
             Op::AddOutput(1),
             Op::AddWindow {
-                id: 1,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(1),
             },
         ];
 
@@ -6165,9 +6295,7 @@ mod tests {
         let ops = [
             Op::AddOutput(3),
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::InteractiveMoveBegin {
                 window: 3,
@@ -6192,13 +6320,61 @@ mod tests {
     }
 
     #[test]
+    fn set_width_fixed_negative() {
+        let ops = [
+            Op::AddOutput(3),
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::ToggleWindowFloating { id: Some(3) },
+            Op::SetColumnWidth(SizeChange::SetFixed(-100)),
+        ];
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn set_height_fixed_negative() {
+        let ops = [
+            Op::AddOutput(3),
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::ToggleWindowFloating { id: Some(3) },
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(-100),
+            },
+        ];
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn interactive_resize_to_negative() {
+        let ops = [
+            Op::AddOutput(3),
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::ToggleWindowFloating { id: Some(3) },
+            Op::InteractiveResizeBegin {
+                window: 3,
+                edges: ResizeEdge::BOTTOM_RIGHT,
+            },
+            Op::InteractiveResizeUpdate {
+                window: 3,
+                dx: -10000.,
+                dy: -10000.,
+            },
+        ];
+        check_ops(&ops);
+    }
+
+    #[test]
     fn windows_on_other_workspaces_remain_activated() {
         let ops = [
             Op::AddOutput(3),
             Op::AddWindow {
-                id: 3,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
-                min_max_size: Default::default(),
+                params: TestWindowParams::new(3),
             },
             Op::FocusWorkspaceDown,
             Op::Refresh { is_active: true },
@@ -6207,6 +6383,147 @@ mod tests {
         let layout = check_ops(&ops);
         let (_, win) = layout.windows().next().unwrap();
         assert!(win.0.pending_activated.get());
+    }
+
+    #[test]
+    fn stacking_add_parent_brings_up_child() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(1),
+                    ..TestWindowParams::new(0)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(1)
+                },
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn stacking_add_parent_brings_up_descendants() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(2),
+                    ..TestWindowParams::new(0)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(0),
+                    ..TestWindowParams::new(1)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(2)
+                },
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn stacking_activate_brings_up_descendants() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(0)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(0),
+                    ..TestWindowParams::new(1)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    parent_id: Some(1),
+                    ..TestWindowParams::new(2)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(3)
+                },
+            },
+            Op::FocusWindow(0),
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn stacking_set_parent_brings_up_child() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(0)
+                },
+            },
+            Op::AddWindow {
+                params: TestWindowParams {
+                    is_floating: true,
+                    ..TestWindowParams::new(1)
+                },
+            },
+            Op::SetParent {
+                id: 0,
+                new_parent_id: Some(1),
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
+        if parent_id == id {
+            return true;
+        }
+
+        'outer: loop {
+            for (_, win) in layout.windows() {
+                if win.0.id == parent_id {
+                    match win.0.parent_id.get() {
+                        Some(new_parent_id) => {
+                            if new_parent_id == id {
+                                // Found a loop.
+                                return true;
+                            }
+
+                            parent_id = new_parent_id;
+                            continue 'outer;
+                        }
+                        // Reached window with no parent.
+                        None => return false,
+                    }
+                }
+            }
+
+            // Parent is not in the layout.
+            return false;
+        }
     }
 
     fn arbitrary_spacing() -> impl Strategy<Value = f64> {
