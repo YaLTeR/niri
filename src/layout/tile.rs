@@ -51,6 +51,9 @@ pub struct Tile<W: LayoutElement> {
     /// The size we were requested to fullscreen into.
     fullscreen_size: Size<f64, Logical>,
 
+    /// Whether the tile should float upon unfullscreening.
+    unfullscreen_to_floating: bool,
+
     /// The animation upon opening a window.
     open_animation: Option<OpenAnimation>,
 
@@ -124,6 +127,7 @@ impl<W: LayoutElement> Tile<W> {
             is_fullscreen: false, // FIXME: up-to-date fullscreen right away, but we need size.
             fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
             fullscreen_size: Default::default(),
+            unfullscreen_to_floating: false,
             open_animation: None,
             resize_animation: None,
             move_x_animation: None,
@@ -921,6 +925,14 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn take_unmap_snapshot(&mut self) -> Option<TileRenderSnapshot> {
         self.unmap_snapshot.take()
+    }
+
+    pub fn unfullscreen_to_floating(&self) -> bool {
+        self.unfullscreen_to_floating
+    }
+
+    pub fn set_unfullscreen_to_floating(&mut self, value: bool) {
+        self.unfullscreen_to_floating = value;
     }
 
     #[cfg(test)]
