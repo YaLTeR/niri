@@ -2140,16 +2140,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
-    pub fn toggle_fullscreen(&mut self, window: &W::Id) {
-        let col = self
-            .columns
-            .iter_mut()
-            .find(|col| col.contains(window))
-            .unwrap();
-        let value = !col.is_fullscreen;
-        self.set_fullscreen(window, value);
-    }
-
     pub fn render_above_top_layer(&self) -> bool {
         // Render above the top layer if we're on a fullscreen window and the view is stationary.
         if self.columns.is_empty() {
