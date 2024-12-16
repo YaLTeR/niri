@@ -985,10 +985,12 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn toggle_fullscreen(&mut self, window: &W::Id) {
-        if self.floating.has_window(window) {
-            self.toggle_window_floating(Some(window));
-        }
-        self.scrolling.toggle_fullscreen(window);
+        let tile = self
+            .tiles()
+            .find(|tile| tile.window().id() == window)
+            .unwrap();
+        let current = tile.window().is_pending_fullscreen();
+        self.set_fullscreen(window, !current);
     }
 
     pub fn toggle_window_floating(&mut self, id: Option<&W::Id>) {
