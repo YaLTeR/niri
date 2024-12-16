@@ -2610,6 +2610,18 @@ impl Niri {
             .cloned()
     }
 
+    pub fn output_previous(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+
+        self.sorted_outputs
+            .iter()
+            .rev()
+            .skip_while(|&output| output != active)
+            .nth(1)
+            .or(self.sorted_outputs.last())
+            .cloned()
+    }
+
     pub fn output_next(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
 

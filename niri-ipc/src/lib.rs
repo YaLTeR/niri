@@ -346,6 +346,8 @@ pub enum Action {
     FocusMonitorDown {},
     /// Focus the monitor above.
     FocusMonitorUp {},
+    /// Focus the previous monitor.
+    FocusMonitorPrevious {},
     /// Focus the next monitor.
     FocusMonitorNext {},
     /// Move the focused window to the monitor to the left.
@@ -356,6 +358,8 @@ pub enum Action {
     MoveWindowToMonitorDown {},
     /// Move the focused window to the monitor above.
     MoveWindowToMonitorUp {},
+    /// Move the focused window to the previous monitor.
+    MoveWindowToMonitorPrevious {},
     /// Move the focused window to the next monitor.
     MoveWindowToMonitorNext {},
     /// Move the focused column to the monitor to the left.
@@ -366,6 +370,8 @@ pub enum Action {
     MoveColumnToMonitorDown {},
     /// Move the focused column to the monitor above.
     MoveColumnToMonitorUp {},
+    /// Move the focused column to the previous monitor.
+    MoveColumnToMonitorPrevious {},
     /// Move the focused column to the next monitor.
     MoveColumnToMonitorNext {},
     /// Change the height of a window.
@@ -430,6 +436,8 @@ pub enum Action {
     MoveWorkspaceToMonitorDown {},
     /// Move the focused workspace to the monitor above.
     MoveWorkspaceToMonitorUp {},
+    /// Move the focused workspace to the previous monitor.
+    MoveWorkspaceToMonitorPrevious {},
     /// Move the focused workspace to the next monitor.
     MoveWorkspaceToMonitorNext {},
     /// Toggle a debug tint on windows.
