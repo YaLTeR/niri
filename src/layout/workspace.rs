@@ -479,7 +479,9 @@ impl<W: LayoutElement> Workspace<W> {
         );
         tile.set_unfullscreen_to_floating(is_floating);
 
-        if is_floating {
+        // If the tile is pending fullscreen, open it in the scrolling layout where it can go
+        // fullscreen.
+        if is_floating && !tile.window().is_pending_fullscreen() {
             self.add_floating_tile(tile, None, activate);
         } else {
             self.add_tile(None, tile, activate, width, is_full_width);
@@ -562,6 +564,7 @@ impl<W: LayoutElement> Workspace<W> {
     ) {
         self.enter_output_for_window(tile.window());
 
+        // TODO: open-fullscreen into scrolling.
         let floating_has_window = self.floating.has_window(right_of);
         if is_floating || floating_has_window {
             if floating_has_window {
