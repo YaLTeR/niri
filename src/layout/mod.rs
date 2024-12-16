@@ -3214,7 +3214,7 @@ impl<W: LayoutElement> Layout<W> {
                     mut tile,
                     width,
                     is_full_width,
-                    is_floating,
+                    mut is_floating,
                 } = self.remove_window(window, Transaction::new()).unwrap();
 
                 tile.stop_move_animations();
@@ -3255,6 +3255,9 @@ impl<W: LayoutElement> Layout<W> {
                     }
 
                     win.request_size(size, true, None);
+
+                    // If we're unfullscreening to floating, default to the floating layout.
+                    is_floating = tile.unfullscreen_to_floating();
                 }
 
                 let mut data = InteractiveMoveData {

@@ -2081,7 +2081,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
+    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) -> bool {
         let (mut col_idx, tile_idx) = self
             .columns
             .iter()
@@ -2090,7 +2090,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .unwrap();
 
         if is_fullscreen == self.columns[col_idx].is_fullscreen {
-            return;
+            return false;
         }
 
         if is_fullscreen
@@ -2138,6 +2138,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         {
             self.view_offset_before_fullscreen = None;
         }
+
+        true
     }
 
     pub fn render_above_top_layer(&self) -> bool {

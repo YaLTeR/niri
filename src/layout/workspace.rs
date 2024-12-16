@@ -471,12 +471,13 @@ impl<W: LayoutElement> Workspace<W> {
         is_full_width: bool,
         is_floating: bool,
     ) {
-        let tile = Tile::new(
+        let mut tile = Tile::new(
             window,
             self.scale.fractional_scale(),
             self.clock.clone(),
             self.options.clone(),
         );
+        tile.set_unfullscreen_to_floating(is_floating);
 
         if is_floating {
             self.add_floating_tile(tile, None, activate);
@@ -541,12 +542,13 @@ impl<W: LayoutElement> Workspace<W> {
         // TODO: smarter enum, so you can override is_floating = false for floating right_of.
         is_floating: bool,
     ) {
-        let tile = Tile::new(
+        let mut tile = Tile::new(
             window,
             self.scale.fractional_scale(),
             self.clock.clone(),
             self.options.clone(),
         );
+        tile.set_unfullscreen_to_floating(is_floating);
         self.add_tile_right_of(right_of, tile, width, is_full_width, is_floating);
     }
 
@@ -972,16 +974,45 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
+        let mut unfullscreen_to_floating = false;
         if self.floating.has_window(window) {
             if is_fullscreen {
+                unfullscreen_to_floating = true;
                 self.toggle_window_floating(Some(window));
             } else {
                 // Floating windows are never fullscreen, so this is an unfullscreen request for an
                 // already unfullscreen window.
                 return;
             }
+        } else if !is_fullscreen {
+            // The window is in the scrolling layout and we're requesting an unfullscreen. If it is
+            // indeed fullscreen (i.e. this isn't a duplicate unfullscreen request), then we may
+            // need to unfullscreen into floating.
+            let tile = self
+                .scrolling
+                .tiles()
+                .find(|tile| tile.window().id() == window)
+                .unwrap();
+            if tile.window().is_pending_fullscreen() && tile.unfullscreen_to_floating() {
+                // Unfullscreen and float in one call so it has a chance to notice and request a
+                // (0, 0) size, rather than the scrolling column size.
+                self.toggle_window_floating(Some(window));
+                return;
+            }
         }
-        self.scrolling.set_fullscreen(window, is_fullscreen);
+
+        let changed = self.scrolling.set_fullscreen(window, is_fullscreen);
+
+        // When going to fullscreen, remember if we should unfullscreen to floating.
+        if changed && is_fullscreen {
+            let tile = self
+                .scrolling
+                .tiles_mut()
+                .find(|tile| tile.window().id() == window)
+                .unwrap();
+
+            tile.set_unfullscreen_to_floating(unfullscreen_to_floating);
+        }
     }
 
     pub fn toggle_fullscreen(&mut self, window: &W::Id) {
