@@ -1528,6 +1528,8 @@ pub struct DebugConfig {
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
     #[knuffel(child)]
+    pub force_pipewire_invalid_modifier: bool,
+    #[knuffel(child)]
     pub emulate_zero_presentation_time: bool,
     #[knuffel(child)]
     pub disable_resize_throttling: bool,

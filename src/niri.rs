@@ -1486,6 +1486,8 @@ impl State {
 
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
+        use smithay::reexports::gbm::Modifier;
+
         use crate::dbus::mutter_screen_cast::StreamTargetId;
 
         match msg {
@@ -1560,12 +1562,22 @@ impl State {
                     }
                 };
 
-                let render_formats = self
+                let mut render_formats = self
                     .backend
                     .with_primary_renderer(|renderer| {
                         renderer.egl_context().dmabuf_render_formats().clone()
                     })
                     .unwrap_or_default();
+
+                {
+                    let config = self.niri.config.borrow();
+                    if config.debug.force_pipewire_invalid_modifier {
+                        render_formats = render_formats
+                            .into_iter()
+                            .filter(|f| f.modifier == Modifier::Invalid)
+                            .collect();
+                    }
+                }
 
                 let res = pw.start_cast(
                     gbm,
