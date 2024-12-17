@@ -11,4 +11,4 @@ initial configure:
 size: 936 × 1048, bounds: 1888 × 1048, states: []
 
 post-map configures:
-size: 936 × 1048, bounds: 1920 × 1080, states: []
+size: 1 × 1, bounds: 1920 × 1080, states: []

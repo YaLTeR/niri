@@ -367,7 +367,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         tile.update_config(self.scale, self.options.clone());
 
         let win = tile.window_mut();
-        if win.is_pending_fullscreen() {
+        let size = if win.is_pending_fullscreen() {
             let mut size = Size::from((0, 0));
 
             // Make sure fixed-size through window rules keeps working.
@@ -380,8 +380,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 size.h = min_size.h;
             }
 
-            win.request_size(size, true, None);
-        }
+            size
+        } else {
+            win.size()
+        };
+        win.request_size_once(size, true);
 
         if activate || self.tiles.is_empty() {
             self.active_window_id = Some(win.id().clone());
@@ -591,16 +594,15 @@ impl<W: LayoutElement> FloatingSpace<W> {
         win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
         win_width = max(1, win_width);
 
-        let win_height = win
-            .requested_size()
-            .map(|size| size.h)
-            // If we requested height = 0, then switch to the current height.
-            .filter(|h| *h != 0)
-            .unwrap_or_else(|| win.size().h);
+        let mut win_height = win.size_to_request().h;
+        // If we requested height = 0, then switch to the current height.
+        if win_height == 0 {
+            win_height = win.size().h;
+        }
         let win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
 
         let win_size = Size::from((win_width, win_height));
-        win.request_size(win_size, animate, None);
+        win.request_size_once(win_size, animate);
     }
 
     pub fn set_window_height(&mut self, id: Option<&W::Id>, change: SizeChange, animate: bool) {
@@ -622,16 +624,15 @@ impl<W: LayoutElement> FloatingSpace<W> {
         win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
         win_height = max(1, win_height);
 
-        let win_width = win
-            .requested_size()
-            .map(|size| size.w)
-            // If we requested width = 0, then switch to the current width.
-            .filter(|w| *w != 0)
-            .unwrap_or_else(|| win.size().w);
+        let mut win_width = win.size_to_request().w;
+        // If we requested width = 0, then switch to the current width.
+        if win_width == 0 {
+            win_width = win.size().w;
+        }
         let win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
 
         let win_size = Size::from((win_width, win_height));
-        win.request_size(win_size, animate, None);
+        win.request_size_once(win_size, animate);
     }
 
     fn focus_directional(

@@ -151,13 +151,24 @@ pub trait LayoutElement {
         self.render(renderer, location, scale, alpha, target).popups
     }
 
+    /// Requests the element to change its size.
+    ///
+    /// The size request is stored and will be continuously sent to the element on any further
+    /// state changes.
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
         animate: bool,
         transaction: Option<Transaction>,
     );
+
+    /// Requests the element to change size once, clearing the request afterwards.
+    fn request_size_once(&mut self, size: Size<i32, Logical>, animate: bool) {
+        self.request_size(size, animate, None);
+    }
+
     fn request_fullscreen(&mut self, size: Size<i32, Logical>);
+
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
@@ -185,6 +196,17 @@ pub trait LayoutElement {
 
     /// Size previously requested through [`LayoutElement::request_size()`].
     fn requested_size(&self) -> Option<Size<i32, Logical>>;
+
+    /// Size that we will request of this window.
+    ///
+    /// This can be different from [`requested_size()`](LayoutElement::requested_size()). For
+    /// example, for floating windows this will generally return the current window size, rather
+    /// than the last size that we requested, since we want floating windows to be able to change
+    /// size freely. But not always: if we just requested a floating window to resize and it hasn't
+    /// responded to it yet, this will return the newly requested size.
+    fn size_to_request(&self) -> Size<i32, Logical> {
+        self.requested_size().unwrap_or_else(|| self.size())
+    }
 
     fn is_child_of(&self, parent: &Self) -> bool;
 
@@ -3255,10 +3277,12 @@ impl<W: LayoutElement> Layout<W> {
                         size.h = min_size.h;
                     }
 
-                    win.request_size(size, true, None);
+                    win.request_size_once(size, true);
 
                     // If we're unfullscreening to floating, default to the floating layout.
                     is_floating = tile.unfullscreen_to_floating();
+                } else {
+                    win.request_size_once(win.size(), true);
                 }
 
                 let mut data = InteractiveMoveData {
