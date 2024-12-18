@@ -188,7 +188,7 @@ impl LayoutElement for TestWindow {
         self.inner.borrow_mut().pending_fullscreen = false;
     }
 
-    fn request_fullscreen(&self, _size: Size<i32, Logical>) {
+    fn request_fullscreen(&mut self, _size: Size<i32, Logical>) {
         self.inner.borrow_mut().pending_fullscreen = true;
     }
 

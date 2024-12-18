@@ -526,7 +526,7 @@ impl LayoutElement for Mapped {
         }
     }
 
-    fn request_fullscreen(&self, size: Size<i32, Logical>) {
+    fn request_fullscreen(&mut self, size: Size<i32, Logical>) {
         self.toplevel().with_pending_state(|state| {
             state.size = Some(size);
             state.states.set(xdg_toplevel::State::Fullscreen);
