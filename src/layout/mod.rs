@@ -157,7 +157,7 @@ pub trait LayoutElement {
         animate: bool,
         transaction: Option<Transaction>,
     );
-    fn request_fullscreen(&self, size: Size<i32, Logical>);
+    fn request_fullscreen(&mut self, size: Size<i32, Logical>);
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
@@ -3999,7 +3999,7 @@ mod tests {
             self.0.pending_fullscreen.set(false);
         }
 
-        fn request_fullscreen(&self, _size: Size<i32, Logical>) {
+        fn request_fullscreen(&mut self, _size: Size<i32, Logical>) {
             self.0.pending_fullscreen.set(true);
         }
 
