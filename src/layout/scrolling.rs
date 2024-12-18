@@ -1071,7 +1071,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Do this before calling update_window() so it can get up-to-date info.
         if let Some(serial) = serial {
-            tile.window_mut().update_interactive_resize(serial);
+            tile.window_mut().on_commit(serial);
         }
 
         let prev_width = self.data[col_idx].width;
