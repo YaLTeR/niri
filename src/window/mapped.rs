@@ -766,7 +766,11 @@ impl LayoutElement for Mapped {
         self.interactive_resize = None;
     }
 
-    fn update_interactive_resize(&mut self, commit_serial: Serial) {
+    fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
+        Some(self.interactive_resize.as_ref()?.data())
+    }
+
+    fn on_commit(&mut self, commit_serial: Serial) {
         if let Some(InteractiveResize::WaitingForLastCommit { serial, .. }) =
             &self.interactive_resize
         {
@@ -774,9 +778,5 @@ impl LayoutElement for Mapped {
                 self.interactive_resize = None;
             }
         }
-    }
-
-    fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
-        Some(self.interactive_resize.as_ref()?.data())
     }
 }

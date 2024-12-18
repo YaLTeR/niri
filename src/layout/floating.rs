@@ -752,7 +752,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         // Do this before calling update_window() so it can get up-to-date info.
         if let Some(serial) = serial {
-            tile.window_mut().update_interactive_resize(serial);
+            tile.window_mut().on_commit(serial);
         }
 
         let prev_size = data.size;
