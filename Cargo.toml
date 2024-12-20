@@ -107,9 +107,12 @@ features = [
 
 [dev-dependencies]
 approx = "0.5.1"
+calloop-wayland-source = "0.4.0"
 insta.workspace = true
 proptest = "1.5.0"
 proptest-derive = { version = "0.5.0", features = ["boxed_union"] }
+rayon = "1.10.0"
+wayland-client = "0.31.7"
 xshell = "0.2.6"
 
 [features]
