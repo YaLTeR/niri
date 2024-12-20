@@ -102,7 +102,7 @@ use smithay::wayland::xdg_foreign::XdgForeignState;
 
 use crate::animation::Clock;
 use crate::backend::tty::SurfaceDmabufFeedback;
-use crate::backend::{Backend, RenderResult, Tty, Winit};
+use crate::backend::{Backend, Headless, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
@@ -520,6 +520,7 @@ impl State {
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
+        headless: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -528,7 +529,10 @@ impl State {
         let has_display =
             env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
 
-        let mut backend = if has_display {
+        let mut backend = if headless {
+            let headless = Headless::new();
+            Backend::Headless(headless)
+        } else if has_display {
             let winit = Winit::new(config.clone(), event_loop.clone())?;
             Backend::Winit(winit)
         } else {
