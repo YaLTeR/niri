@@ -2933,7 +2933,7 @@ pub fn set_miette_hook() -> Result<(), miette::InstallError> {
 
 #[cfg(test)]
 mod tests {
-    use k9::snapshot;
+    use insta::assert_debug_snapshot;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -3833,9 +3833,9 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        snapshot!(
+        assert_debug_snapshot!(
             names,
-            r#"
+            @r#"
 [
     "Unknown A A | DP-3",
     "A Unknown A | DP-3",

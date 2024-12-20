@@ -14,7 +14,7 @@ rust-version = "1.80"
 anyhow = "1.0.93"
 bitflags = "2.6.0"
 clap = { version = "4.5.20", features = ["derive"] }
-k9 = "0.12.0"
+insta = "1.41.1"
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 tracing = { version = "0.1.40", features = ["max_level_trace", "release_max_level_debug"] }
@@ -107,7 +107,7 @@ features = [
 
 [dev-dependencies]
 approx = "0.5.1"
-k9.workspace = true
+insta.workspace = true
 proptest = "1.5.0"
 proptest-derive = { version = "0.5.0", features = ["boxed_union"] }
 xshell = "0.2.6"
@@ -137,6 +137,10 @@ lto = "thin"
 [profile.release.package.niri-config]
 # knuffel with chomsky generates a metric ton of debuginfo.
 debug = false
+
+[profile.dev.package]
+insta.opt-level = 3
+similar.opt-level = 3
 
 [package.metadata.generate-rpm]
 version = "0.1.10"
