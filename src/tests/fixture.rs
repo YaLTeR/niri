@@ -66,6 +66,13 @@ impl Fixture {
         &mut self.niri_state().niri
     }
 
+    pub fn niri_focus_output(&mut self, n: u8) {
+        let niri = &mut self.state.server.state.niri;
+        let idx = usize::from(n - 1);
+        let output = niri.global_space.outputs().nth(idx).unwrap();
+        niri.layout.focus_output(output);
+    }
+
     pub fn add_output(&mut self, n: u8, size: (u16, u16)) {
         let state = self.niri_state();
         let niri = &mut state.niri;

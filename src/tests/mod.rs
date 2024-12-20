@@ -4,4 +4,5 @@ mod client;
 mod fixture;
 mod server;
 
+mod floating;
 mod window_opening;
