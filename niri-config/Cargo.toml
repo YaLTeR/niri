@@ -19,6 +19,6 @@ tracing.workspace = true
 tracy-client.workspace = true
 
 [dev-dependencies]
-k9.workspace = true
+insta.workspace = true
 miette = { version = "5.10.0", features = ["fancy"] }
 pretty_assertions = "1.4.1"

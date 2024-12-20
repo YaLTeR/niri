@@ -212,16 +212,16 @@ fn format_diagonal(diagonal_inches: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use k9::snapshot;
+    use insta::assert_snapshot;
 
     use super::*;
 
     #[test]
     fn test_format_diagonal() {
-        snapshot!(format_diagonal(12.11), "12.1″");
-        snapshot!(format_diagonal(13.28), "13.3″");
-        snapshot!(format_diagonal(15.6), "15.6″");
-        snapshot!(format_diagonal(23.2), "23″");
-        snapshot!(format_diagonal(24.8), "25″");
+        assert_snapshot!(format_diagonal(12.11), @"12.1″");
+        assert_snapshot!(format_diagonal(13.28), @"13.3″");
+        assert_snapshot!(format_diagonal(15.6), @"15.6″");
+        assert_snapshot!(format_diagonal(23.2), @"23″");
+        assert_snapshot!(format_diagonal(24.8), @"25″");
     }
 }
