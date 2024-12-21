@@ -102,6 +102,7 @@ niri_render_elements! {
 pub enum InsertPosition {
     NewColumn(usize),
     InColumn(usize, usize),
+    Floating,
 }
 
 #[derive(Debug)]
@@ -357,6 +358,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn tiles_mut(&mut self) -> impl Iterator<Item = &mut Tile<W>> + '_ {
         self.columns.iter_mut().flat_map(|col| col.tiles.iter_mut())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.columns.is_empty()
     }
 
     pub fn active_window(&self) -> Option<&W> {
@@ -894,6 +899,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 tile: column.tiles.remove(tile_idx),
                 width: column.width,
                 is_full_width: column.is_full_width,
+                is_floating: false,
             };
         }
 
@@ -929,6 +935,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             tile,
             width: column.width,
             is_full_width: column.is_full_width,
+            is_floating: false,
         };
 
         column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
@@ -1064,7 +1071,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Do this before calling update_window() so it can get up-to-date info.
         if let Some(serial) = serial {
-            tile.window_mut().update_interactive_resize(serial);
+            tile.window_mut().on_commit(serial);
         }
 
         let prev_width = self.data[col_idx].width;
@@ -1244,7 +1251,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
     }
 
-    pub fn start_close_animation_for_tile(
+    fn start_close_animation_for_tile(
         &mut self,
         renderer: &mut GlesRenderer,
         snapshot: TileRenderSnapshot,
@@ -1307,28 +1314,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         self.activate_column(self.columns.len() - 1);
-    }
-
-    pub fn focus_column_right_or_first(&mut self) {
-        if self.columns.is_empty() {
-            return;
-        }
-
-        let column_idx = (self.active_column_idx + 1) % self.columns.len();
-        self.activate_column(column_idx);
-    }
-
-    pub fn focus_column_left_or_last(&mut self) {
-        if self.columns.is_empty() {
-            return;
-        }
-
-        let column_idx = if self.active_column_idx == 0 {
-            self.columns.len() - 1
-        } else {
-            self.active_column_idx - 1
-        };
-        self.activate_column(column_idx);
     }
 
     pub fn focus_down(&mut self) -> bool {
@@ -1934,6 +1919,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let loc = Point::from((self.column_x(column_index), y));
                 Rectangle::from_loc_and_size(loc, size)
             }
+            InsertPosition::Floating => return None,
         };
 
         // First window on an empty workspace will cancel out any view offset. Replicate this
@@ -2095,7 +2081,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
+    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) -> bool {
         let (mut col_idx, tile_idx) = self
             .columns
             .iter()
@@ -2104,7 +2090,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .unwrap();
 
         if is_fullscreen == self.columns[col_idx].is_fullscreen {
-            return;
+            return false;
         }
 
         if is_fullscreen
@@ -2152,16 +2138,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         {
             self.view_offset_before_fullscreen = None;
         }
-    }
 
-    pub fn toggle_fullscreen(&mut self, window: &W::Id) {
-        let col = self
-            .columns
-            .iter_mut()
-            .find(|col| col.contains(window))
-            .unwrap();
-        let value = !col.is_fullscreen;
-        self.set_fullscreen(window, value);
+        true
     }
 
     pub fn render_above_top_layer(&self) -> bool {
@@ -2738,7 +2716,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     .iter()
                     .flat_map(|col| &col.tiles)
                     .any(|tile| tile.window().id() == &resize.window),
-                "interactive resize window must be present on the workspace"
+                "interactive resize window must be present in the layout"
             );
         }
     }

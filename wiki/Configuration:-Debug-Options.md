@@ -17,6 +17,7 @@ debug {
     disable-cursor-plane
     disable-direct-scanout
     render-drm-device "/dev/dri/renderD129"
+    force-pipewire-invalid-modifier
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
     emulate-zero-presentation-time
@@ -92,6 +93,20 @@ You can set this to make niri use a different primary GPU than the default one.
 ```kdl
 debug {
     render-drm-device "/dev/dri/renderD129"
+}
+```
+
+### `force-pipewire-invalid-modifier`
+
+<sup>Since: next release</sup>
+
+Forces PipeWire screencasting to use the invalid modifier, even when DRM offers more modifiers.
+
+Useful for testing the invalid modifier code path that is hit by drivers that don't support modifiers.
+
+```kdl
+debug {
+    force-pipewire-invalid-modifier
 }
 ```
 

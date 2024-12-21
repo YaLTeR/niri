@@ -459,7 +459,7 @@ impl XdgShellHandler for State {
                         toplevel.with_pending_state(|state| {
                             state.states.set(xdg_toplevel::State::Fullscreen);
                         });
-                        ws.configure_new_window(&unmapped.window, None, rules);
+                        ws.configure_new_window(&unmapped.window, None, false, rules);
                     }
 
                     // We already sent the initial configure, so we need to reconfigure.
@@ -553,7 +553,13 @@ impl XdgShellHandler for State {
                         } else {
                             *width
                         };
-                        ws.configure_new_window(&unmapped.window, configure_width, rules);
+                        let is_floating = rules.compute_open_floating(&toplevel);
+                        ws.configure_new_window(
+                            &unmapped.window,
+                            configure_width,
+                            is_floating,
+                            rules,
+                        );
                     }
 
                     // We already sent the initial configure, so we need to reconfigure.
@@ -640,6 +646,22 @@ impl XdgShellHandler for State {
 
     fn title_changed(&mut self, toplevel: ToplevelSurface) {
         self.update_window_rules(&toplevel);
+    }
+
+    fn parent_changed(&mut self, toplevel: ToplevelSurface) {
+        let Some(parent) = toplevel.parent() else {
+            return;
+        };
+
+        if let Some((mapped, output)) = self.niri.layout.find_window_and_output_mut(&parent) {
+            let output = output.cloned();
+            let window = mapped.window.clone();
+            if self.niri.layout.descendants_added(&window) {
+                if let Some(output) = output {
+                    self.niri.queue_redraw(&output);
+                }
+            }
+        }
     }
 }
 
@@ -815,6 +837,7 @@ impl State {
 
         let mut width = None;
         let is_full_width = rules.open_maximized.unwrap_or(false);
+        let is_floating = rules.compute_open_floating(toplevel);
 
         // Tell the surface the preferred size and bounds for its likely output.
         let ws = rules
@@ -843,7 +866,7 @@ impl State {
             } else {
                 width
             };
-            ws.configure_new_window(window, configure_width, &rules);
+            ws.configure_new_window(window, configure_width, is_floating, &rules);
         }
 
         // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get

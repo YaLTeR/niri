@@ -188,7 +188,7 @@ impl LayoutElement for TestWindow {
         self.inner.borrow_mut().pending_fullscreen = false;
     }
 
-    fn request_fullscreen(&self, _size: Size<i32, Logical>) {
+    fn request_fullscreen(&mut self, _size: Size<i32, Logical>) {
         self.inner.borrow_mut().pending_fullscreen = true;
     }
 
@@ -240,6 +240,10 @@ impl LayoutElement for TestWindow {
         self.inner.borrow().requested_size
     }
 
+    fn is_child_of(&self, _parent: &Self) -> bool {
+        false
+    }
+
     fn refresh(&self) {}
 
     fn rules(&self) -> &ResolvedWindowRules {
@@ -259,7 +263,7 @@ impl LayoutElement for TestWindow {
 
     fn cancel_interactive_resize(&mut self) {}
 
-    fn update_interactive_resize(&mut self, _serial: Serial) {}
+    fn on_commit(&mut self, _serial: Serial) {}
 
     fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
         None

@@ -983,6 +983,8 @@ pub struct WindowRule {
     pub open_maximized: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_fullscreen: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_floating: Option<bool>,
 
     // Rules applied dynamically.
     #[knuffel(child, unwrap(argument))]
@@ -1254,6 +1256,10 @@ pub enum Action {
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,
     MoveWorkspaceToMonitorUp,
+    ToggleWindowFloating,
+    #[knuffel(skip)]
+    ToggleWindowFloatingById(u64),
+    SwitchFocusBetweenFloatingAndTiling,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1386,6 +1392,13 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,
+            niri_ipc::Action::ToggleWindowFloating { id: None } => Self::ToggleWindowFloating,
+            niri_ipc::Action::ToggleWindowFloating { id: Some(id) } => {
+                Self::ToggleWindowFloatingById(id)
+            }
+            niri_ipc::Action::SwitchFocusBetweenFloatingAndTiling {} => {
+                Self::SwitchFocusBetweenFloatingAndTiling
+            }
         }
     }
 }
@@ -1527,6 +1540,8 @@ pub struct DebugConfig {
     pub disable_direct_scanout: bool,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
+    #[knuffel(child)]
+    pub force_pipewire_invalid_modifier: bool,
     #[knuffel(child)]
     pub emulate_zero_presentation_time: bool,
     #[knuffel(child)]
@@ -3119,6 +3134,7 @@ mod tests {
                 open-on-output "eDP-1"
                 open-maximized true
                 open-fullscreen false
+                open-floating false
 
                 focus-ring {
                     off
@@ -3397,6 +3413,7 @@ mod tests {
                     open_on_output: Some("eDP-1".to_owned()),
                     open_maximized: Some(true),
                     open_fullscreen: Some(false),
+                    open_floating: Some(false),
                     focus_ring: BorderRule {
                         off: true,
                         width: Some(FloatOrInt(3.)),
