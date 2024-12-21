@@ -2420,7 +2420,19 @@ impl Niri {
 
         // Check if some layer-shell surface is on top.
         let layers = layer_map_for_output(output);
-        let layer_under = |layer| layers.layer_under(layer, pos_within_output).is_some();
+        let layer_under = |layer| {
+            layers
+                .layer_under(layer, pos_within_output)
+                .and_then(|layer| {
+                    let layer_pos_within_output =
+                        layers.layer_geometry(layer).unwrap().loc.to_f64();
+                    layer.surface_under(
+                        pos_within_output - layer_pos_within_output,
+                        WindowSurfaceType::ALL,
+                    )
+                })
+                .is_some()
+        };
         if layer_under(Layer::Overlay) {
             return None;
         }
