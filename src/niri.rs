@@ -1,4 +1,4 @@
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{Cell, LazyCell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -327,7 +327,7 @@ pub struct Niri {
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
-    pub pipewire: Option<PipeWire>,
+    pub pipewire: LazyCell<Option<PipeWire>, Box<dyn FnOnce() -> Option<PipeWire>>>,
 
     // Screencast output for each mapped window.
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -1504,13 +1504,15 @@ impl State {
                 let gbm = match self.backend.gbm_device() {
                     Some(gbm) => gbm,
                     None => {
-                        debug!("no GBM device available");
+                        warn!("error starting screencast: no GBM device available");
+                        self.niri.stop_cast(session_id);
                         return;
                     }
                 };
 
-                let Some(pw) = &self.niri.pipewire else {
-                    error!("screencasting must be disabled if PipeWire is missing");
+                let Some(pw) = &*self.niri.pipewire else {
+                    warn!("error starting screencast: PipeWire failed to initialize");
+                    self.niri.stop_cast(session_id);
                     return;
                 };
 
@@ -1882,13 +1884,14 @@ impl Niri {
             }
         };
 
-        let pipewire = match PipeWire::new(&event_loop) {
+        let loop_handle = event_loop.clone();
+        let pipewire = LazyCell::new(Box::new(move || match PipeWire::new(&loop_handle) {
             Ok(pipewire) => Some(pipewire),
             Err(err) => {
                 warn!("error connecting to PipeWire, screencasting will not work: {err:?}");
                 None
             }
-        };
+        }) as _);
 
         let display_source = Generic::new(display, Interest::READ, Mode::Level);
         event_loop
