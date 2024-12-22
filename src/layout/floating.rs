@@ -366,24 +366,27 @@ impl<W: LayoutElement> FloatingSpace<W> {
     ) {
         tile.update_config(self.scale, self.options.clone());
 
+        // Restore the previous floating window size, and in case the tile is fullscreen,
+        // unfullscreen it.
+        let floating_size = tile.floating_window_size();
         let win = tile.window_mut();
-        let size = if win.is_pending_fullscreen() {
-            let mut size = Size::from((0, 0));
-
-            // Make sure fixed-size through window rules keeps working.
-            let min_size = win.min_size();
-            let max_size = win.max_size();
-            if min_size.w == max_size.w {
-                size.w = min_size.w;
-            }
-            if min_size.h == max_size.h {
-                size.h = min_size.h;
-            }
-
-            size
+        let mut size = if win.is_pending_fullscreen() {
+            // If the window was fullscreen without a floating size, ask for (0, 0).
+            floating_size.unwrap_or_default()
         } else {
-            win.size()
+            // If the window wasn't fullscreen without a floating size (e.g. it was tiled before),
+            // ask for the current size.
+            floating_size.unwrap_or_else(|| win.size_to_request())
         };
+        // Make sure fixed-size through window rules keeps working.
+        let min_size = win.min_size();
+        let max_size = win.max_size();
+        if min_size.w != 0 && min_size.w == max_size.w {
+            size.w = min_size.w;
+        }
+        if min_size.h != 0 && min_size.h == max_size.h {
+            size.h = min_size.h;
+        }
         win.request_size_once(size, true);
 
         if activate || self.tiles.is_empty() {
@@ -760,6 +763,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         tile.update_window();
         data.update(tile);
+
+        // Update the stored floating window size.
+        let floating_size = tile.window().size_to_request();
+        tile.set_floating_window_size(floating_size);
 
         // When resizing by top/left edge, update the position accordingly.
         if let Some(resize) = resize {
