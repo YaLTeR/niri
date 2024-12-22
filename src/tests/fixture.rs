@@ -5,6 +5,7 @@ use std::time::Duration;
 use calloop::generic::Generic;
 use calloop::{EventLoop, Interest, LoopHandle, Mode, PostAction};
 use niri_config::Config;
+use smithay::output::Output;
 
 use super::client::{Client, ClientId};
 use super::server::Server;
@@ -64,6 +65,13 @@ impl Fixture {
 
     pub fn niri(&mut self) -> &mut Niri {
         &mut self.niri_state().niri
+    }
+
+    pub fn niri_output(&self, n: u8) -> Output {
+        let niri = &self.state.server.state.niri;
+        let idx = usize::from(n - 1);
+        let output = niri.global_space.outputs().nth(idx).unwrap();
+        output.clone()
     }
 
     pub fn niri_focus_output(&mut self, n: u8) {

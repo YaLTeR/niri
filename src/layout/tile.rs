@@ -54,6 +54,12 @@ pub struct Tile<W: LayoutElement> {
     /// Whether the tile should float upon unfullscreening.
     unfullscreen_to_floating: bool,
 
+    /// The size that the window should assume when going floating.
+    ///
+    /// This is generally the last size the window had when it was floating. It can be unknown if
+    /// the window starts out in the tiling layout or fullscreen.
+    floating_window_size: Option<Size<i32, Logical>>,
+
     /// The animation upon opening a window.
     open_animation: Option<OpenAnimation>,
 
@@ -128,6 +134,7 @@ impl<W: LayoutElement> Tile<W> {
             fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
             fullscreen_size: Default::default(),
             unfullscreen_to_floating: false,
+            floating_window_size: None,
             open_animation: None,
             resize_animation: None,
             move_x_animation: None,
@@ -933,6 +940,14 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn set_unfullscreen_to_floating(&mut self, value: bool) {
         self.unfullscreen_to_floating = value;
+    }
+
+    pub fn floating_window_size(&self) -> Option<Size<i32, Logical>> {
+        self.floating_window_size
+    }
+
+    pub fn set_floating_window_size(&mut self, floating_window_size: Size<i32, Logical>) {
+        self.floating_window_size = Some(floating_window_size);
     }
 
     #[cfg(test)]
