@@ -606,6 +606,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let win_size = Size::from((win_width, win_height));
         win.request_size_once(win_size, animate);
+
+        // Store it right away so pending resizes are not lost when moving across floating spaces.
+        tile.set_floating_window_size(win_size);
     }
 
     pub fn set_window_height(&mut self, id: Option<&W::Id>, change: SizeChange, animate: bool) {
@@ -636,6 +639,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let win_size = Size::from((win_width, win_height));
         win.request_size_once(win_size, animate);
+
+        // Store it right away so pending resizes are not lost when moving across floating spaces.
+        tile.set_floating_window_size(win_size);
     }
 
     fn focus_directional(

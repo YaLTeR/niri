@@ -530,14 +530,18 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
-            true,
-            removed.width,
-            removed.is_full_width,
-            removed.is_floating,
-        );
+        if removed.is_floating {
+            self.add_floating_tile(new_idx, removed.tile, None, true);
+        } else {
+            self.add_tile(
+                new_idx,
+                None,
+                removed.tile,
+                true,
+                removed.width,
+                removed.is_full_width,
+            );
+        }
     }
 
     pub fn move_to_workspace_down(&mut self) {
@@ -553,14 +557,18 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
-            true,
-            removed.width,
-            removed.is_full_width,
-            removed.is_floating,
-        );
+        if removed.is_floating {
+            self.add_floating_tile(new_idx, removed.tile, None, true);
+        } else {
+            self.add_tile(
+                new_idx,
+                None,
+                removed.tile,
+                true,
+                removed.width,
+                removed.is_full_width,
+            );
+        }
     }
 
     pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
@@ -592,14 +600,18 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
-            activate,
-            removed.width,
-            removed.is_full_width,
-            removed.is_floating,
-        );
+        if removed.is_floating {
+            self.add_floating_tile(new_idx, removed.tile, None, activate);
+        } else {
+            self.add_tile(
+                new_idx,
+                None,
+                removed.tile,
+                activate,
+                removed.width,
+                removed.is_full_width,
+            );
+        }
 
         if self.workspace_switch.is_none() {
             self.clean_up_workspaces();
