@@ -816,6 +816,11 @@ impl LayoutElement for Mapped {
             return current_size;
         }
 
+        // FIXME: Ideally, if the window doesn't have a pending resize or an uncommitted acked
+        // size, we should request the current window size, rather than the requested size. This
+        // will keep the window size as-is when moving to floating in the case that a window
+        // changed its size in the tiling layout and then we requested a resize. However, that's
+        // pretty edge-casy and I don't want to complicate this logic for that at the moment.
         self.requested_size().unwrap_or(current_size)
     }
 

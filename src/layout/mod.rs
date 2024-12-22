@@ -1152,6 +1152,12 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
                 move_.tile.update_window();
+
+                // Update the floating size in case the window resizes itself during an interactive
+                // move.
+                let floating_size = move_.tile.window().size_to_request();
+                move_.tile.set_floating_window_size(floating_size);
+
                 return;
             }
         }
@@ -3254,35 +3260,33 @@ impl<W: LayoutElement> Layout<W> {
                     Rc::new(Options::clone(&self.options).adjusted_for_scale(scale)),
                 );
 
-                // Unfullscreen and let the window pick a natural size.
-                //
-                // TODO
-                // When we have floating, we will want to always send a (0, 0) size here, not just
-                // to unfullscreen. However, when implementing that, remember to check how GTK
-                // tiled window size restoration works. It seems to remember *some* last size with
-                // prefer-no-csd, and occasionally that last size can become the full-width size
-                // rather than a smaller size, which is annoying. Need to see if niri can use some
-                // heuristics to make this case behave better.
+                // Unfullscreen.
+                let floating_size = tile.floating_window_size();
+                let unfullscreen_to_floating = tile.unfullscreen_to_floating();
                 let win = tile.window_mut();
                 if win.is_pending_fullscreen() {
-                    let mut size = Size::from((0, 0));
+                    // If we're unfullscreening to floating, use the stored floating size,
+                    // otherwise use (0, 0).
+                    let mut size = if unfullscreen_to_floating {
+                        floating_size.unwrap_or_default()
+                    } else {
+                        Size::from((0, 0))
+                    };
 
                     // Make sure fixed-size through window rules keeps working.
                     let min_size = win.min_size();
                     let max_size = win.max_size();
-                    if min_size.w == max_size.w {
+                    if min_size.w != 0 && min_size.w == max_size.w {
                         size.w = min_size.w;
                     }
-                    if min_size.h == max_size.h {
+                    if min_size.h != 0 && min_size.h == max_size.h {
                         size.h = min_size.h;
                     }
 
                     win.request_size_once(size, true);
 
                     // If we're unfullscreening to floating, default to the floating layout.
-                    is_floating = tile.unfullscreen_to_floating();
-                } else {
-                    win.request_size_once(win.size(), true);
+                    is_floating = unfullscreen_to_floating;
                 }
 
                 let mut data = InteractiveMoveData {
