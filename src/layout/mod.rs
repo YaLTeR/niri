@@ -197,15 +197,27 @@ pub trait LayoutElement {
     /// Size previously requested through [`LayoutElement::request_size()`].
     fn requested_size(&self) -> Option<Size<i32, Logical>>;
 
-    /// Size that we will request of this window.
+    /// Size that we expect this window has or will shortly have.
     ///
     /// This can be different from [`requested_size()`](LayoutElement::requested_size()). For
     /// example, for floating windows this will generally return the current window size, rather
     /// than the last size that we requested, since we want floating windows to be able to change
     /// size freely. But not always: if we just requested a floating window to resize and it hasn't
     /// responded to it yet, this will return the newly requested size.
-    fn size_to_request(&self) -> Size<i32, Logical> {
-        self.requested_size().unwrap_or_else(|| self.size())
+    ///
+    /// This function should never return a 0 size component.
+    ///
+    /// The default impl is for testing only, it will not preserve the window's own size changes.
+    fn expected_size(&self) -> Size<i32, Logical> {
+        let mut requested = self.requested_size().unwrap_or_default();
+        let current = self.size();
+        if requested.w == 0 {
+            requested.w = current.w;
+        }
+        if requested.h == 0 {
+            requested.h = current.h;
+        }
+        requested
     }
 
     fn is_child_of(&self, parent: &Self) -> bool;
@@ -1155,7 +1167,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 // Update the floating size in case the window resizes itself during an interactive
                 // move.
-                let floating_size = move_.tile.window().size_to_request();
+                let floating_size = move_.tile.window().expected_size();
                 move_.tile.set_floating_window_size(floating_size);
 
                 return;

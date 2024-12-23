@@ -750,7 +750,27 @@ impl LayoutElement for Mapped {
         let _span =
             trace_span!("send_pending_configure", surface = ?toplevel.wl_surface().id()).entered();
 
-        if toplevel.has_pending_changes() {
+        // Check for pending changes manually to account fo RequestSizeOnce::UseWindowSize.
+        let has_pending_changes = with_toplevel_role(self.toplevel(), |role| {
+            if role.server_pending.is_none() {
+                return false;
+            }
+
+            let current_server_size = role.current_server_state().size;
+            let server_pending = role.server_pending.as_mut().unwrap();
+
+            // With UseWindowSize, we do not consider size-only changes, because we will
+            // request the current window size and do not expect it to actually change.
+            if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
+                server_pending.size = current_server_size;
+            }
+
+            let server_pending = role.server_pending.as_ref().unwrap();
+            server_pending != role.current_server_state()
+        });
+
+        if has_pending_changes {
+            // If needed, replace the pending size with the current window size.
             if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
                 let size = self.window.geometry().size;
                 toplevel.with_pending_state(|state| {
@@ -809,19 +829,65 @@ impl LayoutElement for Mapped {
         self.toplevel().with_pending_state(|state| state.size)
     }
 
-    fn size_to_request(&self) -> Size<i32, Logical> {
+    fn expected_size(&self) -> Size<i32, Logical> {
         let current_size = self.window.geometry().size;
 
+        // Check if we should be using the current window size.
+        //
+        // This branch can be useful (give different result than the logic below) in this example
+        // case:
+        //
+        // 1. We request_size_once a size change.
+        // 2. We send a second configure requesting a state change.
+        // 3. The window acks and commits-to the first configure but not the second, with a
+        //    different size.
+        //
+        // In this case self.request_size_once will already flip to UseWindowSize and this branch
+        // will return the window's own new size, but the logic below would see an uncommitted size
+        // change and return our size.
         if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
             return current_size;
         }
 
-        // FIXME: Ideally, if the window doesn't have a pending resize or an uncommitted acked
-        // size, we should request the current window size, rather than the requested size. This
-        // will keep the window size as-is when moving to floating in the case that a window
-        // changed its size in the tiling layout and then we requested a resize. However, that's
-        // pretty edge-casy and I don't want to complicate this logic for that at the moment.
-        self.requested_size().unwrap_or(current_size)
+        let pending_size = with_toplevel_role(self.toplevel(), |role| {
+            // If we have a server-pending size change that we haven't sent yet, use that size.
+            if let Some(server_pending) = &role.server_pending {
+                let current_server = role.current_server_state();
+                if server_pending.size != current_server.size {
+                    return Some(server_pending.size.unwrap_or_default());
+                }
+            }
+
+            // If we have a sent-but-not-committed-to size, use that.
+            let (last_sent, last_serial) = if let Some(configure) = role.pending_configures().last()
+            {
+                (&configure.state, configure.serial)
+            } else {
+                (
+                    role.last_acked.as_ref().unwrap(),
+                    role.configure_serial.unwrap(),
+                )
+            };
+
+            if let Some(current_serial) = role.current_serial {
+                if !current_serial.is_no_older_than(&last_serial) {
+                    return Some(last_sent.size.unwrap_or_default());
+                }
+            }
+
+            None
+        });
+
+        // If we have no pending size change (size change that the window hasn't committed to), or
+        // if some component of the pending size change is zero, use the current window size.
+        let mut size = pending_size.unwrap_or_default();
+        if size.w == 0 {
+            size.w = current_size.w;
+        }
+        if size.h == 0 {
+            size.h = current_size.h;
+        }
+        size
     }
 
     fn is_child_of(&self, parent: &Self) -> bool {

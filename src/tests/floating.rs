@@ -78,14 +78,18 @@ fn resize_to_different_size() {
     let (mut f, id, surface) = set_up();
     let _ = f.client(id).window(&surface).recent_configures();
 
+    // Commit in response to the Activated state change configure.
+    f.client(id).window(&surface).ack_last_and_commit();
+    f.double_roundtrip(id);
+
     f.niri().layout.toggle_window_floating(None);
     f.niri().layout.set_column_width(SizeChange::SetFixed(500));
     f.double_roundtrip(id);
 
-    // This should request the new size, 500 ×.
+    // This should request the new size, 500 × 100.
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
-        @"size: 500 × 1048, bounds: 1920 × 1080, states: [Activated]"
+        @"size: 500 × 100, bounds: 1920 × 1080, states: [Activated]"
     );
 
     // Focus a different output which should drop the Activated state.
@@ -94,7 +98,7 @@ fn resize_to_different_size() {
     // This should request the new size since the window hasn't committed yet.
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
-        @"size: 500 × 1048, bounds: 1920 × 1080, states: []"
+        @"size: 500 × 100, bounds: 1920 × 1080, states: []"
     );
 
     // Ack but don't commit yet.
@@ -107,7 +111,7 @@ fn resize_to_different_size() {
     // This should request the new size since the window hasn't committed yet.
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
-        @"size: 500 × 1048, bounds: 1920 × 1080, states: [Activated]"
+        @"size: 500 × 100, bounds: 1920 × 1080, states: [Activated]"
     );
 
     // Commit but with some different size.
@@ -505,5 +509,145 @@ fn resize_during_interactive_move_propagates_to_floating() {
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
         @"size: 300 × 300, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn resize_in_steps() {
+    let (mut f, id, surface) = set_up();
+
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Commit in response to the floating bounds state change configure.
+    f.client(id).window(&surface).ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    // Request a size change to a different size in two steps.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(500));
+    f.niri()
+        .layout
+        .set_window_height(None, SizeChange::SetFixed(500));
+    f.double_roundtrip(id);
+
+    // This should request the full new size (500 × 500) once.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 500 × 500, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    let window = f.client(id).window(&surface);
+    let serial = window.configures_received.last().unwrap().0;
+
+    // Request a size change now that the previous one is pending-but-not-acked.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(600));
+    // Drop Activated to work around resize throttling.
+    f.niri_focus_output(2);
+    f.double_roundtrip(id);
+
+    // This should request the new size (600 × 500) once.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 600 × 500, bounds: 1920 × 1080, states: []"
+    );
+
+    // Commit in response to the previous configure.
+    let window = f.client(id).window(&surface);
+    window.xdg_surface.ack_configure(serial);
+    window.set_size(500, 500);
+    window.commit();
+
+    f.double_roundtrip(id);
+
+    // This shouldn't request anything.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
+    );
+
+    // Request a height change now that the first one is committed-to, but the second isn't.
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window = mapped.window.clone();
+    f.niri()
+        .layout
+        .set_window_height(Some(&window), SizeChange::SetFixed(600));
+    // Add Activated to work around resize throttling.
+    f.niri_focus_output(1);
+    f.double_roundtrip(id);
+
+    // This should request the latest sizes (600 × 600).
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 600 × 600, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn state_change_doesnt_break_use_window_size() {
+    let (mut f, id, surface) = set_up();
+
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Commit in response to the bounds change that comes with toggling floating.
+    f.client(id).window(&surface).ack_last_and_commit();
+    f.roundtrip(id);
+
+    // Request a size change to a different size.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(500));
+    f.double_roundtrip(id);
+
+    // This should request the new size (500 × 100).
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 500 × 100, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    let window = f.client(id).window(&surface);
+    let serial = window.configures_received.last().unwrap().0;
+
+    // Request a state change by dropping Activated.
+    f.niri_focus_output(2);
+    f.double_roundtrip(id);
+
+    // This should request the new size (500 × 100).
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 500 × 100, bounds: 1920 × 1080, states: []"
+    );
+
+    // Commit in response to the previous configure with a different size.
+    let window = f.client(id).window(&surface);
+    window.xdg_surface.ack_configure(serial);
+    window.set_size(300, 300);
+    window.commit();
+
+    f.double_roundtrip(id);
+
+    // This shouldn't request anything.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
+    );
+
+    // Request a height change now that the first one is committed-to, but the second isn't.
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window = mapped.window.clone();
+    f.niri()
+        .layout
+        .set_window_height(Some(&window), SizeChange::SetFixed(600));
+    // Add Activated state to force a configure.
+    f.niri_focus_output(1);
+    f.double_roundtrip(id);
+
+    // This should already request the current width (300 × 600) rather than the pending previous
+    // width (500 × 600) from the state change configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 300 × 600, bounds: 1920 × 1080, states: [Activated]"
     );
 }
