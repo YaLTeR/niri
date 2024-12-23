@@ -24,6 +24,7 @@ Valid modifiers are:
 - `Alt`;
 - `Super` or `Win`;
 - `ISO_Level3_Shift` or `Mod5`—this is the AltGr key on certain layouts;
+- `ISO_Level5_Shift` used by setting xkb lv5 option (check xkb/rules/base.lst)
 - `Mod`.
 
 `Mod` is a special modifier that is equal to `Super` when running niri on a TTY, and to `Alt` when running niri as a nested winit window.
