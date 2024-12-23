@@ -829,8 +829,9 @@ impl LayoutElement for Mapped {
         self.toplevel().with_pending_state(|state| state.size)
     }
 
-    fn expected_size(&self) -> Size<i32, Logical> {
-        let current_size = self.window.geometry().size;
+    fn expected_size(&self) -> Option<Size<i32, Logical>> {
+        // We can only use current size if it's not fullscreen.
+        let current_size = (!self.is_fullscreen()).then(|| self.window.geometry().size);
 
         // Check if we should be using the current window size.
         //
@@ -849,12 +850,17 @@ impl LayoutElement for Mapped {
             return current_size;
         }
 
-        let pending_size = with_toplevel_role(self.toplevel(), |role| {
+        let pending = with_toplevel_role(self.toplevel(), |role| {
             // If we have a server-pending size change that we haven't sent yet, use that size.
             if let Some(server_pending) = &role.server_pending {
                 let current_server = role.current_server_state();
                 if server_pending.size != current_server.size {
-                    return Some(server_pending.size.unwrap_or_default());
+                    return Some((
+                        server_pending.size.unwrap_or_default(),
+                        server_pending
+                            .states
+                            .contains(xdg_toplevel::State::Fullscreen),
+                    ));
                 }
             }
 
@@ -871,23 +877,36 @@ impl LayoutElement for Mapped {
 
             if let Some(current_serial) = role.current_serial {
                 if !current_serial.is_no_older_than(&last_serial) {
-                    return Some(last_sent.size.unwrap_or_default());
+                    return Some((
+                        last_sent.size.unwrap_or_default(),
+                        last_sent.states.contains(xdg_toplevel::State::Fullscreen),
+                    ));
                 }
             }
 
             None
         });
 
-        // If we have no pending size change (size change that the window hasn't committed to), or
-        // if some component of the pending size change is zero, use the current window size.
-        let mut size = pending_size.unwrap_or_default();
-        if size.w == 0 {
-            size.w = current_size.w;
+        if let Some((mut size, fullscreen)) = pending {
+            // If the pending change is fullscreen, we can't use that size.
+            if fullscreen {
+                return None;
+            }
+
+            // If some component of the pending size is zero, substitute it with the current window
+            // size. But only if the current size is not fullscreen.
+            if size.w == 0 {
+                size.w = current_size?.w;
+            }
+            if size.h == 0 {
+                size.h = current_size?.h;
+            }
+
+            Some(size)
+        } else {
+            // No pending size, return the current size if it's non-fullscreen.
+            current_size
         }
-        if size.h == 0 {
-            size.h = current_size.h;
-        }
-        size
     }
 
     fn is_child_of(&self, parent: &Self) -> bool {
