@@ -375,8 +375,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
             floating_size.unwrap_or_default()
         } else {
             // If the window wasn't fullscreen without a floating size (e.g. it was tiled before),
-            // ask for the current size.
-            floating_size.unwrap_or_else(|| win.expected_size())
+            // ask for the current size. If the current size is unknown (the window was only ever
+            // fullscreen until now), fall back to (0, 0).
+            floating_size.unwrap_or_else(|| win.expected_size().unwrap_or_default())
         };
         // Make sure fixed-size through window rules keeps working.
         let min_size = win.min_size();
@@ -482,8 +483,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         }
 
-        // Store the floating size.
-        tile.set_floating_window_size(tile.window().expected_size());
+        // Store the floating size if we have one.
+        if let Some(size) = tile.window().expected_size() {
+            tile.set_floating_window_size(size);
+        }
 
         let width = ColumnWidth::Fixed(tile.window_size().w);
         RemovedTile {
@@ -600,7 +603,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
         win_width = max(1, win_width);
 
-        let win_height = win.expected_size().h;
+        let win_height = win.expected_size().unwrap_or_default().h;
         let win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
 
         let win_size = Size::from((win_width, win_height));
@@ -626,7 +629,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
         win_height = max(1, win_height);
 
-        let win_width = win.expected_size().w;
+        let win_width = win.expected_size().unwrap_or_default().w;
         let win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
 
         let win_size = Size::from((win_width, win_height));

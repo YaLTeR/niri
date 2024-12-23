@@ -197,7 +197,7 @@ pub trait LayoutElement {
     /// Size previously requested through [`LayoutElement::request_size()`].
     fn requested_size(&self) -> Option<Size<i32, Logical>>;
 
-    /// Size that we expect this window has or will shortly have.
+    /// Non-fullscreen size that we expect this window has or will shortly have.
     ///
     /// This can be different from [`requested_size()`](LayoutElement::requested_size()). For
     /// example, for floating windows this will generally return the current window size, rather
@@ -205,10 +205,15 @@ pub trait LayoutElement {
     /// size freely. But not always: if we just requested a floating window to resize and it hasn't
     /// responded to it yet, this will return the newly requested size.
     ///
-    /// This function should never return a 0 size component.
+    /// This function should never return a 0 size component. `None` means there's no known
+    /// expected size (for example, the window is fullscreen).
     ///
     /// The default impl is for testing only, it will not preserve the window's own size changes.
-    fn expected_size(&self) -> Size<i32, Logical> {
+    fn expected_size(&self) -> Option<Size<i32, Logical>> {
+        if self.is_fullscreen() {
+            return None;
+        }
+
         let mut requested = self.requested_size().unwrap_or_default();
         let current = self.size();
         if requested.w == 0 {
@@ -217,7 +222,7 @@ pub trait LayoutElement {
         if requested.h == 0 {
             requested.h = current.h;
         }
-        requested
+        Some(requested)
     }
 
     fn is_child_of(&self, parent: &Self) -> bool;
@@ -2722,7 +2727,8 @@ impl<W: LayoutElement> Layout<W> {
                 if move_.is_floating {
                     let floating_size = move_.tile.floating_window_size();
                     let win = move_.tile.window_mut();
-                    let mut size = floating_size.unwrap_or_else(|| win.expected_size());
+                    let mut size =
+                        floating_size.unwrap_or_else(|| win.expected_size().unwrap_or_default());
                     // Make sure fixed-size through window rules keeps working.
                     let min_size = win.min_size();
                     let max_size = win.max_size();
@@ -3479,7 +3485,9 @@ impl<W: LayoutElement> Layout<W> {
                         // Set the floating size so it takes into account any window resizing that
                         // took place during the move.
                         let mut tile = move_.tile;
-                        tile.set_floating_window_size(tile.window().expected_size());
+                        if let Some(size) = tile.window().expected_size() {
+                            tile.set_floating_window_size(size);
+                        }
 
                         mon.add_floating_tile(ws_idx, tile, Some(pos), true);
                     }

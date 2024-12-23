@@ -725,3 +725,63 @@ fn interactive_move_restores_floating_size_when_set_to_floating() {
         @""
     );
 }
+
+#[test]
+fn floating_doesnt_store_fullscreen_size() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    f.add_output(2, (1280, 720));
+
+    // Open a window fullscreen.
+    let id = f.add_client();
+    let window = f.client(id).create_window();
+    let surface = window.surface.clone();
+    window.set_fullscreen(None);
+    window.commit();
+    f.roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    window.attach_new_buffer();
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This should request 0 × 0 to unfullscreen.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 0 × 0, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // Without committing, make it tiling again. We never committed while floating, so there's no
+    // floating size to remember.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This should request the tiled size.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1048, bounds: 1888 × 1048, states: [Activated]"
+    );
+
+    // Commit in response.
+    let window = f.client(id).window(&surface);
+    window.set_size(100, 100);
+    window.ack_last_and_commit();
+    f.roundtrip(id);
+
+    // Make the window floating again.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This shouldn't request any size change, particularly not the fullscreen size.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 100 × 100, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
