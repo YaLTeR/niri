@@ -376,7 +376,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         } else {
             // If the window wasn't fullscreen without a floating size (e.g. it was tiled before),
             // ask for the current size.
-            floating_size.unwrap_or_else(|| win.size_to_request())
+            floating_size.unwrap_or_else(|| win.expected_size())
         };
         // Make sure fixed-size through window rules keeps working.
         let min_size = win.min_size();
@@ -597,11 +597,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
         win_width = max(1, win_width);
 
-        let mut win_height = win.size_to_request().h;
-        // If we requested height = 0, then switch to the current height.
-        if win_height == 0 {
-            win_height = win.size().h;
-        }
+        let win_height = win.expected_size().h;
         let win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
 
         let win_size = Size::from((win_width, win_height));
@@ -630,11 +626,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
         win_height = max(1, win_height);
 
-        let mut win_width = win.size_to_request().w;
-        // If we requested width = 0, then switch to the current width.
-        if win_width == 0 {
-            win_width = win.size().w;
-        }
+        let win_width = win.expected_size().w;
         let win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
 
         let win_size = Size::from((win_width, win_height));
@@ -771,7 +763,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         data.update(tile);
 
         // Update the stored floating window size.
-        let floating_size = tile.window().size_to_request();
+        let floating_size = tile.window().expected_size();
         tile.set_floating_window_size(floating_size);
 
         // When resizing by top/left edge, update the position accordingly.
