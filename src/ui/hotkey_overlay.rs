@@ -415,6 +415,11 @@ fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
 
     let pretty = match key.trigger {
         Trigger::Keysym(keysym) => prettify_keysym_name(&keysym_get_name(keysym)),
+        Trigger::MouseLeft => String::from("Mouse Left"),
+        Trigger::MouseRight => String::from("Mouse Right"),
+        Trigger::MouseMiddle => String::from("Mouse Middle"),
+        Trigger::MouseBack => String::from("Mouse Back"),
+        Trigger::MouseForward => String::from("Mouse Forward"),
         Trigger::WheelScrollDown => String::from("Wheel Scroll Down"),
         Trigger::WheelScrollUp => String::from("Wheel Scroll Up"),
         Trigger::WheelScrollLeft => String::from("Wheel Scroll Left"),

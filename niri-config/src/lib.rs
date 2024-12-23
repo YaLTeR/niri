@@ -1092,6 +1092,11 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    MouseLeft,
+    MouseRight,
+    MouseMiddle,
+    MouseBack,
+    MouseForward,
     WheelScrollDown,
     WheelScrollUp,
     WheelScrollLeft,
@@ -2824,7 +2829,17 @@ impl FromStr for Key {
             }
         }
 
-        let trigger = if key.eq_ignore_ascii_case("WheelScrollDown") {
+        let trigger = if key.eq_ignore_ascii_case("MouseLeft") {
+            Trigger::MouseLeft
+        } else if key.eq_ignore_ascii_case("MouseRight") {
+            Trigger::MouseRight
+        } else if key.eq_ignore_ascii_case("MouseMiddle") {
+            Trigger::MouseMiddle
+        } else if key.eq_ignore_ascii_case("MouseBack") {
+            Trigger::MouseBack
+        } else if key.eq_ignore_ascii_case("MouseForward") {
+            Trigger::MouseForward
+        } else if key.eq_ignore_ascii_case("WheelScrollDown") {
             Trigger::WheelScrollDown
         } else if key.eq_ignore_ascii_case("WheelScrollUp") {
             Trigger::WheelScrollUp
