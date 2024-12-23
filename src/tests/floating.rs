@@ -651,3 +651,77 @@ fn state_change_doesnt_break_use_window_size() {
         @"size: 300 × 600, bounds: 1920 × 1080, states: [Activated]"
     );
 }
+
+#[test]
+fn interactive_move_restores_floating_size_when_set_to_floating() {
+    let (mut f, id, surface) = set_up();
+
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size while we're floating and commit to make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(200, 200);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Change back to tiling.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // We should get a tiled size configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 200 × 1048, bounds: 1888 × 1048, states: [Activated]"
+    );
+
+    // Resize as requested.
+    let window = f.client(id).window(&surface);
+    let (_, configure) = window.configures_received.last().unwrap();
+    window.set_size(configure.size.0 as u16, configure.size.1 as u16);
+    window.ack_last_and_commit();
+    f.roundtrip(id);
+
+    // Start an interactive move.
+    let output = f.niri_output(1);
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window_id = mapped.window.clone();
+    niri.layout
+        .interactive_move_begin(window_id.clone(), &output, Point::default());
+    niri.layout.interactive_move_update(
+        &window_id,
+        Point::from((1000., 0.)),
+        output,
+        Point::default(),
+    );
+    f.double_roundtrip(id);
+
+    // This shouldn't request any new size because interactive move targets tiling.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 200 × 1048, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // Change interactive move to target floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This should restore the floating window size (200 × 200).
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 200 × 200, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // End the interactive move, placing the window into floating.
+    f.niri().layout.interactive_move_end(&window_id);
+    f.double_roundtrip(id);
+
+    // This should keep the floating window size (200 × 200).
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
+    );
+}

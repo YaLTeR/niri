@@ -2717,6 +2717,23 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 move_.is_floating = !move_.is_floating;
+
+                // When going to floating, restore the floating window size.
+                if move_.is_floating {
+                    let floating_size = move_.tile.floating_window_size();
+                    let win = move_.tile.window_mut();
+                    let mut size = floating_size.unwrap_or_else(|| win.expected_size());
+                    // Make sure fixed-size through window rules keeps working.
+                    let min_size = win.min_size();
+                    let max_size = win.max_size();
+                    if min_size.w != 0 && min_size.w == max_size.w {
+                        size.w = min_size.w;
+                    }
+                    if min_size.h != 0 && min_size.h == max_size.h {
+                        size.h = min_size.h;
+                    }
+                    win.request_size_once(size, true);
+                }
                 return;
             }
         }
