@@ -465,7 +465,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     fn remove_tile_by_idx(&mut self, idx: usize) -> RemovedTile<W> {
-        let tile = self.tiles.remove(idx);
+        let mut tile = self.tiles.remove(idx);
         self.data.remove(idx);
 
         if self.tiles.is_empty() {
@@ -481,6 +481,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 self.interactive_resize = None;
             }
         }
+
+        // Store the floating size.
+        tile.set_floating_window_size(tile.window().expected_size());
 
         let width = ColumnWidth::Fixed(tile.window_size().w);
         RemovedTile {
@@ -602,9 +605,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let win_size = Size::from((win_width, win_height));
         win.request_size_once(win_size, animate);
-
-        // Store it right away so pending resizes are not lost when moving across floating spaces.
-        tile.set_floating_window_size(win_size);
     }
 
     pub fn set_window_height(&mut self, id: Option<&W::Id>, change: SizeChange, animate: bool) {
@@ -631,9 +631,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let win_size = Size::from((win_width, win_height));
         win.request_size_once(win_size, animate);
-
-        // Store it right away so pending resizes are not lost when moving across floating spaces.
-        tile.set_floating_window_size(win_size);
     }
 
     fn focus_directional(
@@ -761,10 +758,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         tile.update_window();
         data.update(tile);
-
-        // Update the stored floating window size.
-        let floating_size = tile.window().expected_size();
-        tile.set_floating_window_size(floating_size);
 
         // When resizing by top/left edge, update the position accordingly.
         if let Some(resize) = resize {
