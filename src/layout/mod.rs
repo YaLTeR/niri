@@ -1164,12 +1164,6 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
                 move_.tile.update_window();
-
-                // Update the floating size in case the window resizes itself during an interactive
-                // move.
-                let floating_size = move_.tile.window().expected_size();
-                move_.tile.set_floating_window_size(floating_size);
-
                 return;
             }
         }
@@ -3464,7 +3458,13 @@ impl<W: LayoutElement> Layout<W> {
                     }
                     InsertPosition::Floating => {
                         let pos = move_.tile_render_location() - offset;
-                        mon.add_floating_tile(ws_idx, move_.tile, Some(pos), true);
+
+                        // Set the floating size so it takes into account any window resizing that
+                        // took place during the move.
+                        let mut tile = move_.tile;
+                        tile.set_floating_window_size(tile.window().expected_size());
+
+                        mon.add_floating_tile(ws_idx, tile, Some(pos), true);
                     }
                 }
 
