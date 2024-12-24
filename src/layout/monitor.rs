@@ -225,10 +225,11 @@ impl<W: LayoutElement> Monitor<W> {
         activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
+        is_floating: bool,
     ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_window(window, activate, width, is_full_width);
+        workspace.add_window(window, activate, width, is_full_width, is_floating);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -253,6 +254,7 @@ impl<W: LayoutElement> Monitor<W> {
         window: W,
         width: ColumnWidth,
         is_full_width: bool,
+        is_floating: bool,
     ) {
         let workspace_idx = self
             .workspaces
@@ -261,7 +263,7 @@ impl<W: LayoutElement> Monitor<W> {
             .unwrap();
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_window_right_of(right_of, window, width, is_full_width);
+        workspace.add_window_right_of(right_of, window, width, is_full_width, is_floating);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -303,6 +305,29 @@ impl<W: LayoutElement> Monitor<W> {
         let workspace = &mut self.workspaces[workspace_idx];
 
         workspace.add_tile(column_idx, tile, activate, width, is_full_width);
+
+        // After adding a new window, workspace becomes this output's own.
+        workspace.original_output = OutputId::new(&self.output);
+
+        if workspace_idx == self.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            self.add_workspace_bottom();
+        }
+
+        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+            self.add_workspace_top();
+            workspace_idx += 1;
+        }
+
+        if activate {
+            self.activate_workspace(workspace_idx);
+        }
+    }
+
+    pub fn add_floating_tile(&mut self, mut workspace_idx: usize, tile: Tile<W>, activate: bool) {
+        let workspace = &mut self.workspaces[workspace_idx];
+
+        workspace.add_floating_tile(tile, activate);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -499,13 +524,18 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
-            true,
-            removed.width,
-            removed.is_full_width,
-        );
+        if removed.is_floating {
+            self.add_floating_tile(new_idx, removed.tile, true);
+        } else {
+            self.add_tile(
+                new_idx,
+                None,
+                removed.tile,
+                true,
+                removed.width,
+                removed.is_full_width,
+            );
+        }
     }
 
     pub fn move_to_workspace_down(&mut self) {
@@ -521,13 +551,18 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
-            true,
-            removed.width,
-            removed.is_full_width,
-        );
+        if removed.is_floating {
+            self.add_floating_tile(new_idx, removed.tile, true);
+        } else {
+            self.add_tile(
+                new_idx,
+                None,
+                removed.tile,
+                true,
+                removed.width,
+                removed.is_full_width,
+            );
+        }
     }
 
     pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
@@ -559,13 +594,18 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
-            activate,
-            removed.width,
-            removed.is_full_width,
-        );
+        if removed.is_floating {
+            self.add_floating_tile(new_idx, removed.tile, activate);
+        } else {
+            self.add_tile(
+                new_idx,
+                None,
+                removed.tile,
+                activate,
+                removed.width,
+                removed.is_full_width,
+            );
+        }
 
         if self.workspace_switch.is_none() {
             self.clean_up_workspaces();
@@ -581,6 +621,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.floating_is_active() {
+            self.move_to_workspace_up();
+            return;
+        }
+
         let Some(column) = workspace.remove_active_column() else {
             return;
         };
@@ -597,6 +642,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.floating_is_active() {
+            self.move_to_workspace_down();
+            return;
+        }
+
         let Some(column) = workspace.remove_active_column() else {
             return;
         };
@@ -613,6 +663,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.floating_is_active() {
+            self.move_to_workspace(None, idx);
+            return;
+        }
+
         let Some(column) = workspace.remove_active_column() else {
             return;
         };

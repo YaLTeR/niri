@@ -1,0 +1,15 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: AU\nset parent: B1\nconfig:\nworkspace \"ws-1\" {\n    open-on-output \"headless-1\"\n}\n\nworkspace \"ws-2\" {\n    open-on-output \"headless-2\"\n}\n\nwindow-rule {\n    exclude title=\"parent\"\n\n    open-on-output \"headless-1\"\n}\n\nwindow-rule {\n    match title=\"parent\"\n    open-on-output \"headless-1\"\n}"
+expression: snapshot
+snapshot_kind: text
+---
+final monitor: headless-1
+final workspace: 0 (ws-1)
+
+initial configure:
+size: 0 × 0, bounds: 1280 × 720, states: []
+
+post-map configures:
+size: 0 × 0, bounds: 1280 × 720, states: []
+size: 1 × 1, bounds: 1280 × 720, states: [Activated]

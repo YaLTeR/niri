@@ -1337,9 +1337,9 @@ dependencies = [
 
 [[package]]
 name = "gbm"
-version = "0.16.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c724107aa10444b1d2709aae4727c18a33c16b3e15ea8a46cc4ae226c084c88a"
+checksum = "fa9a106f044fbd21edf2d8cc57300df1e60630e46ed4bebd59cdcbb23cfad1ce"
 dependencies = [
  "bitflags 2.6.0",
  "drm",
@@ -3727,7 +3727,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay.git#b8292400ea7d137946099e941bf3985ade3ecf91"
+source = "git+https://github.com/YaLTeR/smithay.git?branch=toplevel-parent-fixes-novrr#b985a533d76eb8122c335d5bbad7dd2722d609bc"
 dependencies = [
  "appendlist",
  "bitflags 2.6.0",
@@ -3799,7 +3799,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#b8292400ea7d137946099e941bf3985ade3ecf91"
+source = "git+https://github.com/Smithay/smithay.git#c3f3ac8dc0776d47bc50f9a1911b613a56e6e04b"
 dependencies = [
  "drm",
  "libdisplay-info",

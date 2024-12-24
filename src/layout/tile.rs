@@ -9,7 +9,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::{
-    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
+    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options, SizeFrac,
     RESIZE_ANIMATION_THRESHOLD,
 };
 use crate::animation::{Animation, Clock};
@@ -50,6 +50,22 @@ pub struct Tile<W: LayoutElement> {
 
     /// The size we were requested to fullscreen into.
     fullscreen_size: Size<f64, Logical>,
+
+    /// Whether the tile should float upon unfullscreening.
+    unfullscreen_to_floating: bool,
+
+    /// The size that the window should assume when going floating.
+    ///
+    /// This is generally the last size the window had when it was floating. It can be unknown if
+    /// the window starts out in the tiling layout or fullscreen.
+    floating_window_size: Option<Size<i32, Logical>>,
+
+    /// The position that the window should assume when going floating, relative to the floating
+    /// space working area.
+    ///
+    /// This is generally the last position the window had when it was floating. It can be unknown
+    /// if the window starts out in the tiling layout.
+    floating_window_pos: Option<Point<f64, SizeFrac>>,
 
     /// The animation upon opening a window.
     open_animation: Option<OpenAnimation>,
@@ -124,6 +140,9 @@ impl<W: LayoutElement> Tile<W> {
             is_fullscreen: false, // FIXME: up-to-date fullscreen right away, but we need size.
             fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
             fullscreen_size: Default::default(),
+            unfullscreen_to_floating: false,
+            floating_window_size: None,
+            floating_window_pos: None,
             open_animation: None,
             resize_animation: None,
             move_x_animation: None,
@@ -387,10 +406,6 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn window_mut(&mut self) -> &mut W {
         &mut self.window
-    }
-
-    pub fn into_window(self) -> W {
-        self.window
     }
 
     pub fn is_fullscreen(&self) -> bool {
@@ -921,6 +936,30 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn take_unmap_snapshot(&mut self) -> Option<TileRenderSnapshot> {
         self.unmap_snapshot.take()
+    }
+
+    pub fn unfullscreen_to_floating(&self) -> bool {
+        self.unfullscreen_to_floating
+    }
+
+    pub fn set_unfullscreen_to_floating(&mut self, value: bool) {
+        self.unfullscreen_to_floating = value;
+    }
+
+    pub fn floating_window_size(&self) -> Option<Size<i32, Logical>> {
+        self.floating_window_size
+    }
+
+    pub fn set_floating_window_size(&mut self, floating_window_size: Size<i32, Logical>) {
+        self.floating_window_size = Some(floating_window_size);
+    }
+
+    pub fn floating_window_pos(&self) -> Option<Point<f64, SizeFrac>> {
+        self.floating_window_pos
+    }
+
+    pub fn set_floating_window_pos(&mut self, floating_window_pos: Point<f64, SizeFrac>) {
+        self.floating_window_pos = Some(floating_window_pos);
     }
 
     #[cfg(test)]

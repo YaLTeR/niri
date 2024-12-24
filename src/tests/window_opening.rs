@@ -108,7 +108,7 @@ impl fmt::Display for WantFullscreen {
         match self {
             WantFullscreen::No => write!(f, "U")?,
             WantFullscreen::UnsetBeforeInitial => write!(f, "BU")?,
-            WantFullscreen::UnsetAfterInitial => write!(f, "AA")?,
+            WantFullscreen::UnsetAfterInitial => write!(f, "AU")?,
             WantFullscreen::BeforeInitial(m) => write!(f, "B{}", m.unwrap_or("N"))?,
             WantFullscreen::AfterInitial(m) => write!(f, "A{}", m.unwrap_or("N"))?,
         }

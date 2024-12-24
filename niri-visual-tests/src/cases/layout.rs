@@ -159,11 +159,22 @@ impl Layout {
 
     fn add_window(&mut self, mut window: TestWindow, width: Option<ColumnWidth>) {
         let ws = self.layout.active_workspace().unwrap();
-        window.request_size(ws.new_window_size(width, window.rules()), false, None);
+        let min_size = window.min_size();
+        let max_size = window.max_size();
+        window.request_size(
+            ws.new_window_size(width, false, window.rules(), (min_size, max_size)),
+            false,
+            None,
+        );
         window.communicate();
 
-        self.layout
-            .add_window(window.clone(), width, false, ActivateWindow::default());
+        self.layout.add_window(
+            window.clone(),
+            width,
+            false,
+            false,
+            ActivateWindow::default(),
+        );
         self.windows.push(window);
     }
 
@@ -174,11 +185,17 @@ impl Layout {
         width: Option<ColumnWidth>,
     ) {
         let ws = self.layout.active_workspace().unwrap();
-        window.request_size(ws.new_window_size(width, window.rules()), false, None);
+        let min_size = window.min_size();
+        let max_size = window.max_size();
+        window.request_size(
+            ws.new_window_size(width, false, window.rules(), (min_size, max_size)),
+            false,
+            None,
+        );
         window.communicate();
 
         self.layout
-            .add_window_right_of(right_of.id(), window.clone(), width, false);
+            .add_window_right_of(right_of.id(), window.clone(), width, false, false);
         self.windows.push(window);
     }
 
