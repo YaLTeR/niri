@@ -18,7 +18,7 @@ use super::scrolling::{
     Column, ColumnWidth, InsertHint, InsertPosition, ScrollingSpace, ScrollingSpaceRenderElement,
 };
 use super::tile::{Tile, TileRenderSnapshot};
-use super::{InteractiveResizeData, LayoutElement, Options, RemovedTile};
+use super::{InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac};
 use crate::animation::Clock;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -503,7 +503,7 @@ impl<W: LayoutElement> Workspace<W> {
         // If the tile is pending fullscreen, open it in the scrolling layout where it can go
         // fullscreen.
         if is_floating && !tile.window().is_pending_fullscreen() {
-            self.add_floating_tile(tile, None, activate);
+            self.add_floating_tile(tile, activate);
         } else {
             self.add_tile(None, tile, activate, width, is_full_width);
         }
@@ -526,14 +526,9 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn add_floating_tile(
-        &mut self,
-        tile: Tile<W>,
-        pos: Option<Point<f64, Logical>>,
-        activate: bool,
-    ) {
+    pub fn add_floating_tile(&mut self, tile: Tile<W>, activate: bool) {
         self.enter_output_for_window(tile.window());
-        self.floating.add_tile(tile, pos, activate);
+        self.floating.add_tile(tile, activate);
 
         if activate || self.scrolling.is_empty() {
             self.floating_is_active = FloatingActive::Yes;
@@ -578,7 +573,7 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn add_tile_right_of(
         &mut self,
         right_of: &W::Id,
-        tile: Tile<W>,
+        mut tile: Tile<W>,
         width: ColumnWidth,
         is_full_width: bool,
         is_floating: bool,
@@ -605,8 +600,10 @@ impl<W: LayoutElement> Workspace<W> {
                 let pos = render_pos
                     + (right_of_tile.tile_size().to_point() - tile_size.to_point()).downscale(2.);
                 let pos = self.floating.clamp_within_working_area(pos, tile_size);
+                let pos = self.floating.logical_to_size_frac(pos);
+                tile.set_floating_pos(pos);
 
-                self.floating.add_tile(tile, Some(pos), activate);
+                self.floating.add_tile(tile, activate);
                 if activate {
                     self.floating_is_active = FloatingActive::Yes;
                 }
@@ -1087,12 +1084,18 @@ impl<W: LayoutElement> Workspace<W> {
         } else {
             let mut removed = self.scrolling.remove_tile(&id, Transaction::new());
             removed.tile.stop_move_animations();
-            let pos = self.floating.clamp_within_working_area(
-                render_pos + Point::from((50., 50.)),
-                removed.tile.tile_size(),
-            );
-            self.floating
-                .add_tile(removed.tile, Some(pos), target_is_active);
+
+            // Come up with a default floating position close to the tile position.
+            if removed.tile.floating_pos().is_none() {
+                let pos = self.floating.clamp_within_working_area(
+                    render_pos + Point::from((50., 50.)),
+                    removed.tile.tile_size(),
+                );
+                let pos = self.floating.logical_to_size_frac(pos);
+                removed.tile.set_floating_pos(pos);
+            }
+
+            self.floating.add_tile(removed.tile, target_is_active);
             if target_is_active {
                 self.floating_is_active = FloatingActive::Yes;
             }
@@ -1434,6 +1437,13 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn floating_is_active(&self) -> bool {
         self.floating_is_active.get()
+    }
+
+    pub fn floating_logical_to_size_frac(
+        &self,
+        logical_pos: Point<f64, Logical>,
+    ) -> Point<f64, SizeFrac> {
+        self.floating.logical_to_size_frac(logical_pos)
     }
 
     #[cfg(test)]

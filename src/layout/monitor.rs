@@ -324,16 +324,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn add_floating_tile(
-        &mut self,
-        mut workspace_idx: usize,
-        tile: Tile<W>,
-        pos: Option<Point<f64, Logical>>,
-        activate: bool,
-    ) {
+    pub fn add_floating_tile(&mut self, mut workspace_idx: usize, tile: Tile<W>, activate: bool) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_floating_tile(tile, pos, activate);
+        workspace.add_floating_tile(tile, activate);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -531,7 +525,7 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         if removed.is_floating {
-            self.add_floating_tile(new_idx, removed.tile, None, true);
+            self.add_floating_tile(new_idx, removed.tile, true);
         } else {
             self.add_tile(
                 new_idx,
@@ -558,7 +552,7 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         if removed.is_floating {
-            self.add_floating_tile(new_idx, removed.tile, None, true);
+            self.add_floating_tile(new_idx, removed.tile, true);
         } else {
             self.add_tile(
                 new_idx,
@@ -601,7 +595,7 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         if removed.is_floating {
-            self.add_floating_tile(new_idx, removed.tile, None, activate);
+            self.add_floating_tile(new_idx, removed.tile, activate);
         } else {
             self.add_tile(
                 new_idx,

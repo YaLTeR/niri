@@ -81,6 +81,9 @@ pub const RESIZE_ANIMATION_THRESHOLD: f64 = 10.;
 /// Pointer needs to move this far to pull a window from the layout.
 const INTERACTIVE_MOVE_START_THRESHOLD: f64 = 256. * 256.;
 
+/// Size-relative units.
+pub struct SizeFrac;
+
 niri_render_elements! {
     LayoutElementRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
@@ -3482,14 +3485,17 @@ impl<W: LayoutElement> Layout<W> {
                     InsertPosition::Floating => {
                         let pos = move_.tile_render_location() - offset;
 
+                        let mut tile = move_.tile;
+                        let pos = mon.workspaces[ws_idx].floating_logical_to_size_frac(pos);
+                        tile.set_floating_pos(pos);
+
                         // Set the floating size so it takes into account any window resizing that
                         // took place during the move.
-                        let mut tile = move_.tile;
                         if let Some(size) = tile.window().expected_size() {
                             tile.set_floating_window_size(size);
                         }
 
-                        mon.add_floating_tile(ws_idx, tile, Some(pos), true);
+                        mon.add_floating_tile(ws_idx, tile, true);
                     }
                 }
 
