@@ -3157,9 +3157,9 @@ impl<W: LayoutElement> Layout<W> {
             return false;
         }
 
-        let (tile, tile_offset) = ws
+        let (tile, tile_offset, _visible) = ws
             .tiles_with_render_positions()
-            .find(|(tile, _)| tile.window().id() == &window_id)
+            .find(|(tile, _, _)| tile.window().id() == &window_id)
             .unwrap();
         let window_offset = tile.window_loc();
 
@@ -3258,9 +3258,9 @@ impl<W: LayoutElement> Layout<W> {
                             .map(|rv| (mon, rv))
                     }) {
                         if mon.output() == &output {
-                            let (_, tile_offset) = ws
+                            let (_, tile_offset, _) = ws
                                 .tiles_with_render_positions()
-                                .find(|(tile, _)| tile.window().id() == window)
+                                .find(|(tile, _, _)| tile.window().id() == window)
                                 .unwrap();
 
                             tile_pos = Some(ws_offset + tile_offset);

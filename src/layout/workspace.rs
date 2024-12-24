@@ -37,7 +37,7 @@ pub struct Workspace<W: LayoutElement> {
     floating: FloatingSpace<W>,
 
     /// Whether the floating layout is active instead of the scrolling layout.
-    floating_is_active: bool,
+    floating_is_active: FloatingActive,
 
     /// The original output of this workspace.
     ///
@@ -142,10 +142,31 @@ pub enum ResolvedSize {
     Window(f64),
 }
 
+/// Whether the floating space is active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FloatingActive {
+    /// The scrolling space is active.
+    No,
+    /// The scrolling space is active, but the floating space should render on top, even if the
+    /// active scrolling window is fullscreen.
+    ///
+    /// This is necessary for focus-follows-mouse that activates but doesn't raise the window to
+    /// avoid being annoying.
+    NoButRaised,
+    /// The floating space is active.
+    Yes,
+}
+
 impl OutputId {
     pub fn new(output: &Output) -> Self {
         let output_name = output.user_data().get::<OutputName>().unwrap();
         Self(output_name.format_make_model_serial_or_connector())
+    }
+}
+
+impl FloatingActive {
+    fn get(self) -> bool {
+        self == Self::Yes
     }
 }
 
@@ -191,7 +212,7 @@ impl<W: LayoutElement> Workspace<W> {
         Self {
             scrolling,
             floating,
-            floating_is_active: false,
+            floating_is_active: FloatingActive::No,
             original_output,
             scale,
             transform: output.current_transform(),
@@ -243,7 +264,7 @@ impl<W: LayoutElement> Workspace<W> {
         Self {
             scrolling,
             floating,
-            floating_is_active: false,
+            floating_is_active: FloatingActive::No,
             output: None,
             scale,
             transform: Transform::Normal,
@@ -297,11 +318,11 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn update_render_elements(&mut self, is_active: bool) {
         self.scrolling
-            .update_render_elements(is_active && !self.floating_is_active);
+            .update_render_elements(is_active && !self.floating_is_active.get());
 
         let view_rect = Rectangle::from_loc_and_size((0., 0.), self.view_size);
         self.floating
-            .update_render_elements(is_active && self.floating_is_active, view_rect);
+            .update_render_elements(is_active && self.floating_is_active.get(), view_rect);
     }
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
@@ -359,7 +380,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn active_window(&self) -> Option<&W> {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.active_window()
         } else {
             self.scrolling.active_window()
@@ -501,7 +522,7 @@ impl<W: LayoutElement> Workspace<W> {
             .add_tile(col_idx, tile, activate, width, is_full_width, None);
 
         if activate {
-            self.floating_is_active = false;
+            self.floating_is_active = FloatingActive::No;
         }
     }
 
@@ -515,7 +536,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.floating.add_tile(tile, pos, activate);
 
         if activate || self.scrolling.is_empty() {
-            self.floating_is_active = true;
+            self.floating_is_active = FloatingActive::Yes;
         }
     }
 
@@ -531,7 +552,7 @@ impl<W: LayoutElement> Workspace<W> {
             .add_tile_to_column(col_idx, tile_idx, tile, activate);
 
         if activate {
-            self.floating_is_active = false;
+            self.floating_is_active = FloatingActive::No;
         }
     }
 
@@ -587,7 +608,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                 self.floating.add_tile(tile, Some(pos), activate);
                 if activate {
-                    self.floating_is_active = true;
+                    self.floating_is_active = FloatingActive::Yes;
                 }
             }
         } else {
@@ -604,19 +625,19 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.add_column(None, column, activate, None);
 
         if activate {
-            self.floating_is_active = false;
+            self.floating_is_active = FloatingActive::No;
         }
     }
 
     fn update_focus_floating_tiling_after_removing(&mut self, removed_from_floating: bool) {
         if removed_from_floating {
             if self.floating.is_empty() {
-                self.floating_is_active = false;
+                self.floating_is_active = FloatingActive::No;
             }
         } else {
             // Scrolling should remain focused if both are empty.
             if self.scrolling.is_empty() && !self.floating.is_empty() {
-                self.floating_is_active = true;
+                self.floating_is_active = FloatingActive::Yes;
             }
         }
     }
@@ -640,8 +661,8 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn remove_active_tile(&mut self, transaction: Transaction) -> Option<RemovedTile<W>> {
-        let from_floating = self.floating_is_active;
-        let removed = if self.floating_is_active {
+        let from_floating = self.floating_is_active.get();
+        let removed = if from_floating {
             self.floating.remove_active_tile()?
         } else {
             self.scrolling.remove_active_tile(transaction)?
@@ -657,8 +678,8 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn remove_active_column(&mut self) -> Option<Column<W>> {
-        let from_floating = self.floating_is_active;
-        if self.floating_is_active {
+        let from_floating = self.floating_is_active.get();
+        if from_floating {
             return None;
         }
 
@@ -752,7 +773,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_left(&mut self) -> bool {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_left()
         } else {
             self.scrolling.focus_left()
@@ -760,7 +781,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_right(&mut self) -> bool {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_right()
         } else {
             self.scrolling.focus_right()
@@ -768,7 +789,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_column_first(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_leftmost();
         } else {
             self.scrolling.focus_column_first();
@@ -776,7 +797,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_column_last(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_rightmost();
         } else {
             self.scrolling.focus_column_last();
@@ -796,7 +817,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_down(&mut self) -> bool {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_down()
         } else {
             self.scrolling.focus_down()
@@ -804,7 +825,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_up(&mut self) -> bool {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_up()
         } else {
             self.scrolling.focus_up()
@@ -812,7 +833,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_down_or_left(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_down();
         } else {
             self.scrolling.focus_down_or_left();
@@ -820,7 +841,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_down_or_right(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_down();
         } else {
             self.scrolling.focus_down_or_right();
@@ -828,7 +849,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_up_or_left(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_up();
         } else {
             self.scrolling.focus_up_or_left();
@@ -836,7 +857,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_up_or_right(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.focus_up();
         } else {
             self.scrolling.focus_up_or_right();
@@ -844,7 +865,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn move_left(&mut self) -> bool {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.move_left();
             true
         } else {
@@ -853,7 +874,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn move_right(&mut self) -> bool {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.move_right();
             true
         } else {
@@ -862,21 +883,21 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn move_column_to_first(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             return;
         }
         self.scrolling.move_column_to_first();
     }
 
     pub fn move_column_to_last(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             return;
         }
         self.scrolling.move_column_to_last();
     }
 
     pub fn move_down(&mut self) -> bool {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.move_down();
             true
         } else {
@@ -885,7 +906,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn move_up(&mut self) -> bool {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.move_up();
             true
         } else {
@@ -894,35 +915,39 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
-        if window.map_or(self.floating_is_active, |id| self.floating.has_window(id)) {
+        if window.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
             return;
         }
         self.scrolling.consume_or_expel_window_left(window);
     }
 
     pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) {
-        if window.map_or(self.floating_is_active, |id| self.floating.has_window(id)) {
+        if window.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
             return;
         }
         self.scrolling.consume_or_expel_window_right(window);
     }
 
     pub fn consume_into_column(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             return;
         }
         self.scrolling.consume_into_column();
     }
 
     pub fn expel_from_column(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             return;
         }
         self.scrolling.expel_from_column();
     }
 
     pub fn center_column(&mut self) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.center_window();
         } else {
             self.scrolling.center_column();
@@ -931,7 +956,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn toggle_width(&mut self) {
         // TODO
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             return;
         }
         self.scrolling.toggle_width();
@@ -939,14 +964,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn toggle_full_width(&mut self) {
         // TODO
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             return;
         }
         self.scrolling.toggle_full_width();
     }
 
     pub fn set_column_width(&mut self, change: SizeChange) {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.set_window_width(None, change, true);
         } else {
             self.scrolling.set_column_width(change);
@@ -954,7 +979,9 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn set_window_height(&mut self, window: Option<&W::Id>, change: SizeChange) {
-        if window.map_or(self.floating_is_active, |id| self.floating.has_window(id)) {
+        if window.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
             self.floating.set_window_height(window, change, true);
         } else {
             self.scrolling.set_window_height(window, change);
@@ -962,14 +989,18 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn reset_window_height(&mut self, window: Option<&W::Id>) {
-        if window.map_or(self.floating_is_active, |id| self.floating.has_window(id)) {
+        if window.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
             return;
         }
         self.scrolling.reset_window_height(window);
     }
 
     pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
-        if window.map_or(self.floating_is_active, |id| self.floating.has_window(id)) {
+        if window.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
             // TODO
             return;
         }
@@ -1034,9 +1065,9 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         };
 
-        let (_, render_pos) = self
+        let (_, render_pos, _) = self
             .tiles_with_render_positions()
-            .find(|(tile, _)| *tile.window().id() == id)
+            .find(|(tile, _, _)| *tile.window().id() == id)
             .unwrap();
 
         if self.floating.has_window(&id) {
@@ -1051,7 +1082,7 @@ impl<W: LayoutElement> Workspace<W> {
                 None,
             );
             if target_is_active {
-                self.floating_is_active = false;
+                self.floating_is_active = FloatingActive::No;
             }
         } else {
             let mut removed = self.scrolling.remove_tile(&id, Transaction::new());
@@ -1063,7 +1094,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.floating
                 .add_tile(removed.tile, Some(pos), target_is_active);
             if target_is_active {
-                self.floating_is_active = true;
+                self.floating_is_active = FloatingActive::Yes;
             }
         }
 
@@ -1084,7 +1115,11 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
 
-        self.floating_is_active = !self.floating_is_active;
+        self.floating_is_active = if self.floating_is_active.get() {
+            FloatingActive::No
+        } else {
+            FloatingActive::Yes
+        };
     }
 
     pub fn has_windows(&self) -> bool {
@@ -1105,9 +1140,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn tiles_with_render_positions(
         &self,
-    ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> {
+    ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
         let scrolling = self.scrolling.tiles_with_render_positions();
+        let scrolling = scrolling.map(|(tile, pos)| (tile, pos, true));
+
         let floating = self.floating.tiles_with_render_positions();
+        let visible = self.is_floating_visible();
+        let floating = floating.map(move |(tile, pos)| (tile, pos, visible));
+
         floating.chain(scrolling)
     }
 
@@ -1121,7 +1161,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
-        if self.floating_is_active {
+        if self.floating_is_active.get() {
             self.floating.active_tile_visual_rectangle()
         } else {
             self.scrolling.active_tile_visual_rectangle()
@@ -1145,17 +1185,27 @@ impl<W: LayoutElement> Workspace<W> {
         let scrolling = self.scrolling.render_elements(renderer, scale, target);
         let scrolling = scrolling.into_iter().map(WorkspaceRenderElement::from);
 
-        let view_rect = Rectangle::from_loc_and_size((0., 0.), self.view_size);
-        let floating = self
-            .floating
-            .render_elements(renderer, view_rect, scale, target);
-        let floating = floating.into_iter().map(WorkspaceRenderElement::from);
+        let floating = self.is_floating_visible().then(|| {
+            let view_rect = Rectangle::from_loc_and_size((0., 0.), self.view_size);
+            let floating = self
+                .floating
+                .render_elements(renderer, view_rect, scale, target);
+            floating.into_iter().map(WorkspaceRenderElement::from)
+        });
 
-        floating.chain(scrolling)
+        floating.into_iter().flatten().chain(scrolling)
     }
 
     pub fn render_above_top_layer(&self) -> bool {
         self.scrolling.render_above_top_layer()
+    }
+
+    pub fn is_floating_visible(&self) -> bool {
+        // If the focus is on a fullscreen scrolling window, hide the floating windows.
+        matches!(
+            self.floating_is_active,
+            FloatingActive::Yes | FloatingActive::NoButRaised
+        ) || !self.render_above_top_layer()
     }
 
     pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
@@ -1213,7 +1263,11 @@ impl<W: LayoutElement> Workspace<W> {
         pos: Point<f64, Logical>,
     ) -> Option<(&W, Option<Point<f64, Logical>>)> {
         self.tiles_with_render_positions()
-            .find_map(|(tile, tile_pos)| {
+            .find_map(|(tile, tile_pos, visible)| {
+                if !visible {
+                    return None;
+                }
+
                 let pos_within_tile = pos - tile_pos;
 
                 if tile.is_in_input_region(pos_within_tile) {
@@ -1229,11 +1283,15 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
         self.tiles_with_render_positions()
-            .find_map(|(tile, tile_pos)| {
-                let pos_within_tile = pos - tile_pos;
-
+            .find_map(|(tile, tile_pos, visible)| {
                 // This logic should be consistent with window_under() in when it returns Some vs.
                 // None.
+                if !visible {
+                    return None;
+                }
+
+                let pos_within_tile = pos - tile_pos;
+
                 if tile.is_in_input_region(pos_within_tile)
                     || tile.is_in_activation_region(pos_within_tile)
                 {
@@ -1269,8 +1327,9 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn refresh(&mut self, is_active: bool) {
         self.scrolling
-            .refresh(is_active && !self.floating_is_active);
-        self.floating.refresh(is_active && self.floating_is_active);
+            .refresh(is_active && !self.floating_is_active.get());
+        self.floating
+            .refresh(is_active && self.floating_is_active.get());
     }
 
     pub fn scroll_amount_to_activate(&self, window: &W::Id) -> f64 {
@@ -1283,10 +1342,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window(window) {
-            self.floating_is_active = true;
+            self.floating_is_active = FloatingActive::Yes;
             true
         } else if self.scrolling.activate_window(window) {
-            self.floating_is_active = false;
+            self.floating_is_active = FloatingActive::No;
             true
         } else {
             false
@@ -1295,10 +1354,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn activate_window_without_raising(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window_without_raising(window) {
-            self.floating_is_active = true;
+            self.floating_is_active = FloatingActive::Yes;
             true
         } else if self.scrolling.activate_window(window) {
-            self.floating_is_active = false;
+            self.floating_is_active = match self.floating_is_active {
+                FloatingActive::No => FloatingActive::No,
+                FloatingActive::NoButRaised => FloatingActive::NoButRaised,
+                FloatingActive::Yes => FloatingActive::NoButRaised,
+            };
             true
         } else {
             false
@@ -1370,7 +1433,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn floating_is_active(&self) -> bool {
-        self.floating_is_active
+        self.floating_is_active.get()
     }
 
     #[cfg(test)]
@@ -1405,17 +1468,17 @@ impl<W: LayoutElement> Workspace<W> {
 
         if self.floating.is_empty() {
             assert!(
-                !self.floating_is_active,
+                !self.floating_is_active.get(),
                 "when floating is empty it must never be active"
             );
         } else if self.scrolling.is_empty() {
             assert!(
-                self.floating_is_active,
+                self.floating_is_active.get(),
                 "when scrolling is empty but floating isn't, floating should be active"
             );
         }
 
-        for (tile, tile_pos) in self.tiles_with_render_positions() {
+        for (tile, tile_pos, _visible) in self.tiles_with_render_positions() {
             if Some(tile.window().id()) != move_win_id {
                 assert_eq!(tile.interactive_move_offset, Point::from((0., 0.)));
             }
