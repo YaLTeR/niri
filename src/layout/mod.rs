@@ -794,40 +794,6 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    // TODO: pos
-    pub fn add_window_by_idx(
-        &mut self,
-        monitor_idx: usize,
-        workspace_idx: usize,
-        window: W,
-        activate: bool,
-        width: ColumnWidth,
-        is_full_width: bool,
-        is_floating: bool,
-    ) {
-        let MonitorSet::Normal {
-            monitors,
-            active_monitor_idx,
-            ..
-        } = &mut self.monitor_set
-        else {
-            panic!()
-        };
-
-        monitors[monitor_idx].add_window(
-            workspace_idx,
-            window,
-            activate,
-            width,
-            is_full_width,
-            is_floating,
-        );
-
-        if activate {
-            *active_monitor_idx = monitor_idx;
-        }
-    }
-
     /// Adds a new window to the layout on a specific workspace.
     pub fn add_window_to_named_workspace(
         &mut self,
@@ -2839,7 +2805,7 @@ impl<W: LayoutElement> Layout<W> {
 
             let ws = &mut mon.workspaces[ws_idx];
             let transaction = Transaction::new();
-            let removed = if let Some(window) = window {
+            let mut removed = if let Some(window) = window {
                 ws.remove_tile(window, transaction)
             } else if let Some(removed) = ws.remove_active_tile(transaction) {
                 removed
@@ -2847,19 +2813,25 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             };
 
-            self.add_window_by_idx(
-                new_idx,
-                workspace_idx,
-                removed.tile.into_window(),
-                activate,
-                removed.width,
-                removed.is_full_width,
-                removed.is_floating,
-            );
+            removed.tile.stop_move_animations();
 
-            let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
-                unreachable!()
-            };
+            let mon = &mut monitors[new_idx];
+            if removed.is_floating {
+                mon.add_floating_tile(workspace_idx, removed.tile, activate);
+            } else {
+                mon.add_tile(
+                    workspace_idx,
+                    None,
+                    removed.tile,
+                    activate,
+                    removed.width,
+                    removed.is_full_width,
+                );
+            }
+            if activate {
+                *active_monitor_idx = new_idx;
+            }
+
             let mon = &mut monitors[mon_idx];
             if mon.workspace_switch.is_none() {
                 monitors[mon_idx].clean_up_workspaces();

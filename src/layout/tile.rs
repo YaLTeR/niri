@@ -408,10 +408,6 @@ impl<W: LayoutElement> Tile<W> {
         &mut self.window
     }
 
-    pub fn into_window(self) -> W {
-        self.window
-    }
-
     pub fn is_fullscreen(&self) -> bool {
         self.is_fullscreen
     }
