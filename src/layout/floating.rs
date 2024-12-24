@@ -10,7 +10,9 @@ use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::scrolling::ColumnWidth;
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::workspace::InteractiveResize;
-use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
+use super::{
+    ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
+};
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -68,9 +70,6 @@ niri_render_elements! {
     }
 }
 
-/// Size-relative units.
-struct SizeFrac;
-
 /// Extra per-tile data.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Data {
@@ -106,11 +105,30 @@ impl Data {
         rv
     }
 
+    pub fn scale_by_working_area(
+        area: Rectangle<f64, Logical>,
+        pos: Point<f64, SizeFrac>,
+    ) -> Point<f64, Logical> {
+        let mut logical_pos = Point::from((pos.x, pos.y));
+        logical_pos.x *= area.size.w;
+        logical_pos.y *= area.size.h;
+        logical_pos += area.loc;
+        logical_pos
+    }
+
+    pub fn logical_to_size_frac_in_working_area(
+        area: Rectangle<f64, Logical>,
+        logical_pos: Point<f64, Logical>,
+    ) -> Point<f64, SizeFrac> {
+        let pos = logical_pos - area.loc;
+        let mut pos = Point::from((pos.x, pos.y));
+        pos.x /= f64::max(area.size.w, 1.0);
+        pos.y /= f64::max(area.size.h, 1.0);
+        pos
+    }
+
     fn recompute_logical_pos(&mut self) {
-        let mut logical_pos = Point::from((self.pos.x, self.pos.y));
-        logical_pos.x *= self.working_area.size.w;
-        logical_pos.y *= self.working_area.size.h;
-        logical_pos += self.working_area.loc;
+        let mut logical_pos = Self::scale_by_working_area(self.working_area, self.pos);
 
         // Make sure the window doesn't go too much off-screen. Numbers taken from Mutter.
         let min_on_screen_hor = f64::clamp(self.size.w / 4., 10., 75.);
@@ -152,12 +170,7 @@ impl Data {
     }
 
     pub fn set_logical_pos(&mut self, logical_pos: Point<f64, Logical>) {
-        let pos = logical_pos - self.working_area.loc;
-        let mut pos = Point::from((pos.x, pos.y));
-        pos.x /= f64::max(self.working_area.size.w, 1.0);
-        pos.y /= f64::max(self.working_area.size.h, 1.0);
-
-        self.pos = pos;
+        self.pos = Self::logical_to_size_frac_in_working_area(self.working_area, logical_pos);
 
         // This will clamp the logical position to the current working area.
         self.recompute_logical_pos();
@@ -353,17 +366,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.tiles.is_empty()
     }
 
-    pub fn add_tile(&mut self, tile: Tile<W>, pos: Option<Point<f64, Logical>>, activate: bool) {
-        self.add_tile_at(0, tile, pos, activate);
+    pub fn add_tile(&mut self, tile: Tile<W>, activate: bool) {
+        self.add_tile_at(0, tile, activate);
     }
 
-    fn add_tile_at(
-        &mut self,
-        mut idx: usize,
-        mut tile: Tile<W>,
-        pos: Option<Point<f64, Logical>>,
-        activate: bool,
-    ) {
+    fn add_tile_at(&mut self, mut idx: usize, mut tile: Tile<W>, activate: bool) {
         tile.update_config(self.scale, self.options.clone());
 
         // Restore the previous floating window size, and in case the tile is fullscreen,
@@ -402,9 +409,12 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         }
 
-        let pos = pos.unwrap_or_else(|| {
-            center_preferring_top_left_in_area(self.working_area, tile.tile_size())
-        });
+        let pos = tile
+            .floating_pos()
+            .map(|pos| self.scale_by_working_area(pos))
+            .unwrap_or_else(|| {
+                center_preferring_top_left_in_area(self.working_area, tile.tile_size())
+            });
 
         let data = Data::new(self.working_area, &tile, pos);
         self.data.insert(idx, data);
@@ -413,7 +423,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.bring_up_descendants_of(idx);
     }
 
-    pub fn add_tile_above(&mut self, above: &W::Id, tile: Tile<W>) {
+    pub fn add_tile_above(&mut self, above: &W::Id, mut tile: Tile<W>) {
         // Activate the new window if above was active.
         let activate = Some(above) == self.active_window_id.as_ref();
 
@@ -424,8 +434,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let tile_size = tile.tile_size();
         let pos = above_pos + (above_size.to_point() - tile_size.to_point()).downscale(2.);
         let pos = self.clamp_within_working_area(pos, tile_size);
+        tile.set_floating_pos(self.logical_to_size_frac(pos));
 
-        self.add_tile_at(idx, tile, Some(pos), activate);
+        self.add_tile_at(idx, tile, activate);
     }
 
     fn bring_up_descendants_of(&mut self, idx: usize) {
@@ -467,7 +478,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
     fn remove_tile_by_idx(&mut self, idx: usize) -> RemovedTile<W> {
         let mut tile = self.tiles.remove(idx);
-        self.data.remove(idx);
+        let data = self.data.remove(idx);
 
         if self.tiles.is_empty() {
             self.active_window_id = None;
@@ -487,6 +498,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         if let Some(size) = tile.window().expected_size() {
             tile.set_floating_window_size(size);
         }
+        // Store the floating position.
+        tile.set_floating_pos(data.pos);
 
         let width = ColumnWidth::Fixed(tile.window_size().w);
         RemovedTile {
@@ -932,6 +945,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let mut rect = Rectangle::from_loc_and_size(pos, size);
         clamp_preferring_top_left_in_area(self.working_area, &mut rect);
         rect.loc
+    }
+
+    fn scale_by_working_area(&self, pos: Point<f64, SizeFrac>) -> Point<f64, Logical> {
+        Data::scale_by_working_area(self.working_area, pos)
+    }
+
+    pub fn logical_to_size_frac(&self, logical_pos: Point<f64, Logical>) -> Point<f64, SizeFrac> {
+        Data::logical_to_size_frac_in_working_area(self.working_area, logical_pos)
     }
 
     fn move_and_animate(&mut self, idx: usize, new_pos: Point<f64, Logical>) {

@@ -9,7 +9,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::{
-    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
+    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options, SizeFrac,
     RESIZE_ANIMATION_THRESHOLD,
 };
 use crate::animation::{Animation, Clock};
@@ -59,6 +59,13 @@ pub struct Tile<W: LayoutElement> {
     /// This is generally the last size the window had when it was floating. It can be unknown if
     /// the window starts out in the tiling layout or fullscreen.
     floating_window_size: Option<Size<i32, Logical>>,
+
+    /// The position that the tile should assume when going floating, relative to the floating
+    /// space working area.
+    ///
+    /// This is generally the last position the tile had when it was floating. It can be unknown if
+    /// the window starts out in the tiling layout.
+    floating_pos: Option<Point<f64, SizeFrac>>,
 
     /// The animation upon opening a window.
     open_animation: Option<OpenAnimation>,
@@ -135,6 +142,7 @@ impl<W: LayoutElement> Tile<W> {
             fullscreen_size: Default::default(),
             unfullscreen_to_floating: false,
             floating_window_size: None,
+            floating_pos: None,
             open_animation: None,
             resize_animation: None,
             move_x_animation: None,
@@ -948,6 +956,14 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn set_floating_window_size(&mut self, floating_window_size: Size<i32, Logical>) {
         self.floating_window_size = Some(floating_window_size);
+    }
+
+    pub fn floating_pos(&self) -> Option<Point<f64, SizeFrac>> {
+        self.floating_pos
+    }
+
+    pub fn set_floating_pos(&mut self, floating_pos: Point<f64, SizeFrac>) {
+        self.floating_pos = Some(floating_pos);
     }
 
     #[cfg(test)]
