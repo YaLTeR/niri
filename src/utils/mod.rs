@@ -272,6 +272,16 @@ pub fn ensure_min_max_size(mut x: i32, min_size: i32, max_size: i32) -> i32 {
     x
 }
 
+pub fn ensure_min_max_size_maybe_zero(x: i32, min_size: i32, max_size: i32) -> i32 {
+    if x != 0 {
+        ensure_min_max_size(x, min_size, max_size)
+    } else if min_size > 0 && min_size == max_size {
+        min_size
+    } else {
+        0
+    }
+}
+
 pub fn clamp_preferring_top_left_in_area(
     area: Rectangle<f64, Logical>,
     rect: &mut Rectangle<f64, Logical>,

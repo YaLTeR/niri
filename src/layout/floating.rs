@@ -20,7 +20,7 @@ use crate::render_helpers::RenderTarget;
 use crate::utils::transaction::TransactionBlocker;
 use crate::utils::{
     center_preferring_top_left_in_area, clamp_preferring_top_left_in_area, ensure_min_max_size,
-    ResizeEdge,
+    ensure_min_max_size_maybe_zero, ResizeEdge,
 };
 use crate::window::ResolvedWindowRules;
 
@@ -386,15 +386,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
             // fullscreen until now), fall back to (0, 0).
             floating_size.unwrap_or_else(|| win.expected_size().unwrap_or_default())
         };
-        // Make sure fixed-size through window rules keeps working.
+
+        // Apply min/max size window rules. If requesting a concrete size, apply completely; if
+        // requesting (0, 0), apply only when min/max results in a fixed size.
         let min_size = win.min_size();
         let max_size = win.max_size();
-        if min_size.w != 0 && min_size.w == max_size.w {
-            size.w = min_size.w;
-        }
-        if min_size.h != 0 && min_size.h == max_size.h {
-            size.h = min_size.h;
-        }
+        size.w = ensure_min_max_size_maybe_zero(size.w, min_size.w, max_size.w);
+        size.h = ensure_min_max_size_maybe_zero(size.h, min_size.h, max_size.h);
+
         win.request_size_once(size, true);
 
         if activate || self.tiles.is_empty() {

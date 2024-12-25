@@ -62,7 +62,10 @@ use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
-use crate::utils::{output_matches_name, output_size, round_logical_in_physical_max1, ResizeEdge};
+use crate::utils::{
+    ensure_min_max_size_maybe_zero, output_matches_name, output_size,
+    round_logical_in_physical_max1, ResizeEdge,
+};
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
@@ -2698,15 +2701,15 @@ impl<W: LayoutElement> Layout<W> {
                     let win = move_.tile.window_mut();
                     let mut size =
                         floating_size.unwrap_or_else(|| win.expected_size().unwrap_or_default());
-                    // Make sure fixed-size through window rules keeps working.
+
+                    // Apply min/max size window rules. If requesting a concrete size, apply
+                    // completely; if requesting (0, 0), apply only when min/max results in a fixed
+                    // size.
                     let min_size = win.min_size();
                     let max_size = win.max_size();
-                    if min_size.w != 0 && min_size.w == max_size.w {
-                        size.w = min_size.w;
-                    }
-                    if min_size.h != 0 && min_size.h == max_size.h {
-                        size.h = min_size.h;
-                    }
+                    size.w = ensure_min_max_size_maybe_zero(size.w, min_size.w, max_size.w);
+                    size.h = ensure_min_max_size_maybe_zero(size.h, min_size.h, max_size.h);
+
                     win.request_size_once(size, true);
                 }
                 return;
@@ -3277,15 +3280,13 @@ impl<W: LayoutElement> Layout<W> {
                         Size::from((0, 0))
                     };
 
-                    // Make sure fixed-size through window rules keeps working.
+                    // Apply min/max size window rules. If requesting a concrete size, apply
+                    // completely; if requesting (0, 0), apply only when min/max results in a fixed
+                    // size.
                     let min_size = win.min_size();
                     let max_size = win.max_size();
-                    if min_size.w != 0 && min_size.w == max_size.w {
-                        size.w = min_size.w;
-                    }
-                    if min_size.h != 0 && min_size.h == max_size.h {
-                        size.h = min_size.h;
-                    }
+                    size.w = ensure_min_max_size_maybe_zero(size.w, min_size.w, max_size.w);
+                    size.h = ensure_min_max_size_maybe_zero(size.h, min_size.h, max_size.h);
 
                     win.request_size_once(size, true);
 
