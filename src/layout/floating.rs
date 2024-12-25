@@ -375,7 +375,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         // Restore the previous floating window size, and in case the tile is fullscreen,
         // unfullscreen it.
-        let floating_size = tile.floating_window_size();
+        let floating_size = tile.floating_window_size;
         let win = tile.window_mut();
         let mut size = if win.is_pending_fullscreen() {
             // If the window was fullscreen without a floating size, ask for (0, 0).
@@ -410,7 +410,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
 
         let pos = tile
-            .floating_pos()
+            .floating_pos
             .map(|pos| self.scale_by_working_area(pos))
             .unwrap_or_else(|| {
                 center_preferring_top_left_in_area(self.working_area, tile.tile_size())
@@ -434,7 +434,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let tile_size = tile.tile_size();
         let pos = above_pos + (above_size.to_point() - tile_size.to_point()).downscale(2.);
         let pos = self.clamp_within_working_area(pos, tile_size);
-        tile.set_floating_pos(self.logical_to_size_frac(pos));
+        tile.floating_pos = Some(self.logical_to_size_frac(pos));
 
         self.add_tile_at(idx, tile, activate);
     }
@@ -496,10 +496,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         // Store the floating size if we have one.
         if let Some(size) = tile.window().expected_size() {
-            tile.set_floating_window_size(size);
+            tile.floating_window_size = Some(size);
         }
         // Store the floating position.
-        tile.set_floating_pos(data.pos);
+        tile.floating_pos = Some(data.pos);
 
         let width = ColumnWidth::Fixed(tile.window_size().w);
         RemovedTile {
