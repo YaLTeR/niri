@@ -1,5 +1,6 @@
 use client::ClientId;
 use insta::assert_snapshot;
+use niri_config::Config;
 use niri_ipc::SizeChange;
 use smithay::utils::Point;
 use wayland_client::protocol::wl_surface::WlSurface;
@@ -783,5 +784,73 @@ fn floating_doesnt_store_fullscreen_size() {
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
         @"size: 100 × 100, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn floating_respects_non_fixed_min_max_rule() {
+    let config = r##"
+window-rule {
+    min-width 200
+    max-width 300
+}
+"##;
+    let config = Config::parse("test.kdl", config).unwrap();
+    let mut f = Fixture::with_config(config);
+    f.add_output(1, (1920, 1080));
+    f.add_output(2, (1280, 720));
+
+    let id = f.add_client();
+    let window = f.client(id).create_window();
+    let surface = window.surface.clone();
+    window.commit();
+    f.roundtrip(id);
+
+    // Open with smaller width than min.
+    let window = f.client(id).window(&surface);
+    window.attach_new_buffer();
+    window.set_size(100, 100);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    // Commit to the Activated state configure.
+    f.client(id).window(&surface).ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This should clamp to min-width and request 200 × 100.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 200 × 100, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // Commit with a bigger width than max.
+    let window = f.client(id).window(&surface);
+    window.set_size(400, 100);
+    window.ack_last_and_commit();
+    f.roundtrip(id);
+
+    // Make it tiling.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    f.client(id).window(&surface).ack_last_and_commit();
+    f.roundtrip(id);
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This should clamp to max-width and request 300 × 100.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 300 × 100, bounds: 1920 × 1080, states: [Activated]"
     );
 }
