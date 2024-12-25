@@ -52,20 +52,20 @@ pub struct Tile<W: LayoutElement> {
     fullscreen_size: Size<f64, Logical>,
 
     /// Whether the tile should float upon unfullscreening.
-    unfullscreen_to_floating: bool,
+    pub(super) unfullscreen_to_floating: bool,
 
     /// The size that the window should assume when going floating.
     ///
     /// This is generally the last size the window had when it was floating. It can be unknown if
     /// the window starts out in the tiling layout or fullscreen.
-    floating_window_size: Option<Size<i32, Logical>>,
+    pub(super) floating_window_size: Option<Size<i32, Logical>>,
 
     /// The position that the tile should assume when going floating, relative to the floating
     /// space working area.
     ///
     /// This is generally the last position the tile had when it was floating. It can be unknown if
     /// the window starts out in the tiling layout.
-    floating_pos: Option<Point<f64, SizeFrac>>,
+    pub(super) floating_pos: Option<Point<f64, SizeFrac>>,
 
     /// The animation upon opening a window.
     open_animation: Option<OpenAnimation>,
@@ -936,30 +936,6 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn take_unmap_snapshot(&mut self) -> Option<TileRenderSnapshot> {
         self.unmap_snapshot.take()
-    }
-
-    pub fn unfullscreen_to_floating(&self) -> bool {
-        self.unfullscreen_to_floating
-    }
-
-    pub fn set_unfullscreen_to_floating(&mut self, value: bool) {
-        self.unfullscreen_to_floating = value;
-    }
-
-    pub fn floating_window_size(&self) -> Option<Size<i32, Logical>> {
-        self.floating_window_size
-    }
-
-    pub fn set_floating_window_size(&mut self, floating_window_size: Size<i32, Logical>) {
-        self.floating_window_size = Some(floating_window_size);
-    }
-
-    pub fn floating_pos(&self) -> Option<Point<f64, SizeFrac>> {
-        self.floating_pos
-    }
-
-    pub fn set_floating_pos(&mut self, floating_pos: Point<f64, SizeFrac>) {
-        self.floating_pos = Some(floating_pos);
     }
 
     #[cfg(test)]

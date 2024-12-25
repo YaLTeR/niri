@@ -498,7 +498,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.clock.clone(),
             self.options.clone(),
         );
-        tile.set_unfullscreen_to_floating(is_floating);
+        tile.unfullscreen_to_floating = is_floating;
 
         // If the tile is pending fullscreen, open it in the scrolling layout where it can go
         // fullscreen.
@@ -566,7 +566,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.clock.clone(),
             self.options.clone(),
         );
-        tile.set_unfullscreen_to_floating(is_floating);
+        tile.unfullscreen_to_floating = is_floating;
         self.add_tile_right_of(right_of, tile, width, is_full_width, is_floating);
     }
 
@@ -601,7 +601,7 @@ impl<W: LayoutElement> Workspace<W> {
                     + (right_of_tile.tile_size().to_point() - tile_size.to_point()).downscale(2.);
                 let pos = self.floating.clamp_within_working_area(pos, tile_size);
                 let pos = self.floating.logical_to_size_frac(pos);
-                tile.set_floating_pos(pos);
+                tile.floating_pos = Some(pos);
 
                 self.floating.add_tile(tile, activate);
                 if activate {
@@ -1024,7 +1024,7 @@ impl<W: LayoutElement> Workspace<W> {
                 .tiles()
                 .find(|tile| tile.window().id() == window)
                 .unwrap();
-            if tile.window().is_pending_fullscreen() && tile.unfullscreen_to_floating() {
+            if tile.window().is_pending_fullscreen() && tile.unfullscreen_to_floating {
                 // Unfullscreen and float in one call so it has a chance to notice and request a
                 // (0, 0) size, rather than the scrolling column size.
                 self.toggle_window_floating(Some(window));
@@ -1042,7 +1042,7 @@ impl<W: LayoutElement> Workspace<W> {
                 .find(|tile| tile.window().id() == window)
                 .unwrap();
 
-            tile.set_unfullscreen_to_floating(unfullscreen_to_floating);
+            tile.unfullscreen_to_floating = unfullscreen_to_floating;
         }
     }
 
@@ -1086,13 +1086,13 @@ impl<W: LayoutElement> Workspace<W> {
             removed.tile.stop_move_animations();
 
             // Come up with a default floating position close to the tile position.
-            if removed.tile.floating_pos().is_none() {
+            if removed.tile.floating_pos.is_none() {
                 let pos = self.floating.clamp_within_working_area(
                     render_pos + Point::from((50., 50.)),
                     removed.tile.tile_size(),
                 );
                 let pos = self.floating.logical_to_size_frac(pos);
-                removed.tile.set_floating_pos(pos);
+                removed.tile.floating_pos = Some(pos);
             }
 
             self.floating.add_tile(removed.tile, target_is_active);

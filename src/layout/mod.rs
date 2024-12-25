@@ -2694,7 +2694,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 // When going to floating, restore the floating window size.
                 if move_.is_floating {
-                    let floating_size = move_.tile.floating_window_size();
+                    let floating_size = move_.tile.floating_window_size;
                     let win = move_.tile.window_mut();
                     let mut size =
                         floating_size.unwrap_or_else(|| win.expected_size().unwrap_or_default());
@@ -3265,8 +3265,8 @@ impl<W: LayoutElement> Layout<W> {
                 );
 
                 // Unfullscreen.
-                let floating_size = tile.floating_window_size();
-                let unfullscreen_to_floating = tile.unfullscreen_to_floating();
+                let floating_size = tile.floating_window_size;
+                let unfullscreen_to_floating = tile.unfullscreen_to_floating;
                 let win = tile.window_mut();
                 if win.is_pending_fullscreen() {
                     // If we're unfullscreening to floating, use the stored floating size,
@@ -3459,12 +3459,12 @@ impl<W: LayoutElement> Layout<W> {
 
                         let mut tile = move_.tile;
                         let pos = mon.workspaces[ws_idx].floating_logical_to_size_frac(pos);
-                        tile.set_floating_pos(pos);
+                        tile.floating_pos = Some(pos);
 
                         // Set the floating size so it takes into account any window resizing that
                         // took place during the move.
                         if let Some(size) = tile.window().expected_size() {
-                            tile.set_floating_window_size(size);
+                            tile.floating_window_size = Some(size);
                         }
 
                         mon.add_floating_tile(ws_idx, tile, true);
