@@ -952,11 +952,11 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn toggle_width(&mut self) {
-        // TODO
         if self.floating_is_active.get() {
-            return;
+            self.floating.toggle_window_width(None);
+        } else {
+            self.scrolling.toggle_width();
         }
-        self.scrolling.toggle_width();
     }
 
     pub fn toggle_full_width(&mut self) {
@@ -998,10 +998,10 @@ impl<W: LayoutElement> Workspace<W> {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)
         }) {
-            // TODO
-            return;
+            self.floating.toggle_window_height(window);
+        } else {
+            self.scrolling.toggle_window_height(window);
         }
-        self.scrolling.toggle_window_height(window);
     }
 
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {

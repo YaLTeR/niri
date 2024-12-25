@@ -2832,6 +2832,16 @@ impl ColumnWidth {
             ColumnWidth::Fixed(width) => width,
         }
     }
+
+    pub fn resolve_no_gaps(self, options: &Options, view_width: f64) -> ResolvedSize {
+        match self {
+            ColumnWidth::Proportion(proportion) => ResolvedSize::Tile(view_width * proportion),
+            ColumnWidth::Preset(idx) => {
+                options.preset_column_widths[idx].resolve_no_gaps(options, view_width)
+            }
+            ColumnWidth::Fixed(width) => ResolvedSize::Window(width),
+        }
+    }
 }
 
 impl From<PresetSize> for ColumnWidth {
