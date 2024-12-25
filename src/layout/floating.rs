@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
@@ -628,13 +627,13 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
 
         let preset = self.options.preset_column_widths[preset_idx];
-        let window_width = match preset.resolve_no_gaps(&self.options, view_size) {
-            ResolvedSize::Tile(w) => tile.window_width_for_tile_width(w),
-            ResolvedSize::Window(w) => w,
+        let change = match preset {
+            ColumnWidth::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
+            ColumnWidth::Fixed(fixed) => SizeChange::SetFixed(fixed.round() as i32),
+            _ => unreachable!(),
         };
 
-        let window_width = window_width.round().clamp(1., 100000.) as i32;
-        self.set_window_width(Some(&id), SizeChange::SetFixed(window_width), true);
+        self.set_window_width(Some(&id), change, true);
 
         self.tiles[idx].floating_preset_width_idx = Some(preset_idx);
     }
@@ -669,13 +668,12 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
 
         let preset = self.options.preset_window_heights[preset_idx];
-        let window_height = match resolve_preset_size(preset, view_size) {
-            ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
-            ResolvedSize::Window(h) => h,
+        let change = match preset {
+            PresetSize::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
+            PresetSize::Fixed(fixed) => SizeChange::SetFixed(fixed),
         };
 
-        let window_height = window_height.round().clamp(1., 100000.) as i32;
-        self.set_window_height(Some(&id), SizeChange::SetFixed(window_height), true);
+        self.set_window_height(Some(&id), change, true);
 
         let tile = &mut self.tiles[idx];
         tile.floating_preset_height_idx = Some(preset_idx);
@@ -687,20 +685,39 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(id).unwrap();
 
-        let SizeChange::SetFixed(mut win_width) = change else {
-            // TODO
-            return;
-        };
-
         let tile = &mut self.tiles[idx];
         tile.floating_preset_width_idx = None;
+
+        let view_size = self.working_area.size.w;
+        let win = tile.window();
+        let current_window = win.expected_size().unwrap_or_else(|| win.size()).w;
+        let current_tile = tile.tile_expected_or_current_size().w;
+
+        const MAX_PX: f64 = 100000.;
+        const MAX_F: f64 = 10000.;
+
+        let win_width = match change {
+            SizeChange::SetFixed(win_width) => f64::from(win_width),
+            SizeChange::SetProportion(prop) => {
+                let prop = (prop / 100.).clamp(0., MAX_F);
+                let tile_width = view_size * prop;
+                tile.window_width_for_tile_width(tile_width)
+            }
+            SizeChange::AdjustFixed(delta) => f64::from(current_window.saturating_add(delta)),
+            SizeChange::AdjustProportion(delta) => {
+                let current_prop = current_tile / view_size;
+                let prop = (current_prop + delta / 100.).clamp(0., MAX_F);
+                let tile_width = view_size * prop;
+                tile.window_width_for_tile_width(tile_width)
+            }
+        };
+        let win_width = win_width.round().clamp(1., MAX_PX) as i32;
 
         let win = tile.window_mut();
         let min_size = win.min_size();
         let max_size = win.max_size();
 
-        win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
-        win_width = max(1, win_width);
+        let win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
 
         let win_height = win.expected_size().unwrap_or_default().h;
         let win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
@@ -715,20 +732,39 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(id).unwrap();
 
-        let SizeChange::SetFixed(mut win_height) = change else {
-            // TODO
-            return;
-        };
-
         let tile = &mut self.tiles[idx];
-        tile.floating_preset_height_idx = None;
+        tile.floating_preset_width_idx = None;
+
+        let view_size = self.working_area.size.h;
+        let win = tile.window();
+        let current_window = win.expected_size().unwrap_or_else(|| win.size()).h;
+        let current_tile = tile.tile_expected_or_current_size().h;
+
+        const MAX_PX: f64 = 100000.;
+        const MAX_F: f64 = 10000.;
+
+        let win_height = match change {
+            SizeChange::SetFixed(win_height) => f64::from(win_height),
+            SizeChange::SetProportion(prop) => {
+                let prop = (prop / 100.).clamp(0., MAX_F);
+                let tile_height = view_size * prop;
+                tile.window_height_for_tile_height(tile_height)
+            }
+            SizeChange::AdjustFixed(delta) => f64::from(current_window.saturating_add(delta)),
+            SizeChange::AdjustProportion(delta) => {
+                let current_prop = current_tile / view_size;
+                let prop = (current_prop + delta / 100.).clamp(0., MAX_F);
+                let tile_height = view_size * prop;
+                tile.window_height_for_tile_height(tile_height)
+            }
+        };
+        let win_height = win_height.round().clamp(1., MAX_PX) as i32;
 
         let win = tile.window_mut();
         let min_size = win.min_size();
         let max_size = win.max_size();
 
-        win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
-        win_height = max(1, win_height);
+        let win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
 
         let win_width = win.expected_size().unwrap_or_default().w;
         let win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
