@@ -67,6 +67,12 @@ pub struct Tile<W: LayoutElement> {
     /// the window starts out in the tiling layout.
     pub(super) floating_pos: Option<Point<f64, SizeFrac>>,
 
+    /// Currently selected preset width index when this tile is floating.
+    pub(super) floating_preset_width_idx: Option<usize>,
+
+    /// Currently selected preset height index when this tile is floating.
+    pub(super) floating_preset_height_idx: Option<usize>,
+
     /// The animation upon opening a window.
     open_animation: Option<OpenAnimation>,
 
@@ -143,6 +149,8 @@ impl<W: LayoutElement> Tile<W> {
             unfullscreen_to_floating: false,
             floating_window_size: None,
             floating_pos: None,
+            floating_preset_width_idx: None,
+            floating_preset_height_idx: None,
             open_animation: None,
             resize_animation: None,
             move_x_animation: None,
@@ -157,6 +165,14 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn update_config(&mut self, scale: f64, options: Rc<Options>) {
+        // If preset widths or heights changed, clear our stored preset index.
+        if self.options.preset_column_widths != options.preset_column_widths {
+            self.floating_preset_width_idx = None;
+        }
+        if self.options.preset_window_heights != options.preset_window_heights {
+            self.floating_preset_height_idx = None;
+        }
+
         self.scale = scale;
         self.options = options;
 
@@ -475,8 +491,36 @@ impl<W: LayoutElement> Tile<W> {
         size
     }
 
+    pub fn tile_expected_or_current_size(&self) -> Size<f64, Logical> {
+        let mut size = self.window_expected_or_current_size();
+
+        if self.is_fullscreen {
+            // Normally we'd just return the fullscreen size here, but this makes things a bit
+            // nicer if a fullscreen window is bigger than the fullscreen size for some reason.
+            size.w = f64::max(size.w, self.fullscreen_size.w);
+            size.h = f64::max(size.h, self.fullscreen_size.h);
+            return size;
+        }
+
+        if let Some(width) = self.effective_border_width() {
+            size.w += width * 2.;
+            size.h += width * 2.;
+        }
+
+        size
+    }
+
     pub fn window_size(&self) -> Size<f64, Logical> {
         let mut size = self.window.size().to_f64();
+        size = size
+            .to_physical_precise_round(self.scale)
+            .to_logical(self.scale);
+        size
+    }
+
+    pub fn window_expected_or_current_size(&self) -> Size<f64, Logical> {
+        let size = self.window.expected_size();
+        let mut size = size.unwrap_or_else(|| self.window.size()).to_f64();
         size = size
             .to_physical_precise_round(self.scale)
             .to_logical(self.scale);
