@@ -557,7 +557,8 @@ impl<W: LayoutElement> Workspace<W> {
                 let activate = activate.map_smart(|| self.active_window().unwrap().id() == next_to);
 
                 let floating_has_window = self.floating.has_window(next_to);
-                if is_floating || floating_has_window {
+
+                if is_floating && !tile.window().is_pending_fullscreen() {
                     if floating_has_window {
                         self.floating.add_tile_above(next_to, tile, activate);
                     } else {
@@ -579,58 +580,26 @@ impl<W: LayoutElement> Workspace<W> {
                         tile.floating_pos = Some(pos);
 
                         self.floating.add_tile(tile, activate);
+                    }
 
-                        if activate {
-                            self.floating_is_active = FloatingActive::Yes;
-                        }
+                    if activate || self.scrolling.is_empty() {
+                        self.floating_is_active = FloatingActive::Yes;
+                    }
+                } else if floating_has_window {
+                    self.scrolling
+                        .add_tile(None, tile, activate, width, is_full_width, None);
+
+                    if activate {
+                        self.floating_is_active = FloatingActive::No;
                     }
                 } else {
                     self.scrolling
                         .add_tile_right_of(next_to, tile, activate, width, is_full_width);
-                }
 
-                // if is_floating && !tile.window().is_pending_fullscreen() {
-                //     if floating_has_window {
-                //         self.floating.add_tile_above(next_to, tile, activate);
-                //     } else {
-                //         // FIXME: use static pos
-                //         let (next_to_tile, render_pos) = self
-                //             .scrolling
-                //             .tiles_with_render_positions()
-                //             .find(|(tile, _)| tile.window().id() == next_to)
-                //             .unwrap();
-                //
-                //         // Position the new tile in the center above the next_to tile. Think a
-                //         // dialog opening on top of a window.
-                //         let tile_size = tile.tile_size();
-                //         let pos = render_pos
-                //             + (next_to_tile.tile_size().to_point() - tile_size.to_point())
-                //                 .downscale(2.);
-                //         let pos = self.floating.clamp_within_working_area(pos, tile_size);
-                //         let pos = self.floating.logical_to_size_frac(pos);
-                //         tile.floating_pos = Some(pos);
-                //
-                //         self.floating.add_tile(tile, activate);
-                //     }
-                //
-                //     if activate || self.scrolling.is_empty() {
-                //         self.floating_is_active = FloatingActive::Yes;
-                //     }
-                // } else if floating_has_window {
-                //     self.scrolling
-                //         .add_tile(None, tile, activate, width, is_full_width, None);
-                //
-                //     if activate {
-                //         self.floating_is_active = FloatingActive::No;
-                //     }
-                // } else {
-                //     self.scrolling
-                //         .add_tile_right_of(next_to, tile, activate, width, is_full_width);
-                //
-                //     if activate {
-                //         self.floating_is_active = FloatingActive::No;
-                //     }
-                // }
+                    if activate {
+                        self.floating_is_active = FloatingActive::No;
+                    }
+                }
             }
         }
     }
