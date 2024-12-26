@@ -428,10 +428,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.bring_up_descendants_of(idx);
     }
 
-    pub fn add_tile_above(&mut self, above: &W::Id, mut tile: Tile<W>) {
-        // Activate the new window if above was active.
-        let activate = Some(above) == self.active_window_id.as_ref();
-
+    pub fn add_tile_above(&mut self, above: &W::Id, mut tile: Tile<W>, activate: bool) {
         let idx = self.idx_of(above).unwrap();
 
         let above_pos = self.data[idx].logical_pos;

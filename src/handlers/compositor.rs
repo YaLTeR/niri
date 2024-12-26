@@ -19,7 +19,7 @@ use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
-use crate::layout::ActivateWindow;
+use crate::layout::{ActivateWindow, AddWindowTarget};
 use crate::niri::{ClientState, State};
 use crate::utils::send_scale_transform;
 use crate::utils::transaction::Transaction;
@@ -96,7 +96,7 @@ impl CompositorHandler for State {
 
                     let toplevel = window.toplevel().expect("no X11 support");
 
-                    let (rules, width, is_full_width, output, workspace_name) =
+                    let (rules, width, is_full_width, output, workspace_id) =
                         if let InitialConfigureState::Configured {
                             rules,
                             width,
@@ -110,10 +110,12 @@ impl CompositorHandler for State {
                                 output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
 
                             // Check that the workspace still exists.
-                            let workspace_name = workspace_name
-                                .filter(|n| self.niri.layout.find_workspace_by_name(n).is_some());
+                            let workspace_id = workspace_name
+                                .as_deref()
+                                .and_then(|n| self.niri.layout.find_workspace_by_name(n))
+                                .map(|(_, ws)| ws.id());
 
-                            (rules, width, is_full_width, output, workspace_name)
+                            (rules, width, is_full_width, output, workspace_id)
                         } else {
                             error!("window map must happen after initial configure");
                             (ResolvedWindowRules::empty(), None, false, None, None)
@@ -160,46 +162,24 @@ impl CompositorHandler for State {
                         }
                     };
 
-                    let output = if let Some(p) = parent {
-                        // Open dialogs immediately to the right of their parent window.
-                        //
-                        // FIXME: do we want to use activate here? How do we want things to behave
-                        // exactly?
-                        self.niri.layout.add_window_right_of(
-                            &p,
-                            mapped,
-                            width,
-                            is_full_width,
-                            is_floating,
-                        )
-                    } else if let Some(workspace_name) = &workspace_name {
-                        self.niri.layout.add_window_to_named_workspace(
-                            workspace_name,
-                            mapped,
-                            width,
-                            is_full_width,
-                            is_floating,
-                            activate,
-                        )
+                    let target = if let Some(p) = &parent {
+                        // Open dialogs next to their parent window.
+                        AddWindowTarget::NextTo(p)
+                    } else if let Some(id) = workspace_id {
+                        AddWindowTarget::Workspace(id)
                     } else if let Some(output) = &output {
-                        self.niri.layout.add_window_on_output(
-                            output,
-                            mapped,
-                            width,
-                            is_full_width,
-                            is_floating,
-                            activate,
-                        );
-                        Some(output)
+                        AddWindowTarget::Output(output)
                     } else {
-                        self.niri.layout.add_window(
-                            mapped,
-                            width,
-                            is_full_width,
-                            is_floating,
-                            activate,
-                        )
+                        AddWindowTarget::Auto
                     };
+                    let output = self.niri.layout.add_window(
+                        mapped,
+                        target,
+                        width,
+                        is_full_width,
+                        is_floating,
+                        activate,
+                    );
 
                     if let Some(output) = output.cloned() {
                         self.niri.layout.start_open_animation_for_window(&window);

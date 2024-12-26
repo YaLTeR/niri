@@ -859,7 +859,7 @@ impl State {
                 });
             }
 
-            width = ws.resolve_default_width(rules.default_width);
+            width = ws.resolve_default_width(rules.default_width, is_floating);
 
             let configure_width = if is_full_width {
                 Some(ColumnWidth::Proportion(1.))

@@ -783,6 +783,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         &mut self,
         right_of: &W::Id,
         tile: Tile<W>,
+        activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
     ) {
@@ -792,9 +793,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .position(|col| col.contains(right_of))
             .unwrap();
         let col_idx = right_of_idx + 1;
-
-        // Activate the new window if right_of was active.
-        let activate = self.active_column_idx == right_of_idx;
 
         self.add_tile(Some(col_idx), tile, activate, width, is_full_width, None);
     }
