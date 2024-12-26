@@ -132,6 +132,23 @@ impl fmt::Display for SetParent {
     }
 }
 
+#[derive(Clone, Copy)]
+enum DefaultWidth {
+    WindowChooses,
+    Proportion(&'static str),
+    Fixed(&'static str),
+}
+
+impl fmt::Display for DefaultWidth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DefaultWidth::WindowChooses => write!(f, "U"),
+            DefaultWidth::Proportion(prop) => write!(f, "P{prop}"),
+            DefaultWidth::Fixed(fixed) => write!(f, "F{fixed}"),
+        }
+    }
+}
+
 #[test]
 fn target_output_and_workspaces() {
     // Here we test a massive powerset of settings that can affect where a window opens:
@@ -341,6 +358,182 @@ window-rule {{
 final monitor: {mon}
 final workspace: {ws_idx} ({ws})
 
+initial configure:
+{initial}
+
+post-map configures:
+{}",
+        window.format_recent_configures()
+    );
+
+    let mut settings = insta::Settings::clone_current();
+    settings.set_snapshot_suffix(snapshot_suffix.join("-"));
+    settings.set_description(snapshot_desc.join("\n"));
+    let _guard = settings.bind_to_scope();
+    assert_snapshot!(snapshot);
+}
+
+#[test]
+fn target_size() {
+    // Here we test a massive powerset of settings that can affect the window size:
+    //
+    // * want fullscreen
+    // * open-fullscreen
+    // * open-maximized
+    // * open-floating
+    // * default-column-width
+    // * border
+
+    let open_fullscreen = [None, Some("false"), Some("true")];
+    let want_fullscreen = [
+        WantFullscreen::No,
+        WantFullscreen::UnsetBeforeInitial, // GTK 4
+        WantFullscreen::BeforeInitial(None),
+        WantFullscreen::UnsetAfterInitial,
+        // mpv, osu!
+        WantFullscreen::AfterInitial(None),
+    ];
+    let open_maximized = [None, Some("true")];
+    let open_floating = [None, Some("true")];
+    let default_column_width = [
+        None,
+        Some(DefaultWidth::WindowChooses),
+        Some(DefaultWidth::Proportion("0.25")),
+        Some(DefaultWidth::Fixed("1000")),
+    ];
+    let border = [false, true];
+
+    let mut powerset = Vec::new();
+    for fs in open_fullscreen {
+        for wfs in want_fullscreen {
+            for om in open_maximized {
+                for of in open_floating {
+                    for dw in default_column_width {
+                        for b in border {
+                            powerset.push((fs, wfs, om, of, dw, b));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    powerset
+        .into_par_iter()
+        .for_each(|(fs, wfs, om, of, dw, b)| {
+            check_target_size(fs, wfs, om, of, dw, b);
+        });
+}
+
+fn check_target_size(
+    open_fullscreen: Option<&str>,
+    want_fullscreen: WantFullscreen,
+    open_maximized: Option<&str>,
+    open_floating: Option<&str>,
+    default_width: Option<DefaultWidth>,
+    border: bool,
+) {
+    let mut snapshot_desc = Vec::new();
+    let mut snapshot_suffix = Vec::new();
+
+    let mut config = String::from(
+        r##"
+window-rule {
+"##,
+    );
+
+    if let Some(x) = open_fullscreen {
+        writeln!(config, "    open-fullscreen {x}").unwrap();
+
+        let x = if x == "true" { "T" } else { "F" };
+        snapshot_suffix.push(format!("fs{x}"));
+    }
+
+    if let Some(x) = open_maximized {
+        writeln!(config, "    open-maximized {x}").unwrap();
+
+        let x = if x == "true" { "T" } else { "F" };
+        snapshot_suffix.push(format!("om{x}"));
+    }
+
+    if let Some(x) = open_floating {
+        writeln!(config, "    open-floating {x}").unwrap();
+
+        let x = if x == "true" { "T" } else { "F" };
+        snapshot_suffix.push(format!("of{x}"));
+    }
+
+    if let Some(x) = default_width {
+        let value = match x {
+            DefaultWidth::WindowChooses => String::new(),
+            DefaultWidth::Proportion(prop) => format!("proportion {prop};"),
+            DefaultWidth::Fixed(fixed) => format!("fixed {fixed};"),
+        };
+        writeln!(config, "    default-column-width {{ {value} }}").unwrap();
+
+        snapshot_suffix.push(format!("dw{x}"));
+    }
+
+    if border {
+        writeln!(config, "    border {{ on; }}").unwrap();
+        snapshot_suffix.push(String::from("b"));
+    }
+
+    config.push('}');
+
+    match &want_fullscreen {
+        WantFullscreen::No => (),
+        x => {
+            snapshot_desc.push(format!("want fullscreen: {x}"));
+            snapshot_suffix.push(format!("wfs{x}"));
+        }
+    }
+
+    snapshot_desc.push(format!("config:{config}"));
+
+    let config = Config::parse("config.kdl", &config).unwrap();
+
+    let mut f = Fixture::with_config(config);
+    f.add_output(1, (1280, 720));
+    f.add_output(2, (1920, 1080));
+
+    let id = f.add_client();
+
+    // To get output names.
+    f.roundtrip(id);
+
+    let client = f.client(id);
+    let window = client.create_window();
+    let surface = window.surface.clone();
+
+    if let WantFullscreen::UnsetBeforeInitial = want_fullscreen {
+        client.window(&surface).unset_fullscreen();
+    } else if let WantFullscreen::BeforeInitial(mon) = want_fullscreen {
+        let output = mon.map(|mon| client.output(&format!("headless-{mon}")));
+        client.window(&surface).set_fullscreen(output.as_ref());
+    }
+
+    client.window(&surface).commit();
+    f.roundtrip(id);
+
+    let client = f.client(id);
+    let initial = client.window(&surface).format_recent_configures();
+
+    if let WantFullscreen::UnsetAfterInitial = want_fullscreen {
+        client.window(&surface).unset_fullscreen();
+    } else if let WantFullscreen::AfterInitial(mon) = want_fullscreen {
+        let output = mon.map(|mon| client.output(&format!("headless-{mon}")));
+        client.window(&surface).set_fullscreen(output.as_ref());
+    }
+
+    let window = client.window(&surface);
+    window.attach_new_buffer();
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    let snapshot = format!(
+        "\
 initial configure:
 {initial}
 
