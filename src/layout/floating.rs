@@ -139,6 +139,7 @@ impl Data {
         let max_off_screen_hor = f64::max(0., self.size.w - min_on_screen_hor);
         let max_off_screen_ver = f64::max(0., self.size.h - min_on_screen_ver);
 
+        logical_pos -= self.working_area.loc;
         logical_pos.x = f64::max(logical_pos.x, -max_off_screen_hor);
         logical_pos.y = f64::max(logical_pos.y, -max_off_screen_ver);
         logical_pos.x = f64::min(
@@ -149,6 +150,7 @@ impl Data {
             logical_pos.y,
             self.working_area.size.h - self.size.h + max_off_screen_ver,
         );
+        logical_pos += self.working_area.loc;
 
         self.logical_pos = logical_pos;
     }
