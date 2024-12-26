@@ -335,13 +335,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
         for (tile, pos) in self.tiles_with_offsets() {
             if tile.window().id() == id {
-                // TODO: intersect with working area width.
-                let width = tile.window_size().w;
-                let height = self.working_area.size.h;
-
-                let mut target = Rectangle::from_loc_and_size((0., 0.), (width, height));
-                target.loc.y -= pos.y;
-                target.loc.y -= tile.window_loc().y;
+                // Position within the working area.
+                let mut target = self.working_area;
+                target.loc -= pos;
+                target.loc -= tile.window_loc();
 
                 return Some(target);
             }
