@@ -2577,8 +2577,10 @@ impl<W: LayoutElement> Layout<W> {
         let options = Rc::new(options);
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            let view_size = output_size(&move_.output);
             let scale = move_.output.current_scale().fractional_scale();
             move_.tile.update_config(
+                view_size,
                 scale,
                 Rc::new(Options::clone(&options).adjusted_for_scale(scale)),
             );
@@ -3261,8 +3263,10 @@ impl<W: LayoutElement> Layout<W> {
                     output.current_transform(),
                 );
 
+                let view_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
                 tile.update_config(
+                    view_size,
                     scale,
                     Rc::new(Options::clone(&self.options).adjusted_for_scale(scale)),
                 );
@@ -3324,8 +3328,10 @@ impl<W: LayoutElement> Layout<W> {
                         output.current_scale(),
                         output.current_transform(),
                     );
+                    let view_size = output_size(&output);
                     let scale = output.current_scale().fractional_scale();
                     move_.tile.update_config(
+                        view_size,
                         scale,
                         Rc::new(Options::clone(&self.options).adjusted_for_scale(scale)),
                     );

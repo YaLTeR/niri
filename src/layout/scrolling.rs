@@ -2933,7 +2933,7 @@ impl<W: LayoutElement> Column<W> {
         }
 
         for (tile, data) in zip(&mut self.tiles, &mut self.data) {
-            tile.update_config(scale, options.clone());
+            tile.update_config(view_size, scale, options.clone());
             data.update(tile);
         }
 
@@ -3033,7 +3033,7 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn add_tile_at(&mut self, idx: usize, mut tile: Tile<W>, animate: bool) {
-        tile.update_config(self.scale, self.options.clone());
+        tile.update_config(self.view_size, self.scale, self.options.clone());
 
         // Inserting a tile pushes down all tiles below it, but also in always-centering mode it
         // will affect the X position of all tiles in the column.
@@ -3096,7 +3096,7 @@ impl<W: LayoutElement> Column<W> {
 
     fn update_tile_sizes_with_transaction(&mut self, animate: bool, transaction: Transaction) {
         if self.is_fullscreen {
-            self.tiles[0].request_fullscreen(self.view_size);
+            self.tiles[0].request_fullscreen();
             return;
         }
 
@@ -3787,6 +3787,7 @@ impl<W: LayoutElement> Column<W> {
             assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
             assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
+            assert_eq!(self.view_size, tile.view_size());
             tile.verify_invariants();
 
             let mut data2 = *data;
