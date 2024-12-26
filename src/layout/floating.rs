@@ -50,6 +50,9 @@ pub struct FloatingSpace<W: LayoutElement> {
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
 
+    /// View size for this space.
+    view_size: Size<f64, Logical>,
+
     /// Working area for this space.
     working_area: Rectangle<f64, Logical>,
 
@@ -193,6 +196,7 @@ impl Data {
 
 impl<W: LayoutElement> FloatingSpace<W> {
     pub fn new(
+        view_size: Size<f64, Logical>,
         working_area: Rectangle<f64, Logical>,
         scale: f64,
         clock: Clock,
@@ -204,6 +208,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             active_window_id: None,
             interactive_resize: None,
             closing_windows: Vec::new(),
+            view_size,
             working_area,
             scale,
             clock,
@@ -213,16 +218,18 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
     pub fn update_config(
         &mut self,
+        view_size: Size<f64, Logical>,
         working_area: Rectangle<f64, Logical>,
         scale: f64,
         options: Rc<Options>,
     ) {
         for (tile, data) in zip(&mut self.tiles, &mut self.data) {
-            tile.update_config(scale, options.clone());
+            tile.update_config(view_size, scale, options.clone());
             data.update(tile);
             data.update_config(working_area);
         }
 
+        self.view_size = view_size;
         self.working_area = working_area;
         self.scale = scale;
         self.options = options;
@@ -371,7 +378,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     fn add_tile_at(&mut self, mut idx: usize, mut tile: Tile<W>, activate: bool) {
-        tile.update_config(self.scale, self.options.clone());
+        tile.update_config(self.view_size, self.scale, self.options.clone());
 
         // Restore the previous floating window size, and in case the tile is fullscreen,
         // unfullscreen it.
@@ -602,7 +609,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(&id).unwrap();
 
-        let view_size = self.working_area.size.w;
+        let available_size = self.working_area.size.w;
 
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_width_idx {
@@ -615,7 +622,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 .preset_column_widths
                 .iter()
                 .position(|preset| {
-                    let resolved = preset.resolve_no_gaps(&self.options, view_size);
+                    let resolved = preset.resolve_no_gaps(&self.options, available_size);
                     match resolved {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
@@ -643,7 +650,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(&id).unwrap();
 
-        let view_size = self.working_area.size.h;
+        let available_size = self.working_area.size.h;
 
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
@@ -656,7 +663,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 .preset_window_heights
                 .iter()
                 .position(|preset| {
-                    let resolved = resolve_preset_size(*preset, view_size);
+                    let resolved = resolve_preset_size(*preset, available_size);
                     match resolved {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
@@ -687,7 +694,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let tile = &mut self.tiles[idx];
         tile.floating_preset_width_idx = None;
 
-        let view_size = self.working_area.size.w;
+        let available_size = self.working_area.size.w;
         let win = tile.window();
         let current_window = win.expected_size().unwrap_or_else(|| win.size()).w;
         let current_tile = tile.tile_expected_or_current_size().w;
@@ -699,14 +706,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
             SizeChange::SetFixed(win_width) => f64::from(win_width),
             SizeChange::SetProportion(prop) => {
                 let prop = (prop / 100.).clamp(0., MAX_F);
-                let tile_width = view_size * prop;
+                let tile_width = available_size * prop;
                 tile.window_width_for_tile_width(tile_width)
             }
             SizeChange::AdjustFixed(delta) => f64::from(current_window.saturating_add(delta)),
             SizeChange::AdjustProportion(delta) => {
-                let current_prop = current_tile / view_size;
+                let current_prop = current_tile / available_size;
                 let prop = (current_prop + delta / 100.).clamp(0., MAX_F);
-                let tile_width = view_size * prop;
+                let tile_width = available_size * prop;
                 tile.window_width_for_tile_width(tile_width)
             }
         };
@@ -734,7 +741,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let tile = &mut self.tiles[idx];
         tile.floating_preset_width_idx = None;
 
-        let view_size = self.working_area.size.h;
+        let available_size = self.working_area.size.h;
         let win = tile.window();
         let current_window = win.expected_size().unwrap_or_else(|| win.size()).h;
         let current_tile = tile.tile_expected_or_current_size().h;
@@ -746,14 +753,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
             SizeChange::SetFixed(win_height) => f64::from(win_height),
             SizeChange::SetProportion(prop) => {
                 let prop = (prop / 100.).clamp(0., MAX_F);
-                let tile_height = view_size * prop;
+                let tile_height = available_size * prop;
                 tile.window_height_for_tile_height(tile_height)
             }
             SizeChange::AdjustFixed(delta) => f64::from(current_window.saturating_add(delta)),
             SizeChange::AdjustProportion(delta) => {
-                let current_prop = current_tile / view_size;
+                let current_prop = current_tile / available_size;
                 let prop = (current_prop + delta / 100.).clamp(0., MAX_F);
-                let tile_height = view_size * prop;
+                let tile_height = available_size * prop;
                 tile.window_height_for_tile_height(tile_height)
             }
         };
@@ -1096,6 +1103,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     #[cfg(test)]
+    pub fn view_size(&self) -> Size<f64, Logical> {
+        self.view_size
+    }
+
+    #[cfg(test)]
     pub fn working_area(&self) -> Rectangle<f64, Logical> {
         self.working_area
     }
@@ -1123,6 +1135,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         for (i, (tile, data)) in zip(&self.tiles, &self.data).enumerate() {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
+            assert_eq!(self.view_size, tile.view_size());
             assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
             tile.verify_invariants();

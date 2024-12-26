@@ -203,6 +203,7 @@ impl<W: LayoutElement> Workspace<W> {
         );
 
         let floating = FloatingSpace::new(
+            view_size,
             working_area,
             scale.fractional_scale(),
             clock.clone(),
@@ -255,6 +256,7 @@ impl<W: LayoutElement> Workspace<W> {
         );
 
         let floating = FloatingSpace::new(
+            view_size,
             working_area,
             scale.fractional_scale(),
             clock.clone(),
@@ -337,6 +339,7 @@ impl<W: LayoutElement> Workspace<W> {
         );
 
         self.floating.update_config(
+            self.view_size,
             self.working_area,
             self.scale.fractional_scale(),
             options.clone(),
@@ -467,6 +470,7 @@ impl<W: LayoutElement> Workspace<W> {
                 self.options.clone(),
             );
             self.floating.update_config(
+                size,
                 working_area,
                 scale.fractional_scale(),
                 self.options.clone(),
@@ -494,6 +498,7 @@ impl<W: LayoutElement> Workspace<W> {
     ) {
         let mut tile = Tile::new(
             window,
+            self.view_size,
             self.scale.fractional_scale(),
             self.clock.clone(),
             self.options.clone(),
@@ -562,6 +567,7 @@ impl<W: LayoutElement> Workspace<W> {
     ) {
         let mut tile = Tile::new(
             window,
+            self.view_size,
             self.scale.fractional_scale(),
             self.clock.clone(),
             self.options.clone(),
@@ -1471,6 +1477,7 @@ impl<W: LayoutElement> Workspace<W> {
         assert!(Rc::ptr_eq(&self.options, self.scrolling.options()));
         self.scrolling.verify_invariants(self.working_area);
 
+        assert_eq!(self.view_size, self.floating.view_size());
         assert_eq!(self.working_area, self.floating.working_area());
         assert_eq!(&self.clock, self.floating.clock());
         assert!(Rc::ptr_eq(&self.options, self.floating.options()));

@@ -55,6 +55,8 @@ impl Tile {
     }
 
     pub fn with_window(args: Args, window: TestWindow) -> Self {
+        let Args { size, clock } = args;
+
         let options = Options {
             focus_ring: niri_config::FocusRing {
                 off: true,
@@ -69,10 +71,15 @@ impl Tile {
             ..Default::default()
         };
 
-        let mut tile =
-            niri::layout::tile::Tile::new(window.clone(), 1., args.clock, Rc::new(options));
+        let mut tile = niri::layout::tile::Tile::new(
+            window.clone(),
+            size.to_f64(),
+            1.,
+            clock,
+            Rc::new(options),
+        );
 
-        tile.request_tile_size(args.size.to_f64(), false, None);
+        tile.request_tile_size(size.to_f64(), false, None);
         window.communicate();
 
         Self { window, tile }
@@ -81,8 +88,10 @@ impl Tile {
 
 impl TestCase for Tile {
     fn resize(&mut self, width: i32, height: i32) {
+        let size = Size::from((width, height)).to_f64();
         self.tile
-            .request_tile_size(Size::from((width, height)).to_f64(), false, None);
+            .update_config(size, 1., self.tile.options().clone());
+        self.tile.request_tile_size(size, false, None);
         self.window.communicate();
     }
 
