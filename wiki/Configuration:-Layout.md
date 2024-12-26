@@ -136,7 +136,7 @@ layout {
 ```
 
 > [!NOTE]
-> Currently, due to an oversight, a preset `fixed` width does not take borders into account.
+> Currently, due to an oversight, a preset `fixed` width does not take borders into account in the tiling layout.
 > I.e., preset `fixed 1000` with 4-wide borders will make the window 992 logical pixels wide.
 > This may eventually be corrected.
 >
