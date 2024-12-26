@@ -239,6 +239,16 @@ pub enum WindowHeight {
     Preset(usize),
 }
 
+/// Horizontal direction for an operation
+///
+/// As operations often have a symmetrical counterpart, e.g. focus-right/focus-left, methods
+/// on `Scrolling` can sometimes be factored using the direction of the operation as a parameter.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScrollDirection {
+    Left,
+    Right,
+}
+
 impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn new(
         view_size: Size<f64, Logical>,
@@ -1747,6 +1757,132 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let new_col = &mut self.columns[target_col_idx];
         offset += prev_off - new_col.tile_offset(0);
         new_col.tiles[0].animate_move_from(offset);
+    }
+
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        // if this is the first (resp. last column), then this operation is equivalent
+        // to an `consume_or_expel_window_left` (resp. `consume_or_expel_window_right`)
+        match direction {
+            ScrollDirection::Left => {
+                if self.active_column_idx == 0 {
+                    return;
+                }
+            }
+            ScrollDirection::Right => {
+                if self.active_column_idx == self.columns.len() - 1 {
+                    return;
+                }
+            }
+        }
+
+        let source_column_idx = self.active_column_idx;
+        let target_column_idx = self.active_column_idx.wrapping_add_signed(match direction {
+            ScrollDirection::Left => -1,
+            ScrollDirection::Right => 1,
+        });
+
+        // if both source and target columns contain a single tile, then the operation is equivalent
+        // to a simple column move
+        if self.columns[source_column_idx].tiles.len() == 1
+            && self.columns[target_column_idx].tiles.len() == 1
+        {
+            return self.move_column_to(target_column_idx);
+        }
+
+        let source_tile_idx = self.columns[source_column_idx].active_tile_idx;
+        let target_tile_idx = self.columns[target_column_idx].active_tile_idx;
+        let source_column_drained = self.columns[source_column_idx].tiles.len() == 1;
+
+        // capture the original positions of the tiles
+        let (mut source_pt, mut target_pt) = (
+            self.columns[source_column_idx].render_offset()
+                + self.columns[source_column_idx].tile_offset(source_tile_idx),
+            self.columns[target_column_idx].render_offset()
+                + self.columns[target_column_idx].tile_offset(target_tile_idx),
+        );
+        source_pt.x += self.column_x(source_column_idx);
+        target_pt.x += self.column_x(target_column_idx);
+
+        let transaction = Transaction::new();
+
+        // If the source column contains a single tile, this will also remove the column.
+        // When this happens `source_column_drained` will be set and the column will need to be
+        // recreated with `add_tile`
+        let source_removed = self.remove_tile_by_idx(
+            source_column_idx,
+            source_tile_idx,
+            transaction.clone(),
+            None,
+        );
+
+        {
+            // special case when the source column disappears after removing its last tile
+            let adjusted_target_column_idx =
+                if direction == ScrollDirection::Right && source_column_drained {
+                    target_column_idx - 1
+                } else {
+                    target_column_idx
+                };
+
+            self.add_tile_to_column(
+                adjusted_target_column_idx,
+                Some(target_tile_idx),
+                source_removed.tile,
+                false,
+            );
+
+            let RemovedTile {
+                tile: target_tile, ..
+            } = self.remove_tile_by_idx(
+                adjusted_target_column_idx,
+                target_tile_idx + 1,
+                transaction.clone(),
+                None,
+            );
+
+            if source_column_drained {
+                // recreate the drained column with only the target tile
+                self.add_tile(
+                    Some(source_column_idx),
+                    target_tile,
+                    true,
+                    source_removed.width,
+                    source_removed.is_full_width,
+                    None,
+                )
+            } else {
+                // simply add the removed target tile to the source column
+                self.add_tile_to_column(
+                    source_column_idx,
+                    Some(source_tile_idx),
+                    target_tile,
+                    false,
+                );
+            }
+        }
+
+        // update the active tile in the modified columns
+        self.columns[source_column_idx].active_tile_idx = source_tile_idx;
+        self.columns[target_column_idx].active_tile_idx = target_tile_idx;
+
+        // Animations
+        self.columns[target_column_idx].tiles[target_tile_idx]
+            .animate_move_from(source_pt - target_pt);
+
+        // FIXME: this stop_move_animations() causes the target tile animation to "reset" when
+        // swapping. It's here as a workaround to stop the unwanted animation of moving the source
+        // tile down when adding the target tile above it. This code needs to be written in some
+        // other way not to trigger that animation, or to cancel it properly, so that swap doesn't
+        // cancel all ongoing target tile animations.
+        self.columns[source_column_idx].tiles[source_tile_idx].stop_move_animations();
+        self.columns[source_column_idx].tiles[source_tile_idx]
+            .animate_move_from(target_pt - source_pt);
+
+        self.activate_column(target_column_idx);
     }
 
     pub fn center_column(&mut self) {

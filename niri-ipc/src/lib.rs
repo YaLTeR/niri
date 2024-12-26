@@ -290,6 +290,10 @@ pub enum Action {
     ConsumeWindowIntoColumn {},
     /// Expel the focused window from the column.
     ExpelWindowFromColumn {},
+    /// Swap focused window with one to the right
+    SwapWindowRight {},
+    /// Swap focused window with one to the left
+    SwapWindowLeft {},
     /// Center the focused column on the screen.
     CenterColumn {},
     /// Center a window on the screen.

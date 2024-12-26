@@ -36,6 +36,7 @@ use touch_move_grab::TouchMoveGrab;
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
+use crate::layout::scrolling::ScrollDirection;
 use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
@@ -1128,6 +1129,22 @@ impl State {
             }
             Action::ExpelWindowFromColumn => {
                 self.niri.layout.expel_from_column();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::SwapWindowRight => {
+                self.niri
+                    .layout
+                    .swap_window_in_direction(ScrollDirection::Right);
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::SwapWindowLeft => {
+                self.niri
+                    .layout
+                    .swap_window_in_direction(ScrollDirection::Left);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();

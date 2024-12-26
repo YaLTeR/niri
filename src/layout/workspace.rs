@@ -15,7 +15,8 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
 use super::scrolling::{
-    Column, ColumnWidth, InsertHint, InsertPosition, ScrollingSpace, ScrollingSpaceRenderElement,
+    Column, ColumnWidth, InsertHint, InsertPosition, ScrollDirection, ScrollingSpace,
+    ScrollingSpaceRenderElement,
 };
 use super::tile::{Tile, TileRenderSnapshot};
 use super::{ActivateWindow, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac};
@@ -967,6 +968,13 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
         self.scrolling.expel_from_column();
+    }
+
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.swap_window_in_direction(direction);
     }
 
     pub fn center_column(&mut self) {
