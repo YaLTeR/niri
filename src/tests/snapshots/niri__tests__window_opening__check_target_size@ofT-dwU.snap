@@ -1,0 +1,11 @@
+---
+source: src/tests/window_opening.rs
+description: "config:\nwindow-rule {\n    open-floating true\n    default-column-width {  }\n}"
+expression: snapshot
+snapshot_kind: text
+---
+initial configure:
+size: 0 × 0, bounds: 1280 × 720, states: []
+
+post-map configures:
+size: 1 × 1, bounds: 1280 × 720, states: [Activated]
