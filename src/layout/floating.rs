@@ -507,10 +507,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // Store the floating position.
         tile.floating_pos = Some(data.pos);
 
-        let width = ColumnWidth::Fixed(tile.window_size().w);
+        let width = ColumnWidth::Fixed(tile.window_expected_or_current_size().w);
         RemovedTile {
             tile,
-            // TODO
             width,
             is_full_width: false,
             is_floating: true,
