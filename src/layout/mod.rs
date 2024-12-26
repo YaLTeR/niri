@@ -35,6 +35,7 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
+use monitor::MonitorAddWindowTarget;
 use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig,
@@ -48,7 +49,7 @@ use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use tile::{Tile, TileRenderElement};
-use workspace::WorkspaceId;
+use workspace::{WorkspaceAddWindowTarget, WorkspaceId};
 
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
@@ -424,6 +425,20 @@ pub enum ActivateWindow {
     No,
 }
 
+/// Where to put a newly added window.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum AddWindowTarget<'a, W: LayoutElement> {
+    /// No particular preference.
+    #[default]
+    Auto,
+    /// On this output.
+    Output(&'a Output),
+    /// On this workspace.
+    Workspace(WorkspaceId),
+    /// Next to this existing window.
+    NextTo(&'a W::Id),
+}
+
 impl<W: LayoutElement> InteractiveMoveState<W> {
     fn moving(&self) -> Option<&InteractiveMoveData<W>> {
         match self {
@@ -797,71 +812,6 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    /// Adds a new window to the layout on a specific workspace.
-    pub fn add_window_to_named_workspace(
-        &mut self,
-        workspace_name: &str,
-        window: W,
-        width: Option<ColumnWidth>,
-        is_full_width: bool,
-        is_floating: bool,
-        activate: ActivateWindow,
-    ) -> Option<&Output> {
-        let width = self.resolve_default_width(&window, width);
-
-        match &mut self.monitor_set {
-            MonitorSet::Normal {
-                monitors,
-                active_monitor_idx,
-                ..
-            } => {
-                let (mon_idx, mon, ws_idx) = monitors
-                    .iter_mut()
-                    .enumerate()
-                    .find_map(|(mon_idx, mon)| {
-                        mon.find_named_workspace_index(workspace_name)
-                            .map(move |ws_idx| (mon_idx, mon, ws_idx))
-                    })
-                    .unwrap();
-
-                if activate == ActivateWindow::Yes {
-                    *active_monitor_idx = mon_idx;
-                }
-
-                let activate = activate.map_smart(|| {
-                    // Don't steal focus from an active fullscreen window.
-                    let ws = &mon.workspaces[ws_idx];
-                    if mon_idx == *active_monitor_idx && ws.is_active_fullscreen() {
-                        return false;
-                    }
-
-                    // Don't activate if on a different workspace.
-                    if mon.active_workspace_idx != ws_idx {
-                        return false;
-                    }
-
-                    true
-                });
-
-                mon.add_window(ws_idx, window, activate, width, is_full_width, is_floating);
-                Some(&mon.output)
-            }
-            MonitorSet::NoOutputs { workspaces } => {
-                let ws = workspaces
-                    .iter_mut()
-                    .find(|ws| {
-                        ws.name
-                            .as_ref()
-                            .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
-                    })
-                    .unwrap();
-                let activate = activate.map_smart(|| true);
-                ws.add_window(window, activate, width, is_full_width, is_floating);
-                None
-            }
-        }
-    }
-
     pub fn add_column_by_idx(
         &mut self,
         monitor_idx: usize,
@@ -891,12 +841,13 @@ impl<W: LayoutElement> Layout<W> {
     pub fn add_window(
         &mut self,
         window: W,
+        target: AddWindowTarget<W>,
         width: Option<ColumnWidth>,
         is_full_width: bool,
         is_floating: bool,
         activate: ActivateWindow,
     ) -> Option<&Output> {
-        let width = self.resolve_default_width(&window, width);
+        let resolved_width = self.resolve_default_width(&window, width, is_floating);
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -904,142 +855,136 @@ impl<W: LayoutElement> Layout<W> {
                 active_monitor_idx,
                 ..
             } => {
-                let mon = &mut monitors[*active_monitor_idx];
+                let (mon_idx, target) = match target {
+                    AddWindowTarget::Auto => (*active_monitor_idx, MonitorAddWindowTarget::Auto),
+                    AddWindowTarget::Output(output) => {
+                        let mon_idx = monitors
+                            .iter()
+                            .position(|mon| mon.output == *output)
+                            .unwrap();
 
-                let activate = activate.map_smart(|| {
-                    // Don't steal focus from an active fullscreen window.
-                    let ws = &mon.workspaces[mon.active_workspace_idx];
-                    !ws.is_active_fullscreen()
-                });
+                        (mon_idx, MonitorAddWindowTarget::Auto)
+                    }
+                    AddWindowTarget::Workspace(ws_id) => {
+                        let mon_idx = monitors
+                            .iter()
+                            .position(|mon| mon.workspaces.iter().any(|ws| ws.id() == ws_id))
+                            .unwrap();
+
+                        (
+                            mon_idx,
+                            MonitorAddWindowTarget::Workspace {
+                                id: ws_id,
+                                column_idx: None,
+                            },
+                        )
+                    }
+                    AddWindowTarget::NextTo(next_to) => {
+                        if let Some(output) = self
+                            .interactive_move
+                            .as_ref()
+                            .and_then(|move_| {
+                                if let InteractiveMoveState::Moving(move_) = move_ {
+                                    Some(move_)
+                                } else {
+                                    None
+                                }
+                            })
+                            .filter(|move_| next_to == move_.tile.window().id())
+                            .map(|move_| move_.output.clone())
+                        {
+                            // The next_to window is being interactively moved.
+                            let mon_idx = monitors
+                                .iter()
+                                .position(|mon| mon.output == output)
+                                .unwrap_or(*active_monitor_idx);
+
+                            (mon_idx, MonitorAddWindowTarget::Auto)
+                        } else {
+                            let mon_idx = monitors
+                                .iter()
+                                .position(|mon| {
+                                    mon.workspaces.iter().any(|ws| ws.has_window(next_to))
+                                })
+                                .unwrap();
+                            (mon_idx, MonitorAddWindowTarget::NextTo(next_to))
+                        }
+                    }
+                };
+                let mon = &mut monitors[mon_idx];
 
                 mon.add_window(
-                    mon.active_workspace_idx,
                     window,
+                    target,
                     activate,
-                    width,
+                    resolved_width,
                     is_full_width,
                     is_floating,
                 );
-                Some(&mon.output)
-            }
-            MonitorSet::NoOutputs { workspaces } => {
-                let ws = if let Some(ws) = workspaces.get_mut(0) {
-                    ws
-                } else {
-                    workspaces.push(Workspace::new_no_outputs(
-                        self.clock.clone(),
-                        self.options.clone(),
-                    ));
-                    &mut workspaces[0]
-                };
-                let activate = activate.map_smart(|| true);
-                ws.add_window(window, activate, width, is_full_width, is_floating);
-                None
-            }
-        }
-    }
 
-    /// Adds a new window to the layout immediately to the right of another window.
-    ///
-    /// If that another window was active, activates the new window.
-    ///
-    /// Returns an output that the window was added to, if there were any outputs.
-    pub fn add_window_right_of(
-        &mut self,
-        right_of: &W::Id,
-        window: W,
-        width: Option<ColumnWidth>,
-        is_full_width: bool,
-        is_floating: bool,
-    ) -> Option<&Output> {
-        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if right_of == move_.tile.window().id() {
-                let output = move_.output.clone();
-                let activate = ActivateWindow::default();
-                if self.monitor_for_output(&output).is_some() {
-                    self.add_window_on_output(
-                        &output,
-                        window,
-                        width,
-                        is_full_width,
-                        is_floating,
-                        activate,
-                    );
-                    return Some(&self.monitor_for_output(&output).unwrap().output);
-                } else {
-                    return self.add_window(window, width, is_full_width, is_floating, activate);
+                if activate.map_smart(|| false) {
+                    *active_monitor_idx = mon_idx;
                 }
-            }
-        }
 
-        let width = self.resolve_default_width(&window, width);
-
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                let mon = monitors
-                    .iter_mut()
-                    .find(|mon| mon.workspaces.iter().any(|ws| ws.has_window(right_of)))
-                    .unwrap();
-
-                mon.add_window_right_of(right_of, window, width, is_full_width, is_floating);
                 Some(&mon.output)
             }
             MonitorSet::NoOutputs { workspaces } => {
-                let ws = workspaces
-                    .iter_mut()
-                    .find(|ws| ws.has_window(right_of))
-                    .unwrap();
-                ws.add_window_right_of(right_of, window, width, is_full_width, is_floating);
+                let (ws_idx, target) = match target {
+                    AddWindowTarget::Auto => {
+                        if workspaces.is_empty() {
+                            workspaces.push(Workspace::new_no_outputs(
+                                self.clock.clone(),
+                                self.options.clone(),
+                            ));
+                        }
+
+                        (0, WorkspaceAddWindowTarget::Auto)
+                    }
+                    AddWindowTarget::Output(_) => panic!(),
+                    AddWindowTarget::Workspace(ws_id) => {
+                        let ws_idx = workspaces.iter().position(|ws| ws.id() == ws_id).unwrap();
+                        (ws_idx, WorkspaceAddWindowTarget::Auto)
+                    }
+                    AddWindowTarget::NextTo(next_to) => {
+                        if self
+                            .interactive_move
+                            .as_ref()
+                            .and_then(|move_| {
+                                if let InteractiveMoveState::Moving(move_) = move_ {
+                                    Some(move_)
+                                } else {
+                                    None
+                                }
+                            })
+                            .filter(|move_| next_to == move_.tile.window().id())
+                            .is_some()
+                        {
+                            // The next_to window is being interactively moved.
+                            (0, WorkspaceAddWindowTarget::Auto)
+                        } else {
+                            let ws_idx = workspaces
+                                .iter()
+                                .position(|ws| ws.has_window(next_to))
+                                .unwrap();
+                            (ws_idx, WorkspaceAddWindowTarget::NextTo(next_to))
+                        }
+                    }
+                };
+                let ws = &mut workspaces[ws_idx];
+
+                let tile = ws.make_tile(window);
+                ws.add_tile(
+                    tile,
+                    target,
+                    activate,
+                    resolved_width,
+                    is_full_width,
+                    is_floating,
+                );
+
                 None
             }
         }
-    }
-
-    /// Adds a new window to the layout on a specific output.
-    pub fn add_window_on_output(
-        &mut self,
-        output: &Output,
-        window: W,
-        width: Option<ColumnWidth>,
-        is_full_width: bool,
-        is_floating: bool,
-        activate: ActivateWindow,
-    ) {
-        let width = self.resolve_default_width(&window, width);
-
-        let MonitorSet::Normal {
-            monitors,
-            active_monitor_idx,
-            ..
-        } = &mut self.monitor_set
-        else {
-            panic!()
-        };
-
-        let (mon_idx, mon) = monitors
-            .iter_mut()
-            .enumerate()
-            .find(|(_, mon)| mon.output == *output)
-            .unwrap();
-
-        if activate == ActivateWindow::Yes {
-            *active_monitor_idx = mon_idx;
-        }
-
-        let activate = activate.map_smart(|| {
-            // Don't steal focus from an active fullscreen window.
-            let ws = &mon.workspaces[mon.active_workspace_idx];
-            mon_idx != *active_monitor_idx || !ws.is_active_fullscreen()
-        });
-
-        mon.add_window(
-            mon.active_workspace_idx,
-            window,
-            activate,
-            width,
-            is_full_width,
-            is_floating,
-        );
     }
 
     pub fn remove_window(
@@ -2801,12 +2746,18 @@ impl<W: LayoutElement> Layout<W> {
             if mon_idx == new_idx && ws_idx == workspace_idx {
                 return;
             }
+            let ws_id = monitors[new_idx].workspaces[workspace_idx].id();
 
             let mon = &mut monitors[mon_idx];
             let activate = window.map_or(true, |win| {
                 mon_idx == *active_monitor_idx
                     && mon.active_window().map(|win| win.id()) == Some(win)
             });
+            let activate = if activate {
+                ActivateWindow::Yes
+            } else {
+                ActivateWindow::No
+            };
 
             let ws = &mut mon.workspaces[ws_idx];
             let transaction = Transaction::new();
@@ -2821,19 +2772,18 @@ impl<W: LayoutElement> Layout<W> {
             removed.tile.stop_move_animations();
 
             let mon = &mut monitors[new_idx];
-            if removed.is_floating {
-                mon.add_floating_tile(workspace_idx, removed.tile, activate);
-            } else {
-                mon.add_tile(
-                    workspace_idx,
-                    None,
-                    removed.tile,
-                    activate,
-                    removed.width,
-                    removed.is_full_width,
-                );
-            }
-            if activate {
+            mon.add_tile(
+                removed.tile,
+                MonitorAddWindowTarget::Workspace {
+                    id: ws_id,
+                    column_idx: None,
+                },
+                activate,
+                removed.width,
+                removed.is_full_width,
+                removed.is_floating,
+            );
+            if activate.map_smart(|| false) {
                 *active_monitor_idx = new_idx;
             }
 
@@ -3443,13 +3393,17 @@ impl<W: LayoutElement> Layout<W> {
 
                 match position {
                     InsertPosition::NewColumn(column_idx) => {
+                        let ws_id = mon.workspaces[ws_idx].id();
                         mon.add_tile(
-                            ws_idx,
-                            Some(column_idx),
                             move_.tile,
-                            true,
+                            MonitorAddWindowTarget::Workspace {
+                                id: ws_id,
+                                column_idx: Some(column_idx),
+                            },
+                            ActivateWindow::Yes,
                             move_.width,
                             move_.is_full_width,
+                            false,
                         );
                     }
                     InsertPosition::InColumn(column_idx, tile_idx) => {
@@ -3474,7 +3428,18 @@ impl<W: LayoutElement> Layout<W> {
                             tile.floating_window_size = Some(size);
                         }
 
-                        mon.add_floating_tile(ws_idx, tile, true);
+                        let ws_id = mon.workspaces[ws_idx].id();
+                        mon.add_tile(
+                            tile,
+                            MonitorAddWindowTarget::Workspace {
+                                id: ws_id,
+                                column_idx: None,
+                            },
+                            ActivateWindow::Yes,
+                            move_.width,
+                            move_.is_full_width,
+                            true,
+                        );
                     }
                 }
 
@@ -3490,18 +3455,23 @@ impl<W: LayoutElement> Layout<W> {
                 tile.animate_move_from(window_render_loc - new_window_render_loc);
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
-                let ws = if let Some(ws) = workspaces.get_mut(0) {
-                    ws
-                } else {
+                if workspaces.is_empty() {
                     workspaces.push(Workspace::new_no_outputs(
                         self.clock.clone(),
                         self.options.clone(),
                     ));
-                    &mut workspaces[0]
-                };
+                }
+                let ws = &mut workspaces[0];
 
                 // No point in trying to use the pointer position without outputs.
-                ws.add_tile(None, move_.tile, true, move_.width, move_.is_full_width);
+                ws.add_tile(
+                    move_.tile,
+                    WorkspaceAddWindowTarget::Auto,
+                    ActivateWindow::Yes,
+                    move_.width,
+                    move_.is_full_width,
+                    move_.is_floating,
+                );
             }
         }
     }
@@ -3894,8 +3864,19 @@ impl<W: LayoutElement> Layout<W> {
         self.windows().any(|(_, win)| win.id() == window)
     }
 
-    fn resolve_default_width(&self, window: &W, width: Option<ColumnWidth>) -> ColumnWidth {
+    fn resolve_default_width(
+        &self,
+        window: &W,
+        width: Option<ColumnWidth>,
+        is_floating: bool,
+    ) -> ColumnWidth {
         let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
+        if is_floating {
+            return width;
+        }
+
+        // Add border width to account for the issue that the scrolling layout currently doesn't
+        // take borders into account for fixed sizes.
         if let ColumnWidth::Fixed(w) = &mut width {
             let rules = window.rules();
             let border_config = rules.border.resolve_against(self.options.border);
@@ -3903,6 +3884,7 @@ impl<W: LayoutElement> Layout<W> {
                 *w += border_config.width.0 * 2.;
             }
         }
+
         width
     }
 }
@@ -4242,10 +4224,10 @@ mod tests {
         AddWindow {
             params: TestWindowParams,
         },
-        AddWindowRightOf {
+        AddWindowNextTo {
             params: TestWindowParams,
             #[proptest(strategy = "1..=5usize")]
-            right_of_id: usize,
+            next_to_id: usize,
         },
         AddWindowToNamedWorkspace {
             params: TestWindowParams,
@@ -4548,25 +4530,26 @@ mod tests {
                     let win = TestWindow::new(params);
                     layout.add_window(
                         win,
+                        AddWindowTarget::Auto,
                         None,
                         false,
                         params.is_floating,
                         ActivateWindow::default(),
                     );
                 }
-                Op::AddWindowRightOf {
+                Op::AddWindowNextTo {
                     mut params,
-                    right_of_id,
+                    next_to_id,
                 } => {
-                    let mut found_right_of = false;
+                    let mut found_next_to = false;
 
                     if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
                         let win_id = move_.tile.window().0.id;
                         if win_id == params.id {
                             return;
                         }
-                        if win_id == right_of_id {
-                            found_right_of = true;
+                        if win_id == next_to_id {
+                            found_next_to = true;
                         }
                     }
 
@@ -4579,8 +4562,8 @@ mod tests {
                                             return;
                                         }
 
-                                        if win.0.id == right_of_id {
-                                            found_right_of = true;
+                                        if win.0.id == next_to_id {
+                                            found_next_to = true;
                                         }
                                     }
                                 }
@@ -4593,15 +4576,15 @@ mod tests {
                                         return;
                                     }
 
-                                    if win.0.id == right_of_id {
-                                        found_right_of = true;
+                                    if win.0.id == next_to_id {
+                                        found_next_to = true;
                                     }
                                 }
                             }
                         }
                     }
 
-                    if !found_right_of {
+                    if !found_next_to {
                         return;
                     }
 
@@ -4612,14 +4595,21 @@ mod tests {
                     }
 
                     let win = TestWindow::new(params);
-                    layout.add_window_right_of(&right_of_id, win, None, false, params.is_floating);
+                    layout.add_window(
+                        win,
+                        AddWindowTarget::NextTo(&next_to_id),
+                        None,
+                        false,
+                        params.is_floating,
+                        ActivateWindow::default(),
+                    );
                 }
                 Op::AddWindowToNamedWorkspace {
                     mut params,
                     ws_name,
                 } => {
                     let ws_name = format!("ws{ws_name}");
-                    let mut found_workspace = false;
+                    let mut ws_id = None;
 
                     if let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move {
                         if move_.tile.window().0.id == params.id {
@@ -4642,7 +4632,7 @@ mod tests {
                                         .as_ref()
                                         .map_or(false, |name| name.eq_ignore_ascii_case(&ws_name))
                                     {
-                                        found_workspace = true;
+                                        ws_id = Some(ws.id());
                                     }
                                 }
                             }
@@ -4660,15 +4650,15 @@ mod tests {
                                     .as_ref()
                                     .map_or(false, |name| name.eq_ignore_ascii_case(&ws_name))
                                 {
-                                    found_workspace = true;
+                                    ws_id = Some(ws.id());
                                 }
                             }
                         }
                     }
 
-                    if !found_workspace {
+                    let Some(ws_id) = ws_id else {
                         return;
-                    }
+                    };
 
                     if let Some(parent_id) = params.parent_id {
                         if parent_id_causes_loop(layout, params.id, parent_id) {
@@ -4677,9 +4667,9 @@ mod tests {
                     }
 
                     let win = TestWindow::new(params);
-                    layout.add_window_to_named_workspace(
-                        &ws_name,
+                    layout.add_window(
                         win,
+                        AddWindowTarget::Workspace(ws_id),
                         None,
                         false,
                         params.is_floating,
@@ -5116,9 +5106,9 @@ mod tests {
             Op::AddWindow {
                 params: TestWindowParams::new(1),
             },
-            Op::AddWindowRightOf {
+            Op::AddWindowNextTo {
                 params: TestWindowParams::new(2),
-                right_of_id: 1,
+                next_to_id: 1,
             },
             Op::AddWindowToNamedWorkspace {
                 params: TestWindowParams::new(3),
@@ -5265,13 +5255,13 @@ mod tests {
             Op::AddWindow {
                 params: TestWindowParams::new(2),
             },
-            Op::AddWindowRightOf {
+            Op::AddWindowNextTo {
                 params: TestWindowParams::new(6),
-                right_of_id: 0,
+                next_to_id: 0,
             },
-            Op::AddWindowRightOf {
+            Op::AddWindowNextTo {
                 params: TestWindowParams::new(7),
-                right_of_id: 1,
+                next_to_id: 1,
             },
             Op::AddWindowToNamedWorkspace {
                 params: TestWindowParams::new(5),
@@ -5663,9 +5653,9 @@ mod tests {
             Op::AddWindow {
                 params: TestWindowParams::new(2),
             },
-            Op::AddWindowRightOf {
+            Op::AddWindowNextTo {
                 params: TestWindowParams::new(3),
-                right_of_id: 1,
+                next_to_id: 1,
             },
         ];
 
@@ -5699,9 +5689,9 @@ mod tests {
             Op::AddWindow {
                 params: TestWindowParams::new(2),
             },
-            Op::AddWindowRightOf {
+            Op::AddWindowNextTo {
                 params: TestWindowParams::new(3),
-                right_of_id: 1,
+                next_to_id: 1,
             },
         ];
 

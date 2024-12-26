@@ -18,7 +18,7 @@ use super::scrolling::{
     Column, ColumnWidth, InsertHint, InsertPosition, ScrollingSpace, ScrollingSpaceRenderElement,
 };
 use super::tile::{Tile, TileRenderSnapshot};
-use super::{InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac};
+use super::{ActivateWindow, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac};
 use crate::animation::Clock;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -155,6 +155,18 @@ enum FloatingActive {
     NoButRaised,
     /// The floating space is active.
     Yes,
+}
+
+/// Where to put a newly added window.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceAddWindowTarget<'a, W: LayoutElement> {
+    /// No particular preference.
+    #[default]
+    Auto,
+    /// As a new column at this index.
+    NewColumnAt(usize),
+    /// Next to this existing window.
+    NextTo(&'a W::Id),
 }
 
 impl OutputId {
@@ -488,55 +500,138 @@ impl<W: LayoutElement> Workspace<W> {
         self.view_size
     }
 
-    pub fn add_window(
-        &mut self,
-        window: W,
-        activate: bool,
-        width: ColumnWidth,
-        is_full_width: bool,
-        is_floating: bool,
-    ) {
-        let mut tile = Tile::new(
+    pub fn make_tile(&self, window: W) -> Tile<W> {
+        Tile::new(
             window,
             self.view_size,
             self.scale.fractional_scale(),
             self.clock.clone(),
             self.options.clone(),
-        );
-        tile.unfullscreen_to_floating = is_floating;
-
-        // If the tile is pending fullscreen, open it in the scrolling layout where it can go
-        // fullscreen.
-        if is_floating && !tile.window().is_pending_fullscreen() {
-            self.add_floating_tile(tile, activate);
-        } else {
-            self.add_tile(None, tile, activate, width, is_full_width);
-        }
+        )
     }
 
     pub fn add_tile(
         &mut self,
-        col_idx: Option<usize>,
-        tile: Tile<W>,
-        activate: bool,
+        mut tile: Tile<W>,
+        target: WorkspaceAddWindowTarget<W>,
+        activate: ActivateWindow,
         width: ColumnWidth,
         is_full_width: bool,
+        is_floating: bool,
     ) {
         self.enter_output_for_window(tile.window());
-        self.scrolling
-            .add_tile(col_idx, tile, activate, width, is_full_width, None);
+        tile.unfullscreen_to_floating = is_floating;
 
-        if activate {
-            self.floating_is_active = FloatingActive::No;
-        }
-    }
+        match target {
+            WorkspaceAddWindowTarget::Auto => {
+                // Don't steal focus from an active fullscreen window.
+                let activate = activate.map_smart(|| !self.is_active_fullscreen());
 
-    pub fn add_floating_tile(&mut self, tile: Tile<W>, activate: bool) {
-        self.enter_output_for_window(tile.window());
-        self.floating.add_tile(tile, activate);
+                // If the tile is pending fullscreen, open it in the scrolling layout where it can
+                // go fullscreen.
+                if is_floating && !tile.window().is_pending_fullscreen() {
+                    self.floating.add_tile(tile, activate);
 
-        if activate || self.scrolling.is_empty() {
-            self.floating_is_active = FloatingActive::Yes;
+                    if activate || self.scrolling.is_empty() {
+                        self.floating_is_active = FloatingActive::Yes;
+                    }
+                } else {
+                    self.scrolling
+                        .add_tile(None, tile, activate, width, is_full_width, None);
+
+                    if activate {
+                        self.floating_is_active = FloatingActive::No;
+                    }
+                }
+            }
+            WorkspaceAddWindowTarget::NewColumnAt(col_idx) => {
+                let activate = activate.map_smart(|| false);
+                self.scrolling
+                    .add_tile(Some(col_idx), tile, activate, width, is_full_width, None);
+
+                if activate {
+                    self.floating_is_active = FloatingActive::No;
+                }
+            }
+            WorkspaceAddWindowTarget::NextTo(next_to) => {
+                let activate = activate.map_smart(|| self.active_window().unwrap().id() == next_to);
+
+                let floating_has_window = self.floating.has_window(next_to);
+                if is_floating || floating_has_window {
+                    if floating_has_window {
+                        self.floating.add_tile_above(next_to, tile, activate);
+                    } else {
+                        // FIXME: use static pos
+                        let (next_to_tile, render_pos) = self
+                            .scrolling
+                            .tiles_with_render_positions()
+                            .find(|(tile, _)| tile.window().id() == next_to)
+                            .unwrap();
+
+                        // Position the new tile in the center above the next_to tile. Think a
+                        // dialog opening on top of a window.
+                        let tile_size = tile.tile_size();
+                        let pos = render_pos
+                            + (next_to_tile.tile_size().to_point() - tile_size.to_point())
+                                .downscale(2.);
+                        let pos = self.floating.clamp_within_working_area(pos, tile_size);
+                        let pos = self.floating.logical_to_size_frac(pos);
+                        tile.floating_pos = Some(pos);
+
+                        self.floating.add_tile(tile, activate);
+
+                        if activate {
+                            self.floating_is_active = FloatingActive::Yes;
+                        }
+                    }
+                } else {
+                    self.scrolling
+                        .add_tile_right_of(next_to, tile, activate, width, is_full_width);
+                }
+
+                // if is_floating && !tile.window().is_pending_fullscreen() {
+                //     if floating_has_window {
+                //         self.floating.add_tile_above(next_to, tile, activate);
+                //     } else {
+                //         // FIXME: use static pos
+                //         let (next_to_tile, render_pos) = self
+                //             .scrolling
+                //             .tiles_with_render_positions()
+                //             .find(|(tile, _)| tile.window().id() == next_to)
+                //             .unwrap();
+                //
+                //         // Position the new tile in the center above the next_to tile. Think a
+                //         // dialog opening on top of a window.
+                //         let tile_size = tile.tile_size();
+                //         let pos = render_pos
+                //             + (next_to_tile.tile_size().to_point() - tile_size.to_point())
+                //                 .downscale(2.);
+                //         let pos = self.floating.clamp_within_working_area(pos, tile_size);
+                //         let pos = self.floating.logical_to_size_frac(pos);
+                //         tile.floating_pos = Some(pos);
+                //
+                //         self.floating.add_tile(tile, activate);
+                //     }
+                //
+                //     if activate || self.scrolling.is_empty() {
+                //         self.floating_is_active = FloatingActive::Yes;
+                //     }
+                // } else if floating_has_window {
+                //     self.scrolling
+                //         .add_tile(None, tile, activate, width, is_full_width, None);
+                //
+                //     if activate {
+                //         self.floating_is_active = FloatingActive::No;
+                //     }
+                // } else {
+                //     self.scrolling
+                //         .add_tile_right_of(next_to, tile, activate, width, is_full_width);
+                //
+                //     if activate {
+                //         self.floating_is_active = FloatingActive::No;
+                //     }
+                // }
+            }
         }
     }
 
@@ -553,70 +648,6 @@ impl<W: LayoutElement> Workspace<W> {
 
         if activate {
             self.floating_is_active = FloatingActive::No;
-        }
-    }
-
-    pub fn add_window_right_of(
-        &mut self,
-        right_of: &W::Id,
-        window: W,
-        width: ColumnWidth,
-        is_full_width: bool,
-        // TODO: smarter enum, so you can override is_floating = false for floating right_of.
-        is_floating: bool,
-    ) {
-        let mut tile = Tile::new(
-            window,
-            self.view_size,
-            self.scale.fractional_scale(),
-            self.clock.clone(),
-            self.options.clone(),
-        );
-        tile.unfullscreen_to_floating = is_floating;
-        self.add_tile_right_of(right_of, tile, width, is_full_width, is_floating);
-    }
-
-    pub fn add_tile_right_of(
-        &mut self,
-        right_of: &W::Id,
-        mut tile: Tile<W>,
-        width: ColumnWidth,
-        is_full_width: bool,
-        is_floating: bool,
-    ) {
-        self.enter_output_for_window(tile.window());
-
-        // TODO: open-fullscreen into scrolling.
-        let floating_has_window = self.floating.has_window(right_of);
-        if is_floating || floating_has_window {
-            if floating_has_window {
-                self.floating.add_tile_above(right_of, tile);
-            } else {
-                let activate = self.scrolling.active_window().unwrap().id() == right_of;
-                // FIXME: use static pos
-                let (right_of_tile, render_pos) = self
-                    .scrolling
-                    .tiles_with_render_positions()
-                    .find(|(tile, _)| tile.window().id() == right_of)
-                    .unwrap();
-
-                // Position the new tile in the center above the right_of tile. Think a dialog
-                // opening on top of a window.
-                let tile_size = tile.tile_size();
-                let pos = render_pos
-                    + (right_of_tile.tile_size().to_point() - tile_size.to_point()).downscale(2.);
-                let pos = self.floating.clamp_within_working_area(pos, tile_size);
-                let pos = self.floating.logical_to_size_frac(pos);
-                tile.floating_pos = Some(pos);
-
-                self.floating.add_tile(tile, activate);
-                if activate {
-                    self.floating_is_active = FloatingActive::Yes;
-                }
-            }
-        } else {
-            self.scrolling
-                .add_tile_right_of(right_of, tile, width, is_full_width);
         }
     }
 
@@ -702,10 +733,12 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn resolve_default_width(
         &self,
         default_width: Option<Option<ColumnWidth>>,
+        is_floating: bool,
     ) -> Option<ColumnWidth> {
         match default_width {
             Some(Some(width)) => Some(width),
             Some(None) => None,
+            None if is_floating => None,
             None => self.options.default_column_width,
         }
     }
