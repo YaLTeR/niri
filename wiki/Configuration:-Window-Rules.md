@@ -98,12 +98,12 @@ There can be multiple *matchers* in one directive, then the window should match 
 ```kdl
 window-rule {
     // Match Firefox windows with Gmail in title.
-    match app-id="org.mozilla.firefox" title="Gmail"
+    match app-id="firefox" title="Gmail"
 }
 
 window-rule {
     // Match Firefox, but only when it is active...
-    match app-id=r#"^org\.mozilla\.firefox$"# is-active=true
+    match app-id="firefox" is-active=true
 
     // ...or match Telegram...
     match app-id=r#"^org\.telegram\.desktop$"#
@@ -248,7 +248,7 @@ If the window opens on an output that is not currently focused, the window will 
 // Open Firefox and Telegram (but not its Media Viewer)
 // on a specific monitor.
 window-rule {
-    match app-id=r#"^org\.mozilla\.firefox$"#
+    match app-id="firefox$"
     match app-id=r#"^org\.telegram\.desktop$"#
     exclude app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
 
@@ -287,7 +287,7 @@ Make the window open as a maximized column.
 ```kdl
 // Maximize Firefox by default.
 window-rule {
-    match app-id=r#"^org\.mozilla\.firefox$"#
+    match app-id="firefox$"
 
     open-maximized true
 }
@@ -323,7 +323,7 @@ Make the window open in the floating layout.
 ```kdl
 // Open the Firefox picture-in-picture window as floating.
 window-rule {
-    match app-id=r#"^org\.mozilla\.firefox$"# title="^Picture-in-Picture$"
+    match app-id="firefox$" title="^Picture-in-Picture$"
 
     open-floating true
 }
@@ -391,7 +391,7 @@ window-rule {
 > ```kdl
 > window-rule {
 >     // Doesn't quite work! Try to block out the Gmail tab.
->     match app-id=r#"^org\.mozilla\.firefox$"# title="- Gmail "
+>     match app-id="firefox$" title="- Gmail "
 >
 >     block-out-from "screencast"
 > }
