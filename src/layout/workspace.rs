@@ -966,8 +966,9 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn toggle_full_width(&mut self) {
-        // TODO
         if self.floating_is_active.get() {
+            // Leave this unimplemented for now. For good UX, this probably needs moving the tile
+            // to be against the left edge of the working area while it is full-width.
             return;
         }
         self.scrolling.toggle_full_width();
