@@ -42,7 +42,7 @@ use crate::input::resize_grab::ResizeGrab;
 use crate::input::touch_move_grab::TouchMoveGrab;
 use crate::input::touch_resize_grab::TouchResizeGrab;
 use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
-use crate::layout::workspace::ColumnWidth;
+use crate::layout::scrolling::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{get_monotonic_time, output_matches_name, send_scale_transform, ResizeEdge};
@@ -609,7 +609,7 @@ impl XdgShellHandler for State {
                 .start_close_animation_for_window(renderer, &window, blocker);
         });
 
-        let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
+        let active_window = self.niri.layout.focus().map(|m| &m.window);
         let was_active = active_window == Some(&window);
 
         self.niri.layout.remove_window(&window, transaction.clone());
@@ -928,8 +928,8 @@ impl State {
         };
 
         // Figure out if the root is a window or a layer surface.
-        if let Some((mapped, output)) = self.niri.layout.find_window_and_output(&root) {
-            self.unconstrain_window_popup(popup, &mapped.window, output);
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&root) {
+            self.unconstrain_window_popup(popup, &mapped.window);
         } else if let Some((layer_surface, output)) = self.niri.layout.outputs().find_map(|o| {
             let map = layer_map_for_output(o);
             let layer_surface = map.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)?;
@@ -939,19 +939,10 @@ impl State {
         }
     }
 
-    fn unconstrain_window_popup(&self, popup: &PopupKind, window: &Window, output: &Output) {
-        let window_geo = window.geometry();
-        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
-
+    fn unconstrain_window_popup(&self, popup: &PopupKind, window: &Window) {
         // The target geometry for the positioner should be relative to its parent's geometry, so
         // we will compute that here.
-        //
-        // We try to keep regular window popups within the window itself horizontally (since the
-        // window can be scrolled to both edges of the screen), but within the whole monitor's
-        // height.
-        let mut target =
-            Rectangle::from_loc_and_size((0, 0), (window_geo.size.w, output_geo.size.h)).to_f64();
-        target.loc -= self.niri.layout.window_loc(window).unwrap();
+        let mut target = self.niri.layout.popup_target_rect(window);
         target.loc -= get_popup_toplevel_coords(popup).to_f64();
 
         self.position_popup_within_rect(popup, target);
@@ -1016,7 +1007,7 @@ impl State {
         }
     }
 
-    pub fn update_reactive_popups(&self, window: &Window, output: &Output) {
+    pub fn update_reactive_popups(&self, window: &Window) {
         let _span = tracy_client::span!("Niri::update_reactive_popups");
 
         for (popup, _) in PopupManager::popups_for_surface(
@@ -1025,7 +1016,7 @@ impl State {
             match &popup {
                 xdg_popup @ PopupKind::Xdg(popup) => {
                     if popup.with_pending_state(|state| state.positioner.reactive) {
-                        self.unconstrain_window_popup(xdg_popup, window, output);
+                        self.unconstrain_window_popup(xdg_popup, window);
                         if let Err(err) = popup.send_pending_configure() {
                             warn!("error re-configuring reactive popup: {err:?}");
                         }

@@ -189,9 +189,8 @@ impl CompositorHandler for State {
                     if let Some(output) = output.cloned() {
                         self.niri.layout.start_open_animation_for_window(&window);
 
-                        let new_active_window =
-                            self.niri.layout.active_window().map(|(m, _)| &m.window);
-                        if new_active_window == Some(&window) {
+                        let new_focus = self.niri.layout.focus().map(|m| &m.window);
+                        if new_focus == Some(&window) {
                             self.maybe_warp_cursor_to_focus();
                         }
 
@@ -242,7 +241,7 @@ impl CompositorHandler for State {
                     // The toplevel got unmapped.
                     //
                     // Test client: wleird-unmap.
-                    let active_window = self.niri.layout.active_window().map(|(m, _)| &m.window);
+                    let active_window = self.niri.layout.focus().map(|m| &m.window);
                     let was_active = active_window == Some(&window);
 
                     #[cfg(feature = "xdp-gnome-screencast")]
@@ -290,7 +289,7 @@ impl CompositorHandler for State {
                 self.niri.layout.update_window(&window, serial);
 
                 // Popup placement depends on window size which might have changed.
-                self.update_reactive_popups(&window, &output);
+                self.update_reactive_popups(&window);
 
                 self.niri.queue_redraw(&output);
                 return;

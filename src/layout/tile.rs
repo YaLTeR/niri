@@ -922,4 +922,15 @@ impl<W: LayoutElement> Tile<W> {
     pub fn take_unmap_snapshot(&mut self) -> Option<TileRenderSnapshot> {
         self.unmap_snapshot.take()
     }
+
+    #[cfg(test)]
+    pub fn verify_invariants(&self) {
+        use approx::assert_abs_diff_eq;
+
+        let scale = self.scale;
+        let size = self.tile_size();
+        let rounded = size.to_physical_precise_round(scale).to_logical(scale);
+        assert_abs_diff_eq!(size.w, rounded.w, epsilon = 1e-5);
+        assert_abs_diff_eq!(size.h, rounded.h, epsilon = 1e-5);
+    }
 }

@@ -26,10 +26,8 @@
         {
           lib,
           cairo,
-          clang,
           dbus,
           libGL,
-          libclang,
           libdisplay-info,
           libinput,
           seatd,
@@ -79,7 +77,7 @@
           strictDeps = true;
 
           nativeBuildInputs = [
-            clang
+            rustPlatform.bindgenHook
             pkg-config
           ];
 
@@ -108,6 +106,15 @@
             ++ lib.optional withSystemd "systemd";
           buildNoDefaultFeatures = true;
 
+          # ever since this commit:
+          # https://github.com/YaLTeR/niri/commit/771ea1e81557ffe7af9cbdbec161601575b64d81
+          # niri now runs an actual instance of the real compositor (with a mock backend) during tests
+          # and thus creates a real socket file in the runtime dir.
+          # this is fine for our build, we just need to make sure it has a directory to write to.
+          preCheck = ''
+            export XDG_RUNTIME_DIR="$(mktemp -d)"
+          '';
+
           postInstall =
             ''
               install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
@@ -119,8 +126,6 @@
             '';
 
           env = {
-            LIBCLANG_PATH = lib.getLib libclang + "/lib";
-
             # Force linking with libEGL and libwayland-client
             # so they can be discovered by `dlopen()`
             RUSTFLAGS = toString (
@@ -191,7 +196,7 @@
             ];
 
             nativeBuildInputs = [
-              pkgs.clang
+              pkgs.rustPlatform.bindgenHook
               pkgs.pkg-config
               pkgs.wrapGAppsHook4 # For `niri-visual-tests`
             ];
@@ -201,8 +206,6 @@
             ];
 
             env = {
-              inherit (niri) LIBCLANG_PATH;
-
               # WARN: Do not overwrite this variable in your shell!
               # It is required for `dlopen()` to work on some libraries; see the comment
               # in the package expression

@@ -1,8 +1,11 @@
+use std::cmp::{max, min};
+
 use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, WindowRule};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::utils::{Logical, Size};
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceRoleAttributes};
 
-use crate::layout::workspace::ColumnWidth;
+use crate::layout::scrolling::ColumnWidth;
 use crate::utils::with_toplevel_role;
 
 pub mod mapped;
@@ -235,6 +238,40 @@ impl ResolvedWindowRules {
         });
 
         resolved
+    }
+
+    pub fn apply_min_size(&self, min_size: Size<i32, Logical>) -> Size<i32, Logical> {
+        let mut size = min_size;
+
+        if let Some(x) = self.min_width {
+            size.w = max(size.w, i32::from(x));
+        }
+        if let Some(x) = self.min_height {
+            size.h = max(size.h, i32::from(x));
+        }
+
+        size
+    }
+
+    pub fn apply_max_size(&self, max_size: Size<i32, Logical>) -> Size<i32, Logical> {
+        let mut size = max_size;
+
+        if let Some(x) = self.max_width {
+            if size.w == 0 {
+                size.w = i32::from(x);
+            } else if x > 0 {
+                size.w = min(size.w, i32::from(x));
+            }
+        }
+        if let Some(x) = self.max_height {
+            if size.h == 0 {
+                size.h = i32::from(x);
+            } else if x > 0 {
+                size.h = min(size.h, i32::from(x));
+            }
+        }
+
+        size
     }
 }
 

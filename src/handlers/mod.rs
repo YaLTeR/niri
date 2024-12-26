@@ -62,8 +62,8 @@ use smithay::{
     delegate_input_method_manager, delegate_output, delegate_pointer_constraints,
     delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
     delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation,
+    delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
@@ -404,6 +404,10 @@ impl SessionLockHandler for State {
 
     fn unlock(&mut self) {
         self.niri.unlock();
+        self.niri.activate_monitors(&mut self.backend);
+        self.niri
+            .idle_notifier_state
+            .notify_activity(&self.niri.seat);
     }
 
     fn new_surface(&mut self, surface: LockSurface, output: WlOutput) {
@@ -697,3 +701,5 @@ delegate_output_management!(State);
 
 impl MutterX11InteropHandler for State {}
 delegate_mutter_x11_interop!(State);
+
+delegate_single_pixel_buffer!(State);

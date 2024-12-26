@@ -1,4 +1,4 @@
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{Cell, LazyCell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -92,6 +92,8 @@ use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
+#[cfg(test)]
+use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
@@ -102,7 +104,7 @@ use smithay::wayland::xdg_foreign::XdgForeignState;
 
 use crate::animation::Clock;
 use crate::backend::tty::SurfaceDmabufFeedback;
-use crate::backend::{Backend, RenderResult, Tty, Winit};
+use crate::backend::{Backend, Headless, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
@@ -263,6 +265,15 @@ pub struct Niri {
     pub activation_state: XdgActivationState,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
 
+    // This will not work as is outside of tests, so it is gated with #[cfg(test)] for now. In
+    // particular, shaders will need to learn about the single pixel buffer. Also, it must be
+    // verified that a black single-pixel-buffer background lets the foreground surface to be
+    // unredirected.
+    //
+    // https://github.com/YaLTeR/niri/issues/619
+    #[cfg(test)]
+    pub single_pixel_buffer_state: SinglePixelBufferState,
+
     pub seat: Seat<State>,
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<Keycode>,
@@ -327,7 +338,7 @@ pub struct Niri {
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
-    pub pipewire: Option<PipeWire>,
+    pub pipewire: LazyCell<Option<PipeWire>, Box<dyn FnOnce() -> Option<PipeWire>>>,
 
     // Screencast output for each mapped window.
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -520,6 +531,7 @@ impl State {
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
+        headless: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -528,7 +540,10 @@ impl State {
         let has_display =
             env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
 
-        let mut backend = if has_display {
+        let mut backend = if headless {
+            let headless = Headless::new();
+            Backend::Headless(headless)
+        } else if has_display {
             let winit = Winit::new(config.clone(), event_loop.clone())?;
             Backend::Winit(winit)
         } else {
@@ -1486,6 +1501,8 @@ impl State {
 
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
+        use smithay::reexports::gbm::Modifier;
+
         use crate::dbus::mutter_screen_cast::StreamTargetId;
 
         match msg {
@@ -1502,13 +1519,15 @@ impl State {
                 let gbm = match self.backend.gbm_device() {
                     Some(gbm) => gbm,
                     None => {
-                        debug!("no GBM device available");
+                        warn!("error starting screencast: no GBM device available");
+                        self.niri.stop_cast(session_id);
                         return;
                     }
                 };
 
-                let Some(pw) = &self.niri.pipewire else {
-                    error!("screencasting must be disabled if PipeWire is missing");
+                let Some(pw) = &*self.niri.pipewire else {
+                    warn!("error starting screencast: PipeWire failed to initialize");
+                    self.niri.stop_cast(session_id);
                     return;
                 };
 
@@ -1560,12 +1579,22 @@ impl State {
                     }
                 };
 
-                let render_formats = self
+                let mut render_formats = self
                     .backend
                     .with_primary_renderer(|renderer| {
                         renderer.egl_context().dmabuf_render_formats().clone()
                     })
                     .unwrap_or_default();
+
+                {
+                    let config = self.niri.config.borrow();
+                    if config.debug.force_pipewire_invalid_modifier {
+                        render_formats = render_formats
+                            .into_iter()
+                            .filter(|f| f.modifier == Modifier::Invalid)
+                            .collect();
+                    }
+                }
 
                 let res = pw.start_cast(
                     gbm,
@@ -1800,6 +1829,9 @@ impl Niri {
         let mutter_x11_interop_state =
             MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
 
+        #[cfg(test)]
+        let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
+
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
@@ -1870,13 +1902,14 @@ impl Niri {
             }
         };
 
-        let pipewire = match PipeWire::new(&event_loop) {
+        let loop_handle = event_loop.clone();
+        let pipewire = LazyCell::new(Box::new(move || match PipeWire::new(&loop_handle) {
             Ok(pipewire) => Some(pipewire),
             Err(err) => {
                 warn!("error connecting to PipeWire, screencasting will not work: {err:?}");
                 None
             }
-        };
+        }) as _);
 
         let display_source = Generic::new(display, Interest::READ, Mode::Level);
         event_loop
@@ -1971,6 +2004,8 @@ impl Niri {
             gamma_control_manager_state,
             activation_state,
             mutter_x11_interop_state,
+            #[cfg(test)]
+            single_pixel_buffer_state,
 
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
@@ -2408,7 +2443,19 @@ impl Niri {
 
         // Check if some layer-shell surface is on top.
         let layers = layer_map_for_output(output);
-        let layer_under = |layer| layers.layer_under(layer, pos_within_output).is_some();
+        let layer_under = |layer| {
+            layers
+                .layer_under(layer, pos_within_output)
+                .and_then(|layer| {
+                    let layer_pos_within_output =
+                        layers.layer_geometry(layer).unwrap().loc.to_f64();
+                    layer.surface_under(
+                        pos_within_output - layer_pos_within_output,
+                        WindowSurfaceType::ALL,
+                    )
+                })
+                .is_some()
+        };
         if layer_under(Layer::Overlay) {
             return None;
         }

@@ -96,7 +96,7 @@ jobs:
     strategy:
       fail-fast: false
 
-    name: 'msrv - 1.77.0'
+    name: 'msrv - 1.80.0'
     runs-on: ubuntu-24.04
 
     steps:
@@ -109,7 +109,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libadwaita-1-dev libdisplay-info-dev
 
-      - uses: dtolnay/rust-toolchain@1.77.0
+      - uses: dtolnay/rust-toolchain@1.80.0
 
       - uses: Swatinem/rust-cache@v2
 
