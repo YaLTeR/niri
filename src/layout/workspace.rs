@@ -11,7 +11,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::scrolling::{
-    Column, ColumnWidth, InsertHint, InsertPosition, ScrollingSpace, ScrollingSpaceRenderElement,
+    Column, ColumnWidth, InsertHint, InsertPosition, ScrollDirection, ScrollingSpace,
+    ScrollingSpaceRenderElement,
 };
 use super::tile::{Tile, TileRenderSnapshot};
 use super::{InteractiveResizeData, LayoutElement, Options, RemovedTile};
@@ -642,6 +643,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn expel_from_column(&mut self) {
         self.scrolling.expel_from_column();
+    }
+
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+        self.scrolling.swap_window_in_direction(direction);
     }
 
     pub fn center_column(&mut self) {

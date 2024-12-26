@@ -1254,6 +1254,8 @@ pub enum Action {
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,
     MoveWorkspaceToMonitorUp,
+    SwapWindowLeft,
+    SwapWindowRight,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1386,6 +1388,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,
+            niri_ipc::Action::SwapWindowRight {} => Self::SwapWindowRight,
+            niri_ipc::Action::SwapWindowLeft {} => Self::SwapWindowLeft,
         }
     }
 }
