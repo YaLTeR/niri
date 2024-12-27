@@ -126,6 +126,32 @@ impl CompositorHandler for State {
                     // moment, that is here.
                     let is_floating = rules.compute_open_floating(toplevel);
 
+                    // Figure out if we should activate the window.
+                    let activate = rules.open_focused.map(|focus| {
+                        if focus {
+                            ActivateWindow::Yes
+                        } else {
+                            ActivateWindow::No
+                        }
+                    });
+                    let activate = activate.unwrap_or_else(|| {
+                        // Check the token timestamp again in case the window took a while between
+                        // requesting activation and mapping.
+                        let token = activation_token_data.filter(|token| {
+                            token.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT
+                        });
+                        if token.is_some() {
+                            ActivateWindow::Yes
+                        } else {
+                            let config = self.niri.config.borrow();
+                            if config.debug.strict_new_window_focus_policy {
+                                ActivateWindow::No
+                            } else {
+                                ActivateWindow::Smart
+                            }
+                        }
+                    });
+
                     let parent = toplevel
                         .parent()
                         .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
@@ -145,22 +171,6 @@ impl CompositorHandler for State {
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
                     let mapped = Mapped::new(window, rules, hook);
                     let window = mapped.window.clone();
-
-                    // Check the token timestamp again in case the window took a while between
-                    // requesting activation and mapping.
-                    let activate = match activation_token_data
-                        .filter(|token| token.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT)
-                    {
-                        Some(_) => ActivateWindow::Yes,
-                        None => {
-                            let config = self.niri.config.borrow();
-                            if config.debug.strict_new_window_focus_policy {
-                                ActivateWindow::No
-                            } else {
-                                ActivateWindow::Smart
-                            }
-                        }
-                    };
 
                     let target = if let Some(p) = &parent {
                         // Open dialogs next to their parent window.
