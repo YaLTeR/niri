@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{OutputName, Workspace as WorkspaceConfig};
+use niri_config::{OutputName, PresetSize, Workspace as WorkspaceConfig};
 use niri_ipc::SizeChange;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -715,15 +715,30 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn resolve_default_height(
+        &self,
+        default_height: Option<Option<PresetSize>>,
+        is_floating: bool,
+    ) -> Option<PresetSize> {
+        match default_height {
+            Some(Some(height)) => Some(height),
+            Some(None) => None,
+            None if is_floating => None,
+            // We don't have a global default at the moment.
+            None => None,
+        }
+    }
+
     pub fn new_window_size(
         &self,
         width: Option<ColumnWidth>,
+        height: Option<PresetSize>,
         is_floating: bool,
         rules: &ResolvedWindowRules,
         (min_size, max_size): (Size<i32, Logical>, Size<i32, Logical>),
     ) -> Size<i32, Logical> {
         let mut size = if is_floating {
-            self.floating.new_window_size(width, rules)
+            self.floating.new_window_size(width, height, rules)
         } else {
             self.scrolling.new_window_size(width, rules)
         };
@@ -749,6 +764,7 @@ impl<W: LayoutElement> Workspace<W> {
         &self,
         window: &Window,
         width: Option<ColumnWidth>,
+        height: Option<PresetSize>,
         is_floating: bool,
         rules: &ResolvedWindowRules,
     ) {
@@ -766,7 +782,8 @@ impl<W: LayoutElement> Workspace<W> {
             if state.states.contains(xdg_toplevel::State::Fullscreen) {
                 state.size = Some(self.view_size.to_i32_round());
             } else {
-                let size = self.new_window_size(width, is_floating, rules, (min_size, max_size));
+                let size =
+                    self.new_window_size(width, height, is_floating, rules, (min_size, max_size));
                 state.size = Some(size);
             }
 

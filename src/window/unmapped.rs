@@ -1,3 +1,4 @@
+use niri_config::PresetSize;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::wayland::shell::xdg::ToplevelSurface;
@@ -39,6 +40,11 @@ pub enum InitialConfigureState {
         ///
         /// `None` means that the window will pick its own width.
         floating_width: Option<ColumnWidth>,
+
+        /// Resolved floating default height for this window.
+        ///
+        /// `None` means that the window will pick its own height.
+        floating_height: Option<PresetSize>,
 
         /// Whether the window should open full-width.
         is_full_width: bool,

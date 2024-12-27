@@ -1102,9 +1102,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
         width.resolve_no_gaps(&self.options, self.working_area.size.w)
     }
 
+    pub fn resolve_height(&self, height: PresetSize) -> ResolvedSize {
+        resolve_preset_size(height, self.working_area.size.h)
+    }
+
     pub fn new_window_size(
         &self,
         width: Option<ColumnWidth>,
+        height: Option<PresetSize>,
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
         let border = rules.border.resolve_against(self.options.border);
@@ -1125,7 +1130,23 @@ impl<W: LayoutElement> FloatingSpace<W> {
             0
         };
 
-        Size::from((width, 0))
+        let height = if let Some(height) = height {
+            let height = match self.resolve_height(height) {
+                ResolvedSize::Tile(mut size) => {
+                    if !border.off {
+                        size -= border.width.0 * 2.;
+                    }
+                    size
+                }
+                ResolvedSize::Window(size) => size,
+            };
+
+            max(1, height.floor() as i32)
+        } else {
+            0
+        };
+
+        Size::from((width, height))
     }
 
     #[cfg(test)]

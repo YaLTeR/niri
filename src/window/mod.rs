@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 
-use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, WindowRule};
+use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, PresetSize, WindowRule};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Size};
 use smithay::wayland::compositor::with_states;
@@ -33,6 +33,13 @@ pub struct ResolvedWindowRules {
     /// - `Some(None)`: set to empty (window picks its own width).
     /// - `Some(Some(width))`: set to a particular width.
     pub default_width: Option<Option<ColumnWidth>>,
+
+    /// Default height for this window.
+    ///
+    /// - `None`: unset (global default should be used).
+    /// - `Some(None)`: set to empty (window picks its own height).
+    /// - `Some(Some(width))`: set to a particular height.
+    pub default_height: Option<Option<PresetSize>>,
 
     /// Output to open this window on.
     pub open_on_output: Option<String>,
@@ -114,6 +121,7 @@ impl ResolvedWindowRules {
     pub const fn empty() -> Self {
         Self {
             default_width: None,
+            default_height: None,
             open_on_output: None,
             open_on_workspace: None,
             open_maximized: None,
@@ -190,6 +198,10 @@ impl ResolvedWindowRules {
                     .map(|d| d.0.map(ColumnWidth::from))
                 {
                     resolved.default_width = Some(x);
+                }
+
+                if let Some(x) = rule.default_window_height {
+                    resolved.default_height = Some(x.0);
                 }
 
                 if let Some(x) = rule.open_on_output.as_deref() {
