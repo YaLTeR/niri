@@ -2933,7 +2933,7 @@ pub fn set_miette_hook() -> Result<(), miette::InstallError> {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_debug_snapshot;
+    use insta::{assert_debug_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -3850,5 +3850,62 @@ mod tests {
 ]
 "#
         );
+    }
+
+    #[test]
+    fn test_border_rule_on_off_merging() {
+        fn is_on(config: &str, rules: &[&str]) -> String {
+            let mut resolved = BorderRule {
+                off: false,
+                on: false,
+                width: None,
+                active_color: None,
+                inactive_color: None,
+                active_gradient: None,
+                inactive_gradient: None,
+            };
+
+            for rule in rules.iter().copied() {
+                let rule = BorderRule {
+                    off: rule == "off" || rule == "off,on",
+                    on: rule == "on" || rule == "off,on",
+                    ..Default::default()
+                };
+
+                resolved.merge_with(&rule);
+            }
+
+            let config = Border {
+                off: config == "off",
+                ..Default::default()
+            };
+
+            if resolved.resolve_against(config).off {
+                "off"
+            } else {
+                "on"
+            }
+            .to_owned()
+        }
+
+        assert_snapshot!(is_on("off", &[]), @"off");
+        assert_snapshot!(is_on("off", &["off"]), @"off");
+        assert_snapshot!(is_on("off", &["on"]), @"on");
+        assert_snapshot!(is_on("off", &["off,on"]), @"on");
+
+        assert_snapshot!(is_on("on", &[]), @"on");
+        assert_snapshot!(is_on("on", &["off"]), @"off");
+        assert_snapshot!(is_on("on", &["on"]), @"on");
+        assert_snapshot!(is_on("on", &["off,on"]), @"on");
+
+        assert_snapshot!(is_on("off", &["off", "off"]), @"off");
+        assert_snapshot!(is_on("off", &["off", "on"]), @"on");
+        assert_snapshot!(is_on("off", &["on", "off"]), @"on");
+        assert_snapshot!(is_on("off", &["on", "on"]), @"on");
+
+        assert_snapshot!(is_on("on", &["off", "off"]), @"off");
+        assert_snapshot!(is_on("on", &["off", "on"]), @"on");
+        assert_snapshot!(is_on("on", &["on", "off"]), @"on");
+        assert_snapshot!(is_on("on", &["on", "on"]), @"on");
     }
 }
