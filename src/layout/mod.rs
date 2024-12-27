@@ -54,6 +54,7 @@ pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{OutputId, Workspace};
 use crate::animation::Clock;
+use crate::layout::scrolling::ScrollDirection;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
@@ -1950,6 +1951,13 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.expel_from_column();
+    }
+
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.swap_window_in_direction(direction);
     }
 
     pub fn center_column(&mut self) {

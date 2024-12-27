@@ -430,6 +430,10 @@ pub enum Action {
     DebugToggleOpaqueRegions {},
     /// Toggle visualization of output damage.
     DebugToggleDamage {},
+    /// Swap focused window with one to the right
+    SwapWindowRight {},
+    /// Swap focused window with one to the left
+    SwapWindowLeft {},
 }
 
 /// Change in window or column size.
