@@ -220,6 +220,8 @@ impl LayoutElement for TestWindow {
 
     fn set_active_in_column(&mut self, _active: bool) {}
 
+    fn set_floating(&mut self, _floating: bool) {}
+
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
     fn configure_intent(&self) -> ConfigureIntent {

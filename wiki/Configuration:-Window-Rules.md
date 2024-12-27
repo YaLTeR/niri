@@ -33,6 +33,7 @@ window-rule {
     match is-active=true
     match is-focused=false
     match is-active-in-column=true
+    match is-floating=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -195,6 +196,23 @@ It is the window that was last focused in the column, i.e. the one that will gai
 ```kdl
 window-rule {
     match is-active-in-column=true
+}
+```
+
+#### `is-floating`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches floating windows.
+
+> [!NOTE]
+> This matcher will apply only after the window is already open.
+> This means that you cannot use it to change the window opening properties like `default-window-height` or `open-on-workspace`.
+
+```kdl
+window-rule {
+    match is-floating=true
 }
 ```
 

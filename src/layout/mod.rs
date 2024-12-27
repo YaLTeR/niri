@@ -186,6 +186,7 @@ pub trait LayoutElement {
     fn set_offscreen_element_id(&self, id: Option<Id>);
     fn set_activated(&mut self, active: bool);
     fn set_active_in_column(&mut self, active: bool);
+    fn set_floating(&mut self, floating: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
 
     fn configure_intent(&self) -> ConfigureIntent;
@@ -3746,6 +3747,7 @@ impl<W: LayoutElement> Layout<W> {
             let win = move_.tile.window_mut();
 
             win.set_active_in_column(true);
+            win.set_floating(move_.is_floating);
             win.set_activated(true);
 
             win.set_interactive_resize(None);
@@ -4073,6 +4075,8 @@ mod tests {
         fn send_pending_configure(&mut self) {}
 
         fn set_active_in_column(&mut self, _active: bool) {}
+
+        fn set_floating(&mut self, _floating: bool) {}
 
         fn is_fullscreen(&self) -> bool {
             false
