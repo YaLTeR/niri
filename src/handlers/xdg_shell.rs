@@ -459,7 +459,7 @@ impl XdgShellHandler for State {
                         toplevel.with_pending_state(|state| {
                             state.states.set(xdg_toplevel::State::Fullscreen);
                         });
-                        ws.configure_new_window(&unmapped.window, None, false, rules);
+                        ws.configure_new_window(&unmapped.window, None, None, false, rules);
                     }
 
                     // We already sent the initial configure, so we need to reconfigure.
@@ -495,6 +495,7 @@ impl XdgShellHandler for State {
                     rules,
                     width,
                     floating_width,
+                    floating_height,
                     is_full_width,
                     output,
                     workspace_name,
@@ -557,9 +558,11 @@ impl XdgShellHandler for State {
                         } else {
                             *width
                         };
+                        let configure_height = if is_floating { *floating_height } else { None };
                         ws.configure_new_window(
                             &unmapped.window,
                             configure_width,
+                            configure_height,
                             is_floating,
                             rules,
                         );
@@ -840,6 +843,7 @@ impl State {
 
         let mut width = None;
         let mut floating_width = None;
+        let mut floating_height = None;
         let is_full_width = rules.open_maximized.unwrap_or(false);
         let is_floating = rules.compute_open_floating(toplevel);
 
@@ -865,6 +869,7 @@ impl State {
 
             width = ws.resolve_default_width(rules.default_width, false);
             floating_width = ws.resolve_default_width(rules.default_width, true);
+            floating_height = ws.resolve_default_height(rules.default_height, true);
 
             let configure_width = if is_floating {
                 floating_width
@@ -873,7 +878,14 @@ impl State {
             } else {
                 width
             };
-            ws.configure_new_window(window, configure_width, is_floating, &rules);
+            let configure_height = if is_floating { floating_height } else { None };
+            ws.configure_new_window(
+                window,
+                configure_width,
+                configure_height,
+                is_floating,
+                &rules,
+            );
         }
 
         // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
@@ -892,6 +904,7 @@ impl State {
             rules,
             width,
             floating_width,
+            floating_height,
             is_full_width,
             output,
             workspace_name: ws.and_then(|w| w.name().cloned()),

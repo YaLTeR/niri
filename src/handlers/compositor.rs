@@ -101,6 +101,7 @@ impl CompositorHandler for State {
                             rules,
                             width,
                             floating_width: _,
+                            floating_height: _,
                             is_full_width,
                             output,
                             workspace_name,

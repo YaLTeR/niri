@@ -401,6 +401,12 @@ fn target_size() {
         Some(DefaultSize::Proportion("0.25")),
         Some(DefaultSize::Fixed("1000")),
     ];
+    let default_window_height = [
+        None,
+        Some(DefaultSize::WindowChooses),
+        Some(DefaultSize::Proportion("0.5")),
+        Some(DefaultSize::Fixed("500")),
+    ];
     let border = [false, true];
 
     let mut powerset = Vec::new();
@@ -409,8 +415,10 @@ fn target_size() {
             for om in open_maximized {
                 for of in open_floating {
                     for dw in default_column_width {
-                        for b in border {
-                            powerset.push((fs, wfs, om, of, dw, b));
+                        for dh in default_window_height {
+                            for b in border {
+                                powerset.push((fs, wfs, om, of, dw, dh, b));
+                            }
                         }
                     }
                 }
@@ -420,8 +428,8 @@ fn target_size() {
 
     powerset
         .into_par_iter()
-        .for_each(|(fs, wfs, om, of, dw, b)| {
-            check_target_size(fs, wfs, om, of, dw, b);
+        .for_each(|(fs, wfs, om, of, dw, dh, b)| {
+            check_target_size(fs, wfs, om, of, dw, dh, b);
         });
 }
 
@@ -431,6 +439,7 @@ fn check_target_size(
     open_maximized: Option<&str>,
     open_floating: Option<&str>,
     default_width: Option<DefaultSize>,
+    default_height: Option<DefaultSize>,
     border: bool,
 ) {
     let mut snapshot_desc = Vec::new();
@@ -472,6 +481,17 @@ window-rule {
         writeln!(config, "    default-column-width {{ {value} }}").unwrap();
 
         snapshot_suffix.push(format!("dw{x}"));
+    }
+
+    if let Some(x) = default_height {
+        let value = match x {
+            DefaultSize::WindowChooses => String::new(),
+            DefaultSize::Proportion(prop) => format!("proportion {prop};"),
+            DefaultSize::Fixed(fixed) => format!("fixed {fixed};"),
+        };
+        writeln!(config, "    default-window-height {{ {value} }}").unwrap();
+
+        snapshot_suffix.push(format!("dh{x}"));
     }
 
     if border {

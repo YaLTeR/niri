@@ -705,7 +705,7 @@ pub enum PresetSize {
     Fixed(#[knuffel(argument)] i32),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultPresetSize(pub Option<PresetSize>);
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
@@ -975,6 +975,8 @@ pub struct WindowRule {
     // Rules applied at initial configure.
     #[knuffel(child)]
     pub default_column_width: Option<DefaultPresetSize>,
+    #[knuffel(child)]
+    pub default_window_height: Option<DefaultPresetSize>,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
     #[knuffel(child, unwrap(argument))]
@@ -3145,6 +3147,7 @@ mod tests {
                 open-fullscreen false
                 open-floating false
                 open-focused true
+                default-window-height { fixed 500; }
 
                 focus-ring {
                     off
@@ -3425,6 +3428,7 @@ mod tests {
                     open_fullscreen: Some(false),
                     open_floating: Some(false),
                     open_focused: Some(true),
+                    default_window_height: Some(DefaultPresetSize(Some(PresetSize::Fixed(500)))),
                     focus_ring: BorderRule {
                         off: true,
                         width: Some(FloatOrInt(3.)),

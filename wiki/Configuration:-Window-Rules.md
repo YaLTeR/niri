@@ -37,6 +37,7 @@ window-rule {
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
+    default-window-height { fixed 500; }
     open-on-output "Some Company CoolMonitor 1234"
     open-on-workspace "chat"
     open-maximized true
@@ -234,6 +235,21 @@ window-rule {
     match app-id="^gimp"
 
     default-column-width { fixed 1200; }
+}
+```
+
+#### `default-window-height`
+
+<sup>Since: next release</sup>
+
+Set the default height for the new window if it opens as floating.
+
+```kdl
+// Make Alacritty take 50% of the screen height on opening.
+window-rule {
+    match app-id="^Alacritty$"
+
+    default-window-height { proportion 0.5; }
 }
 ```
 
