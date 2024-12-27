@@ -66,6 +66,9 @@ pub struct Mapped {
     /// Whether this window is the active window in its column.
     is_active_in_column: bool,
 
+    /// Whether this window is floating.
+    is_floating: bool,
+
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
 
@@ -163,6 +166,7 @@ impl Mapped {
             need_to_recompute_rules: false,
             is_focused: false,
             is_active_in_column: false,
+            is_floating: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
             animate_serials: Vec::new(),
@@ -218,6 +222,10 @@ impl Mapped {
 
     pub fn is_active_in_column(&self) -> bool {
         self.is_active_in_column
+    }
+
+    pub fn is_floating(&self) -> bool {
+        self.is_floating
     }
 
     pub fn set_is_focused(&mut self, is_focused: bool) {
@@ -687,6 +695,12 @@ impl LayoutElement for Mapped {
     fn set_active_in_column(&mut self, active: bool) {
         let changed = self.is_active_in_column != active;
         self.is_active_in_column = active;
+        self.need_to_recompute_rules |= changed;
+    }
+
+    fn set_floating(&mut self, floating: bool) {
+        let changed = self.is_floating != floating;
+        self.is_floating = floating;
         self.need_to_recompute_rules |= changed;
     }
 

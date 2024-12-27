@@ -1029,6 +1029,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             let win = tile.window_mut();
 
             win.set_active_in_column(true);
+            win.set_floating(true);
 
             let is_active = is_active && Some(win.id()) == active.as_ref();
             win.set_activated(is_active);

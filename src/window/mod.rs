@@ -115,6 +115,21 @@ impl<'a> WindowRef<'a> {
             WindowRef::Mapped(mapped) => mapped.is_active_in_column(),
         }
     }
+
+    pub fn is_floating(self) -> bool {
+        match self {
+            // FIXME: This means you cannot set initial configure rules based on is-floating. I'm
+            // not sure there's a good way to support it, since this matcher makes a cycle with the
+            // open-floating rule.
+            //
+            // That said, I don't think there are a lot of useful initial configure properties you
+            // may want to set through an is-floating matcher? Like, if you're configuring a
+            // specific window to open as floating, you can also set those properties in that same
+            // window rule, rather than relying on a different is-floating rule.
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_floating(),
+        }
+    }
 }
 
 impl ResolvedWindowRules {
@@ -377,6 +392,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_active_in_column) = m.is_active_in_column {
         if window.is_active_in_column() != is_active_in_column {
+            return false;
+        }
+    }
+
+    if let Some(is_floating) = m.is_floating {
+        if window.is_floating() != is_floating {
             return false;
         }
     }
