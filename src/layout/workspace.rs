@@ -723,7 +723,7 @@ impl<W: LayoutElement> Workspace<W> {
         (min_size, max_size): (Size<i32, Logical>, Size<i32, Logical>),
     ) -> Size<i32, Logical> {
         let mut size = if is_floating {
-            Size::from((0, 0))
+            self.floating.new_window_size(width, rules)
         } else {
             self.scrolling.new_window_size(width, rules)
         };
