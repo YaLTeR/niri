@@ -49,6 +49,9 @@ pub struct ResolvedWindowRules {
     /// Whether the window should open floating.
     pub open_floating: Option<bool>,
 
+    /// Whether the window should open focused.
+    pub open_focused: Option<bool>,
+
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
     /// Extra bound on the minimum window height.
@@ -116,6 +119,7 @@ impl ResolvedWindowRules {
             open_maximized: None,
             open_fullscreen: None,
             open_floating: None,
+            open_focused: None,
             min_width: None,
             min_height: None,
             max_width: None,
@@ -206,6 +210,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_floating {
                     resolved.open_floating = Some(x);
+                }
+
+                if let Some(x) = rule.open_focused {
+                    resolved.open_focused = Some(x);
                 }
 
                 if let Some(x) = rule.min_width {

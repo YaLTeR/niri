@@ -985,6 +985,8 @@ pub struct WindowRule {
     pub open_fullscreen: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_floating: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_focused: Option<bool>,
 
     // Rules applied dynamically.
     #[knuffel(child, unwrap(argument))]
@@ -3142,6 +3144,7 @@ mod tests {
                 open-maximized true
                 open-fullscreen false
                 open-floating false
+                open-focused true
 
                 focus-ring {
                     off
@@ -3421,6 +3424,7 @@ mod tests {
                     open_maximized: Some(true),
                     open_fullscreen: Some(false),
                     open_floating: Some(false),
+                    open_focused: Some(true),
                     focus_ring: BorderRule {
                         off: true,
                         width: Some(FloatOrInt(3.)),

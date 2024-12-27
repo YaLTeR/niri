@@ -42,6 +42,7 @@ window-rule {
     open-maximized true
     open-fullscreen true
     open-floating true
+    open-focused false
 
     // Properties that apply continuously.
     draw-border-with-background false
@@ -335,6 +336,35 @@ You can also set this to `false` to *prevent* a window from opening in the float
 // Open all windows in the tiling layout, overriding any auto-floating logic.
 window-rule {
     open-floating false
+}
+```
+
+#### `open-focused`
+
+<sup>Since: next release</sup>
+
+Set this to `false` to prevent this window from being automatically focused upon opening.
+
+```kdl
+// Don't give focus to the GIMP startup splash screen.
+window-rule {
+    match app-id="^gimp" title="^GIMP Startup$"
+
+    open-focused false
+}
+```
+
+You can also set this to `true` to focus the window, even if normally it wouldn't get auto-focused.
+
+```kdl
+// Always focus the KeePassXC-Browser unlock dialog.
+//
+// This dialog opens parented to the KeePassXC window rather than the browser,
+// so it doesn't get auto-focused by default.
+window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"# title="^Unlock Database - KeePassXC$"
+
+    open-focused true
 }
 ```
 
