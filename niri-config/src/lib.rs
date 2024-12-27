@@ -1589,8 +1589,15 @@ impl Default for Config {
 
 impl BorderRule {
     pub fn merge_with(&mut self, other: &Self) {
-        self.off |= other.off;
-        self.on |= other.on;
+        if other.off {
+            self.off = true;
+            self.on = false;
+        }
+
+        if other.on {
+            self.off = false;
+            self.on = true;
+        }
 
         if let Some(x) = other.width {
             self.width = Some(x);
@@ -3900,12 +3907,12 @@ mod tests {
 
         assert_snapshot!(is_on("off", &["off", "off"]), @"off");
         assert_snapshot!(is_on("off", &["off", "on"]), @"on");
-        assert_snapshot!(is_on("off", &["on", "off"]), @"on");
+        assert_snapshot!(is_on("off", &["on", "off"]), @"off");
         assert_snapshot!(is_on("off", &["on", "on"]), @"on");
 
         assert_snapshot!(is_on("on", &["off", "off"]), @"off");
         assert_snapshot!(is_on("on", &["off", "on"]), @"on");
-        assert_snapshot!(is_on("on", &["on", "off"]), @"on");
+        assert_snapshot!(is_on("on", &["on", "off"]), @"off");
         assert_snapshot!(is_on("on", &["on", "on"]), @"on");
     }
 }
