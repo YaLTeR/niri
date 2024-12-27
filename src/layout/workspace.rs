@@ -25,7 +25,10 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
-use crate::utils::{ensure_min_max_size, output_size, send_scale_transform, ResizeEdge};
+use crate::utils::{
+    ensure_min_max_size, ensure_min_max_size_maybe_zero, output_size, send_scale_transform,
+    ResizeEdge,
+};
 use crate::window::ResolvedWindowRules;
 
 #[derive(Debug)]
@@ -729,9 +732,7 @@ impl<W: LayoutElement> Workspace<W> {
         // size. This is to ensure that a fixed-size window rule works on open, while still
         // allowing the window freedom to pick its default size otherwise.
         let (min_size, max_size) = rules.apply_min_max_size(min_size, max_size);
-        if size.w > 0 || min_size.w == max_size.w {
-            size.w = ensure_min_max_size(size.w, min_size.w, max_size.w);
-        }
+        size.w = ensure_min_max_size_maybe_zero(size.w, min_size.w, max_size.w);
         // For scrolling (where height is > 0) only ensure fixed height, since at runtime scrolling
         // will only honor fixed height currently.
         if min_size.h == max_size.h {
