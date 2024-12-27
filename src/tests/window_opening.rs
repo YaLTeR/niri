@@ -133,18 +133,18 @@ impl fmt::Display for SetParent {
 }
 
 #[derive(Clone, Copy)]
-enum DefaultWidth {
+enum DefaultSize {
     WindowChooses,
     Proportion(&'static str),
     Fixed(&'static str),
 }
 
-impl fmt::Display for DefaultWidth {
+impl fmt::Display for DefaultSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DefaultWidth::WindowChooses => write!(f, "U"),
-            DefaultWidth::Proportion(prop) => write!(f, "P{prop}"),
-            DefaultWidth::Fixed(fixed) => write!(f, "F{fixed}"),
+            DefaultSize::WindowChooses => write!(f, "U"),
+            DefaultSize::Proportion(prop) => write!(f, "P{prop}"),
+            DefaultSize::Fixed(fixed) => write!(f, "F{fixed}"),
         }
     }
 }
@@ -397,9 +397,9 @@ fn target_size() {
     let open_floating = [None, Some("true")];
     let default_column_width = [
         None,
-        Some(DefaultWidth::WindowChooses),
-        Some(DefaultWidth::Proportion("0.25")),
-        Some(DefaultWidth::Fixed("1000")),
+        Some(DefaultSize::WindowChooses),
+        Some(DefaultSize::Proportion("0.25")),
+        Some(DefaultSize::Fixed("1000")),
     ];
     let border = [false, true];
 
@@ -430,7 +430,7 @@ fn check_target_size(
     want_fullscreen: WantFullscreen,
     open_maximized: Option<&str>,
     open_floating: Option<&str>,
-    default_width: Option<DefaultWidth>,
+    default_width: Option<DefaultSize>,
     border: bool,
 ) {
     let mut snapshot_desc = Vec::new();
@@ -465,9 +465,9 @@ window-rule {
 
     if let Some(x) = default_width {
         let value = match x {
-            DefaultWidth::WindowChooses => String::new(),
-            DefaultWidth::Proportion(prop) => format!("proportion {prop};"),
-            DefaultWidth::Fixed(fixed) => format!("fixed {fixed};"),
+            DefaultSize::WindowChooses => String::new(),
+            DefaultSize::Proportion(prop) => format!("proportion {prop};"),
+            DefaultSize::Fixed(fixed) => format!("fixed {fixed};"),
         };
         writeln!(config, "    default-column-width {{ {value} }}").unwrap();
 
