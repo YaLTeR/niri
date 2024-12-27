@@ -494,6 +494,7 @@ impl XdgShellHandler for State {
                 InitialConfigureState::Configured {
                     rules,
                     width,
+                    floating_width,
                     is_full_width,
                     output,
                     workspace_name,
@@ -548,12 +549,14 @@ impl XdgShellHandler for State {
                             state.states.unset(xdg_toplevel::State::Fullscreen);
                         });
 
-                        let configure_width = if *is_full_width {
+                        let is_floating = rules.compute_open_floating(&toplevel);
+                        let configure_width = if is_floating {
+                            *floating_width
+                        } else if *is_full_width {
                             Some(ColumnWidth::Proportion(1.))
                         } else {
                             *width
                         };
-                        let is_floating = rules.compute_open_floating(&toplevel);
                         ws.configure_new_window(
                             &unmapped.window,
                             configure_width,
@@ -836,6 +839,7 @@ impl State {
         let mon = mon.map(|(mon, _)| mon);
 
         let mut width = None;
+        let mut floating_width = None;
         let is_full_width = rules.open_maximized.unwrap_or(false);
         let is_floating = rules.compute_open_floating(toplevel);
 
@@ -859,9 +863,12 @@ impl State {
                 });
             }
 
-            width = ws.resolve_default_width(rules.default_width, is_floating);
+            width = ws.resolve_default_width(rules.default_width, false);
+            floating_width = ws.resolve_default_width(rules.default_width, true);
 
-            let configure_width = if is_full_width {
+            let configure_width = if is_floating {
+                floating_width
+            } else if is_full_width {
                 Some(ColumnWidth::Proportion(1.))
             } else {
                 width
@@ -884,6 +891,7 @@ impl State {
         *state = InitialConfigureState::Configured {
             rules,
             width,
+            floating_width,
             is_full_width,
             output,
             workspace_name: ws.and_then(|w| w.name().cloned()),

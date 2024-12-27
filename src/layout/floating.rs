@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
@@ -1095,6 +1096,36 @@ impl<W: LayoutElement> FloatingSpace<W> {
         if diff.x * diff.x + diff.y * diff.y > ANIMATION_THRESHOLD_SQ {
             tile.animate_move_from(prev_pos - new_pos);
         }
+    }
+
+    pub fn resolve_width(&self, width: ColumnWidth) -> ResolvedSize {
+        width.resolve_no_gaps(&self.options, self.working_area.size.w)
+    }
+
+    pub fn new_window_size(
+        &self,
+        width: Option<ColumnWidth>,
+        rules: &ResolvedWindowRules,
+    ) -> Size<i32, Logical> {
+        let border = rules.border.resolve_against(self.options.border);
+
+        let width = if let Some(width) = width {
+            let width = match self.resolve_width(width) {
+                ResolvedSize::Tile(mut size) => {
+                    if !border.off {
+                        size -= border.width.0 * 2.;
+                    }
+                    size
+                }
+                ResolvedSize::Window(size) => size,
+            };
+
+            max(1, width.floor() as i32)
+        } else {
+            0
+        };
+
+        Size::from((width, 0))
     }
 
     #[cfg(test)]

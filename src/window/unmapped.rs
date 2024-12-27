@@ -30,10 +30,15 @@ pub enum InitialConfigureState {
         /// affect anything before that.
         rules: ResolvedWindowRules,
 
-        /// Resolved default width for this window.
+        /// Resolved scrolling default width for this window.
         ///
         /// `None` means that the window will pick its own width.
         width: Option<ColumnWidth>,
+
+        /// Resolved floating default width for this window.
+        ///
+        /// `None` means that the window will pick its own width.
+        floating_width: Option<ColumnWidth>,
 
         /// Whether the window should open full-width.
         is_full_width: bool,

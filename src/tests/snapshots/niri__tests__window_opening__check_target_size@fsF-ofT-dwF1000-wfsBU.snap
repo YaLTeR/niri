@@ -5,7 +5,7 @@ expression: snapshot
 snapshot_kind: text
 ---
 initial configure:
-size: 0 × 0, bounds: 1280 × 720, states: []
+size: 1000 × 0, bounds: 1280 × 720, states: []
 
 post-map configures:
 size: 1 × 1, bounds: 1280 × 720, states: [Activated]

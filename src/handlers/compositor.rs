@@ -100,6 +100,7 @@ impl CompositorHandler for State {
                         if let InitialConfigureState::Configured {
                             rules,
                             width,
+                            floating_width: _,
                             is_full_width,
                             output,
                             workspace_name,
