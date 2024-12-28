@@ -1157,6 +1157,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.toggle_window_floating(id);
     }
 
+    pub fn focus_floating(&mut self) {
+        if !self.floating_is_active.get() {
+            self.switch_focus_floating_tiling();
+        }
+    }
+
+    pub fn focus_tiling(&mut self) {
+        if self.floating_is_active.get() {
+            self.switch_focus_floating_tiling();
+        }
+    }
+
     pub fn switch_focus_floating_tiling(&mut self) {
         if self.floating.is_empty() {
             // If floating is empty, keep focus on scrolling.

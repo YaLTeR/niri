@@ -470,6 +470,10 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Switches focus to the floating layout.
+    FocusFloating {},
+    /// Switches focus to the tiling layout.
+    FocusTiling {},
     /// Toggles the focus between the floating and the tiling layout.
     SwitchFocusBetweenFloatingAndTiling {},
 }

@@ -1346,6 +1346,16 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::FocusFloating => {
+                self.niri.layout.focus_floating();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusTiling => {
+                self.niri.layout.focus_tiling();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::SwitchFocusBetweenFloatingAndTiling => {
                 self.niri.layout.switch_focus_floating_tiling();
                 // FIXME: granular
