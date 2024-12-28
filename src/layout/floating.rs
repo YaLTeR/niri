@@ -839,8 +839,13 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
-    fn move_to(&mut self, idx: usize, new_pos: Point<f64, Logical>) {
-        self.move_and_animate(idx, new_pos);
+    fn move_to(&mut self, idx: usize, new_pos: Point<f64, Logical>, animate: bool) {
+        if animate {
+            self.move_and_animate(idx, new_pos);
+        } else {
+            self.data[idx].set_logical_pos(new_pos);
+        }
+
         self.interactive_resize_end(None);
     }
 
@@ -851,7 +856,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let idx = self.idx_of(active_id).unwrap();
 
         let new_pos = self.data[idx].logical_pos + amount;
-        self.move_to(idx, new_pos)
+        self.move_to(idx, new_pos, true)
     }
 
     pub fn move_left(&mut self) {
@@ -870,7 +875,13 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.move_by(Point::from((0., DIRECTIONAL_MOVE_PX)));
     }
 
-    pub fn move_window(&mut self, id: Option<&W::Id>, x: PositionChange, y: PositionChange) {
+    pub fn move_window(
+        &mut self,
+        id: Option<&W::Id>,
+        x: PositionChange,
+        y: PositionChange,
+        animate: bool,
+    ) {
         let Some(id) = id.or(self.active_window_id.as_ref()) else {
             return;
         };
@@ -885,7 +896,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
             PositionChange::SetFixed(y) => new_pos.y = y + self.working_area.loc.y,
             PositionChange::AdjustFixed(y) => new_pos.y += y,
         }
-        self.move_to(idx, new_pos);
+
+        self.move_to(idx, new_pos, animate);
     }
 
     pub fn center_window(&mut self) {
@@ -895,7 +907,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let idx = self.idx_of(active_id).unwrap();
 
         let new_pos = center_preferring_top_left_in_area(self.working_area, self.data[idx].size);
-        self.move_to(idx, new_pos);
+        self.move_to(idx, new_pos, true);
     }
 
     pub fn descendants_added(&mut self, id: &W::Id) -> bool {

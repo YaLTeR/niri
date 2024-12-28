@@ -1190,11 +1190,12 @@ impl<W: LayoutElement> Workspace<W> {
         id: Option<&W::Id>,
         x: PositionChange,
         y: PositionChange,
+        animate: bool,
     ) {
         if id.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)
         }) {
-            self.floating.move_window(id, x, y);
+            self.floating.move_window(id, x, y, animate);
         } else {
             // If the target tile isn't floating, set its stored floating position.
             let tile = if let Some(id) = id {
