@@ -3394,6 +3394,26 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_workspace_up();
     }
 
+    pub fn set_workspace_name(&mut self, name: String) {
+        // ignore request if the name is an integer
+        if name.parse::<usize>().is_ok() { return }
+
+        // also ignore the request if the name is already used by another workspace
+        if self.find_workspace_by_name(&name).is_some() { return }
+
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.set_workspace_name(name);
+    }
+
+    pub fn unset_workspace_name(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.unset_workspace_name();
+    }
+
     pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {

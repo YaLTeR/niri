@@ -658,6 +658,16 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn set_workspace_name(&mut self, name: String) {
+        let ws = &mut self.workspaces[self.active_workspace_idx];
+        ws.name.replace(name);
+    }
+
+    pub fn unset_workspace_name(&mut self) {
+        let ws = &mut self.workspaces[self.active_workspace_idx];
+        ws.name.take();
+    }
+
     pub fn consume_into_column(&mut self) {
         self.active_workspace().consume_into_column();
     }
