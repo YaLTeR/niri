@@ -40,7 +40,7 @@ use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig,
 };
-use niri_ipc::SizeChange;
+use niri_ipc::{PositionChange, SizeChange};
 use scrolling::{Column, ColumnWidth, InsertHint, InsertPosition};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Id;
@@ -2750,6 +2750,30 @@ impl<W: LayoutElement> Layout<W> {
         workspace.switch_focus_floating_tiling();
     }
 
+    pub fn move_floating_window(
+        &mut self,
+        id: Option<&W::Id>,
+        x: PositionChange,
+        y: PositionChange,
+    ) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if id.is_none() || id == Some(move_.tile.window().id()) {
+                return;
+            }
+        }
+
+        let workspace = if let Some(id) = id {
+            Some(self.workspaces_mut().find(|ws| ws.has_window(id)).unwrap())
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.move_floating_window(id, x, y);
+    }
+
     pub fn focus_output(&mut self, output: &Output) {
         if let MonitorSet::Normal {
             monitors,
@@ -4202,6 +4226,15 @@ mod tests {
         ]
     }
 
+    fn arbitrary_position_change() -> impl Strategy<Value = PositionChange> {
+        prop_oneof![
+            (-1000f64..1000f64).prop_map(PositionChange::SetFixed),
+            (-1000f64..1000f64).prop_map(PositionChange::AdjustFixed),
+            any::<f64>().prop_map(PositionChange::SetFixed),
+            any::<f64>().prop_map(PositionChange::AdjustFixed),
+        ]
+    }
+
     fn arbitrary_min_max() -> impl Strategy<Value = (i32, i32)> {
         prop_oneof![
             Just((0, 0)),
@@ -4410,6 +4443,14 @@ mod tests {
         FocusFloating,
         FocusTiling,
         SwitchFocusFloatingTiling,
+        MoveFloatingWindow {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+            #[proptest(strategy = "arbitrary_position_change()")]
+            x: PositionChange,
+            #[proptest(strategy = "arbitrary_position_change()")]
+            y: PositionChange,
+        },
         SetParent {
             #[proptest(strategy = "1..=5usize")]
             id: usize,
@@ -4933,6 +4974,10 @@ mod tests {
                 }
                 Op::SwitchFocusFloatingTiling => {
                     layout.switch_focus_floating_tiling();
+                }
+                Op::MoveFloatingWindow { id, x, y } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.move_floating_window(id.as_ref(), x, y);
                 }
                 Op::SetParent {
                     id,
