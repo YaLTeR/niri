@@ -362,6 +362,22 @@ pub enum Action {
     MoveColumnToMonitorDown {},
     /// Move the focused column to the monitor above.
     MoveColumnToMonitorUp {},
+    /// Change the width of a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Change the width of the focused window")
+    )]
+    SetWindowWidth {
+        /// Id of the window whose width to set.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
+        /// How to change the width.
+        #[cfg_attr(feature = "clap", arg())]
+        change: SizeChange,
+    },
     /// Change the height of a window.
     #[cfg_attr(
         feature = "clap",

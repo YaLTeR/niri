@@ -2592,6 +2592,29 @@ impl<W: LayoutElement> Layout<W> {
         monitor.set_column_width(change);
     }
 
+    pub fn set_window_width(&mut self, window: Option<&W::Id>, change: SizeChange) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
+                return;
+            }
+        }
+
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.set_window_width(window, change);
+    }
+
     pub fn set_window_height(&mut self, window: Option<&W::Id>, change: SizeChange) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
@@ -4319,6 +4342,12 @@ mod tests {
         },
         MaximizeColumn,
         SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
+        SetWindowWidth {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+            #[proptest(strategy = "arbitrary_size_change()")]
+            change: SizeChange,
+        },
         SetWindowHeight {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
             id: Option<usize>,
@@ -4829,6 +4858,10 @@ mod tests {
                 }
                 Op::MaximizeColumn => layout.toggle_full_width(),
                 Op::SetColumnWidth(change) => layout.set_column_width(change),
+                Op::SetWindowWidth { id, change } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.set_window_width(id.as_ref(), change);
+                }
                 Op::SetWindowHeight { id, change } => {
                     let id = id.filter(|id| layout.has_window(id));
                     layout.set_window_height(id.as_ref(), change);

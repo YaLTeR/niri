@@ -1237,6 +1237,16 @@ impl State {
             Action::SetColumnWidth(change) => {
                 self.niri.layout.set_column_width(change);
             }
+            Action::SetWindowWidth(change) => {
+                self.niri.layout.set_window_width(None, change);
+            }
+            Action::SetWindowWidthById { id, change } => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.set_window_width(Some(&window), change);
+                }
+            }
             Action::SetWindowHeight(change) => {
                 self.niri.layout.set_window_height(None, change);
             }
