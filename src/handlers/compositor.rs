@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 
+use niri_ipc::PositionChange;
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::calloop::Interest;
@@ -279,14 +280,21 @@ impl CompositorHandler for State {
                     return;
                 }
 
-                let serial = with_states(surface, |states| {
+                let (serial, buffer_delta) = with_states(surface, |states| {
+                    let buffer_delta = states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .current()
+                        .buffer_delta
+                        .take();
+
                     let role = states
                         .data_map
                         .get::<XdgToplevelSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap();
-                    role.configure_serial
+                    (role.configure_serial, buffer_delta)
                 });
                 if serial.is_none() {
                     error!("commit on a mapped surface without a configured serial");
@@ -294,6 +302,19 @@ impl CompositorHandler for State {
 
                 // The toplevel remains mapped.
                 self.niri.layout.update_window(&window, serial);
+
+                // Move the toplevel according to the attach offset.
+                if let Some(delta) = buffer_delta {
+                    if delta.x != 0 || delta.y != 0 {
+                        let (x, y) = delta.to_f64().into();
+                        self.niri.layout.move_floating_window(
+                            Some(&window),
+                            PositionChange::AdjustFixed(x),
+                            PositionChange::AdjustFixed(y),
+                            false,
+                        );
+                    }
+                }
 
                 // Popup placement depends on window size which might have changed.
                 self.update_reactive_popups(&window);
