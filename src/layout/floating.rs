@@ -638,6 +638,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.set_window_width(Some(&id), change, true);
 
         self.tiles[idx].floating_preset_width_idx = Some(preset_idx);
+
+        self.interactive_resize_end(Some(&id));
     }
 
     pub fn toggle_window_height(&mut self, id: Option<&W::Id>) {
@@ -679,6 +681,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let tile = &mut self.tiles[idx];
         tile.floating_preset_height_idx = Some(preset_idx);
+
+        self.interactive_resize_end(Some(&id));
     }
 
     pub fn set_window_width(&mut self, id: Option<&W::Id>, change: SizeChange, animate: bool) {
@@ -843,6 +847,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let new_pos = self.data[active_idx].logical_pos + amount;
         self.move_and_animate(active_idx, new_pos);
+
+        self.interactive_resize_end(None);
     }
 
     pub fn move_left(&mut self) {
@@ -870,6 +876,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let new_pos =
             center_preferring_top_left_in_area(self.working_area, self.data[active_idx].size);
         self.move_and_animate(active_idx, new_pos);
+
+        self.interactive_resize_end(None);
     }
 
     pub fn descendants_added(&mut self, id: &W::Id) -> bool {
