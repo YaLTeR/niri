@@ -1146,6 +1146,17 @@ impl<W: LayoutElement> Workspace<W> {
         tile.animate_move_from(render_pos - new_render_pos);
     }
 
+    pub fn set_window_floating(&mut self, id: Option<&W::Id>, floating: bool) {
+        if id.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) == floating
+        {
+            return;
+        }
+
+        self.toggle_window_floating(id);
+    }
+
     pub fn switch_focus_floating_tiling(&mut self) {
         if self.floating.is_empty() {
             // If floating is empty, keep focus on scrolling.
