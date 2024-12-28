@@ -1996,13 +1996,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn set_column_width(&mut self, change: SizeChange) {
+    pub fn set_window_width(&mut self, window: Option<&W::Id>, change: SizeChange) {
         if self.columns.is_empty() {
             return;
         }
 
-        let col = &mut self.columns[self.active_column_idx];
-        col.set_column_width(change, None, true);
+        let (col, tile_idx) = if let Some(window) = window {
+            self.columns
+                .iter_mut()
+                .find_map(|col| {
+                    col.tiles
+                        .iter()
+                        .position(|tile| tile.window().id() == window)
+                        .map(|tile_idx| (col, Some(tile_idx)))
+                })
+                .unwrap()
+        } else {
+            (&mut self.columns[self.active_column_idx], None)
+        };
+
+        col.set_column_width(change, tile_idx, true);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }

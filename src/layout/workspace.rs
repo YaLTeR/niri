@@ -998,7 +998,17 @@ impl<W: LayoutElement> Workspace<W> {
         if self.floating_is_active.get() {
             self.floating.set_window_width(None, change, true);
         } else {
-            self.scrolling.set_column_width(change);
+            self.scrolling.set_window_width(None, change);
+        }
+    }
+
+    pub fn set_window_width(&mut self, window: Option<&W::Id>, change: SizeChange) {
+        if window.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
+            self.floating.set_window_width(window, change, true);
+        } else {
+            self.scrolling.set_window_width(window, change);
         }
     }
 

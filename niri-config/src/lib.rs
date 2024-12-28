@@ -1241,6 +1241,12 @@ pub enum Action {
     MoveColumnToMonitorRight,
     MoveColumnToMonitorDown,
     MoveColumnToMonitorUp,
+    SetWindowWidth(#[knuffel(argument, str)] SizeChange),
+    #[knuffel(skip)]
+    SetWindowWidthById {
+        id: u64,
+        change: SizeChange,
+    },
     SetWindowHeight(#[knuffel(argument, str)] SizeChange),
     #[knuffel(skip)]
     SetWindowHeightById {
@@ -1373,6 +1379,11 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
             niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
             niri_ipc::Action::MoveColumnToMonitorUp {} => Self::MoveColumnToMonitorUp,
+            niri_ipc::Action::SetWindowWidth { id: None, change } => Self::SetWindowWidth(change),
+            niri_ipc::Action::SetWindowWidth {
+                id: Some(id),
+                change,
+            } => Self::SetWindowWidthById { id, change },
             niri_ipc::Action::SetWindowHeight { id: None, change } => Self::SetWindowHeight(change),
             niri_ipc::Action::SetWindowHeight {
                 id: Some(id),
