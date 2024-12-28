@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 
 use niri_config::PresetSize;
-use niri_ipc::SizeChange;
+use niri_ipc::{PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
@@ -839,16 +839,19 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
+    fn move_to(&mut self, idx: usize, new_pos: Point<f64, Logical>) {
+        self.move_and_animate(idx, new_pos);
+        self.interactive_resize_end(None);
+    }
+
     fn move_by(&mut self, amount: Point<f64, Logical>) {
         let Some(active_id) = &self.active_window_id else {
             return;
         };
-        let active_idx = self.idx_of(active_id).unwrap();
+        let idx = self.idx_of(active_id).unwrap();
 
-        let new_pos = self.data[active_idx].logical_pos + amount;
-        self.move_and_animate(active_idx, new_pos);
-
-        self.interactive_resize_end(None);
+        let new_pos = self.data[idx].logical_pos + amount;
+        self.move_to(idx, new_pos)
     }
 
     pub fn move_left(&mut self) {
@@ -867,17 +870,32 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.move_by(Point::from((0., DIRECTIONAL_MOVE_PX)));
     }
 
+    pub fn move_window(&mut self, id: Option<&W::Id>, x: PositionChange, y: PositionChange) {
+        let Some(id) = id.or(self.active_window_id.as_ref()) else {
+            return;
+        };
+        let idx = self.idx_of(id).unwrap();
+
+        let mut new_pos = self.data[idx].logical_pos;
+        match x {
+            PositionChange::SetFixed(x) => new_pos.x = x + self.working_area.loc.x,
+            PositionChange::AdjustFixed(x) => new_pos.x += x,
+        }
+        match y {
+            PositionChange::SetFixed(y) => new_pos.y = y + self.working_area.loc.y,
+            PositionChange::AdjustFixed(y) => new_pos.y += y,
+        }
+        self.move_to(idx, new_pos);
+    }
+
     pub fn center_window(&mut self) {
         let Some(active_id) = &self.active_window_id else {
             return;
         };
-        let active_idx = self.idx_of(active_id).unwrap();
+        let idx = self.idx_of(active_id).unwrap();
 
-        let new_pos =
-            center_preferring_top_left_in_area(self.working_area, self.data[active_idx].size);
-        self.move_and_animate(active_idx, new_pos);
-
-        self.interactive_resize_end(None);
+        let new_pos = center_preferring_top_left_in_area(self.working_area, self.data[idx].size);
+        self.move_to(idx, new_pos);
     }
 
     pub fn descendants_added(&mut self, id: &W::Id) -> bool {
@@ -1082,7 +1100,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         rect.loc
     }
 
-    fn scale_by_working_area(&self, pos: Point<f64, SizeFrac>) -> Point<f64, Logical> {
+    pub fn scale_by_working_area(&self, pos: Point<f64, SizeFrac>) -> Point<f64, Logical> {
         Data::scale_by_working_area(self.working_area, pos)
     }
 
@@ -1163,7 +1181,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.view_size
     }
 
-    #[cfg(test)]
     pub fn working_area(&self) -> Rectangle<f64, Logical> {
         self.working_area
     }

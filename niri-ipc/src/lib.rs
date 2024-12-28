@@ -476,6 +476,29 @@ pub enum Action {
     FocusTiling {},
     /// Toggles the focus between the floating and the tiling layout.
     SwitchFocusBetweenFloatingAndTiling {},
+    /// Move a floating window on screen.
+    #[cfg_attr(feature = "clap", clap(about = "Move the floating window on screen"))]
+    MoveFloatingWindow {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
+        /// How to change the X position.
+        #[cfg_attr(
+            feature = "clap",
+            arg(short, long, default_value = "+0", allow_negative_numbers = true)
+        )]
+        x: PositionChange,
+
+        /// How to change the Y position.
+        #[cfg_attr(
+            feature = "clap",
+            arg(short, long, default_value = "+0", allow_negative_numbers = true)
+        )]
+        y: PositionChange,
+    },
 }
 
 /// Change in window or column size.
@@ -490,6 +513,16 @@ pub enum SizeChange {
     AdjustFixed(i32),
     /// Add or subtract to the current size as a proportion of the working area.
     AdjustProportion(f64),
+}
+
+/// Change in floating window position.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PositionChange {
+    /// Set the position in logical pixels.
+    SetFixed(f64),
+    /// Add or subtract to the current position in logical pixels.
+    AdjustFixed(f64),
 }
 
 /// Workspace reference (id, index or name) to operate on.
@@ -988,6 +1021,25 @@ impl FromStr for SizeChange {
                     None => Err("value is missing"),
                 }
             }
+        }
+    }
+}
+
+impl FromStr for PositionChange {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value = s;
+        match value.bytes().next() {
+            Some(b'-' | b'+') => {
+                let value = value.parse().map_err(|_| "error parsing value")?;
+                Ok(Self::AdjustFixed(value))
+            }
+            Some(_) => {
+                let value = value.parse().map_err(|_| "error parsing value")?;
+                Ok(Self::SetFixed(value))
+            }
+            None => Err("value is missing"),
         }
     }
 }

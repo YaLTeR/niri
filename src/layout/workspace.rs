@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{OutputName, PresetSize, Workspace as WorkspaceConfig};
-use niri_ipc::SizeChange;
+use niri_ipc::{PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -1183,6 +1183,55 @@ impl<W: LayoutElement> Workspace<W> {
         } else {
             FloatingActive::Yes
         };
+    }
+
+    pub fn move_floating_window(
+        &mut self,
+        id: Option<&W::Id>,
+        x: PositionChange,
+        y: PositionChange,
+    ) {
+        if id.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
+            self.floating.move_window(id, x, y);
+        } else {
+            // If the target tile isn't floating, set its stored floating position.
+            let tile = if let Some(id) = id {
+                self.scrolling
+                    .tiles_mut()
+                    .find(|tile| tile.window().id() == id)
+                    .unwrap()
+            } else if let Some(tile) = self.scrolling.active_tile_mut() {
+                tile
+            } else {
+                return;
+            };
+
+            let working_area_loc = self.floating.working_area().loc;
+            // If there's no stored floating position, we can only set both components at once, not
+            // adjust.
+            let Some(pos) = tile.floating_pos.or_else(|| {
+                (matches!(x, PositionChange::SetFixed(_))
+                    && matches!(y, PositionChange::SetFixed(_)))
+                .then_some(Point::default())
+            }) else {
+                return;
+            };
+
+            let mut pos = self.floating.scale_by_working_area(pos);
+            match x {
+                PositionChange::SetFixed(x) => pos.x = x + working_area_loc.x,
+                PositionChange::AdjustFixed(x) => pos.x += x,
+            }
+            match y {
+                PositionChange::SetFixed(y) => pos.y = y + working_area_loc.y,
+                PositionChange::AdjustFixed(y) => pos.y += y,
+            }
+
+            let pos = self.floating.logical_to_size_frac(pos);
+            tile.floating_pos = Some(pos);
+        }
     }
 
     pub fn has_windows(&self) -> bool {

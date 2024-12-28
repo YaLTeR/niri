@@ -12,7 +12,10 @@ use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 use layer_rule::LayerRule;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
-use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform, WorkspaceReferenceArg};
+use niri_ipc::{
+    ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
+    WorkspaceReferenceArg,
+};
 use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
@@ -1280,6 +1283,12 @@ pub enum Action {
     FocusFloating,
     FocusTiling,
     SwitchFocusBetweenFloatingAndTiling,
+    #[knuffel(skip)]
+    MoveFloatingWindowById {
+        id: Option<u64>,
+        x: PositionChange,
+        y: PositionChange,
+    },
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1433,6 +1442,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusTiling {} => Self::FocusTiling,
             niri_ipc::Action::SwitchFocusBetweenFloatingAndTiling {} => {
                 Self::SwitchFocusBetweenFloatingAndTiling
+            }
+            niri_ipc::Action::MoveFloatingWindow { id, x, y } => {
+                Self::MoveFloatingWindowById { id, x, y }
             }
         }
     }
@@ -2989,6 +3001,7 @@ pub fn set_miette_hook() -> Result<(), miette::InstallError> {
 #[cfg(test)]
 mod tests {
     use insta::{assert_debug_snapshot, assert_snapshot};
+    use niri_ipc::PositionChange;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -3680,6 +3693,28 @@ mod tests {
 
         assert!("-".parse::<SizeChange>().is_err());
         assert!("10% ".parse::<SizeChange>().is_err());
+    }
+
+    #[test]
+    fn parse_position_change() {
+        assert_eq!(
+            "10".parse::<PositionChange>().unwrap(),
+            PositionChange::SetFixed(10.),
+        );
+        assert_eq!(
+            "+10".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustFixed(10.),
+        );
+        assert_eq!(
+            "-10".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustFixed(-10.),
+        );
+
+        assert!("10%".parse::<PositionChange>().is_err());
+        assert!("+10%".parse::<PositionChange>().is_err());
+        assert!("-10%".parse::<PositionChange>().is_err());
+        assert!("-".parse::<PositionChange>().is_err());
+        assert!("10% ".parse::<PositionChange>().is_err());
     }
 
     #[test]
