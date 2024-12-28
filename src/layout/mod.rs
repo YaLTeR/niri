@@ -2755,6 +2755,7 @@ impl<W: LayoutElement> Layout<W> {
         id: Option<&W::Id>,
         x: PositionChange,
         y: PositionChange,
+        animate: bool,
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if id.is_none() || id == Some(move_.tile.window().id()) {
@@ -2771,7 +2772,7 @@ impl<W: LayoutElement> Layout<W> {
         let Some(workspace) = workspace else {
             return;
         };
-        workspace.move_floating_window(id, x, y);
+        workspace.move_floating_window(id, x, y, animate);
     }
 
     pub fn focus_output(&mut self, output: &Output) {
@@ -4450,6 +4451,7 @@ mod tests {
             x: PositionChange,
             #[proptest(strategy = "arbitrary_position_change()")]
             y: PositionChange,
+            animate: bool,
         },
         SetParent {
             #[proptest(strategy = "1..=5usize")]
@@ -4975,9 +4977,9 @@ mod tests {
                 Op::SwitchFocusFloatingTiling => {
                     layout.switch_focus_floating_tiling();
                 }
-                Op::MoveFloatingWindow { id, x, y } => {
+                Op::MoveFloatingWindow { id, x, y, animate } => {
                     let id = id.filter(|id| layout.has_window(id));
-                    layout.move_floating_window(id.as_ref(), x, y);
+                    layout.move_floating_window(id.as_ref(), x, y, animate);
                 }
                 Op::SetParent {
                     id,

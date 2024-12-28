@@ -1373,7 +1373,9 @@ impl State {
                     None
                 };
 
-                self.niri.layout.move_floating_window(window.as_ref(), x, y);
+                self.niri
+                    .layout
+                    .move_floating_window(window.as_ref(), x, y, true);
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
