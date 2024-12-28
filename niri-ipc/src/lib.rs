@@ -375,7 +375,7 @@ pub enum Action {
         id: Option<u64>,
 
         /// How to change the width.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
     },
     /// Change the height of a window.
@@ -391,7 +391,7 @@ pub enum Action {
         id: Option<u64>,
 
         /// How to change the height.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
     },
     /// Reset the height of a window back to automatic.
@@ -421,7 +421,7 @@ pub enum Action {
     /// Change the width of the focused column.
     SetColumnWidth {
         /// How to change the width.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
     },
     /// Switch between keyboard layouts.
