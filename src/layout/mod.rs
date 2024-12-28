@@ -2729,6 +2729,20 @@ impl<W: LayoutElement> Layout<W> {
         workspace.set_window_floating(window, floating);
     }
 
+    pub fn focus_floating(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.focus_floating();
+    }
+
+    pub fn focus_tiling(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.focus_tiling();
+    }
+
     pub fn switch_focus_floating_tiling(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
@@ -4393,6 +4407,8 @@ mod tests {
             id: Option<usize>,
             floating: bool,
         },
+        FocusFloating,
+        FocusTiling,
         SwitchFocusFloatingTiling,
         SetParent {
             #[proptest(strategy = "1..=5usize")]
@@ -4908,6 +4924,12 @@ mod tests {
                 Op::SetWindowFloating { id, floating } => {
                     let id = id.filter(|id| layout.has_window(id));
                     layout.set_window_floating(id.as_ref(), floating);
+                }
+                Op::FocusFloating => {
+                    layout.focus_floating();
+                }
+                Op::FocusTiling => {
+                    layout.focus_tiling();
                 }
                 Op::SwitchFocusFloatingTiling => {
                     layout.switch_focus_floating_tiling();

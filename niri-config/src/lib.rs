@@ -1277,6 +1277,8 @@ pub enum Action {
     MoveWindowToTiling,
     #[knuffel(skip)]
     MoveWindowToTilingById(u64),
+    FocusFloating,
+    FocusTiling,
     SwitchFocusBetweenFloatingAndTiling,
 }
 
@@ -1427,6 +1429,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWindowToTiling { id: Some(id) } => {
                 Self::MoveWindowToTilingById(id)
             }
+            niri_ipc::Action::FocusFloating {} => Self::FocusFloating,
+            niri_ipc::Action::FocusTiling {} => Self::FocusTiling,
             niri_ipc::Action::SwitchFocusBetweenFloatingAndTiling {} => {
                 Self::SwitchFocusBetweenFloatingAndTiling
             }
