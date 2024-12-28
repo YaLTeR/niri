@@ -1271,6 +1271,12 @@ pub enum Action {
     ToggleWindowFloating,
     #[knuffel(skip)]
     ToggleWindowFloatingById(u64),
+    MoveWindowToFloating,
+    #[knuffel(skip)]
+    MoveWindowToFloatingById(u64),
+    MoveWindowToTiling,
+    #[knuffel(skip)]
+    MoveWindowToTilingById(u64),
     SwitchFocusBetweenFloatingAndTiling,
 }
 
@@ -1412,6 +1418,14 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowFloating { id: None } => Self::ToggleWindowFloating,
             niri_ipc::Action::ToggleWindowFloating { id: Some(id) } => {
                 Self::ToggleWindowFloatingById(id)
+            }
+            niri_ipc::Action::MoveWindowToFloating { id: None } => Self::MoveWindowToFloating,
+            niri_ipc::Action::MoveWindowToFloating { id: Some(id) } => {
+                Self::MoveWindowToFloatingById(id)
+            }
+            niri_ipc::Action::MoveWindowToTiling { id: None } => Self::MoveWindowToTiling,
+            niri_ipc::Action::MoveWindowToTiling { id: Some(id) } => {
+                Self::MoveWindowToTilingById(id)
             }
             niri_ipc::Action::SwitchFocusBetweenFloatingAndTiling {} => {
                 Self::SwitchFocusBetweenFloatingAndTiling

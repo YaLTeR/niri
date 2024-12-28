@@ -2703,6 +2703,32 @@ impl<W: LayoutElement> Layout<W> {
         workspace.toggle_window_floating(window);
     }
 
+    pub fn set_window_floating(&mut self, window: Option<&W::Id>, floating: bool) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
+                if move_.is_floating != floating {
+                    self.toggle_window_floating(window);
+                }
+                return;
+            }
+        }
+
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.set_window_floating(window, floating);
+    }
+
     pub fn switch_focus_floating_tiling(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
@@ -4362,6 +4388,11 @@ mod tests {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
             id: Option<usize>,
         },
+        SetWindowFloating {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+            floating: bool,
+        },
         SwitchFocusFloatingTiling,
         SetParent {
             #[proptest(strategy = "1..=5usize")]
@@ -4873,6 +4904,10 @@ mod tests {
                 Op::ToggleWindowFloating { id } => {
                     let id = id.filter(|id| layout.has_window(id));
                     layout.toggle_window_floating(id.as_ref());
+                }
+                Op::SetWindowFloating { id, floating } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.set_window_floating(id.as_ref(), floating);
                 }
                 Op::SwitchFocusFloatingTiling => {
                     layout.switch_focus_floating_tiling();
