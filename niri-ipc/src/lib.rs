@@ -758,6 +758,10 @@ pub struct Window {
     ///
     /// There can be either one focused window or zero (e.g. when a layer-shell surface has focus).
     pub is_focused: bool,
+    /// Whether this window is currently floating.
+    ///
+    /// If the window isn't floating then it is in the tiling layout.
+    pub is_floating: bool,
 }
 
 /// Output configuration change result.
