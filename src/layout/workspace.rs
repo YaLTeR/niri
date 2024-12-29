@@ -971,9 +971,19 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn center_column(&mut self) {
         if self.floating_is_active.get() {
-            self.floating.center_window();
+            self.floating.center_window(None);
         } else {
             self.scrolling.center_column();
+        }
+    }
+
+    pub fn center_window(&mut self, id: Option<&W::Id>) {
+        if id.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
+            self.floating.center_window(id);
+        } else {
+            self.scrolling.center_window(id);
         }
     }
 

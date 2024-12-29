@@ -902,11 +902,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.move_to(idx, new_pos, animate);
     }
 
-    pub fn center_window(&mut self) {
-        let Some(active_id) = &self.active_window_id else {
+    pub fn center_window(&mut self, id: Option<&W::Id>) {
+        let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
-        let idx = self.idx_of(active_id).unwrap();
+        let idx = self.idx_of(&id).unwrap();
 
         let new_pos = center_preferring_top_left_in_area(self.working_area, self.data[idx].size);
         self.move_to(idx, new_pos, true);

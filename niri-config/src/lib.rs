@@ -1225,6 +1225,9 @@ pub enum Action {
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
     CenterColumn,
+    CenterWindow,
+    #[knuffel(skip)]
+    CenterWindowById(u64),
     FocusWorkspaceDown,
     FocusWorkspaceUp,
     FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
@@ -1368,6 +1371,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ConsumeWindowIntoColumn {} => Self::ConsumeWindowIntoColumn,
             niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
+            niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
+            niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
             niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
             niri_ipc::Action::FocusWorkspace { reference } => {

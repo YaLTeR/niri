@@ -1747,6 +1747,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
+    pub fn center_window(&mut self, window: Option<&W::Id>) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col_idx = if let Some(window) = window {
+            self.columns
+                .iter()
+                .position(|col| col.contains(window))
+                .unwrap()
+        } else {
+            self.active_column_idx
+        };
+
+        // We can reasonably center only the active column.
+        if col_idx != self.active_column_idx {
+            return;
+        }
+
+        self.center_column();
+    }
+
     pub fn view_pos(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset.current()
     }
