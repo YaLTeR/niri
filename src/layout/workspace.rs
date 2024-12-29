@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{OutputName, PresetSize, Workspace as WorkspaceConfig};
+use niri_config::{CenterFocusedColumn, OutputName, PresetSize, Workspace as WorkspaceConfig};
 use niri_ipc::{PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -1124,10 +1124,14 @@ impl<W: LayoutElement> Workspace<W> {
 
             // Come up with a default floating position close to the tile position.
             if removed.tile.floating_pos.is_none() {
-                let pos = self.floating.clamp_within_working_area(
-                    render_pos + Point::from((50., 50.)),
-                    removed.tile.tile_size(),
-                );
+                let offset = if self.options.center_focused_column == CenterFocusedColumn::Always {
+                    Point::from((0., 0.))
+                } else {
+                    Point::from((50., 50.))
+                };
+                let pos = render_pos + offset;
+                let size = removed.tile.tile_size();
+                let pos = self.floating.clamp_within_working_area(pos, size);
                 let pos = self.floating.logical_to_size_frac(pos);
                 removed.tile.floating_pos = Some(pos);
             }
