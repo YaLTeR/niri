@@ -1904,8 +1904,21 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        let Some(monitor) = self.active_monitor() else {
-            return;
+        let monitor = if let Some(window) = window {
+            match &mut self.monitor_set {
+                MonitorSet::Normal { monitors, .. } => monitors
+                    .iter_mut()
+                    .find(|mon| mon.has_window(window))
+                    .unwrap(),
+                MonitorSet::NoOutputs { .. } => {
+                    return;
+                }
+            }
+        } else {
+            let Some(monitor) = self.active_monitor() else {
+                return;
+            };
+            monitor
         };
         monitor.move_to_workspace(window, idx);
     }
@@ -4935,11 +4948,7 @@ mod tests {
                     window_id,
                     workspace_idx,
                 } => {
-                    let window_id = window_id.filter(|id| {
-                        layout
-                            .active_monitor()
-                            .map_or(false, |mon| mon.has_window(id))
-                    });
+                    let window_id = window_id.filter(|id| layout.has_window(id));
                     layout.move_to_workspace(window_id.as_ref(), workspace_idx);
                 }
                 Op::MoveColumnToWorkspaceDown => layout.move_column_to_workspace_down(),
@@ -6702,6 +6711,24 @@ mod tests {
             Op::SetParent {
                 id: 0,
                 new_parent_id: Some(1),
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn move_window_to_workspace_with_different_active_output() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(0),
+            },
+            Op::FocusOutput(1),
+            Op::MoveWindowToWorkspace {
+                window_id: Some(0),
+                workspace_idx: 2,
             },
         ];
 
