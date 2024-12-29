@@ -3246,9 +3246,13 @@ impl Niri {
             elements.push(element.into());
         }
 
+        // Don't draw the focus ring on the workspaces while interactively moving above those
+        // workspaces, since the interactively-moved window already has a focus ring.
+        let focus_ring = !self.layout.interactive_move_is_moving_above_output(output);
+
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
-        let monitor_elements: Vec<_> = mon.render_elements(renderer, target).collect();
+        let monitor_elements: Vec<_> = mon.render_elements(renderer, target, focus_ring).collect();
         let float_elements: Vec<_> = self
             .layout
             .render_floating_for_output(renderer, output, target)

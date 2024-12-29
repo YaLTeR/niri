@@ -962,6 +962,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         view_rect: Rectangle<f64, Logical>,
         scale: Scale<f64>,
         target: RenderTarget,
+        focus_ring: bool,
     ) -> Vec<FloatingSpaceRenderElement<R>> {
         let mut rv = Vec::new();
 
@@ -976,7 +977,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let active = self.active_window_id.clone();
         for (tile, tile_pos) in self.tiles_with_render_positions() {
             // For the active tile, draw the focus ring.
-            let focus_ring = Some(tile.window().id()) == active.as_ref();
+            let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 
             rv.extend(
                 tile.render(renderer, tile_pos, scale, focus_ring, target)
