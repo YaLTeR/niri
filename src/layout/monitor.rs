@@ -963,6 +963,7 @@ impl<W: LayoutElement> Monitor<W> {
         &'a self,
         renderer: &'a mut R,
         target: RenderTarget,
+        focus_ring: bool,
     ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Monitor::render_elements");
 
@@ -989,7 +990,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.workspaces_with_render_positions()
             .flat_map(move |(ws, offset)| {
-                ws.render_elements(renderer, target)
+                ws.render_elements(renderer, target, focus_ring)
                     .filter_map(move |elem| {
                         CropRenderElement::from_element(elem, scale, crop_bounds)
                     })

@@ -3565,6 +3565,14 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn interactive_move_is_moving_above_output(&self, output: &Output) -> bool {
+        let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move else {
+            return false;
+        };
+
+        move_.output == *output
+    }
+
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {

@@ -2180,6 +2180,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         renderer: &mut R,
         scale: Scale<f64>,
         target: RenderTarget,
+        focus_ring: bool,
     ) -> Vec<ScrollingSpaceRenderElement<R>> {
         let mut rv = vec![];
 
@@ -2208,7 +2209,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let mut first = true;
         for (tile, tile_pos) in self.tiles_with_render_positions() {
             // For the active tile (which comes first), draw the focus ring.
-            let focus_ring = first;
+            let focus_ring = focus_ring && first;
             first = false;
 
             rv.extend(
