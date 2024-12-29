@@ -292,6 +292,18 @@ pub enum Action {
     ExpelWindowFromColumn {},
     /// Center the focused column on the screen.
     CenterColumn {},
+    /// Center a window on the screen.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Center the focused window on the screen")
+    )]
+    CenterWindow {
+        /// Id of the window to center.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Focus the workspace below.
     FocusWorkspaceDown {},
     /// Focus the workspace above.

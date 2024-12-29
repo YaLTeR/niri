@@ -1127,6 +1127,20 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::CenterWindow => {
+                self.niri.layout.center_window(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::CenterWindowById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.center_window(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::MaximizeColumn => {
                 self.niri.layout.toggle_full_width();
             }

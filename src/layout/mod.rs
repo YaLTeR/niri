@@ -1993,6 +1993,19 @@ impl<W: LayoutElement> Layout<W> {
         monitor.center_column();
     }
 
+    pub fn center_window(&mut self, id: Option<&W::Id>) {
+        let workspace = if let Some(id) = id {
+            Some(self.workspaces_mut().find(|ws| ws.has_window(id)).unwrap())
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.center_window(id);
+    }
+
     pub fn focus(&self) -> Option<&W> {
         self.focus_with_output().map(|(win, _out)| win)
     }
@@ -4390,6 +4403,10 @@ mod tests {
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
         CenterColumn,
+        CenterWindow {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            id: Option<usize>,
+        },
         FocusWorkspaceDown,
         FocusWorkspaceUp,
         FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
@@ -4901,6 +4918,10 @@ mod tests {
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
                 Op::CenterColumn => layout.center_column(),
+                Op::CenterWindow { id } => {
+                    let id = id.filter(|id| layout.has_window(id));
+                    layout.center_window(id.as_ref());
+                }
                 Op::FocusWorkspaceDown => layout.switch_workspace_down(),
                 Op::FocusWorkspaceUp => layout.switch_workspace_up(),
                 Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
