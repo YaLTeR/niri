@@ -491,6 +491,9 @@ impl XdgShellHandler for State {
 
             // A configure is required in response to this event regardless if there are pending
             // changes.
+            //
+            // FIXME: when unfullscreening to floating, this will send an extra configure with
+            // scrolling layout bounds. We should probably avoid it.
             toplevel.send_configure();
         } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             match &mut unmapped.state {

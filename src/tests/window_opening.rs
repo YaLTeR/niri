@@ -5,6 +5,7 @@ use niri_config::Config;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::*;
+use crate::layout::LayoutElement;
 use crate::utils::with_toplevel_role;
 
 #[test]
@@ -347,21 +348,42 @@ window-rule {{
     }
 
     let niri = f.niri();
-    let (mon, ws_idx, ws) = niri
+    let (mon, ws_idx, ws, mapped) = niri
         .layout
         .workspaces()
-        .find(|(_, _, ws)| {
-            ws.windows().any(|win| {
-                with_toplevel_role(win.toplevel(), |role| {
+        .find_map(|(mon, ws_idx, ws)| {
+            ws.windows().find_map(|win| {
+                if with_toplevel_role(win.toplevel(), |role| {
                     role.title.as_deref() != Some("parent")
-                })
+                }) {
+                    Some((mon, ws_idx, ws, win))
+                } else {
+                    None
+                }
             })
         })
         .unwrap();
+    let is_fullscreen = mapped.is_fullscreen();
+    let win = mapped.window.clone();
     let mon = mon.unwrap().output_name().clone();
     let ws = ws.name().cloned().unwrap_or(String::from("unnamed"));
 
     let window = f.client(id).window(&surface);
+    let post_map = window.format_recent_configures();
+
+    // If the window ended up fullscreen, unfullscreen it and output the configure.
+    let mut post_unfullscreen = String::new();
+    if is_fullscreen {
+        f.niri().layout.set_fullscreen(&win, false);
+        f.double_roundtrip(id);
+
+        let window = f.client(id).window(&surface);
+        post_unfullscreen = format!(
+            "\n\nunfullscreen configure:\n{}",
+            window.format_recent_configures()
+        );
+    }
+
     let snapshot = format!(
         "\
 final monitor: {mon}
@@ -371,8 +393,7 @@ initial configure:
 {initial}
 
 post-map configures:
-{}",
-        window.format_recent_configures()
+{post_map}{post_unfullscreen}",
     );
 
     let mut settings = insta::Settings::clone_current();
@@ -570,14 +591,31 @@ window-rule {
     }
 
     let window = f.client(id).window(&surface);
+    let post_map = window.format_recent_configures();
+
+    // If the window ended up fullscreen, unfullscreen it and output the configure.
+    let mut post_unfullscreen = String::new();
+    let mapped = f.niri().layout.windows().next().unwrap().1;
+    let is_fullscreen = mapped.is_fullscreen();
+    let win = mapped.window.clone();
+    if is_fullscreen {
+        f.niri().layout.set_fullscreen(&win, false);
+        f.double_roundtrip(id);
+
+        let window = f.client(id).window(&surface);
+        post_unfullscreen = format!(
+            "\n\nunfullscreen configure:\n{}",
+            window.format_recent_configures()
+        );
+    }
+
     let snapshot = format!(
         "\
 initial configure:
 {initial}
 
 post-map configures:
-{}",
-        window.format_recent_configures()
+{post_map}{post_unfullscreen}",
     );
 
     let mut settings = insta::Settings::clone_current();
