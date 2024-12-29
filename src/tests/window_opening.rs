@@ -334,8 +334,17 @@ window-rule {{
 
     let window = client.window(&surface);
     window.attach_new_buffer();
+    let serial = window.configures_received.last().unwrap().0;
     window.ack_last_and_commit();
     f.double_roundtrip(id);
+
+    // Commit to the post-intial configures.
+    let window = f.client(id).window(&surface);
+    let new_serial = window.configures_received.last().unwrap().0;
+    if new_serial != serial {
+        window.ack_last_and_commit();
+        f.double_roundtrip(id);
+    }
 
     let niri = f.niri();
     let (mon, ws_idx, ws) = niri
@@ -548,8 +557,17 @@ window-rule {
 
     let window = client.window(&surface);
     window.attach_new_buffer();
+    let serial = window.configures_received.last().unwrap().0;
     window.ack_last_and_commit();
     f.double_roundtrip(id);
+
+    // Commit to the post-intial configures.
+    let window = f.client(id).window(&surface);
+    let new_serial = window.configures_received.last().unwrap().0;
+    if new_serial != serial {
+        window.ack_last_and_commit();
+        f.double_roundtrip(id);
+    }
 
     let window = f.client(id).window(&surface);
     let snapshot = format!(
