@@ -52,6 +52,7 @@ window-rule {
     block-out-from "screencast"
     // block-out-from "screen-capture"
     variable-refresh-rate true
+    default-floating-position x=100 y=200
 
     focus-ring {
         // off
@@ -504,6 +505,29 @@ window-rule {
     match app-id="^mpv$"
 
     variable-refresh-rate true
+}
+```
+
+#### `default-floating-position`
+
+<sup>Since: next release</sup>
+
+Set the initial position for this window when it opens on, or moves to the floating layout.
+
+Afterward, the window will remember its last floating position.
+
+By default, new floating windows open at the center of the screen, and windows from the tiling layout open close to their visual screen position.
+
+The position uses logical coordinates relative to the working area.
+For example, if you have a bar at the top, then `x=0 y=0` will put the top-left corner of the window directly below the bar.
+
+```kdl
+// Open the Firefox picture-in-picture window at the top-left corner of the screen
+// with a small gap.
+window-rule {
+    match app-id="firefox$" title="^Picture-in-Picture$"
+
+    default-floating-position x=32 y=32
 }
 ```
 

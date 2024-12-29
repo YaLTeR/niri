@@ -1019,6 +1019,8 @@ pub struct WindowRule {
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, unwrap(argument))]
     pub variable_refresh_rate: Option<bool>,
+    #[knuffel(child)]
+    pub default_floating_position: Option<FoIPosition>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -1080,6 +1082,14 @@ pub struct BorderRule {
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct FoIPosition {
+    #[knuffel(property)]
+    pub x: FloatOrInt<-65535, 65535>,
+    #[knuffel(property)]
+    pub y: FloatOrInt<-65535, 65535>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -3192,6 +3202,7 @@ mod tests {
                 open-floating false
                 open-focused true
                 default-window-height { fixed 500; }
+                default-floating-position x=100 y=-200
 
                 focus-ring {
                     off
@@ -3476,6 +3487,10 @@ mod tests {
                     open_floating: Some(false),
                     open_focused: Some(true),
                     default_window_height: Some(DefaultPresetSize(Some(PresetSize::Fixed(500)))),
+                    default_floating_position: Some(FoIPosition {
+                        x: FloatOrInt(100.),
+                        y: FloatOrInt(-200.),
+                    }),
                     focus_ring: BorderRule {
                         off: true,
                         width: Some(FloatOrInt(3.)),
