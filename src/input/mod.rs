@@ -1697,8 +1697,16 @@ impl State {
                             // FIXME: deduplicate with resize_request in xdg-shell somehow.
                             let time = get_monotonic_time();
                             let last_cell = mapped.last_interactive_resize_start();
-                            let last = last_cell.get();
+                            let mut last = last_cell.get();
                             last_cell.set(Some((time, edges)));
+
+                            // Floating windows don't have either of the double-resize-click
+                            // gestures, so just allow it to resize.
+                            if mapped.is_floating() {
+                                last = None;
+                                last_cell.set(None);
+                            }
+
                             if let Some((last_time, last_edges)) = last {
                                 if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
                                     // Allow quick resize after a triple click.
