@@ -415,12 +415,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         }
 
-        let pos = tile
-            .floating_pos
-            .map(|pos| self.scale_by_working_area(pos))
-            .unwrap_or_else(|| {
-                center_preferring_top_left_in_area(self.working_area, tile.tile_size())
-            });
+        let pos = tile.floating_pos.map(|pos| self.scale_by_working_area(pos));
+        let pos = pos.or_else(|| {
+            tile.default_floating_logical_pos()
+                .map(|pos| pos + self.working_area.loc)
+        });
+        let pos = pos.unwrap_or_else(|| {
+            center_preferring_top_left_in_area(self.working_area, tile.tile_size())
+        });
 
         let data = Data::new(self.working_area, &tile, pos);
         self.data.insert(idx, data);
