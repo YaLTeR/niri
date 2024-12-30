@@ -22,13 +22,14 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracy-client = { version = "0.17.4", default-features = false }
 
 [workspace.dependencies.smithay]
-git = "https://github.com/YaLTeR/smithay.git"
-branch = "fix-vrr-cursor-plane-only"
+git = "https://github.com/PolyMeilex/smithay.git"
+branch = "ext-idle-notify-2"
 # path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/PolyMeilex/smithay.git"
+branch = "ext-idle-notify-2"
 # path = "../smithay/smithay-drm-extras"
 
 [package]

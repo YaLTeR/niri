@@ -2613,7 +2613,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af1844ef2428cc3e1cb900be36181049ef3d3193c63e43026cfe202983b27a56"
 dependencies = [
- "proc-macro-crate 3.2.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.86",
@@ -3727,7 +3727,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/YaLTeR/smithay.git?branch=fix-vrr-cursor-plane-only#a1fec3b52902d51fa351c235cb4177ba7c14a675"
+source = "git+https://github.com/PolyMeilex/smithay.git?branch=ext-idle-notify-2#d7fa8aeeb6f28fb17219361f828b74350baa9d21"
 dependencies = [
  "appendlist",
  "bitflags 2.6.0",
@@ -3799,7 +3799,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#c3f3ac8dc0776d47bc50f9a1911b613a56e6e04b"
+source = "git+https://github.com/PolyMeilex/smithay.git?branch=ext-idle-notify-2#d7fa8aeeb6f28fb17219361f828b74350baa9d21"
 dependencies = [
  "drm",
  "libdisplay-info",
