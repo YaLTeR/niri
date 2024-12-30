@@ -22,13 +22,14 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracy-client = { version = "0.17.4", default-features = false }
 
 [workspace.dependencies.smithay]
-git = "https://github.com/YaLTeR/smithay.git"
-branch = "fix-vrr-cursor-plane-only"
+git = "https://github.com/PolyMeilex/smithay.git"
+branch = "ext-idle-notify-2"
 # path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/PolyMeilex/smithay.git"
+branch = "ext-idle-notify-2"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
@@ -87,6 +88,18 @@ wayland-backend = "0.3.7"
 wayland-scanner = "0.31.5"
 xcursor = "0.3.8"
 zbus = { version = "~3.15.2", optional = true }
+
+[patch.crates-io]
+wayland-egl = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-protocols = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-protocols-wlr = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-protocols-misc = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-server = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-cursor = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-client = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-sys = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-backend = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
+wayland-scanner = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "ext-idle-notify-2" }
 
 [dependencies.smithay]
 workspace = true

@@ -52,9 +52,11 @@ impl DBusServers {
         if is_session_instance || config.debug.dbus_interfaces_in_non_session_instances {
             let display_config = DisplayConfig::new(backend.ipc_outputs());
             dbus.conn_display_config = try_start(display_config);
-
-            let screen_saver = ScreenSaver::new(niri.is_fdo_idle_inhibited.clone());
-            dbus.conn_screen_saver = try_start(screen_saver);
+            
+            if !(config.prefer_no_fdo_screensaver_dbus_impl) {
+                let screen_saver = ScreenSaver::new(niri.is_fdo_idle_inhibited.clone());
+                dbus.conn_screen_saver = try_start(screen_saver);
+            }
 
             let (to_niri, from_screenshot) = calloop::channel::channel();
             let (to_screenshot, from_niri) = async_channel::unbounded();
