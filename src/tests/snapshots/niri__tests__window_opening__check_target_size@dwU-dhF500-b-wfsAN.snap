@@ -5,11 +5,11 @@ expression: snapshot
 snapshot_kind: text
 ---
 initial configure:
-size: 0 × 680, bounds: 1240 × 680, states: []
+size: 0 × 500, bounds: 1240 × 680, states: []
 
 post-map configures:
 size: 1280 × 720, bounds: 1240 × 680, states: [Fullscreen]
 size: 1280 × 720, bounds: 1240 × 680, states: [Fullscreen, Activated]
 
 unfullscreen configure:
-size: 1 × 680, bounds: 1240 × 680, states: [Activated]
+size: 1 × 500, bounds: 1240 × 680, states: [Activated]

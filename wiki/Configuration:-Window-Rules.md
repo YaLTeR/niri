@@ -244,6 +244,8 @@ To be precise, they apply at the point when niri sends the initial configure req
 
 Set the default width for the new window.
 
+This works for floating windows too, despite the word "column" in the name.
+
 ```kdl
 // Give Blender and GIMP some guaranteed width on opening.
 window-rule {
@@ -261,14 +263,16 @@ window-rule {
 
 <sup>Since: next release</sup>
 
-Set the default height for the new window if it opens as floating.
+Set the default height for the new window.
 
 ```kdl
-// Make Alacritty take 50% of the screen height on opening.
+// Open the Firefox picture-in-picture window as floating with 480×270 size.
 window-rule {
-    match app-id="^Alacritty$"
+    match app-id="firefox$" title="^Picture-in-Picture$"
 
-    default-window-height { proportion 0.5; }
+    open-floating true
+    default-column-width { fixed 480; }
+    default-window-height { fixed 270; }
 }
 ```
 
