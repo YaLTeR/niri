@@ -127,6 +127,7 @@ install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri-shutdown.target
 
 %if %{with check}
 %check
+export XDG_RUNTIME_DIR="$(mktemp -d)"
 %cargo_test -- --workspace --exclude niri-visual-tests
 %endif
 
