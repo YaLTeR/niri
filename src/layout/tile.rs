@@ -999,11 +999,6 @@ impl<W: LayoutElement> Tile<W> {
         &self.options
     }
 
-    pub fn default_floating_logical_pos(&self) -> Option<Point<f64, Logical>> {
-        let pos = self.window().rules().default_floating_position?;
-        Some(Point::from((pos.x.0, pos.y.0)))
-    }
-
     #[cfg(test)]
     pub fn view_size(&self) -> Size<f64, Logical> {
         self.view_size

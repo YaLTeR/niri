@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::PresetSize;
+use niri_config::{PresetSize, RelativeTo};
 use niri_ipc::{PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
@@ -415,12 +415,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         }
 
-        let pos = tile.floating_pos.map(|pos| self.scale_by_working_area(pos));
-        let pos = pos.or_else(|| {
-            tile.default_floating_logical_pos()
-                .map(|pos| pos + self.working_area.loc)
-        });
-        let pos = pos.unwrap_or_else(|| {
+        let pos = self.stored_or_default_tile_pos(&tile).unwrap_or_else(|| {
             center_preferring_top_left_in_area(self.working_area, tile.tile_size())
         });
 
@@ -1189,6 +1184,27 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
 
         Size::from((width, height))
+    }
+
+    pub fn stored_or_default_tile_pos(&self, tile: &Tile<W>) -> Option<Point<f64, Logical>> {
+        let pos = tile.floating_pos.map(|pos| self.scale_by_working_area(pos));
+        pos.or_else(|| {
+            tile.window().rules().default_floating_position.map(|pos| {
+                let relative_to = pos.relative_to;
+                let size = tile.tile_size();
+                let area = self.working_area;
+
+                let mut pos = Point::from((pos.x.0, pos.y.0));
+                if relative_to == RelativeTo::TopRight || relative_to == RelativeTo::BottomRight {
+                    pos.x = area.size.w - size.w - pos.x;
+                }
+                if relative_to == RelativeTo::BottomLeft || relative_to == RelativeTo::BottomRight {
+                    pos.y = area.size.h - size.h - pos.y;
+                }
+
+                pos + self.working_area.loc
+            })
+        })
     }
 
     #[cfg(test)]

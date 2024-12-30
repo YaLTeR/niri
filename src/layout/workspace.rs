@@ -1143,9 +1143,8 @@ impl<W: LayoutElement> Workspace<W> {
             removed.tile.stop_move_animations();
 
             // Come up with a default floating position close to the tile position.
-            if removed.tile.floating_pos.is_none()
-                && removed.tile.default_floating_logical_pos().is_none()
-            {
+            let stored_or_default = self.floating.stored_or_default_tile_pos(&removed.tile);
+            if stored_or_default.is_none() {
                 let offset = if self.options.center_focused_column == CenterFocusedColumn::Always {
                     Point::from((0., 0.))
                 } else {
@@ -1236,13 +1235,7 @@ impl<W: LayoutElement> Workspace<W> {
             };
 
             let working_area_loc = self.floating.working_area().loc;
-            let pos = tile
-                .floating_pos
-                .map(|pos| self.floating.scale_by_working_area(pos));
-            let pos = pos.or_else(|| {
-                tile.default_floating_logical_pos()
-                    .map(|pos| pos + working_area_loc)
-            });
+            let pos = self.floating.stored_or_default_tile_pos(tile);
 
             // If there's no stored floating position, we can only set both components at once, not
             // adjust.
