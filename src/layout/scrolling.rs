@@ -2116,6 +2116,27 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = if let Some(window) = window {
+            self.columns
+                .iter_mut()
+                .find(|col| col.contains(window))
+                .unwrap()
+        } else {
+            &mut self.columns[self.active_column_idx]
+        };
+
+        // FIXME: when we fix preset fixed width to be per-window, this should also be made
+        // window-specific to resolve the correct window width.
+        col.toggle_width();
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
     pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
         if self.columns.is_empty() {
             return;
