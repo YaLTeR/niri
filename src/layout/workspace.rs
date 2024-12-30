@@ -740,7 +740,7 @@ impl<W: LayoutElement> Workspace<W> {
         let mut size = if is_floating {
             self.floating.new_window_size(width, height, rules)
         } else {
-            self.scrolling.new_window_size(width, rules)
+            self.scrolling.new_window_size(width, height, rules)
         };
 
         // If the window has a fixed size, or we're picking some fixed size, apply min and max

@@ -36,6 +36,11 @@ pub enum InitialConfigureState {
         /// `None` means that the window will pick its own width.
         width: Option<ColumnWidth>,
 
+        /// Resolved scrolling default height for this window.
+        ///
+        /// `None` means that the window will pick its own height.
+        height: Option<PresetSize>,
+
         /// Resolved floating default width for this window.
         ///
         /// `None` means that the window will pick its own width.

@@ -839,16 +839,23 @@ impl<W: LayoutElement> Layout<W> {
     /// Adds a new window to the layout.
     ///
     /// Returns an output that the window was added to, if there were any outputs.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_window(
         &mut self,
         window: W,
         target: AddWindowTarget<W>,
         width: Option<ColumnWidth>,
+        height: Option<PresetSize>,
         is_full_width: bool,
         is_floating: bool,
         activate: ActivateWindow,
     ) -> Option<&Output> {
         let resolved_width = self.resolve_default_width(&window, width, is_floating);
+        let resolved_height = height.map(|h| match h {
+            PresetSize::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
+            PresetSize::Fixed(fixed) => SizeChange::SetFixed(fixed),
+        });
+        let id = window.id().clone();
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -927,6 +934,18 @@ impl<W: LayoutElement> Layout<W> {
                     *active_monitor_idx = mon_idx;
                 }
 
+                // Set the default height for scrolling windows.
+                if !is_floating {
+                    if let Some(change) = resolved_height {
+                        let ws = mon
+                            .workspaces
+                            .iter_mut()
+                            .find(|ws| ws.has_window(&id))
+                            .unwrap();
+                        ws.set_window_height(Some(&id), change);
+                    }
+                }
+
                 Some(&mon.output)
             }
             MonitorSet::NoOutputs { workspaces } => {
@@ -982,6 +1001,13 @@ impl<W: LayoutElement> Layout<W> {
                     is_full_width,
                     is_floating,
                 );
+
+                // Set the default height for scrolling windows.
+                if !is_floating {
+                    if let Some(change) = resolved_height {
+                        ws.set_window_height(Some(&id), change);
+                    }
+                }
 
                 None
             }
@@ -4693,6 +4719,7 @@ mod tests {
                         win,
                         AddWindowTarget::Auto,
                         None,
+                        None,
                         false,
                         params.is_floating,
                         ActivateWindow::default(),
@@ -4759,6 +4786,7 @@ mod tests {
                     layout.add_window(
                         win,
                         AddWindowTarget::NextTo(&next_to_id),
+                        None,
                         None,
                         false,
                         params.is_floating,
@@ -4831,6 +4859,7 @@ mod tests {
                     layout.add_window(
                         win,
                         AddWindowTarget::Workspace(ws_id),
+                        None,
                         None,
                         false,
                         params.is_floating,

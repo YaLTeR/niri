@@ -399,6 +399,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn new_window_size(
         &self,
         width: Option<ColumnWidth>,
+        height: Option<PresetSize>,
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
         let border = rules.border.resolve_against(self.options.border);
@@ -417,10 +418,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             0
         };
 
-        let mut height = self.working_area.size.h - self.options.gaps * 2.;
+        let mut full_height = self.working_area.size.h - self.options.gaps * 2.;
         if !border.off {
-            height -= border.width.0 * 2.;
+            full_height -= border.width.0 * 2.;
         }
+
+        let height = if let Some(height) = height {
+            let height = match resolve_preset_size(height, &self.options, self.working_area.size.h)
+            {
+                ResolvedSize::Tile(mut size) => {
+                    if !border.off {
+                        size -= border.width.0 * 2.;
+                    }
+                    size
+                }
+                ResolvedSize::Window(size) => size,
+            };
+            f64::min(height, full_height)
+        } else {
+            full_height
+        };
 
         Size::from((width, max(height.floor() as i32, 1)))
     }

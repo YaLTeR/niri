@@ -505,6 +505,7 @@ impl XdgShellHandler for State {
                 InitialConfigureState::Configured {
                     rules,
                     width,
+                    height,
                     floating_width,
                     floating_height,
                     is_full_width,
@@ -569,7 +570,11 @@ impl XdgShellHandler for State {
                         } else {
                             *width
                         };
-                        let configure_height = if is_floating { *floating_height } else { None };
+                        let configure_height = if is_floating {
+                            *floating_height
+                        } else {
+                            *height
+                        };
                         ws.configure_new_window(
                             &unmapped.window,
                             configure_width,
@@ -854,6 +859,7 @@ impl State {
 
         let mut width = None;
         let mut floating_width = None;
+        let mut height = None;
         let mut floating_height = None;
         let is_full_width = rules.open_maximized.unwrap_or(false);
         let is_floating = rules.compute_open_floating(toplevel);
@@ -880,6 +886,7 @@ impl State {
 
             width = ws.resolve_default_width(rules.default_width, false);
             floating_width = ws.resolve_default_width(rules.default_width, true);
+            height = ws.resolve_default_height(rules.default_height, false);
             floating_height = ws.resolve_default_height(rules.default_height, true);
 
             let configure_width = if is_floating {
@@ -889,7 +896,7 @@ impl State {
             } else {
                 width
             };
-            let configure_height = if is_floating { floating_height } else { None };
+            let configure_height = if is_floating { floating_height } else { height };
             ws.configure_new_window(
                 window,
                 configure_width,
@@ -914,6 +921,7 @@ impl State {
         *state = InitialConfigureState::Configured {
             rules,
             width,
+            height,
             floating_width,
             floating_height,
             is_full_width,

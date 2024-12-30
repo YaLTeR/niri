@@ -97,10 +97,11 @@ impl CompositorHandler for State {
 
                     let toplevel = window.toplevel().expect("no X11 support");
 
-                    let (rules, width, is_full_width, output, workspace_id) =
+                    let (rules, width, height, is_full_width, output, workspace_id) =
                         if let InitialConfigureState::Configured {
                             rules,
                             width,
+                            height,
                             floating_width: _,
                             floating_height: _,
                             is_full_width,
@@ -118,10 +119,10 @@ impl CompositorHandler for State {
                                 .and_then(|n| self.niri.layout.find_workspace_by_name(n))
                                 .map(|(_, ws)| ws.id());
 
-                            (rules, width, is_full_width, output, workspace_id)
+                            (rules, width, height, is_full_width, output, workspace_id)
                         } else {
                             error!("window map must happen after initial configure");
-                            (ResolvedWindowRules::empty(), None, false, None, None)
+                            (ResolvedWindowRules::empty(), None, None, false, None, None)
                         };
 
                     // The GTK about dialog sets min/max size after the initial configure but
@@ -189,6 +190,7 @@ impl CompositorHandler for State {
                         mapped,
                         target,
                         width,
+                        height,
                         is_full_width,
                         is_floating,
                         activate,
