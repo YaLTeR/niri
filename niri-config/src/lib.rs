@@ -1090,6 +1090,17 @@ pub struct FoIPosition {
     pub x: FloatOrInt<-65535, 65535>,
     #[knuffel(property)]
     pub y: FloatOrInt<-65535, 65535>,
+    #[knuffel(property, default)]
+    pub relative_to: RelativeTo,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum RelativeTo {
+    #[default]
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -3214,7 +3225,7 @@ mod tests {
                 open-floating false
                 open-focused true
                 default-window-height { fixed 500; }
-                default-floating-position x=100 y=-200
+                default-floating-position x=100 y=-200 relative-to="bottom-left"
 
                 focus-ring {
                     off
@@ -3502,6 +3513,7 @@ mod tests {
                     default_floating_position: Some(FoIPosition {
                         x: FloatOrInt(100.),
                         y: FloatOrInt(-200.),
+                        relative_to: RelativeTo::BottomLeft,
                     }),
                     focus_ring: BorderRule {
                         off: true,
