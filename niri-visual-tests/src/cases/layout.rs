@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use niri::animation::Clock;
 use niri::layout::scrolling::ColumnWidth;
-use niri::layout::{ActivateWindow, LayoutElement as _, Options};
+use niri::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _, Options};
 use niri::render_helpers::RenderTarget;
 use niri_config::{Color, FloatOrInt, OutputName};
 use smithay::backend::renderer::element::RenderElement;
@@ -159,11 +159,24 @@ impl Layout {
 
     fn add_window(&mut self, mut window: TestWindow, width: Option<ColumnWidth>) {
         let ws = self.layout.active_workspace().unwrap();
-        window.request_size(ws.new_window_size(width, window.rules()), false, None);
+        let min_size = window.min_size();
+        let max_size = window.max_size();
+        window.request_size(
+            ws.new_window_size(width, None, false, window.rules(), (min_size, max_size)),
+            false,
+            None,
+        );
         window.communicate();
 
-        self.layout
-            .add_window(window.clone(), width, false, ActivateWindow::default());
+        self.layout.add_window(
+            window.clone(),
+            AddWindowTarget::Auto,
+            width,
+            None,
+            false,
+            false,
+            ActivateWindow::default(),
+        );
         self.windows.push(window);
     }
 
@@ -174,11 +187,24 @@ impl Layout {
         width: Option<ColumnWidth>,
     ) {
         let ws = self.layout.active_workspace().unwrap();
-        window.request_size(ws.new_window_size(width, window.rules()), false, None);
+        let min_size = window.min_size();
+        let max_size = window.max_size();
+        window.request_size(
+            ws.new_window_size(width, None, false, window.rules(), (min_size, max_size)),
+            false,
+            None,
+        );
         window.communicate();
 
-        self.layout
-            .add_window_right_of(right_of.id(), window.clone(), width, false);
+        self.layout.add_window(
+            window.clone(),
+            AddWindowTarget::NextTo(right_of.id()),
+            width,
+            None,
+            false,
+            false,
+            ActivateWindow::default(),
+        );
         self.windows.push(window);
     }
 
@@ -238,7 +264,7 @@ impl TestCase for Layout {
         self.layout
             .monitor_for_output(&self.output)
             .unwrap()
-            .render_elements(renderer, RenderTarget::Output)
+            .render_elements(renderer, RenderTarget::Output, true)
             .map(|elem| Box::new(elem) as _)
             .collect()
     }

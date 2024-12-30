@@ -1,9 +1,14 @@
 use std::cmp::{max, min};
 
-use niri_config::{BlockOutFrom, BorderRule, CornerRadius, Match, WindowRule};
+use niri_config::{
+    BlockOutFrom, BorderRule, CornerRadius, FoIPosition, Match, PresetSize, WindowRule,
+};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Size};
-use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceRoleAttributes};
+use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::xdg::{
+    SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceRoleAttributes,
+};
 
 use crate::layout::scrolling::ColumnWidth;
 use crate::utils::with_toplevel_role;
@@ -31,6 +36,16 @@ pub struct ResolvedWindowRules {
     /// - `Some(Some(width))`: set to a particular width.
     pub default_width: Option<Option<ColumnWidth>>,
 
+    /// Default height for this window.
+    ///
+    /// - `None`: unset (global default should be used).
+    /// - `Some(None)`: set to empty (window picks its own height).
+    /// - `Some(Some(width))`: set to a particular height.
+    pub default_height: Option<Option<PresetSize>>,
+
+    /// Default floating position for this window.
+    pub default_floating_position: Option<FoIPosition>,
+
     /// Output to open this window on.
     pub open_on_output: Option<String>,
 
@@ -42,6 +57,12 @@ pub struct ResolvedWindowRules {
 
     /// Whether the window should open fullscreen.
     pub open_fullscreen: Option<bool>,
+
+    /// Whether the window should open floating.
+    pub open_floating: Option<bool>,
+
+    /// Whether the window should open focused.
+    pub open_focused: Option<bool>,
 
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
@@ -99,16 +120,35 @@ impl<'a> WindowRef<'a> {
             WindowRef::Mapped(mapped) => mapped.is_active_in_column(),
         }
     }
+
+    pub fn is_floating(self) -> bool {
+        match self {
+            // FIXME: This means you cannot set initial configure rules based on is-floating. I'm
+            // not sure there's a good way to support it, since this matcher makes a cycle with the
+            // open-floating rule.
+            //
+            // That said, I don't think there are a lot of useful initial configure properties you
+            // may want to set through an is-floating matcher? Like, if you're configuring a
+            // specific window to open as floating, you can also set those properties in that same
+            // window rule, rather than relying on a different is-floating rule.
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_floating(),
+        }
+    }
 }
 
 impl ResolvedWindowRules {
     pub const fn empty() -> Self {
         Self {
             default_width: None,
+            default_height: None,
+            default_floating_position: None,
             open_on_output: None,
             open_on_workspace: None,
             open_maximized: None,
             open_fullscreen: None,
+            open_floating: None,
+            open_focused: None,
             min_width: None,
             min_height: None,
             max_width: None,
@@ -181,6 +221,14 @@ impl ResolvedWindowRules {
                     resolved.default_width = Some(x);
                 }
 
+                if let Some(x) = rule.default_window_height {
+                    resolved.default_height = Some(x.0);
+                }
+
+                if let Some(x) = rule.default_floating_position {
+                    resolved.default_floating_position = Some(x);
+                }
+
                 if let Some(x) = rule.open_on_output.as_deref() {
                     open_on_output = Some(x);
                 }
@@ -195,6 +243,14 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_fullscreen {
                     resolved.open_fullscreen = Some(x);
+                }
+
+                if let Some(x) = rule.open_floating {
+                    resolved.open_floating = Some(x);
+                }
+
+                if let Some(x) = rule.open_focused {
+                    resolved.open_focused = Some(x);
                 }
 
                 if let Some(x) = rule.min_width {
@@ -273,6 +329,37 @@ impl ResolvedWindowRules {
 
         size
     }
+
+    pub fn apply_min_max_size(
+        &self,
+        min_size: Size<i32, Logical>,
+        max_size: Size<i32, Logical>,
+    ) -> (Size<i32, Logical>, Size<i32, Logical>) {
+        let min_size = self.apply_min_size(min_size);
+        let max_size = self.apply_max_size(max_size);
+        (min_size, max_size)
+    }
+
+    pub fn compute_open_floating(&self, toplevel: &ToplevelSurface) -> bool {
+        if let Some(res) = self.open_floating {
+            return res;
+        }
+
+        // Windows with a parent (usually dialogs) open as floating by default.
+        if toplevel.parent().is_some() {
+            return true;
+        }
+
+        let (min_size, max_size) = with_states(toplevel.wl_surface(), |state| {
+            let mut guard = state.cached_state.get::<SurfaceCachedState>();
+            let current = guard.current();
+            (current.min_size, current.max_size)
+        });
+        let (min_size, max_size) = self.apply_min_max_size(min_size, max_size);
+
+        // We open fixed-height windows as floating.
+        min_size.h > 0 && min_size.h == max_size.h
+    }
 }
 
 fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
@@ -315,6 +402,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_active_in_column) = m.is_active_in_column {
         if window.is_active_in_column() != is_active_in_column {
+            return false;
+        }
+    }
+
+    if let Some(is_floating) = m.is_floating {
+        if window.is_floating() != is_floating {
             return false;
         }
     }

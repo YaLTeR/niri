@@ -9,7 +9,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::{
-    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
+    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options, SizeFrac,
     RESIZE_ANIMATION_THRESHOLD,
 };
 use crate::animation::{Animation, Clock};
@@ -48,8 +48,27 @@ pub struct Tile<W: LayoutElement> {
     /// The black backdrop for fullscreen windows.
     fullscreen_backdrop: SolidColorBuffer,
 
-    /// The size we were requested to fullscreen into.
-    fullscreen_size: Size<f64, Logical>,
+    /// Whether the tile should float upon unfullscreening.
+    pub(super) unfullscreen_to_floating: bool,
+
+    /// The size that the window should assume when going floating.
+    ///
+    /// This is generally the last size the window had when it was floating. It can be unknown if
+    /// the window starts out in the tiling layout or fullscreen.
+    pub(super) floating_window_size: Option<Size<i32, Logical>>,
+
+    /// The position that the tile should assume when going floating, relative to the floating
+    /// space working area.
+    ///
+    /// This is generally the last position the tile had when it was floating. It can be unknown if
+    /// the window starts out in the tiling layout.
+    pub(super) floating_pos: Option<Point<f64, SizeFrac>>,
+
+    /// Currently selected preset width index when this tile is floating.
+    pub(super) floating_preset_width_idx: Option<usize>,
+
+    /// Currently selected preset height index when this tile is floating.
+    pub(super) floating_preset_height_idx: Option<usize>,
 
     /// The animation upon opening a window.
     open_animation: Option<OpenAnimation>,
@@ -71,6 +90,11 @@ pub struct Tile<W: LayoutElement> {
 
     /// Extra damage for clipped surface corner radius changes.
     rounded_corner_damage: RoundedCornerDamage,
+
+    /// The view size for the tile's workspace.
+    ///
+    /// Used as the fullscreen target size.
+    view_size: Size<f64, Logical>,
 
     /// Scale of the output the tile is on (and rounds its sizes to).
     scale: f64,
@@ -112,18 +136,29 @@ struct MoveAnimation {
 }
 
 impl<W: LayoutElement> Tile<W> {
-    pub fn new(window: W, scale: f64, clock: Clock, options: Rc<Options>) -> Self {
+    pub fn new(
+        window: W,
+        view_size: Size<f64, Logical>,
+        scale: f64,
+        clock: Clock,
+        options: Rc<Options>,
+    ) -> Self {
         let rules = window.rules();
         let border_config = rules.border.resolve_against(options.border);
         let focus_ring_config = rules.focus_ring.resolve_against(options.focus_ring.into());
+        let is_fullscreen = window.is_fullscreen();
 
         Self {
             window,
             border: FocusRing::new(border_config.into()),
             focus_ring: FocusRing::new(focus_ring_config.into()),
-            is_fullscreen: false, // FIXME: up-to-date fullscreen right away, but we need size.
-            fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
-            fullscreen_size: Default::default(),
+            is_fullscreen,
+            fullscreen_backdrop: SolidColorBuffer::new(view_size, [0., 0., 0., 1.]),
+            unfullscreen_to_floating: false,
+            floating_window_size: None,
+            floating_pos: None,
+            floating_preset_width_idx: None,
+            floating_preset_height_idx: None,
             open_animation: None,
             resize_animation: None,
             move_x_animation: None,
@@ -131,13 +166,28 @@ impl<W: LayoutElement> Tile<W> {
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
+            view_size,
             scale,
             clock,
             options,
         }
     }
 
-    pub fn update_config(&mut self, scale: f64, options: Rc<Options>) {
+    pub fn update_config(
+        &mut self,
+        view_size: Size<f64, Logical>,
+        scale: f64,
+        options: Rc<Options>,
+    ) {
+        // If preset widths or heights changed, clear our stored preset index.
+        if self.options.preset_column_widths != options.preset_column_widths {
+            self.floating_preset_width_idx = None;
+        }
+        if self.options.preset_window_heights != options.preset_window_heights {
+            self.floating_preset_height_idx = None;
+        }
+
+        self.view_size = view_size;
         self.scale = scale;
         self.options = options;
 
@@ -150,6 +200,8 @@ impl<W: LayoutElement> Tile<W> {
             .focus_ring
             .resolve_against(self.options.focus_ring.into());
         self.focus_ring.update_config(focus_ring_config.into());
+
+        self.fullscreen_backdrop.resize(view_size);
     }
 
     pub fn update_shaders(&mut self) {
@@ -158,10 +210,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn update_window(&mut self) {
-        // FIXME: remove when we can get a fullscreen size right away.
-        if self.fullscreen_size != Size::from((0., 0.)) {
-            self.is_fullscreen = self.window.is_fullscreen();
-        }
+        self.is_fullscreen = self.window.is_fullscreen();
 
         if let Some(animate_from) = self.window.take_animation_snapshot() {
             let size_from = if let Some(resize) = self.resize_animation.take() {
@@ -389,10 +438,6 @@ impl<W: LayoutElement> Tile<W> {
         &mut self.window
     }
 
-    pub fn into_window(self) -> W {
-        self.window
-    }
-
     pub fn is_fullscreen(&self) -> bool {
         self.is_fullscreen
     }
@@ -417,7 +462,7 @@ impl<W: LayoutElement> Tile<W> {
         // In fullscreen, center the window in the given size.
         if self.is_fullscreen {
             let window_size = self.window_size();
-            let target_size = self.fullscreen_size;
+            let target_size = self.view_size;
 
             // Windows aren't supposed to be larger than the fullscreen size, but in case we get
             // one, leave it at the top-left as usual.
@@ -447,8 +492,27 @@ impl<W: LayoutElement> Tile<W> {
         if self.is_fullscreen {
             // Normally we'd just return the fullscreen size here, but this makes things a bit
             // nicer if a fullscreen window is bigger than the fullscreen size for some reason.
-            size.w = f64::max(size.w, self.fullscreen_size.w);
-            size.h = f64::max(size.h, self.fullscreen_size.h);
+            size.w = f64::max(size.w, self.view_size.w);
+            size.h = f64::max(size.h, self.view_size.h);
+            return size;
+        }
+
+        if let Some(width) = self.effective_border_width() {
+            size.w += width * 2.;
+            size.h += width * 2.;
+        }
+
+        size
+    }
+
+    pub fn tile_expected_or_current_size(&self) -> Size<f64, Logical> {
+        let mut size = self.window_expected_or_current_size();
+
+        if self.is_fullscreen {
+            // Normally we'd just return the fullscreen size here, but this makes things a bit
+            // nicer if a fullscreen window is bigger than the fullscreen size for some reason.
+            size.w = f64::max(size.w, self.view_size.w);
+            size.h = f64::max(size.h, self.view_size.h);
             return size;
         }
 
@@ -462,6 +526,15 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn window_size(&self) -> Size<f64, Logical> {
         let mut size = self.window.size().to_f64();
+        size = size
+            .to_physical_precise_round(self.scale)
+            .to_logical(self.scale);
+        size
+    }
+
+    pub fn window_expected_or_current_size(&self) -> Size<f64, Logical> {
+        let size = self.window.expected_size();
+        let mut size = size.unwrap_or_else(|| self.window.size()).to_f64();
         size = size
             .to_physical_precise_round(self.scale)
             .to_logical(self.scale);
@@ -491,8 +564,8 @@ impl<W: LayoutElement> Tile<W> {
         if self.is_fullscreen {
             // Normally we'd just return the fullscreen size here, but this makes things a bit
             // nicer if a fullscreen window is bigger than the fullscreen size for some reason.
-            size.w = f64::max(size.w, self.fullscreen_size.w);
-            size.h = f64::max(size.h, self.fullscreen_size.h);
+            size.w = f64::max(size.w, self.view_size.w);
+            size.h = f64::max(size.h, self.view_size.h);
             return size;
         }
 
@@ -573,10 +646,9 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    pub fn request_fullscreen(&mut self, size: Size<f64, Logical>) {
-        self.fullscreen_backdrop.resize(size);
-        self.fullscreen_size = size;
-        self.window.request_fullscreen(size.to_i32_round());
+    pub fn request_fullscreen(&mut self) {
+        self.window
+            .request_fullscreen(self.view_size.to_i32_round());
     }
 
     pub fn min_size(&self) -> Size<f64, Logical> {
@@ -923,9 +995,21 @@ impl<W: LayoutElement> Tile<W> {
         self.unmap_snapshot.take()
     }
 
+    pub fn options(&self) -> &Rc<Options> {
+        &self.options
+    }
+
+    #[cfg(test)]
+    pub fn view_size(&self) -> Size<f64, Logical> {
+        self.view_size
+    }
+
     #[cfg(test)]
     pub fn verify_invariants(&self) {
         use approx::assert_abs_diff_eq;
+
+        assert_eq!(self.is_fullscreen, self.window.is_fullscreen());
+        assert_eq!(self.fullscreen_backdrop.size(), self.view_size);
 
         let scale = self.scale;
         let size = self.tile_size();

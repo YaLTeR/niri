@@ -33,14 +33,18 @@ window-rule {
     match is-active=true
     match is-focused=false
     match is-active-in-column=true
+    match is-floating=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
+    default-window-height { fixed 500; }
     open-on-output "Some Company CoolMonitor 1234"
     open-on-workspace "chat"
     open-maximized true
     open-fullscreen true
+    open-floating true
+    open-focused false
 
     // Properties that apply continuously.
     draw-border-with-background false
@@ -48,6 +52,7 @@ window-rule {
     block-out-from "screencast"
     // block-out-from "screen-capture"
     variable-refresh-rate true
+    default-floating-position x=100 y=200 relative-to="bottom-left"
 
     focus-ring {
         // off
@@ -97,12 +102,12 @@ There can be multiple *matchers* in one directive, then the window should match 
 ```kdl
 window-rule {
     // Match Firefox windows with Gmail in title.
-    match app-id="org.mozilla.firefox" title="Gmail"
+    match app-id="firefox" title="Gmail"
 }
 
 window-rule {
     // Match Firefox, but only when it is active...
-    match app-id=r#"^org\.mozilla\.firefox$"# is-active=true
+    match app-id="firefox" is-active=true
 
     // ...or match Telegram...
     match app-id=r#"^org\.telegram\.desktop$"#
@@ -195,6 +200,23 @@ window-rule {
 }
 ```
 
+#### `is-floating`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches floating windows.
+
+> [!NOTE]
+> This matcher will apply only after the window is already open.
+> This means that you cannot use it to change the window opening properties like `default-window-height` or `open-on-workspace`.
+
+```kdl
+window-rule {
+    match is-floating=true
+}
+```
+
 #### `at-startup`
 
 <sup>Since: 0.1.6</sup>
@@ -222,6 +244,8 @@ To be precise, they apply at the point when niri sends the initial configure req
 
 Set the default width for the new window.
 
+This works for floating windows too, despite the word "column" in the name.
+
 ```kdl
 // Give Blender and GIMP some guaranteed width on opening.
 window-rule {
@@ -232,6 +256,23 @@ window-rule {
     match app-id="^gimp"
 
     default-column-width { fixed 1200; }
+}
+```
+
+#### `default-window-height`
+
+<sup>Since: next release</sup>
+
+Set the default height for the new window.
+
+```kdl
+// Open the Firefox picture-in-picture window as floating with 480×270 size.
+window-rule {
+    match app-id="firefox$" title="^Picture-in-Picture$"
+
+    open-floating true
+    default-column-width { fixed 480; }
+    default-window-height { fixed 270; }
 }
 ```
 
@@ -247,7 +288,7 @@ If the window opens on an output that is not currently focused, the window will 
 // Open Firefox and Telegram (but not its Media Viewer)
 // on a specific monitor.
 window-rule {
-    match app-id=r#"^org\.mozilla\.firefox$"#
+    match app-id="firefox$"
     match app-id=r#"^org\.telegram\.desktop$"#
     exclude app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
 
@@ -286,7 +327,7 @@ Make the window open as a maximized column.
 ```kdl
 // Maximize Firefox by default.
 window-rule {
-    match app-id=r#"^org\.mozilla\.firefox$"#
+    match app-id="firefox$"
 
     open-maximized true
 }
@@ -310,6 +351,59 @@ window-rule {
     match app-id=r#"^org\.telegram\.desktop$"# title="^Media viewer$"
 
     open-fullscreen false
+}
+```
+
+#### `open-floating`
+
+<sup>Since: next release</sup>
+
+Make the window open in the floating layout.
+
+```kdl
+// Open the Firefox picture-in-picture window as floating.
+window-rule {
+    match app-id="firefox$" title="^Picture-in-Picture$"
+
+    open-floating true
+}
+```
+
+You can also set this to `false` to *prevent* a window from opening in the floating layout.
+
+```kdl
+// Open all windows in the tiling layout, overriding any auto-floating logic.
+window-rule {
+    open-floating false
+}
+```
+
+#### `open-focused`
+
+<sup>Since: next release</sup>
+
+Set this to `false` to prevent this window from being automatically focused upon opening.
+
+```kdl
+// Don't give focus to the GIMP startup splash screen.
+window-rule {
+    match app-id="^gimp" title="^GIMP Startup$"
+
+    open-focused false
+}
+```
+
+You can also set this to `true` to focus the window, even if normally it wouldn't get auto-focused.
+
+```kdl
+// Always focus the KeePassXC-Browser unlock dialog.
+//
+// This dialog opens parented to the KeePassXC window rather than the browser,
+// so it doesn't get auto-focused by default.
+window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"# title="^Unlock Database - KeePassXC$"
+
+    open-focused true
 }
 ```
 
@@ -366,7 +460,7 @@ window-rule {
 > ```kdl
 > window-rule {
 >     // Doesn't quite work! Try to block out the Gmail tab.
->     match app-id=r#"^org\.mozilla\.firefox$"# title="- Gmail "
+>     match app-id="firefox$" title="- Gmail "
 >
 >     block-out-from "screencast"
 > }
@@ -415,6 +509,36 @@ window-rule {
     match app-id="^mpv$"
 
     variable-refresh-rate true
+}
+```
+
+#### `default-floating-position`
+
+<sup>Since: next release</sup>
+
+Set the initial position for this window when it opens on, or moves to the floating layout.
+
+Afterward, the window will remember its last floating position.
+
+By default, new floating windows open at the center of the screen, and windows from the tiling layout open close to their visual screen position.
+
+The position uses logical coordinates relative to the working area.
+By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`.
+
+For example, if you have a bar at the top, then `x=0 y=0` will put the top-left corner of the window directly below the bar.
+If instead you write `x=0 y=0 relative-to="top-right"`, then the top-right corner of the window will align with the top-right corner of the workspace, also directly below the bar.
+
+The coordinates change direction based on `relative-to`.
+For example, by default (top-left), `x=100 y=200` will put the window 100 pixels to the right and 200 pixels down from the top-left corner.
+If you use `x=100 y=200 relative-to="bottom-left"`, it will put the window 100 pixels to the right and 200 pixels *up* from the bottom-left corner.
+
+```kdl
+// Open the Firefox picture-in-picture window at the bottom-left corner of the screen
+// with a small gap.
+window-rule {
+    match app-id="firefox$" title="^Picture-in-Picture$"
+
+    default-floating-position x=32 y=32 relative-to="bottom-left"
 }
 ```
 

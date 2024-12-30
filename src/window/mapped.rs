@@ -66,6 +66,9 @@ pub struct Mapped {
     /// Whether this window is the active window in its column.
     is_active_in_column: bool,
 
+    /// Whether this window is floating.
+    is_floating: bool,
+
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
 
@@ -77,6 +80,8 @@ pub struct Mapped {
 
     /// Snapshot right before an animated commit.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
+
+    request_size_once: Option<RequestSizeOnce>,
 
     /// Transaction that the next configure should take part in, if any.
     transaction_for_next_configure: Option<Transaction>,
@@ -140,6 +145,13 @@ impl InteractiveResize {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum RequestSizeOnce {
+    WaitingForConfigure,
+    WaitingForCommit(Serial),
+    UseWindowSize,
+}
+
 impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
@@ -154,10 +166,12 @@ impl Mapped {
             need_to_recompute_rules: false,
             is_focused: false,
             is_active_in_column: false,
+            is_floating: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
+            request_size_once: None,
             transaction_for_next_configure: None,
             pending_transactions: Vec::new(),
             interactive_resize: None,
@@ -208,6 +222,10 @@ impl Mapped {
 
     pub fn is_active_in_column(&self) -> bool {
         self.is_active_in_column
+    }
+
+    pub fn is_floating(&self) -> bool {
+        self.is_floating
     }
 
     pub fn set_is_focused(&mut self, is_focused: bool) {
@@ -516,6 +534,8 @@ impl LayoutElement for Mapped {
             self.animate_next_configure = true;
         }
 
+        self.request_size_once = None;
+
         // Store the transaction regardless of whether the size changed. This is because with 3+
         // windows in a column, the size may change among windows 1 and 2 and then right away among
         // windows 2 and 3, and we want all windows 1, 2 and 3 to use the last transaction, rather
@@ -526,11 +546,76 @@ impl LayoutElement for Mapped {
         }
     }
 
-    fn request_fullscreen(&self, size: Size<i32, Logical>) {
+    fn request_size_once(&mut self, size: Size<i32, Logical>, animate: bool) {
+        // Assume that when calling this function, the window is going floating, so it can no
+        // longer participate in any transactions with other windows.
+        self.transaction_for_next_configure = None;
+
+        // If our last requested size already matches the size we want to request-once, clear the
+        // size request right away. However, we must also check if we're unfullscreening, because
+        // in that case the window itself will restore its previous size upon receiving a (0, 0)
+        // configure, whereas what we potentially want is to unfullscreen the window into its
+        // fullscreen size.
+        let already_sent = with_toplevel_role(self.toplevel(), |role| {
+            let (last_sent, last_serial) = if let Some(configure) = role.pending_configures().last()
+            {
+                // FIXME: it would be more optimal to find the *oldest* pending configure that
+                // has the same size and fullscreen state to the last pending configure.
+                (&configure.state, configure.serial)
+            } else {
+                (
+                    role.last_acked.as_ref().unwrap(),
+                    role.configure_serial.unwrap(),
+                )
+            };
+
+            let same_size = last_sent.size.unwrap_or_default() == size;
+            let has_fullscreen = last_sent.states.contains(xdg_toplevel::State::Fullscreen);
+            (same_size && !has_fullscreen).then_some(last_serial)
+        });
+
+        if let Some(serial) = already_sent {
+            if let Some(current_serial) =
+                with_toplevel_role(self.toplevel(), |role| role.current_serial)
+            {
+                // God this triple negative...
+                if !current_serial.is_no_older_than(&serial) {
+                    // We have already sent a request for the new size, but the surface has not
+                    // committed in response yet, so we will wait for that commit.
+                    self.request_size_once = Some(RequestSizeOnce::WaitingForCommit(serial));
+                } else {
+                    // We have already sent a request for the new size, and the surface has
+                    // committed in response, so we will start using the current size right away.
+                    self.request_size_once = Some(RequestSizeOnce::UseWindowSize);
+                }
+            } else {
+                warn!("no current serial; did the surface not ack the initial configure?");
+                self.request_size_once = Some(RequestSizeOnce::UseWindowSize);
+            };
+            return;
+        }
+
+        let changed = self.toplevel().with_pending_state(|state| {
+            let changed = state.size != Some(size);
+            state.size = Some(size);
+            state.states.unset(xdg_toplevel::State::Fullscreen);
+            changed
+        });
+
+        if changed && animate {
+            self.animate_next_configure = true;
+        }
+
+        self.request_size_once = Some(RequestSizeOnce::WaitingForConfigure);
+    }
+
+    fn request_fullscreen(&mut self, size: Size<i32, Logical>) {
         self.toplevel().with_pending_state(|state| {
             state.size = Some(size);
             state.states.set(xdg_toplevel::State::Fullscreen);
         });
+
+        self.request_size_once = None;
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
@@ -613,6 +698,12 @@ impl LayoutElement for Mapped {
         self.need_to_recompute_rules |= changed;
     }
 
+    fn set_floating(&mut self, floating: bool) {
+        let changed = self.is_floating != floating;
+        self.is_floating = floating;
+        self.need_to_recompute_rules |= changed;
+    }
+
     fn set_bounds(&self, bounds: Size<i32, Logical>) {
         self.toplevel().with_pending_state(|state| {
             state.bounds = Some(bounds);
@@ -669,11 +760,39 @@ impl LayoutElement for Mapped {
     }
 
     fn send_pending_configure(&mut self) {
+        let toplevel = self.toplevel();
         let _span =
-            trace_span!("send_pending_configure", surface = ?self.toplevel().wl_surface().id())
-                .entered();
+            trace_span!("send_pending_configure", surface = ?toplevel.wl_surface().id()).entered();
 
-        if let Some(serial) = self.toplevel().send_pending_configure() {
+        // Check for pending changes manually to account fo RequestSizeOnce::UseWindowSize.
+        let has_pending_changes = with_toplevel_role(self.toplevel(), |role| {
+            if role.server_pending.is_none() {
+                return false;
+            }
+
+            let current_server_size = role.current_server_state().size;
+            let server_pending = role.server_pending.as_mut().unwrap();
+
+            // With UseWindowSize, we do not consider size-only changes, because we will
+            // request the current window size and do not expect it to actually change.
+            if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
+                server_pending.size = current_server_size;
+            }
+
+            let server_pending = role.server_pending.as_ref().unwrap();
+            server_pending != role.current_server_state()
+        });
+
+        if has_pending_changes {
+            // If needed, replace the pending size with the current window size.
+            if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
+                let size = self.window.geometry().size;
+                toplevel.with_pending_state(|state| {
+                    state.size = Some(size);
+                });
+            }
+
+            let serial = toplevel.send_configure();
             trace!(?serial, "sending configure");
 
             if self.animate_next_configure {
@@ -689,6 +808,10 @@ impl LayoutElement for Mapped {
                     Some(InteractiveResize::WaitingForLastCommit { data, serial })
                 }
                 x => x,
+            };
+
+            if let Some(RequestSizeOnce::WaitingForConfigure) = self.request_size_once {
+                self.request_size_once = Some(RequestSizeOnce::WaitingForCommit(serial));
             }
         } else {
             self.interactive_resize = match self.interactive_resize.take() {
@@ -696,7 +819,7 @@ impl LayoutElement for Mapped {
                 // changing.
                 Some(InteractiveResize::WaitingForLastConfigure { .. }) => None,
                 x => x,
-            }
+            };
         }
 
         self.animate_next_configure = false;
@@ -718,6 +841,90 @@ impl LayoutElement for Mapped {
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
         self.toplevel().with_pending_state(|state| state.size)
+    }
+
+    fn expected_size(&self) -> Option<Size<i32, Logical>> {
+        // We can only use current size if it's not fullscreen.
+        let current_size = (!self.is_fullscreen()).then(|| self.window.geometry().size);
+
+        // Check if we should be using the current window size.
+        //
+        // This branch can be useful (give different result than the logic below) in this example
+        // case:
+        //
+        // 1. We request_size_once a size change.
+        // 2. We send a second configure requesting a state change.
+        // 3. The window acks and commits-to the first configure but not the second, with a
+        //    different size.
+        //
+        // In this case self.request_size_once will already flip to UseWindowSize and this branch
+        // will return the window's own new size, but the logic below would see an uncommitted size
+        // change and return our size.
+        if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
+            return current_size;
+        }
+
+        let pending = with_toplevel_role(self.toplevel(), |role| {
+            // If we have a server-pending size change that we haven't sent yet, use that size.
+            if let Some(server_pending) = &role.server_pending {
+                let current_server = role.current_server_state();
+                if server_pending.size != current_server.size {
+                    return Some((
+                        server_pending.size.unwrap_or_default(),
+                        server_pending
+                            .states
+                            .contains(xdg_toplevel::State::Fullscreen),
+                    ));
+                }
+            }
+
+            // If we have a sent-but-not-committed-to size, use that.
+            let (last_sent, last_serial) = if let Some(configure) = role.pending_configures().last()
+            {
+                (&configure.state, configure.serial)
+            } else {
+                (
+                    role.last_acked.as_ref().unwrap(),
+                    role.configure_serial.unwrap(),
+                )
+            };
+
+            if let Some(current_serial) = role.current_serial {
+                if !current_serial.is_no_older_than(&last_serial) {
+                    return Some((
+                        last_sent.size.unwrap_or_default(),
+                        last_sent.states.contains(xdg_toplevel::State::Fullscreen),
+                    ));
+                }
+            }
+
+            None
+        });
+
+        if let Some((mut size, fullscreen)) = pending {
+            // If the pending change is fullscreen, we can't use that size.
+            if fullscreen {
+                return None;
+            }
+
+            // If some component of the pending size is zero, substitute it with the current window
+            // size. But only if the current size is not fullscreen.
+            if size.w == 0 {
+                size.w = current_size?.w;
+            }
+            if size.h == 0 {
+                size.h = current_size?.h;
+            }
+
+            Some(size)
+        } else {
+            // No pending size, return the current size if it's non-fullscreen.
+            current_size
+        }
+    }
+
+    fn is_child_of(&self, parent: &Self) -> bool {
+        self.toplevel().parent().as_ref() == Some(parent.toplevel().wl_surface())
     }
 
     fn refresh(&self) {
@@ -762,7 +969,11 @@ impl LayoutElement for Mapped {
         self.interactive_resize = None;
     }
 
-    fn update_interactive_resize(&mut self, commit_serial: Serial) {
+    fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
+        Some(self.interactive_resize.as_ref()?.data())
+    }
+
+    fn on_commit(&mut self, commit_serial: Serial) {
         if let Some(InteractiveResize::WaitingForLastCommit { serial, .. }) =
             &self.interactive_resize
         {
@@ -770,9 +981,11 @@ impl LayoutElement for Mapped {
                 self.interactive_resize = None;
             }
         }
-    }
 
-    fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
-        Some(self.interactive_resize.as_ref()?.data())
+        if let Some(RequestSizeOnce::WaitingForCommit(serial)) = &self.request_size_once {
+            if commit_serial.is_no_older_than(serial) {
+                self.request_size_once = Some(RequestSizeOnce::UseWindowSize);
+            }
+        }
     }
 }

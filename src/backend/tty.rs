@@ -20,7 +20,7 @@ use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
 use smithay::backend::drm::{
-    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
+    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType, VrrSupport,
 };
 use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLDevice, EGLDisplay};
@@ -50,6 +50,7 @@ use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlob
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
+use smithay::wayland::presentation::Refresh;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -183,7 +184,6 @@ struct Surface {
     gamma_props: Option<GammaProps>,
     /// Gamma change to apply upon session resume.
     pending_gamma_change: Option<Option<Vec<u16>>>,
-    vrr_enabled: bool,
     /// Tracy frame that goes from vblank to vblank.
     vblank_frame: Option<tracy_client::Frame>,
     /// Frame name for the VBlank frame.
@@ -404,8 +404,6 @@ impl Tty {
                     self.device_changed(node.dev_id(), niri);
 
                     // Apply pending gamma changes and restore our existing gamma.
-                    //
-                    // Also, restore our VRR.
                     let device = self.devices.get_mut(&node).unwrap();
                     for (crtc, surface) in device.surfaces.iter_mut() {
                         if let Some(ramp) = surface.pending_gamma_change.take() {
@@ -423,33 +421,6 @@ impl Tty {
                                 warn!("error restoring gamma: {err:?}");
                             }
                         }
-
-                        // Restore VRR.
-                        let output = niri
-                            .global_space
-                            .outputs()
-                            .find(|output| {
-                                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                                tty_state.node == node && tty_state.crtc == *crtc
-                            })
-                            .cloned();
-                        let Some(output) = output else {
-                            error!("missing output for crtc: {crtc:?}");
-                            continue;
-                        };
-                        let Some(output_state) = niri.output_state.get_mut(&output) else {
-                            error!("missing state for output {:?}", surface.name.connector);
-                            continue;
-                        };
-
-                        try_to_change_vrr(
-                            &device.drm,
-                            surface.connector,
-                            *crtc,
-                            surface,
-                            output_state,
-                            surface.vrr_enabled,
-                        );
                     }
                 }
 
@@ -821,45 +792,6 @@ impl Tty {
             Err(err) => debug!("error setting max bpc: {err:?}"),
         }
 
-        // Try to enable VRR if requested.
-        let mut vrr_enabled = false;
-        if let Some(capable) = is_vrr_capable(&device.drm, connector.handle()) {
-            if capable {
-                // Even if on-demand, we still disable it until later checks.
-                let vrr = config.is_vrr_always_on();
-                let word = if vrr { "enabling" } else { "disabling" };
-
-                match set_vrr_enabled(&device.drm, crtc, vrr) {
-                    Ok(enabled) => {
-                        if enabled != vrr {
-                            warn!("failed {} VRR", word);
-                        }
-
-                        vrr_enabled = enabled;
-                    }
-                    Err(err) => {
-                        warn!("error {} VRR: {err:?}", word);
-                    }
-                }
-            } else {
-                if !config.is_vrr_always_off() {
-                    warn!("cannot enable VRR because connector is not vrr_capable");
-                }
-
-                // Try to disable it anyway to work around a bug where resetting DRM state causes
-                // vrr_capable to be reset to 0, potentially leaving VRR_ENABLED at 1.
-                let res = set_vrr_enabled(&device.drm, crtc, false);
-                if matches!(res, Ok(true)) {
-                    warn!("error disabling VRR");
-
-                    // So that we can try it again later.
-                    vrr_enabled = true;
-                }
-            }
-        } else if !config.is_vrr_always_off() {
-            warn!("cannot enable VRR because connector is not vrr_capable");
-        }
-
         let mut gamma_props = GammaProps::new(&device.drm, crtc)
             .map_err(|err| debug!("error getting gamma properties: {err:?}"))
             .ok();
@@ -877,6 +809,31 @@ impl Tty {
         let surface = device
             .drm
             .create_surface(crtc, mode, &[connector.handle()])?;
+
+        // Try to enable VRR if requested.
+        match surface.vrr_supported(connector.handle()) {
+            Ok(VrrSupport::Supported | VrrSupport::RequiresModeset) => {
+                // Even if on-demand, we still disable it until later checks.
+                let vrr = config.is_vrr_always_on();
+                let word = if vrr { "enabling" } else { "disabling" };
+
+                if let Err(err) = surface.use_vrr(vrr) {
+                    warn!("error {} VRR: {err:?}", word);
+                }
+            }
+            Ok(VrrSupport::NotSupported) => {
+                if !config.is_vrr_always_off() {
+                    warn!("cannot enable VRR because connector does not support it");
+                }
+
+                // Try to disable it anyway to work around a bug where resetting DRM state causes
+                // vrr_capable to be reset to 0, potentially leaving VRR_ENABLED at 1.
+                let _ = surface.use_vrr(false);
+            }
+            Err(err) => {
+                warn!("error querying for VRR support: {err:?}");
+            }
+        }
 
         // Create GBM allocator.
         let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
@@ -1037,6 +994,8 @@ impl Tty {
             }
         }
 
+        let vrr_enabled = compositor.vrr_enabled();
+
         let vblank_frame_name =
             tracy_client::FrameName::new_leak(format!("vblank on {connector_name}"));
         let time_since_presentation_plot_name = tracy_client::PlotName::new_leak(format!(
@@ -1054,7 +1013,6 @@ impl Tty {
             compositor,
             dmabuf_feedback,
             gamma_props,
-            vrr_enabled,
             pending_gamma_change: None,
             vblank_frame: None,
             vblank_frame_name,
@@ -1233,10 +1191,17 @@ impl Tty {
         // Mark the last frame as submitted.
         match surface.compositor.frame_submitted() {
             Ok(Some((mut feedback, target_presentation_time))) => {
-                let refresh = output_state
-                    .frame_clock
-                    .refresh_interval()
-                    .unwrap_or(Duration::ZERO);
+                let refresh = match output_state.frame_clock.refresh_interval() {
+                    Some(refresh) => {
+                        if output_state.frame_clock.vrr() {
+                            Refresh::Variable(refresh)
+                        } else {
+                            Refresh::Fixed(refresh)
+                        }
+                    }
+                    None => Refresh::Unknown,
+                };
+
                 // FIXME: ideally should be monotonically increasing for a surface.
                 let seq = meta.sequence as u64;
                 let mut flags = wp_presentation_feedback::Kind::Vsync
@@ -1614,8 +1579,17 @@ impl Tty {
                     }
                 }
 
-                let vrr_supported = is_vrr_capable(&device.drm, connector.handle()) == Some(true);
-                let vrr_enabled = surface.map_or(false, |surface| surface.vrr_enabled);
+                let vrr_supported = surface
+                    .map(|surface| {
+                        matches!(
+                            surface.compositor.vrr_supported(connector.handle()),
+                            Ok(VrrSupport::Supported | VrrSupport::RequiresModeset)
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        is_vrr_capable(&device.drm, connector.handle()) == Some(true)
+                    });
+                let vrr_enabled = surface.map_or(false, |surface| surface.compositor.vrr_enabled());
 
                 let logical = niri
                     .global_space
@@ -1700,14 +1674,17 @@ impl Tty {
             for (&crtc, surface) in device.surfaces.iter_mut() {
                 let tty_state: &TtyOutputState = output.user_data().get().unwrap();
                 if tty_state.node == node && tty_state.crtc == crtc {
-                    try_to_change_vrr(
-                        &device.drm,
-                        surface.connector,
-                        crtc,
-                        surface,
-                        output_state,
-                        enable_vrr,
-                    );
+                    let word = if enable_vrr { "enabling" } else { "disabling" };
+                    if let Err(err) = surface.compositor.use_vrr(enable_vrr) {
+                        warn!(
+                            "output {:?}: error {} VRR: {err:?}",
+                            surface.name.connector, word
+                        );
+                    }
+                    output_state
+                        .frame_clock
+                        .set_vrr(surface.compositor.vrr_enabled());
+
                     self.refresh_ipc_outputs(niri);
                     return;
                 }
@@ -1773,8 +1750,11 @@ impl Tty {
                 };
 
                 let change_mode = surface.compositor.pending_mode() != mode;
-                let change_always_vrr = surface.vrr_enabled != config.is_vrr_always_on();
+
+                let vrr_enabled = surface.compositor.vrr_enabled();
+                let change_always_vrr = vrr_enabled != config.is_vrr_always_on();
                 let is_on_demand_vrr = config.is_vrr_on_demand();
+
                 if !change_mode && !change_always_vrr && !is_on_demand_vrr {
                     continue;
                 }
@@ -1796,17 +1776,20 @@ impl Tty {
                     continue;
                 };
 
-                if (is_on_demand_vrr && surface.vrr_enabled != output_state.on_demand_vrr_enabled)
+                if (is_on_demand_vrr && vrr_enabled != output_state.on_demand_vrr_enabled)
                     || (!is_on_demand_vrr && change_always_vrr)
                 {
-                    try_to_change_vrr(
-                        &device.drm,
-                        connector.handle(),
-                        crtc,
-                        surface,
-                        output_state,
-                        !surface.vrr_enabled,
-                    );
+                    let vrr = !vrr_enabled;
+                    let word = if vrr { "enabling" } else { "disabling" };
+                    if let Err(err) = surface.compositor.use_vrr(vrr) {
+                        warn!(
+                            "output {:?}: error {} VRR: {err:?}",
+                            surface.name.connector, word
+                        );
+                    }
+                    output_state
+                        .frame_clock
+                        .set_vrr(surface.compositor.vrr_enabled());
                 }
 
                 if change_mode {
@@ -1838,8 +1821,10 @@ impl Tty {
                     let wl_mode = Mode::from(mode);
                     output.change_current_state(Some(wl_mode), None, None, None);
                     output.set_preferred(wl_mode);
-                    output_state.frame_clock =
-                        FrameClock::new(Some(refresh_interval(mode)), surface.vrr_enabled);
+                    output_state.frame_clock = FrameClock::new(
+                        Some(refresh_interval(mode)),
+                        surface.compositor.vrr_enabled(),
+                    );
                     niri.output_resized(&output);
                 }
             }
@@ -2423,24 +2408,6 @@ fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bo
     info.value_type().convert_value(value).as_boolean()
 }
 
-fn set_vrr_enabled(device: &DrmDevice, crtc: crtc::Handle, enabled: bool) -> anyhow::Result<bool> {
-    let (prop, info, _) =
-        find_drm_property(device, crtc, "VRR_ENABLED").context("VRR_ENABLED property missing")?;
-
-    let value = property::Value::UnsignedRange(if enabled { 1 } else { 0 });
-    device
-        .set_property(crtc, prop, value.into())
-        .context("error setting VRR_ENABLED property")?;
-
-    let value = get_drm_property(device, crtc, prop)
-        .context("VRR_ENABLED property missing after setting")?;
-    match info.value_type().convert_value(value) {
-        property::Value::UnsignedRange(value) => Ok(value == 1),
-        property::Value::Boolean(value) => Ok(value),
-        _ => bail!("wrong VRR_ENABLED property type"),
-    }
-}
-
 pub fn set_gamma_for_crtc(
     device: &DrmDevice,
     crtc: crtc::Handle,
@@ -2484,43 +2451,6 @@ pub fn set_gamma_for_crtc(
         .context("error setting gamma")?;
 
     Ok(())
-}
-
-fn try_to_change_vrr(
-    device: &DrmDevice,
-    connector: connector::Handle,
-    crtc: crtc::Handle,
-    surface: &mut Surface,
-    output_state: &mut crate::niri::OutputState,
-    enable_vrr: bool,
-) {
-    let _span = tracy_client::span!("try_to_change_vrr");
-
-    if is_vrr_capable(device, connector) == Some(true) {
-        let word = if enable_vrr { "enabling" } else { "disabling" };
-
-        match set_vrr_enabled(device, crtc, enable_vrr) {
-            Ok(enabled) => {
-                if enabled != enable_vrr {
-                    warn!("output {:?}: failed {} VRR", surface.name.connector, word);
-                }
-
-                surface.vrr_enabled = enabled;
-                output_state.frame_clock.set_vrr(enabled);
-            }
-            Err(err) => {
-                warn!(
-                    "output {:?}: error {} VRR: {err:?}",
-                    surface.name.connector, word
-                );
-            }
-        }
-    } else if enable_vrr {
-        warn!(
-            "output {:?}: cannot enable VRR because connector is not vrr_capable",
-            surface.name.connector
-        );
-    }
 }
 
 fn format_connector_name(connector: &connector::Info) -> String {

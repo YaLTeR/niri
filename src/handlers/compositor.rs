@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 
+use niri_ipc::PositionChange;
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::calloop::Interest;
@@ -19,7 +20,7 @@ use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
-use crate::layout::ActivateWindow;
+use crate::layout::{ActivateWindow, AddWindowTarget};
 use crate::niri::{ClientState, State};
 use crate::utils::send_scale_transform;
 use crate::utils::transaction::Transaction;
@@ -96,10 +97,13 @@ impl CompositorHandler for State {
 
                     let toplevel = window.toplevel().expect("no X11 support");
 
-                    let (rules, width, is_full_width, output, workspace_name) =
+                    let (rules, width, height, is_full_width, output, workspace_id) =
                         if let InitialConfigureState::Configured {
                             rules,
                             width,
+                            height,
+                            floating_width: _,
+                            floating_height: _,
                             is_full_width,
                             output,
                             workspace_name,
@@ -110,14 +114,47 @@ impl CompositorHandler for State {
                                 output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
 
                             // Check that the workspace still exists.
-                            let workspace_name = workspace_name
-                                .filter(|n| self.niri.layout.find_workspace_by_name(n).is_some());
+                            let workspace_id = workspace_name
+                                .as_deref()
+                                .and_then(|n| self.niri.layout.find_workspace_by_name(n))
+                                .map(|(_, ws)| ws.id());
 
-                            (rules, width, is_full_width, output, workspace_name)
+                            (rules, width, height, is_full_width, output, workspace_id)
                         } else {
                             error!("window map must happen after initial configure");
-                            (ResolvedWindowRules::empty(), None, false, None, None)
+                            (ResolvedWindowRules::empty(), None, None, false, None, None)
                         };
+
+                    // The GTK about dialog sets min/max size after the initial configure but
+                    // before mapping, so we need to compute open_floating at the last possible
+                    // moment, that is here.
+                    let is_floating = rules.compute_open_floating(toplevel);
+
+                    // Figure out if we should activate the window.
+                    let activate = rules.open_focused.map(|focus| {
+                        if focus {
+                            ActivateWindow::Yes
+                        } else {
+                            ActivateWindow::No
+                        }
+                    });
+                    let activate = activate.unwrap_or_else(|| {
+                        // Check the token timestamp again in case the window took a while between
+                        // requesting activation and mapping.
+                        let token = activation_token_data.filter(|token| {
+                            token.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT
+                        });
+                        if token.is_some() {
+                            ActivateWindow::Yes
+                        } else {
+                            let config = self.niri.config.borrow();
+                            if config.debug.strict_new_window_focus_policy {
+                                ActivateWindow::No
+                            } else {
+                                ActivateWindow::Smart
+                            }
+                        }
+                    });
 
                     let parent = toplevel
                         .parent()
@@ -139,52 +176,25 @@ impl CompositorHandler for State {
                     let mapped = Mapped::new(window, rules, hook);
                     let window = mapped.window.clone();
 
-                    // Check the token timestamp again in case the window took a while between
-                    // requesting activation and mapping.
-                    let activate = match activation_token_data
-                        .filter(|token| token.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT)
-                    {
-                        Some(_) => ActivateWindow::Yes,
-                        None => {
-                            let config = self.niri.config.borrow();
-                            if config.debug.strict_new_window_focus_policy {
-                                ActivateWindow::No
-                            } else {
-                                ActivateWindow::Smart
-                            }
-                        }
-                    };
-
-                    let output = if let Some(p) = parent {
-                        // Open dialogs immediately to the right of their parent window.
-                        //
-                        // FIXME: do we want to use activate here? How do we want things to behave
-                        // exactly?
-                        self.niri
-                            .layout
-                            .add_window_right_of(&p, mapped, width, is_full_width)
-                    } else if let Some(workspace_name) = &workspace_name {
-                        self.niri.layout.add_window_to_named_workspace(
-                            workspace_name,
-                            mapped,
-                            width,
-                            is_full_width,
-                            activate,
-                        )
+                    let target = if let Some(p) = &parent {
+                        // Open dialogs next to their parent window.
+                        AddWindowTarget::NextTo(p)
+                    } else if let Some(id) = workspace_id {
+                        AddWindowTarget::Workspace(id)
                     } else if let Some(output) = &output {
-                        self.niri.layout.add_window_on_output(
-                            output,
-                            mapped,
-                            width,
-                            is_full_width,
-                            activate,
-                        );
-                        Some(output)
+                        AddWindowTarget::Output(output)
                     } else {
-                        self.niri
-                            .layout
-                            .add_window(mapped, width, is_full_width, activate)
+                        AddWindowTarget::Auto
                     };
+                    let output = self.niri.layout.add_window(
+                        mapped,
+                        target,
+                        width,
+                        height,
+                        is_full_width,
+                        is_floating,
+                        activate,
+                    );
 
                     if let Some(output) = output.cloned() {
                         self.niri.layout.start_open_animation_for_window(&window);
@@ -272,14 +282,21 @@ impl CompositorHandler for State {
                     return;
                 }
 
-                let serial = with_states(surface, |states| {
+                let (serial, buffer_delta) = with_states(surface, |states| {
+                    let buffer_delta = states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .current()
+                        .buffer_delta
+                        .take();
+
                     let role = states
                         .data_map
                         .get::<XdgToplevelSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap();
-                    role.configure_serial
+                    (role.configure_serial, buffer_delta)
                 });
                 if serial.is_none() {
                     error!("commit on a mapped surface without a configured serial");
@@ -287,6 +304,19 @@ impl CompositorHandler for State {
 
                 // The toplevel remains mapped.
                 self.niri.layout.update_window(&window, serial);
+
+                // Move the toplevel according to the attach offset.
+                if let Some(delta) = buffer_delta {
+                    if delta.x != 0 || delta.y != 0 {
+                        let (x, y) = delta.to_f64().into();
+                        self.niri.layout.move_floating_window(
+                            Some(&window),
+                            PositionChange::AdjustFixed(x),
+                            PositionChange::AdjustFixed(y),
+                            false,
+                        );
+                    }
+                }
 
                 // Popup placement depends on window size which might have changed.
                 self.update_reactive_popups(&window);

@@ -188,7 +188,7 @@ impl LayoutElement for TestWindow {
         self.inner.borrow_mut().pending_fullscreen = false;
     }
 
-    fn request_fullscreen(&self, _size: Size<i32, Logical>) {
+    fn request_fullscreen(&mut self, _size: Size<i32, Logical>) {
         self.inner.borrow_mut().pending_fullscreen = true;
     }
 
@@ -220,6 +220,8 @@ impl LayoutElement for TestWindow {
 
     fn set_active_in_column(&mut self, _active: bool) {}
 
+    fn set_floating(&mut self, _floating: bool) {}
+
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
     fn configure_intent(&self) -> ConfigureIntent {
@@ -238,6 +240,10 @@ impl LayoutElement for TestWindow {
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
         self.inner.borrow().requested_size
+    }
+
+    fn is_child_of(&self, _parent: &Self) -> bool {
+        false
     }
 
     fn refresh(&self) {}
@@ -259,7 +265,7 @@ impl LayoutElement for TestWindow {
 
     fn cancel_interactive_resize(&mut self) {}
 
-    fn update_interactive_resize(&mut self, _serial: Serial) {}
+    fn on_commit(&mut self, _serial: Serial) {}
 
     fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
         None

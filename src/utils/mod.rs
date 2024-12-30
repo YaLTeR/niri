@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use std::ffi::{CString, OsStr};
 use std::io::Write;
 use std::os::unix::prelude::OsStrExt;
@@ -261,6 +262,50 @@ pub fn get_credentials_for_surface(surface: &WlSurface) -> Option<Credentials> {
     client.get_credentials(&dh).ok()
 }
 
+pub fn ensure_min_max_size(mut x: i32, min_size: i32, max_size: i32) -> i32 {
+    if max_size > 0 {
+        x = min(x, max_size);
+    }
+    if min_size > 0 {
+        x = max(x, min_size);
+    }
+    x
+}
+
+pub fn ensure_min_max_size_maybe_zero(x: i32, min_size: i32, max_size: i32) -> i32 {
+    if x != 0 {
+        ensure_min_max_size(x, min_size, max_size)
+    } else if min_size > 0 && min_size == max_size {
+        min_size
+    } else {
+        0
+    }
+}
+
+pub fn clamp_preferring_top_left_in_area(
+    area: Rectangle<f64, Logical>,
+    rect: &mut Rectangle<f64, Logical>,
+) {
+    rect.loc.x = f64::min(rect.loc.x, area.loc.x + area.size.w - rect.size.w);
+    rect.loc.y = f64::min(rect.loc.y, area.loc.y + area.size.h - rect.size.h);
+
+    // Clamp by top and left last so it takes precedence.
+    rect.loc.x = f64::max(rect.loc.x, area.loc.x);
+    rect.loc.y = f64::max(rect.loc.y, area.loc.y);
+}
+
+pub fn center_preferring_top_left_in_area(
+    area: Rectangle<f64, Logical>,
+    size: Size<f64, Logical>,
+) -> Point<f64, Logical> {
+    let area_size = area.size.to_point();
+    let size = size.to_point();
+    let mut offset = (area_size - size).downscale(2.);
+    offset.x = f64::max(offset.x, 0.);
+    offset.y = f64::max(offset.y, 0.);
+    area.loc + offset
+}
+
 #[cfg(feature = "dbus")]
 pub fn show_screenshot_notification(image_path: Option<PathBuf>) {
     let mut notification = notify_rust::Notification::new();
@@ -297,4 +342,41 @@ pub fn cause_panic() {
     let a = Duration::from_secs(1);
     let b = Duration::from_secs(2);
     let _ = a - b;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clamp_preferring_top_left() {
+        fn check(
+            (ax, ay, aw, ah): (i32, i32, i32, i32),
+            (rx, ry, rw, rh): (i32, i32, i32, i32),
+            (ex, ey): (i32, i32),
+        ) {
+            let area = Rectangle::from_loc_and_size((ax, ay), (aw, ah)).to_f64();
+            let mut rect = Rectangle::from_loc_and_size((rx, ry), (rw, rh)).to_f64();
+            clamp_preferring_top_left_in_area(area, &mut rect);
+            assert_eq!(rect.loc, Point::from((ex, ey)).to_f64());
+        }
+
+        check((0, 0, 10, 20), (2, 3, 4, 5), (2, 3));
+        check((0, 0, 10, 20), (-2, 3, 4, 5), (0, 3));
+        check((0, 0, 10, 20), (2, -3, 4, 5), (2, 0));
+        check((0, 0, 10, 20), (-2, -3, 4, 5), (0, 0));
+
+        check((1, 1, 10, 20), (2, 3, 4, 5), (2, 3));
+        check((1, 1, 10, 20), (-2, 3, 4, 5), (1, 3));
+        check((1, 1, 10, 20), (2, -3, 4, 5), (2, 1));
+        check((1, 1, 10, 20), (-2, -3, 4, 5), (1, 1));
+
+        check((0, 0, 10, 20), (20, 3, 4, 5), (6, 3));
+        check((0, 0, 10, 20), (2, 30, 4, 5), (2, 15));
+        check((0, 0, 10, 20), (20, 30, 4, 5), (6, 15));
+
+        check((0, 0, 10, 20), (20, 30, 40, 5), (0, 15));
+        check((0, 0, 10, 20), (20, 30, 4, 50), (6, 0));
+        check((0, 0, 10, 20), (20, 30, 40, 50), (0, 0));
+    }
 }

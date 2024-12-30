@@ -209,8 +209,16 @@ impl XdgShellHandler for State {
         // See if we got a double resize-click gesture.
         let time = get_monotonic_time();
         let last_cell = mapped.last_interactive_resize_start();
-        let last = last_cell.get();
+        let mut last = last_cell.get();
         last_cell.set(Some((time, edges)));
+
+        // Floating windows don't have either of the double-resize-click gestures, so just allow it
+        // to resize.
+        if mapped.is_floating() {
+            last = None;
+            last_cell.set(None);
+        }
+
         if let Some((last_time, last_edges)) = last {
             if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
                 // Allow quick resize after a triple click.
@@ -459,7 +467,7 @@ impl XdgShellHandler for State {
                         toplevel.with_pending_state(|state| {
                             state.states.set(xdg_toplevel::State::Fullscreen);
                         });
-                        ws.configure_new_window(&unmapped.window, None, rules);
+                        ws.configure_new_window(&unmapped.window, None, None, false, rules);
                     }
 
                     // We already sent the initial configure, so we need to reconfigure.
@@ -483,6 +491,9 @@ impl XdgShellHandler for State {
 
             // A configure is required in response to this event regardless if there are pending
             // changes.
+            //
+            // FIXME: when unfullscreening to floating, this will send an extra configure with
+            // scrolling layout bounds. We should probably avoid it.
             toplevel.send_configure();
         } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             match &mut unmapped.state {
@@ -494,6 +505,9 @@ impl XdgShellHandler for State {
                 InitialConfigureState::Configured {
                     rules,
                     width,
+                    height,
+                    floating_width,
+                    floating_height,
                     is_full_width,
                     output,
                     workspace_name,
@@ -548,12 +562,26 @@ impl XdgShellHandler for State {
                             state.states.unset(xdg_toplevel::State::Fullscreen);
                         });
 
-                        let configure_width = if *is_full_width {
+                        let is_floating = rules.compute_open_floating(&toplevel);
+                        let configure_width = if is_floating {
+                            *floating_width
+                        } else if *is_full_width {
                             Some(ColumnWidth::Proportion(1.))
                         } else {
                             *width
                         };
-                        ws.configure_new_window(&unmapped.window, configure_width, rules);
+                        let configure_height = if is_floating {
+                            *floating_height
+                        } else {
+                            *height
+                        };
+                        ws.configure_new_window(
+                            &unmapped.window,
+                            configure_width,
+                            configure_height,
+                            is_floating,
+                            rules,
+                        );
                     }
 
                     // We already sent the initial configure, so we need to reconfigure.
@@ -640,6 +668,22 @@ impl XdgShellHandler for State {
 
     fn title_changed(&mut self, toplevel: ToplevelSurface) {
         self.update_window_rules(&toplevel);
+    }
+
+    fn parent_changed(&mut self, toplevel: ToplevelSurface) {
+        let Some(parent) = toplevel.parent() else {
+            return;
+        };
+
+        if let Some((mapped, output)) = self.niri.layout.find_window_and_output_mut(&parent) {
+            let output = output.cloned();
+            let window = mapped.window.clone();
+            if self.niri.layout.descendants_added(&window) {
+                if let Some(output) = output {
+                    self.niri.queue_redraw(&output);
+                }
+            }
+        }
     }
 }
 
@@ -814,7 +858,11 @@ impl State {
         let mon = mon.map(|(mon, _)| mon);
 
         let mut width = None;
+        let mut floating_width = None;
+        let mut height = None;
+        let mut floating_height = None;
         let is_full_width = rules.open_maximized.unwrap_or(false);
+        let is_floating = rules.compute_open_floating(toplevel);
 
         // Tell the surface the preferred size and bounds for its likely output.
         let ws = rules
@@ -836,14 +884,26 @@ impl State {
                 });
             }
 
-            width = ws.resolve_default_width(rules.default_width);
+            width = ws.resolve_default_width(rules.default_width, false);
+            floating_width = ws.resolve_default_width(rules.default_width, true);
+            height = ws.resolve_default_height(rules.default_height, false);
+            floating_height = ws.resolve_default_height(rules.default_height, true);
 
-            let configure_width = if is_full_width {
+            let configure_width = if is_floating {
+                floating_width
+            } else if is_full_width {
                 Some(ColumnWidth::Proportion(1.))
             } else {
                 width
             };
-            ws.configure_new_window(window, configure_width, &rules);
+            let configure_height = if is_floating { floating_height } else { height };
+            ws.configure_new_window(
+                window,
+                configure_width,
+                configure_height,
+                is_floating,
+                &rules,
+            );
         }
 
         // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
@@ -861,6 +921,9 @@ impl State {
         *state = InitialConfigureState::Configured {
             rules,
             width,
+            height,
+            floating_width,
+            floating_height,
             is_full_width,
             output,
             workspace_name: ws.and_then(|w| w.name().cloned()),

@@ -11,8 +11,10 @@ use smithay::utils::{Logical, Point, Rectangle};
 
 use super::scrolling::{Column, ColumnWidth};
 use super::tile::Tile;
-use super::workspace::{OutputId, Workspace, WorkspaceId, WorkspaceRenderElement};
-use super::{LayoutElement, Options};
+use super::workspace::{
+    OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId, WorkspaceRenderElement,
+};
+use super::{ActivateWindow, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -64,6 +66,23 @@ pub struct WorkspaceSwitchGesture {
     tracker: SwipeTracker,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
+}
+
+/// Where to put a newly added window.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
+    /// No particular preference.
+    #[default]
+    Auto,
+    /// On this workspace.
+    Workspace {
+        /// Id of the target workspace.
+        id: WorkspaceId,
+        /// Override where the window will open as a new column.
+        column_idx: Option<usize>,
+    },
+    /// Next to this existing window.
+    NextTo(&'a W::Id),
 }
 
 pub type MonitorRenderElement<R> =
@@ -220,54 +239,18 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn add_window(
         &mut self,
-        mut workspace_idx: usize,
         window: W,
-        activate: bool,
+        target: MonitorAddWindowTarget<W>,
+        activate: ActivateWindow,
         width: ColumnWidth,
         is_full_width: bool,
+        is_floating: bool,
     ) {
-        let workspace = &mut self.workspaces[workspace_idx];
+        // Currently, everything a workspace sets on a Tile is the same across all workspaces of a
+        // monitor. So we can use any workspace, not necessarily the exact target workspace.
+        let tile = self.workspaces[0].make_tile(window);
 
-        workspace.add_window(window, activate, width, is_full_width);
-
-        // After adding a new window, workspace becomes this output's own.
-        workspace.original_output = OutputId::new(&self.output);
-
-        if workspace_idx == self.workspaces.len() - 1 {
-            self.add_workspace_bottom();
-        }
-
-        if self.options.empty_workspace_above_first && workspace_idx == 0 {
-            self.add_workspace_top();
-            workspace_idx += 1;
-        }
-
-        if activate {
-            self.activate_workspace(workspace_idx);
-        }
-    }
-
-    pub fn add_window_right_of(
-        &mut self,
-        right_of: &W::Id,
-        window: W,
-        width: ColumnWidth,
-        is_full_width: bool,
-    ) {
-        let workspace_idx = self
-            .workspaces
-            .iter_mut()
-            .position(|ws| ws.has_window(right_of))
-            .unwrap();
-        let workspace = &mut self.workspaces[workspace_idx];
-
-        workspace.add_window_right_of(right_of, window, width, is_full_width);
-
-        // After adding a new window, workspace becomes this output's own.
-        workspace.original_output = OutputId::new(&self.output);
-
-        // Since we're adding window right of something, the workspace isn't empty, and therefore
-        // cannot be the last one, so we never need to insert a new empty workspace.
+        self.add_tile(tile, target, activate, width, is_full_width, is_floating);
     }
 
     pub fn add_column(&mut self, mut workspace_idx: usize, column: Column<W>, activate: bool) {
@@ -293,16 +276,39 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn add_tile(
         &mut self,
-        mut workspace_idx: usize,
-        column_idx: Option<usize>,
         tile: Tile<W>,
-        activate: bool,
+        target: MonitorAddWindowTarget<W>,
+        activate: ActivateWindow,
         width: ColumnWidth,
         is_full_width: bool,
+        is_floating: bool,
     ) {
+        let (mut workspace_idx, target) = match target {
+            MonitorAddWindowTarget::Auto => {
+                (self.active_workspace_idx, WorkspaceAddWindowTarget::Auto)
+            }
+            MonitorAddWindowTarget::Workspace { id, column_idx } => {
+                let idx = self.workspaces.iter().position(|ws| ws.id() == id).unwrap();
+                let target = if let Some(column_idx) = column_idx {
+                    WorkspaceAddWindowTarget::NewColumnAt(column_idx)
+                } else {
+                    WorkspaceAddWindowTarget::Auto
+                };
+                (idx, target)
+            }
+            MonitorAddWindowTarget::NextTo(win_id) => {
+                let idx = self
+                    .workspaces
+                    .iter_mut()
+                    .position(|ws| ws.has_window(win_id))
+                    .unwrap();
+                (idx, WorkspaceAddWindowTarget::NextTo(win_id))
+            }
+        };
+
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_tile(column_idx, tile, activate, width, is_full_width);
+        workspace.add_tile(tile, target, activate, width, is_full_width, is_floating);
 
         // After adding a new window, workspace becomes this output's own.
         workspace.original_output = OutputId::new(&self.output);
@@ -317,7 +323,7 @@ impl<W: LayoutElement> Monitor<W> {
             workspace_idx += 1;
         }
 
-        if activate {
+        if activate.map_smart(|| false) {
             self.activate_workspace(workspace_idx);
         }
     }
@@ -493,18 +499,23 @@ impl<W: LayoutElement> Monitor<W> {
         if new_idx == source_workspace_idx {
             return;
         }
+        let new_id = self.workspaces[new_idx].id();
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         let Some(removed) = workspace.remove_active_tile(Transaction::new()) else {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
-            true,
+        self.add_tile(
+            removed.tile,
+            MonitorAddWindowTarget::Workspace {
+                id: new_id,
+                column_idx: None,
+            },
+            ActivateWindow::Yes,
             removed.width,
             removed.is_full_width,
+            removed.is_floating,
         );
     }
 
@@ -515,18 +526,23 @@ impl<W: LayoutElement> Monitor<W> {
         if new_idx == source_workspace_idx {
             return;
         }
+        let new_id = self.workspaces[new_idx].id();
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         let Some(removed) = workspace.remove_active_tile(Transaction::new()) else {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
-            true,
+        self.add_tile(
+            removed.tile,
+            MonitorAddWindowTarget::Workspace {
+                id: new_id,
+                column_idx: None,
+            },
+            ActivateWindow::Yes,
             removed.width,
             removed.is_full_width,
+            removed.is_floating,
         );
     }
 
@@ -544,10 +560,16 @@ impl<W: LayoutElement> Monitor<W> {
         if new_idx == source_workspace_idx {
             return;
         }
+        let new_id = self.workspaces[new_idx].id();
 
         let activate = window.map_or(true, |win| {
             self.active_window().map(|win| win.id()) == Some(win)
         });
+        let activate = if activate {
+            ActivateWindow::Yes
+        } else {
+            ActivateWindow::No
+        };
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         let transaction = Transaction::new();
@@ -559,12 +581,16 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_window(
-            new_idx,
-            removed.tile.into_window(),
+        self.add_tile(
+            removed.tile,
+            MonitorAddWindowTarget::Workspace {
+                id: new_id,
+                column_idx: None,
+            },
             activate,
             removed.width,
             removed.is_full_width,
+            removed.is_floating,
         );
 
         if self.workspace_switch.is_none() {
@@ -581,6 +607,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.floating_is_active() {
+            self.move_to_workspace_up();
+            return;
+        }
+
         let Some(column) = workspace.remove_active_column() else {
             return;
         };
@@ -597,6 +628,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.floating_is_active() {
+            self.move_to_workspace_down();
+            return;
+        }
+
         let Some(column) = workspace.remove_active_column() else {
             return;
         };
@@ -613,6 +649,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let workspace = &mut self.workspaces[source_workspace_idx];
+        if workspace.floating_is_active() {
+            self.move_to_workspace(None, idx);
+            return;
+        }
+
         let Some(column) = workspace.remove_active_column() else {
             return;
         };
@@ -922,6 +963,7 @@ impl<W: LayoutElement> Monitor<W> {
         &'a self,
         renderer: &'a mut R,
         target: RenderTarget,
+        focus_ring: bool,
     ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Monitor::render_elements");
 
@@ -948,7 +990,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.workspaces_with_render_positions()
             .flat_map(move |(ws, offset)| {
-                ws.render_elements(renderer, target)
+                ws.render_elements(renderer, target, focus_ring)
                     .filter_map(move |elem| {
                         CropRenderElement::from_element(elem, scale, crop_bounds)
                     })

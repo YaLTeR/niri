@@ -292,6 +292,18 @@ pub enum Action {
     ExpelWindowFromColumn {},
     /// Center the focused column on the screen.
     CenterColumn {},
+    /// Center a window on the screen.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Center the focused window on the screen")
+    )]
+    CenterWindow {
+        /// Id of the window to center.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Focus the workspace below.
     FocusWorkspaceDown {},
     /// Focus the workspace above.
@@ -362,6 +374,22 @@ pub enum Action {
     MoveColumnToMonitorDown {},
     /// Move the focused column to the monitor above.
     MoveColumnToMonitorUp {},
+    /// Change the width of a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Change the width of the focused window")
+    )]
+    SetWindowWidth {
+        /// Id of the window whose width to set.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
+        /// How to change the width.
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
+        change: SizeChange,
+    },
     /// Change the height of a window.
     #[cfg_attr(
         feature = "clap",
@@ -375,7 +403,7 @@ pub enum Action {
         id: Option<u64>,
 
         /// How to change the height.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
     },
     /// Reset the height of a window back to automatic.
@@ -392,6 +420,14 @@ pub enum Action {
     },
     /// Switch between preset column widths.
     SwitchPresetColumnWidth {},
+    /// Switch between preset window widths.
+    SwitchPresetWindowWidth {
+        /// Id of the window whose width to switch.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Switch between preset window heights.
     SwitchPresetWindowHeight {
         /// Id of the window whose height to switch.
@@ -405,7 +441,7 @@ pub enum Action {
     /// Change the width of the focused column.
     SetColumnWidth {
         /// How to change the width.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
     },
     /// Switch between keyboard layouts.
@@ -430,6 +466,59 @@ pub enum Action {
     DebugToggleOpaqueRegions {},
     /// Toggle visualization of output damage.
     DebugToggleDamage {},
+    /// Move the focused window between the floating and the tiling layout.
+    ToggleWindowFloating {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Move the focused window to the floating layout.
+    MoveWindowToFloating {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Move the focused window to the tiling layout.
+    MoveWindowToTiling {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Switches focus to the floating layout.
+    FocusFloating {},
+    /// Switches focus to the tiling layout.
+    FocusTiling {},
+    /// Toggles the focus between the floating and the tiling layout.
+    SwitchFocusBetweenFloatingAndTiling {},
+    /// Move a floating window on screen.
+    #[cfg_attr(feature = "clap", clap(about = "Move the floating window on screen"))]
+    MoveFloatingWindow {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
+        /// How to change the X position.
+        #[cfg_attr(
+            feature = "clap",
+            arg(short, long, default_value = "+0", allow_negative_numbers = true)
+        )]
+        x: PositionChange,
+
+        /// How to change the Y position.
+        #[cfg_attr(
+            feature = "clap",
+            arg(short, long, default_value = "+0", allow_negative_numbers = true)
+        )]
+        y: PositionChange,
+    },
 }
 
 /// Change in window or column size.
@@ -444,6 +533,16 @@ pub enum SizeChange {
     AdjustFixed(i32),
     /// Add or subtract to the current size as a proportion of the working area.
     AdjustProportion(f64),
+}
+
+/// Change in floating window position.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PositionChange {
+    /// Set the position in logical pixels.
+    SetFixed(f64),
+    /// Add or subtract to the current position in logical pixels.
+    AdjustFixed(f64),
 }
 
 /// Workspace reference (id, index or name) to operate on.
@@ -712,6 +811,10 @@ pub struct Window {
     ///
     /// There can be either one focused window or zero (e.g. when a layer-shell surface has focus).
     pub is_focused: bool,
+    /// Whether this window is currently floating.
+    ///
+    /// If the window isn't floating then it is in the tiling layout.
+    pub is_floating: bool,
 }
 
 /// Output configuration change result.
@@ -938,6 +1041,25 @@ impl FromStr for SizeChange {
                     None => Err("value is missing"),
                 }
             }
+        }
+    }
+}
+
+impl FromStr for PositionChange {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value = s;
+        match value.bytes().next() {
+            Some(b'-' | b'+') => {
+                let value = value.parse().map_err(|_| "error parsing value")?;
+                Ok(Self::AdjustFixed(value))
+            }
+            Some(_) => {
+                let value = value.parse().map_err(|_| "error parsing value")?;
+                Ok(Self::SetFixed(value))
+            }
+            None => Err("value is missing"),
         }
     }
 }

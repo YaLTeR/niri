@@ -1112,6 +1112,16 @@ impl State {
             Action::SwitchPresetColumnWidth => {
                 self.niri.layout.toggle_width();
             }
+            Action::SwitchPresetWindowWidth => {
+                self.niri.layout.toggle_window_width(None);
+            }
+            Action::SwitchPresetWindowWidthById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_width(Some(&window));
+                }
+            }
             Action::SwitchPresetWindowHeight => {
                 self.niri.layout.toggle_window_height(None);
             }
@@ -1126,6 +1136,20 @@ impl State {
                 self.niri.layout.center_column();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::CenterWindow => {
+                self.niri.layout.center_window(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::CenterWindowById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.center_window(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::MaximizeColumn => {
                 self.niri.layout.toggle_full_width();
@@ -1237,6 +1261,16 @@ impl State {
             Action::SetColumnWidth(change) => {
                 self.niri.layout.set_column_width(change);
             }
+            Action::SetWindowWidth(change) => {
+                self.niri.layout.set_window_width(None, change);
+            }
+            Action::SetWindowWidthById { id, change } => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.set_window_width(Some(&window), change);
+                }
+            }
             Action::SetWindowHeight(change) => {
                 self.niri.layout.set_window_height(None, change);
             }
@@ -1293,6 +1327,81 @@ impl State {
                         self.move_cursor_to_output(&output);
                     }
                 }
+            }
+            Action::ToggleWindowFloating => {
+                self.niri.layout.toggle_window_floating(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::ToggleWindowFloatingById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_floating(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MoveWindowToFloating => {
+                self.niri.layout.set_window_floating(None, true);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveWindowToFloatingById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.set_window_floating(Some(&window), true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MoveWindowToTiling => {
+                self.niri.layout.set_window_floating(None, false);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveWindowToTilingById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.set_window_floating(Some(&window), false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::FocusFloating => {
+                self.niri.layout.focus_floating();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusTiling => {
+                self.niri.layout.focus_tiling();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::SwitchFocusBetweenFloatingAndTiling => {
+                self.niri.layout.switch_focus_floating_tiling();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveFloatingWindowById { id, x, y } => {
+                let window = if let Some(id) = id {
+                    let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                    let window = window.map(|(_, m)| m.window.clone());
+                    if window.is_none() {
+                        return;
+                    }
+                    window
+                } else {
+                    None
+                };
+
+                self.niri
+                    .layout
+                    .move_floating_window(window.as_ref(), x, y, true);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
         }
     }
@@ -1612,8 +1721,16 @@ impl State {
                             // FIXME: deduplicate with resize_request in xdg-shell somehow.
                             let time = get_monotonic_time();
                             let last_cell = mapped.last_interactive_resize_start();
-                            let last = last_cell.get();
+                            let mut last = last_cell.get();
                             last_cell.set(Some((time, edges)));
+
+                            // Floating windows don't have either of the double-resize-click
+                            // gestures, so just allow it to resize.
+                            if mapped.is_floating() {
+                                last = None;
+                                last_cell.set(None);
+                            }
+
                             if let Some((last_time, last_edges)) = last {
                                 if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
                                     // Allow quick resize after a triple click.

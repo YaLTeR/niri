@@ -12,7 +12,10 @@ use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 use layer_rule::LayerRule;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
-use niri_ipc::{ConfiguredMode, LayoutSwitchTarget, SizeChange, Transform, WorkspaceReferenceArg};
+use niri_ipc::{
+    ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
+    WorkspaceReferenceArg,
+};
 use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
@@ -707,7 +710,7 @@ pub enum PresetSize {
     Fixed(#[knuffel(argument)] i32),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultPresetSize(pub Option<PresetSize>);
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
@@ -977,6 +980,8 @@ pub struct WindowRule {
     // Rules applied at initial configure.
     #[knuffel(child)]
     pub default_column_width: Option<DefaultPresetSize>,
+    #[knuffel(child)]
+    pub default_window_height: Option<DefaultPresetSize>,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
     #[knuffel(child, unwrap(argument))]
@@ -985,6 +990,10 @@ pub struct WindowRule {
     pub open_maximized: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_fullscreen: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_floating: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_focused: Option<bool>,
 
     // Rules applied dynamically.
     #[knuffel(child, unwrap(argument))]
@@ -1012,6 +1021,8 @@ pub struct WindowRule {
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, unwrap(argument))]
     pub variable_refresh_rate: Option<bool>,
+    #[knuffel(child)]
+    pub default_floating_position: Option<FoIPosition>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -1026,6 +1037,8 @@ pub struct Match {
     pub is_focused: Option<bool>,
     #[knuffel(property)]
     pub is_active_in_column: Option<bool>,
+    #[knuffel(property)]
+    pub is_floating: Option<bool>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
 }
@@ -1071,6 +1084,25 @@ pub struct BorderRule {
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct FoIPosition {
+    #[knuffel(property)]
+    pub x: FloatOrInt<-65535, 65535>,
+    #[knuffel(property)]
+    pub y: FloatOrInt<-65535, 65535>,
+    #[knuffel(property, default)]
+    pub relative_to: RelativeTo,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum RelativeTo {
+    #[default]
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -1206,6 +1238,9 @@ pub enum Action {
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
     CenterColumn,
+    CenterWindow,
+    #[knuffel(skip)]
+    CenterWindowById(u64),
     FocusWorkspaceDown,
     FocusWorkspaceUp,
     FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
@@ -1235,6 +1270,12 @@ pub enum Action {
     MoveColumnToMonitorRight,
     MoveColumnToMonitorDown,
     MoveColumnToMonitorUp,
+    SetWindowWidth(#[knuffel(argument, str)] SizeChange),
+    #[knuffel(skip)]
+    SetWindowWidthById {
+        id: u64,
+        change: SizeChange,
+    },
     SetWindowHeight(#[knuffel(argument, str)] SizeChange),
     #[knuffel(skip)]
     SetWindowHeightById {
@@ -1245,6 +1286,9 @@ pub enum Action {
     #[knuffel(skip)]
     ResetWindowHeightById(u64),
     SwitchPresetColumnWidth,
+    SwitchPresetWindowWidth,
+    #[knuffel(skip)]
+    SwitchPresetWindowWidthById(u64),
     SwitchPresetWindowHeight,
     #[knuffel(skip)]
     SwitchPresetWindowHeightById(u64),
@@ -1256,6 +1300,24 @@ pub enum Action {
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,
     MoveWorkspaceToMonitorUp,
+    ToggleWindowFloating,
+    #[knuffel(skip)]
+    ToggleWindowFloatingById(u64),
+    MoveWindowToFloating,
+    #[knuffel(skip)]
+    MoveWindowToFloatingById(u64),
+    MoveWindowToTiling,
+    #[knuffel(skip)]
+    MoveWindowToTilingById(u64),
+    FocusFloating,
+    FocusTiling,
+    SwitchFocusBetweenFloatingAndTiling,
+    #[knuffel(skip)]
+    MoveFloatingWindowById {
+        id: Option<u64>,
+        x: PositionChange,
+        y: PositionChange,
+    },
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1325,6 +1387,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ConsumeWindowIntoColumn {} => Self::ConsumeWindowIntoColumn,
             niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
+            niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
+            niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
             niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
             niri_ipc::Action::FocusWorkspace { reference } => {
@@ -1363,6 +1427,11 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
             niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
             niri_ipc::Action::MoveColumnToMonitorUp {} => Self::MoveColumnToMonitorUp,
+            niri_ipc::Action::SetWindowWidth { id: None, change } => Self::SetWindowWidth(change),
+            niri_ipc::Action::SetWindowWidth {
+                id: Some(id),
+                change,
+            } => Self::SetWindowWidthById { id, change },
             niri_ipc::Action::SetWindowHeight { id: None, change } => Self::SetWindowHeight(change),
             niri_ipc::Action::SetWindowHeight {
                 id: Some(id),
@@ -1371,6 +1440,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
             niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
             niri_ipc::Action::SwitchPresetColumnWidth {} => Self::SwitchPresetColumnWidth,
+            niri_ipc::Action::SwitchPresetWindowWidth { id: None } => Self::SwitchPresetWindowWidth,
+            niri_ipc::Action::SwitchPresetWindowWidth { id: Some(id) } => {
+                Self::SwitchPresetWindowWidthById(id)
+            }
             niri_ipc::Action::SwitchPresetWindowHeight { id: None } => {
                 Self::SwitchPresetWindowHeight
             }
@@ -1388,6 +1461,26 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,
+            niri_ipc::Action::ToggleWindowFloating { id: None } => Self::ToggleWindowFloating,
+            niri_ipc::Action::ToggleWindowFloating { id: Some(id) } => {
+                Self::ToggleWindowFloatingById(id)
+            }
+            niri_ipc::Action::MoveWindowToFloating { id: None } => Self::MoveWindowToFloating,
+            niri_ipc::Action::MoveWindowToFloating { id: Some(id) } => {
+                Self::MoveWindowToFloatingById(id)
+            }
+            niri_ipc::Action::MoveWindowToTiling { id: None } => Self::MoveWindowToTiling,
+            niri_ipc::Action::MoveWindowToTiling { id: Some(id) } => {
+                Self::MoveWindowToTilingById(id)
+            }
+            niri_ipc::Action::FocusFloating {} => Self::FocusFloating,
+            niri_ipc::Action::FocusTiling {} => Self::FocusTiling,
+            niri_ipc::Action::SwitchFocusBetweenFloatingAndTiling {} => {
+                Self::SwitchFocusBetweenFloatingAndTiling
+            }
+            niri_ipc::Action::MoveFloatingWindow { id, x, y } => {
+                Self::MoveFloatingWindowById { id, x, y }
+            }
         }
     }
 }
@@ -1591,8 +1684,15 @@ impl Default for Config {
 
 impl BorderRule {
     pub fn merge_with(&mut self, other: &Self) {
-        self.off |= other.off;
-        self.on |= other.on;
+        if other.off {
+            self.off = true;
+            self.on = false;
+        }
+
+        if other.on {
+            self.off = false;
+            self.on = true;
+        }
 
         if let Some(x) = other.width {
             self.width = Some(x);
@@ -2935,7 +3035,8 @@ pub fn set_miette_hook() -> Result<(), miette::InstallError> {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_debug_snapshot;
+    use insta::{assert_debug_snapshot, assert_snapshot};
+    use niri_ipc::PositionChange;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -3123,6 +3224,10 @@ mod tests {
                 open-on-output "eDP-1"
                 open-maximized true
                 open-fullscreen false
+                open-floating false
+                open-focused true
+                default-window-height { fixed 500; }
+                default-floating-position x=100 y=-200 relative-to="bottom-left"
 
                 focus-ring {
                     off
@@ -3378,6 +3483,7 @@ mod tests {
                         is_active: None,
                         is_focused: None,
                         is_active_in_column: None,
+                        is_floating: None,
                         at_startup: None,
                     }],
                     excludes: vec![
@@ -3387,6 +3493,7 @@ mod tests {
                             is_active: None,
                             is_focused: None,
                             is_active_in_column: None,
+                            is_floating: None,
                             at_startup: None,
                         },
                         Match {
@@ -3395,12 +3502,21 @@ mod tests {
                             is_active: Some(true),
                             is_focused: Some(false),
                             is_active_in_column: None,
+                            is_floating: None,
                             at_startup: None,
                         },
                     ],
                     open_on_output: Some("eDP-1".to_owned()),
                     open_maximized: Some(true),
                     open_fullscreen: Some(false),
+                    open_floating: Some(false),
+                    open_focused: Some(true),
+                    default_window_height: Some(DefaultPresetSize(Some(PresetSize::Fixed(500)))),
+                    default_floating_position: Some(FoIPosition {
+                        x: FloatOrInt(100.),
+                        y: FloatOrInt(-200.),
+                        relative_to: RelativeTo::BottomLeft,
+                    }),
                     focus_ring: BorderRule {
                         off: true,
                         width: Some(FloatOrInt(3.)),
@@ -3618,6 +3734,28 @@ mod tests {
 
         assert!("-".parse::<SizeChange>().is_err());
         assert!("10% ".parse::<SizeChange>().is_err());
+    }
+
+    #[test]
+    fn parse_position_change() {
+        assert_eq!(
+            "10".parse::<PositionChange>().unwrap(),
+            PositionChange::SetFixed(10.),
+        );
+        assert_eq!(
+            "+10".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustFixed(10.),
+        );
+        assert_eq!(
+            "-10".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustFixed(-10.),
+        );
+
+        assert!("10%".parse::<PositionChange>().is_err());
+        assert!("+10%".parse::<PositionChange>().is_err());
+        assert!("-10%".parse::<PositionChange>().is_err());
+        assert!("-".parse::<PositionChange>().is_err());
+        assert!("10% ".parse::<PositionChange>().is_err());
     }
 
     #[test]
@@ -3852,5 +3990,62 @@ mod tests {
 ]
 "#
         );
+    }
+
+    #[test]
+    fn test_border_rule_on_off_merging() {
+        fn is_on(config: &str, rules: &[&str]) -> String {
+            let mut resolved = BorderRule {
+                off: false,
+                on: false,
+                width: None,
+                active_color: None,
+                inactive_color: None,
+                active_gradient: None,
+                inactive_gradient: None,
+            };
+
+            for rule in rules.iter().copied() {
+                let rule = BorderRule {
+                    off: rule == "off" || rule == "off,on",
+                    on: rule == "on" || rule == "off,on",
+                    ..Default::default()
+                };
+
+                resolved.merge_with(&rule);
+            }
+
+            let config = Border {
+                off: config == "off",
+                ..Default::default()
+            };
+
+            if resolved.resolve_against(config).off {
+                "off"
+            } else {
+                "on"
+            }
+            .to_owned()
+        }
+
+        assert_snapshot!(is_on("off", &[]), @"off");
+        assert_snapshot!(is_on("off", &["off"]), @"off");
+        assert_snapshot!(is_on("off", &["on"]), @"on");
+        assert_snapshot!(is_on("off", &["off,on"]), @"on");
+
+        assert_snapshot!(is_on("on", &[]), @"on");
+        assert_snapshot!(is_on("on", &["off"]), @"off");
+        assert_snapshot!(is_on("on", &["on"]), @"on");
+        assert_snapshot!(is_on("on", &["off,on"]), @"on");
+
+        assert_snapshot!(is_on("off", &["off", "off"]), @"off");
+        assert_snapshot!(is_on("off", &["off", "on"]), @"on");
+        assert_snapshot!(is_on("off", &["on", "off"]), @"off");
+        assert_snapshot!(is_on("off", &["on", "on"]), @"on");
+
+        assert_snapshot!(is_on("on", &["off", "off"]), @"off");
+        assert_snapshot!(is_on("on", &["off", "on"]), @"on");
+        assert_snapshot!(is_on("on", &["on", "off"]), @"off");
+        assert_snapshot!(is_on("on", &["on", "on"]), @"on");
     }
 }

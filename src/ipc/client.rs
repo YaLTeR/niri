@@ -516,6 +516,11 @@ fn print_window(window: &Window) {
         println!("  App ID: (unset)");
     }
 
+    println!(
+        "  Is floating: {}",
+        if window.is_floating { "yes" } else { "no" }
+    );
+
     if let Some(pid) = window.pid {
         println!("  PID: {pid}");
     } else {
