@@ -1041,6 +1041,16 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.reset_window_height(window);
     }
 
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
+        if window.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
+            self.floating.toggle_window_width(window);
+        } else {
+            self.scrolling.toggle_window_width(window);
+        }
+    }
+
     pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)

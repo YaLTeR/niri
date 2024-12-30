@@ -1112,6 +1112,16 @@ impl State {
             Action::SwitchPresetColumnWidth => {
                 self.niri.layout.toggle_width();
             }
+            Action::SwitchPresetWindowWidth => {
+                self.niri.layout.toggle_window_width(None);
+            }
+            Action::SwitchPresetWindowWidthById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_width(Some(&window));
+                }
+            }
             Action::SwitchPresetWindowHeight => {
                 self.niri.layout.toggle_window_height(None);
             }
