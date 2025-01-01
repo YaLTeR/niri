@@ -55,75 +55,68 @@ impl DisplayConfig {
         HashMap<String, OwnedValue>,
     )> {
         // Construct the DBus response.
-        let mut monitors: Vec<(Monitor, LogicalMonitor)> = self
-            .ipc_outputs
-            .lock()
-            .unwrap()
-            .values()
-            // Take only enabled outputs.
-            .filter(|output| output.current_mode.is_some() && output.logical.is_some())
-            .map(|output| {
-                // Loosely matches the check in Mutter.
-                let c = &output.name;
-                let is_laptop_panel = is_laptop_panel(c);
-                let display_name = make_display_name(output, is_laptop_panel);
+        let mut monitors = Vec::new();
+        let mut logical_monitors = Vec::new();
 
-                let mut properties = HashMap::new();
-                properties.insert(
-                    String::from("display-name"),
-                    OwnedValue::from(zvariant::Str::from(display_name)),
-                );
-                properties.insert(
-                    String::from("is-builtin"),
-                    OwnedValue::from(is_laptop_panel),
-                );
+        for output in self.ipc_outputs.lock().unwrap().values() {
+            // Loosely matches the check in Mutter.
+            let c = &output.name;
+            let is_laptop_panel = is_laptop_panel(c);
+            let display_name = make_display_name(output, is_laptop_panel);
 
-                let mut modes: Vec<Mode> = output
-                    .modes
-                    .iter()
-                    .map(|m| {
-                        let niri_ipc::Mode {
-                            width,
-                            height,
-                            refresh_rate,
-                            is_preferred,
-                        } = *m;
-                        let refresh = refresh_rate as f64 / 1000.;
+            let mut properties = HashMap::new();
+            properties.insert(
+                String::from("display-name"),
+                OwnedValue::from(zvariant::Str::from(display_name)),
+            );
+            properties.insert(
+                String::from("is-builtin"),
+                OwnedValue::from(is_laptop_panel),
+            );
 
-                        Mode {
-                            id: format!("{width}x{height}@{refresh:.3}"),
-                            width: i32::from(width),
-                            height: i32::from(height),
-                            refresh_rate: refresh,
-                            preferred_scale: 1.,
-                            supported_scales: vec![1., 2., 3.],
-                            properties: HashMap::from([(
-                                String::from("is-preferred"),
-                                OwnedValue::from(is_preferred),
-                            )]),
-                        }
-                    })
-                    .collect();
-                modes[output.current_mode.unwrap()]
+            let mut modes: Vec<Mode> = output
+                .modes
+                .iter()
+                .map(|m| {
+                    let niri_ipc::Mode {
+                        width,
+                        height,
+                        refresh_rate,
+                        is_preferred,
+                    } = *m;
+                    let refresh = refresh_rate as f64 / 1000.;
+
+                    Mode {
+                        id: format!("{width}x{height}@{refresh:.3}"),
+                        width: i32::from(width),
+                        height: i32::from(height),
+                        refresh_rate: refresh,
+                        preferred_scale: 1.,
+                        supported_scales: vec![1., 2., 3.],
+                        properties: HashMap::from([(
+                            String::from("is-preferred"),
+                            OwnedValue::from(is_preferred),
+                        )]),
+                    }
+                })
+                .collect();
+            if let Some(mode) = output.current_mode {
+                modes[mode]
                     .properties
                     .insert(String::from("is-current"), OwnedValue::from(true));
+            }
 
-                let connector = c.clone();
-                let model = output.model.clone();
-                let make = output.make.clone();
+            let connector = c.clone();
+            let model = output.model.clone();
+            let make = output.make.clone();
 
-                // Serial is used for session restore, so fall back to the connector name if it's
-                // not available.
-                let serial = output.serial.as_ref().unwrap_or(&connector).clone();
+            // Serial is used for session restore, so fall back to the connector name if it's
+            // not available.
+            let serial = output.serial.as_ref().unwrap_or(&connector).clone();
 
-                let monitor = Monitor {
-                    names: (connector, make, model, serial),
-                    modes,
-                    properties,
-                };
+            let names = (connector, make, model, serial);
 
-                let logical = output.logical.as_ref().unwrap();
-
+            if let Some(logical) = output.logical.as_ref() {
                 let transform = match logical.transform {
                     niri_ipc::Transform::Normal => 0,
                     niri_ipc::Transform::_90 => 1,
@@ -135,24 +128,28 @@ impl DisplayConfig {
                     niri_ipc::Transform::Flipped270 => 7,
                 };
 
-                let logical_monitor = LogicalMonitor {
+                logical_monitors.push(LogicalMonitor {
                     x: logical.x,
                     y: logical.y,
                     scale: logical.scale,
                     transform,
                     is_primary: false,
-                    monitors: vec![monitor.names.clone()],
+                    monitors: vec![names.clone()],
                     properties: HashMap::new(),
-                };
+                });
+            }
 
-                (monitor, logical_monitor)
-            })
-            .collect();
+            monitors.push(Monitor {
+                names,
+                modes,
+                properties,
+            });
+        }
 
         // Sort by connector.
-        monitors.sort_unstable_by(|a, b| a.0.names.0.cmp(&b.0.names.0));
+        monitors.sort_unstable_by(|a, b| a.names.0.cmp(&b.names.0));
+        logical_monitors.sort_unstable_by(|a, b| a.monitors[0].0.cmp(&b.monitors[0].0));
 
-        let (monitors, logical_monitors) = monitors.into_iter().unzip();
         let properties = HashMap::from([(String::from("layout-mode"), OwnedValue::from(1u32))]);
         Ok((0, monitors, logical_monitors, properties))
     }
