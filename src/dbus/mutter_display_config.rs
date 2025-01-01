@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use smithay::utils::Size;
 use zbus::fdo::RequestNameFlags;
 use zbus::object_server::SignalEmitter;
@@ -14,6 +15,7 @@ use crate::utils::is_laptop_panel;
 use crate::utils::scale::supported_scales;
 
 pub struct DisplayConfig {
+    to_niri: calloop::channel::Sender<HashMap<String, Option<niri_config::Output>>>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
@@ -44,6 +46,17 @@ pub struct LogicalMonitor {
     is_primary: bool,
     monitors: Vec<(String, String, String, String)>,
     properties: HashMap<String, OwnedValue>,
+}
+
+// ApplyMonitorsConfig
+#[derive(Deserialize, Type)]
+pub struct LogicalMonitorConfiguration {
+    x: i32,
+    y: i32,
+    scale: f64,
+    transform: u32,
+    _is_primary: bool,
+    monitors: Vec<(String, String, HashMap<String, OwnedValue>)>,
 }
 
 #[interface(name = "org.gnome.Mutter.DisplayConfig")]
@@ -158,6 +171,87 @@ impl DisplayConfig {
         Ok((0, monitors, logical_monitors, properties))
     }
 
+    async fn apply_monitors_config(
+        &self,
+        _serial: u32,
+        method: u32,
+        logical_monitor_configs: Vec<LogicalMonitorConfiguration>,
+        _properties: HashMap<String, OwnedValue>,
+    ) -> fdo::Result<()> {
+        let current_conf = self.ipc_outputs.lock().unwrap();
+        let mut new_conf = HashMap::new();
+        for requested_config in logical_monitor_configs {
+            if requested_config.monitors.len() > 1 {
+                return Err(zbus::fdo::Error::Failed(
+                    "Mirroring is not yet supported".to_owned(),
+                ));
+            }
+            for (connector, mode, _props) in requested_config.monitors {
+                if !current_conf.values().any(|o| o.name == connector) {
+                    return Err(zbus::fdo::Error::Failed(format!(
+                        "Connector '{}' not found",
+                        connector
+                    )));
+                }
+                new_conf.insert(
+                    connector.clone(),
+                    Some(niri_config::Output {
+                        off: false,
+                        name: connector,
+                        scale: Some(niri_config::FloatOrInt(requested_config.scale)),
+                        transform: match requested_config.transform {
+                            0 => niri_ipc::Transform::Normal,
+                            1 => niri_ipc::Transform::_90,
+                            2 => niri_ipc::Transform::_180,
+                            3 => niri_ipc::Transform::_270,
+                            4 => niri_ipc::Transform::Flipped,
+                            5 => niri_ipc::Transform::Flipped90,
+                            6 => niri_ipc::Transform::Flipped180,
+                            7 => niri_ipc::Transform::Flipped270,
+                            x => {
+                                return Err(zbus::fdo::Error::Failed(format!(
+                                    "Unknown transform {}",
+                                    x
+                                )))
+                            }
+                        },
+                        position: Some(niri_config::Position {
+                            x: requested_config.x,
+                            y: requested_config.y,
+                        }),
+                        mode: Some(niri_ipc::ConfiguredMode::from_str(&mode).map_err(|e| {
+                            zbus::fdo::Error::Failed(format!(
+                                "Could not parse mode '{}': {}",
+                                mode, e
+                            ))
+                        })?),
+                        // FIXME: VRR
+                        ..Default::default()
+                    }),
+                );
+            }
+        }
+        if new_conf.is_empty() {
+            return Err(zbus::fdo::Error::Failed(
+                "At least one output must be enabled".to_owned(),
+            ));
+        }
+        for output in current_conf.values() {
+            if !new_conf.contains_key(&output.name) {
+                new_conf.insert(output.name.clone(), None);
+            }
+        }
+        if method == 0 {
+            // 0 means "verify", so don't actually apply here
+            return Ok(());
+        }
+        if let Err(err) = self.to_niri.send(new_conf) {
+            warn!("error sending message to niri: {err:?}");
+            return Err(fdo::Error::Failed("internal error".to_owned()));
+        }
+        Ok(())
+    }
+
     #[zbus(signal)]
     pub async fn monitors_changed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 
@@ -188,8 +282,14 @@ impl DisplayConfig {
 }
 
 impl DisplayConfig {
-    pub fn new(ipc_outputs: Arc<Mutex<IpcOutputMap>>) -> Self {
-        Self { ipc_outputs }
+    pub fn new(
+        to_niri: calloop::channel::Sender<HashMap<String, Option<niri_config::Output>>>,
+        ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    ) -> Self {
+        Self {
+            to_niri,
+            ipc_outputs,
+        }
     }
 }
 
