@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use zbus::fdo::RequestNameFlags;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{self, OwnedValue, Type};
@@ -10,8 +11,12 @@ use zbus::{fdo, interface};
 use super::Start;
 use crate::backend::IpcOutputMap;
 use crate::utils::is_laptop_panel;
+use niri_ipc::{
+    ConfiguredMode, ConfiguredPosition, ModeToSet, OutputAction, PositionToSet, ScaleToSet,
+};
 
 pub struct DisplayConfig {
+    to_niri: calloop::channel::Sender<HashMap<String, Vec<OutputAction>>>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
@@ -79,6 +84,17 @@ pub struct LogicalMonitor {
     is_primary: bool,
     monitors: Vec<(String, String, String, String)>,
     properties: HashMap<String, OwnedValue>,
+}
+
+// ApplyMonitorsConfig
+#[derive(Deserialize, Type)]
+pub struct LogicalMonitorConfiguration {
+    x: i32,
+    y: i32,
+    scale: f64,
+    transform: u32,
+    _is_primary: bool,
+    monitors: Vec<(String, String, HashMap<String, OwnedValue>)>,
 }
 
 #[interface(name = "org.gnome.Mutter.DisplayConfig")]
@@ -313,11 +329,102 @@ impl DisplayConfig {
 
     #[zbus(signal)]
     pub async fn monitors_changed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    async fn apply_monitors_config(
+        &self,
+        _serial: u32,
+        method: u32,
+        logical_monitor_configs: Vec<LogicalMonitorConfiguration>,
+        _properties: HashMap<String, OwnedValue>,
+    ) -> fdo::Result<()> {
+        let current_conf = self.ipc_outputs.lock().unwrap();
+        let mut messages = HashMap::new();
+        for requested_config in logical_monitor_configs.into_iter() {
+            for (connector, mode, _props) in requested_config.monitors {
+                if current_conf
+                    .values()
+                    .find(|o| o.name == connector)
+                    .is_none()
+                {
+                    return Err(zbus::fdo::Error::Failed(format!(
+                        "Connector '{}' not found",
+                        connector
+                    )));
+                }
+                let msgs = vec![
+                    OutputAction::Mode {
+                        mode: ModeToSet::Specific(ConfiguredMode::from_str(&mode).map_err(
+                            |e| {
+                                zbus::fdo::Error::Failed(format!(
+                                    "Could not parse mode '{}': {}",
+                                    mode, e
+                                ))
+                            },
+                        )?),
+                    },
+                    OutputAction::Position {
+                        position: PositionToSet::Specific(ConfiguredPosition {
+                            x: requested_config.x,
+                            y: requested_config.y,
+                        }),
+                    },
+                    OutputAction::Scale {
+                        scale: ScaleToSet::Specific(requested_config.scale),
+                    },
+                    OutputAction::Transform {
+                        transform: match requested_config.transform {
+                            0 => niri_ipc::Transform::Normal,
+                            1 => niri_ipc::Transform::_90,
+                            2 => niri_ipc::Transform::_180,
+                            3 => niri_ipc::Transform::_270,
+                            4 => niri_ipc::Transform::Flipped,
+                            5 => niri_ipc::Transform::Flipped90,
+                            6 => niri_ipc::Transform::Flipped180,
+                            7 => niri_ipc::Transform::Flipped270,
+                            x => {
+                                return Err(zbus::fdo::Error::Failed(format!(
+                                    "Unknown transform {}",
+                                    x
+                                )))
+                            }
+                        },
+                    },
+                    OutputAction::On,
+                ];
+                messages.insert(connector, msgs);
+            }
+        }
+        if messages.is_empty() {
+            return Err(zbus::fdo::Error::Failed(
+                "At least one output must be enabled".to_owned(),
+            ));
+        }
+        if method == 0 {
+            // 0 means "verify", so don't actually apply here
+            return Ok(());
+        }
+        for (_, output) in current_conf.iter() {
+            if !messages.contains_key(&output.name) {
+                messages.insert(output.name.clone(), vec![OutputAction::Off]);
+            }
+        }
+        if let Err(err) = self.to_niri.send(messages) {
+            warn!("error sending message to niri: {err:?}");
+            return Err(fdo::Error::Failed("internal error".to_owned()));
+        }
+        Ok(())
+    }
 }
 
 impl DisplayConfig {
-    pub fn new(ipc_outputs: Arc<Mutex<IpcOutputMap>>) -> Self {
-        Self { ipc_outputs }
+    pub fn new(
+        to_niri: calloop::channel::Sender<HashMap<String, Vec<OutputAction>>>,
+        ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    ) -> Self {
+        Self {
+            to_niri,
+            ipc_outputs,
+        }
     }
 }
 
