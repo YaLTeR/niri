@@ -1996,7 +1996,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -3483,7 +3483,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#c3f3ac8dc0776d47bc50f9a1911b613a56e6e04b"
+source = "git+https://github.com/Smithay/smithay.git#5186cf7dec2472a91e3c248772954b1141dab7f2"
 dependencies = [
  "drm",
  "libdisplay-info",
