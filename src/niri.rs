@@ -4545,7 +4545,9 @@ impl Niri {
             }
 
             #[cfg(feature = "dbus")]
-            crate::utils::show_screenshot_notification(image_path);
+            if let Err(err) = crate::utils::show_screenshot_notification(image_path) {
+                warn!("error showing screenshot notification: {err:?}");
+            }
             #[cfg(not(feature = "dbus"))]
             drop(image_path);
         });

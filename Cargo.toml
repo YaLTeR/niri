@@ -67,7 +67,6 @@ libdisplay-info = "0.1.0"
 log = { version = "0.4.22", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "0.1.10", path = "niri-config" }
 niri-ipc = { version = "0.1.10", path = "niri-ipc", features = ["clap"] }
-notify-rust = { version = "~4.10.0", optional = true }
 ordered-float = "4.5.0"
 pango = { version = "0.20.4", features = ["v1_44"] }
 pangocairo = "0.20.4"
@@ -119,7 +118,7 @@ xshell = "0.2.6"
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
 # Enables D-Bus support (serve various freedesktop and GNOME interfaces, power button handling).
-dbus = ["dep:zbus", "dep:async-io", "dep:notify-rust", "dep:url"]
+dbus = ["dep:zbus", "dep:async-io", "dep:url"]
 # Enables systemd integration (global environment, apps in transient scopes).
 systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
