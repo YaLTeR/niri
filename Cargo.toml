@@ -1,5 +1,9 @@
 [workspace]
-members = ["niri-visual-tests"]
+members = [
+    "niri-config",
+    "niri-ipc",
+    "niri-visual-tests",
+]
 
 [workspace.package]
 version = "0.1.10"
