@@ -3972,6 +3972,10 @@ mod tests {
         ]
     }
 
+    fn arbitrary_scroll_direction() -> impl Strategy<Value = ScrollDirection> {
+        prop_oneof![Just(ScrollDirection::Left), Just(ScrollDirection::Right)]
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -4066,6 +4070,9 @@ mod tests {
         },
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
+        SwapWindowInDirection(
+            #[proptest(strategy = "arbitrary_scroll_direction()")] ScrollDirection,
+        ),
         CenterColumn,
         FocusWorkspaceDown,
         FocusWorkspaceUp,
@@ -4519,6 +4526,7 @@ mod tests {
                 }
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
+                Op::SwapWindowInDirection(direction) => layout.swap_window_in_direction(direction),
                 Op::CenterColumn => layout.center_column(),
                 Op::FocusWorkspaceDown => layout.switch_workspace_down(),
                 Op::FocusWorkspaceUp => layout.switch_workspace_up(),

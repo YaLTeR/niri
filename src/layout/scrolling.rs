@@ -248,7 +248,6 @@ pub enum ScrollDirection {
     Right,
 }
 
-
 impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn new(
         view_size: Size<f64, Logical>,
@@ -1759,28 +1758,30 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // if this is the first (resp. last column), then this operation is equivalent
         // to an `consume_or_expel_window_left` (resp. `consume_or_expel_window_right`)
         match direction {
-            ScrollDirection::Left => if self.active_column_idx == 0 {
-                return self.consume_or_expel_window_left(None)
+            ScrollDirection::Left => {
+                if self.active_column_idx == 0 {
+                    return self.consume_or_expel_window_left(None);
+                }
             }
-            ScrollDirection::Right => if self.active_column_idx == self.columns.len() - 1 {
-                return self.consume_or_expel_window_right(None)
+            ScrollDirection::Right => {
+                if self.active_column_idx == self.columns.len() - 1 {
+                    return self.consume_or_expel_window_right(None);
+                }
             }
         }
 
         let source_column_idx = self.active_column_idx;
-        let target_column_idx =
-            self.active_column_idx.wrapping_add_signed(
-                match direction {
-                    ScrollDirection::Left => -1,
-                    ScrollDirection::Right => 1,
-                }
-            );
+        let target_column_idx = self.active_column_idx.wrapping_add_signed(match direction {
+            ScrollDirection::Left => -1,
+            ScrollDirection::Right => 1,
+        });
 
         // if both source and target columns contain a single tile, then the operation is equivalent
         // to a simple column move
-        if self.columns[source_column_idx].tiles.len() == 1 &&
-            self.columns[target_column_idx].tiles.len() == 1 {
-            return self.move_column_to(target_column_idx)
+        if self.columns[source_column_idx].tiles.len() == 1
+            && self.columns[target_column_idx].tiles.len() == 1
+        {
+            return self.move_column_to(target_column_idx);
         }
 
         let source_tile_idx = self.columns[source_column_idx].active_tile_idx;
@@ -1789,8 +1790,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // capture the original positions of the tiles
         let (source_pt, target_pt) = (
-            Point::from((self.column_x(source_column_idx), 0.)) +  self.columns[source_column_idx].tile_offset(source_tile_idx),
-            Point::from((self.column_x(target_column_idx), 0.)) +  self.columns[target_column_idx].tile_offset(target_tile_idx),
+            Point::from((self.column_x(source_column_idx), 0.))
+                + self.columns[source_column_idx].tile_offset(source_tile_idx),
+            Point::from((self.column_x(target_column_idx), 0.))
+                + self.columns[target_column_idx].tile_offset(target_tile_idx),
         );
 
         let transaction = Transaction::new();
@@ -1805,44 +1808,50 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             None,
         );
 
-        // special case when the source column disappears after removing its last tile
-        let adjusted_target_column_idx =
-            if direction == ScrollDirection::Right && source_column_drained {
-                target_column_idx - 1
-            } else { target_column_idx };
+        {
+            // special case when the source column disappears after removing its last tile
+            let adjusted_target_column_idx =
+                if direction == ScrollDirection::Right && source_column_drained {
+                    target_column_idx - 1
+                } else {
+                    target_column_idx
+                };
 
-        self.add_tile_to_column(
-            adjusted_target_column_idx,
-            Some(target_tile_idx),
-            source_removed.tile,
-            false,
-        );
-
-        let RemovedTile {tile: target_tile, ..} = self.remove_tile_by_idx(
-            adjusted_target_column_idx,
-            target_tile_idx + 1,
-            transaction.clone(),
-            None,
-        );
-
-        if source_column_drained {
-            // recreate the drained column with only the target tile
-            self.add_tile(
-                Some(source_column_idx),
-                target_tile,
-                true,
-                source_removed.width,
-                source_removed.is_full_width,
-                None,
-            )
-        } else {
-            // simply add the removed target tile to the source column
             self.add_tile_to_column(
-                source_column_idx,
-                Some(source_tile_idx),
-                target_tile,
+                adjusted_target_column_idx,
+                Some(target_tile_idx),
+                source_removed.tile,
                 false,
             );
+
+            let RemovedTile {
+                tile: target_tile, ..
+            } = self.remove_tile_by_idx(
+                adjusted_target_column_idx,
+                target_tile_idx + 1,
+                transaction.clone(),
+                None,
+            );
+
+            if source_column_drained {
+                // recreate the drained column with only the target tile
+                self.add_tile(
+                    Some(source_column_idx),
+                    target_tile,
+                    true,
+                    source_removed.width,
+                    source_removed.is_full_width,
+                    None,
+                )
+            } else {
+                // simply add the removed target tile to the source column
+                self.add_tile_to_column(
+                    source_column_idx,
+                    Some(source_tile_idx),
+                    target_tile,
+                    false,
+                );
+            }
         }
 
         // update the active tile in the modified columns
@@ -1850,11 +1859,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns[target_column_idx].active_tile_idx = target_tile_idx;
 
         // Animations
-        self.columns[target_column_idx]
-            .tiles[target_tile_idx]
+        self.columns[target_column_idx].tiles[target_tile_idx]
             .animate_move_from(source_pt - target_pt);
-        self.columns[source_column_idx]
-            .tiles[source_tile_idx]
+        self.columns[source_column_idx].tiles[source_tile_idx]
             .animate_move_from(target_pt - source_pt);
 
         self.activate_column(target_column_idx);

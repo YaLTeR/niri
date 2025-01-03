@@ -36,8 +36,8 @@ use touch_move_grab::TouchMoveGrab;
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
-use crate::niri::State;
 use crate::layout::scrolling::ScrollDirection;
+use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
@@ -1296,11 +1296,15 @@ impl State {
                 }
             }
             Action::SwapWindowRight => {
-                self.niri.layout.swap_window_in_direction(ScrollDirection::Right);
+                self.niri
+                    .layout
+                    .swap_window_in_direction(ScrollDirection::Right);
                 self.niri.queue_redraw_all();
             }
             Action::SwapWindowLeft => {
-                self.niri.layout.swap_window_in_direction(ScrollDirection::Left);
+                self.niri
+                    .layout
+                    .swap_window_in_direction(ScrollDirection::Left);
                 self.niri.queue_redraw_all();
             }
         }
