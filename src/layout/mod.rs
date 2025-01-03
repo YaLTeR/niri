@@ -3776,7 +3776,7 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
 mod tests {
     use std::cell::Cell;
 
-    use niri_config::{FloatOrInt, OutputName, WorkspaceName};
+    use niri_config::{FloatOrInt, OutputName, WorkspaceName, WorkspaceReference};
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use smithay::output::{Mode, PhysicalProperties, Subpixel};
@@ -4147,6 +4147,14 @@ mod tests {
         MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
         MoveWorkspaceDown,
         MoveWorkspaceUp,
+        SetWorkspaceName {
+            #[proptest(strategy = "1..=5usize")]
+            ws_name: usize,
+        },
+        UnsetWorkspaceName {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            ws_name: Option<usize>,
+        },
         MoveWindowToOutput {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
             window_id: Option<usize>,
@@ -4353,6 +4361,14 @@ mod tests {
                 }
                 Op::UnnameWorkspace { ws_name } => {
                     layout.unname_workspace(&format!("ws{ws_name}"));
+                }
+                Op::SetWorkspaceName { ws_name } => {
+                    layout.set_workspace_name(format!("ws{ws_name}"));
+                }
+                Op::UnsetWorkspaceName { ws_name } => {
+                    let ws_ref =
+                        ws_name.map(|ws_name| WorkspaceReference::Name(format!("ws{ws_name}")));
+                    layout.unset_workspace_name(ws_ref);
                 }
                 Op::AddWindow {
                     id,
