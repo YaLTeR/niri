@@ -920,6 +920,8 @@ impl State {
             // fullscreen layout window. This will need tracking in grab() to avoid handing it out
             // in the first place. Or a better way to structure this code.
             surface = surface.or_else(|| grab_on_layer(Layer::Top));
+            surface = surface.or_else(|| grab_on_layer(Layer::Bottom));
+            surface = surface.or_else(|| grab_on_layer(Layer::Background));
 
             surface = surface.or_else(|| focus_on_layer(Layer::Overlay));
 
