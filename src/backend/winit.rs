@@ -266,4 +266,9 @@ impl Winit {
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
     }
+
+    // FIXME: If/when the winit backend supports multiple outputs, then this method makes no sense.
+    pub fn single_output(&self) -> &Output {
+        &self.output
+    }
 }
