@@ -28,7 +28,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 ## Features
 
-- Scrollable tiling
+- Built from the ground up for scrollable tiling
 - Dynamic workspaces like in GNOME
 - Built-in screenshot UI
 - Monitor and window screencasting through xdg-desktop-portal-gnome
@@ -45,9 +45,34 @@ https://github.com/YaLTeR/niri/assets/1794388/bce834b0-f205-434e-a027-b373495f97
 
 ## Status
 
-A lot of the essential functionality is implemented, plus some goodies on top.
-Feel free to give niri a try: follow the instructions on the [Getting Started](https://github.com/YaLTeR/niri/wiki/Getting-Started) wiki page.
+Niri is stable for day-to-day use and does most things expected of a Wayland compositor.
+Many people are daily-driving niri, and are happy to help in our [Matrix channel].
+
+Give it a try!
+Follow the instructions on the [Getting Started](https://github.com/YaLTeR/niri/wiki/Getting-Started) wiki page.
 Have your [waybar]s and [fuzzel]s ready: niri is not a complete desktop environment.
+
+Here are some points you may have questions about:
+
+- **Multi-monitor**: yes, a core part of the design from the very start. Mixed DPI works.
+- **Fractional scaling**: yes, plus all niri UI stays pixel-perfect.
+- **NVIDIA**: seems to work fine.
+- **Floating windows**: yes, starting from the next release.
+- **Input devices**: niri supports tablets, touchpads, and touchscreens.
+You can map the tablet to a specific monitor, or use [OpenTabletDriver].
+We have touchpad gestures, but no touchscreen gestures yet.
+- **Wlr protocols**: yes, we have most of the important ones like layer-shell, gamma-control, screencopy.
+You can check on [wayland.app](https://wayland.app) at the bottom of each protocol's page.
+- **Performance**: while I run niri on beefy machines, I try to stay conscious of performance.
+I've seen someone use it fine on an Eee PC 900 from 2008, of all things.
+- **Xwayland**: no built-in support, but xwayland-satellite is [easy to set up](https://github.com/YaLTeR/niri/wiki/Xwayland#using-xwayland-satellite) and works very well.
+    - Steam and games, including Proton: work perfectly through xwayland-satellite.
+    - JetBrains IDEs, Ghidra: work well through xwayland-satellite.
+    - Discord and other Electron apps: work well through xwayland-satellite.
+    - Chromium and VSCode: work perfectly natively on Wayland with the right flags.
+    - X11 apps that want to position windows or bars at specific screen coordinates: won't work well; you can run them in a nested compositor like [labwc](https://github.com/YaLTeR/niri/wiki/Xwayland#using-the-labwc-wayland-compositor) or [rootful Xwayland](https://github.com/YaLTeR/niri/wiki/Xwayland#directly-running-xwayland-in-rootful-mode).
+    - Display scaling (integer or fractional) will make X11 apps look blurry; this needs to be supported in xwayland-satellite.
+    For games, you can run them in [gamescope] at native resolution, even with display scaling.
 
 ## Inspiration
 
@@ -78,3 +103,6 @@ We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#
 [hyprscroller]: https://github.com/dawsers/hyprscroller
 [hyprslidr]: https://gitlab.com/magus/hyprslidr
 [PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon
+[Matrix channel]: https://matrix.to/#/#niri:matrix.org
+[OpenTabletDriver]: https://opentabletdriver.net/
+[gamescope]: https://github.com/ValveSoftware/gamescope
