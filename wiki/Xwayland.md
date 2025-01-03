@@ -35,6 +35,18 @@ environment {
 >
 > You can also force a specific DISPLAY number like so: `xwayland-satellite :12` will start on `DISPLAY=:12`.
 
+## Using the labwc Wayland compositor
+
+[Labwc](https://github.com/labwc/labwc) is a traditional stacking Wayland compositor with Xwayland.
+You can run it as a window, then run X11 apps inside.
+
+1. Install labwc from your distribution packages.
+1. Run it inside niri with the `labwc` command.
+It will open as a new window.
+1. Run an X11 application on the X11 DISPLAY that it provides, e.g. `env DISPLAY=:0 glxgears`
+
+![Labwc running X11 apps.](https://github.com/user-attachments/assets/aecbcecb-f0cb-4909-867f-09d34b5a2d7e)
+
 ## Directly running Xwayland in rootful mode
 
 This method involves invoking XWayland directly and running it as its own window, it also requires an extra X11 window manager running inside it.
