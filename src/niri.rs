@@ -928,14 +928,19 @@ impl State {
             if mon.render_above_top_layer() {
                 surface = surface.or_else(layout_focus);
                 surface = surface.or_else(|| focus_on_layer(Layer::Top));
+                surface = surface.or_else(|| focus_on_layer(Layer::Bottom));
+                surface = surface.or_else(|| focus_on_layer(Layer::Background));
             } else {
                 surface = surface.or_else(|| focus_on_layer(Layer::Top));
+                surface = surface.or_else(|| on_d_focus_on_layer(Layer::Bottom));
+                surface = surface.or_else(|| on_d_focus_on_layer(Layer::Background));
                 surface = surface.or_else(layout_focus);
-            }
 
-            // Bottom and background layers can receive on-demand focus only.
-            surface = surface.or_else(|| on_d_focus_on_layer(Layer::Bottom));
-            surface = surface.or_else(|| on_d_focus_on_layer(Layer::Background));
+                // Bottom and background layers can only receive exclusive focus when there are no
+                // layout windows.
+                surface = surface.or_else(|| excl_focus_on_layer(Layer::Bottom));
+                surface = surface.or_else(|| excl_focus_on_layer(Layer::Background));
+            }
 
             surface.unwrap_or(KeyboardFocus::Layout { surface: None })
         } else {
