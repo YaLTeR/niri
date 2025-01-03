@@ -350,6 +350,18 @@ pub enum Action {
     MoveWorkspaceDown {},
     /// Move the focused workspace up.
     MoveWorkspaceUp {},
+    /// Set the name of the focused workspace.
+    SetWorkspaceName {
+        /// New name for the workspace.
+        #[cfg_attr(feature = "clap", arg())]
+        name: String,
+    },
+    /// Unset the name of the focused workspace.
+    UnsetWorkspaceName {
+        /// Reference (index or name) of the workspace to focus.
+        #[cfg_attr(feature = "clap", arg())]
+        reference: Option<WorkspaceReferenceArg>,
+    },
     /// Focus the monitor to the left.
     FocusMonitorLeft {},
     /// Focus the monitor to the right.
