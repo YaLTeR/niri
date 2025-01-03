@@ -1222,7 +1222,7 @@ pub enum Action {
     MoveWorkspaceDown,
     MoveWorkspaceUp,
     SetWorkspaceName(#[knuffel(argument)] String),
-    UnsetWorkspaceName,
+    UnsetWorkspaceName(#[knuffel(argument)] Option<WorkspaceReference>),
     FocusMonitorLeft,
     FocusMonitorRight,
     FocusMonitorDown,
@@ -1351,10 +1351,10 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::MoveWorkspaceDown {} => Self::MoveWorkspaceDown,
             niri_ipc::Action::MoveWorkspaceUp {} => Self::MoveWorkspaceUp,
-            niri_ipc::Action::SetWorkspaceName {
-                name,
-            } => Self::SetWorkspaceName(name),
-            niri_ipc::Action::UnsetWorkspaceName {} => Self::UnsetWorkspaceName,
+            niri_ipc::Action::SetWorkspaceName { name } => Self::SetWorkspaceName(name),
+            niri_ipc::Action::UnsetWorkspaceName { reference } => {
+                Self::UnsetWorkspaceName(reference.map(WorkspaceReference::from))
+            }
             niri_ipc::Action::FocusMonitorLeft {} => Self::FocusMonitorLeft,
             niri_ipc::Action::FocusMonitorRight {} => Self::FocusMonitorRight,
             niri_ipc::Action::FocusMonitorDown {} => Self::FocusMonitorDown,

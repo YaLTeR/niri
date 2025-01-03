@@ -344,8 +344,12 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         name: String,
     },
-    /// Unset the name of te focused workspace.
-    UnsetWorkspaceName {},
+    /// Unset the name of the focused workspace.
+    UnsetWorkspaceName {
+        /// Reference (index or name) of the workspace to focus.
+        #[cfg_attr(feature = "clap", arg())]
+        reference: Option<WorkspaceReferenceArg>,
+    },
     /// Focus the monitor to the left.
     FocusMonitorLeft {},
     /// Focus the monitor to the right.

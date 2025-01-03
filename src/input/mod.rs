@@ -1099,8 +1099,8 @@ impl State {
             Action::SetWorkspaceName(name) => {
                 self.niri.layout.set_workspace_name(name);
             }
-            Action::UnsetWorkspaceName => {
-                self.niri.layout.unset_workspace_name();
+            Action::UnsetWorkspaceName(reference) => {
+                self.niri.layout.unset_workspace_name(reference);
             }
             Action::ConsumeWindowIntoColumn => {
                 self.niri.layout.consume_into_column();

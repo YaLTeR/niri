@@ -377,12 +377,19 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn unname_workspace(&mut self, workspace_name: &str) -> bool {
-        for ws in &mut self.workspaces {
-            if ws
-                .name
+        self.unname_workspace_with_filter(|ws| {
+            ws.name
                 .as_ref()
                 .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
-            {
+        })
+    }
+
+    pub fn unname_workspace_with_filter<P>(&mut self, pred: P) -> bool
+    where
+        P: Fn(&Workspace<W>) -> bool,
+    {
+        for ws in &mut self.workspaces {
+            if pred(ws) {
                 ws.unname();
                 return true;
             }
@@ -656,16 +663,6 @@ impl<W: LayoutElement> Monitor<W> {
         if let Some(idx) = self.previous_workspace_idx() {
             self.switch_workspace(idx);
         }
-    }
-
-    pub fn set_workspace_name(&mut self, name: String) {
-        let ws = &mut self.workspaces[self.active_workspace_idx];
-        ws.name.replace(name);
-    }
-
-    pub fn unset_workspace_name(&mut self) {
-        let ws = &mut self.workspaces[self.active_workspace_idx];
-        ws.name.take();
     }
 
     pub fn consume_into_column(&mut self) {

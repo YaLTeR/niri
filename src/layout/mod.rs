@@ -37,7 +37,7 @@ use std::time::Duration;
 
 use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
-    Workspace as WorkspaceConfig,
+    Workspace as WorkspaceConfig, WorkspaceReference,
 };
 use niri_ipc::SizeChange;
 use scrolling::{Column, ColumnWidth, InsertHint, InsertPosition};
@@ -1190,11 +1190,63 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn find_workspace_by_ref(
+        &mut self,
+        workspace_reference: WorkspaceReference,
+    ) -> Option<&mut Workspace<W>> {
+        fn iter_find<'a, I, W>(
+            mut iter: I,
+            workspace_reference: WorkspaceReference,
+        ) -> Option<&'a mut Workspace<W>>
+        where
+            I: Iterator<Item = &'a mut Workspace<W>>,
+            W: LayoutElement,
+        {
+            iter.find(|w| match workspace_reference {
+                WorkspaceReference::Name(ref workspace_name) => w
+                    .name
+                    .as_ref()
+                    .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name)),
+                WorkspaceReference::Id(id) => w.id() == WorkspaceId::specific(id),
+                _ => panic!("find_wkspc called with WorkspaceReference::Index"),
+            })
+        }
+        if let WorkspaceReference::Index(index) = workspace_reference {
+            self.active_monitor().and_then(|m| {
+                let index = index.saturating_sub(1) as usize;
+                m.workspaces.get_mut(index)
+            })
+        } else {
+            match &mut self.monitor_set {
+                MonitorSet::Normal {
+                    ref mut monitors, ..
+                } => {
+                    let iter = monitors.iter_mut().flat_map(|m| m.workspaces.iter_mut());
+                    iter_find(iter, workspace_reference)
+                }
+                MonitorSet::NoOutputs { ref mut workspaces } => {
+                    iter_find(workspaces.iter_mut(), workspace_reference)
+                }
+            }
+        }
+    }
+
     pub fn unname_workspace(&mut self, workspace_name: &str) {
+        self.unname_workspace_with_filter(|ws| {
+            ws.name
+                .as_ref()
+                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+        });
+    }
+
+    pub fn unname_workspace_with_filter<P>(&mut self, pred: P)
+    where
+        P: Fn(&Workspace<W>) -> bool,
+    {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
-                    if mon.unname_workspace(workspace_name) {
+                    if mon.unname_workspace_with_filter(&pred) {
                         if mon.workspace_switch.is_none() {
                             mon.clean_up_workspaces();
                         }
@@ -1204,18 +1256,13 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { workspaces } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
-                    if ws
-                        .name
-                        .as_ref()
-                        .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
-                    {
+                    if pred(ws) {
                         ws.unname();
 
                         // Clean up empty workspaces.
                         if !ws.has_windows() {
                             workspaces.remove(idx);
                         }
-
                         return;
                     }
                 }
@@ -3395,23 +3442,26 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn set_workspace_name(&mut self, name: String) {
-        // ignore request if the name is an integer
-        if name.parse::<usize>().is_ok() { return }
-
         // also ignore the request if the name is already used by another workspace
-        if self.find_workspace_by_name(&name).is_some() { return }
-
-        let Some(monitor) = self.active_monitor() else {
+        if self.find_workspace_by_name(&name).is_some() {
             return;
-        };
-        monitor.set_workspace_name(name);
+        }
+
+        self.active_workspace_mut()
+            .and_then(|ws| ws.name.replace(name));
     }
 
-    pub fn unset_workspace_name(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
-            return;
+    pub fn unset_workspace_name(&mut self, reference: Option<WorkspaceReference>) {
+        let ws = if let Some(reference) = reference {
+            self.find_workspace_by_ref(reference)
+        } else {
+            self.active_workspace_mut()
         };
-        monitor.unset_workspace_name();
+
+        if let Some(ws) = ws {
+            let target_id = ws.id();
+            self.unname_workspace_with_filter(|w| target_id == w.id())
+        }
     }
 
     pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
