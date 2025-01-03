@@ -768,36 +768,42 @@ impl State {
             Action::FocusColumnLeft => {
                 self.niri.layout.focus_left();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusColumnFirst => {
                 self.niri.layout.focus_column_first();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusColumnLast => {
                 self.niri.layout.focus_column_last();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusColumnRightOrFirst => {
                 self.niri.layout.focus_column_right_or_first();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusColumnLeftOrLast => {
                 self.niri.layout.focus_column_left_or_last();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -814,6 +820,7 @@ impl State {
                     self.niri.layout.focus_up();
                     self.maybe_warp_cursor_to_focus();
                 }
+                self.niri.layer_shell_on_demand_focus = None;
 
                 // FIXME: granular
                 self.niri.queue_redraw_all();
@@ -831,6 +838,7 @@ impl State {
                     self.niri.layout.focus_down();
                     self.maybe_warp_cursor_to_focus();
                 }
+                self.niri.layer_shell_on_demand_focus = None;
 
                 // FIXME: granular
                 self.niri.queue_redraw_all();
@@ -848,6 +856,7 @@ impl State {
                     self.niri.layout.focus_left();
                     self.maybe_warp_cursor_to_focus();
                 }
+                self.niri.layer_shell_on_demand_focus = None;
 
                 // FIXME: granular
                 self.niri.queue_redraw_all();
@@ -865,6 +874,7 @@ impl State {
                     self.niri.layout.focus_right();
                     self.maybe_warp_cursor_to_focus();
                 }
+                self.niri.layer_shell_on_demand_focus = None;
 
                 // FIXME: granular
                 self.niri.queue_redraw_all();
@@ -872,48 +882,56 @@ impl State {
             Action::FocusWindowDown => {
                 self.niri.layout.focus_down();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowUp => {
                 self.niri.layout.focus_up();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowDownOrColumnLeft => {
                 self.niri.layout.focus_down_or_left();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowDownOrColumnRight => {
                 self.niri.layout.focus_down_or_right();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowUpOrColumnLeft => {
                 self.niri.layout.focus_up_or_left();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowUpOrColumnRight => {
                 self.niri.layout.focus_up_or_right();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowOrWorkspaceDown => {
                 self.niri.layout.focus_window_or_workspace_down();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowOrWorkspaceUp => {
                 self.niri.layout.focus_window_or_workspace_up();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -1042,12 +1060,14 @@ impl State {
             Action::FocusWorkspaceDown => {
                 self.niri.layout.switch_workspace_down();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusWorkspaceUp => {
                 self.niri.layout.switch_workspace_up();
                 self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -1076,6 +1096,7 @@ impl State {
                         }
                         self.maybe_warp_cursor_to_focus();
                     }
+                    self.niri.layer_shell_on_demand_focus = None;
 
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -1083,6 +1104,8 @@ impl State {
             }
             Action::FocusWorkspacePrevious => {
                 self.niri.layout.switch_workspace_previous();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -1160,6 +1183,7 @@ impl State {
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
                     }
+                    self.niri.layer_shell_on_demand_focus = None;
                 }
             }
             Action::FocusMonitorRight => {
@@ -1168,6 +1192,7 @@ impl State {
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
                     }
+                    self.niri.layer_shell_on_demand_focus = None;
                 }
             }
             Action::FocusMonitorDown => {
@@ -1176,6 +1201,7 @@ impl State {
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
                     }
+                    self.niri.layer_shell_on_demand_focus = None;
                 }
             }
             Action::FocusMonitorUp => {
@@ -1184,6 +1210,7 @@ impl State {
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
                     }
+                    self.niri.layer_shell_on_demand_focus = None;
                 }
             }
             Action::FocusMonitorPrevious => {
@@ -1192,6 +1219,7 @@ impl State {
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
                     }
+                    self.niri.layer_shell_on_demand_focus = None;
                 }
             }
             Action::FocusMonitorNext => {
@@ -1200,6 +1228,7 @@ impl State {
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
                     }
+                    self.niri.layer_shell_on_demand_focus = None;
                 }
             }
             Action::MoveWindowToMonitorLeft => {

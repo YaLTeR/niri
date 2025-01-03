@@ -317,6 +317,7 @@ impl ClientDndGrabHandler for State {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
                     let window = mapped.window.clone();
                     self.niri.layout.activate_window(&window);
+                    self.niri.layer_shell_on_demand_focus = None;
                     activate_output = false;
                 }
             }
