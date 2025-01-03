@@ -140,7 +140,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
     render_to_dmabuf, render_to_encompassing_texture, render_to_shm, render_to_texture,
-    render_to_vec, shaders, RenderTarget,
+    render_to_vec, shaders, RenderTarget, SplitElements,
 };
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
@@ -2460,27 +2460,42 @@ impl Niri {
 
         let (output, pos_within_output) = self.output_under(pos)?;
 
+        // The ordering here must be consistent with the ordering in render() so that input is
+        // consistent with the visuals.
+
         // Check if some layer-shell surface is on top.
         let layers = layer_map_for_output(output);
-        let layer_under = |layer| {
+        let layer_surface_under = |layer, popup| {
             layers
-                .layer_under(layer, pos_within_output)
-                .and_then(|layer| {
+                .layers_on(layer)
+                .rev()
+                .find_map(|layer| {
                     let layer_pos_within_output =
                         layers.layer_geometry(layer).unwrap().loc.to_f64();
-                    layer.surface_under(
-                        pos_within_output - layer_pos_within_output,
-                        WindowSurfaceType::ALL,
-                    )
+                    let surface_type = if popup {
+                        WindowSurfaceType::POPUP
+                    } else {
+                        WindowSurfaceType::TOPLEVEL
+                    } | WindowSurfaceType::SUBSURFACE;
+                    layer.surface_under(pos_within_output - layer_pos_within_output, surface_type)
                 })
                 .is_some()
         };
-        if layer_under(Layer::Overlay) {
+
+        let layer_toplevel_under = |layer| layer_surface_under(layer, false);
+        let layer_popup_under = |layer| layer_surface_under(layer, true);
+
+        if layer_popup_under(Layer::Overlay) || layer_toplevel_under(Layer::Overlay) {
             return None;
         }
 
         let mon = self.layout.monitor_for_output(output).unwrap();
-        if !mon.render_above_top_layer() && layer_under(Layer::Top) {
+        if !mon.render_above_top_layer()
+            && (layer_popup_under(Layer::Top)
+                || layer_popup_under(Layer::Bottom)
+                || layer_popup_under(Layer::Background)
+                || layer_toplevel_under(Layer::Top))
+        {
             return None;
         }
 
@@ -2512,6 +2527,9 @@ impl Niri {
         rv.output = Some(output.clone());
         let output_pos_in_global_space = self.global_space.output_geometry(output).unwrap().loc;
 
+        // The ordering here must be consistent with the ordering in render() so that input is
+        // consistent with the visuals.
+
         if self.is_locked() {
             let Some(state) = self.output_state.get(output) else {
                 return rv;
@@ -2542,17 +2560,20 @@ impl Niri {
         }
 
         let layers = layer_map_for_output(output);
-        let layer_surface_under = |layer| {
+        let layer_surface_under = |layer, popup| {
             layers
-                .layer_under(layer, pos_within_output)
-                .and_then(|layer| {
+                .layers_on(layer)
+                .rev()
+                .find_map(|layer| {
                     let layer_pos_within_output =
                         layers.layer_geometry(layer).unwrap().loc.to_f64();
+                    let surface_type = if popup {
+                        WindowSurfaceType::POPUP
+                    } else {
+                        WindowSurfaceType::TOPLEVEL
+                    } | WindowSurfaceType::SUBSURFACE;
                     layer
-                        .surface_under(
-                            pos_within_output - layer_pos_within_output,
-                            WindowSurfaceType::ALL,
-                        )
+                        .surface_under(pos_within_output - layer_pos_within_output, surface_type)
                         .map(|(surface, pos_within_layer)| {
                             (
                                 (surface, pos_within_layer.to_f64() + layer_pos_within_output),
@@ -2562,6 +2583,9 @@ impl Niri {
                 })
                 .map(|(s, l)| (s, (None, Some(l.clone()))))
         };
+
+        let layer_toplevel_under = |layer| layer_surface_under(layer, false);
+        let layer_popup_under = |layer| layer_surface_under(layer, true);
 
         let window_under = || {
             self.layout
@@ -2583,22 +2607,32 @@ impl Niri {
 
         let mon = self.layout.monitor_for_output(output).unwrap();
 
-        let mut under = layer_surface_under(Layer::Overlay);
+        let mut under =
+            layer_popup_under(Layer::Overlay).or_else(|| layer_toplevel_under(Layer::Overlay));
 
+        // When rendering above the top layer, we put the regular monitor elements first.
+        // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
             under = under
                 .or_else(window_under)
-                .or_else(|| layer_surface_under(Layer::Top));
+                .or_else(|| layer_popup_under(Layer::Top))
+                .or_else(|| layer_popup_under(Layer::Bottom))
+                .or_else(|| layer_popup_under(Layer::Background))
+                .or_else(|| layer_toplevel_under(Layer::Top))
+                .or_else(|| layer_toplevel_under(Layer::Bottom))
+                .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
             under = under
-                .or_else(|| layer_surface_under(Layer::Top))
-                .or_else(window_under);
+                .or_else(|| layer_popup_under(Layer::Top))
+                .or_else(|| layer_popup_under(Layer::Bottom))
+                .or_else(|| layer_popup_under(Layer::Background))
+                .or_else(|| layer_toplevel_under(Layer::Top))
+                .or_else(window_under)
+                .or_else(|| layer_toplevel_under(Layer::Bottom))
+                .or_else(|| layer_toplevel_under(Layer::Background));
         }
 
-        let Some(((surface, surface_pos_within_output), (window, layer))) = under
-            .or_else(|| layer_surface_under(Layer::Bottom))
-            .or_else(|| layer_surface_under(Layer::Background))
-        else {
+        let Some(((surface, surface_pos_within_output), (window, layer))) = under else {
             return rv;
         };
 
@@ -3304,27 +3338,41 @@ impl Niri {
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
-        let mut extend_from_layer = |elements: &mut Vec<OutputRenderElements<R>>, layer| {
+        let mut extend_from_layer = |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
+                                     layer| {
             self.render_layer(renderer, target, output_scale, &layer_map, layer, elements);
         };
 
-        // The upper layer-shell elements go next.
-        extend_from_layer(&mut elements, Layer::Overlay);
+        // The overlay layer elements go next.
+        let mut layer_elems = SplitElements::default();
+        extend_from_layer(&mut layer_elems, Layer::Overlay);
+        elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
-        // Then the regular monitor elements and the top layer in varying order.
+        // Collect all other layer-shell elements.
+        let mut layer_elems = SplitElements::default();
+        extend_from_layer(&mut layer_elems, Layer::Top);
+        let top_layer_normal = mem::take(&mut layer_elems.normal);
+        extend_from_layer(&mut layer_elems, Layer::Bottom);
+        extend_from_layer(&mut layer_elems, Layer::Background);
+
+        // When rendering above the top layer, we put the regular monitor elements first.
+        // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
             elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
-            extend_from_layer(&mut elements, Layer::Top);
+
+            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
+            elements.extend(top_layer_normal.into_iter().map(OutputRenderElements::from));
+            elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
         } else {
-            extend_from_layer(&mut elements, Layer::Top);
+            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
+            elements.extend(top_layer_normal.into_iter().map(OutputRenderElements::from));
+
             elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
-        }
 
-        // Then the lower layer-shell elements.
-        extend_from_layer(&mut elements, Layer::Bottom);
-        extend_from_layer(&mut elements, Layer::Background);
+            elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
+        }
 
         // Then the background.
         elements.push(background);
@@ -3343,20 +3391,17 @@ impl Niri {
         scale: Scale<f64>,
         layer_map: &LayerMap,
         layer: Layer,
-        elements: &mut Vec<OutputRenderElements<R>>,
+        elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
     ) {
-        let iter = layer_map
-            .layers_on(layer)
-            .filter_map(|surface| {
-                let mapped = self.mapped_layer_surfaces.get(surface)?;
-                let geo = layer_map.layer_geometry(surface)?;
-                Some((mapped, geo))
-            })
-            .flat_map(|(mapped, geo)| {
-                let elements = mapped.render(renderer, geo, scale, target);
-                elements.into_iter().map(OutputRenderElements::LayerSurface)
-            });
-        elements.extend(iter);
+        // LayerMap returns layers in reverse stacking order.
+        let iter = layer_map.layers_on(layer).rev().filter_map(|surface| {
+            let mapped = self.mapped_layer_surfaces.get(surface)?;
+            let geo = layer_map.layer_geometry(surface)?;
+            Some((mapped, geo))
+        });
+        for (mapped, geo) in iter {
+            elements.extend(mapped.render(renderer, geo, scale, target));
+        }
     }
 
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {

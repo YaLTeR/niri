@@ -113,6 +113,11 @@ impl<E> SplitElements<E> {
         popups.extend(normal);
         popups
     }
+
+    pub fn extend(&mut self, other: SplitElements<E>) {
+        self.popups.extend(other.popups);
+        self.normal.extend(other.normal);
+    }
 }
 
 impl ToRenderElement for BakedBuffer<TextureBuffer<GlesTexture>> {
