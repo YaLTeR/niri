@@ -1641,6 +1641,8 @@ pub struct DebugConfig {
     pub disable_cursor_plane: bool,
     #[knuffel(child)]
     pub disable_direct_scanout: bool,
+    #[knuffel(child)]
+    pub restrict_primary_scanout_to_matching_format: bool,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
     #[knuffel(child)]

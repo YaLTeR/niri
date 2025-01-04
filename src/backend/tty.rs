@@ -1336,21 +1336,29 @@ impl Tty {
 
         // Overlay planes are disabled by default as they cause weird performance issues on my
         // system.
-        let mut flags =
-            FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT | FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT;
-        {
+        let flags = {
             let debug = &self.config.borrow().debug;
+
+            let primary_scanout_flag = if debug.restrict_primary_scanout_to_matching_format {
+                FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT
+            } else {
+                FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT_ANY
+            };
+            let mut flags = primary_scanout_flag | FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT;
+
             if debug.enable_overlay_planes {
                 flags.insert(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
             if debug.disable_direct_scanout {
-                flags.remove(FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT);
+                flags.remove(primary_scanout_flag);
                 flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
             if debug.disable_cursor_plane {
                 flags.remove(FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT);
             }
-        }
+
+            flags
+        };
 
         // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;

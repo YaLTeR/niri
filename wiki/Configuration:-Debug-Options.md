@@ -16,6 +16,7 @@ debug {
     enable-overlay-planes
     disable-cursor-plane
     disable-direct-scanout
+    restrict-primary-scanout-to-matching-format
     render-drm-device "/dev/dri/renderD129"
     force-pipewire-invalid-modifier
     dbus-interfaces-in-non-session-instances
@@ -81,6 +82,20 @@ Disable direct scanout to both the primary plane and the overlay planes.
 ```kdl
 debug {
     disable-direct-scanout
+}
+```
+
+### `restrict-primary-scanout-to-matching-format`
+
+Restricts direct scanout to the primary plane to when the window buffer exactly matches the composition swapchain format.
+
+This flag may prevent unexpected bandwidth changes when going between composition and scanout.
+The plan is to make it default in the future, when we implement a way to tell the clients the composition swapchain format.
+As is, it may prevent some clients (mpv on my machine) from scanning out to the primary plane.
+
+```kdl
+debug {
+    restrict-primary-scanout-to-matching-format
 }
 ```
 
