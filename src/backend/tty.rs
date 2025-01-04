@@ -123,7 +123,7 @@ pub struct OutputDevice {
     render_node: DrmNode,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
-    output_ids: HashMap<crtc::Handle, OutputId>,
+    known_crtcs: HashMap<crtc::Handle, CrtcInfo>,
     // SAFETY: drop after all the objects used with them are dropped.
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
@@ -132,6 +132,13 @@ pub struct OutputDevice {
     pub drm_lease_state: Option<DrmLeaseState>,
     non_desktop_connectors: HashSet<(connector::Handle, crtc::Handle)>,
     active_leases: Vec<DrmLease>,
+}
+
+// A connected, but not necessarily enabled, crtc.
+#[derive(Debug, Clone)]
+pub struct CrtcInfo {
+    id: OutputId,
+    name: OutputName,
 }
 
 impl OutputDevice {
@@ -172,6 +179,35 @@ impl OutputDevice {
 
     pub fn remove_lease(&mut self, lease_id: u32) {
         self.active_leases.retain(|l| l.id() != lease_id);
+    }
+
+    pub fn known_crtc_name(
+        &self,
+        crtc: &crtc::Handle,
+        conn: &connector::Info,
+        disable_monitor_names: bool,
+    ) -> OutputName {
+        if disable_monitor_names {
+            let conn_name = format_connector_name(conn);
+            return OutputName {
+                connector: conn_name,
+                make: None,
+                model: None,
+                serial: None,
+            };
+        }
+
+        let Some(info) = self.known_crtcs.get(crtc) else {
+            let conn_name = format_connector_name(conn);
+            error!("crtc for connector {conn_name} missing from known");
+            return OutputName {
+                connector: conn_name,
+                make: None,
+                model: None,
+                serial: None,
+            };
+        };
+        info.name.clone()
     }
 }
 
@@ -572,7 +608,7 @@ impl Tty {
             gbm,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
-            output_ids: HashMap::new(),
+            known_crtcs: HashMap::new(),
             drm_lease_state,
             active_leases: Vec::new(),
             non_desktop_connectors: HashSet::new(),
@@ -613,16 +649,16 @@ impl Tty {
                     crtc: Some(crtc),
                 } => {
                     let connector_name = format_connector_name(&connector);
-                    let output_name =
-                        make_output_name(&device.drm, connector.handle(), connector_name, false);
+                    let name = make_output_name(&device.drm, connector.handle(), connector_name);
                     debug!(
                         "new connector: {} \"{}\"",
-                        &output_name.connector,
-                        output_name.format_make_model_serial(),
+                        &name.connector,
+                        name.format_make_model_serial(),
                     );
 
                     // Assign an id to this crtc.
-                    device.output_ids.insert(crtc, OutputId::next());
+                    let id = OutputId::next();
+                    device.known_crtcs.insert(crtc, CrtcInfo { id, name });
                 }
                 DrmScanEvent::Disconnected {
                     crtc: Some(crtc), ..
@@ -643,7 +679,7 @@ impl Tty {
         };
 
         for crtc in removed {
-            if device.output_ids.remove(&crtc).is_none() {
+            if device.known_crtcs.remove(&crtc).is_none() {
                 error!("output ID missing for disconnected crtc: {crtc:?}");
             }
         }
@@ -739,12 +775,8 @@ impl Tty {
 
         let device = self.devices.get_mut(&node).context("missing device")?;
 
-        let output_name = make_output_name(
-            &device.drm,
-            connector.handle(),
-            connector_name.clone(),
-            self.config.borrow().debug.disable_monitor_names,
-        );
+        let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
+        let output_name = device.known_crtc_name(&crtc, &connector, disable_monitor_names);
 
         let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
@@ -1543,17 +1575,13 @@ impl Tty {
         let _span = tracy_client::span!("Tty::refresh_ipc_outputs");
 
         let mut ipc_outputs = HashMap::new();
+        let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
 
         for (node, device) in &self.devices {
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 let connector_name = format_connector_name(connector);
                 let physical_size = connector.size();
-                let output_name = make_output_name(
-                    &device.drm,
-                    connector.handle(),
-                    connector_name.clone(),
-                    self.config.borrow().debug.disable_monitor_names,
-                );
+                let output_name = device.known_crtc_name(&crtc, connector, disable_monitor_names);
 
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
@@ -1609,6 +1637,12 @@ impl Tty {
                     })
                     .map(logical_output);
 
+                let id = device.known_crtcs.get(&crtc).map(|info| info.id);
+                let id = id.unwrap_or_else(|| {
+                    error!("crtc for connector {connector_name} missing from known");
+                    OutputId::next()
+                });
+
                 let ipc_output = niri_ipc::Output {
                     name: connector_name,
                     make: output_name.make.unwrap_or_else(|| "Unknown".into()),
@@ -1622,10 +1656,6 @@ impl Tty {
                     logical,
                 };
 
-                let id = device.output_ids.get(&crtc).copied().unwrap_or_else(|| {
-                    error!("output ID missing for crtc: {crtc:?}");
-                    OutputId::next()
-                });
                 ipc_outputs.insert(id, ipc_output);
             }
         }
@@ -1838,6 +1868,9 @@ impl Tty {
                 }
             }
 
+            let config = self.config.borrow();
+            let disable_monitor_names = config.debug.disable_monitor_names;
+
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 // Check if connected.
                 if connector.state() != connector::State::Connected {
@@ -1853,16 +1886,9 @@ impl Tty {
                     continue;
                 }
 
-                let connector_name = format_connector_name(connector);
-                let output_name = make_output_name(
-                    &device.drm,
-                    connector.handle(),
-                    connector_name,
-                    self.config.borrow().debug.disable_monitor_names,
-                );
-                let config = self
-                    .config
-                    .borrow()
+                let output_name = device.known_crtc_name(&crtc, connector, disable_monitor_names);
+
+                let config = config
                     .outputs
                     .find(&output_name)
                     .cloned()
@@ -1896,6 +1922,7 @@ impl Tty {
     }
 
     pub fn disconnected_connector_name_by_name_match(&self, target: &str) -> Option<OutputName> {
+        let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
         for device in self.devices.values() {
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 // Check if connected.
@@ -1912,13 +1939,7 @@ impl Tty {
                     continue;
                 }
 
-                let connector_name = format_connector_name(connector);
-                let output_name = make_output_name(
-                    &device.drm,
-                    connector.handle(),
-                    connector_name,
-                    self.config.borrow().debug.disable_monitor_names,
-                );
+                let output_name = device.known_crtc_name(&crtc, connector, disable_monitor_names);
                 if output_name.matches(target) {
                     return Some(output_name);
                 }
@@ -2479,17 +2500,7 @@ fn make_output_name(
     device: &DrmDevice,
     connector: connector::Handle,
     connector_name: String,
-    disable_monitor_names: bool,
 ) -> OutputName {
-    if disable_monitor_names {
-        return OutputName {
-            connector: connector_name,
-            make: None,
-            model: None,
-            serial: None,
-        };
-    }
-
     let info = get_edid_info(device, connector)
         .map_err(|err| warn!("error getting EDID info for {connector_name}: {err:?}"))
         .ok();
