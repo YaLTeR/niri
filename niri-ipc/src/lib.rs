@@ -800,6 +800,22 @@ pub enum Transform {
     Flipped270,
 }
 
+impl Transform {
+    /// Return numeric identifier matching the `transform` enum of the `wl_output` interface.
+    pub fn to_wayland_id(self) -> u32 {
+        match self {
+            Transform::Normal => 0,
+            Transform::_90 => 1,
+            Transform::_180 => 2,
+            Transform::_270 => 3,
+            Transform::Flipped => 4,
+            Transform::Flipped90 => 5,
+            Transform::Flipped180 => 6,
+            Transform::Flipped270 => 7,
+        }
+    }
+}
+
 /// Toplevel window.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]

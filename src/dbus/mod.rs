@@ -50,7 +50,20 @@ impl DBusServers {
         }
 
         if is_session_instance || config.debug.dbus_interfaces_in_non_session_instances {
-            let display_config = DisplayConfig::new(backend.ipc_outputs());
+            let (to_niri, from_display_config) = calloop::channel::channel();
+            let display_config = DisplayConfig::new(to_niri, backend.ipc_outputs());
+            niri.event_loop
+                .insert_source(from_display_config, move |event, _, state| match event {
+                    calloop::channel::Event::Msg(messages) => {
+                        for (output, actions) in messages.into_iter() {
+                            for action in actions.into_iter() {
+                                state.apply_transient_output_config(&output, action);
+                            }
+                        }
+                    }
+                    calloop::channel::Event::Closed => (),
+                })
+                .unwrap();
             dbus.conn_display_config = try_start(display_config);
 
             let screen_saver = ScreenSaver::new(niri.is_fdo_idle_inhibited.clone());
