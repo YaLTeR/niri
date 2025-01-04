@@ -26,8 +26,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracy-client = { version = "0.18.0", default-features = false }
 
 [workspace.dependencies.smithay]
-git = "https://github.com/YaLTeR/smithay.git"
-branch = "fix-vrr-cursor-plane-only"
+git = "https://github.com/Smithay/smithay.git"
 # path = "../smithay"
 default-features = false
 

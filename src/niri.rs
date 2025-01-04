@@ -1107,7 +1107,6 @@ impl State {
         let mut preserved_output_config = None;
         let mut window_rules_changed = false;
         let mut layer_rules_changed = false;
-        let mut debug_config_changed = false;
         let mut shaders_changed = false;
         let mut cursor_inactivity_timeout_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
@@ -1206,14 +1205,10 @@ impl State {
             cursor_inactivity_timeout_changed = true;
         }
 
-        if config.debug != old_config.debug {
-            debug_config_changed = true;
-
-            if config.debug.keep_laptop_panel_on_when_lid_is_closed
-                != old_config.debug.keep_laptop_panel_on_when_lid_is_closed
-            {
-                output_config_changed = true;
-            }
+        if config.debug.keep_laptop_panel_on_when_lid_is_closed
+            != old_config.debug.keep_laptop_panel_on_when_lid_is_closed
+        {
+            output_config_changed = true;
         }
 
         *old_config = config;
@@ -1244,10 +1239,6 @@ impl State {
 
         if output_config_changed {
             self.reload_output_config();
-        }
-
-        if debug_config_changed {
-            self.backend.on_debug_config_changed();
         }
 
         if window_rules_changed {

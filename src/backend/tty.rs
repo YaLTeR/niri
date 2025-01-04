@@ -18,7 +18,7 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::drm::compositor::{DrmCompositor, PrimaryPlaneElement};
+use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags, PrimaryPlaneElement};
 use smithay::backend::drm::{
     DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType, VrrSupport,
 };
@@ -64,7 +64,7 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output};
 
-const SUPPORTED_COLOR_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Abgr8888];
+const SUPPORTED_COLOR_FORMATS: [Fourcc; 2] = [Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
     config: Rc<RefCell<Config>>,
@@ -861,23 +861,6 @@ impl Tty {
             .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
 
-        let mut planes = surface.planes().clone();
-
-        let config = self.config.borrow();
-
-        // Overlay planes are disabled by default as they cause weird performance issues on my
-        // system.
-        if !config.debug.enable_overlay_planes {
-            planes.overlay.clear();
-        }
-
-        // Cursor planes have bugs on some systems.
-        let cursor_plane_gbm = if config.debug.disable_cursor_plane {
-            None
-        } else {
-            Some(device.gbm.clone())
-        };
-
         let renderer = self.gpu_manager.single_renderer(&device.render_node)?;
         let egl_context = renderer.as_ref().egl_context();
         let render_formats = egl_context.dmabuf_render_formats();
@@ -916,7 +899,7 @@ impl Tty {
         let res = DrmCompositor::new(
             OutputModeSource::Auto(output.clone()),
             surface,
-            Some(planes),
+            None,
             allocator.clone(),
             device.gbm.clone(),
             SUPPORTED_COLOR_FORMATS,
@@ -924,7 +907,7 @@ impl Tty {
             // formats, even though we only ever render on the primary GPU.
             render_formats.clone(),
             device.drm.cursor_size(),
-            cursor_plane_gbm.clone(),
+            Some(device.gbm.clone()),
         );
 
         let mut compositor = match res {
@@ -942,21 +925,17 @@ impl Tty {
                 let surface = device
                     .drm
                     .create_surface(crtc, mode, &[connector.handle()])?;
-                let mut planes = surface.planes().clone();
-                if !config.debug.enable_overlay_planes {
-                    planes.overlay.clear();
-                }
 
                 DrmCompositor::new(
                     OutputModeSource::Auto(output.clone()),
                     surface,
-                    Some(planes),
+                    None,
                     allocator,
                     device.gbm.clone(),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
                     device.drm.cursor_size(),
-                    cursor_plane_gbm,
+                    Some(device.gbm.clone()),
                 )
                 .context("error creating DRM compositor")?
             }
@@ -965,7 +944,6 @@ impl Tty {
         if self.debug_tint {
             compositor.set_debug_flags(DebugFlags::TINT);
         }
-        compositor.use_direct_scanout(!config.debug.disable_direct_scanout);
 
         let mut dmabuf_feedback = None;
         if let Ok(primary_renderer) = self.gpu_manager.single_renderer(&self.primary_render_node) {
@@ -1351,9 +1329,27 @@ impl Tty {
             draw_damage(&mut output_state.debug_damage_tracker, &mut elements);
         }
 
+        // Overlay planes are disabled by default as they cause weird performance issues on my
+        // system.
+        let mut flags =
+            FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT | FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT;
+        {
+            let debug = &self.config.borrow().debug;
+            if debug.enable_overlay_planes {
+                flags.insert(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
+            }
+            if debug.disable_direct_scanout {
+                flags.remove(FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT);
+                flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
+            }
+            if debug.disable_cursor_plane {
+                flags.remove(FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT);
+            }
+        }
+
         // Hand them over to the DRM.
         let drm_compositor = &mut surface.compositor;
-        match drm_compositor.render_frame::<_, _>(&mut renderer, &elements, [0.; 4]) {
+        match drm_compositor.render_frame::<_, _>(&mut renderer, &elements, [0.; 4], flags) {
             Ok(res) => {
                 let needs_sync = res.needs_sync()
                     || self
@@ -1882,19 +1878,6 @@ impl Tty {
         self.refresh_ipc_outputs(niri);
     }
 
-    pub fn on_debug_config_changed(&mut self) {
-        let config = self.config.borrow();
-        let debug = &config.debug;
-        let use_direct_scanout = !debug.disable_direct_scanout;
-
-        // FIXME: reload other flags if possible?
-        for device in self.devices.values_mut() {
-            for surface in device.surfaces.values_mut() {
-                surface.compositor.use_direct_scanout(use_direct_scanout);
-            }
-        }
-    }
-
     pub fn get_device_from_node(&mut self, node: DrmNode) -> Option<&mut OutputDevice> {
         self.devices.get_mut(&node)
     }
@@ -2117,9 +2100,8 @@ fn surface_dmabuf_feedback(
     let surface = compositor.surface();
     let planes = surface.planes();
 
-    let plane_formats = surface
-        .plane_info()
-        .formats
+    let primary_plane_formats = surface.plane_info().formats.clone();
+    let primary_or_overlay_plane_formats = primary_plane_formats
         .iter()
         .chain(planes.overlay.iter().flat_map(|p| p.formats.iter()))
         .copied()
@@ -2127,7 +2109,11 @@ fn surface_dmabuf_feedback(
 
     // We limit the scan-out trache to formats we can also render from so that there is always a
     // fallback render path available in case the supplied buffer can not be scanned out directly.
-    let mut scanout_formats = plane_formats
+    let mut primary_scanout_formats = primary_plane_formats
+        .intersection(&primary_formats)
+        .copied()
+        .collect::<Vec<_>>();
+    let mut primary_or_overlay_scanout_formats = primary_or_overlay_plane_formats
         .intersection(&primary_formats)
         .copied()
         .collect::<Vec<_>>();
@@ -2135,17 +2121,32 @@ fn surface_dmabuf_feedback(
     // HACK: AMD iGPU + dGPU systems share some modifiers between the two, and yet cross-device
     // buffers produce a glitched scanout if the modifier is not Linear...
     if primary_render_node != surface_render_node {
-        scanout_formats.retain(|f| f.modifier == Modifier::Linear);
+        primary_scanout_formats.retain(|f| f.modifier == Modifier::Linear);
+        primary_or_overlay_scanout_formats.retain(|f| f.modifier == Modifier::Linear);
     }
 
     let builder = DmabufFeedbackBuilder::new(primary_render_node.dev_id(), primary_formats);
 
+    trace!(
+        "primary scanout formats: {}, overlay adds: {}",
+        primary_scanout_formats.len(),
+        primary_or_overlay_scanout_formats.len() - primary_scanout_formats.len(),
+    );
+
+    // Prefer the primary-plane-only formats, then primary-or-overlay-plane formats. This will
+    // increase the chance of scanning out a client even with our disabled-by-default overlay
+    // planes.
     let scanout = builder
         .clone()
         .add_preference_tranche(
             surface_render_node.dev_id(),
             Some(TrancheFlags::Scanout),
-            scanout_formats,
+            primary_scanout_formats,
+        )
+        .add_preference_tranche(
+            surface_render_node.dev_id(),
+            Some(TrancheFlags::Scanout),
+            primary_or_overlay_scanout_formats,
         )
         .build()?;
 

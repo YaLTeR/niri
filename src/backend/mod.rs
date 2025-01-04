@@ -186,14 +186,6 @@ impl Backend {
         }
     }
 
-    pub fn on_debug_config_changed(&mut self) {
-        match self {
-            Backend::Tty(tty) => tty.on_debug_config_changed(),
-            Backend::Winit(_) => (),
-            Backend::Headless(_) => (),
-        }
-    }
-
     pub fn tty_checked(&mut self) -> Option<&mut Tty> {
         if let Self::Tty(v) = self {
             Some(v)
