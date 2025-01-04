@@ -641,6 +641,7 @@ impl Tty {
             }
         };
 
+        let mut added = Vec::new();
         let mut removed = Vec::new();
         for event in scan_result {
             match event {
@@ -649,37 +650,16 @@ impl Tty {
                     crtc: Some(crtc),
                 } => {
                     let connector_name = format_connector_name(&connector);
-                    let mut name =
-                        make_output_name(&device.drm, connector.handle(), connector_name);
+                    let name = make_output_name(&device.drm, connector.handle(), connector_name);
                     debug!(
                         "new connector: {} \"{}\"",
                         &name.connector,
                         name.format_make_model_serial(),
                     );
 
-                    // Make/model/serial can match exactly between different physical monitors. This
-                    // doesn't happen often, but our Layout does not support such duplicates and
-                    // will panic.
-                    //
-                    // As a workaround, search for duplicates, and unname the current connector if
-                    // one is found. Connector names are always unique.
-                    let formatted = name.format_make_model_serial_or_connector();
-                    for info in device.known_crtcs.values() {
-                        if info.name.matches(&formatted) {
-                            warn!("connector make/model/serial duplicates existing, unnaming");
-                            name = OutputName {
-                                connector: name.connector,
-                                make: None,
-                                model: None,
-                                serial: None,
-                            };
-                            break;
-                        }
-                    }
-
                     // Assign an id to this crtc.
                     let id = OutputId::next();
-                    device.known_crtcs.insert(crtc, CrtcInfo { id, name });
+                    added.push((crtc, CrtcInfo { id, name }));
                 }
                 DrmScanEvent::Disconnected {
                     crtc: Some(crtc), ..
@@ -703,6 +683,37 @@ impl Tty {
             if device.known_crtcs.remove(&crtc).is_none() {
                 error!("output ID missing for disconnected crtc: {crtc:?}");
             }
+        }
+
+        for (crtc, mut info) in added {
+            // Make/model/serial can match exactly between different physical monitors. This doesn't
+            // happen often, but our Layout does not support such duplicates and will panic.
+            //
+            // As a workaround, search for duplicates, and unname the new connectors if one is
+            // found. Connector names are always unique.
+            let name = &mut info.name;
+            let formatted = name.format_make_model_serial_or_connector();
+            for info in self.devices.values().flat_map(|d| d.known_crtcs.values()) {
+                if info.name.matches(&formatted) {
+                    let connector = mem::take(&mut name.connector);
+                    warn!(
+                        "new connector {connector} duplicates make/model/serial \
+                         of existing connector {}, unnaming",
+                        info.name.connector,
+                    );
+                    *name = OutputName {
+                        connector,
+                        make: None,
+                        model: None,
+                        serial: None,
+                    };
+                    break;
+                }
+            }
+
+            // Insert it right away so next added connector will check against this one too.
+            let device = self.devices.get_mut(&node).unwrap();
+            device.known_crtcs.insert(crtc, info);
         }
 
         // This will connect any new connectors if needed, and apply other changes, such as
