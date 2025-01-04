@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+use smithay::utils::Size;
 use zbus::fdo::RequestNameFlags;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{self, OwnedValue, Type};
@@ -10,6 +11,7 @@ use zbus::{fdo, interface};
 use super::Start;
 use crate::backend::IpcOutputMap;
 use crate::utils::is_laptop_panel;
+use crate::utils::scale::supported_scales;
 
 pub struct DisplayConfig {
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
@@ -84,15 +86,17 @@ impl DisplayConfig {
                         refresh_rate,
                         is_preferred,
                     } = *m;
-                    let refresh = refresh_rate as f64 / 1000.;
+                    let width = i32::from(width);
+                    let height = i32::from(height);
+                    let refresh_rate = refresh_rate as f64 / 1000.;
 
                     Mode {
-                        id: format!("{width}x{height}@{refresh:.3}"),
-                        width: i32::from(width),
-                        height: i32::from(height),
-                        refresh_rate: refresh,
+                        id: format!("{width}x{height}@{refresh_rate:.3}"),
+                        width,
+                        height,
+                        refresh_rate,
                         preferred_scale: 1.,
-                        supported_scales: vec![1., 2., 3.],
+                        supported_scales: supported_scales(Size::from((width, height))).collect(),
                         properties: HashMap::from([(
                             String::from("is-preferred"),
                             OwnedValue::from(is_preferred),
