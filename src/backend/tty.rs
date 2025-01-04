@@ -649,12 +649,33 @@ impl Tty {
                     crtc: Some(crtc),
                 } => {
                     let connector_name = format_connector_name(&connector);
-                    let name = make_output_name(&device.drm, connector.handle(), connector_name);
+                    let mut name =
+                        make_output_name(&device.drm, connector.handle(), connector_name);
                     debug!(
                         "new connector: {} \"{}\"",
                         &name.connector,
                         name.format_make_model_serial(),
                     );
+
+                    // Make/model/serial can match exactly between different physical monitors. This
+                    // doesn't happen often, but our Layout does not support such duplicates and
+                    // will panic.
+                    //
+                    // As a workaround, search for duplicates, and unname the current connector if
+                    // one is found. Connector names are always unique.
+                    let formatted = name.format_make_model_serial_or_connector();
+                    for info in device.known_crtcs.values() {
+                        if info.name.matches(&formatted) {
+                            warn!("connector make/model/serial duplicates existing, unnaming");
+                            name = OutputName {
+                                connector: name.connector,
+                                make: None,
+                                model: None,
+                                serial: None,
+                            };
+                            break;
+                        }
+                    }
 
                     // Assign an id to this crtc.
                     let id = OutputId::next();
