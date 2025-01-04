@@ -54,7 +54,7 @@ impl Element for ExtraDamage {
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        Rectangle::from_loc_and_size((0., 0.), (1., 1.))
+        Rectangle::from_size(Size::from((1., 1.)))
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {

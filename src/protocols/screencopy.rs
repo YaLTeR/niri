@@ -206,9 +206,9 @@ where
                 let output_transform = output.current_transform();
                 let output_physical_size =
                     output_transform.transform_size(output.current_mode().unwrap().size);
-                let output_rect = Rectangle::from_loc_and_size((0, 0), output_physical_size);
+                let output_rect = Rectangle::from_size(output_physical_size);
 
-                let rect = Rectangle::from_loc_and_size((x, y), (width, height));
+                let rect = Rectangle::new(Point::from((x, y)), Size::from((width, height)));
 
                 let output_scale = output.current_scale().fractional_scale();
                 let physical_rect = rect.to_physical_precise_round(output_scale);

@@ -1050,7 +1050,7 @@ impl State {
 
         // The target geometry for the positioner should be relative to its parent's geometry, so
         // we will compute that here.
-        let mut target = Rectangle::from_loc_and_size((0, 0), output_geo.size);
+        let mut target = Rectangle::from_size(output_geo.size);
         target.loc -= layer_geo.loc;
         target.loc -= get_popup_toplevel_coords(popup);
 

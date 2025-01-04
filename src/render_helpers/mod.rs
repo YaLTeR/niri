@@ -216,7 +216,7 @@ pub fn render_and_download(
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
     let mapping = renderer
-        .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), buffer_size), fourcc)
+        .copy_framebuffer(Rectangle::from_size(buffer_size), fourcc)
         .context("error copying framebuffer")?;
     Ok(mapping)
 }
@@ -300,7 +300,7 @@ fn render_elements(
     elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
 ) -> anyhow::Result<SyncPoint> {
     let transform = transform.invert();
-    let output_rect = Rectangle::from_loc_and_size((0, 0), transform.transform_size(size));
+    let output_rect = Rectangle::from_size(transform.transform_size(size));
 
     let mut frame = renderer
         .render(size, transform)

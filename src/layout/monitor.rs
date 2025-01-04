@@ -7,7 +7,7 @@ use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::scrolling::{Column, ColumnWidth};
 use super::tile::Tile;
@@ -871,7 +871,7 @@ impl<W: LayoutElement> Monitor<W> {
             let offset = switch.target_idx() - self.active_workspace_idx as f64;
             let offset = offset * size.h;
 
-            let clip_rect = Rectangle::from_loc_and_size((0., -offset), size);
+            let clip_rect = Rectangle::new(Point::from((0., -offset)), size);
             rect = rect.intersection(clip_rect)?;
         }
 
@@ -930,7 +930,7 @@ impl<W: LayoutElement> Monitor<W> {
         let size = output_size(&self.output);
         let (ws, bounds) = self
             .workspaces_with_render_positions()
-            .map(|(ws, offset)| (ws, Rectangle::from_loc_and_size(offset, size)))
+            .map(|(ws, offset)| (ws, Rectangle::new(offset, size)))
             .find(|(_, bounds)| bounds.contains(pos_within_output))?;
         Some((ws, bounds.loc))
     }
@@ -983,9 +983,15 @@ impl<W: LayoutElement> Monitor<W> {
         //
         // FIXME: use proper bounds after fixing the Crop element.
         let crop_bounds = if self.workspace_switch.is_some() {
-            Rectangle::from_loc_and_size((-i32::MAX / 2, 0), (i32::MAX, height))
+            Rectangle::new(
+                Point::from((-i32::MAX / 2, 0)),
+                Size::from((i32::MAX, height)),
+            )
         } else {
-            Rectangle::from_loc_and_size((-i32::MAX / 2, -i32::MAX / 2), (i32::MAX, i32::MAX))
+            Rectangle::new(
+                Point::from((-i32::MAX / 2, -i32::MAX / 2)),
+                Size::from((i32::MAX, i32::MAX)),
+            )
         };
 
         self.workspaces_with_render_positions()

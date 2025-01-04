@@ -335,13 +335,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let is_active = is_active && col_idx == active_idx;
             let col_off = Point::from((col_x, 0.));
             let col_pos = view_pos - col_off - col.render_offset();
-            let view_rect = Rectangle::from_loc_and_size(col_pos, view_size);
+            let view_rect = Rectangle::new(col_pos, view_size);
             col.update_render_elements(is_active, view_rect);
         }
 
         if let Some(insert_hint) = &self.insert_hint {
             if let Some(area) = self.insert_hint_area(insert_hint) {
-                let view_rect = Rectangle::from_loc_and_size(area.loc.upscale(-1.), view_size);
+                let view_rect = Rectangle::new(area.loc.upscale(-1.), view_size);
                 self.insert_hint_element.update_render_elements(
                     area.size,
                     view_rect,
@@ -1919,7 +1919,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     if column_index == 0 && !self.columns.is_empty() {
                         loc.x -= size.w + self.options.gaps;
                     }
-                    Rectangle::from_loc_and_size(loc, size)
+                    Rectangle::new(loc, size)
                 } else if column_index > self.columns.len() {
                     error!("insert hint column index is out of range");
                     return None;
@@ -1930,7 +1930,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                         self.column_x(column_index) - size.w / 2. - self.options.gaps / 2.,
                         self.working_area.loc.y + self.options.gaps,
                     ));
-                    Rectangle::from_loc_and_size(loc, size)
+                    Rectangle::new(loc, size)
                 }
             }
             InsertPosition::InColumn(column_index, tile_index) => {
@@ -1963,7 +1963,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 let size = Size::from((self.data[column_index].width, height));
                 let loc = Point::from((self.column_x(column_index), y));
-                Rectangle::from_loc_and_size(loc, size)
+                Rectangle::new(loc, size)
             }
             InsertPosition::Floating => return None,
         };
@@ -2010,9 +2010,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let tile_pos = view_off + tile_off;
         let tile_size = tile.tile_size();
-        let tile_rect = Rectangle::from_loc_and_size(tile_pos, tile_size);
+        let tile_rect = Rectangle::new(tile_pos, tile_size);
 
-        let view = Rectangle::from_loc_and_size((0., 0.), self.view_size);
+        let view = Rectangle::from_size(self.view_size);
         view.intersection(tile_rect)
     }
 
@@ -2256,7 +2256,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         // Draw the closing windows on top of the other windows.
-        let view_rect = Rectangle::from_loc_and_size((self.view_pos(), 0.), self.view_size);
+        let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
         for closing in self.closing_windows.iter().rev() {
             let elem = closing.render(renderer.as_gles_renderer(), view_rect, scale, target);
             rv.push(elem.into());
@@ -3731,7 +3731,7 @@ impl<W: LayoutElement> Column<W> {
                 let width = tile.window_size().w;
                 let height = self.view_size.h;
 
-                let mut target = Rectangle::from_loc_and_size((0., 0.), (width, height));
+                let mut target = Rectangle::from_size(Size::from((width, height)));
                 target.loc.y -= pos.y;
                 target.loc.y -= tile.window_loc().y;
 
@@ -4028,7 +4028,7 @@ mod tests {
             bottom: FloatOrInt(1.),
         };
 
-        let parent_area = Rectangle::from_loc_and_size((0., 0.), (1280., 720.));
+        let parent_area = Rectangle::from_size(Size::from((1280., 720.)));
         let area = compute_working_area(parent_area, 1., struts);
 
         assert_eq!(round_logical_in_physical(1., area.loc.x), area.loc.x);
@@ -4044,7 +4044,7 @@ mod tests {
             bottom: FloatOrInt(0.),
         };
 
-        let parent_area = Rectangle::from_loc_and_size((0., 0.), (1280., 720.));
+        let parent_area = Rectangle::from_size(Size::from((1280., 720.)));
         compute_working_area(parent_area, 1., struts);
     }
 }

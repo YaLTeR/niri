@@ -318,7 +318,7 @@ impl<W: LayoutElement> Tile<W> {
             self.animated_window_size(),
             is_active,
             !draw_border_with_background,
-            Rectangle::from_loc_and_size(
+            Rectangle::new(
                 view_rect.loc - Point::from((border_width, border_width)),
                 view_rect.size,
             ),
@@ -590,7 +590,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn is_in_activation_region(&self, point: Point<f64, Logical>) -> bool {
-        let activation_region = Rectangle::from_loc_and_size((0., 0.), self.tile_size());
+        let activation_region = Rectangle::from_size(self.tile_size());
         activation_region.contains(point)
     }
 
@@ -711,7 +711,7 @@ impl<W: LayoutElement> Tile<W> {
         let window_size = self.window_size().to_f64();
         let animated_window_size = self.animated_window_size();
         let window_render_loc = location + window_loc;
-        let area = Rectangle::from_loc_and_size(window_render_loc, animated_window_size);
+        let area = Rectangle::new(window_render_loc, animated_window_size);
 
         let rules = self.window.rules();
         let clip_to_geometry = !self.is_fullscreen && rules.clip_to_geometry == Some(true);
@@ -810,7 +810,7 @@ impl<W: LayoutElement> Tile<W> {
                 .window
                 .render(renderer, window_render_loc, scale, alpha, target);
 
-            let geo = Rectangle::from_loc_and_size(window_render_loc, window_size);
+            let geo = Rectangle::new(window_render_loc, window_size);
             let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
 
             let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
@@ -852,12 +852,12 @@ impl<W: LayoutElement> Tile<W> {
                     if radius != CornerRadius::default() && has_border_shader {
                         return BorderRenderElement::new(
                             geo.size,
-                            Rectangle::from_loc_and_size((0., 0.), geo.size),
+                            Rectangle::from_size(geo.size),
                             GradientInterpolation::default(),
                             Color::from_color32f(elem.color()),
                             Color::from_color32f(elem.color()),
                             0.,
-                            Rectangle::from_loc_and_size((0., 0.), geo.size),
+                            Rectangle::from_size(geo.size),
                             0.,
                             radius,
                             scale.x as f32,

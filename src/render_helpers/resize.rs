@@ -43,7 +43,7 @@ impl ResizeRenderElement {
         let tex_next_geo_scaled = tex_next_geo.to_f64().upscale(scale_next);
         let combined_geo = tex_prev_geo_scaled.merge(tex_next_geo_scaled).to_i32_up();
 
-        let area = Rectangle::from_loc_and_size(
+        let area = Rectangle::new(
             area.loc + combined_geo.loc.to_logical(scale),
             combined_geo.size.to_logical(scale),
         );

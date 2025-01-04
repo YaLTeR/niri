@@ -330,7 +330,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let (tile, offset) = self.tiles_with_offsets().next()?;
 
         let tile_size = tile.tile_size();
-        let tile_rect = Rectangle::from_loc_and_size(offset, tile_size);
+        let tile_rect = Rectangle::new(offset, tile_size);
 
         self.working_area.intersection(tile_rect)
     }
@@ -1105,7 +1105,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         pos: Point<f64, Logical>,
         size: Size<f64, Logical>,
     ) -> Point<f64, Logical> {
-        let mut rect = Rectangle::from_loc_and_size(pos, size);
+        let mut rect = Rectangle::new(pos, size);
         clamp_preferring_top_left_in_area(self.working_area, &mut rect);
         rect.loc
     }

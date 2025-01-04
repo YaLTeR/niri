@@ -1289,7 +1289,7 @@ impl<W: LayoutElement> Layout<W> {
                 // window geometry.
                 let width = move_.tile.window_size().w;
                 let height = output_size(&move_.output).h;
-                let mut target = Rectangle::from_loc_and_size((0., 0.), (width, height));
+                let mut target = Rectangle::from_size(Size::from((width, height)));
                 // FIXME: ideally this shouldn't include the tile render offset, but the code
                 // duplication would be a bit annoying for this edge case.
                 target.loc.y -= move_.tile_render_location().y;
@@ -2405,10 +2405,8 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if output.map_or(true, |output| move_.output == *output) {
                 let pos_within_output = move_.tile_render_location();
-                let view_rect = Rectangle::from_loc_and_size(
-                    pos_within_output.upscale(-1.),
-                    output_size(&move_.output),
-                );
+                let view_rect =
+                    Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
                 move_.tile.update(true, view_rect);
             }
         }
@@ -4121,7 +4119,7 @@ mod tests {
                 id,
                 parent_id: None,
                 is_floating: false,
-                bbox: Rectangle::from_loc_and_size((0, 0), (100, 200)),
+                bbox: Rectangle::from_size(Size::from((100, 200))),
                 min_max_size: Default::default(),
             }
         }
@@ -4295,7 +4293,7 @@ mod tests {
         any::<(i16, i16, u16, u16)>().prop_map(|(x, y, w, h)| {
             let loc: Point<i32, _> = Point::from((x.into(), y.into()));
             let size: Size<i32, _> = Size::from((w.max(1).into(), h.max(1).into()));
-            Rectangle::from_loc_and_size(loc, size)
+            Rectangle::new(loc, size)
         })
     }
 
@@ -6078,7 +6076,7 @@ mod tests {
 
         Op::AddWindow {
             params: TestWindowParams {
-                bbox: Rectangle::from_loc_and_size((0, 0), (1280, 200)),
+                bbox: Rectangle::from_size(Size::from((1280, 200))),
                 ..TestWindowParams::new(1)
             },
         }

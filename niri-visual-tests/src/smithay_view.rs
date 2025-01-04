@@ -145,7 +145,7 @@ mod imp {
 
             case.advance_animations(self.clock.borrow_mut().now());
 
-            let rect: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((0, 0), size);
+            let rect: Rectangle<i32, Physical> = Rectangle::from_size(Size::from(size));
 
             let elements = unsafe {
                 with_framebuffer_save_restore(renderer, |renderer| {

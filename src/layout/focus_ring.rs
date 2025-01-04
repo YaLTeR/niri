@@ -94,7 +94,7 @@ impl FocusRing {
             in_: GradientInterpolation::default(),
         });
 
-        let full_rect = Rectangle::from_loc_and_size((-width, -width), self.full_size);
+        let full_rect = Rectangle::new(Point::from((-width, -width)), self.full_size);
         let gradient_area = match gradient.relative_to {
             GradientRelativeTo::Window => full_rect,
             GradientRelativeTo::WorkspaceView => view_rect,
@@ -178,12 +178,12 @@ impl FocusRing {
             for (border, (loc, size)) in zip(&mut self.borders, zip(self.locations, self.sizes)) {
                 border.update(
                     size,
-                    Rectangle::from_loc_and_size(gradient_area.loc - loc, gradient_area.size),
+                    Rectangle::new(gradient_area.loc - loc, gradient_area.size),
                     gradient.in_,
                     gradient.from,
                     gradient.to,
                     ((gradient.angle as f32) - 90.).to_radians(),
-                    Rectangle::from_loc_and_size(full_rect.loc - loc, full_rect.size),
+                    Rectangle::new(full_rect.loc - loc, full_rect.size),
                     rounded_corner_border_width,
                     radius,
                     scale as f32,
@@ -196,15 +196,12 @@ impl FocusRing {
 
             self.borders[0].update(
                 self.sizes[0],
-                Rectangle::from_loc_and_size(
-                    gradient_area.loc - self.locations[0],
-                    gradient_area.size,
-                ),
+                Rectangle::new(gradient_area.loc - self.locations[0], gradient_area.size),
                 gradient.in_,
                 gradient.from,
                 gradient.to,
                 ((gradient.angle as f32) - 90.).to_radians(),
-                Rectangle::from_loc_and_size(full_rect.loc - self.locations[0], full_rect.size),
+                Rectangle::new(full_rect.loc - self.locations[0], full_rect.size),
                 rounded_corner_border_width,
                 radius,
                 scale as f32,

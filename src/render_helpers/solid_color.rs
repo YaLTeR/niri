@@ -85,7 +85,7 @@ impl SolidColorRenderElement {
         alpha: f32,
         kind: Kind,
     ) -> Self {
-        let geo = Rectangle::from_loc_and_size(location, buffer.size());
+        let geo = Rectangle::new(location.into(), buffer.size());
         let color = buffer.color * alpha;
         Self::new(buffer.id.clone(), geo, buffer.commit, color, kind)
     }
@@ -125,7 +125,7 @@ impl Element for SolidColorRenderElement {
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        Rectangle::from_loc_and_size((0., 0.), (1., 1.))
+        Rectangle::from_size(Size::from((1., 1.)))
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
@@ -134,8 +134,7 @@ impl Element for SolidColorRenderElement {
 
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         if self.color.is_opaque() {
-            let rect = Rectangle::from_loc_and_size((0., 0.), self.geometry.size)
-                .to_physical_precise_down(scale);
+            let rect = Rectangle::from_size(self.geometry.size).to_physical_precise_down(scale);
             OpaqueRegions::from_slice(&[rect])
         } else {
             OpaqueRegions::default()

@@ -365,12 +365,12 @@ impl Mapped {
                     let geo = elem.geo();
                     return BorderRenderElement::new(
                         geo.size,
-                        Rectangle::from_loc_and_size((0., 0.), geo.size),
+                        Rectangle::from_size(geo.size),
                         GradientInterpolation::default(),
                         Color::from_color32f(elem.color()),
                         Color::from_color32f(elem.color()),
                         0.,
-                        Rectangle::from_loc_and_size((0., 0.), geo.size),
+                        Rectangle::from_size(geo.size),
                         0.,
                         radius,
                         scale.x as f32,
@@ -665,7 +665,7 @@ impl LayoutElement for Mapped {
     }
 
     fn output_enter(&self, output: &Output) {
-        let overlap = Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX));
+        let overlap = Rectangle::from_size(Size::from((i32::MAX, i32::MAX)));
         self.window.output_enter(output, overlap)
     }
 

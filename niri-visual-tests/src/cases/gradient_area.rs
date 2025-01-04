@@ -65,8 +65,8 @@ impl TestCase for GradientArea {
         let f = (self.progress.sin() + 1.) / 2.;
 
         let (a, b) = (size.w / 4, size.h / 4);
-        let rect_size = (size.w - a * 2, size.h - b * 2);
-        let area = Rectangle::from_loc_and_size((a, b), rect_size).to_f64();
+        let rect_size = Size::from((size.w - a * 2, size.h - b * 2));
+        let area = Rectangle::new(Point::from((a, b)), rect_size).to_f64();
 
         let g_size = Size::from((
             (size.w as f32 / 8. + size.w as f32 / 8. * 7. * f).round() as i32,
@@ -74,7 +74,7 @@ impl TestCase for GradientArea {
         ));
         let g_loc = Point::from(((size.w - g_size.w) / 2, (size.h - g_size.h) / 2)).to_f64();
         let g_size = g_size.to_f64();
-        let mut g_area = Rectangle::from_loc_and_size(g_loc, g_size);
+        let mut g_area = Rectangle::new(g_loc, g_size);
         g_area.loc -= area.loc;
 
         self.border.update_render_elements(
@@ -99,7 +99,7 @@ impl TestCase for GradientArea {
                 Color::new_unpremul(1., 0., 0., 1.),
                 Color::new_unpremul(0., 1., 0., 1.),
                 FRAC_PI_4,
-                Rectangle::from_loc_and_size((0, 0), rect_size).to_f64(),
+                Rectangle::from_size(rect_size).to_f64(),
                 0.,
                 CornerRadius::default(),
                 1.,

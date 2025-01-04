@@ -6,7 +6,7 @@ use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform,
 };
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::damage::ExtraDamage;
 use super::renderer::{AsGlesFrame as _, NiriRenderer};
@@ -117,21 +117,21 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
         let bottom_left = corner_radius.bottom_left as f64;
 
         [
-            Rectangle::from_loc_and_size(geo.loc, (top_left, top_left)),
-            Rectangle::from_loc_and_size(
-                (geo.loc.x + geo.size.w - top_right, geo.loc.y),
-                (top_right, top_right),
+            Rectangle::new(geo.loc, Size::from((top_left, top_left))),
+            Rectangle::new(
+                Point::from((geo.loc.x + geo.size.w - top_right, geo.loc.y)),
+                Size::from((top_right, top_right)),
             ),
-            Rectangle::from_loc_and_size(
-                (
+            Rectangle::new(
+                Point::from((
                     geo.loc.x + geo.size.w - bottom_right,
                     geo.loc.y + geo.size.h - bottom_right,
-                ),
-                (bottom_right, bottom_right),
+                )),
+                Size::from((bottom_right, bottom_right)),
             ),
-            Rectangle::from_loc_and_size(
-                (geo.loc.x, geo.loc.y + geo.size.h - bottom_left),
-                (bottom_left, bottom_left),
+            Rectangle::new(
+                Point::from((geo.loc.x, geo.loc.y + geo.size.h - bottom_left)),
+                Size::from((bottom_left, bottom_left)),
             ),
         ]
     }

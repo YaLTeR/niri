@@ -260,7 +260,7 @@ impl<W: LayoutElement> Workspace<W> {
             Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
 
         let view_size = Size::from((1280., 720.));
-        let working_area = Rectangle::from_loc_and_size((0., 0.), (1280., 720.));
+        let working_area = Rectangle::from_size(Size::from((1280., 720.)));
 
         let scrolling = ScrollingSpace::new(
             view_size,
@@ -337,7 +337,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling
             .update_render_elements(is_active && !self.floating_is_active.get());
 
-        let view_rect = Rectangle::from_loc_and_size((0., 0.), self.view_size);
+        let view_rect = Rectangle::from_size(self.view_size);
         self.floating
             .update_render_elements(is_active && self.floating_is_active.get(), view_rect);
     }
@@ -1332,7 +1332,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let floating_focus_ring = focus_ring && self.floating_is_active();
         let floating = self.is_floating_visible().then(|| {
-            let view_rect = Rectangle::from_loc_and_size((0., 0.), self.view_size);
+            let view_rect = Rectangle::from_size(self.view_size);
             let floating = self.floating.render_elements(
                 renderer,
                 view_rect,
@@ -1364,7 +1364,7 @@ impl<W: LayoutElement> Workspace<W> {
         for (tile, tile_pos) in self.tiles_with_render_positions_mut(false) {
             if tile.window().id() == window {
                 let view_pos = Point::from((-tile_pos.x, -tile_pos.y));
-                let view_rect = Rectangle::from_loc_and_size(view_pos, view_size);
+                let view_rect = Rectangle::new(view_pos, view_size);
                 tile.update(false, view_rect);
                 tile.store_unmap_snapshot_if_empty(renderer, output_scale);
                 return;

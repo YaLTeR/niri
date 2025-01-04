@@ -72,7 +72,7 @@ impl OpenAnimation {
         let texture_size = geo.size.to_f64().to_logical(scale);
 
         if Shaders::get(renderer).program(ProgramType::Open).is_some() {
-            let mut area = Rectangle::from_loc_and_size(location + offset, texture_size);
+            let mut area = Rectangle::new(location + offset, texture_size);
 
             // Expand the area a bit to allow for more varied effects.
             let mut target_size = area.size.upscale(1.5);

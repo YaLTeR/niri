@@ -127,9 +127,9 @@ impl ScreenshotUi {
                 let size = output_transform.transform_size(output_mode.size);
                 (
                     output,
-                    Rectangle::from_loc_and_size(
-                        (size.w / 4, size.h / 4),
-                        (size.w / 2, size.h / 2),
+                    Rectangle::new(
+                        Point::from((size.w / 4, size.h / 4)),
+                        Size::from((size.w / 2, size.h / 2)),
                     ),
                 )
             }
@@ -268,10 +268,10 @@ impl ScreenshotUi {
 
             if output == selection_output {
                 // Check if the selection is still valid. If not, reset it back to default.
-                if !Rectangle::from_loc_and_size((0, 0), size).contains_rect(rect) {
-                    rect = Rectangle::from_loc_and_size(
-                        (size.w / 4, size.h / 4),
-                        (size.w / 2, size.h / 2),
+                if !Rectangle::from_size(size).contains_rect(rect) {
+                    rect = Rectangle::new(
+                        Point::from((size.w / 4, size.h / 4)),
+                        Size::from((size.w / 2, size.h / 2)),
                     );
                     *a = rect.loc;
                     *b = rect.loc + rect.size - Size::from((1, 1));
@@ -446,7 +446,7 @@ impl ScreenshotUi {
                 );
                 match res {
                     Ok((texture, _)) => {
-                        tex_rect = Some((texture, Rectangle::from_loc_and_size((0, 0), rect.size)));
+                        tex_rect = Some((texture, Rectangle::from_size(rect.size)));
                     }
                     Err(err) => {
                         warn!("error compositing pointer onto screenshot: {err:?}");
@@ -556,9 +556,12 @@ impl ScreenshotUi {
             let mut rect = rect_from_corner_points(*a, *b);
             if rect.size.is_empty() || rect.size == Size::from((1, 1)) {
                 let data = &output_data[output];
-                rect = Rectangle::from_loc_and_size((rect.loc.x - 16, rect.loc.y - 16), (32, 32))
-                    .intersection(Rectangle::from_loc_and_size((0, 0), data.size))
-                    .unwrap_or_default();
+                rect = Rectangle::new(
+                    Point::from((rect.loc.x - 16, rect.loc.y - 16)),
+                    Size::from((32, 32)),
+                )
+                .intersection(Rectangle::from_size(data.size))
+                .unwrap_or_default();
                 *a = rect.loc;
                 *b = rect.loc + rect.size - Size::from((1, 1));
             }

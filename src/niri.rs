@@ -2169,7 +2169,7 @@ impl Niri {
                 .map(|pos| Point::from((pos.x, pos.y)))
                 .filter(|pos| {
                     // Ensure that the requested position does not overlap any existing output.
-                    let target_geom = Rectangle::from_loc_and_size(*pos, size);
+                    let target_geom = Rectangle::new(*pos, size);
 
                     let overlap = self
                         .global_space
@@ -2651,9 +2651,9 @@ impl Niri {
     pub fn output_left(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
         let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::from_loc_and_size(
-            (i32::MIN / 2, active_geo.loc.y),
-            (i32::MAX, active_geo.size.h),
+        let extended_geo = Rectangle::new(
+            Point::from((i32::MIN / 2, active_geo.loc.y)),
+            Size::from((i32::MAX, active_geo.size.h)),
         );
 
         self.global_space
@@ -2668,9 +2668,9 @@ impl Niri {
     pub fn output_right(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
         let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::from_loc_and_size(
-            (i32::MIN / 2, active_geo.loc.y),
-            (i32::MAX, active_geo.size.h),
+        let extended_geo = Rectangle::new(
+            Point::from((i32::MIN / 2, active_geo.loc.y)),
+            Size::from((i32::MAX, active_geo.size.h)),
         );
 
         self.global_space
@@ -2685,9 +2685,9 @@ impl Niri {
     pub fn output_up(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
         let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::from_loc_and_size(
-            (active_geo.loc.x, i32::MIN / 2),
-            (active_geo.size.w, i32::MAX),
+        let extended_geo = Rectangle::new(
+            Point::from((active_geo.loc.x, i32::MIN / 2)),
+            Size::from((active_geo.size.w, i32::MAX)),
         );
 
         self.global_space
@@ -2746,9 +2746,9 @@ impl Niri {
     pub fn output_down(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
         let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::from_loc_and_size(
-            (active_geo.loc.x, i32::MIN / 2),
-            (active_geo.size.w, i32::MAX),
+        let extended_geo = Rectangle::new(
+            Point::from((active_geo.loc.x, i32::MIN / 2)),
+            Size::from((active_geo.size.w, i32::MAX)),
         );
 
         self.global_space

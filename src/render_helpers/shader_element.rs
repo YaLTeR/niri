@@ -193,7 +193,7 @@ impl ShaderRenderElement {
             program,
             id: Id::new(),
             commit_counter: CommitCounter::default(),
-            area: Rectangle::from_loc_and_size((0., 0.), size),
+            area: Rectangle::from_size(size),
             opaque_regions: opaque_regions.unwrap_or_default(),
             scale,
             alpha,
@@ -255,7 +255,7 @@ impl Element for ShaderRenderElement {
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        Rectangle::from_loc_and_size((0., 0.), (1., 1.))
+        Rectangle::from_size(Size::from((1., 1.)))
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
@@ -314,7 +314,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
                     (dest_size.to_point() - rect_constrained_loc).to_size(),
                 );
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 [
                     rect.loc.x as f32,
                     rect.loc.y as f32,
@@ -334,7 +334,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
                     (dest_size.to_point() - rect_constrained_loc).to_size(),
                 );
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 // Add the 4 f32s per damage rectangle for each of the 6 vertices.
                 (0..6).flat_map(move |_| {
                     [

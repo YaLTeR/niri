@@ -375,8 +375,8 @@ mod tests {
             (rx, ry, rw, rh): (i32, i32, i32, i32),
             (ex, ey): (i32, i32),
         ) {
-            let area = Rectangle::from_loc_and_size((ax, ay), (aw, ah)).to_f64();
-            let mut rect = Rectangle::from_loc_and_size((rx, ry), (rw, rh)).to_f64();
+            let area = Rectangle::new(Point::from((ax, ay)), Size::from((aw, ah))).to_f64();
+            let mut rect = Rectangle::new(Point::from((rx, ry)), Size::from((rw, rh))).to_f64();
             clamp_preferring_top_left_in_area(area, &mut rect);
             assert_eq!(rect.loc, Point::from((ex, ey)).to_f64());
         }

@@ -157,7 +157,7 @@ impl<T: Texture> Element for TextureRenderElement<T> {
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        let logical_geo = Rectangle::from_loc_and_size(self.location, self.logical_size());
+        let logical_geo = Rectangle::new(self.location, self.logical_size());
         logical_geo.to_physical_precise_round(scale)
     }
 
@@ -174,9 +174,7 @@ impl<T: Texture> Element for TextureRenderElement<T> {
                     &self.buffer.logical_size(),
                 )
             })
-            .unwrap_or_else(|| {
-                Rectangle::from_loc_and_size((0, 0), self.buffer.texture.size()).to_f64()
-            })
+            .unwrap_or_else(|| Rectangle::from_size(self.buffer.texture.size()).to_f64())
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {

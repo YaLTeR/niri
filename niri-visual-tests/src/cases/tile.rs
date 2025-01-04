@@ -114,7 +114,7 @@ impl TestCase for Tile {
 
         self.tile.update(
             true,
-            Rectangle::from_loc_and_size((-location.x, -location.y), size.to_logical(1.)),
+            Rectangle::new(Point::from((-location.x, -location.y)), size.to_logical(1.)),
         );
         self.tile
             .render(
