@@ -1,4 +1,4 @@
-use std::cell::{Cell, LazyCell, OnceCell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -345,7 +345,9 @@ pub struct Niri {
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
-    pub pipewire: LazyCell<Option<PipeWire>, Box<dyn FnOnce() -> Option<PipeWire>>>,
+    pub pipewire: Option<PipeWire>,
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub pw_to_niri: calloop::channel::Sender<PwToNiri>,
 
     // Screencast output for each mapped window.
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -1504,6 +1506,16 @@ impl State {
                     });
                 }
             },
+            PwToNiri::FatalError => {
+                warn!("stopping PipeWire due to fatal error");
+                if let Some(pw) = self.niri.pipewire.take() {
+                    let ids: Vec<_> = self.niri.casts.iter().map(|cast| cast.session_id).collect();
+                    for id in ids {
+                        self.niri.stop_cast(id);
+                    }
+                    self.niri.event_loop.remove(pw.token);
+                }
+            }
         }
     }
 
@@ -1533,10 +1545,19 @@ impl State {
                     }
                 };
 
-                let Some(pw) = &*self.niri.pipewire else {
-                    warn!("error starting screencast: PipeWire failed to initialize");
-                    self.niri.stop_cast(session_id);
-                    return;
+                let pw = if let Some(pw) = &self.niri.pipewire {
+                    pw
+                } else {
+                    match PipeWire::new(&self.niri.event_loop, self.niri.pw_to_niri.clone()) {
+                        Ok(pipewire) => self.niri.pipewire.insert(pipewire),
+                        Err(err) => {
+                            warn!(
+                                "error starting screencast: PipeWire failed to initialize: {err:?}"
+                            );
+                            self.niri.stop_cast(session_id);
+                            return;
+                        }
+                    }
                 };
 
                 let (target, size, refresh, alpha) = match target {
@@ -1911,14 +1932,17 @@ impl Niri {
             }
         };
 
-        let loop_handle = event_loop.clone();
-        let pipewire = LazyCell::new(Box::new(move || match PipeWire::new(&loop_handle) {
-            Ok(pipewire) => Some(pipewire),
-            Err(err) => {
-                warn!("error connecting to PipeWire, screencasting will not work: {err:?}");
-                None
-            }
-        }) as _);
+        #[cfg(feature = "xdp-gnome-screencast")]
+        let pw_to_niri = {
+            let (pw_to_niri, from_pipewire) = calloop::channel::channel();
+            event_loop
+                .insert_source(from_pipewire, move |event, _, state| match event {
+                    calloop::channel::Event::Msg(msg) => state.on_pw_msg(msg),
+                    calloop::channel::Event::Closed => (),
+                })
+                .unwrap();
+            pw_to_niri
+        };
 
         let display_source = Generic::new(display, Interest::READ, Mode::Level);
         event_loop
@@ -2061,8 +2085,10 @@ impl Niri {
             ipc_server,
             ipc_outputs_changed: false,
 
-            pipewire,
+            pipewire: None,
             casts: vec![],
+            #[cfg(feature = "xdp-gnome-screencast")]
+            pw_to_niri,
 
             #[cfg(feature = "xdp-gnome-screencast")]
             mapped_cast_output: HashMap::new(),

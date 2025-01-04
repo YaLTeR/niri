@@ -11,7 +11,7 @@ use anyhow::Context as _;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use pipewire::context::Context;
-use pipewire::core::Core;
+use pipewire::core::{Core, PW_ID_CORE};
 use pipewire::main_loop::MainLoop;
 use pipewire::properties::Properties;
 use pipewire::spa::buffer::DataType;
@@ -54,12 +54,14 @@ const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
 pub struct PipeWire {
     _context: Context,
     pub core: Core,
+    pub token: RegistrationToken,
     to_niri: calloop::channel::Sender<PwToNiri>,
 }
 
 pub enum PwToNiri {
     StopCast { session_id: usize },
     Redraw(CastTarget),
+    FatalError,
 }
 
 pub struct Cast {
@@ -134,15 +136,26 @@ macro_rules! make_params {
 }
 
 impl PipeWire {
-    pub fn new(event_loop: &LoopHandle<'static, State>) -> anyhow::Result<Self> {
+    pub fn new(
+        event_loop: &LoopHandle<'static, State>,
+        to_niri: calloop::channel::Sender<PwToNiri>,
+    ) -> anyhow::Result<Self> {
         let main_loop = MainLoop::new(None).context("error creating MainLoop")?;
         let context = Context::new(&main_loop).context("error creating Context")?;
         let core = context.connect(None).context("error creating Core")?;
 
+        let to_niri_ = to_niri.clone();
         let listener = core
             .add_listener_local()
-            .error(|id, seq, res, message| {
+            .error(move |id, seq, res, message| {
                 warn!(id, seq, res, message, "pw error");
+
+                // Reset PipeWire on connection errors.
+                if id == PW_ID_CORE && res == -32 {
+                    if let Err(err) = to_niri_.send(PwToNiri::FatalError) {
+                        warn!("error sending FatalError to niri: {err:?}");
+                    }
+                }
             })
             .register();
         mem::forget(listener);
@@ -154,7 +167,7 @@ impl PipeWire {
             }
         }
         let generic = Generic::new(AsFdWrapper(main_loop), Interest::READ, Mode::Level);
-        event_loop
+        let token = event_loop
             .insert_source(generic, move |_, wrapper, _| {
                 let _span = tracy_client::span!("pipewire iteration");
                 wrapper.0.loop_().iterate(Duration::ZERO);
@@ -162,17 +175,10 @@ impl PipeWire {
             })
             .unwrap();
 
-        let (to_niri, from_pipewire) = calloop::channel::channel();
-        event_loop
-            .insert_source(from_pipewire, move |event, _, state| match event {
-                calloop::channel::Event::Msg(msg) => state.on_pw_msg(msg),
-                calloop::channel::Event::Closed => (),
-            })
-            .unwrap();
-
         Ok(Self {
             _context: context,
             core,
+            token,
             to_niri,
         })
     }
