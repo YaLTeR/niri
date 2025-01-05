@@ -194,7 +194,7 @@ Matches the window that is the "active" window in its column.
 Contrary to `is-active`, there is always one `is-active-in-column` window in each column.
 It is the window that was last focused in the column, i.e. the one that will gain focus if this column is focused.
 
-<sup>Since: next release</sup> This rule will match true during the initial window opening.
+<sup>Since: next release</sup> This rule will match `true` during the initial window opening.
 
 ```kdl
 window-rule {
