@@ -165,7 +165,7 @@ impl Mapped {
             rules,
             need_to_recompute_rules: false,
             is_focused: false,
-            is_active_in_column: false,
+            is_active_in_column: true,
             is_floating: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,

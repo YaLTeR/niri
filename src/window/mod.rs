@@ -116,7 +116,7 @@ impl<'a> WindowRef<'a> {
 
     pub fn is_active_in_column(self) -> bool {
         match self {
-            WindowRef::Unmapped(_) => false,
+            WindowRef::Unmapped(_) => true,
             WindowRef::Mapped(mapped) => mapped.is_active_in_column(),
         }
     }
