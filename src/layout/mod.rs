@@ -55,6 +55,7 @@ pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{OutputId, Workspace};
 use crate::animation::Clock;
+use crate::layout::scrolling::ScrollDirection;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
@@ -2023,6 +2024,13 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.expel_from_column();
+    }
+
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.swap_window_in_direction(direction);
     }
 
     pub fn center_column(&mut self) {
@@ -4382,6 +4390,10 @@ mod tests {
         ]
     }
 
+    fn arbitrary_scroll_direction() -> impl Strategy<Value = ScrollDirection> {
+        prop_oneof![Just(ScrollDirection::Left), Just(ScrollDirection::Right)]
+    }
+
     #[derive(Debug, Clone, Copy, Arbitrary)]
     enum Op {
         AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -4462,6 +4474,9 @@ mod tests {
         },
         ConsumeWindowIntoColumn,
         ExpelWindowFromColumn,
+        SwapWindowInDirection(
+            #[proptest(strategy = "arbitrary_scroll_direction()")] ScrollDirection,
+        ),
         CenterColumn,
         CenterWindow {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -4984,6 +4999,7 @@ mod tests {
                 }
                 Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
                 Op::ExpelWindowFromColumn => layout.expel_from_column(),
+                Op::SwapWindowInDirection(direction) => layout.swap_window_in_direction(direction),
                 Op::CenterColumn => layout.center_column(),
                 Op::CenterWindow { id } => {
                     let id = id.filter(|id| layout.has_window(id));

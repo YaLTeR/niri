@@ -9,7 +9,7 @@ use smithay::backend::renderer::element::utils::{
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
-use super::scrolling::{Column, ColumnWidth};
+use super::scrolling::{Column, ColumnWidth, ScrollDirection};
 use super::tile::Tile;
 use super::workspace::{
     OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId, WorkspaceRenderElement,
@@ -705,6 +705,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn expel_from_column(&mut self) {
         self.active_workspace().expel_from_column();
+    }
+
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+        self.active_workspace().swap_window_in_direction(direction);
     }
 
     pub fn center_column(&mut self) {
