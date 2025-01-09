@@ -1469,16 +1469,19 @@ impl State {
             }
             Action::FocusFloating => {
                 self.niri.layout.focus_floating();
+                self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::FocusTiling => {
                 self.niri.layout.focus_tiling();
+                self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::SwitchFocusBetweenFloatingAndTiling => {
                 self.niri.layout.switch_focus_floating_tiling();
+                self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
