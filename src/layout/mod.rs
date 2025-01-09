@@ -6961,6 +6961,23 @@ mod tests {
     }
 
     #[test]
+    fn set_first_workspace_name_ewaf() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::SetWorkspaceName {
+                new_ws_name: 0,
+                ws_name: None,
+            },
+        ];
+
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
     fn set_last_workspace_name() {
         let ops = [
             Op::AddOutput(0),
