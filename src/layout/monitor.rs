@@ -382,18 +382,14 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn unname_workspace(&mut self, workspace_name: &str) -> bool {
-        for ws in &mut self.workspaces {
-            if ws
-                .name
-                .as_ref()
-                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
-            {
+    pub fn unname_workspace(&mut self, id: WorkspaceId) -> bool {
+        self.workspaces
+            .iter_mut()
+            .find(|ws| ws.id() == id)
+            .map_or(false, |ws| {
                 ws.unname();
-                return true;
-            }
-        }
-        false
+                true
+            })
     }
 
     pub fn move_left(&mut self) -> bool {

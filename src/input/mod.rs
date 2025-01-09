@@ -1120,6 +1120,18 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::SetWorkspaceName(name) => {
+                self.niri.layout.set_workspace_name(name, None);
+            }
+            Action::SetWorkspaceNameByRef { name, reference } => {
+                self.niri.layout.set_workspace_name(name, Some(reference));
+            }
+            Action::UnsetWorkspaceName => {
+                self.niri.layout.unset_workspace_name(None);
+            }
+            Action::UnsetWorkSpaceNameByRef(reference) => {
+                self.niri.layout.unset_workspace_name(Some(reference));
+            }
             Action::ConsumeWindowIntoColumn => {
                 self.niri.layout.consume_into_column();
                 // This does not cause immediate focus or window size change, so warping mouse to

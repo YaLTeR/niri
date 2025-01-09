@@ -1263,6 +1263,15 @@ pub enum Action {
     MoveColumnToWorkspace(#[knuffel(argument)] WorkspaceReference),
     MoveWorkspaceDown,
     MoveWorkspaceUp,
+    SetWorkspaceName(#[knuffel(argument)] String),
+    #[knuffel(skip)]
+    SetWorkspaceNameByRef {
+        name: String,
+        reference: WorkspaceReference,
+    },
+    UnsetWorkspaceName,
+    #[knuffel(skip)]
+    UnsetWorkSpaceNameByRef(#[knuffel(argument)] WorkspaceReference),
     FocusMonitorLeft,
     FocusMonitorRight,
     FocusMonitorDown,
@@ -1430,6 +1439,21 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::MoveWorkspaceDown {} => Self::MoveWorkspaceDown,
             niri_ipc::Action::MoveWorkspaceUp {} => Self::MoveWorkspaceUp,
+            niri_ipc::Action::SetWorkspaceName {
+                name,
+                reference: None,
+            } => Self::SetWorkspaceName(name),
+            niri_ipc::Action::SetWorkspaceName {
+                name,
+                reference: Some(reference),
+            } => Self::SetWorkspaceNameByRef {
+                name,
+                reference: WorkspaceReference::from(reference),
+            },
+            niri_ipc::Action::UnsetWorkspaceName { reference: None } => Self::UnsetWorkspaceName,
+            niri_ipc::Action::UnsetWorkspaceName {
+                reference: Some(reference),
+            } => Self::UnsetWorkSpaceNameByRef(WorkspaceReference::from(reference)),
             niri_ipc::Action::FocusMonitorLeft {} => Self::FocusMonitorLeft,
             niri_ipc::Action::FocusMonitorRight {} => Self::FocusMonitorRight,
             niri_ipc::Action::FocusMonitorDown {} => Self::FocusMonitorDown,
