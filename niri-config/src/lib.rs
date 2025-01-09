@@ -4009,19 +4009,19 @@ mod tests {
         assert_debug_snapshot!(
             names,
             @r#"
-[
-    "Unknown A A | DP-3",
-    "A Unknown A | DP-3",
-    "A A Unknown | DP-3",
-    "A A A | DP-4",
-    "A A A | DP-5",
-    "A A B | DP-3",
-    "A B A | DP-3",
-    "B A A | DP-3",
-    "DP-1 | DP-1",
-    "DP-2 | DP-2",
-]
-"#
+        [
+            "Unknown A A | DP-3",
+            "A Unknown A | DP-3",
+            "A A Unknown | DP-3",
+            "A A A | DP-4",
+            "A A A | DP-5",
+            "A A B | DP-3",
+            "A B A | DP-3",
+            "B A A | DP-3",
+            "DP-1 | DP-1",
+            "DP-2 | DP-2",
+        ]
+        "#
         );
     }
 
