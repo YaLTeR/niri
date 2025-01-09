@@ -363,7 +363,7 @@ pub enum Action {
         /// New name for the workspace.
         #[cfg_attr(feature = "clap", arg())]
         name: String,
-        /// Reference (index or name) of the workspace to unname.
+        /// Reference (index or name) of the workspace to name.
         #[cfg_attr(feature = "clap", arg())]
         reference: Option<WorkspaceReferenceArg>,
     },
