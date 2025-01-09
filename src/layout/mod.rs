@@ -1219,40 +1219,20 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         reference: WorkspaceReference,
     ) -> Option<&mut Workspace<W>> {
-        fn iter_find<'a, I, W>(
-            mut iter: I,
-            reference: WorkspaceReference,
-        ) -> Option<&'a mut Workspace<W>>
-        where
-            I: Iterator<Item = &'a mut Workspace<W>>,
-            W: LayoutElement,
-        {
-            iter.find(|w| match reference {
-                WorkspaceReference::Name(ref workspace_name) => w
-                    .name
-                    .as_ref()
-                    .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name)),
-                WorkspaceReference::Id(id) => w.id() == WorkspaceId::specific(id),
-                _ => panic!("iter_find called with WorkspaceReference::Index"),
-            })
-        }
         if let WorkspaceReference::Index(index) = reference {
             self.active_monitor().and_then(|m| {
                 let index = index.saturating_sub(1) as usize;
                 m.workspaces.get_mut(index)
             })
         } else {
-            match &mut self.monitor_set {
-                MonitorSet::Normal {
-                    ref mut monitors, ..
-                } => {
-                    let iter = monitors.iter_mut().flat_map(|m| m.workspaces.iter_mut());
-                    iter_find(iter, reference)
-                }
-                MonitorSet::NoOutputs { ref mut workspaces } => {
-                    iter_find(workspaces.iter_mut(), reference)
-                }
-            }
+            self.workspaces_mut().find(|ws| match &reference {
+                WorkspaceReference::Name(ref_name) => ws
+                    .name
+                    .as_ref()
+                    .map_or(false, |name| name.eq_ignore_ascii_case(ref_name)),
+                WorkspaceReference::Id(id) => ws.id().get() == *id,
+                WorkspaceReference::Index(_) => unreachable!(),
+            })
         }
     }
 
@@ -1288,6 +1268,7 @@ impl<W: LayoutElement> Layout<W> {
                         if !ws.has_windows() {
                             workspaces.remove(idx);
                         }
+
                         return;
                     }
                 }
@@ -3812,11 +3793,12 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
-        let Some(ws) = (if let Some(reference) = reference {
+        let ws = if let Some(reference) = reference {
             self.find_workspace_by_ref(reference)
         } else {
             self.active_workspace_mut()
-        }) else {
+        };
+        let Some(ws) = ws else {
             return;
         };
 
@@ -3861,11 +3843,12 @@ impl<W: LayoutElement> Layout<W> {
         } else {
             self.active_workspace_mut()
         };
-        let id = ws.map(|ws| ws.id());
+        let Some(ws) = ws else {
+            return;
+        };
+        let id = ws.id();
 
-        if let Some(id) = id {
-            self.unname_workspace_by_id(id);
-        }
+        self.unname_workspace_by_id(id);
     }
 
     pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
