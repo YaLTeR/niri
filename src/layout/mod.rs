@@ -4617,7 +4617,9 @@ mod tests {
         MoveWorkspaceUp,
         SetWorkspaceName {
             #[proptest(strategy = "1..=5usize")]
-            ws_name: usize,
+            new_ws_name: usize,
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            ws_name: Option<usize>,
         },
         UnsetWorkspaceName {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -4867,8 +4869,13 @@ mod tests {
                 Op::UnnameWorkspace { ws_name } => {
                     layout.unname_workspace(&format!("ws{ws_name}"));
                 }
-                Op::SetWorkspaceName { ws_name } => {
-                    layout.set_workspace_name(format!("ws{ws_name}"), None);
+                Op::SetWorkspaceName {
+                    new_ws_name,
+                    ws_name,
+                } => {
+                    let ws_ref =
+                        ws_name.map(|ws_name| WorkspaceReference::Name(format!("ws{ws_name}")));
+                    layout.set_workspace_name(format!("ws{new_ws_name}"), ws_ref);
                 }
                 Op::UnsetWorkspaceName { ws_name } => {
                     let ws_ref =
@@ -6942,7 +6949,13 @@ mod tests {
 
     #[test]
     fn set_first_workspace_name() {
-        let ops = [Op::AddOutput(0), Op::SetWorkspaceName { ws_name: 0 }];
+        let ops = [
+            Op::AddOutput(0),
+            Op::SetWorkspaceName {
+                new_ws_name: 0,
+                ws_name: None,
+            },
+        ];
 
         check_ops(&ops);
     }
@@ -6955,7 +6968,10 @@ mod tests {
                 params: TestWindowParams::new(0),
             },
             Op::FocusWorkspaceDown,
-            Op::SetWorkspaceName { ws_name: 0 },
+            Op::SetWorkspaceName {
+                new_ws_name: 0,
+                ws_name: None,
+            },
         ];
 
         check_ops(&ops);
