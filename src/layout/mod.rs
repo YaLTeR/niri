@@ -38,7 +38,7 @@ use std::time::Duration;
 use monitor::MonitorAddWindowTarget;
 use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
-    Workspace as WorkspaceConfig,
+    Workspace as WorkspaceConfig, WorkspaceReference,
 };
 use niri_ipc::{PositionChange, SizeChange};
 use scrolling::{Column, ColumnWidth, InsertHint, InsertPosition};
@@ -1215,11 +1215,43 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn find_workspace_by_ref(
+        &mut self,
+        reference: WorkspaceReference,
+    ) -> Option<&mut Workspace<W>> {
+        if let WorkspaceReference::Index(index) = reference {
+            self.active_monitor().and_then(|m| {
+                let index = index.saturating_sub(1) as usize;
+                m.workspaces.get_mut(index)
+            })
+        } else {
+            self.workspaces_mut().find(|ws| match &reference {
+                WorkspaceReference::Name(ref_name) => ws
+                    .name
+                    .as_ref()
+                    .map_or(false, |name| name.eq_ignore_ascii_case(ref_name)),
+                WorkspaceReference::Id(id) => ws.id().get() == *id,
+                WorkspaceReference::Index(_) => unreachable!(),
+            })
+        }
+    }
+
     pub fn unname_workspace(&mut self, workspace_name: &str) {
+        self.unname_workspace_by_ref(WorkspaceReference::Name(workspace_name.into()));
+    }
+
+    pub fn unname_workspace_by_ref(&mut self, reference: WorkspaceReference) {
+        let id = self.find_workspace_by_ref(reference).map(|ws| ws.id());
+        if let Some(id) = id {
+            self.unname_workspace_by_id(id);
+        }
+    }
+
+    pub fn unname_workspace_by_id(&mut self, id: WorkspaceId) {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
-                    if mon.unname_workspace(workspace_name) {
+                    if mon.unname_workspace(id) {
                         if mon.workspace_switch.is_none() {
                             mon.clean_up_workspaces();
                         }
@@ -1229,11 +1261,7 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { workspaces } => {
                 for (idx, ws) in workspaces.iter_mut().enumerate() {
-                    if ws
-                        .name
-                        .as_ref()
-                        .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
-                    {
+                    if ws.id() == id {
                         ws.unname();
 
                         // Clean up empty workspaces.
@@ -3759,6 +3787,70 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_workspace_up();
     }
 
+    pub fn set_workspace_name(&mut self, name: String, reference: Option<WorkspaceReference>) {
+        // ignore the request if the name is already used by another workspace
+        if self.find_workspace_by_name(&name).is_some() {
+            return;
+        }
+
+        let ws = if let Some(reference) = reference {
+            self.find_workspace_by_ref(reference)
+        } else {
+            self.active_workspace_mut()
+        };
+        let Some(ws) = ws else {
+            return;
+        };
+
+        ws.name.replace(name);
+
+        let wsid = ws.id();
+
+        // if `empty_workspace_above_first` is set and `ws` is the first
+        // worskpace on a monitor, another empty workspace needs to
+        // be added before.
+        // Conversely, if `ws` was the last workspace on a monitor, an
+        // empty workspace needs to be added after.
+
+        if let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        {
+            let monitor = &mut monitors[*active_monitor_idx];
+            if self.options.empty_workspace_above_first
+                && monitor
+                    .workspaces
+                    .first()
+                    .is_some_and(|first| first.id() == wsid)
+            {
+                monitor.add_workspace_top();
+            }
+            if monitor
+                .workspaces
+                .last()
+                .is_some_and(|last| last.id() == wsid)
+            {
+                monitor.add_workspace_bottom();
+            }
+        }
+    }
+
+    pub fn unset_workspace_name(&mut self, reference: Option<WorkspaceReference>) {
+        let ws = if let Some(reference) = reference {
+            self.find_workspace_by_ref(reference)
+        } else {
+            self.active_workspace_mut()
+        };
+        let Some(ws) = ws else {
+            return;
+        };
+        let id = ws.id();
+
+        self.unname_workspace_by_id(id);
+    }
+
     pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {
@@ -4084,7 +4176,7 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
 mod tests {
     use std::cell::Cell;
 
-    use niri_config::{FloatOrInt, OutputName, WorkspaceName};
+    use niri_config::{FloatOrInt, OutputName, WorkspaceName, WorkspaceReference};
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use smithay::output::{Mode, PhysicalProperties, Subpixel};
@@ -4506,6 +4598,16 @@ mod tests {
         MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
         MoveWorkspaceDown,
         MoveWorkspaceUp,
+        SetWorkspaceName {
+            #[proptest(strategy = "1..=5usize")]
+            new_ws_name: usize,
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            ws_name: Option<usize>,
+        },
+        UnsetWorkspaceName {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            ws_name: Option<usize>,
+        },
         MoveWindowToOutput {
             #[proptest(strategy = "proptest::option::of(1..=5usize)")]
             window_id: Option<usize>,
@@ -4749,6 +4851,19 @@ mod tests {
                 }
                 Op::UnnameWorkspace { ws_name } => {
                     layout.unname_workspace(&format!("ws{ws_name}"));
+                }
+                Op::SetWorkspaceName {
+                    new_ws_name,
+                    ws_name,
+                } => {
+                    let ws_ref =
+                        ws_name.map(|ws_name| WorkspaceReference::Name(format!("ws{ws_name}")));
+                    layout.set_workspace_name(format!("ws{new_ws_name}"), ws_ref);
+                }
+                Op::UnsetWorkspaceName { ws_name } => {
+                    let ws_ref =
+                        ws_name.map(|ws_name| WorkspaceReference::Name(format!("ws{ws_name}")));
+                    layout.unset_workspace_name(ws_ref);
                 }
                 Op::AddWindow { mut params } => {
                     if layout.has_window(&params.id) {
@@ -6809,6 +6924,53 @@ mod tests {
             Op::MoveWindowToWorkspace {
                 window_id: Some(0),
                 workspace_idx: 2,
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn set_first_workspace_name() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::SetWorkspaceName {
+                new_ws_name: 0,
+                ws_name: None,
+            },
+        ];
+
+        check_ops(&ops);
+    }
+
+    #[test]
+    fn set_first_workspace_name_ewaf() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::SetWorkspaceName {
+                new_ws_name: 0,
+                ws_name: None,
+            },
+        ];
+
+        let options = Options {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        };
+        check_ops_with_options(options, &ops);
+    }
+
+    #[test]
+    fn set_last_workspace_name() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams::new(0),
+            },
+            Op::FocusWorkspaceDown,
+            Op::SetWorkspaceName {
+                new_ws_name: 0,
+                ws_name: None,
             },
         ];
 
