@@ -83,11 +83,11 @@ pub fn version() -> String {
         return String::from(v);
     }
 
-    format!(
-        "{} ({})",
-        env!("CARGO_PKG_VERSION"),
-        git_version!(fallback = "unknown commit"),
-    )
+    let version = env!("CARGO_PKG_VERSION");
+    let commit =
+        option_env!("NIRI_BUILD_COMMIT").unwrap_or(git_version!(fallback = "unknown commit"));
+
+    format!("{version} ({commit})")
 }
 
 pub fn get_monotonic_time() -> Duration {
