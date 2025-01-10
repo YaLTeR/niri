@@ -1194,7 +1194,7 @@ impl<W: LayoutElement> Layout<W> {
                         mon.workspaces.iter().enumerate().find(|(_, w)| {
                             w.name
                                 .as_ref()
-                                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                                .is_some_and(|name| name.eq_ignore_ascii_case(workspace_name))
                         })
                     {
                         return Some((index, workspace));
@@ -1205,7 +1205,7 @@ impl<W: LayoutElement> Layout<W> {
                 if let Some((index, workspace)) = workspaces.iter().enumerate().find(|(_, w)| {
                     w.name
                         .as_ref()
-                        .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                        .is_some_and(|name| name.eq_ignore_ascii_case(workspace_name))
                 }) {
                     return Some((index, workspace));
                 }
@@ -1229,7 +1229,7 @@ impl<W: LayoutElement> Layout<W> {
                 WorkspaceReference::Name(ref_name) => ws
                     .name
                     .as_ref()
-                    .map_or(false, |name| name.eq_ignore_ascii_case(ref_name)),
+                    .is_some_and(|name| name.eq_ignore_ascii_case(ref_name)),
                 WorkspaceReference::Id(id) => ws.id().get() == *id,
                 WorkspaceReference::Index(_) => unreachable!(),
             })
@@ -1657,7 +1657,7 @@ impl<W: LayoutElement> Layout<W> {
             monitor.workspaces.iter().any(|ws| {
                 ws.name
                     .as_ref()
-                    .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                    .is_some_and(|name| name.eq_ignore_ascii_case(workspace_name))
             })
         })
     }
@@ -2427,7 +2427,7 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         for mon in monitors {
-            if output.map_or(false, |output| mon.output != *output) {
+            if output.is_some_and(|output| mon.output != *output) {
                 continue;
             }
 
@@ -2510,7 +2510,7 @@ impl<W: LayoutElement> Layout<W> {
         let Some(InteractiveMoveState::Moving(move_)) = self.interactive_move.take() else {
             unreachable!()
         };
-        if output.map_or(false, |out| &move_.output != out) {
+        if output.is_some_and(|out| &move_.output != out) {
             self.interactive_move = Some(InteractiveMoveState::Moving(move_));
             return;
         }
@@ -4980,7 +4980,7 @@ mod tests {
                                     if ws
                                         .name
                                         .as_ref()
-                                        .map_or(false, |name| name.eq_ignore_ascii_case(&ws_name))
+                                        .is_some_and(|name| name.eq_ignore_ascii_case(&ws_name))
                                     {
                                         ws_id = Some(ws.id());
                                     }
@@ -4998,7 +4998,7 @@ mod tests {
                                 if ws
                                     .name
                                     .as_ref()
-                                    .map_or(false, |name| name.eq_ignore_ascii_case(&ws_name))
+                                    .is_some_and(|name| name.eq_ignore_ascii_case(&ws_name))
                                 {
                                     ws_id = Some(ws.id());
                                 }

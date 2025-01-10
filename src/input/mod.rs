@@ -119,7 +119,7 @@ impl State {
             .niri
             .exit_confirm_dialog
             .as_ref()
-            .map_or(false, |d| d.is_open())
+            .is_some_and(|d| d.is_open())
             && should_hide_exit_confirm_dialog(&event);
 
         use InputEvent::*;
@@ -989,7 +989,7 @@ impl State {
                             .niri
                             .layout
                             .active_output()
-                            .map_or(false, |active| output.as_ref() == Some(active));
+                            .is_some_and(|active| output.as_ref() == Some(active));
 
                         if let Some(output) = output {
                             self.niri
@@ -1010,7 +1010,7 @@ impl State {
 
                             // If we focused the target window.
                             let new_focus = self.niri.layout.focus();
-                            if new_focus.map_or(false, |win| win.window == window) {
+                            if new_focus.is_some_and(|win| win.window == window) {
                                 self.maybe_warp_cursor_to_focus();
                             }
                         }

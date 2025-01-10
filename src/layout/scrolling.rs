@@ -2469,7 +2469,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         };
 
-        if is_touchpad.map_or(false, |x| gesture.is_touchpad != x) {
+        if is_touchpad.is_some_and(|x| gesture.is_touchpad != x) {
             return false;
         }
 
@@ -3034,7 +3034,7 @@ impl TileData {
         self.interactively_resizing_by_left_edge = tile
             .window()
             .interactive_resize_data()
-            .map_or(false, |data| data.edges.contains(ResizeEdge::LEFT));
+            .is_some_and(|data| data.edges.contains(ResizeEdge::LEFT));
     }
 }
 

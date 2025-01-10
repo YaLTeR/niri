@@ -165,7 +165,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspaces.iter().find(|ws| {
             ws.name
                 .as_ref()
-                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                .is_some_and(|name| name.eq_ignore_ascii_case(workspace_name))
         })
     }
 
@@ -173,7 +173,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspaces.iter().position(|ws| {
             ws.name
                 .as_ref()
-                .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
+                .is_some_and(|name| name.eq_ignore_ascii_case(workspace_name))
         })
     }
 
@@ -1074,7 +1074,7 @@ impl<W: LayoutElement> Monitor<W> {
             return false;
         };
 
-        if is_touchpad.map_or(false, |x| gesture.is_touchpad != x) {
+        if is_touchpad.is_some_and(|x| gesture.is_touchpad != x) {
             return false;
         }
 

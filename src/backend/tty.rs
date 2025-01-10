@@ -1658,7 +1658,7 @@ impl Tty {
                     .unwrap_or_else(|| {
                         is_vrr_capable(&device.drm, connector.handle()) == Some(true)
                     });
-                let vrr_enabled = surface.map_or(false, |surface| surface.compositor.vrr_enabled());
+                let vrr_enabled = surface.is_some_and(|surface| surface.compositor.vrr_enabled());
 
                 let logical = niri
                     .global_space

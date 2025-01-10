@@ -3556,7 +3556,7 @@ impl Niri {
             .borrow()
             .outputs
             .find(name)
-            .map_or(false, |output| output.is_vrr_on_demand());
+            .is_some_and(|output| output.is_vrr_on_demand());
         if !on_demand {
             return;
         }
