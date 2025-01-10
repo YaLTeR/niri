@@ -112,6 +112,7 @@ sed -i 's/.*please-remove-me$//' .cargo/config.toml
 %build
 export NIRI_BUILD_COMMIT="%{version}"
 %cargo_build
+%{cargo_license_summary}
 
 %install
 %cargo_install
