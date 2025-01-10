@@ -25,7 +25,9 @@ jobs:
 
       - name: Check for unreplaced "Since:" in the wiki
         run: |
-          grep --recursive 'Since: next release' wiki && exit 1
+          if grep --recursive 'Since: next release' wiki; then
+            exit 1
+          fi
 
       - name: Install dependencies
         run: |
