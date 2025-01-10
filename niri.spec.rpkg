@@ -101,10 +101,6 @@ Opening a new window never causes existing windows to resize.
 %prep
 {{{ git_dir_setup_macro }}}
 
-# Make the version log message look nicer: since we're building not from niri's git repository,
-# the git version macro will show its fallback string.
-sed -i 's/"unknown commit"/"%{version}"/' src/utils/mod.rs
-
 %cargo_prep -N
 
 # We're doing an online build.
@@ -114,6 +110,7 @@ sed -i 's/^offline = true$//' .cargo/config.toml
 sed -i 's/.*please-remove-me$//' .cargo/config.toml
 
 %build
+export NIRI_BUILD_COMMIT="%{version}"
 %cargo_build
 
 %install
