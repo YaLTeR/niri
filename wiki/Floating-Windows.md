@@ -1,6 +1,6 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Floating windows in niri always show on top of the tiled windows.
 The floating layout does not scroll.

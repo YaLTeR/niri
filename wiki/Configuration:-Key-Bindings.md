@@ -101,7 +101,7 @@ For example, if you have a `Mod+WheelScrollDown` bind, then while holding `Mod`,
 
 ### Mouse Click Bindings
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 You can bind mouse clicks using the following syntax.
 

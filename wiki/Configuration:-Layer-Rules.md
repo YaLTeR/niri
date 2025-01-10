@@ -1,6 +1,6 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Layer rules let you adjust behavior for individual layer-shell surfaces.
 They have `match` and `exclude` directives that control which layer-shell surfaces the rule should apply to, and a number of properties that you can set.

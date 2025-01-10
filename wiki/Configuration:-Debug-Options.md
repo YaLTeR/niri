@@ -113,7 +113,7 @@ debug {
 
 ### `force-pipewire-invalid-modifier`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Forces PipeWire screencasting to use the invalid modifier, even when DRM offers more modifiers.
 
@@ -227,7 +227,7 @@ debug {
 
 ### `strict-new-window-focus-policy`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Disables heuristic automatic focusing for new windows.
 Only windows that activate themselves with a valid xdg-activation token will be focused.

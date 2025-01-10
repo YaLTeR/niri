@@ -194,7 +194,7 @@ Matches the window that is the "active" window in its column.
 Contrary to `is-active`, there is always one `is-active-in-column` window in each column.
 It is the window that was last focused in the column, i.e. the one that will gain focus if this column is focused.
 
-<sup>Since: next release</sup> This rule will match `true` during the initial window opening.
+<sup>Since: 25.01</sup> This rule will match `true` during the initial window opening.
 
 ```kdl
 window-rule {
@@ -204,7 +204,7 @@ window-rule {
 
 #### `is-floating`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Can be `true` or `false`.
 Matches floating windows.
@@ -263,7 +263,7 @@ window-rule {
 
 #### `default-window-height`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Set the default height for the new window.
 
@@ -358,7 +358,7 @@ window-rule {
 
 #### `open-floating`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Make the window open in the floating layout.
 
@@ -382,7 +382,7 @@ window-rule {
 
 #### `open-focused`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Set this to `false` to prevent this window from being automatically focused upon opening.
 
@@ -516,7 +516,7 @@ window-rule {
 
 #### `default-floating-position`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.01</sup>
 
 Set the initial position for this window when it opens on, or moves to the floating layout.
 
