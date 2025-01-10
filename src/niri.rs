@@ -1536,13 +1536,10 @@ impl State {
 
                 debug!(session_id, "StartCast");
 
-                let gbm = match self.backend.gbm_device() {
-                    Some(gbm) => gbm,
-                    None => {
-                        warn!("error starting screencast: no GBM device available");
-                        self.niri.stop_cast(session_id);
-                        return;
-                    }
+                let Some(gbm) = self.backend.gbm_device() else {
+                    warn!("error starting screencast: no GBM device available");
+                    self.niri.stop_cast(session_id);
+                    return;
                 };
 
                 let pw = if let Some(pw) = &self.niri.pipewire {

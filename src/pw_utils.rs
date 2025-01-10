@@ -844,12 +844,9 @@ impl Cast {
             return false;
         }
 
-        let mut buffer = match self.stream.dequeue_buffer() {
-            Some(buffer) => buffer,
-            None => {
-                warn!("no available buffer in pw stream, skipping frame");
-                return false;
-            }
+        let Some(mut buffer) = self.stream.dequeue_buffer() else {
+            warn!("no available buffer in pw stream, skipping frame");
+            return false;
         };
 
         let fd = buffer.datas_mut()[0].as_raw().fd;
