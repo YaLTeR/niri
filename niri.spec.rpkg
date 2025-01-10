@@ -111,8 +111,10 @@ sed -i 's/^offline = true$//' .cargo/config.toml
 # Final step in leaving alone our debug settings.
 sed -i 's/.*please-remove-me$//' .cargo/config.toml
 
+# Set the commit string.
+sed -i 's/\[env\]/[env]\nNIRI_BUILD_COMMIT="%{version}"/' .cargo/config.toml
+
 %build
-export NIRI_BUILD_COMMIT="%{version}"
 %cargo_build
 %{cargo_license_summary}
 
