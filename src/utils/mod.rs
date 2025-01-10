@@ -83,11 +83,25 @@ pub fn version() -> String {
         return String::from(v);
     }
 
-    let version = env!("CARGO_PKG_VERSION");
+    const MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
+    const MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
+    const PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
+
+    let minor_prefix = if MINOR.len() == 1 {
+        // Print single-digit months in '0M' format.
+        "0"
+    } else {
+        ""
+    };
+
     let commit =
         option_env!("NIRI_BUILD_COMMIT").unwrap_or(git_version!(fallback = "unknown commit"));
 
-    format!("{version} ({commit})")
+    if PATCH == "0" {
+        format!("{MAJOR}.{minor_prefix}{MINOR} ({commit})")
+    } else {
+        format!("{MAJOR}.{minor_prefix}{MINOR}.{PATCH} ({commit})")
+    }
 }
 
 pub fn get_monotonic_time() -> Duration {
