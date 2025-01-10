@@ -116,7 +116,6 @@ sed -i 's/\[env\]/[env]\nNIRI_BUILD_COMMIT="%{version}"/' .cargo/config.toml
 
 %build
 %cargo_build
-%{cargo_license_summary}
 
 %install
 %cargo_install
