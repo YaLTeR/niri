@@ -363,9 +363,12 @@ pub enum Action {
         /// New name for the workspace.
         #[cfg_attr(feature = "clap", arg())]
         name: String,
+
         /// Reference (index or name) of the workspace to name.
-        #[cfg_attr(feature = "clap", arg())]
-        reference: Option<WorkspaceReferenceArg>,
+        ///
+        /// If `None`, uses the focused workspace.
+        #[cfg_attr(feature = "clap", arg(long))]
+        workspace: Option<WorkspaceReferenceArg>,
     },
     /// Unset the name of a workspace.
     #[cfg_attr(
@@ -374,6 +377,8 @@ pub enum Action {
     )]
     UnsetWorkspaceName {
         /// Reference (index or name) of the workspace to unname.
+        ///
+        /// If `None`, uses the focused workspace.
         #[cfg_attr(feature = "clap", arg())]
         reference: Option<WorkspaceReferenceArg>,
     },

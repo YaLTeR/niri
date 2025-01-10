@@ -1441,11 +1441,11 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWorkspaceUp {} => Self::MoveWorkspaceUp,
             niri_ipc::Action::SetWorkspaceName {
                 name,
-                reference: None,
+                workspace: None,
             } => Self::SetWorkspaceName(name),
             niri_ipc::Action::SetWorkspaceName {
                 name,
-                reference: Some(reference),
+                workspace: Some(reference),
             } => Self::SetWorkspaceNameByRef {
                 name,
                 reference: WorkspaceReference::from(reference),
