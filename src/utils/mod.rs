@@ -79,6 +79,10 @@ impl ResizeEdge {
 }
 
 pub fn version() -> String {
+    if let Some(v) = option_env!("NIRI_BUILD_VERSION_STRING") {
+        return String::from(v);
+    }
+
     format!(
         "{} ({})",
         env!("CARGO_PKG_VERSION"),
