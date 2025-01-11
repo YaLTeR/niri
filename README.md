@@ -10,7 +10,7 @@
     <a href="https://github.com/YaLTeR/niri/wiki/Getting-Started">Getting Started</a> | <a href="https://github.com/YaLTeR/niri/wiki/Configuration:-Overview">Configuration</a> | <a href="https://github.com/YaLTeR/niri/discussions/325">Setup&nbsp;Showcase</a>
 </p>
 
-![](https://github.com/YaLTeR/niri/assets/1794388/52c799a1-77ec-455f-b4aa-f3236a144964)
+![niri with a few windows open](https://github.com/user-attachments/assets/d142e57d-a25d-4ddb-ab46-311417458211)
 
 ## About
 
