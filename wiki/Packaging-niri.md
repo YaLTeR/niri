@@ -28,6 +28,32 @@ To do that, put files into the correct directories according to this table.
 
 Doing this will make niri appear in GDM and other display managers.
 
+### Version string
+
+The niri version string includes its version and commit hash:
+
+```
+$ niri --version
+niri 25.01 (e35c630)
+```
+
+When building in a packaging system, there's usually no repository, so the commit hash is unavailable and the version will show "unknown commit".
+In this case, please set the commit hash manually:
+
+```
+$ export NIRI_BUILD_COMMIT="e35c630"
+...proceed to build niri
+```
+
+You can also override the version string entirely, in this case please make sure the corresponding niri version stays intact:
+
+```
+$ export NIRI_BUILD_VERSION_STRING="25.01-1 (e35c630)"
+...proceed to build niri
+```
+
+Remember to set this variable for both `cargo build` and `cargo install` since the latter will rebuild niri if the environment changes.
+
 ### Panics
 
 Good panic backtraces are required for diagnosing niri crashes.
