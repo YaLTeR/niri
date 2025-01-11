@@ -89,7 +89,7 @@ Important things to look for:
 
 - The panic message is there: "overflow when subtracting durations".
 - The backtrace goes all the way up to `main` and includes `cause_panic`.
-- The backtrace includes the file and line number for `cause_panic`: `at /.../src/utils/mod.rs:382:13`
+- The backtrace includes the file and line number for `cause_panic`: `at /.../src/utils/mod.rs:382:13`.
 
 If possible, please ensure that your niri package on its own has good panics, i.e. *without* installing debuginfo or other packages.
 The user likely won't have debuginfo installed when their compositor first crashes, and we really want to be able to diagnose and fix all crashes right away.
