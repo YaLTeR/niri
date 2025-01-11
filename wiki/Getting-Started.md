@@ -1,6 +1,6 @@
 The easiest way to get niri is to install one of the distribution packages.
 Here are some of them: [Fedora COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri/) and [nightly COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri-git/) (which I maintain myself), [NixOS Flake](https://github.com/sodiboo/niri-flake), and some more from repology below.
-See the [Building](#building) section if you'd like to compile niri yourself.
+See the [Building](#building) section if you'd like to compile niri yourself and the [Packaging niri](./Packaging-niri.md) page if you want to package niri.
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/niri.svg)](https://repology.org/project/niri/versions)
 
@@ -159,24 +159,6 @@ If you're not on NixOS, you may need [NixGL](https://github.com/nix-community/ni
 ```
 nix run --impure github:guibou/nixGL -- ./results/bin/niri
 ```
-
-### Packaging
-
-The recommended way to package niri is so that it runs as a standalone desktop session.
-To do that, put files into the correct directories according to this table.
-
-| File | Destination |
-| ---- | ----------- |
-| `target/release/niri` | `/usr/bin/` |
-| `resources/niri-session` | `/usr/bin/` |
-| `resources/niri.desktop` | `/usr/share/wayland-sessions/` |
-| `resources/niri-portals.conf` | `/usr/share/xdg-desktop-portal/` |
-| `resources/niri.service` (systemd) | `/usr/lib/systemd/user/` |
-| `resources/niri-shutdown.target` (systemd) | `/usr/lib/systemd/user/` |
-| `resources/dinit/niri` (dinit) | `/usr/lib/dinit.d/user/` |
-| `resources/dinit/niri-shutdown` (dinit) | `/usr/lib/dinit.d/user/` |
-
-Doing this will make niri appear in GDM and other display managers.
 
 ### Manual Installation
 

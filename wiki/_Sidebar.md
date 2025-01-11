@@ -8,6 +8,7 @@
 * [Application-Specific Issues](./Application-Issues.md)
 * [Xwayland](./Xwayland.md)
 * [Gestures](./Gestures.md)
+* [Packaging niri](./Packaging-niri.md)
 * [FAQ](./FAQ.md)
 
 ## Configuration
