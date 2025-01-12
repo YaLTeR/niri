@@ -87,20 +87,13 @@ pub fn version() -> String {
     const MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
     const PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
-    let minor_prefix = if MINOR.len() == 1 {
-        // Print single-digit months in '0M' format.
-        "0"
-    } else {
-        ""
-    };
-
     let commit =
         option_env!("NIRI_BUILD_COMMIT").unwrap_or(git_version!(fallback = "unknown commit"));
 
     if PATCH == "0" {
-        format!("{MAJOR}.{minor_prefix}{MINOR} ({commit})")
+        format!("{MAJOR}.{MINOR:0>2} ({commit})")
     } else {
-        format!("{MAJOR}.{minor_prefix}{MINOR}.{PATCH} ({commit})")
+        format!("{MAJOR}.{MINOR:0>2}.{PATCH} ({commit})")
     }
 }
 
