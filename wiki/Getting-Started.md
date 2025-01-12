@@ -164,7 +164,7 @@ nix run --impure github:guibou/nixGL -- ./results/bin/niri
 
 If installing directly without a package, the recommended file destinations are slightly different.
 In this case, put the files in the directories indicated in the table below.
-These may vary depending on your distribution.
+These may vary depending on your distribution. Don't forget to make sure that the path to `niri` in niri.service is correct. This defaults to /usr/bin/niri.
 
 | File | Destination |
 | ---- | ----------- |
