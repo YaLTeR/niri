@@ -547,8 +547,9 @@ impl State {
 
         let config = Rc::new(RefCell::new(config));
 
-        let has_display =
-            env::var_os("WAYLAND_DISPLAY").is_some() || env::var_os("DISPLAY").is_some();
+        let has_display = env::var_os("WAYLAND_DISPLAY").is_some()
+            || env::var_os("WAYLAND_SOCKET").is_some()
+            || env::var_os("DISPLAY").is_some();
 
         let mut backend = if headless {
             let headless = Headless::new();
