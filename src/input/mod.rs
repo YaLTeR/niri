@@ -382,7 +382,6 @@ impl State {
                             .active_workspace_mut()
                             .and_then(|ws| ws.active_window_mut())
                         {
-                            dbg!("Exit sequence", m.id());
                             m.update_focus_timestamp(now);
                         }
                     }
@@ -407,7 +406,6 @@ impl State {
                             let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
                             let window = window.map(|(_, m)| m.window.clone());
                             if let Some(window) = window {
-                                dbg!("Cancel MRU");
                                 this.focus_window(&window);
                                 return FilterResult::Intercept(None);
                             }

@@ -770,7 +770,6 @@ impl State {
         if let Some(window) = wmru.mru_previous(&self.niri) {
             self.focus_window(&window);
         }
-        dbg!(&wmru);
         self.niri.window_mru.replace(wmru);
     }
 
@@ -785,7 +784,6 @@ impl State {
         if let Some(window) = wmru.mru_next(&self.niri) {
             self.focus_window(&window);
         }
-        dbg!(&wmru);
         self.niri.window_mru.replace(wmru);
     }
 
@@ -1060,7 +1058,6 @@ impl State {
                                     .flat_map(|ws| ws.windows_mut())
                                     .find(|w| w.id() == focus_id)
                                 {
-                                    dbg!("locked focus for", &focus_id);
                                     window.update_focus_timestamp(stamp);
                                 }
                                 state.niri.focus_lockin_token.take();
@@ -5243,9 +5240,7 @@ impl WindowMRU {
             }
         });
 
-        dbg!(&bh);
-
-        dbg!(WindowMRU {
+        WindowMRU {
             ids: bh
                 .into_sorted_vec()
                 .into_iter()
@@ -5253,7 +5248,7 @@ impl WindowMRU {
                 .rev()
                 .collect(),
             current: 0,
-        })
+        }
     }
 
     fn get<F>(&mut self, niri: &Niri, f: F) -> Option<Window>
