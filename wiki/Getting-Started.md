@@ -166,6 +166,9 @@ If installing directly without a package, the recommended file destinations are 
 In this case, put the files in the directories indicated in the table below.
 These may vary depending on your distribution.
 
+Don't forget to make sure that the path to `niri` in niri.service is correct.
+This defaults to `/usr/bin/niri`.
+
 | File | Destination |
 | ---- | ----------- |
 | `target/release/niri` | `/usr/local/bin/` |
