@@ -487,10 +487,10 @@ pub struct WindowOffscreenId(pub RefCell<Option<Id>>);
 #[derive(Debug)]
 pub struct WindowMRU {
     /// list of window ids to be traversed in MRU order
-    pub list: Vec<MappedId>,
+    pub ids: Vec<MappedId>,
 
     /// current index in the MRU traversal
-    pub current_idx: usize,
+    pub current: usize,
 }
 
 impl RedrawState {
@@ -1042,7 +1042,7 @@ impl State {
                         // user if they focus another window and then want
                         // to immediately return to the newly created window
                         if let Some(ref mut wmru) = self.niri.window_mru {
-                            wmru.list.insert(wmru.current_idx, focus_id);
+                            wmru.ids.insert(wmru.current, focus_id);
                         }
                     } else if self.niri.window_mru.is_none() {
                         let timer = Timer::from_duration(Duration::from_millis(
@@ -5246,13 +5246,13 @@ impl WindowMRU {
         dbg!(&bh);
 
         dbg!(WindowMRU {
-            list: bh
+            ids: bh
                 .into_sorted_vec()
                 .into_iter()
                 .map(|(_, id)| id)
                 .rev()
                 .collect(),
-            current_idx: 0,
+            current: 0,
         })
     }
 
@@ -5262,14 +5262,14 @@ impl WindowMRU {
         // are (current_index, number of elements in the list)
         F: Fn(usize, usize) -> usize,
     {
-        while !self.list.is_empty() {
-            self.current_idx = f(self.current_idx, self.list.len());
+        while !self.ids.is_empty() {
+            self.current = f(self.current, self.ids.len());
 
-            if let Some(id) = self.list.get(self.current_idx) {
+            if let Some(id) = self.ids.get(self.current) {
                 if let Some(window) = niri.find_window_by_id(*id) {
                     return Some(window);
                 }
-                self.list.remove(self.current_idx);
+                self.ids.remove(self.current);
             }
         }
         None

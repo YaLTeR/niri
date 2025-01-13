@@ -402,7 +402,7 @@ impl State {
                             .niri
                             .window_mru
                             .take()
-                            .and_then(|wmru| wmru.list.into_iter().next())
+                            .and_then(|wmru| wmru.ids.into_iter().next())
                         {
                             let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
                             let window = window.map(|(_, m)| m.window.clone());
