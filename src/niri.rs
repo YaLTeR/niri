@@ -2274,6 +2274,12 @@ impl Niri {
             .to_array_unpremul();
         background_color[3] = 1.;
 
+        let default_column_width = c.map(|c| c.default_column_width).unwrap_or(None);
+
+        output
+            .user_data()
+            .insert_if_missing(|| default_column_width);
+
         // FIXME: fix winit damage on other transforms.
         if name.connector == "winit" {
             transform = Transform::Flipped180;

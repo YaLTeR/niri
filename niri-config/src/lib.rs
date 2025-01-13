@@ -372,6 +372,8 @@ pub struct Output {
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
+    #[knuffel(child)]
+    pub default_column_width: Option<DefaultPresetSize>,
 }
 
 impl Output {
@@ -399,6 +401,7 @@ impl Default for Output {
             mode: None,
             variable_refresh_rate: None,
             background_color: DEFAULT_BACKGROUND_COLOR,
+            default_column_width: None,
         }
     }
 }
@@ -3420,6 +3423,7 @@ mod tests {
                     }),
                     variable_refresh_rate: Some(Vrr { on_demand: true }),
                     background_color: Color::from_rgba8_unpremul(25, 25, 102, 255),
+                    default_column_width: None,
                 }]),
                 layout: Layout {
                     focus_ring: FocusRing {
