@@ -206,6 +206,10 @@ pub enum Action {
     },
     /// Focus the previously focused window.
     FocusWindowPrevious {},
+    /// Focus the previous window in most-recently-used order.
+    FocusWindowMruPrevious {},
+    /// Focus the next window in most-recently-used order.
+    FocusWindowMruNext {},
     /// Focus the column to the left.
     FocusColumnLeft {},
     /// Focus the column to the right.

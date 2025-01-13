@@ -96,6 +96,9 @@ pub struct Mapped {
     ///
     /// Used for double-resize-click tracking.
     last_interactive_resize_start: Cell<Option<(Duration, ResizeEdge)>>,
+
+    /// Most recent time the window had the focus
+    most_recent_focus: Option<Duration>,
 }
 
 niri_render_elements! {
@@ -108,7 +111,7 @@ niri_render_elements! {
 
 static MAPPED_ID_COUNTER: IdCounter = IdCounter::new();
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub struct MappedId(u64);
 
 impl MappedId {
@@ -176,6 +179,7 @@ impl Mapped {
             pending_transactions: Vec::new(),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
+            most_recent_focus: None,
         }
     }
 
@@ -382,6 +386,14 @@ impl Mapped {
 
             WindowCastRenderElements::from(elem)
         })
+    }
+
+    pub fn get_focus_timestamp(&self) -> Option<Duration> {
+        self.most_recent_focus
+    }
+
+    pub fn update_focus_timestamp(&mut self, timestamp: Duration) {
+        self.most_recent_focus.replace(timestamp);
     }
 }
 

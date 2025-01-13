@@ -349,7 +349,6 @@ impl State {
             serial,
             time,
             |this, mods, keysym| {
-                let bindings = &this.niri.config.borrow().binds;
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
@@ -360,6 +359,63 @@ impl State {
                         this.niri.stop_signal.stop();
                     }
                 }
+
+                // check if the released key is the mod key, if so and there was an active
+                // window-mru list: drop the list and update the current window's timestamp
+                if let Some(raw) = raw {
+                    if !pressed
+                        && match comp_mod {
+                            CompositorMod::Super => {
+                                matches!(raw, Keysym::Super_L | Keysym::Super_R)
+                            }
+                            CompositorMod::Alt => matches!(raw, Keysym::Alt_L | Keysym::Alt_R),
+                        }
+                        && this.niri.window_mru.take().is_some()
+                        && !this.niri.is_locked()
+                    // window-mru is cancelled *even* when state is locked, however the
+                    // focus timestamp on the active window will not be updated
+                    {
+                        let now = this.niri.clock.now();
+                        if let Some(m) = this
+                            .niri
+                            .layout
+                            .active_workspace_mut()
+                            .and_then(|ws| ws.active_window_mut())
+                        {
+                            dbg!("Exit sequence", m.id());
+                            m.update_focus_timestamp(now);
+                        }
+                    }
+
+                    // If the Mod and the ESC key are pressed and there is an
+                    // active window-mru, cancel it and refocus the initial
+                    // window (first in the list)
+                    if pressed
+                        && !this.niri.is_locked()
+                        && match comp_mod {
+                            CompositorMod::Super => mods.logo,
+                            CompositorMod::Alt => mods.alt,
+                        }
+                        && raw == Keysym::Escape
+                    {
+                        if let Some(id) = this
+                            .niri
+                            .window_mru
+                            .take()
+                            .and_then(|wmru| wmru.list.into_iter().next())
+                        {
+                            let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
+                            let window = window.map(|(_, m)| m.window.clone());
+                            if let Some(window) = window {
+                                dbg!("Cancel MRU");
+                                this.focus_window(&window);
+                                return FilterResult::Intercept(None);
+                            }
+                        }
+                    }
+                }
+
+                let bindings = &this.niri.config.borrow().binds;
 
                 should_intercept_key(
                     &mut this.niri.suppressed_keys,
@@ -642,6 +698,12 @@ impl State {
                 if let Some(window) = self.niri.previously_focused_window.clone() {
                     self.focus_window(&window);
                 }
+            }
+            Action::FocusWindowMruPrevious => {
+                self.focus_window_mru_previous();
+            }
+            Action::FocusWindowMruNext => {
+                self.focus_window_mru_next();
             }
             Action::SwitchLayout(action) => {
                 let keyboard = &self.niri.seat.get_keyboard().unwrap();
