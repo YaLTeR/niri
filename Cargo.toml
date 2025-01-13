@@ -57,7 +57,7 @@ bitflags.workspace = true
 bytemuck = { version = "1.21.0", features = ["derive"] }
 calloop = { version = "0.14.2", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
-directories = "5.0.1"
+directories = "6.0.0"
 drm-ffi = "0.9.0"
 fastrand = "2.3.0"
 futures-util = { version = "0.3.31", default-features = false, features = ["std", "io"] }
