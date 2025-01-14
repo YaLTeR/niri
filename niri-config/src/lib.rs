@@ -1189,16 +1189,21 @@ pub enum Action {
     Spawn(#[knuffel(arguments)] Vec<String>),
     DoScreenTransition(#[knuffel(property(name = "delay-ms"))] Option<u16>),
     #[knuffel(skip)]
-    ConfirmScreenshot,
+    ConfirmScreenshot {
+        write_to_disk: bool,
+    },
     #[knuffel(skip)]
     CancelScreenshot,
     #[knuffel(skip)]
     ScreenshotTogglePointer,
     Screenshot,
-    ScreenshotScreen,
-    ScreenshotWindow,
+    ScreenshotScreen(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
+    ScreenshotWindow(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
     #[knuffel(skip)]
-    ScreenshotWindowById(u64),
+    ScreenshotWindowById {
+        id: u64,
+        write_to_disk: bool,
+    },
     CloseWindow,
     #[knuffel(skip)]
     CloseWindowById(u64),
@@ -1357,9 +1362,17 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
             niri_ipc::Action::Screenshot {} => Self::Screenshot,
-            niri_ipc::Action::ScreenshotScreen {} => Self::ScreenshotScreen,
-            niri_ipc::Action::ScreenshotWindow { id: None } => Self::ScreenshotWindow,
-            niri_ipc::Action::ScreenshotWindow { id: Some(id) } => Self::ScreenshotWindowById(id),
+            niri_ipc::Action::ScreenshotScreen { write_to_disk } => {
+                Self::ScreenshotScreen(write_to_disk)
+            }
+            niri_ipc::Action::ScreenshotWindow {
+                id: None,
+                write_to_disk,
+            } => Self::ScreenshotWindow(write_to_disk),
+            niri_ipc::Action::ScreenshotWindow {
+                id: Some(id),
+                write_to_disk,
+            } => Self::ScreenshotWindowById { id, write_to_disk },
             niri_ipc::Action::CloseWindow { id: None } => Self::CloseWindow,
             niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,

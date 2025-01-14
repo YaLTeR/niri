@@ -167,7 +167,13 @@ pub enum Action {
     /// Open the screenshot UI.
     Screenshot {},
     /// Screenshot the focused screen.
-    ScreenshotScreen {},
+    ScreenshotScreen {
+        /// Write the screenshot to disk in addition to putting it in your clipboard.
+        ///
+        /// The screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
+        write_to_disk: bool,
+    },
     /// Screenshot a window.
     #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
     ScreenshotWindow {
@@ -176,6 +182,11 @@ pub enum Action {
         /// If `None`, uses the focused window.
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
+        /// Write the screenshot to disk in addition to putting it in your clipboard.
+        ///
+        /// The screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
+        write_to_disk: bool,
     },
     /// Close a window.
     #[cfg_attr(feature = "clap", clap(about = "Close the focused window"))]

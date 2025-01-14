@@ -4623,6 +4623,7 @@ impl Niri {
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
+        write_to_disk: bool,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
@@ -4645,7 +4646,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(size, pixels)
+        self.save_screenshot(size, pixels, write_to_disk)
             .context("error saving screenshot")
     }
 
@@ -4654,6 +4655,7 @@ impl Niri {
         renderer: &mut GlesRenderer,
         output: &Output,
         mapped: &Mapped,
+        write_to_disk: bool,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
@@ -4689,7 +4691,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(geo.size, pixels)
+        self.save_screenshot(geo.size, pixels, write_to_disk)
             .context("error saving screenshot")
     }
 
@@ -4697,14 +4699,17 @@ impl Niri {
         &self,
         size: Size<i32, Physical>,
         pixels: Vec<u8>,
+        write_to_disk: bool,
     ) -> anyhow::Result<()> {
-        let path = match make_screenshot_path(&self.config.borrow()) {
-            Ok(path) => path,
-            Err(err) => {
-                warn!("error making screenshot path: {err:?}");
-                None
-            }
-        };
+        let path = write_to_disk
+            .then(|| match make_screenshot_path(&self.config.borrow()) {
+                Ok(path) => path,
+                Err(err) => {
+                    warn!("error making screenshot path: {err:?}");
+                    None
+                }
+            })
+            .flatten();
 
         // Prepare to set the encoded image as our clipboard selection. This must be done from the
         // main thread.

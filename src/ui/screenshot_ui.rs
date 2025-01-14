@@ -629,10 +629,15 @@ fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
         return None;
     }
 
-    if (mods.ctrl && raw == Keysym::c)
-        || (!mods.ctrl && (raw == Keysym::space || raw == Keysym::Return))
-    {
-        return Some(Action::ConfirmScreenshot);
+    if !mods.ctrl && (raw == Keysym::space || raw == Keysym::Return) {
+        return Some(Action::ConfirmScreenshot {
+            write_to_disk: true,
+        });
+    }
+    if mods.ctrl && raw == Keysym::c {
+        return Some(Action::ConfirmScreenshot {
+            write_to_disk: false,
+        });
     }
 
     if !mods.ctrl && raw == Keysym::p {
