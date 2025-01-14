@@ -258,6 +258,7 @@ impl<'render> RenderElement<TtyRenderer<'render>>
         frame.as_gles_frame().override_default_tex_program(
             self.program.clone(),
             vec![
+                Uniform::new("niri_scale", self.scale),
                 Uniform::new(
                     "geo_size",
                     (self.geometry.size.w as f32, self.geometry.size.h as f32),
