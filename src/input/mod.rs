@@ -529,17 +529,17 @@ impl State {
                     self.niri.do_screen_transition(renderer, delay_ms);
                 });
             }
-            Action::ScreenshotScreen => {
+            Action::ScreenshotScreen(write_to_disk) => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) = self.niri.screenshot(renderer, &active) {
+                        if let Err(err) = self.niri.screenshot(renderer, &active, write_to_disk) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
-            Action::ConfirmScreenshot => {
+            Action::ConfirmScreenshot { write_to_disk } => {
                 if !self.niri.screenshot_ui.is_open() {
                     return;
                 }
@@ -547,7 +547,8 @@ impl State {
                 self.backend.with_primary_renderer(|renderer| {
                     match self.niri.screenshot_ui.capture(renderer) {
                         Ok((size, pixels)) => {
-                            if let Err(err) = self.niri.save_screenshot(size, pixels) {
+                            if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk)
+                            {
                                 warn!("error saving screenshot: {err:?}");
                             }
                         }
@@ -581,23 +582,29 @@ impl State {
             Action::Screenshot => {
                 self.open_screenshot_ui();
             }
-            Action::ScreenshotWindow => {
+            Action::ScreenshotWindow(write_to_disk) => {
                 let focus = self.niri.layout.focus_with_output();
                 if let Some((mapped, output)) = focus {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) = self.niri.screenshot_window(renderer, output, mapped) {
+                        if let Err(err) =
+                            self.niri
+                                .screenshot_window(renderer, output, mapped, write_to_disk)
+                        {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
-            Action::ScreenshotWindowById(id) => {
+            Action::ScreenshotWindowById { id, write_to_disk } => {
                 let mut windows = self.niri.layout.windows();
                 let window = windows.find(|(_, m)| m.id().get() == id);
                 if let Some((Some(monitor), mapped)) = window {
                     let output = monitor.output();
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) = self.niri.screenshot_window(renderer, output, mapped) {
+                        if let Err(err) =
+                            self.niri
+                                .screenshot_window(renderer, output, mapped, write_to_disk)
+                        {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
