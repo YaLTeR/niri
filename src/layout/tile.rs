@@ -34,9 +34,6 @@ pub struct Tile<W: LayoutElement> {
     border: FocusRing,
 
     /// The focus ring around the window.
-    ///
-    /// It's supposed to be on the Workspace, but for the sake of a nicer open animation it's
-    /// currently here.
     focus_ring: FocusRing,
 
     /// Whether this tile is fullscreen.
