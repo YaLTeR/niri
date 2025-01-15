@@ -37,6 +37,7 @@ use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
+use crate::layout::LayoutElement;
 use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
@@ -1538,6 +1539,26 @@ impl State {
                     .move_floating_window(window.as_ref(), x, y, true);
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::ToggleWindowOpacity => {
+                let active_window = self
+                    .niri
+                    .layout
+                    .active_workspace_mut()
+                    .and_then(|ws| ws.active_window_mut());
+                if let Some(window) = active_window {
+                    window.toggle_forced_opaqueness();
+                }
+            }
+            Action::ToggleWindowOpacityById(id) => {
+                let window = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(window) = window {
+                    window.toggle_forced_opaqueness();
+                }
             }
         }
     }

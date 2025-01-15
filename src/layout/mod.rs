@@ -203,6 +203,9 @@ pub trait LayoutElement {
     /// This *will* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
     fn is_pending_fullscreen(&self) -> bool;
 
+    fn is_forced_opaque(&self) -> bool;
+    fn toggle_forced_opaqueness(&mut self);
+
     /// Size previously requested through [`LayoutElement::request_size()`].
     fn requested_size(&self) -> Option<Size<i32, Logical>>;
 

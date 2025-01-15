@@ -698,7 +698,7 @@ impl<W: LayoutElement> Tile<W> {
     ) -> impl Iterator<Item = TileRenderElement<R>> {
         let _span = tracy_client::span!("Tile::render_inner");
 
-        let alpha = if self.is_fullscreen {
+        let alpha = if self.is_fullscreen || self.window.is_forced_opaque() {
             1.
         } else {
             self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)

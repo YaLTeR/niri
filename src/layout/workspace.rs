@@ -406,6 +406,14 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn active_window_mut(&mut self) -> Option<&mut W> {
+        if self.floating_is_active.get() {
+            self.floating.active_window_mut()
+        } else {
+            self.scrolling.active_window_mut()
+        }
+    }
+
     pub fn is_active_fullscreen(&self) -> bool {
         self.scrolling.is_active_fullscreen()
     }

@@ -578,6 +578,14 @@ pub enum Action {
         )]
         y: PositionChange,
     },
+    /// Toggles the opacity of the focused window
+    ToggleWindowOpacity {
+        /// Id of the window.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
 }
 
 /// Change in window or column size.

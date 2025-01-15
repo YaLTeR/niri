@@ -1011,6 +1011,8 @@ pub struct WindowRule {
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
+    #[knuffel(child, unwrap(argument))]
+    pub force_opaque: Option<bool>,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
     #[knuffel(child, unwrap(argument))]
@@ -1345,6 +1347,9 @@ pub enum Action {
         x: PositionChange,
         y: PositionChange,
     },
+    ToggleWindowOpacity,
+    #[knuffel(skip)]
+    ToggleWindowOpacityById(u64),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1542,6 +1547,10 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::MoveFloatingWindow { id, x, y } => {
                 Self::MoveFloatingWindowById { id, x, y }
+            }
+            niri_ipc::Action::ToggleWindowOpacity { id: None } => Self::ToggleWindowOpacity,
+            niri_ipc::Action::ToggleWindowOpacity { id: Some(id) } => {
+                Self::ToggleWindowOpacityById(id)
             }
         }
     }
