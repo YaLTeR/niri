@@ -77,6 +77,7 @@ pub mod insert_hint_element;
 pub mod monitor;
 pub mod opening_window;
 pub mod scrolling;
+pub mod shadow;
 pub mod tile;
 pub mod workspace;
 
@@ -304,6 +305,7 @@ pub struct Options {
     pub struts: Struts,
     pub focus_ring: niri_config::FocusRing,
     pub border: niri_config::Border,
+    pub shadow: niri_config::Shadow,
     pub insert_hint: niri_config::InsertHint,
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
@@ -327,6 +329,7 @@ impl Default for Options {
             struts: Default::default(),
             focus_ring: Default::default(),
             border: Default::default(),
+            shadow: Default::default(),
             insert_hint: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
@@ -509,6 +512,7 @@ impl Options {
             struts: layout.struts,
             focus_ring: layout.focus_ring,
             border: layout.border,
+            shadow: layout.shadow,
             insert_hint: layout.insert_hint,
             center_focused_column: layout.center_focused_column,
             always_center_single_column: layout.always_center_single_column,
@@ -7073,11 +7077,25 @@ mod tests {
     }
 
     prop_compose! {
+        fn arbitrary_shadow()(
+            on in any::<bool>(),
+            width in arbitrary_spacing(),
+        ) -> niri_config::Shadow {
+            niri_config::Shadow {
+                on,
+                softness: FloatOrInt(width),
+                ..Default::default()
+            }
+        }
+    }
+
+    prop_compose! {
         fn arbitrary_options()(
             gaps in arbitrary_spacing(),
             struts in arbitrary_struts(),
             focus_ring in arbitrary_focus_ring(),
             border in arbitrary_border(),
+            shadow in arbitrary_shadow(),
             center_focused_column in arbitrary_center_focused_column(),
             always_center_single_column in any::<bool>(),
             empty_workspace_above_first in any::<bool>(),
@@ -7090,6 +7108,7 @@ mod tests {
                 empty_workspace_above_first,
                 focus_ring,
                 border,
+                shadow,
                 ..Default::default()
             }
         }

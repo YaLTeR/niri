@@ -3,6 +3,7 @@ extern crate tracing;
 
 use std::collections::HashSet;
 use std::ffi::OsStr;
+use std::ops::Mul;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
@@ -436,6 +437,8 @@ pub struct Layout {
     #[knuffel(child, default)]
     pub border: Border,
     #[knuffel(child, default)]
+    pub shadow: Shadow,
+    #[knuffel(child, default)]
     pub insert_hint: InsertHint,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetSize>,
@@ -460,6 +463,7 @@ impl Default for Layout {
         Self {
             focus_ring: Default::default(),
             border: Default::default(),
+            shadow: Default::default(),
             insert_hint: Default::default(),
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
@@ -609,6 +613,49 @@ impl From<FocusRing> for Border {
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Shadow {
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, default = Self::default().offset)]
+    pub offset: ShadowOffset,
+    #[knuffel(child, unwrap(argument), default = Self::default().softness)]
+    pub softness: FloatOrInt<0, 1024>,
+    #[knuffel(child, unwrap(argument), default = Self::default().spread)]
+    pub spread: FloatOrInt<0, 1024>,
+    #[knuffel(child, unwrap(argument), default = Self::default().draw_behind_window)]
+    pub draw_behind_window: bool,
+    #[knuffel(child, default = Self::default().color)]
+    pub color: Color,
+    #[knuffel(child)]
+    pub inactive_color: Option<Color>,
+}
+
+impl Default for Shadow {
+    fn default() -> Self {
+        Self {
+            on: false,
+            offset: ShadowOffset {
+                x: FloatOrInt(0.),
+                y: FloatOrInt(5.),
+            },
+            softness: FloatOrInt(30.),
+            spread: FloatOrInt(5.),
+            draw_behind_window: false,
+            color: Color::from_rgba8_unpremul(0, 0, 0, 0x70),
+            inactive_color: None,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct ShadowOffset {
+    #[knuffel(property, default)]
+    pub x: FloatOrInt<-65535, 65535>,
+    #[knuffel(property, default)]
+    pub y: FloatOrInt<-65535, 65535>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct InsertHint {
     #[knuffel(child)]
     pub off: bool,
@@ -676,6 +723,15 @@ impl Color {
     pub fn to_array_premul(self) -> [f32; 4] {
         let [r, g, b, a] = [self.r, self.g, self.b, self.a];
         [r * a, g * a, b * a, a]
+    }
+}
+
+impl Mul<f32> for Color {
+    type Output = Self;
+
+    fn mul(mut self, rhs: f32) -> Self::Output {
+        self.a *= rhs;
+        self
     }
 }
 
@@ -1007,6 +1063,8 @@ pub struct WindowRule {
     pub focus_ring: BorderRule,
     #[knuffel(child, default)]
     pub border: BorderRule,
+    #[knuffel(child, default)]
+    pub shadow: ShadowRule,
     #[knuffel(child, unwrap(argument))]
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -1082,6 +1140,26 @@ pub struct BorderRule {
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct ShadowRule {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child)]
+    pub offset: Option<ShadowOffset>,
+    #[knuffel(child, unwrap(argument))]
+    pub softness: Option<FloatOrInt<0, 1024>>,
+    #[knuffel(child, unwrap(argument))]
+    pub spread: Option<FloatOrInt<0, 1024>>,
+    #[knuffel(child, unwrap(argument))]
+    pub draw_behind_window: Option<bool>,
+    #[knuffel(child)]
+    pub color: Option<Color>,
+    #[knuffel(child)]
+    pub inactive_color: Option<Color>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -1797,6 +1875,67 @@ impl BorderRule {
         }
         if let Some(x) = self.inactive_gradient {
             config.inactive_gradient = Some(x);
+        }
+
+        config
+    }
+}
+
+impl ShadowRule {
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.off {
+            self.off = true;
+            self.on = false;
+        }
+
+        if other.on {
+            self.off = false;
+            self.on = true;
+        }
+
+        if let Some(x) = other.offset {
+            self.offset = Some(x);
+        }
+        if let Some(x) = other.softness {
+            self.softness = Some(x);
+        }
+        if let Some(x) = other.spread {
+            self.spread = Some(x);
+        }
+        if let Some(x) = other.draw_behind_window {
+            self.draw_behind_window = Some(x);
+        }
+        if let Some(x) = other.color {
+            self.color = Some(x);
+        }
+        if let Some(x) = other.inactive_color {
+            self.inactive_color = Some(x);
+        }
+    }
+
+    pub fn resolve_against(&self, mut config: Shadow) -> Shadow {
+        config.on |= self.on;
+        if self.off {
+            config.on = false;
+        }
+
+        if let Some(x) = self.offset {
+            config.offset = x;
+        }
+        if let Some(x) = self.softness {
+            config.softness = x;
+        }
+        if let Some(x) = self.spread {
+            config.spread = x;
+        }
+        if let Some(x) = self.draw_behind_window {
+            config.draw_behind_window = x;
+        }
+        if let Some(x) = self.color {
+            config.color = x;
+        }
+        if let Some(x) = self.inactive_color {
+            config.inactive_color = Some(x);
         }
 
         config
@@ -3221,6 +3360,10 @@ mod tests {
                     inactive-color "rgba(255, 200, 100, 0.0)"
                 }
 
+                shadow {
+                    offset x=10 y=-20
+                }
+
                 preset-column-widths {
                     proportion 0.25
                     proportion 0.5
@@ -3459,6 +3602,13 @@ mod tests {
                         inactive_color: Color::from_rgba8_unpremul(255, 200, 100, 0),
                         active_gradient: None,
                         inactive_gradient: None,
+                    },
+                    shadow: Shadow {
+                        offset: ShadowOffset {
+                            x: FloatOrInt(10.),
+                            y: FloatOrInt(-20.),
+                        },
+                        ..Default::default()
                     },
                     insert_hint: InsertHint {
                         off: false,
