@@ -11,6 +11,7 @@ use super::shader_element::ShaderProgram;
 
 pub struct Shaders {
     pub border: Option<ShaderProgram>,
+    pub shadow: Option<ShaderProgram>,
     pub clipped_surface: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
@@ -21,6 +22,7 @@ pub struct Shaders {
 #[derive(Debug, Clone, Copy)]
 pub enum ProgramType {
     Border,
+    Shadow,
     Resize,
     Close,
     Open,
@@ -53,6 +55,26 @@ impl Shaders {
         })
         .ok();
 
+        let shadow = ShaderProgram::compile(
+            renderer,
+            include_str!("shadow.frag"),
+            &[
+                UniformName::new("shadow_color", UniformType::_4f),
+                UniformName::new("sigma", UniformType::_1f),
+                UniformName::new("input_to_geo", UniformType::Matrix3x3),
+                UniformName::new("geo_size", UniformType::_2f),
+                UniformName::new("corner_radius", UniformType::_4f),
+                UniformName::new("window_input_to_geo", UniformType::Matrix3x3),
+                UniformName::new("window_geo_size", UniformType::_2f),
+                UniformName::new("window_corner_radius", UniformType::_4f),
+            ],
+            &[],
+        )
+        .map_err(|err| {
+            warn!("error compiling shadow shader: {err:?}");
+        })
+        .ok();
+
         let clipped_surface = renderer
             .compile_custom_texture_shader(
                 include_str!("clipped_surface.frag"),
@@ -76,6 +98,7 @@ impl Shaders {
 
         Self {
             border,
+            shadow,
             clipped_surface,
             resize,
             custom_resize: RefCell::new(None),
@@ -121,6 +144,7 @@ impl Shaders {
     pub fn program(&self, program: ProgramType) -> Option<ShaderProgram> {
         match program {
             ProgramType::Border => self.border.clone(),
+            ProgramType::Shadow => self.shadow.clone(),
             ProgramType::Resize => self
                 .custom_resize
                 .borrow()
