@@ -19,9 +19,7 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     program: GlesTexProgram,
     corner_radius: CornerRadius,
     geometry: Rectangle<f64, Logical>,
-    input_to_geo: Mat3,
-    // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
-    scale: f32,
+    uniforms: Vec<Uniform<'static>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -72,13 +70,19 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             * Mat3::from_scale(buf_size / src_size)
             * Mat3::from_translation(-src_loc / buf_size);
 
+        let uniforms = vec![
+            Uniform::new("niri_scale", scale.x as f32),
+            Uniform::new("geo_size", (geometry.size.w as f32, geometry.size.h as f32)),
+            Uniform::new("corner_radius", <[f32; 4]>::from(corner_radius)),
+            mat3_uniform("input_to_geo", input_to_geo),
+        ];
+
         Self {
             inner: elem,
             program,
             corner_radius,
             geometry,
-            input_to_geo,
-            scale: scale.x as f32,
+            uniforms,
         }
     }
 
@@ -220,18 +224,7 @@ impl RenderElement<GlesRenderer> for ClippedSurfaceRenderElement<GlesRenderer> {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        frame.override_default_tex_program(
-            self.program.clone(),
-            vec![
-                Uniform::new("niri_scale", self.scale),
-                Uniform::new(
-                    "geo_size",
-                    (self.geometry.size.w as f32, self.geometry.size.h as f32),
-                ),
-                Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
-                mat3_uniform("input_to_geo", self.input_to_geo),
-            ],
-        );
+        frame.override_default_tex_program(self.program.clone(), self.uniforms.clone());
         RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
         frame.clear_tex_program_override();
         Ok(())
@@ -255,17 +248,9 @@ impl<'render> RenderElement<TtyRenderer<'render>>
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
-        frame.as_gles_frame().override_default_tex_program(
-            self.program.clone(),
-            vec![
-                Uniform::new(
-                    "geo_size",
-                    (self.geometry.size.w as f32, self.geometry.size.h as f32),
-                ),
-                Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
-                mat3_uniform("input_to_geo", self.input_to_geo),
-            ],
-        );
+        frame
+            .as_gles_frame()
+            .override_default_tex_program(self.program.clone(), self.uniforms.clone());
         RenderElement::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
         frame.as_gles_frame().clear_tex_program_override();
         Ok(())

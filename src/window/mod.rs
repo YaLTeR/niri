@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
 use niri_config::{
-    BlockOutFrom, BorderRule, CornerRadius, FoIPosition, Match, PresetSize, WindowRule,
+    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, Match, PresetSize, WindowRule,
 };
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Size};
@@ -44,7 +44,7 @@ pub struct ResolvedWindowRules {
     pub default_height: Option<Option<PresetSize>>,
 
     /// Default floating position for this window.
-    pub default_floating_position: Option<FoIPosition>,
+    pub default_floating_position: Option<FloatingPosition>,
 
     /// Output to open this window on.
     pub open_on_output: Option<String>,
