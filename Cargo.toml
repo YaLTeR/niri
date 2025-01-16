@@ -16,7 +16,7 @@ rust-version = "1.80"
 
 [workspace.dependencies]
 anyhow = "1.0.95"
-bitflags = "2.7.0"
+bitflags = "2.8.0"
 clap = { version = "4.5.26", features = ["derive"] }
 insta = "1.42.0"
 serde = { version = "1.0.217", features = ["derive"] }
@@ -67,7 +67,7 @@ input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.169"
 libdisplay-info = "0.2.2"
-log = { version = "0.4.22", features = ["max_level_trace", "release_max_level_debug"] }
+log = { version = "0.4.25", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "25.1.0", path = "niri-config" }
 niri-ipc = { version = "25.1.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "4.6.0"
