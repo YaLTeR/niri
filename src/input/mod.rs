@@ -386,10 +386,7 @@ impl State {
                     // window (first in the list)
                     if pressed
                         && !this.niri.is_locked()
-                        && match comp_mod {
-                            CompositorMod::Super => mods.logo,
-                            CompositorMod::Alt => mods.alt,
-                        }
+                        && matches!(raw, Keysym::Alt_L | Keysym::Alt_R)
                         && raw == Keysym::Escape
                     {
                         if let Some(id) = this
