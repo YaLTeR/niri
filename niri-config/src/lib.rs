@@ -1213,7 +1213,9 @@ pub enum Action {
     #[knuffel(skip)]
     FocusWindow(u64),
     FocusWindowPrevious,
+    #[knuffel(skip)]
     FocusWindowMruPrevious,
+    #[knuffel(skip)]
     FocusWindowMruNext,
     FocusColumnLeft,
     FocusColumnRight,
