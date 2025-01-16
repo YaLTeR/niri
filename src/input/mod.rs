@@ -364,12 +364,7 @@ impl State {
                 // window-mru list: drop the list and update the current window's timestamp
                 if let Some(raw) = raw {
                     if !pressed
-                        && match comp_mod {
-                            CompositorMod::Super => {
-                                matches!(raw, Keysym::Super_L | Keysym::Super_R)
-                            }
-                            CompositorMod::Alt => matches!(raw, Keysym::Alt_L | Keysym::Alt_R),
-                        }
+                        && matches!(raw, Keysym::Alt_L | Keysym::Alt_R)
                         && this.niri.window_mru.take().is_some()
                         && !this.niri.is_locked()
                     // window-mru is cancelled *even* when state is locked, however the
@@ -2937,6 +2932,37 @@ fn find_bind(
     find_configured_bind(bindings, comp_mod, trigger, mods)
 }
 
+/// Preset bindings can be overridden in the user configuration.
+/// The reason for treating them differently is that their key + modifier
+/// combination needs to be frozen for some reason
+const PRESET_BINDINGS: &[Bind] = &[
+    // The following two bindings cover MRU window navigation. They are
+    // preset because the `Alt` key is treated specially in `on_keyboard`.
+    // When it is released the active MRU traversal is considered to have
+    // completed. If the user were allowed to change the MRU bindings
+    // below, the navigation mechanism would no longer work as intended.
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Tab),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::FocusWindowMruPrevious,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Tab),
+            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
+        },
+        action: Action::FocusWindowMruNext,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+    },
+];
+
 fn find_configured_bind(
     bindings: &Binds,
     comp_mod: CompositorMod,
@@ -2954,7 +2980,9 @@ fn find_configured_bind(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    for bind in &bindings.0 {
+    // iterate through configured bindings to find a match, and
+    // if none were found, also check `PRESET_BINDINGS`
+    for bind in bindings.0.iter().chain(PRESET_BINDINGS.iter()) {
         if bind.key.trigger != trigger {
             continue;
         }
