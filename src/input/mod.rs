@@ -381,9 +381,9 @@ impl State {
                         }
                     }
 
-                    // If the Mod and the ESC key are pressed and there is an
-                    // active window-mru, cancel it and refocus the initial
-                    // window (first in the list)
+                    // If the ESC key was pressed with the Alt modifier and
+                    // there is an active window-mru, cancel it and refocus the
+                    // initial window (first in the list)
                     if pressed
                         && !this.niri.is_locked()
                         && matches!(raw, Keysym::Alt_L | Keysym::Alt_R)
@@ -2977,8 +2977,8 @@ fn find_configured_bind(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    // iterate through configured bindings to find a match, and
-    // if none were found, also check `PRESET_BINDINGS`
+    // iterate through configured bindings looking for a match, and
+    // then check in  `PRESET_BINDINGS` if none were found
     for bind in bindings.0.iter().chain(PRESET_BINDINGS.iter()) {
         if bind.key.trigger != trigger {
             continue;
