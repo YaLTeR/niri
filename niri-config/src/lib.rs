@@ -1011,8 +1011,6 @@ pub struct WindowRule {
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
-    #[knuffel(child, unwrap(argument))]
-    pub force_opaque: Option<bool>,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
     #[knuffel(child, unwrap(argument))]

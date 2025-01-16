@@ -1548,6 +1548,8 @@ impl State {
                     .and_then(|ws| ws.active_window_mut());
                 if let Some(window) = active_window {
                     window.toggle_forced_opaqueness();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
                 }
             }
             Action::ToggleWindowOpacityById(id) => {
@@ -1558,6 +1560,8 @@ impl State {
                     .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
                 if let Some(window) = window {
                     window.toggle_forced_opaqueness();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
                 }
             }
         }
