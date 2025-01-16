@@ -382,13 +382,9 @@ impl State {
                     }
 
                     // If the ESC key was pressed with the Alt modifier and
-                    // there is an active window-mru, cancel it and refocus the
-                    // initial window (first in the list)
-                    if pressed
-                        && !this.niri.is_locked()
-                        && matches!(raw, Keysym::Alt_L | Keysym::Alt_R)
-                        && raw == Keysym::Escape
-                    {
+                    // there is an active window-mru, cancel the window-mru and
+                    // refocus the initial window (first in the list)
+                    if pressed && !this.niri.is_locked() && mods.alt && raw == Keysym::Escape {
                         if let Some(id) = this
                             .niri
                             .window_mru
