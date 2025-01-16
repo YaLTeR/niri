@@ -481,6 +481,8 @@ This is applied on top of the window's own opacity, so semitransparent windows w
 
 Opacity is applied to every surface of the window individually, so subsurfaces and pop-up menus will show window content behind them.
 
+Opacity can be toggle on or off for a window using the [toggle-window-opacity](./Configuration:-Key-Bindings.md#toggle-window-opacity) action.
+
 ![Screenshot showing Adwaita Demo with a semitransparent pop-up menu.](./img/opacity-popup.png)
 
 Also, focus ring and border with background will show through semitransparent windows (see `prefer-no-csd` and the `draw-border-with-background` window rule below).

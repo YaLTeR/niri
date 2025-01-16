@@ -253,3 +253,13 @@ Or, in scripts:
 ```shell
 niri msg action do-screen-transition --delay-ms 100
 ```
+
+### `toggle-window-opacity`
+
+Toggle the opacity of the active window.
+
+```kdl
+binds {
+    Mod+O { toggle-window-opacity; }
+}
+```
