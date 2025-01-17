@@ -1,7 +1,8 @@
 use std::cmp::{max, min};
 
 use niri_config::{
-    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, Match, PresetSize, WindowRule,
+    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, Match, PresetSize, ShadowRule,
+    WindowRule,
 };
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Size};
@@ -77,6 +78,8 @@ pub struct ResolvedWindowRules {
     pub focus_ring: BorderRule,
     /// Window border overrides.
     pub border: BorderRule,
+    /// Shadow overrides.
+    pub shadow: ShadowRule,
 
     /// Whether or not to draw the border with a solid background.
     ///
@@ -170,6 +173,16 @@ impl ResolvedWindowRules {
                 inactive_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+            },
+            shadow: ShadowRule {
+                off: false,
+                on: false,
+                offset: None,
+                softness: None,
+                spread: None,
+                draw_behind_window: None,
+                color: None,
+                inactive_color: None,
             },
             draw_border_with_background: None,
             opacity: None,
@@ -268,6 +281,7 @@ impl ResolvedWindowRules {
 
                 resolved.focus_ring.merge_with(&rule.focus_ring);
                 resolved.border.merge_with(&rule.border);
+                resolved.shadow.merge_with(&rule.shadow);
 
                 if let Some(x) = rule.draw_border_with_background {
                     resolved.draw_border_with_background = Some(x);

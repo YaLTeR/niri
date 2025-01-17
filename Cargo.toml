@@ -77,7 +77,7 @@ pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", op
 png = "0.17.16"
 portable-atomic = { version = "1.10.0", default-features = false, features = ["float"] }
 profiling = "1.0.16"
-sd-notify = "0.4.3"
+sd-notify = "0.4.4"
 serde.workspace = true
 serde_json.workspace = true
 smithay-drm-extras.workspace = true

@@ -38,7 +38,7 @@ pub fn guess_monitor_scale(size_mm: Size<i32, Raw>, resolution: Size<i32, Physic
         .map_or(1., |(scale, _)| scale)
 }
 
-fn supported_scales(resolution: Size<i32, Physical>) -> impl Iterator<Item = f64> {
+pub fn supported_scales(resolution: Size<i32, Physical>) -> impl Iterator<Item = f64> {
     (MIN_SCALE * STEPS..=MAX_SCALE * STEPS)
         .map(|x| f64::from(x) / f64::from(STEPS))
         .filter(move |scale| is_valid_for_resolution(resolution, *scale))

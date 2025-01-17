@@ -43,6 +43,16 @@ layout {
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
     }
 
+    shadow {
+        // on
+        softness 30
+        spread 5
+        offset x=0 y=5
+        draw-behind-window true
+        color "#00000070"
+        // inactive-color "#00000054"
+    }
+
     insert-hint {
         // off
         color "#ffc87f80"
@@ -320,6 +330,52 @@ layout {
         active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer hue"
     }
 }
+```
+
+### `shadow`
+
+<sup>Since: next release</sup>
+
+Shadow rendered behind a window.
+
+Set `on` to enable the shadow.
+
+`softness` controls the shadow softness/size in logical pixels, same as CSS box-shadow *blur radius*.
+Setting `softness 0` will give you hard shadows.
+
+`spread` is the distance to expand the window rectangle in logical pixels, same as CSS box-shadow spread.
+
+`offset` moves the shadow relative to the window in logical pixels, same as CSS box-shadow offset.
+
+Set `draw-behind-window` to `true` to make shadows draw behind the window rather than just around it.
+Note that niri has no way of knowing about the CSD window corner radius.
+It has to assume that windows have square corners, leading to shadow artifacts inside the CSD rounded corners.
+This setting fixes those artifacts.
+
+However, instead you may want to set `prefer-no-csd` and/or `geometry-corner-radius`.
+Then, niri will know the corner radius and draw the shadow correctly, without having to draw it behind the window.
+These will also remove client-side shadows if the window draws any.
+
+`color` is the shadow color and opacity.
+
+`inactive-color` lets you override the shadow color for inactive windows; by default, a more transparent `color` is used.
+
+Shadow drawing will follow the window corner radius set with the `geometry-corner-radius` [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules).
+
+> [!NOTE]
+> Currently, shadow drawing only supports matching radius for all corners. If you set `geometry-corner-radius` to four values instead of one, the first (top-left) corner radius will be used for shadows.
+
+```kdl
+// Enable shadows.
+layout {
+    shadow {
+        on
+    }
+}
+
+// Also ask windows to omit client-side decorations, so that
+// they don't draw their own window shadows.
+prefer-no-csd
 ```
 
 ### `insert-hint`

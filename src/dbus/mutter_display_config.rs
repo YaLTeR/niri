@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use smithay::utils::Size;
 use zbus::fdo::RequestNameFlags;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{self, OwnedValue, Type};
@@ -10,8 +12,10 @@ use zbus::{fdo, interface};
 use super::Start;
 use crate::backend::IpcOutputMap;
 use crate::utils::is_laptop_panel;
+use crate::utils::scale::supported_scales;
 
 pub struct DisplayConfig {
+    to_niri: calloop::channel::Sender<HashMap<String, Option<niri_config::Output>>>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
@@ -44,6 +48,17 @@ pub struct LogicalMonitor {
     properties: HashMap<String, OwnedValue>,
 }
 
+// ApplyMonitorsConfig
+#[derive(Deserialize, Type)]
+pub struct LogicalMonitorConfiguration {
+    x: i32,
+    y: i32,
+    scale: f64,
+    transform: u32,
+    _is_primary: bool,
+    monitors: Vec<(String, String, HashMap<String, OwnedValue>)>,
+}
+
 #[interface(name = "org.gnome.Mutter.DisplayConfig")]
 impl DisplayConfig {
     async fn get_current_state(
@@ -55,75 +70,70 @@ impl DisplayConfig {
         HashMap<String, OwnedValue>,
     )> {
         // Construct the DBus response.
-        let mut monitors: Vec<(Monitor, LogicalMonitor)> = self
-            .ipc_outputs
-            .lock()
-            .unwrap()
-            .values()
-            // Take only enabled outputs.
-            .filter(|output| output.current_mode.is_some() && output.logical.is_some())
-            .map(|output| {
-                // Loosely matches the check in Mutter.
-                let c = &output.name;
-                let is_laptop_panel = is_laptop_panel(c);
-                let display_name = make_display_name(output, is_laptop_panel);
+        let mut monitors = Vec::new();
+        let mut logical_monitors = Vec::new();
 
-                let mut properties = HashMap::new();
-                properties.insert(
-                    String::from("display-name"),
-                    OwnedValue::from(zvariant::Str::from(display_name)),
-                );
-                properties.insert(
-                    String::from("is-builtin"),
-                    OwnedValue::from(is_laptop_panel),
-                );
+        for output in self.ipc_outputs.lock().unwrap().values() {
+            // Loosely matches the check in Mutter.
+            let c = &output.name;
+            let is_laptop_panel = is_laptop_panel(c);
+            let display_name = make_display_name(output, is_laptop_panel);
 
-                let mut modes: Vec<Mode> = output
-                    .modes
-                    .iter()
-                    .map(|m| {
-                        let niri_ipc::Mode {
-                            width,
-                            height,
-                            refresh_rate,
-                            is_preferred,
-                        } = *m;
-                        let refresh = refresh_rate as f64 / 1000.;
+            let mut properties = HashMap::new();
+            properties.insert(
+                String::from("display-name"),
+                OwnedValue::from(zvariant::Str::from(display_name)),
+            );
+            properties.insert(
+                String::from("is-builtin"),
+                OwnedValue::from(is_laptop_panel),
+            );
 
-                        Mode {
-                            id: format!("{width}x{height}@{refresh:.3}"),
-                            width: i32::from(width),
-                            height: i32::from(height),
-                            refresh_rate: refresh,
-                            preferred_scale: 1.,
-                            supported_scales: vec![1., 2., 3.],
-                            properties: HashMap::from([(
-                                String::from("is-preferred"),
-                                OwnedValue::from(is_preferred),
-                            )]),
-                        }
-                    })
-                    .collect();
-                modes[output.current_mode.unwrap()]
+            let mut modes: Vec<Mode> = output
+                .modes
+                .iter()
+                .map(|m| {
+                    let niri_ipc::Mode {
+                        width,
+                        height,
+                        refresh_rate,
+                        is_preferred,
+                    } = *m;
+                    let width = i32::from(width);
+                    let height = i32::from(height);
+                    let refresh_rate = refresh_rate as f64 / 1000.;
+
+                    Mode {
+                        id: format!("{width}x{height}@{refresh_rate:.3}"),
+                        width,
+                        height,
+                        refresh_rate,
+                        preferred_scale: 1.,
+                        supported_scales: supported_scales(Size::from((width, height))).collect(),
+                        properties: HashMap::from([(
+                            String::from("is-preferred"),
+                            OwnedValue::from(is_preferred),
+                        )]),
+                    }
+                })
+                .collect();
+            if let Some(mode) = output.current_mode {
+                modes[mode]
                     .properties
                     .insert(String::from("is-current"), OwnedValue::from(true));
+            }
 
-                let connector = c.clone();
-                let model = output.model.clone();
-                let make = output.make.clone();
+            let connector = c.clone();
+            let model = output.model.clone();
+            let make = output.make.clone();
 
-                // Serial is used for session restore, so fall back to the connector name if it's
-                // not available.
-                let serial = output.serial.as_ref().unwrap_or(&connector).clone();
+            // Serial is used for session restore, so fall back to the connector name if it's
+            // not available.
+            let serial = output.serial.as_ref().unwrap_or(&connector).clone();
 
-                let monitor = Monitor {
-                    names: (connector, make, model, serial),
-                    modes,
-                    properties,
-                };
+            let names = (connector, make, model, serial);
 
-                let logical = output.logical.as_ref().unwrap();
-
+            if let Some(logical) = output.logical.as_ref() {
                 let transform = match logical.transform {
                     niri_ipc::Transform::Normal => 0,
                     niri_ipc::Transform::_90 => 1,
@@ -135,35 +145,151 @@ impl DisplayConfig {
                     niri_ipc::Transform::Flipped270 => 7,
                 };
 
-                let logical_monitor = LogicalMonitor {
+                logical_monitors.push(LogicalMonitor {
                     x: logical.x,
                     y: logical.y,
                     scale: logical.scale,
                     transform,
                     is_primary: false,
-                    monitors: vec![monitor.names.clone()],
+                    monitors: vec![names.clone()],
                     properties: HashMap::new(),
-                };
+                });
+            }
 
-                (monitor, logical_monitor)
-            })
-            .collect();
+            monitors.push(Monitor {
+                names,
+                modes,
+                properties,
+            });
+        }
 
         // Sort by connector.
-        monitors.sort_unstable_by(|a, b| a.0.names.0.cmp(&b.0.names.0));
+        monitors.sort_unstable_by(|a, b| a.names.0.cmp(&b.names.0));
+        logical_monitors.sort_unstable_by(|a, b| a.monitors[0].0.cmp(&b.monitors[0].0));
 
-        let (monitors, logical_monitors) = monitors.into_iter().unzip();
         let properties = HashMap::from([(String::from("layout-mode"), OwnedValue::from(1u32))]);
         Ok((0, monitors, logical_monitors, properties))
     }
 
+    async fn apply_monitors_config(
+        &self,
+        _serial: u32,
+        method: u32,
+        logical_monitor_configs: Vec<LogicalMonitorConfiguration>,
+        _properties: HashMap<String, OwnedValue>,
+    ) -> fdo::Result<()> {
+        let current_conf = self.ipc_outputs.lock().unwrap();
+        let mut new_conf = HashMap::new();
+        for requested_config in logical_monitor_configs {
+            if requested_config.monitors.len() > 1 {
+                return Err(zbus::fdo::Error::Failed(
+                    "Mirroring is not yet supported".to_owned(),
+                ));
+            }
+            for (connector, mode, _props) in requested_config.monitors {
+                if !current_conf.values().any(|o| o.name == connector) {
+                    return Err(zbus::fdo::Error::Failed(format!(
+                        "Connector '{}' not found",
+                        connector
+                    )));
+                }
+                new_conf.insert(
+                    connector.clone(),
+                    Some(niri_config::Output {
+                        off: false,
+                        name: connector,
+                        scale: Some(niri_config::FloatOrInt(requested_config.scale)),
+                        transform: match requested_config.transform {
+                            0 => niri_ipc::Transform::Normal,
+                            1 => niri_ipc::Transform::_90,
+                            2 => niri_ipc::Transform::_180,
+                            3 => niri_ipc::Transform::_270,
+                            4 => niri_ipc::Transform::Flipped,
+                            5 => niri_ipc::Transform::Flipped90,
+                            6 => niri_ipc::Transform::Flipped180,
+                            7 => niri_ipc::Transform::Flipped270,
+                            x => {
+                                return Err(zbus::fdo::Error::Failed(format!(
+                                    "Unknown transform {}",
+                                    x
+                                )))
+                            }
+                        },
+                        position: Some(niri_config::Position {
+                            x: requested_config.x,
+                            y: requested_config.y,
+                        }),
+                        mode: Some(niri_ipc::ConfiguredMode::from_str(&mode).map_err(|e| {
+                            zbus::fdo::Error::Failed(format!(
+                                "Could not parse mode '{}': {}",
+                                mode, e
+                            ))
+                        })?),
+                        // FIXME: VRR
+                        ..Default::default()
+                    }),
+                );
+            }
+        }
+        if new_conf.is_empty() {
+            return Err(zbus::fdo::Error::Failed(
+                "At least one output must be enabled".to_owned(),
+            ));
+        }
+        for output in current_conf.values() {
+            if !new_conf.contains_key(&output.name) {
+                new_conf.insert(output.name.clone(), None);
+            }
+        }
+        if method == 0 {
+            // 0 means "verify", so don't actually apply here
+            return Ok(());
+        }
+        if let Err(err) = self.to_niri.send(new_conf) {
+            warn!("error sending message to niri: {err:?}");
+            return Err(fdo::Error::Failed("internal error".to_owned()));
+        }
+        Ok(())
+    }
+
     #[zbus(signal)]
     pub async fn monitors_changed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn power_save_mode(&self) -> i32 {
+        -1
+    }
+
+    #[zbus(property)]
+    fn set_power_save_mode(&self, _mode: i32) -> zbus::Result<()> {
+        Err(zbus::Error::Unsupported)
+    }
+
+    #[zbus(property)]
+    fn panel_orientation_managed(&self) -> bool {
+        false
+    }
+
+    #[zbus(property)]
+    fn apply_monitors_config_allowed(&self) -> bool {
+        true
+    }
+
+    #[zbus(property)]
+    fn night_light_supported(&self) -> bool {
+        false
+    }
 }
 
 impl DisplayConfig {
-    pub fn new(ipc_outputs: Arc<Mutex<IpcOutputMap>>) -> Self {
-        Self { ipc_outputs }
+    pub fn new(
+        to_niri: calloop::channel::Sender<HashMap<String, Option<niri_config::Output>>>,
+        ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    ) -> Self {
+        Self {
+            to_niri,
+            ipc_outputs,
+        }
     }
 }
 
