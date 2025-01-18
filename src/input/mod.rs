@@ -3384,6 +3384,8 @@ pub fn mods_with_finger_scroll_binds(comp_mod: CompositorMod, binds: &Binds) -> 
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
     use crate::animation::Clock;
 
@@ -3407,6 +3409,7 @@ mod tests {
 
         let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
         let disable_power_key_handling = false;
+        let is_inhibiting_shortcuts = Cell::new(false);
 
         // The key_code we pick is arbitrary, the only thing
         // that matters is that they are different between cases.
@@ -3424,7 +3427,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
-                false,
+                is_inhibiting_shortcuts.get(),
             )
         };
 
@@ -3441,7 +3444,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
-                false,
+                is_inhibiting_shortcuts.get(),
             )
         };
 
@@ -3521,6 +3524,53 @@ mod tests {
         assert!(matches!(filter, FilterResult::Intercept(None)));
 
         // Ensure that no keys are being suppressed.
+        assert!(suppressed_keys.is_empty());
+
+        // Now test shortcut inhibiting.
+
+        // With inhibited shortcuts, we don't intercept our shortcut.
+        is_inhibiting_shortcuts.set(true);
+
+        mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            ..Default::default()
+        };
+
+        let filter = close_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(filter, FilterResult::Forward));
+        assert!(suppressed_keys.is_empty());
+
+        let filter = close_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Forward));
+        assert!(suppressed_keys.is_empty());
+
+        // Toggle it off after pressing the shortcut.
+        let filter = close_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(filter, FilterResult::Forward));
+        assert!(suppressed_keys.is_empty());
+
+        is_inhibiting_shortcuts.set(false);
+
+        let filter = close_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Forward));
+        assert!(suppressed_keys.is_empty());
+
+        // Toggle it on after pressing the shortcut.
+        let filter = close_key_event(&mut suppressed_keys, mods, true);
+        assert!(matches!(
+            filter,
+            FilterResult::Intercept(Some(Bind {
+                action: Action::CloseWindow,
+                ..
+            }))
+        ));
+        assert!(suppressed_keys.contains(&close_key_code));
+
+        is_inhibiting_shortcuts.set(true);
+
+        let filter = close_key_event(&mut suppressed_keys, mods, false);
+        assert!(matches!(filter, FilterResult::Intercept(None)));
         assert!(suppressed_keys.is_empty());
     }
 
