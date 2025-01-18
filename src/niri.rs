@@ -77,6 +77,9 @@ use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::input_method::{InputMethodManagerState, InputMethodSeat};
+use smithay::wayland::keyboard_shortcuts_inhibit::{
+    KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
+};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
 use smithay::wayland::pointer_gestures::PointerGesturesState;
@@ -131,6 +134,7 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
+use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::pw_utils::{CastSizeChange, CastTarget, PwToNiri};
@@ -253,7 +257,9 @@ pub struct Niri {
     pub tablet_state: TabletManagerState,
     pub text_input_state: TextInputManagerState,
     pub input_method_state: InputMethodManagerState,
+    pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub virtual_keyboard_state: VirtualKeyboardManagerState,
+    pub virtual_pointer_state: VirtualPointerManagerState,
     pub pointer_gestures_state: PointerGesturesState,
     pub relative_pointer_state: RelativePointerManagerState,
     pub pointer_constraints_state: PointerConstraintsState,
@@ -291,6 +297,7 @@ pub struct Niri {
     pub previously_focused_window: Option<Window>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
+    pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -1444,82 +1451,85 @@ impl State {
         self.niri.output_management_state.on_config_changed(config);
     }
 
-    pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
+    pub fn modify_output_config<F>(&mut self, name: &str, fun: F)
+    where
+        F: FnOnce(&mut niri_config::Output),
+    {
+        // Try hard to find the output config section corresponding to the output set by the
+        // user. Since if we add a new section and some existing section also matches the
+        // output, then our new section won't do anything.
+        let temp;
+        let match_name = if let Some(output) = self.niri.output_by_name_match(name) {
+            output.user_data().get::<OutputName>().unwrap()
+        } else if let Some(output_name) = self
+            .backend
+            .tty_checked()
+            .and_then(|tty| tty.disconnected_connector_name_by_name_match(name))
         {
-            // Try hard to find the output config section corresponding to the output set by the
-            // user. Since if we add a new section and some existing section also matches the
-            // output, then our new section won't do anything.
-            let temp;
-            let match_name = if let Some(output) = self.niri.output_by_name_match(name) {
-                output.user_data().get::<OutputName>().unwrap()
-            } else if let Some(output_name) = self
-                .backend
-                .tty_checked()
-                .and_then(|tty| tty.disconnected_connector_name_by_name_match(name))
-            {
-                temp = output_name;
-                &temp
-            } else {
-                // Even if name is "make model serial", matching will work fine this way.
-                temp = OutputName {
-                    connector: name.to_owned(),
-                    make: None,
-                    model: None,
-                    serial: None,
-                };
-                &temp
+            temp = output_name;
+            &temp
+        } else {
+            // Even if name is "make model serial", matching will work fine this way.
+            temp = OutputName {
+                connector: name.to_owned(),
+                make: None,
+                model: None,
+                serial: None,
             };
+            &temp
+        };
 
-            let mut config = self.niri.config.borrow_mut();
-            let config = if let Some(config) = config.outputs.find_mut(match_name) {
-                config
-            } else {
-                config.outputs.0.push(niri_config::Output {
-                    // Save name as set by the user.
-                    name: String::from(name),
-                    ..Default::default()
-                });
-                config.outputs.0.last_mut().unwrap()
-            };
+        let mut config = self.niri.config.borrow_mut();
+        let config = if let Some(config) = config.outputs.find_mut(match_name) {
+            config
+        } else {
+            config.outputs.0.push(niri_config::Output {
+                // Save name as set by the user.
+                name: String::from(name),
+                ..Default::default()
+            });
+            config.outputs.0.last_mut().unwrap()
+        };
 
-            match action {
-                niri_ipc::OutputAction::Off => config.off = true,
-                niri_ipc::OutputAction::On => config.off = false,
-                niri_ipc::OutputAction::Mode { mode } => {
-                    config.mode = match mode {
-                        niri_ipc::ModeToSet::Automatic => None,
-                        niri_ipc::ModeToSet::Specific(mode) => Some(mode),
-                    }
-                }
-                niri_ipc::OutputAction::Scale { scale } => {
-                    config.scale = match scale {
-                        niri_ipc::ScaleToSet::Automatic => None,
-                        niri_ipc::ScaleToSet::Specific(scale) => Some(FloatOrInt(scale)),
-                    }
-                }
-                niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
-                niri_ipc::OutputAction::Position { position } => {
-                    config.position = match position {
-                        niri_ipc::PositionToSet::Automatic => None,
-                        niri_ipc::PositionToSet::Specific(position) => {
-                            Some(niri_config::Position {
-                                x: position.x,
-                                y: position.y,
-                            })
-                        }
-                    }
-                }
-                niri_ipc::OutputAction::Vrr { vrr } => {
-                    config.variable_refresh_rate = if vrr.vrr {
-                        Some(niri_config::Vrr {
-                            on_demand: vrr.on_demand,
-                        })
-                    } else {
-                        None
-                    }
+        fun(config);
+    }
+
+    pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
+        self.modify_output_config(name, move |config| match action {
+            niri_ipc::OutputAction::Off => config.off = true,
+            niri_ipc::OutputAction::On => config.off = false,
+            niri_ipc::OutputAction::Mode { mode } => {
+                config.mode = match mode {
+                    niri_ipc::ModeToSet::Automatic => None,
+                    niri_ipc::ModeToSet::Specific(mode) => Some(mode),
                 }
             }
-        }
+            niri_ipc::OutputAction::Scale { scale } => {
+                config.scale = match scale {
+                    niri_ipc::ScaleToSet::Automatic => None,
+                    niri_ipc::ScaleToSet::Specific(scale) => Some(FloatOrInt(scale)),
+                }
+            }
+            niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
+            niri_ipc::OutputAction::Position { position } => {
+                config.position = match position {
+                    niri_ipc::PositionToSet::Automatic => None,
+                    niri_ipc::PositionToSet::Specific(position) => Some(niri_config::Position {
+                        x: position.x,
+                        y: position.y,
+                    }),
+                }
+            }
+            niri_ipc::OutputAction::Vrr { vrr } => {
+                config.variable_refresh_rate = if vrr.vrr {
+                    Some(niri_config::Vrr {
+                        on_demand: vrr.on_demand,
+                    })
+                } else {
+                    None
+                }
+            }
+        });
 
         self.reload_output_config();
     }
@@ -1916,11 +1926,16 @@ impl Niri {
             InputMethodManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
+        let keyboard_shortcuts_inhibit_state =
+            KeyboardShortcutsInhibitState::new::<State>(&display_handle);
         let virtual_keyboard_state =
             VirtualKeyboardManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
             });
-
+        let virtual_pointer_state =
+            VirtualPointerManagerState::new::<State, _>(&display_handle, |client| {
+                !client.get_data::<ClientState>().unwrap().restricted
+            });
         let foreign_toplevel_state =
             ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
                 !client.get_data::<ClientState>().unwrap().restricted
@@ -2112,7 +2127,9 @@ impl Niri {
             xdg_foreign_state,
             text_input_state,
             input_method_state,
+            keyboard_shortcuts_inhibit_state,
             virtual_keyboard_state,
+            virtual_pointer_state,
             shm_state,
             output_manager_state,
             dmabuf_state,
@@ -2147,6 +2164,7 @@ impl Niri {
             previously_focused_window: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
+            keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,

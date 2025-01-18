@@ -191,6 +191,43 @@ layout {
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
     }
 
+    // You can enable drop shadows for windows.
+    shadow {
+        // Uncomment the next line to enable shadows.
+        // on
+
+        // By default, the shadow draws only around its window, and not behind it.
+        // Uncomment this setting to make the shadow draw behind its window.
+        //
+        // Note that niri has no way of knowing about the CSD window corner
+        // radius. It has to assume that windows have square corners, leading to
+        // shadow artifacts inside the CSD rounded corners. This setting fixes
+        // those artifacts.
+        // 
+        // However, instead you may want to set prefer-no-csd and/or
+        // geometry-corner-radius. Then, niri will know the corner radius and
+        // draw the shadow correctly, without having to draw it behind the
+        // window. These will also remove client-side shadows if the window
+        // draws any.
+        // 
+        // draw-behind-window true
+
+        // You can change how shadows look. The values below are in logical
+        // pixels and match the CSS box-shadow properties.
+
+        // Softness controls the shadow blur radius.
+        softness 30
+
+        // Spread expands the shadow.
+        spread 5
+
+        // Offset moves the shadow relative to the window.
+        offset x=0 y=5
+
+        // You can also change the shadow color and opacity.
+        color "#0007"
+    }
+
     // Struts shrink the area occupied by windows, similarly to layer-shell panels.
     // You can think of them as a kind of outer gaps. They are set in logical pixels.
     // Left and right struts will cause the next window to the side to always be visible.
@@ -498,6 +535,16 @@ binds {
     Print { screenshot; }
     Ctrl+Print { screenshot-screen; }
     Alt+Print { screenshot-window; }
+
+    // Applications such as remote-desktop clients and software KVM switches may
+    // request that niri stops processing the keyboard shortcuts defined here
+    // so they may, for example, forward the key presses as-is to a remote machine.
+    // It's a good idea to bind an escape hatch to toggle the inhibitor,
+    // so a buggy application can't hold your session hostage.
+    //
+    // The allow-inhibiting=false property can be applied to other binds as well,
+    // which ensures niri always processes them, even when an inhibitor is active.
+    Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
 
     // The quit action will show a confirmation dialog to avoid accidental exits.
     Mod+Shift+E { quit; }

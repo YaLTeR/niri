@@ -8,6 +8,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
+use super::shadow::Shadow;
 use super::{
     LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options, SizeFrac,
     RESIZE_ANIMATION_THRESHOLD,
@@ -19,6 +20,7 @@ use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, Rounde
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
+use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
@@ -35,6 +37,9 @@ pub struct Tile<W: LayoutElement> {
 
     /// The focus ring around the window.
     focus_ring: FocusRing,
+
+    /// The shadow around the window.
+    shadow: Shadow,
 
     /// Whether this tile is fullscreen.
     ///
@@ -111,6 +116,7 @@ niri_render_elements! {
         Opening = OpeningWindowRenderElement,
         Resize = ResizeRenderElement,
         Border = BorderRenderElement,
+        Shadow = ShadowRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
         ExtraDamage = ExtraDamage,
     }
@@ -143,12 +149,14 @@ impl<W: LayoutElement> Tile<W> {
         let rules = window.rules();
         let border_config = rules.border.resolve_against(options.border);
         let focus_ring_config = rules.focus_ring.resolve_against(options.focus_ring.into());
+        let shadow_config = rules.shadow.resolve_against(options.shadow);
         let is_fullscreen = window.is_fullscreen();
 
         Self {
             window,
             border: FocusRing::new(border_config.into()),
             focus_ring: FocusRing::new(focus_ring_config.into()),
+            shadow: Shadow::new(shadow_config),
             is_fullscreen,
             fullscreen_backdrop: SolidColorBuffer::new(view_size, [0., 0., 0., 1.]),
             unfullscreen_to_floating: false,
@@ -198,12 +206,16 @@ impl<W: LayoutElement> Tile<W> {
             .resolve_against(self.options.focus_ring.into());
         self.focus_ring.update_config(focus_ring_config.into());
 
+        let shadow_config = rules.shadow.resolve_against(self.options.shadow);
+        self.shadow.update_config(shadow_config);
+
         self.fullscreen_backdrop.resize(view_size);
     }
 
     pub fn update_shaders(&mut self) {
         self.border.update_shaders();
         self.focus_ring.update_shaders();
+        self.shadow.update_shaders();
     }
 
     pub fn update_window(&mut self) {
@@ -253,6 +265,9 @@ impl<W: LayoutElement> Tile<W> {
             .focus_ring
             .resolve_against(self.options.focus_ring.into());
         self.focus_ring.update_config(focus_ring_config.into());
+
+        let shadow_config = rules.shadow.resolve_against(self.options.shadow);
+        self.shadow.update_config(shadow_config);
 
         let window_size = self.window_size();
         let radius = rules
@@ -323,19 +338,26 @@ impl<W: LayoutElement> Tile<W> {
             self.scale,
         );
 
-        let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
-            false
-        } else {
-            draw_border_with_background
-        };
         let radius = if self.is_fullscreen {
             CornerRadius::default()
         } else if self.effective_border_width().is_some() {
             radius
         } else {
             rules.geometry_corner_radius.unwrap_or_default()
-        }
-        .expanded_by(self.focus_ring.width() as f32);
+        };
+        self.shadow.update_render_elements(
+            self.animated_tile_size(),
+            is_active,
+            radius,
+            self.scale,
+        );
+
+        let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
+            false
+        } else {
+            draw_border_with_background
+        };
+        let radius = radius.expanded_by(self.focus_ring.width() as f32);
         self.focus_ring.update_render_elements(
             self.animated_tile_size(),
             is_active,
@@ -688,14 +710,14 @@ impl<W: LayoutElement> Tile<W> {
             .unwrap_or_else(|| !self.window.has_ssd())
     }
 
-    fn render_inner<R: NiriRenderer>(
-        &self,
+    fn render_inner<'a, R: NiriRenderer + 'a>(
+        &'a self,
         renderer: &mut R,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         focus_ring: bool,
         target: RenderTarget,
-    ) -> impl Iterator<Item = TileRenderElement<R>> {
+    ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render_inner");
 
         let alpha = if self.is_fullscreen {
@@ -899,17 +921,19 @@ impl<W: LayoutElement> Tile<W> {
         let rv = rv.chain(elem.into_iter().flatten());
 
         let elem = focus_ring.then(|| self.focus_ring.render(renderer, location).map(Into::into));
-        rv.chain(elem.into_iter().flatten())
+        let rv = rv.chain(elem.into_iter().flatten());
+
+        rv.chain(self.shadow.render(renderer, location).map(Into::into))
     }
 
-    pub fn render<R: NiriRenderer>(
-        &self,
+    pub fn render<'a, R: NiriRenderer + 'a>(
+        &'a self,
         renderer: &mut R,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         focus_ring: bool,
         target: RenderTarget,
-    ) -> impl Iterator<Item = TileRenderElement<R>> {
+    ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render");
 
         let mut open_anim_elem = None;
