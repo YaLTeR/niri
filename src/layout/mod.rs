@@ -3994,12 +3994,12 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn render_floating_for_output<R: NiriRenderer>(
-        &self,
+    pub fn render_floating_for_output<'a, R: NiriRenderer + 'a>(
+        &'a self,
         renderer: &mut R,
         output: &Output,
         target: RenderTarget,
-    ) -> impl Iterator<Item = TileRenderElement<R>> {
+    ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         if self.update_render_elements_time != self.clock.now() {
             error!("clock moved between updating render elements and rendering");
         }

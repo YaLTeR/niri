@@ -157,26 +157,19 @@ impl Shadow {
         &self,
         renderer: &mut impl NiriRenderer,
         location: Point<f64, Logical>,
-    ) -> impl Iterator<Item = ShadowRenderElement> {
-        let mut rv = Vec::new();
-
+    ) -> impl Iterator<Item = ShadowRenderElement> + '_ {
         if !self.config.on {
-            return rv.into_iter();
+            return None.into_iter().flatten();
         }
 
         let has_shadow_shader = ShadowRenderElement::has_shader(renderer);
         if !has_shadow_shader {
-            return rv.into_iter();
+            return None.into_iter().flatten();
         }
 
-        let mut push = |shader: &ShadowRenderElement, location: Point<f64, Logical>| {
-            rv.push(shader.clone().with_location(location));
-        };
+        let rv = zip(&self.shaders, &self.shader_rects)
+            .map(move |(shader, rect)| shader.clone().with_location(location + rect.loc));
 
-        for (shader, rect) in zip(&self.shaders, &self.shader_rects) {
-            push(shader, location + rect.loc);
-        }
-
-        rv.into_iter()
+        Some(rv).into_iter().flatten()
     }
 }

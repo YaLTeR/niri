@@ -710,14 +710,14 @@ impl<W: LayoutElement> Tile<W> {
             .unwrap_or_else(|| !self.window.has_ssd())
     }
 
-    fn render_inner<R: NiriRenderer>(
-        &self,
+    fn render_inner<'a, R: NiriRenderer + 'a>(
+        &'a self,
         renderer: &mut R,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         focus_ring: bool,
         target: RenderTarget,
-    ) -> impl Iterator<Item = TileRenderElement<R>> {
+    ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render_inner");
 
         let alpha = if self.is_fullscreen {
@@ -926,14 +926,14 @@ impl<W: LayoutElement> Tile<W> {
         rv.chain(self.shadow.render(renderer, location).map(Into::into))
     }
 
-    pub fn render<R: NiriRenderer>(
-        &self,
+    pub fn render<'a, R: NiriRenderer + 'a>(
+        &'a self,
         renderer: &mut R,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         focus_ring: bool,
         target: RenderTarget,
-    ) -> impl Iterator<Item = TileRenderElement<R>> {
+    ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render");
 
         let mut open_anim_elem = None;
