@@ -24,7 +24,7 @@ use smithay::reexports::input;
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
 
-pub const DEFAULT_FOCUS_LOCKIN_MS: u64 = 500;
+pub const DEFAULT_FOCUS_LOCKIN_MS: u64 = 750;
 
 pub mod layer_rule;
 

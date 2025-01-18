@@ -2,6 +2,7 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
@@ -121,6 +122,17 @@ impl State {
             .as_ref()
             .is_some_and(|d| d.is_open())
             && should_hide_exit_confirm_dialog(&event);
+
+        // If an event was forwarded to the focused window and it still has
+        // a running lockin_token, cancel the token and update the timestamp
+        // immediately
+        if self
+            .niri
+            .event_forwarded_to_focused_client
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            self.niri.lockin_focus();
+        }
 
         use InputEvent::*;
         match event {
@@ -414,6 +426,7 @@ impl State {
                     *mods,
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
+                    &mut this.niri.event_forwarded_to_focused_client,
                 )
             },
         ) else {
@@ -2055,6 +2068,12 @@ impl State {
             }
         }
 
+        // The event is getting forwarded to a client, consider that the
+        // focus should be locked-in
+        self.niri
+            .event_forwarded_to_focused_client
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
         pointer.button(
             self,
             &ButtonEvent {
@@ -2828,6 +2847,7 @@ fn should_intercept_key(
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
+    event_forwarded_to_focused_client: &mut AtomicBool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -2882,7 +2902,14 @@ fn should_intercept_key(
             suppressed_keys.remove(&key_code);
             FilterResult::Intercept(None)
         }
-        (None, true) => FilterResult::Forward,
+        (None, true) => {
+            // Interaction with the active window, the event will be picked
+            // up by Niri on the next event loop at which point it can do an
+            // immediate update of the active window's focus timestamp without
+            // waiting for a possible lockin period.
+            event_forwarded_to_focused_client.store(true, std::sync::atomic::Ordering::Relaxed);
+            FilterResult::Forward
+        }
     }
 }
 
@@ -3437,6 +3464,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                &mut AtomicBool::new(false),
             )
         };
 
@@ -3453,6 +3481,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                &mut AtomicBool::new(false),
             )
         };
 

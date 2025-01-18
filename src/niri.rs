@@ -357,7 +357,10 @@ pub struct Niri {
     // List of windows for MRU prev/next traversal.
     // Only defined when there is an active traversal in progress
     pub window_mru: Option<WindowMRU>,
-    pub focus_lockin_token: Option<RegistrationToken>,
+
+    pending_focus_lockin: Option<PendingFocusLockin>,
+
+    pub event_forwarded_to_focused_client: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -491,6 +494,14 @@ pub struct WindowMRU {
 
     /// current index in the MRU traversal
     pub current: usize,
+}
+
+/// Pending update to a window's focus timestamp
+#[derive(Debug)]
+struct PendingFocusLockin {
+    id: MappedId,
+    token: RegistrationToken,
+    stamp: Duration,
 }
 
 impl RedrawState {
@@ -1051,23 +1062,19 @@ impl State {
                             .niri
                             .event_loop
                             .insert_source(timer, move |_, _, state| {
-                                if let Some(window) = state
-                                    .niri
-                                    .layout
-                                    .workspaces_mut()
-                                    .flat_map(|ws| ws.windows_mut())
-                                    .find(|w| w.id() == focus_id)
-                                {
-                                    window.update_focus_timestamp(stamp);
-                                }
-                                state.niri.focus_lockin_token.take();
+                                state.niri.lockin_focus();
                                 TimeoutAction::Drop
                             })
                             .unwrap();
-                        self.niri
-                            .focus_lockin_token
-                            .replace(focus_token)
-                            .map(|t| self.niri.event_loop.disable(&t));
+                        if let Some(PendingFocusLockin { token, .. }) =
+                            self.niri.pending_focus_lockin.replace(PendingFocusLockin {
+                                id: focus_id,
+                                token: focus_token,
+                                stamp,
+                            })
+                        {
+                            self.niri.event_loop.remove(token);
+                        }
                     }
                 }
             }
@@ -2186,7 +2193,8 @@ impl Niri {
             mapped_cast_output: HashMap::new(),
 
             window_mru: None,
-            focus_lockin_token: None,
+            pending_focus_lockin: None,
+            event_forwarded_to_focused_client: AtomicBool::new(false),
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -5207,6 +5215,22 @@ impl Niri {
             .unwrap();
         self.pointer_inactivity_timer = Some(token);
     }
+
+    // Consume the active PendingLockinFocus, if any, and use the information
+    // it contains to update the (active) window's focus timestamp
+    pub fn lockin_focus(&mut self) {
+        if let Some(pending) = self.pending_focus_lockin.take() {
+            if let Some(window) = self
+                .layout
+                .workspaces_mut()
+                .flat_map(|ws| ws.windows_mut())
+                .find(|w| w.id() == pending.id)
+            {
+                window.update_focus_timestamp(pending.stamp);
+            }
+            self.event_loop.remove(pending.token);
+        }
+    }
 }
 
 pub struct ClientState {
@@ -5256,7 +5280,7 @@ impl WindowMRU {
         }
     }
 
-    fn get<F>(&mut self, niri: &Niri, f: F) -> Option<Window>
+    fn mru_with<F>(&mut self, niri: &Niri, f: F) -> Option<Window>
     where
         // function that yields the index of the next element, arguments
         // are (current_index, number of elements in the list)
@@ -5276,11 +5300,11 @@ impl WindowMRU {
     }
 
     fn mru_previous(&mut self, niri: &Niri) -> Option<Window> {
-        self.get(niri, |i, l| (i + 1) % l)
+        self.mru_with(niri, |i, l| (i + 1) % l)
     }
 
     fn mru_next(&mut self, niri: &Niri) -> Option<Window> {
-        self.get(niri, |i, l| i.checked_sub(1).unwrap_or(l - 1))
+        self.mru_with(niri, |i, l| i.checked_sub(1).unwrap_or(l - 1))
     }
 }
 
