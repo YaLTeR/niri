@@ -1358,6 +1358,18 @@ pub enum Action {
     MoveColumnToWorkspace(#[knuffel(argument)] WorkspaceReference),
     MoveWorkspaceDown,
     MoveWorkspaceUp,
+    MoveWorkspaceToIndex(#[knuffel(argument)] usize),
+    #[knuffel(skip)]
+    MoveWorkspaceToIndexByRef {
+        new_idx: usize,
+        reference: WorkspaceReference,
+    },
+    #[knuffel(skip)]
+    MoveWorkspaceToMonitorByRef {
+        output_name: String,
+        reference: WorkspaceReference,
+    },
+    MoveWorkspaceToMonitor(#[knuffel(argument)] String),
     SetWorkspaceName(#[knuffel(argument)] String),
     #[knuffel(skip)]
     SetWorkspaceNameByRef {
@@ -1612,6 +1624,28 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWorkspaceToMonitorPrevious {} => {
                 Self::MoveWorkspaceToMonitorPrevious
             }
+            niri_ipc::Action::MoveWorkspaceToIndex {
+                index,
+                reference: Some(reference),
+            } => Self::MoveWorkspaceToIndexByRef {
+                new_idx: index,
+                reference: WorkspaceReference::from(reference),
+            },
+            niri_ipc::Action::MoveWorkspaceToIndex {
+                index,
+                reference: None,
+            } => Self::MoveWorkspaceToIndex(index),
+            niri_ipc::Action::MoveWorkspaceToMonitor {
+                output,
+                reference: Some(reference),
+            } => Self::MoveWorkspaceToMonitorByRef {
+                output_name: output,
+                reference: WorkspaceReference::from(reference),
+            },
+            niri_ipc::Action::MoveWorkspaceToMonitor {
+                output,
+                reference: None,
+            } => Self::MoveWorkspaceToMonitor(output),
             niri_ipc::Action::MoveWorkspaceToMonitorNext {} => Self::MoveWorkspaceToMonitorNext,
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,

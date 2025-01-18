@@ -858,6 +858,45 @@ impl<W: LayoutElement> Monitor<W> {
         self.clean_up_workspaces();
     }
 
+    pub fn move_workspace_to_idx(&mut self, old_idx: usize, new_idx: usize) {
+        let mut new_idx = new_idx.clamp(0, self.workspaces.len() - 1);
+        if old_idx == new_idx {
+            return;
+        }
+
+        let ws = self.workspaces.remove(old_idx);
+        self.workspaces.insert(new_idx, ws);
+
+        if new_idx > old_idx {
+            if new_idx == self.workspaces.len() - 1 {
+                // Insert a new empty workspace.
+                self.add_workspace_bottom();
+            }
+
+            if self.options.empty_workspace_above_first && old_idx == 0 {
+                self.add_workspace_top();
+                new_idx += 1;
+            }
+        } else {
+            if old_idx == self.workspaces.len() - 1 {
+                // Insert a new empty workspace.
+                self.add_workspace_bottom();
+            }
+
+            if self.options.empty_workspace_above_first && new_idx == 0 {
+                self.add_workspace_top();
+                new_idx += 1;
+            }
+        }
+
+        let previous_workspace_id = self.previous_workspace_id;
+        self.activate_workspace(new_idx);
+        self.workspace_switch = None;
+        self.previous_workspace_id = previous_workspace_id;
+
+        self.clean_up_workspaces();
+    }
+
     /// Returns the geometry of the active tile relative to and clamped to the output.
     ///
     /// During animations, assumes the final view position.

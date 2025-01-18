@@ -3792,6 +3792,83 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_workspace_up();
     }
 
+    pub fn move_workspace_to_idx(&mut self, reference: Option<(Output, usize)>, new_idx: usize) {
+        let (monitor, old_idx) = if let Some((output, old_idx)) = reference {
+            let Some(monitor) = self.monitor_for_output_mut(&output) else {
+                return;
+            };
+            (monitor, old_idx)
+        } else {
+            let Some(monitor) = self.active_monitor() else {
+                return;
+            };
+            let index = monitor.active_workspace_idx;
+            (monitor, index)
+        };
+
+        monitor.move_workspace_to_idx(old_idx, new_idx);
+    }
+
+    pub fn move_workspace_to_output_by_id(
+        &mut self,
+        old_idx: usize,
+        old_output: Output,
+        new_output: Output,
+    ) {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+
+        let current_idx = monitors
+            .iter()
+            .position(|mon| mon.output == old_output)
+            .unwrap();
+        let current = &mut monitors[current_idx];
+
+        if old_idx == current.workspaces.len() - 1 {
+            // Insert a new empty workspace.
+            current.add_workspace_bottom();
+        }
+        if current.options.empty_workspace_above_first && old_idx == 0 {
+            current.add_workspace_top();
+        }
+
+        let mut ws = current.workspaces.remove(old_idx);
+        current.active_workspace_idx = old_idx.saturating_sub(1);
+        current.workspace_switch = None;
+        current.clean_up_workspaces();
+
+        ws.set_output(Some(new_output.clone()));
+        ws.original_output = OutputId::new(&new_output);
+
+        let target_idx = monitors
+            .iter()
+            .position(|mon| mon.output == new_output)
+            .unwrap();
+        let target = &mut monitors[target_idx];
+
+        target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
+
+        if target.options.empty_workspace_above_first && target.workspaces.len() == 1 {
+            // Insert a new empty workspace on top to prepare for insertion of new workspce.
+            target.add_workspace_top();
+        }
+        // Insert the workspace after the currently active one. Unless the currently active one is
+        // the last empty workspace, then insert before.
+        let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
+        target.workspaces.insert(target_ws_idx, ws);
+        target.active_workspace_idx = target_ws_idx;
+        target.workspace_switch = None;
+        target.clean_up_workspaces();
+
+        *active_monitor_idx = target_idx;
+    }
+
     pub fn set_workspace_name(&mut self, name: String, reference: Option<WorkspaceReference>) {
         // ignore the request if the name is already used by another workspace
         if self.find_workspace_by_name(&name).is_some() {
@@ -4607,6 +4684,18 @@ mod tests {
         MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
         MoveWorkspaceDown,
         MoveWorkspaceUp,
+        MoveWorkspaceToIndex {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            ws_name: Option<usize>,
+            #[proptest(strategy = "0..=4usize")]
+            target_idx: usize,
+        },
+        MoveWorkspaceToMonitor {
+            #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+            ws_name: Option<usize>,
+            #[proptest(strategy = "0..5usize")]
+            output_id: usize,
+        },
         SetWorkspaceName {
             #[proptest(strategy = "1..=5usize")]
             new_ws_name: usize,
@@ -5179,6 +5268,80 @@ mod tests {
                 }
                 Op::MoveWorkspaceDown => layout.move_workspace_down(),
                 Op::MoveWorkspaceUp => layout.move_workspace_up(),
+                Op::MoveWorkspaceToIndex {
+                    ws_name: Some(ws_name),
+                    target_idx,
+                } => {
+                    let MonitorSet::Normal { monitors, .. } = &mut layout.monitor_set else {
+                        return;
+                    };
+
+                    let (old_idx, old_output) = monitors
+                        .iter()
+                        .find_map(|monitor| {
+                            monitor
+                                .workspaces
+                                .iter()
+                                .enumerate()
+                                .find_map(|(i, ws)| {
+                                    if ws.name == Some(format!("ws{ws_name}")) {
+                                        Some(i)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .map(|i| (i, monitor.output.clone()))
+                        })
+                        .unwrap();
+
+                    layout.move_workspace_to_idx(Some((old_output, old_idx)), target_idx)
+                }
+                Op::MoveWorkspaceToIndex {
+                    ws_name: None,
+                    target_idx,
+                } => layout.move_workspace_to_idx(None, target_idx),
+                Op::MoveWorkspaceToMonitor {
+                    ws_name: None,
+                    output_id: id,
+                } => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+                    layout.move_workspace_to_output(&output);
+                }
+                Op::MoveWorkspaceToMonitor {
+                    ws_name: Some(ws_name),
+                    output_id: id,
+                } => {
+                    let name = format!("output{id}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+                    let MonitorSet::Normal { monitors, .. } = &mut layout.monitor_set else {
+                        return;
+                    };
+
+                    let (old_idx, old_output) = monitors
+                        .iter()
+                        .find_map(|monitor| {
+                            monitor
+                                .workspaces
+                                .iter()
+                                .enumerate()
+                                .find_map(|(i, ws)| {
+                                    if ws.name == Some(format!("ws{ws_name}")) {
+                                        Some(i)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .map(|i| (i, monitor.output.clone()))
+                        })
+                        .unwrap();
+
+                    layout.move_workspace_to_output_by_id(old_idx, old_output, output)
+                }
                 Op::SwitchPresetColumnWidth => layout.toggle_width(),
                 Op::SwitchPresetWindowWidth { id } => {
                     let id = id.filter(|id| layout.has_window(id));

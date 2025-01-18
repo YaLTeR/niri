@@ -1163,6 +1163,21 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::MoveWorkspaceToIndex(new_idx) => {
+                self.niri.layout.move_workspace_to_idx(None, new_idx);
+            }
+            Action::MoveWorkspaceToIndexByRef {
+                new_idx: index,
+                reference,
+            } => {
+                if let Some((Some(output), old_idx)) =
+                    self.niri.find_output_and_workspace_index(reference)
+                {
+                    self.niri
+                        .layout
+                        .move_workspace_to_idx(Some((output, old_idx)), index);
+                }
+            }
             Action::SetWorkspaceName(name) => {
                 self.niri.layout.set_workspace_name(name, None);
             }
@@ -1175,6 +1190,7 @@ impl State {
             Action::UnsetWorkSpaceNameByRef(reference) => {
                 self.niri.layout.unset_workspace_name(Some(reference));
             }
+
             Action::ConsumeWindowIntoColumn => {
                 self.niri.layout.consume_into_column();
                 // This does not cause immediate focus or window size change, so warping mouse to
@@ -1494,6 +1510,30 @@ impl State {
                     self.niri.layout.move_workspace_to_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
+                    }
+                }
+            }
+            Action::MoveWorkspaceToMonitor(new_output) => {
+                if let Some(new_output) = self.niri.output_by_name_match(&new_output) {
+                    self.niri
+                        .layout
+                        .move_workspace_to_output(&new_output.clone());
+                }
+            }
+            Action::MoveWorkspaceToMonitorByRef {
+                output_name,
+                reference,
+            } => {
+                if let Some((Some(output), old_idx)) =
+                    self.niri.find_output_and_workspace_index(reference)
+                {
+                    if let Some(new_output) = self.niri.output_by_name_match(&output_name).cloned()
+                    {
+                        if new_output != output {
+                            self.niri
+                                .layout
+                                .move_workspace_to_output_by_id(old_idx, output, new_output);
+                        }
                     }
                 }
             }
