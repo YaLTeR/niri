@@ -508,7 +508,7 @@ pub struct WindowMRU {
 struct PendingFocusLockin {
     id: MappedId,
     token: RegistrationToken,
-    stamp: Duration,
+    stamp: Instant,
 }
 
 impl RedrawState {
@@ -1047,7 +1047,7 @@ impl State {
                     // the timestamp will be updated for `mapped`, but only
                     // after the focus lock-in period has gone by without
                     // the focus having elsewhere.
-                    let stamp = self.niri.clock.now();
+                    let stamp = Instant::now();
                     let focus_id = mapped.id();
 
                     if mapped.get_focus_timestamp().is_none() {

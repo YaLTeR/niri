@@ -3,7 +3,7 @@ use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -403,14 +403,13 @@ impl State {
                     // window-mru is cancelled *even* when state is locked, however the
                     // focus timestamp on the active window will not be updated
                     {
-                        let now = this.niri.clock.now();
                         if let Some(m) = this
                             .niri
                             .layout
                             .active_workspace_mut()
                             .and_then(|ws| ws.active_window_mut())
                         {
-                            m.update_focus_timestamp(now);
+                            m.update_focus_timestamp(Instant::now());
                         }
                     }
 
