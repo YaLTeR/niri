@@ -265,7 +265,7 @@ pub struct Niri {
     pub idle_notifier_state: IdleNotifierState<State>,
     pub idle_inhibit_manager_state: IdleInhibitManagerState,
     pub data_device_state: DataDeviceState,
-    pub primary_selection_state: PrimarySelectionState,
+    pub primary_selection_state: Option<PrimarySelectionState>,
     pub data_control_state: DataControlState,
     pub popups: PopupManager,
     pub popup_grab: Option<PopupGrabState>,
@@ -1807,12 +1807,18 @@ impl Niri {
         let idle_notifier_state = IdleNotifierState::new(&display_handle, event_loop.clone());
         let idle_inhibit_manager_state = IdleInhibitManagerState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
-        let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
+
+        let primary_selection_state = if !config.borrow().clipboard.disable_primary {
+            Some(PrimarySelectionState::new::<State>(&display_handle))
+        } else {
+            None
+        };
         let data_control_state = DataControlState::new::<State, _>(
             &display_handle,
-            Some(&primary_selection_state),
+            primary_selection_state.as_ref(),
             |client| !client.get_data::<ClientState>().unwrap().restricted,
         );
+
         let presentation_state =
             PresentationState::new::<State>(&display_handle, Monotonic::ID as u32);
         let security_context_state =
