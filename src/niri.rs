@@ -5269,14 +5269,7 @@ impl WindowMRU {
     fn new(niri: &mut Niri) -> Self {
         // update the timestamp on the currently active window and
         // prepare a new WindowMRU
-        let now = niri.clock.now();
-        if let Some(m) = niri
-            .layout
-            .active_workspace_mut()
-            .and_then(|ws| ws.active_window_mut())
-        {
-            m.update_focus_timestamp(now);
-        }
+        niri.lockin_focus();
 
         // and build a list of MappedId sorted by timestamp
         let mut bh = BinaryHeap::new();
