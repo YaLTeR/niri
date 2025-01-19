@@ -1540,7 +1540,7 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::ToggleWindowOpacity => {
+            Action::ToggleWindowRuleOpacity => {
                 let active_window = self
                     .niri
                     .layout
@@ -1554,7 +1554,7 @@ impl State {
                     }
                 }
             }
-            Action::ToggleWindowOpacityById(id) => {
+            Action::ToggleWindowRuleOpacityById(id) => {
                 let window = self
                     .niri
                     .layout

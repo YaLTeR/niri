@@ -69,7 +69,7 @@ pub struct Mapped {
     /// Whether this window is floating.
     is_floating: bool,
 
-    /// Whether this window is forced to be opaque
+    /// Whether this window is forced to be opaque.
     is_forced_opaque: bool,
 
     /// Buffer to draw instead of the window when it should be blocked out.

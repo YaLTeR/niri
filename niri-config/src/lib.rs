@@ -1423,9 +1423,9 @@ pub enum Action {
         x: PositionChange,
         y: PositionChange,
     },
-    ToggleWindowOpacity,
+    ToggleWindowRuleOpacity,
     #[knuffel(skip)]
-    ToggleWindowOpacityById(u64),
+    ToggleWindowRuleOpacityById(u64),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1624,9 +1624,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveFloatingWindow { id, x, y } => {
                 Self::MoveFloatingWindowById { id, x, y }
             }
-            niri_ipc::Action::ToggleWindowOpacity { id: None } => Self::ToggleWindowOpacity,
-            niri_ipc::Action::ToggleWindowOpacity { id: Some(id) } => {
-                Self::ToggleWindowOpacityById(id)
+            niri_ipc::Action::ToggleWindowRuleOpacity { id: None } => Self::ToggleWindowRuleOpacity,
+            niri_ipc::Action::ToggleWindowRuleOpacity { id: Some(id) } => {
+                Self::ToggleWindowRuleOpacityById(id)
             }
         }
     }

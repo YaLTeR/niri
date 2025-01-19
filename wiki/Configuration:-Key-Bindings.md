@@ -254,12 +254,13 @@ Or, in scripts:
 niri msg action do-screen-transition --delay-ms 100
 ```
 
-### `toggle-window-opacity`
+### `toggle-window-rule-opacity`
 
-Toggle the opacity of the active window. This has only an effect if the window's opacity is already set to be semitransparent.
+Toggle the opacity window rule of the focused window.
+This only has an effect if the window's opacity window rule is already set to semitransparent.
 
 ```kdl
 binds {
-    Mod+O { toggle-window-opacity; }
+    Mod+O { toggle-window-rule-opacity; }
 }
 ```
