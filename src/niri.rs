@@ -89,6 +89,7 @@ use smithay::wayland::security_context::SecurityContextState;
 use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
+use smithay::wayland::selection::SelectionTarget;
 use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellState};
@@ -265,7 +266,7 @@ pub struct Niri {
     pub idle_notifier_state: IdleNotifierState<State>,
     pub idle_inhibit_manager_state: IdleInhibitManagerState,
     pub data_device_state: DataDeviceState,
-    pub primary_selection_state: Option<PrimarySelectionState>,
+    pub primary_selection_state: PrimarySelectionState,
     pub data_control_state: DataControlState,
     pub popups: PopupManager,
     pub popup_grab: Option<PopupGrabState>,
@@ -1807,16 +1808,24 @@ impl Niri {
         let idle_notifier_state = IdleNotifierState::new(&display_handle, event_loop.clone());
         let idle_inhibit_manager_state = IdleInhibitManagerState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
-
-        let primary_selection_state = if !config.borrow().clipboard.disable_primary {
-            Some(PrimarySelectionState::new::<State>(&display_handle))
-        } else {
-            None
-        };
-        let data_control_state = DataControlState::new::<State, _>(
+        let primary_selection_state =
+            PrimarySelectionState::new::<State, _>(&display_handle, |client| {
+                !client
+                    .get_data::<ClientState>()
+                    .unwrap()
+                    .primary_selection_disabled
+            });
+        let data_control_state = DataControlState::new::<State, _, _>(
             &display_handle,
-            primary_selection_state.as_ref(),
+            Some(&primary_selection_state),
             |client| !client.get_data::<ClientState>().unwrap().restricted,
+            |client, selection| {
+                selection != SelectionTarget::Primary
+                    || !client
+                        .get_data::<ClientState>()
+                        .unwrap()
+                        .primary_selection_disabled
+            },
         );
 
         let presentation_state =
@@ -1933,6 +1942,7 @@ impl Niri {
                 let data = Arc::new(ClientState {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
+                    primary_selection_disabled: config.clipboard.disable_primary,
                     restricted: false,
                     credentials_unknown: false,
                 });
@@ -5132,6 +5142,7 @@ impl Niri {
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
     pub can_view_decoration_globals: bool,
+    pub primary_selection_disabled: bool,
     /// Whether this client is denied from the restricted protocols such as security-context.
     pub restricted: bool,
     /// We cannot retrieve this client's socket credentials.

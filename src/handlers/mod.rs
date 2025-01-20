@@ -116,9 +116,7 @@ impl SeatHandler for State {
         let dh = &self.niri.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client.clone());
-        if self.niri.primary_selection_state.is_some() {
-            set_primary_focus(dh, seat, client);
-        }
+        set_primary_focus(dh, seat, client);
     }
 
     fn led_state_changed(&mut self, _seat: &Seat<Self>, led_state: keyboard::LedState) {
@@ -384,7 +382,7 @@ delegate_data_device!(State);
 
 impl PrimarySelectionHandler for State {
     fn primary_selection_state(&self) -> &PrimarySelectionState {
-        self.niri.primary_selection_state.as_ref().unwrap()
+        &self.niri.primary_selection_state
     }
 }
 delegate_primary_selection!(State);
@@ -478,6 +476,7 @@ impl SecurityContextHandler for State {
                 let data = Arc::new(ClientState {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
+                    primary_selection_disabled: config.clipboard.disable_primary,
                     restricted: true,
                     credentials_unknown: false,
                 });
