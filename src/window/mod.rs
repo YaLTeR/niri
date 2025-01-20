@@ -100,6 +100,9 @@ pub struct ResolvedWindowRules {
 
     /// Whether to enable VRR on this window's primary output if it is on-demand.
     pub variable_refresh_rate: Option<bool>,
+
+    /// Multiplier for all scroll events sent to this window.
+    pub scroll_factor: Option<f64>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -190,6 +193,7 @@ impl ResolvedWindowRules {
             clip_to_geometry: None,
             block_out_from: None,
             variable_refresh_rate: None,
+            scroll_factor: None,
         }
     }
 
@@ -300,6 +304,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.variable_refresh_rate {
                     resolved.variable_refresh_rate = Some(x);
+                }
+                if let Some(x) = rule.scroll_factor {
+                    resolved.scroll_factor = Some(x.0);
                 }
             }
 

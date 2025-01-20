@@ -37,6 +37,7 @@ use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
+use crate::layout::LayoutElement;
 use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
@@ -2171,7 +2172,12 @@ impl State {
             AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor,
             _ => None,
         };
-        let scroll_factor = scroll_factor.map(|x| x.0).unwrap_or(1.);
+        let window_scroll_factor = self
+            .niri
+            .window_under_cursor()
+            .and_then(|window| window.rules().scroll_factor);
+        let scroll_factor =
+            scroll_factor.map(|x| x.0).unwrap_or(1.) * window_scroll_factor.unwrap_or(1.);
 
         let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
