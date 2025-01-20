@@ -1079,6 +1079,8 @@ pub struct WindowRule {
     pub variable_refresh_rate: Option<bool>,
     #[knuffel(child)]
     pub default_floating_position: Option<FloatingPosition>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor: Option<FloatOrInt<0, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
