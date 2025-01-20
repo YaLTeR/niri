@@ -19,7 +19,11 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
         Msg::FocusedOutput => Request::FocusedOutput,
-        Msg::Action { action } => Request::Action(action.clone()),
+        Msg::Action {
+            action: Some(action),
+        } => Request::Action(vec![action.clone()]),
+        Msg::Action { action: None } => unreachable!(),
+        Msg::Actions { actions } => Request::Action(actions.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
             action: action.clone(),
@@ -252,7 +256,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("No output is focused.");
             }
         }
-        Msg::Action { .. } => {
+        Msg::Action { .. } | Msg::Actions { .. } => {
             let Response::Handled = response else {
                 bail!("unexpected response: expected Handled, got {response:?}");
             };
