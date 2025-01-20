@@ -53,6 +53,7 @@ window-rule {
     // block-out-from "screen-capture"
     variable-refresh-rate true
     default-floating-position x=100 y=200 relative-to="bottom-left"
+    scroll-factor 0.75
 
     focus-ring {
         // off
@@ -554,6 +555,23 @@ window-rule {
     match app-id="firefox$" title="^Picture-in-Picture$"
 
     default-floating-position x=32 y=32 relative-to="bottom-left"
+}
+```
+
+#### `scroll-factor`
+
+<sup>Since: next release</sup>
+
+Set a scroll factor for all scroll events sent to a window.
+
+This will be multiplied with the scroll factor set for your input device in the [input](/wiki/Configuration:-Input.md) section.
+
+```kdl
+// Make scrolling in Firefox a bit slower.
+window-rule {
+    match app-id="firefox$"
+
+    scroll-factor 0.75
 }
 ```
 
