@@ -191,6 +191,9 @@ pub trait LayoutElement {
     fn set_floating(&mut self, floating: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
 
+    fn is_forced_opaque(&self) -> bool;
+    fn toggle_forced_opaqueness(&mut self);
+
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
 

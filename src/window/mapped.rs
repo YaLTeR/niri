@@ -69,6 +69,9 @@ pub struct Mapped {
     /// Whether this window is floating.
     is_floating: bool,
 
+    /// Whether this window is forced to be opaque.
+    is_forced_opaque: bool,
+
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
 
@@ -167,6 +170,7 @@ impl Mapped {
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
+            is_forced_opaque: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
             animate_serials: Vec::new(),
@@ -226,6 +230,10 @@ impl Mapped {
 
     pub fn is_floating(&self) -> bool {
         self.is_floating
+    }
+
+    pub fn is_forced_opaque(&self) -> bool {
+        self.is_forced_opaque
     }
 
     pub fn set_is_focused(&mut self, is_focused: bool) {
@@ -837,6 +845,14 @@ impl LayoutElement for Mapped {
     fn is_pending_fullscreen(&self) -> bool {
         self.toplevel()
             .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
+    }
+
+    fn is_forced_opaque(&self) -> bool {
+        self.is_forced_opaque
+    }
+
+    fn toggle_forced_opaqueness(&mut self) {
+        self.is_forced_opaque = !self.is_forced_opaque;
     }
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {

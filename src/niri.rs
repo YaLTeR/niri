@@ -4574,7 +4574,7 @@ impl Niri {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let alpha = if mapped.is_fullscreen() {
+        let alpha = if mapped.is_fullscreen() || mapped.is_forced_opaque() {
             1.
         } else {
             mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
