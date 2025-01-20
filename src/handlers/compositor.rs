@@ -272,7 +272,11 @@ impl CompositorHandler for State {
                     }
 
                     if was_active {
-                        self.maybe_warp_cursor_to_focus();
+                        if self.niri.window_mru.is_some() {
+                            self.focus_window_mru_previous();
+                        } else {
+                            self.maybe_warp_cursor_to_focus();
+                        }
                     }
 
                     // Newly-unmapped toplevels must perform the initial commit-configure sequence

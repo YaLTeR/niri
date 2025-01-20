@@ -25,6 +25,8 @@ use smithay::reexports::input;
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
 
+pub const DEFAULT_FOCUS_LOCKIN_MS: u64 = 750;
+
 pub mod layer_rule;
 
 mod utils;
@@ -70,6 +72,8 @@ pub struct Config {
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
+    #[knuffel(child, unwrap(argument), default = DEFAULT_FOCUS_LOCKIN_MS)]
+    pub focus_lockin_ms: u64,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -1289,6 +1293,10 @@ pub enum Action {
     #[knuffel(skip)]
     FocusWindow(u64),
     FocusWindowPrevious,
+    #[knuffel(skip)]
+    FocusWindowMruPrevious,
+    #[knuffel(skip)]
+    FocusWindowMruNext,
     FocusColumnLeft,
     FocusColumnRight,
     FocusColumnFirst,
@@ -1453,6 +1461,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
             niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
+            niri_ipc::Action::FocusWindowMruPrevious {} => Self::FocusWindowMruPrevious,
+            niri_ipc::Action::FocusWindowMruNext {} => Self::FocusWindowMruNext,
             niri_ipc::Action::FocusColumnLeft {} => Self::FocusColumnLeft,
             niri_ipc::Action::FocusColumnRight {} => Self::FocusColumnRight,
             niri_ipc::Action::FocusColumnFirst {} => Self::FocusColumnFirst,
@@ -3504,6 +3514,8 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
+
+            focus-lockin-ms 123
             "##,
             Config {
                 input: Input {
@@ -3941,6 +3953,7 @@ mod tests {
                     render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
                 },
+                focus_lockin_ms: 123u64,
             },
         );
     }

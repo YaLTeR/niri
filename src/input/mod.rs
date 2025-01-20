@@ -2,7 +2,8 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -126,6 +127,17 @@ impl State {
             .as_ref()
             .is_some_and(|d| d.is_open())
             && should_hide_exit_confirm_dialog(&event);
+
+        // If an event was forwarded to the focused window and it still has
+        // a running lockin_token, cancel the token and update the timestamp
+        // immediately
+        if self
+            .niri
+            .event_forwarded_to_focused_client
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            self.niri.lockin_focus();
+        }
 
         use InputEvent::*;
         match event {
@@ -370,7 +382,6 @@ impl State {
             serial,
             time,
             |this, mods, keysym| {
-                let bindings = &this.niri.config.borrow().binds;
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
@@ -381,6 +392,48 @@ impl State {
                         this.niri.stop_signal.stop();
                     }
                 }
+
+                // check if the released key is the mod key, if so and there was an active
+                // window-mru list: drop the list and update the current window's timestamp
+                if let Some(raw) = raw {
+                    if !pressed
+                        && matches!(raw, Keysym::Alt_L | Keysym::Alt_R)
+                        && this.niri.window_mru.take().is_some()
+                        && !this.niri.is_locked()
+                    // window-mru is cancelled *even* when state is locked, however the
+                    // focus timestamp on the active window will not be updated
+                    {
+                        if let Some(m) = this
+                            .niri
+                            .layout
+                            .active_workspace_mut()
+                            .and_then(|ws| ws.active_window_mut())
+                        {
+                            m.update_focus_timestamp(Instant::now());
+                        }
+                    }
+
+                    // If the ESC key was pressed with the Alt modifier and
+                    // there is an active window-mru, cancel the window-mru and
+                    // refocus the initial window (first in the list)
+                    if pressed && !this.niri.is_locked() && mods.alt && raw == Keysym::Escape {
+                        if let Some(id) = this
+                            .niri
+                            .window_mru
+                            .take()
+                            .and_then(|wmru| wmru.ids.into_iter().next())
+                        {
+                            let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
+                            let window = window.map(|(_, m)| m.window.clone());
+                            if let Some(window) = window {
+                                this.focus_window(&window);
+                                return FilterResult::Intercept(None);
+                            }
+                        }
+                    }
+                }
+
+                let bindings = &this.niri.config.borrow().binds;
 
                 should_intercept_key(
                     &mut this.niri.suppressed_keys,
@@ -394,6 +447,7 @@ impl State {
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
                     is_inhibiting_shortcuts,
+                    &mut this.niri.event_forwarded_to_focused_client,
                 )
             },
         ) else {
@@ -684,6 +738,12 @@ impl State {
                 if let Some(window) = self.niri.previously_focused_window.clone() {
                     self.focus_window(&window);
                 }
+            }
+            Action::FocusWindowMruPrevious => {
+                self.focus_window_mru_previous();
+            }
+            Action::FocusWindowMruNext => {
+                self.focus_window_mru_next();
             }
             Action::SwitchLayout(action) => {
                 let keyboard = &self.niri.seat.get_keyboard().unwrap();
@@ -2044,6 +2104,12 @@ impl State {
             }
         }
 
+        // The event is getting forwarded to a client, consider that the
+        // focus should be locked-in
+        self.niri
+            .event_forwarded_to_focused_client
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
         pointer.button(
             self,
             &ButtonEvent {
@@ -2827,6 +2893,7 @@ fn should_intercept_key(
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
+    event_forwarded_to_focused_client: &mut AtomicBool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -2894,7 +2961,14 @@ fn should_intercept_key(
             suppressed_keys.remove(&key_code);
             FilterResult::Intercept(None)
         }
-        (None, true) => FilterResult::Forward,
+        (None, true) => {
+            // Interaction with the active window, the event will be picked
+            // up by Niri on the next event loop at which point it can do an
+            // immediate update of the active window's focus timestamp without
+            // waiting for a possible lockin period.
+            event_forwarded_to_focused_client.store(true, std::sync::atomic::Ordering::Relaxed);
+            FilterResult::Forward
+        }
     }
 }
 
@@ -2943,6 +3017,39 @@ fn find_bind(
     find_configured_bind(bindings, comp_mod, trigger, mods)
 }
 
+/// Preset bindings can be overridden in the user configuration.
+/// The reason for treating them differently is that their key + modifier
+/// combination needs to be frozen for some reason
+const PRESET_BINDINGS: &[Bind] = &[
+    // The following two bindings cover MRU window navigation. They are
+    // preset because the `Alt` key is treated specially in `on_keyboard`.
+    // When it is released the active MRU traversal is considered to have
+    // completed. If the user were allowed to change the MRU bindings
+    // below, the navigation mechanism would no longer work as intended.
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Tab),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::FocusWindowMruPrevious,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Tab),
+            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
+        },
+        action: Action::FocusWindowMruNext,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+    },
+];
+
 fn find_configured_bind(
     bindings: &Binds,
     comp_mod: CompositorMod,
@@ -2960,7 +3067,9 @@ fn find_configured_bind(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    for bind in &bindings.0 {
+    // iterate through configured bindings looking for a match, and
+    // then check in  `PRESET_BINDINGS` if none were found
+    for bind in bindings.0.iter().chain(PRESET_BINDINGS.iter()) {
         if bind.key.trigger != trigger {
             continue;
         }
@@ -3428,6 +3537,7 @@ mod tests {
                 &screenshot_ui,
                 disable_power_key_handling,
                 is_inhibiting_shortcuts.get(),
+                &mut AtomicBool::new(false),
             )
         };
 
@@ -3445,6 +3555,7 @@ mod tests {
                 &screenshot_ui,
                 disable_power_key_handling,
                 is_inhibiting_shortcuts.get(),
+                &mut AtomicBool::new(false),
             )
         };
 
