@@ -1097,6 +1097,9 @@ impl State {
         }
 
         self.niri.layout.update_config(&config);
+        for mapped in self.niri.mapped_layer_surfaces.values_mut() {
+            mapped.update_config(&config);
+        }
 
         // Create new named workspaces.
         for ws_config in &config.workspaces {
@@ -5101,11 +5104,13 @@ impl Niri {
 
         let mut changed = false;
         {
-            let rules = &self.config.borrow().layer_rules;
+            let config = self.config.borrow();
+            let rules = &config.layer_rules;
 
             for mapped in self.mapped_layer_surfaces.values_mut() {
                 if mapped.recompute_layer_rules(rules, self.is_at_startup) {
                     changed = true;
+                    mapped.update_config(&config);
                 }
             }
         }

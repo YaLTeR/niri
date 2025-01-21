@@ -1,4 +1,4 @@
-use crate::{BlockOutFrom, RegexEq};
+use crate::{BlockOutFrom, CornerRadius, RegexEq, ShadowRule};
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct LayerRule {
@@ -11,6 +11,10 @@ pub struct LayerRule {
     pub opacity: Option<f32>,
     #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,
+    #[knuffel(child, default)]
+    pub shadow: ShadowRule,
+    #[knuffel(child)]
+    pub geometry_corner_radius: Option<CornerRadius>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

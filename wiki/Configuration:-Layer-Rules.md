@@ -19,6 +19,19 @@ layer-rule {
     opacity 0.5
     block-out-from "screencast"
     // block-out-from "screen-capture"
+
+    shadow {
+        on
+        // off
+        softness 40
+        spread 5
+        offset x=0 y=5
+        draw-behind-window true
+        color "#00000064"
+        // inactive-color "#00000064"
+    }
+
+    geometry-corner-radius 12
 }
 ```
 
@@ -93,5 +106,50 @@ layer-rule {
     match namespace="^launcher$"
 
     opacity 0.95
+}
+```
+
+#### `shadow`
+
+<sup>Since: next release</sup>
+
+Override the shadow options for the surface.
+
+These rules have the same options as the normal shadow config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+
+Unlike window shadows, layer surface shadows always need to be enabled with a layer rule.
+That is, enabling shadows in the layout config section won't automatically enable them for layer surfaces.
+
+> [!NOTE]
+> Layer surfaces have no way to tell niri about their *visual geometry*.
+> For example, if a layer surface includes some invisible margins (like mako), niri has no way of knowing that, and will draw the shadow behind the entire surface, including the invisible margins.
+>
+> So to use niri shadows, you'll need to configure layer-shell clients to remove their own margins or shadows.
+
+```kdl
+// Add a shadow for fuzzel.
+layer-rule {
+    match namespace="^launcher$"
+    
+    shadow {
+        on
+    }
+
+    // Fuzzel defaults to 10 px rounded corners.
+    geometry-corner-radius 10
+}
+```
+
+#### `geometry-corner-radius`
+
+<sup>Since: next release</sup>
+
+Set the corner radius of the surface.
+
+This setting will only affect the shadow—it will round its corners to match the geometry corner radius.
+
+```kdl
+layer-rule {
+    geometry-corner-radius 12
 }
 ```

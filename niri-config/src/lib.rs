@@ -3778,6 +3778,8 @@ mod tests {
                         excludes: vec![],
                         opacity: None,
                         block_out_from: Some(BlockOutFrom::Screencast),
+                        shadow: ShadowRule::default(),
+                        geometry_corner_radius: None,
                     }
                 ],
                 workspaces: vec![
