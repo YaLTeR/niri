@@ -3248,6 +3248,18 @@ impl Niri {
                 if let Some(transition) = &mut state.screen_transition {
                     transition.update_render_elements(scale, transform);
                 }
+
+                let layer_map = layer_map_for_output(out);
+                for surface in layer_map.layers() {
+                    let Some(mapped) = self.mapped_layer_surfaces.get_mut(surface) else {
+                        continue;
+                    };
+                    let Some(geo) = layer_map.layer_geometry(surface) else {
+                        continue;
+                    };
+
+                    mapped.update_render_elements(geo.size.to_f64(), scale);
+                }
             }
         }
     }
@@ -3440,7 +3452,7 @@ impl Niri {
             Some((mapped, geo))
         });
         for (mapped, geo) in iter {
-            elements.extend(mapped.render(renderer, geo, scale, target));
+            elements.extend(mapped.render(renderer, geo.loc.to_f64(), scale, target));
         }
     }
 
