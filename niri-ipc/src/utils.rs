@@ -30,55 +30,57 @@ pub(crate) mod one_or_many {
 
     #[cfg(test)]
     mod tests {
+        use std::fmt::Debug;
+
         use serde_json::de::SliceRead;
         use serde_json::{Deserializer, Serializer, Value};
 
         use super::*;
 
+        fn test_serialize<T: Serialize>(value: &Vec<T>, expected: &str) {
+            let mut bytes = Vec::new();
+            let mut serializer = Serializer::new(&mut bytes);
+            serialize(value, &mut serializer).expect("failed to serialize");
+            assert_eq!(String::from_utf8_lossy(&bytes), expected);
+        }
+
+        fn test_deserialize<'de, T>(value: &'de str, expected: &Vec<T>)
+        where
+            T: Deserialize<'de> + Debug + PartialEq,
+        {
+            let mut deserailier = Deserializer::new(SliceRead::new(value.as_bytes()));
+            let result: Vec<T> = deserialize(&mut deserailier).expect("failed to deserialize");
+            assert_eq!(&result, expected);
+        }
+
         #[test]
         fn serialize_one() {
-            let mut result = Vec::new();
-            let mut serializer = Serializer::new(&mut result);
-            serialize(&vec![Value::Null], &mut serializer).expect("failed to serialize");
-            assert_eq!(String::from_utf8_lossy(&result), "null");
+            test_serialize(&vec![Value::Null], "null");
         }
 
         #[test]
         fn deserialize_one() {
-            let mut deserailier = Deserializer::new(SliceRead::new("null".as_bytes()));
-            let result: Vec<Value> = deserialize(&mut deserailier).expect("failed to deserialize");
-            assert_eq!(result, vec![Value::Null]);
+            test_deserialize("null", &vec![Value::Null]);
         }
 
         #[test]
         fn serialize_many() {
-            let mut result = Vec::new();
-            let mut serializer = Serializer::new(&mut result);
-            serialize(&vec![Value::Null, Value::Null], &mut serializer)
-                .expect("failed to serialize");
-            assert_eq!(String::from_utf8_lossy(&result), "[null,null]");
+            test_serialize(&vec![Value::Null, Value::Null], "[null,null]");
         }
 
         #[test]
         fn deserialize_many() {
-            let mut deserailier = Deserializer::new(SliceRead::new("[null,null]".as_bytes()));
-            let result: Vec<Value> = deserialize(&mut deserailier).expect("failed to deserialize");
-            assert_eq!(result, vec![Value::Null, Value::Null]);
+            test_deserialize("[null,null]", &vec![Value::Null, Value::Null]);
         }
 
         #[test]
         fn serialize_none() {
-            let mut result = Vec::new();
-            let mut serializer = Serializer::new(&mut result);
-            serialize(&Vec::<Value>::new(), &mut serializer).expect("failed to serialize");
-            assert_eq!(String::from_utf8_lossy(&result), "[]");
+            test_serialize(&Vec::<Value>::new(), "[]");
         }
 
         #[test]
         fn deserialize_none() {
-            let mut deserailier = Deserializer::new(SliceRead::new("[]".as_bytes()));
-            let result: Vec<Value> = deserialize(&mut deserailier).expect("failed to deserialize");
-            assert_eq!(result, Vec::<Value>::new());
+            test_deserialize("[]", &Vec::<Value>::new());
         }
 
         #[test]
