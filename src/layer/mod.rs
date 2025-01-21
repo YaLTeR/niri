@@ -8,9 +8,10 @@ pub use mapped::MappedLayer;
 /// Rules fully resolved for a layer-shell surface.
 #[derive(Debug, PartialEq)]
 pub struct ResolvedLayerRules {
-    /// Extra opacity to draw this window with.
+    /// Extra opacity to draw this layer surface with.
     pub opacity: Option<f32>,
-    /// Whether to block out this window from certain render targets.
+
+    /// Whether to block out this layer surface from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 }
 
