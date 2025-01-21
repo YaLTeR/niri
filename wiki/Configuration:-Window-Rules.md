@@ -70,6 +70,7 @@ window-rule {
 
     shadow {
         // on
+        off
         softness 40
         spread 5
         offset x=0 y=5
