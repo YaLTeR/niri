@@ -310,7 +310,7 @@ impl<W: LayoutElement> Tile<W> {
             || self.move_y_animation.is_some()
     }
 
-    pub fn update(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
 
         let draw_border_with_background = rules

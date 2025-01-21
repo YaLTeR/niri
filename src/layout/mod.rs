@@ -2453,7 +2453,7 @@ impl<W: LayoutElement> Layout<W> {
                 let pos_within_output = move_.tile_render_location();
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
-                move_.tile.update(true, view_rect);
+                move_.tile.update_render_elements(true, view_rect);
             }
         }
 
