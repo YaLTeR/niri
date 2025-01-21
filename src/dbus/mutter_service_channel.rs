@@ -28,6 +28,7 @@ impl ServiceChannel {
             compositor_state: Default::default(),
             // Would be nice to thread config here but for now it's fine.
             can_view_decoration_globals: false,
+            primary_selection_disabled: false,
             restricted: false,
             // FIXME: maybe you can get the PID from D-Bus somehow?
             credentials_unknown: true,
