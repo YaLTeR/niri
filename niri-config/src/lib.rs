@@ -53,6 +53,8 @@ pub struct Config {
     ]
     pub screenshot_path: Option<String>,
     #[knuffel(child, default)]
+    pub clipboard: Clipboard,
+    #[knuffel(child, default)]
     pub hotkey_overlay: HotkeyOverlay,
     #[knuffel(child, default)]
     pub animations: Animations,
@@ -783,6 +785,12 @@ pub struct Struts {
 pub struct HotkeyOverlay {
     #[knuffel(child)]
     pub skip_at_startup: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Clipboard {
+    #[knuffel(child)]
+    pub disable_primary: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
@@ -3432,6 +3440,10 @@ mod tests {
 
             screenshot-path "~/Screenshots/screenshot.png"
 
+            clipboard {
+                disable-primary
+            }
+
             hotkey-overlay {
                 skip-at-startup
             }
@@ -3686,6 +3698,9 @@ mod tests {
                     hide_after_inactive_ms: Some(3000),
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
+                clipboard: Clipboard {
+                    disable_primary: true,
+                },
                 hotkey_overlay: HotkeyOverlay {
                     skip_at_startup: true,
                 },

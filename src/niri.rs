@@ -1810,7 +1810,13 @@ impl Niri {
         let idle_notifier_state = IdleNotifierState::new(&display_handle, event_loop.clone());
         let idle_inhibit_manager_state = IdleInhibitManagerState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
-        let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
+        let primary_selection_state =
+            PrimarySelectionState::new_with_filter::<State, _>(&display_handle, |client| {
+                !client
+                    .get_data::<ClientState>()
+                    .unwrap()
+                    .primary_selection_disabled
+            });
         let data_control_state = DataControlState::new::<State, _>(
             &display_handle,
             Some(&primary_selection_state),
@@ -1930,6 +1936,7 @@ impl Niri {
                 let data = Arc::new(ClientState {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
+                    primary_selection_disabled: config.clipboard.disable_primary,
                     restricted: false,
                     credentials_unknown: false,
                 });
@@ -5167,6 +5174,7 @@ impl Niri {
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
     pub can_view_decoration_globals: bool,
+    pub primary_selection_disabled: bool,
     /// Whether this client is denied from the restricted protocols such as security-context.
     pub restricted: bool,
     /// We cannot retrieve this client's socket credentials.
