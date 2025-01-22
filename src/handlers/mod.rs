@@ -475,6 +475,7 @@ impl SecurityContextHandler for State {
                 let data = Arc::new(ClientState {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
+                    primary_selection_disabled: config.clipboard.disable_primary,
                     restricted: true,
                     credentials_unknown: false,
                 });
