@@ -29,7 +29,7 @@
 //! compromise we only keep the first workspace there, and move the rest to the primary output,
 //! making the primary output their original output.
 
-use std::cmp::min;
+use std::cmp::{min, Ordering};
 use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
@@ -3834,23 +3834,28 @@ impl<W: LayoutElement> Layout<W> {
     pub fn move_workspace_to_output_by_id(
         &mut self,
         old_idx: usize,
-        old_output: Output,
+        old_output: Option<Output>,
         new_output: Output,
-    ) {
+    ) -> bool {
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
             ..
         } = &mut self.monitor_set
         else {
-            return;
+            return false;
         };
 
-        let current_idx = monitors
-            .iter()
-            .position(|mon| mon.output == old_output)
-            .unwrap();
+        let current_idx = if let Some(old_output) = old_output {
+            monitors
+                .iter()
+                .position(|mon| mon.output == old_output)
+                .unwrap()
+        } else {
+            *active_monitor_idx
+        };
         let current = &mut monitors[current_idx];
+        let current_active_ws_idx = current.active_workspace_idx;
 
         if old_idx == current.workspaces.len() - 1 {
             // Insert a new empty workspace.
@@ -3861,7 +3866,16 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         let mut ws = current.workspaces.remove(old_idx);
-        current.active_workspace_idx = old_idx.saturating_sub(1);
+
+        match old_idx.cmp(&current.active_workspace_idx) {
+            Ordering::Equal => {
+                current.active_workspace_idx = old_idx.saturating_sub(1);
+            }
+            Ordering::Less => {
+                current.active_workspace_idx = current.active_workspace_idx.saturating_sub(1);
+            }
+            Ordering::Greater => (),
+        }
         current.workspace_switch = None;
         current.clean_up_workspaces();
 
@@ -3884,11 +3898,20 @@ impl<W: LayoutElement> Layout<W> {
         // the last empty workspace, then insert before.
         let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
         target.workspaces.insert(target_ws_idx, ws);
-        target.active_workspace_idx = target_ws_idx;
-        target.workspace_switch = None;
         target.clean_up_workspaces();
 
-        *active_monitor_idx = target_idx;
+        // Only switch active monitor if the workspace moved was the currently focused one on the current monitor
+        if current_idx == *active_monitor_idx && old_idx == current_active_ws_idx {
+            *active_monitor_idx = target_idx;
+            target.active_workspace_idx = target_ws_idx;
+            target.workspace_switch = None;
+            true
+        } else {
+            if target_ws_idx <= target.active_workspace_idx {
+                target.active_workspace_idx += 1;
+            }
+            false
+        }
     }
 
     pub fn set_workspace_name(&mut self, name: String, reference: Option<WorkspaceReference>) {
@@ -5360,7 +5383,7 @@ mod tests {
                         return;
                     };
 
-                    layout.move_workspace_to_output_by_id(old_idx, old_output, output)
+                    layout.move_workspace_to_output_by_id(old_idx, Some(old_output), output);
                 }
                 Op::SwitchPresetColumnWidth => layout.toggle_width(),
                 Op::SwitchPresetWindowWidth { id } => {

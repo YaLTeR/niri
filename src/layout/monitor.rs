@@ -889,20 +889,15 @@ impl<W: LayoutElement> Monitor<W> {
             }
         }
 
-        let previous_workspace_id = self.previous_workspace_id;
-
         // Only refocus the workspace if it was already focused
         if self.active_workspace_idx == old_idx {
-            self.activate_workspace(new_idx);
+            self.active_workspace_idx = new_idx;
         // If the workspace order was switched so that the current workspace moved down the workspace stack, focus correctly
         } else if new_idx <= self.active_workspace_idx && old_idx > self.active_workspace_idx {
-            self.activate_workspace(self.active_workspace_idx + 1);
+            self.active_workspace_idx += 1;
         } else if new_idx >= self.active_workspace_idx && old_idx < self.active_workspace_idx {
-            self.activate_workspace(self.active_workspace_idx - 1);
+            self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
         }
-
-        self.workspace_switch = None;
-        self.previous_workspace_id = previous_workspace_id;
 
         self.clean_up_workspaces();
     }

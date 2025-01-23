@@ -1522,17 +1522,16 @@ impl State {
                 output_name,
                 reference,
             } => {
-                if let Some((Some(output), old_idx)) =
+                if let Some((output, old_idx)) =
                     self.niri.find_output_and_workspace_index(reference)
                 {
                     if let Some(new_output) = self.niri.output_by_name_match(&output_name).cloned()
                     {
-                        if new_output != output {
-                            self.niri.layout.move_workspace_to_output_by_id(
-                                old_idx,
-                                output,
-                                new_output.clone(),
-                            );
+                        if self.niri.layout.move_workspace_to_output_by_id(
+                            old_idx,
+                            output,
+                            new_output.clone(),
+                        ) {
                             // Cursor warp already calls `queue_redraw_all`
                             if !self.maybe_warp_cursor_to_focus_centered() {
                                 self.move_cursor_to_output(&new_output);
