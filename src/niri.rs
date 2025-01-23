@@ -41,8 +41,8 @@ use smithay::desktop::utils::{
     under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
 use smithay::desktop::{
-    layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager, PopupUngrabStrategy,
-    Space, Window, WindowSurfaceType,
+    find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
+    PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
@@ -4905,6 +4905,22 @@ impl Niri {
             // FIXME: granular.
             self.queue_redraw_all();
         }
+    }
+
+    /// Tries to find and return the root shell surface for a given surface.
+    ///
+    /// I.e. for popups, this function will try to find the parent toplevel or layer surface. For
+    /// regular subsurfaces, it will find the root surface.
+    pub fn find_root_shell_surface(&self, surface: &WlSurface) -> WlSurface {
+        let Some(root) = self.root_surface.get(surface) else {
+            return surface.clone();
+        };
+
+        if let Some(popup) = self.popups.find_popup(root) {
+            return find_popup_root_surface(&popup).unwrap_or_else(|_| root.clone());
+        }
+
+        root.clone()
     }
 
     #[cfg(feature = "dbus")]
