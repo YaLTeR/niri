@@ -1169,12 +1169,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWorkspaceToIndexByRef { new_idx, reference } => {
-                if let Some((Some(output), old_idx)) =
-                    self.niri.find_output_and_workspace_index(reference)
-                {
-                    self.niri
-                        .layout
-                        .move_workspace_to_idx(Some((output, old_idx)), new_idx);
+                if let Some(res) = self.niri.find_output_and_workspace_index(reference) {
+                    self.niri.layout.move_workspace_to_idx(Some(res), new_idx);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }

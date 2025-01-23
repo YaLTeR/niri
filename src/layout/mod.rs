@@ -3800,11 +3800,25 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_workspace_up();
     }
 
-    pub fn move_workspace_to_idx(&mut self, reference: Option<(Output, usize)>, new_idx: usize) {
+    pub fn move_workspace_to_idx(
+        &mut self,
+        reference: Option<(Option<Output>, usize)>,
+        new_idx: usize,
+    ) {
         let (monitor, old_idx) = if let Some((output, old_idx)) = reference {
-            let Some(monitor) = self.monitor_for_output_mut(&output) else {
-                return;
+            let monitor = if let Some(output) = output {
+                let Some(monitor) = self.monitor_for_output_mut(&output) else {
+                    return;
+                };
+                monitor
+            } else {
+                // In case a numbered workspace reference is used, assume the active monitor
+                let Some(monitor) = self.active_monitor() else {
+                    return;
+                };
+                monitor
             };
+
             (monitor, old_idx)
         } else {
             let Some(monitor) = self.active_monitor() else {
@@ -5301,7 +5315,7 @@ mod tests {
                         return;
                     };
 
-                    layout.move_workspace_to_idx(Some((old_output, old_idx)), target_idx)
+                    layout.move_workspace_to_idx(Some((Some(old_output), old_idx)), target_idx)
                 }
                 Op::MoveWorkspaceToIndex {
                     ws_name: None,
