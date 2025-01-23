@@ -899,6 +899,8 @@ impl<W: LayoutElement> Monitor<W> {
             self.active_workspace_idx = self.active_workspace_idx.saturating_sub(1);
         }
 
+        self.workspace_switch = None;
+
         self.clean_up_workspaces();
     }
 
