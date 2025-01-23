@@ -3898,20 +3898,23 @@ impl<W: LayoutElement> Layout<W> {
         // the last empty workspace, then insert before.
         let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
         target.workspaces.insert(target_ws_idx, ws);
-        target.clean_up_workspaces();
 
         // Only switch active monitor if the workspace moved was the currently focused one on the current monitor
-        if current_idx == *active_monitor_idx && old_idx == current_active_ws_idx {
+        let res = if current_idx == *active_monitor_idx && old_idx == current_active_ws_idx {
             *active_monitor_idx = target_idx;
             target.active_workspace_idx = target_ws_idx;
-            target.workspace_switch = None;
             true
         } else {
             if target_ws_idx <= target.active_workspace_idx {
                 target.active_workspace_idx += 1;
             }
             false
-        }
+        };
+
+        target.workspace_switch = None;
+        target.clean_up_workspaces();
+
+        res
     }
 
     pub fn set_workspace_name(&mut self, name: String, reference: Option<WorkspaceReference>) {
