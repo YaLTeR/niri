@@ -190,6 +190,7 @@ pub trait LayoutElement {
     fn set_active_in_column(&mut self, active: bool);
     fn set_floating(&mut self, floating: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
+    fn is_ignoring_opacity_window_rule(&self) -> bool;
 
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
@@ -4346,6 +4347,10 @@ mod tests {
         }
 
         fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
+
+        fn is_ignoring_opacity_window_rule(&self) -> bool {
+            false
+        }
 
         fn configure_intent(&self) -> ConfigureIntent {
             ConfigureIntent::CanSend
