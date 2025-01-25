@@ -96,7 +96,7 @@ jobs:
     strategy:
       fail-fast: false
 
-    name: 'msrv - 1.80.1'
+    name: msrv
     runs-on: ubuntu-24.04
 
     steps:
