@@ -374,6 +374,7 @@ pub enum Action {
         /// New index for the workspace.
         #[cfg_attr(feature = "clap", arg())]
         index: usize,
+
         /// Reference (index or name) of the workspace to move.
         ///
         /// If `None`, uses the focused workspace.
@@ -543,6 +544,7 @@ pub enum Action {
         /// The target output name.
         #[cfg_attr(feature = "clap", arg())]
         output: String,
+
         // Reference (index or name) of the workspace to move.
         ///
         /// If `None`, uses the focused workspace.
