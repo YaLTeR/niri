@@ -1818,6 +1818,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             &mut source_col.tiles[source_tile_idx],
             &mut target_col.tiles[target_tile_idx],
         );
+        std::mem::swap(
+            &mut source_col.data[source_tile_idx],
+            &mut target_col.data[target_tile_idx],
+        );
 
         // Animations
         let (source_tile, target_tile) = (
