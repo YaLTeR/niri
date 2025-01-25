@@ -3899,7 +3899,8 @@ impl<W: LayoutElement> Layout<W> {
         let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
         target.workspaces.insert(target_ws_idx, ws);
 
-        // Only switch active monitor if the workspace moved was the currently focused one on the current monitor
+        // Only switch active monitor if the workspace moved was the currently focused one on the
+        // current monitor
         let res = if current_idx == *active_monitor_idx && old_idx == current_active_ws_idx {
             *active_monitor_idx = target_idx;
             target.active_workspace_idx = target_ws_idx;

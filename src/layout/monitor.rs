@@ -892,7 +892,8 @@ impl<W: LayoutElement> Monitor<W> {
         // Only refocus the workspace if it was already focused
         if self.active_workspace_idx == old_idx {
             self.active_workspace_idx = new_idx;
-        // If the workspace order was switched so that the current workspace moved down the workspace stack, focus correctly
+        // If the workspace order was switched so that the current workspace moved down the
+        // workspace stack, focus correctly
         } else if new_idx <= self.active_workspace_idx && old_idx > self.active_workspace_idx {
             self.active_workspace_idx += 1;
         } else if new_idx >= self.active_workspace_idx && old_idx < self.active_workspace_idx {
