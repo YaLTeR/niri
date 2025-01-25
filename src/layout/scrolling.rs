@@ -1835,6 +1835,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         source_tile.request_tile_size(target_tile.tile_size(), true, Some(transaction.clone()));
         target_tile.request_tile_size(source_tile.tile_size(), true, Some(transaction));
 
+        // mark the animation on the two tiles as having no effect on their
+        // sibling tiles
+        source_tile.inhibit_sibling_move_on_resize.replace(());
+        target_tile.inhibit_sibling_move_on_resize.replace(());
+
         self.activate_column(target_column_idx);
     }
 
@@ -3251,7 +3256,10 @@ impl<W: LayoutElement> Column<W> {
         // windows in the column, so they should all be animated. How should this interact with
         // animated vs. non-animated resizes? For example, an animated +20 resize followed by two
         // non-animated -10 resizes.
-        if tile.resize_animation().is_some() && offset != 0. {
+        if tile.resize_animation().is_some()
+            && tile.inhibit_sibling_move_on_resize.take().is_none()
+            && offset != 0.
+        {
             for tile in &mut self.tiles[tile_idx + 1..] {
                 tile.animate_move_y_from_with_config(
                     offset,

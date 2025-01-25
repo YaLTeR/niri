@@ -106,6 +106,10 @@ pub struct Tile<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
+
+    /// Marker to indicate that the resize animation should not propagate
+    /// to other tiles below in the same column
+    pub(super) inhibit_sibling_move_on_resize: Option<()>,
 }
 
 niri_render_elements! {
@@ -175,6 +179,7 @@ impl<W: LayoutElement> Tile<W> {
             scale,
             clock,
             options,
+            inhibit_sibling_move_on_resize: None,
         }
     }
 
