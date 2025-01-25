@@ -365,6 +365,22 @@ pub enum Action {
     MoveWorkspaceDown {},
     /// Move the focused workspace up.
     MoveWorkspaceUp {},
+    /// Move a workspace to a specific index on its monitor.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move the focused workspace to a specific index on its monitor")
+    )]
+    MoveWorkspaceToIndex {
+        /// New index for the workspace.
+        #[cfg_attr(feature = "clap", arg())]
+        index: usize,
+
+        /// Reference (index or name) of the workspace to move.
+        ///
+        /// If `None`, uses the focused workspace.
+        #[cfg_attr(feature = "clap", arg(long))]
+        reference: Option<WorkspaceReferenceArg>,
+    },
     /// Set the name of a workspace.
     #[cfg_attr(
         feature = "clap",
@@ -519,6 +535,22 @@ pub enum Action {
     MoveWorkspaceToMonitorPrevious {},
     /// Move the focused workspace to the next monitor.
     MoveWorkspaceToMonitorNext {},
+    /// Move a workspace to a specific monitor.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move the focused workspace to a specific monitor")
+    )]
+    MoveWorkspaceToMonitor {
+        /// The target output name.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+
+        // Reference (index or name) of the workspace to move.
+        ///
+        /// If `None`, uses the focused workspace.
+        #[cfg_attr(feature = "clap", arg(long))]
+        reference: Option<WorkspaceReferenceArg>,
+    },
     /// Toggle a debug tint on windows.
     ToggleDebugTint {},
     /// Toggle visualization of render element opaque regions.

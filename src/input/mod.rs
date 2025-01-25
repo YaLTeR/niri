@@ -1163,6 +1163,18 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::MoveWorkspaceToIndex(new_idx) => {
+                self.niri.layout.move_workspace_to_idx(None, new_idx);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MoveWorkspaceToIndexByRef { new_idx, reference } => {
+                if let Some(res) = self.niri.find_output_and_workspace_index(reference) {
+                    self.niri.layout.move_workspace_to_idx(Some(res), new_idx);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::SetWorkspaceName(name) => {
                 self.niri.layout.set_workspace_name(name, None);
             }
@@ -1494,6 +1506,37 @@ impl State {
                     self.niri.layout.move_workspace_to_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
+                    }
+                }
+            }
+            Action::MoveWorkspaceToMonitor(new_output) => {
+                if let Some(new_output) = self.niri.output_by_name_match(&new_output).cloned() {
+                    if self.niri.layout.move_workspace_to_output(&new_output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&new_output);
+                    }
+                }
+            }
+            Action::MoveWorkspaceToMonitorByRef {
+                output_name,
+                reference,
+            } => {
+                if let Some((output, old_idx)) =
+                    self.niri.find_output_and_workspace_index(reference)
+                {
+                    if let Some(new_output) = self.niri.output_by_name_match(&output_name).cloned()
+                    {
+                        if self.niri.layout.move_workspace_to_output_by_id(
+                            old_idx,
+                            output,
+                            new_output.clone(),
+                        ) {
+                            // Cursor warp already calls `queue_redraw_all`
+                            if !self.maybe_warp_cursor_to_focus_centered() {
+                                self.move_cursor_to_output(&new_output);
+                            }
+                        }
                     }
                 }
             }
