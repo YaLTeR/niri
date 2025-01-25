@@ -29,7 +29,7 @@
 //! compromise we only keep the first workspace there, and move the rest to the primary output,
 //! making the primary output their original output.
 
-use std::cmp::{min, Ordering};
+use std::cmp::min;
 use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
@@ -3854,6 +3854,15 @@ impl<W: LayoutElement> Layout<W> {
         } else {
             *active_monitor_idx
         };
+        let target_idx = monitors
+            .iter()
+            .position(|mon| mon.output == new_output)
+            .unwrap();
+
+        if current_idx == target_idx {
+            return false;
+        }
+
         let current = &mut monitors[current_idx];
         let current_active_ws_idx = current.active_workspace_idx;
 
@@ -3861,20 +3870,15 @@ impl<W: LayoutElement> Layout<W> {
             // Insert a new empty workspace.
             current.add_workspace_bottom();
         }
+
+        let mut ws = current.workspaces.remove(old_idx);
+
         if current.options.empty_workspace_above_first && old_idx == 0 {
             current.add_workspace_top();
         }
 
-        let mut ws = current.workspaces.remove(old_idx);
-
-        match old_idx.cmp(&current.active_workspace_idx) {
-            Ordering::Equal => {
-                current.active_workspace_idx = old_idx.saturating_sub(1);
-            }
-            Ordering::Less => {
-                current.active_workspace_idx = current.active_workspace_idx.saturating_sub(1);
-            }
-            Ordering::Greater => (),
+        if old_idx < current.active_workspace_idx {
+            current.active_workspace_idx -= 1;
         }
         current.workspace_switch = None;
         current.clean_up_workspaces();
@@ -3882,10 +3886,6 @@ impl<W: LayoutElement> Layout<W> {
         ws.set_output(Some(new_output.clone()));
         ws.original_output = OutputId::new(&new_output);
 
-        let target_idx = monitors
-            .iter()
-            .position(|mon| mon.output == new_output)
-            .unwrap();
         let target = &mut monitors[target_idx];
 
         target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
@@ -7194,6 +7194,38 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn move_workspace_to_same_monitor_doesnt_reorder() {
+        let ops = [
+            Op::AddOutput(0),
+            Op::SetWorkspaceName {
+                new_ws_name: 0,
+                ws_name: None,
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(0),
+            },
+            Op::FocusWorkspaceDown,
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::MoveWorkspaceToMonitor {
+                ws_name: Some(0),
+                output_id: 0,
+            },
+        ];
+
+        let layout = check_ops(&ops);
+        let counts: Vec<_> = layout
+            .workspaces()
+            .map(|(_, _, ws)| ws.windows().count())
+            .collect();
+        assert_eq!(counts, &[1, 2, 0]);
     }
 
     fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
