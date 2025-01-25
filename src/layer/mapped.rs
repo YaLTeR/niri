@@ -1,16 +1,17 @@
-use std::cell::RefCell;
-
 use niri_config::layer_rule::LayerRule;
+use niri_config::Config;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::Kind;
 use smithay::desktop::{LayerSurface, PopupManager};
-use smithay::utils::{Logical, Rectangle, Scale};
+use smithay::utils::{Logical, Point, Scale, Size};
 
 use super::ResolvedLayerRules;
+use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::{RenderTarget, SplitElements};
 
@@ -23,23 +24,57 @@ pub struct MappedLayer {
     rules: ResolvedLayerRules,
 
     /// Buffer to draw instead of the surface when it should be blocked out.
-    block_out_buffer: RefCell<SolidColorBuffer>,
+    block_out_buffer: SolidColorBuffer,
+
+    /// The shadow around the surface.
+    shadow: Shadow,
 }
 
 niri_render_elements! {
     LayerSurfaceRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
+        Shadow = ShadowRenderElement,
     }
 }
 
 impl MappedLayer {
-    pub fn new(surface: LayerSurface, rules: ResolvedLayerRules) -> Self {
+    pub fn new(surface: LayerSurface, rules: ResolvedLayerRules, config: &Config) -> Self {
+        let mut shadow_config = config.layout.shadow;
+        // Shadows for layer surfaces need to be explicitly enabled.
+        shadow_config.on = false;
+        let shadow_config = rules.shadow.resolve_against(shadow_config);
+
         Self {
             surface,
             rules,
-            block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
+            block_out_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            shadow: Shadow::new(shadow_config),
         }
+    }
+
+    pub fn update_config(&mut self, config: &Config) {
+        let mut shadow_config = config.layout.shadow;
+        // Shadows for layer surfaces need to be explicitly enabled.
+        shadow_config.on = false;
+        let shadow_config = self.rules.shadow.resolve_against(shadow_config);
+        self.shadow.update_config(shadow_config);
+    }
+
+    pub fn update_shaders(&mut self) {
+        self.shadow.update_shaders();
+    }
+
+    pub fn update_render_elements(&mut self, size: Size<f64, Logical>, scale: Scale<f64>) {
+        // Round to physical pixels.
+        let size = size.to_physical_precise_round(scale).to_logical(scale);
+
+        self.block_out_buffer.resize(size);
+
+        let radius = self.rules.geometry_corner_radius.unwrap_or_default();
+        // FIXME: is_active based on keyboard focus?
+        self.shadow
+            .update_render_elements(size, true, radius, scale.x);
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -64,7 +99,7 @@ impl MappedLayer {
     pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        geometry: Rectangle<i32, Logical>,
+        location: Point<f64, Logical>,
         scale: Scale<f64>,
         target: RenderTarget,
     ) -> SplitElements<LayerSurfaceRenderElement<R>> {
@@ -74,23 +109,19 @@ impl MappedLayer {
 
         if target.should_block_out(self.rules.block_out_from) {
             // Round to physical pixels.
-            let geometry = geometry
-                .to_f64()
-                .to_physical_precise_round(scale)
-                .to_logical(scale);
+            let location = location.to_physical_precise_round(scale).to_logical(scale);
 
-            let mut buffer = self.block_out_buffer.borrow_mut();
-            buffer.resize(geometry.size.to_f64());
+            // FIXME: take geometry-corner-radius into account.
             let elem = SolidColorRenderElement::from_buffer(
-                &buffer,
-                geometry.loc,
+                &self.block_out_buffer,
+                location,
                 alpha,
                 Kind::Unspecified,
             );
             rv.normal.push(elem.into());
         } else {
             // Layer surfaces don't have extra geometry like windows.
-            let buf_pos = geometry.loc;
+            let buf_pos = location;
 
             let surface = self.surface.wl_surface();
             for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
@@ -100,7 +131,7 @@ impl MappedLayer {
                 rv.popups.extend(render_elements_from_surface_tree(
                     renderer,
                     popup.wl_surface(),
-                    (buf_pos + offset).to_physical_precise_round(scale),
+                    (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                     scale,
                     alpha,
                     Kind::Unspecified,
@@ -116,6 +147,10 @@ impl MappedLayer {
                 Kind::Unspecified,
             );
         }
+
+        let location = location.to_physical_precise_round(scale).to_logical(scale);
+        rv.normal
+            .extend(self.shadow.render(renderer, location).map(Into::into));
 
         rv
     }

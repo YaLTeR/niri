@@ -1,5 +1,5 @@
 use niri_config::layer_rule::{LayerRule, Match};
-use niri_config::BlockOutFrom;
+use niri_config::{BlockOutFrom, CornerRadius, ShadowRule};
 use smithay::desktop::LayerSurface;
 
 pub mod mapped;
@@ -8,10 +8,17 @@ pub use mapped::MappedLayer;
 /// Rules fully resolved for a layer-shell surface.
 #[derive(Debug, PartialEq)]
 pub struct ResolvedLayerRules {
-    /// Extra opacity to draw this window with.
+    /// Extra opacity to draw this layer surface with.
     pub opacity: Option<f32>,
-    /// Whether to block out this window from certain render targets.
+
+    /// Whether to block out this layer surface from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
+
+    /// Shadow overrides.
+    pub shadow: ShadowRule,
+
+    /// Corner radius to assume this layer surface has.
+    pub geometry_corner_radius: Option<CornerRadius>,
 }
 
 impl ResolvedLayerRules {
@@ -19,6 +26,17 @@ impl ResolvedLayerRules {
         Self {
             opacity: None,
             block_out_from: None,
+            shadow: ShadowRule {
+                off: false,
+                on: false,
+                offset: None,
+                softness: None,
+                spread: None,
+                draw_behind_window: None,
+                color: None,
+                inactive_color: None,
+            },
+            geometry_corner_radius: None,
         }
     }
 
@@ -52,6 +70,11 @@ impl ResolvedLayerRules {
             if let Some(x) = rule.block_out_from {
                 resolved.block_out_from = Some(x);
             }
+            if let Some(x) = rule.geometry_corner_radius {
+                resolved.geometry_corner_radius = Some(x);
+            }
+
+            resolved.shadow.merge_with(&rule.shadow);
         }
 
         resolved

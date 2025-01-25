@@ -267,7 +267,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= offset + tile.render_offset();
-            tile.update(is_active, tile_view_rect);
+            tile.update_render_elements(is_active, tile_view_rect);
         }
     }
 
@@ -363,6 +363,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
             .iter()
             .find(|tile| tile.window().id() == id)
             .map(Tile::window)
+    }
+
+    pub fn active_window_mut(&mut self) -> Option<&mut W> {
+        let id = self.active_window_id.as_ref()?;
+        self.tiles
+            .iter_mut()
+            .find(|tile| tile.window().id() == id)
+            .map(Tile::window_mut)
     }
 
     pub fn has_window(&self, id: &W::Id) -> bool {

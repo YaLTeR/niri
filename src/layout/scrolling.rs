@@ -383,6 +383,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         Some(col.tiles[col.active_tile_idx].window())
     }
 
+    pub fn active_window_mut(&mut self) -> Option<&mut W> {
+        if self.columns.is_empty() {
+            return None;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        Some(col.tiles[col.active_tile_idx].window_mut())
+    }
+
     pub fn active_tile_mut(&mut self) -> Option<&mut Tile<W>> {
         if self.columns.is_empty() {
             return None;
@@ -3152,7 +3161,7 @@ impl<W: LayoutElement> Column<W> {
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= tile_off + tile.render_offset();
-            tile.update(is_active, tile_view_rect);
+            tile.update_render_elements(is_active, tile_view_rect);
         }
     }
 

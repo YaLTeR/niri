@@ -224,6 +224,10 @@ impl LayoutElement for TestWindow {
 
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
+    fn is_ignoring_opacity_window_rule(&self) -> bool {
+        false
+    }
+
     fn configure_intent(&self) -> ConfigureIntent {
         ConfigureIntent::CanSend
     }

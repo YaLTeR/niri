@@ -41,8 +41,8 @@ use smithay::desktop::utils::{
     under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
 };
 use smithay::desktop::{
-    layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager, PopupUngrabStrategy,
-    Space, Window, WindowSurfaceType,
+    find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
+    PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
 use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
@@ -1097,6 +1097,9 @@ impl State {
         }
 
         self.niri.layout.update_config(&config);
+        for mapped in self.niri.mapped_layer_surfaces.values_mut() {
+            mapped.update_config(&config);
+        }
 
         // Create new named workspaces.
         for ws_config in &config.workspaces {
@@ -1260,7 +1263,7 @@ impl State {
         }
 
         if shaders_changed {
-            self.niri.layout.update_shaders();
+            self.niri.update_shaders();
         }
 
         if cursor_inactivity_timeout_changed {
@@ -1807,7 +1810,13 @@ impl Niri {
         let idle_notifier_state = IdleNotifierState::new(&display_handle, event_loop.clone());
         let idle_inhibit_manager_state = IdleInhibitManagerState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
-        let primary_selection_state = PrimarySelectionState::new::<State>(&display_handle);
+        let primary_selection_state =
+            PrimarySelectionState::new_with_filter::<State, _>(&display_handle, |client| {
+                !client
+                    .get_data::<ClientState>()
+                    .unwrap()
+                    .primary_selection_disabled
+            });
         let data_control_state = DataControlState::new::<State, _>(
             &display_handle,
             Some(&primary_selection_state),
@@ -1927,6 +1936,7 @@ impl Niri {
                 let data = Arc::new(ClientState {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
+                    primary_selection_disabled: config.clipboard.disable_primary,
                     restricted: false,
                     credentials_unknown: false,
                 });
@@ -3248,7 +3258,27 @@ impl Niri {
                 if let Some(transition) = &mut state.screen_transition {
                     transition.update_render_elements(scale, transform);
                 }
+
+                let layer_map = layer_map_for_output(out);
+                for surface in layer_map.layers() {
+                    let Some(mapped) = self.mapped_layer_surfaces.get_mut(surface) else {
+                        continue;
+                    };
+                    let Some(geo) = layer_map.layer_geometry(surface) else {
+                        continue;
+                    };
+
+                    mapped.update_render_elements(geo.size.to_f64(), scale);
+                }
             }
+        }
+    }
+
+    pub fn update_shaders(&mut self) {
+        self.layout.update_shaders();
+
+        for mapped in self.mapped_layer_surfaces.values_mut() {
+            mapped.update_shaders();
         }
     }
 
@@ -3440,7 +3470,7 @@ impl Niri {
             Some((mapped, geo))
         });
         for (mapped, geo) in iter {
-            elements.extend(mapped.render(renderer, geo, scale, target));
+            elements.extend(mapped.render(renderer, geo.loc.to_f64(), scale, target));
         }
     }
 
@@ -4574,7 +4604,7 @@ impl Niri {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let alpha = if mapped.is_fullscreen() {
+        let alpha = if mapped.is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
             1.
         } else {
             mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
@@ -4884,6 +4914,22 @@ impl Niri {
         }
     }
 
+    /// Tries to find and return the root shell surface for a given surface.
+    ///
+    /// I.e. for popups, this function will try to find the parent toplevel or layer surface. For
+    /// regular subsurfaces, it will find the root surface.
+    pub fn find_root_shell_surface(&self, surface: &WlSurface) -> WlSurface {
+        let Some(root) = self.root_surface.get(surface) else {
+            return surface.clone();
+        };
+
+        if let Some(popup) = self.popups.find_popup(root) {
+            return find_popup_root_surface(&popup).unwrap_or_else(|_| root.clone());
+        }
+
+        root.clone()
+    }
+
     #[cfg(feature = "dbus")]
     pub fn on_ipc_outputs_changed(&self) {
         let _span = tracy_client::span!("Niri::on_ipc_outputs_changed");
@@ -5081,11 +5127,13 @@ impl Niri {
 
         let mut changed = false;
         {
-            let rules = &self.config.borrow().layer_rules;
+            let config = self.config.borrow();
+            let rules = &config.layer_rules;
 
             for mapped in self.mapped_layer_surfaces.values_mut() {
                 if mapped.recompute_layer_rules(rules, self.is_at_startup) {
                     changed = true;
+                    mapped.update_config(&config);
                 }
             }
         }
@@ -5126,6 +5174,7 @@ impl Niri {
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
     pub can_view_decoration_globals: bool,
+    pub primary_selection_disabled: bool,
     /// Whether this client is denied from the restricted protocols such as security-context.
     pub restricted: bool,
     /// We cannot retrieve this client's socket credentials.

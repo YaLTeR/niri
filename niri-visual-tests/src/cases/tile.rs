@@ -112,7 +112,7 @@ impl TestCase for Tile {
         let tile_size = self.tile.tile_size().to_physical(1.);
         let location = Point::from((size.w - tile_size.w, size.h - tile_size.h)).downscale(2.);
 
-        self.tile.update(
+        self.tile.update_render_elements(
             true,
             Rectangle::new(Point::from((-location.x, -location.y)), size.to_logical(1.)),
         );

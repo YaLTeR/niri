@@ -53,6 +53,8 @@ pub struct Config {
     ]
     pub screenshot_path: Option<String>,
     #[knuffel(child, default)]
+    pub clipboard: Clipboard,
+    #[knuffel(child, default)]
     pub hotkey_overlay: HotkeyOverlay,
     #[knuffel(child, default)]
     pub animations: Animations,
@@ -785,6 +787,12 @@ pub struct HotkeyOverlay {
     pub skip_at_startup: bool,
 }
 
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Clipboard {
+    #[knuffel(child)]
+    pub disable_primary: bool,
+}
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Animations {
     #[knuffel(child)]
@@ -1079,6 +1087,8 @@ pub struct WindowRule {
     pub variable_refresh_rate: Option<bool>,
     #[knuffel(child)]
     pub default_floating_position: Option<FloatingPosition>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor: Option<FloatOrInt<0, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -1348,6 +1358,18 @@ pub enum Action {
     MoveColumnToWorkspace(#[knuffel(argument)] WorkspaceReference),
     MoveWorkspaceDown,
     MoveWorkspaceUp,
+    MoveWorkspaceToIndex(#[knuffel(argument)] usize),
+    #[knuffel(skip)]
+    MoveWorkspaceToIndexByRef {
+        new_idx: usize,
+        reference: WorkspaceReference,
+    },
+    #[knuffel(skip)]
+    MoveWorkspaceToMonitorByRef {
+        output_name: String,
+        reference: WorkspaceReference,
+    },
+    MoveWorkspaceToMonitor(#[knuffel(argument)] String),
     SetWorkspaceName(#[knuffel(argument)] String),
     #[knuffel(skip)]
     SetWorkspaceNameByRef {
@@ -1425,6 +1447,9 @@ pub enum Action {
         x: PositionChange,
         y: PositionChange,
     },
+    ToggleWindowRuleOpacity,
+    #[knuffel(skip)]
+    ToggleWindowRuleOpacityById(u64),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1599,6 +1624,28 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWorkspaceToMonitorPrevious {} => {
                 Self::MoveWorkspaceToMonitorPrevious
             }
+            niri_ipc::Action::MoveWorkspaceToIndex {
+                index,
+                reference: Some(reference),
+            } => Self::MoveWorkspaceToIndexByRef {
+                new_idx: index,
+                reference: WorkspaceReference::from(reference),
+            },
+            niri_ipc::Action::MoveWorkspaceToIndex {
+                index,
+                reference: None,
+            } => Self::MoveWorkspaceToIndex(index),
+            niri_ipc::Action::MoveWorkspaceToMonitor {
+                output,
+                reference: Some(reference),
+            } => Self::MoveWorkspaceToMonitorByRef {
+                output_name: output,
+                reference: WorkspaceReference::from(reference),
+            },
+            niri_ipc::Action::MoveWorkspaceToMonitor {
+                output,
+                reference: None,
+            } => Self::MoveWorkspaceToMonitor(output),
             niri_ipc::Action::MoveWorkspaceToMonitorNext {} => Self::MoveWorkspaceToMonitorNext,
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
@@ -1622,6 +1669,10 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::MoveFloatingWindow { id, x, y } => {
                 Self::MoveFloatingWindowById { id, x, y }
+            }
+            niri_ipc::Action::ToggleWindowRuleOpacity { id: None } => Self::ToggleWindowRuleOpacity,
+            niri_ipc::Action::ToggleWindowRuleOpacity { id: Some(id) } => {
+                Self::ToggleWindowRuleOpacityById(id)
             }
         }
     }
@@ -3423,6 +3474,10 @@ mod tests {
 
             screenshot-path "~/Screenshots/screenshot.png"
 
+            clipboard {
+                disable-primary
+            }
+
             hotkey-overlay {
                 skip-at-startup
             }
@@ -3677,6 +3732,9 @@ mod tests {
                     hide_after_inactive_ms: Some(3000),
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
+                clipboard: Clipboard {
+                    disable_primary: true,
+                },
                 hotkey_overlay: HotkeyOverlay {
                     skip_at_startup: true,
                 },
@@ -3778,6 +3836,8 @@ mod tests {
                         excludes: vec![],
                         opacity: None,
                         block_out_from: Some(BlockOutFrom::Screencast),
+                        shadow: ShadowRule::default(),
+                        geometry_corner_radius: None,
                     }
                 ],
                 workspaces: vec![
