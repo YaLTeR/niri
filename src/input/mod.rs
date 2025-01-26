@@ -17,7 +17,7 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
+use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -691,6 +691,14 @@ impl State {
                 keyboard.with_xkb_state(self, |mut state| match action {
                     LayoutSwitchTarget::Next => state.cycle_next_layout(),
                     LayoutSwitchTarget::Prev => state.cycle_prev_layout(),
+                    LayoutSwitchTarget::Index(layout) => {
+                        let num_layouts = state.xkb().lock().unwrap().layouts().count();
+                        if usize::from(layout) >= num_layouts {
+                            warn!("requested layout doesn't exist")
+                        } else {
+                            state.set_layout(Layout(layout.into()))
+                        }
+                    }
                 });
             }
             Action::MoveColumnLeft => {
