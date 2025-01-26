@@ -9,6 +9,8 @@ on:
 
 env:
   RUN_SLOW_TESTS: 1
+  DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
+  DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
 
 jobs:
   build:
@@ -33,7 +35,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
+          sudo apt-get install -y ${{ env.DEPS_APT }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -68,6 +70,41 @@ jobs:
       - name: Test
         run: cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
 
+  # Job that runs randomized tests for a longer period of time.
+  randomized-tests:
+    strategy:
+      fail-fast: false
+
+    name: randomized tests
+    runs-on: ubuntu-24.04
+
+    env:
+      RUST_BACKTRACE: 1
+      PROPTEST_CASES: 200000
+      PROPTEST_MAX_LOCAL_REJECTS: 200000
+      PROPTEST_MAX_GLOBAL_REJECTS: 200000
+      PROPTEST_MAX_SHRINK_ITERS: 200000
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build tests
+        run: cargo test --no-run --all --exclude niri-visual-tests --release
+
+      - name: Test
+        run: cargo test --all --exclude niri-visual-tests --release
+
   visual-tests:
     strategy:
       fail-fast: false
@@ -83,7 +120,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev libadwaita-1-dev
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -107,7 +144,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev libadwaita-1-dev
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
       - uses: dtolnay/rust-toolchain@1.80.1
 
@@ -130,7 +167,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev libadwaita-1-dev
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -168,7 +205,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo dnf update -y
-          sudo dnf install -y cargo gcc libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel clang libdisplay-info-devel libadwaita-devel
+          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
 
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --all
