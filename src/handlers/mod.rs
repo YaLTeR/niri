@@ -343,13 +343,12 @@ impl ClientDndGrabHandler for State {
         // example. On successful drop, additionally activate the target window.
         let mut activate_output = true;
         if let Some(target) = validated.then_some(target).flatten() {
-            if let Some(root) = self.niri.root_surface.get(&target) {
-                if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
-                    let window = mapped.window.clone();
-                    self.niri.layout.activate_window(&window);
-                    self.niri.layer_shell_on_demand_focus = None;
-                    activate_output = false;
-                }
+            let root = self.niri.find_root_shell_surface(&target);
+            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&root) {
+                let window = mapped.window.clone();
+                self.niri.layout.activate_window(&window);
+                self.niri.layer_shell_on_demand_focus = None;
+                activate_output = false;
             }
         }
 
@@ -476,6 +475,7 @@ impl SecurityContextHandler for State {
                 let data = Arc::new(ClientState {
                     compositor_state: Default::default(),
                     can_view_decoration_globals: config.prefer_no_csd,
+                    primary_selection_disabled: config.clipboard.disable_primary,
                     restricted: true,
                     credentials_unknown: false,
                 });

@@ -310,7 +310,7 @@ impl<W: LayoutElement> Tile<W> {
             || self.move_y_animation.is_some()
     }
 
-    pub fn update(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
 
         let draw_border_with_background = rules
@@ -720,7 +720,7 @@ impl<W: LayoutElement> Tile<W> {
     ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render_inner");
 
-        let alpha = if self.is_fullscreen {
+        let alpha = if self.is_fullscreen || self.window.is_ignoring_opacity_window_rule() {
             1.
         } else {
             self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)

@@ -53,6 +53,7 @@ window-rule {
     // block-out-from "screen-capture"
     variable-refresh-rate true
     default-floating-position x=100 y=200 relative-to="bottom-left"
+    scroll-factor 0.75
 
     focus-ring {
         // off
@@ -70,6 +71,7 @@ window-rule {
 
     shadow {
         // on
+        off
         softness 40
         spread 5
         offset x=0 y=5
@@ -491,6 +493,8 @@ This is applied on top of the window's own opacity, so semitransparent windows w
 
 Opacity is applied to every surface of the window individually, so subsurfaces and pop-up menus will show window content behind them.
 
+Opacity can be toggled on or off for a window using the [`toggle-window-rule-opacity`](./Configuration:-Key-Bindings.md) action.
+
 ![Screenshot showing Adwaita Demo with a semitransparent pop-up menu.](./img/opacity-popup.png)
 
 Also, focus ring and border with background will show through semitransparent windows (see `prefer-no-csd` and the `draw-border-with-background` window rule below).
@@ -551,6 +555,23 @@ window-rule {
     match app-id="firefox$" title="^Picture-in-Picture$"
 
     default-floating-position x=32 y=32 relative-to="bottom-left"
+}
+```
+
+#### `scroll-factor`
+
+<sup>Since: next release</sup>
+
+Set a scroll factor for all scroll events sent to a window.
+
+This will be multiplied with the scroll factor set for your input device in the [input](/wiki/Configuration:-Input.md) section.
+
+```kdl
+// Make scrolling in Firefox a bit slower.
+window-rule {
+    match app-id="firefox$"
+
+    scroll-factor 0.75
 }
 ```
 

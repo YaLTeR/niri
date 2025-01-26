@@ -25,6 +25,10 @@ cursor {
     hide-after-inactive-ms 1000
 }
 
+clipboard {
+    disable-primary
+}
+
 hotkey-overlay {
     skip-at-startup
 }
@@ -131,6 +135,19 @@ If set, the cursor will automatically hide once this number of milliseconds pass
 cursor {
     // Hide the cursor after one second of inactivity.
     hide-after-inactive-ms 1000
+}
+```
+
+### `clipboard`
+
+Clipboard settings.
+
+Set the `disable-primary` flag to disable the primary clipboard (middle-click paste).
+Toggling this flag will only apply to applications started afterward.
+
+```kdl
+clipboard {
+    disable-primary
 }
 ```
 

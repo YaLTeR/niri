@@ -547,7 +547,7 @@ impl Tty {
             }
             drop(config);
 
-            niri.layout.update_shaders();
+            niri.update_shaders();
 
             // Create the dmabuf global.
             let primary_formats = renderer.dmabuf_formats();

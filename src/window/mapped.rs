@@ -69,6 +69,9 @@ pub struct Mapped {
     /// Whether this window is floating.
     is_floating: bool,
 
+    /// Whether this window should ignore opacity set through window rules.
+    ignore_opacity_window_rule: bool,
+
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
 
@@ -170,6 +173,7 @@ impl Mapped {
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
+            ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
             animate_serials: Vec::new(),
@@ -194,6 +198,12 @@ impl Mapped {
         let new_rules = ResolvedWindowRules::compute(rules, WindowRef::Mapped(self), is_at_startup);
         if new_rules == self.rules {
             return false;
+        }
+
+        // If the opacity window rule no longer makes the window semitransparent, reset the ignore
+        // flag to reduce surprises down the line.
+        if !new_rules.opacity.is_some_and(|o| o < 1.) {
+            self.ignore_opacity_window_rule = false;
         }
 
         self.rules = new_rules;
@@ -230,6 +240,10 @@ impl Mapped {
 
     pub fn is_floating(&self) -> bool {
         self.is_floating
+    }
+
+    pub fn toggle_ignore_opacity_window_rule(&mut self) {
+        self.ignore_opacity_window_rule = !self.ignore_opacity_window_rule;
     }
 
     pub fn set_is_focused(&mut self, is_focused: bool) {
@@ -849,6 +863,10 @@ impl LayoutElement for Mapped {
     fn is_pending_fullscreen(&self) -> bool {
         self.toplevel()
             .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
+    }
+
+    fn is_ignoring_opacity_window_rule(&self) -> bool {
+        self.ignore_opacity_window_rule
     }
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {

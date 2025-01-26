@@ -132,10 +132,11 @@ impl State {
 
                     // Resolve rules for newly mapped layer surfaces.
                     if was_unmapped {
-                        let rules = &self.niri.config.borrow().layer_rules;
+                        let config = self.niri.config.borrow();
+                        let rules = &config.layer_rules;
                         let rules =
                             ResolvedLayerRules::compute(rules, layer, self.niri.is_at_startup);
-                        let mapped = MappedLayer::new(layer.clone(), rules);
+                        let mapped = MappedLayer::new(layer.clone(), rules, &config);
                         let prev = self
                             .niri
                             .mapped_layer_surfaces
