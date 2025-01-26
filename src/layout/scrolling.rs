@@ -1840,9 +1840,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         source_tile.animate_move_from(source_pt - target_pt);
         target_tile.animate_move_from(target_pt - source_pt);
 
+        // tile size swap
+        let (source_sz, target_sz) = (source_tile.tile_size(), target_tile.tile_size());
         let transaction = Transaction::new();
-        source_tile.request_tile_size(target_tile.tile_size(), true, Some(transaction.clone()));
-        target_tile.request_tile_size(source_tile.tile_size(), true, Some(transaction));
+        source_tile.request_tile_size(target_sz, true, Some(transaction.clone()));
+        target_tile.request_tile_size(source_sz, true, Some(transaction));
 
         // mark the animation on the two tiles as having no effect on their
         // sibling tiles
