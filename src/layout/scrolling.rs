@@ -1827,10 +1827,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             &mut source_col.tiles[source_tile_idx],
             &mut target_col.tiles[target_tile_idx],
         );
-        std::mem::swap(
-            &mut source_col.data[source_tile_idx],
-            &mut target_col.data[target_tile_idx],
-        );
+        // std::mem::swap(
+        //     &mut source_col.data[source_tile_idx],
+        //     &mut target_col.data[target_tile_idx],
+        // );
 
         // Animations
         let (source_tile, target_tile) = (
@@ -1844,12 +1844,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let (source_sz, target_sz) = (source_tile.tile_size(), target_tile.tile_size());
         let transaction = Transaction::new();
         source_tile.request_tile_size(target_sz, true, Some(transaction.clone()));
-        target_tile.request_tile_size(source_sz, true, Some(transaction));
+        target_tile.request_tile_size(source_sz, true, Some(transaction.clone()));
 
         // mark the animation on the two tiles as having no effect on their
         // sibling tiles
         source_tile.inhibit_sibling_move_on_resize.replace(());
         target_tile.inhibit_sibling_move_on_resize.replace(());
+
+        // recompute all sizes in changed columns
+        source_col.update_tile_sizes_with_transaction(false, transaction.clone());
+        target_col.update_tile_sizes_with_transaction(false, transaction);
+
+        // update all data caches for changed tiles and columns
+        source_col.data[source_tile_idx].update(&source_col.tiles[source_tile_idx]);
+        target_col.data[target_tile_idx].update(&target_col.tiles[target_tile_idx]);
+        self.data[source_column_idx].update(&source_col);
+        self.data[target_column_idx].update(&target_col);
 
         self.activate_column(target_column_idx);
     }
