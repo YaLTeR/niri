@@ -693,7 +693,7 @@ impl State {
                     LayoutSwitchTarget::Prev => state.cycle_prev_layout(),
                     LayoutSwitchTarget::Index(layout) => {
                         let num_layouts = state.xkb().lock().unwrap().layouts().count();
-                        if usize::from(layout) > (num_layouts - 1) {
+                        if usize::from(layout) >= num_layouts {
                             warn!("requested layout doesn't exist")
                         } else {
                             state.set_layout(Layout(layout.into()))
