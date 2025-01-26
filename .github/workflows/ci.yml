@@ -70,6 +70,41 @@ jobs:
       - name: Test
         run: cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
 
+  # Job that runs randomized tests for a longer period of time.
+  randomized-tests:
+    strategy:
+      fail-fast: false
+
+    name: randomized tests
+    runs-on: ubuntu-24.04
+
+    env:
+      RUST_BACKTRACE: 1
+      PROPTEST_CASES: 200000
+      PROPTEST_MAX_LOCAL_REJECTS: 200000
+      PROPTEST_MAX_GLOBAL_REJECTS: 200000
+      PROPTEST_MAX_SHRINK_ITERS: 200000
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build tests
+        run: cargo test --no-run --all --exclude niri-visual-tests
+
+      - name: Test
+        run: cargo test --all --exclude niri-visual-tests
+
   visual-tests:
     strategy:
       fail-fast: false
