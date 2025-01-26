@@ -80,10 +80,10 @@ jobs:
 
     env:
       RUST_BACKTRACE: 1
-      PROPTEST_CASES: 5000
-      PROPTEST_MAX_LOCAL_REJECTS: 5000
-      PROPTEST_MAX_GLOBAL_REJECTS: 5000
-      PROPTEST_MAX_SHRINK_ITERS: 5000
+      PROPTEST_CASES: 200000
+      PROPTEST_MAX_LOCAL_REJECTS: 200000
+      PROPTEST_MAX_GLOBAL_REJECTS: 200000
+      PROPTEST_MAX_SHRINK_ITERS: 200000
 
     steps:
       - uses: actions/checkout@v4
@@ -100,10 +100,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build tests
-        run: cargo test --no-run --all --exclude niri-visual-tests
+        run: cargo test --no-run --all --exclude niri-visual-tests --release
 
       - name: Test
-        run: cargo test --all --exclude niri-visual-tests
+        run: cargo test --all --exclude niri-visual-tests --release
 
   visual-tests:
     strategy:
