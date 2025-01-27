@@ -181,11 +181,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_loop.get_signal(),
         display,
         false,
+        true,
     )
     .unwrap();
 
     // Set WAYLAND_DISPLAY for children.
-    let socket_name = &state.niri.socket_name;
+    let socket_name = state.niri.socket_name.as_deref().unwrap();
     env::set_var("WAYLAND_DISPLAY", socket_name);
     info!(
         "listening on Wayland socket: {}",
@@ -194,8 +195,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set NIRI_SOCKET for children.
     if let Some(ipc) = &state.niri.ipc_server {
-        env::set_var(SOCKET_PATH_ENV, &ipc.socket_path);
-        info!("IPC listening on: {}", ipc.socket_path.to_string_lossy());
+        let socket_path = ipc.socket_path.as_deref().unwrap();
+        env::set_var(SOCKET_PATH_ENV, socket_path);
+        info!("IPC listening on: {}", socket_path.to_string_lossy());
     }
 
     if cli.session {

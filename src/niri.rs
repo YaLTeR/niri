@@ -181,7 +181,11 @@ pub struct Niri {
     pub scheduler: Scheduler<()>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
-    pub socket_name: OsString,
+
+    /// Name of the Wayland socket.
+    ///
+    /// This is `None` when creating `Niri` without a Wayland socket.
+    pub socket_name: Option<OsString>,
 
     pub start_time: Instant,
 
@@ -550,6 +554,7 @@ impl State {
         stop_signal: LoopSignal,
         display: Display<State>,
         headless: bool,
+        create_wayland_socket: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -571,7 +576,14 @@ impl State {
             Backend::Tty(tty)
         };
 
-        let mut niri = Niri::new(config.clone(), event_loop, stop_signal, display, &backend);
+        let mut niri = Niri::new(
+            config.clone(),
+            event_loop,
+            stop_signal,
+            display,
+            &backend,
+            create_wayland_socket,
+        );
         backend.init(&mut niri);
 
         let mut state = Self { backend, niri };
@@ -1743,6 +1755,7 @@ impl Niri {
         stop_signal: LoopSignal,
         display: Display<State>,
         backend: &Backend,
+        create_wayland_socket: bool,
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
@@ -1929,19 +1942,22 @@ impl Niri {
             )
             .unwrap();
 
-        let socket_source = ListeningSocketSource::new_auto().unwrap();
-        let socket_name = socket_source.socket_name().to_os_string();
-        event_loop
-            .insert_source(socket_source, move |client, _, state| {
-                state.niri.insert_client(NewClient {
-                    client,
-                    restricted: false,
-                    credentials_unknown: false,
-                });
-            })
-            .unwrap();
+        let socket_name = create_wayland_socket.then(|| {
+            let socket_source = ListeningSocketSource::new_auto().unwrap();
+            let socket_name = socket_source.socket_name().to_os_string();
+            event_loop
+                .insert_source(socket_source, move |client, _, state| {
+                    state.niri.insert_client(NewClient {
+                        client,
+                        restricted: false,
+                        credentials_unknown: false,
+                    });
+                })
+                .unwrap();
+            socket_name
+        });
 
-        let ipc_server = match IpcServer::start(&event_loop, &socket_name.to_string_lossy()) {
+        let ipc_server = match IpcServer::start(&event_loop, socket_name.as_deref()) {
             Ok(server) => Some(server),
             Err(err) => {
                 warn!("error starting IPC server: {err:?}");
