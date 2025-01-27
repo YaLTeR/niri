@@ -217,10 +217,10 @@ pub enum Action {
     },
     /// Focus the previously focused window.
     FocusWindowPrevious {},
-    /// Focus the previous window in most-recently-used order.
-    FocusWindowMruPrevious {},
     /// Focus the next window in most-recently-used order.
     FocusWindowMruNext {},
+    /// Focus the previous window in most-recently-used order.
+    FocusWindowMruPrevious {},
     /// Focus the column to the left.
     FocusColumnLeft {},
     /// Focus the column to the right.
@@ -305,9 +305,9 @@ pub enum Action {
     ConsumeWindowIntoColumn {},
     /// Expel the focused window from the column.
     ExpelWindowFromColumn {},
-    /// Swap focused window with one to the right
+    /// Swap focused window with one to the right.
     SwapWindowRight {},
-    /// Swap focused window with one to the left
+    /// Swap focused window with one to the left.
     SwapWindowLeft {},
     /// Center the focused column on the screen.
     CenterColumn {},

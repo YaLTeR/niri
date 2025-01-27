@@ -394,30 +394,26 @@ impl State {
                     }
                 }
 
-                // check if the released key is the mod key, if so and there was an active
-                // window-mru list: drop the list and update the current window's timestamp
-                if let Some(raw) = raw {
-                    if !pressed
-                        && matches!(raw, Keysym::Alt_L | Keysym::Alt_R)
-                        && this.niri.window_mru.take().is_some()
-                        && !this.niri.is_locked()
-                    // window-mru is cancelled *even* when state is locked, however the
-                    // focus timestamp on the active window will not be updated
+                // check if alt key was released while there was an active
+                // window-mru list. If so,  drop the list and update the current window's timestamp.
+                // window-mru is cancelled *even* when state is locked, however the
+                // focus timestamp on the active window will not be updated
+                if !mods.alt && this.niri.window_mru.take().is_some() && !this.niri.is_locked() {
+                    if let Some(m) = this
+                        .niri
+                        .layout
+                        .active_workspace_mut()
+                        .and_then(|ws| ws.active_window_mut())
                     {
-                        if let Some(m) = this
-                            .niri
-                            .layout
-                            .active_workspace_mut()
-                            .and_then(|ws| ws.active_window_mut())
-                        {
-                            m.update_focus_timestamp(Instant::now());
-                        }
+                        m.update_focus_timestamp(Instant::now());
                     }
+                }
 
+                if let Some(raw) = raw {
                     // If the ESC key was pressed with the Alt modifier and
                     // there is an active window-mru, cancel the window-mru and
                     // refocus the initial window (first in the list)
-                    if pressed && !this.niri.is_locked() && mods.alt && raw == Keysym::Escape {
+                    if pressed && mods.alt && raw == Keysym::Escape {
                         if let Some(id) = this
                             .niri
                             .window_mru
@@ -740,11 +736,11 @@ impl State {
                     self.focus_window(&window);
                 }
             }
-            Action::FocusWindowMruPrevious => {
-                self.focus_window_mru_previous();
-            }
             Action::FocusWindowMruNext => {
                 self.focus_window_mru_next();
+            }
+            Action::FocusWindowMruPrevious => {
+                self.focus_window_mru_previous();
             }
             Action::SwitchLayout(action) => {
                 let keyboard = &self.niri.seat.get_keyboard().unwrap();
@@ -3098,7 +3094,7 @@ fn find_bind(
 
 /// Preset bindings can be overridden in the user configuration.
 /// The reason for treating them differently is that their key + modifier
-/// combination needs to be frozen for some reason
+/// combination needs to be frozen for some reason.
 const PRESET_BINDINGS: &[Bind] = &[
     // The following two bindings cover MRU window navigation. They are
     // preset because the `Alt` key is treated specially in `on_keyboard`.
@@ -3110,7 +3106,7 @@ const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT,
         },
-        action: Action::FocusWindowMruPrevious,
+        action: Action::FocusWindowMruNext,
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -3121,7 +3117,7 @@ const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
         },
-        action: Action::FocusWindowMruNext,
+        action: Action::FocusWindowMruPrevious,
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

@@ -1,5 +1,5 @@
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -493,17 +493,17 @@ pub enum CenterCoords {
 #[derive(Default)]
 pub struct WindowOffscreenId(pub RefCell<Option<Id>>);
 
-/// List of windows sorted in MRU order
+/// Window MRU traversal context.
 #[derive(Debug)]
 pub struct WindowMRU {
-    /// list of window ids to be traversed in MRU order
+    /// List of window ids to be traversed in MRU order.
     pub ids: Vec<MappedId>,
 
-    /// current index in the MRU traversal
+    /// Current index in the MRU traversal.
     pub current: usize,
 }
 
-/// Pending update to a window's focus timestamp
+/// Pending update to a window's focus timestamp.
 #[derive(Debug)]
 struct PendingFocusLockin {
     id: MappedId,
@@ -777,21 +777,7 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    /// Focus the previous window in MRU order
-    pub fn focus_window_mru_previous(&mut self) {
-        let mut wmru = self
-            .niri
-            .window_mru
-            .take()
-            .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
-
-        if let Some(window) = wmru.mru_previous(&self.niri) {
-            self.focus_window(&window);
-        }
-        self.niri.window_mru.replace(wmru);
-    }
-
-    /// Focus the next window in MRU order
+    /// Focus the next window in MRU order.
     pub fn focus_window_mru_next(&mut self) {
         let mut wmru = self
             .niri
@@ -800,6 +786,20 @@ impl State {
             .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
 
         if let Some(window) = wmru.mru_next(&self.niri) {
+            self.focus_window(&window);
+        }
+        self.niri.window_mru.replace(wmru);
+    }
+
+    /// Focus the previous window in MRU order.
+    pub fn focus_window_mru_previous(&mut self) {
+        let mut wmru = self
+            .niri
+            .window_mru
+            .take()
+            .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
+
+        if let Some(window) = wmru.mru_previous(&self.niri) {
             self.focus_window(&window);
         }
         self.niri.window_mru.replace(wmru);
@@ -5321,33 +5321,25 @@ impl WindowMRU {
         niri.lockin_focus();
 
         // and build a list of MappedId sorted by timestamp
-        let mut bh = BinaryHeap::new();
+        let mut ts_ids: Vec<(Instant, MappedId)> = niri
+            .layout
+            .windows()
+            .filter_map(|(_, w)| w.get_focus_timestamp().map(|t| (t, w.id())))
+            .collect();
+        ts_ids.sort_by_key(|(t, _)| *t);
 
-        niri.layout.with_windows(|m, _, _| {
-            if let Some(t) = m.get_focus_timestamp() {
-                bh.push((t, m.id()))
-            }
-        });
+        let ids = ts_ids.into_iter().map(|(_, id)| id).rev().collect();
 
-        WindowMRU {
-            ids: bh
-                .into_sorted_vec()
-                .into_iter()
-                .map(|(_, id)| id)
-                .rev()
-                .collect(),
-            current: 0,
-        }
+        WindowMRU { ids, current: 0 }
     }
 
-    fn mru_with<F>(&mut self, niri: &Niri, f: F) -> Option<Window>
-    where
-        // function that yields the index of the next element, arguments
-        // are (current_index, number of elements in the list)
-        F: Fn(usize, usize) -> usize,
-    {
+    fn advance(&mut self, niri: &Niri, reversed: bool) -> Option<Window> {
         while !self.ids.is_empty() {
-            self.current = f(self.current, self.ids.len());
+            self.current = if reversed {
+                self.current.checked_sub(1).unwrap_or(self.ids.len() - 1)
+            } else {
+                (self.current + 1) % self.ids.len()
+            };
 
             if let Some(id) = self.ids.get(self.current) {
                 if let Some(window) = niri.find_window_by_id(*id) {
@@ -5359,12 +5351,12 @@ impl WindowMRU {
         None
     }
 
-    fn mru_previous(&mut self, niri: &Niri) -> Option<Window> {
-        self.mru_with(niri, |i, l| (i + 1) % l)
+    fn mru_next(&mut self, niri: &Niri) -> Option<Window> {
+        self.advance(niri, false)
     }
 
-    fn mru_next(&mut self, niri: &Niri) -> Option<Window> {
-        self.mru_with(niri, |i, l| i.checked_sub(1).unwrap_or(l - 1))
+    fn mru_previous(&mut self, niri: &Niri) -> Option<Window> {
+        self.advance(niri, true)
     }
 }
 

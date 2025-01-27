@@ -239,7 +239,7 @@ pub enum WindowHeight {
     Preset(usize),
 }
 
-/// Horizontal direction for an operation
+/// Horizontal direction for an operation.
 ///
 /// As operations often have a symmetrical counterpart, e.g. focus-right/focus-left, methods
 /// on `Scrolling` can sometimes be factored using the direction of the operation as a parameter.

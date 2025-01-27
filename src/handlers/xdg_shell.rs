@@ -676,7 +676,7 @@ impl XdgShellHandler for State {
 
         if was_active {
             if self.niri.window_mru.is_some() {
-                self.focus_window_mru_previous();
+                self.focus_window_mru_next();
             } else {
                 self.maybe_warp_cursor_to_focus();
             }

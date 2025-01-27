@@ -100,7 +100,7 @@ pub struct Mapped {
     /// Used for double-resize-click tracking.
     last_interactive_resize_start: Cell<Option<(Duration, ResizeEdge)>>,
 
-    /// Most recent time the window had the focus
+    /// Most recent time the window had the focus.
     most_recent_focus: Option<Instant>,
 }
 
@@ -114,7 +114,7 @@ niri_render_elements! {
 
 static MAPPED_ID_COUNTER: IdCounter = IdCounter::new();
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MappedId(u64);
 
 impl MappedId {
