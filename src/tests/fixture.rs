@@ -1,4 +1,5 @@
 use std::os::fd::AsFd as _;
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use smithay::output::Output;
 
 use super::client::{Client, ClientId};
 use super::server::Server;
-use crate::niri::Niri;
+use crate::niri::{NewClient, Niri};
 
 pub struct Fixture {
     pub event_loop: EventLoop<'static, State>,
@@ -88,7 +89,14 @@ impl Fixture {
     }
 
     pub fn add_client(&mut self) -> ClientId {
-        let client = Client::new(&self.state.server.state.niri.socket_name);
+        let (sock1, sock2) = UnixStream::pair().unwrap();
+        self.niri().insert_client(NewClient {
+            client: sock1,
+            restricted: false,
+            credentials_unknown: false,
+        });
+
+        let client = Client::new(sock2);
         let id = client.id;
 
         let fd = client.event_loop.as_fd().try_clone_to_owned().unwrap();

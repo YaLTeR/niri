@@ -1,13 +1,11 @@
 use std::cmp::min;
 use std::collections::HashMap;
-use std::ffi::OsStr;
+use std::fmt;
 use std::fmt::Write as _;
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{env, fmt};
 
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
@@ -105,21 +103,13 @@ impl fmt::Display for Configure {
     }
 }
 
-fn connect(socket_name: &OsStr) -> Connection {
-    let mut socket_path = PathBuf::from(env::var_os("XDG_RUNTIME_DIR").unwrap());
-    socket_path.push(socket_name);
-
-    let stream = UnixStream::connect(socket_path).unwrap();
-    let backend = Backend::connect(stream).unwrap();
-    Connection::from_backend(backend)
-}
-
 impl Client {
-    pub fn new(socket_name: &OsStr) -> Self {
+    pub fn new(stream: UnixStream) -> Self {
         let id = ClientId::next();
 
         let event_loop = EventLoop::try_new().unwrap();
-        let connection = connect(socket_name);
+        let backend = Backend::connect(stream).unwrap();
+        let connection = Connection::from_backend(backend);
         let queue = connection.new_event_queue();
         let qh = queue.handle();
         WaylandSource::new(connection.clone(), queue)
