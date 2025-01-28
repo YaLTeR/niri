@@ -136,6 +136,8 @@ pub struct Xkb {
     pub variant: String,
     #[knuffel(child, unwrap(argument))]
     pub options: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub file: Option<String>,
 }
 
 impl Xkb {
