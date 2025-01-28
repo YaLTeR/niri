@@ -2,7 +2,6 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
@@ -128,17 +127,6 @@ impl State {
             .as_ref()
             .is_some_and(|d| d.is_open())
             && should_hide_exit_confirm_dialog(&event);
-
-        // If an event was forwarded to the focused window and it still has
-        // a running lockin_token, cancel the token and update the timestamp
-        // immediately
-        if self
-            .niri
-            .event_forwarded_to_focused_client
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
-        {
-            self.niri.lockin_focus();
-        }
 
         use InputEvent::*;
         match event {
@@ -430,22 +418,29 @@ impl State {
                     }
                 }
 
-                let bindings = &this.niri.config.borrow().binds;
-
-                should_intercept_key(
-                    &mut this.niri.suppressed_keys,
-                    bindings,
-                    comp_mod,
-                    key_code,
-                    modified,
-                    raw,
-                    pressed,
-                    *mods,
-                    &this.niri.screenshot_ui,
-                    this.niri.config.borrow().input.disable_power_key_handling,
-                    is_inhibiting_shortcuts,
-                    &mut this.niri.event_forwarded_to_focused_client,
-                )
+                let intercept_result = {
+                    let bindings = &this.niri.config.borrow().binds;
+                    should_intercept_key(
+                        &mut this.niri.suppressed_keys,
+                        bindings,
+                        comp_mod,
+                        key_code,
+                        modified,
+                        raw,
+                        pressed,
+                        *mods,
+                        &this.niri.screenshot_ui,
+                        this.niri.config.borrow().input.disable_power_key_handling,
+                        is_inhibiting_shortcuts,
+                    )
+                };
+                if matches!(intercept_result, FilterResult::Forward) {
+                    // Interaction with the active window, immediately update
+                    // the active window's focus timestamp without waiting for a
+                    // possible lockin period.
+                    this.niri.lockin_focus();
+                }
+                intercept_result
             },
         ) else {
             return;
@@ -2173,10 +2168,8 @@ impl State {
         }
 
         // The event is getting forwarded to a client, consider that the
-        // focus should be locked-in
-        self.niri
-            .event_forwarded_to_focused_client
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        // focus should be locked-in.
+        self.niri.lockin_focus();
 
         pointer.button(
             self,
@@ -2968,7 +2961,6 @@ fn should_intercept_key(
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
-    event_forwarded_to_focused_client: &mut AtomicBool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
@@ -3036,14 +3028,7 @@ fn should_intercept_key(
             suppressed_keys.remove(&key_code);
             FilterResult::Intercept(None)
         }
-        (None, true) => {
-            // Interaction with the active window, the event will be picked
-            // up by Niri on the next event loop at which point it can do an
-            // immediate update of the active window's focus timestamp without
-            // waiting for a possible lockin period.
-            event_forwarded_to_focused_client.store(true, std::sync::atomic::Ordering::Relaxed);
-            FilterResult::Forward
-        }
+        (None, true) => FilterResult::Forward,
     }
 }
 
@@ -3612,7 +3597,6 @@ mod tests {
                 &screenshot_ui,
                 disable_power_key_handling,
                 is_inhibiting_shortcuts.get(),
-                &mut AtomicBool::new(false),
             )
         };
 
@@ -3630,7 +3614,6 @@ mod tests {
                 &screenshot_ui,
                 disable_power_key_handling,
                 is_inhibiting_shortcuts.get(),
-                &mut AtomicBool::new(false),
             )
         };
 
