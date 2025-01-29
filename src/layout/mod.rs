@@ -6074,6 +6074,36 @@ mod tests {
     }
 
     #[test]
+    fn named_workspaces_dont_update_original_output_on_adding_window() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::SetWorkspaceName {
+                new_ws_name: 1,
+                ws_name: None,
+            },
+            Op::AddOutput(2),
+            Op::RemoveOutput(1),
+            Op::FocusWorkspaceUp,
+            // Adding a window updates the original output for unnamed workspaces.
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            // Connecting the previous output should move the named workspace back since its
+            // original output wasn't updated.
+            Op::AddOutput(1),
+        ];
+
+        let layout = check_ops(&ops);
+        let (mon, _, ws) = layout
+            .workspaces()
+            .find(|(_, _, ws)| ws.name().is_some())
+            .unwrap();
+        assert!(ws.name().is_some()); // Sanity check.
+        let mon = mon.unwrap();
+        assert_eq!(mon.output_name(), "output1");
+    }
+
+    #[test]
     fn workspaces_update_original_output_on_moving_to_same_output() {
         let ops = [
             Op::AddOutput(1),
