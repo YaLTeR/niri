@@ -62,7 +62,7 @@ pub struct Window {
     pub viewport: WpViewport,
     pub pending_configure: Configure,
     pub configures_received: Vec<(u32, Configure)>,
-    pub close_requsted: bool,
+    pub close_requested: bool,
 
     pub configures_looked_at: usize,
 }
@@ -194,7 +194,7 @@ impl State {
             viewport,
             pending_configure: Configure::default(),
             configures_received: Vec::new(),
-            close_requsted: false,
+            close_requested: false,
 
             configures_looked_at: 0,
         };
@@ -459,7 +459,7 @@ impl Dispatch<XdgToplevel, ()> for State {
                     .collect();
             }
             xdg_toplevel::Event::Close => {
-                window.close_requsted = true;
+                window.close_requested = true;
             }
             xdg_toplevel::Event::ConfigureBounds { width, height } => {
                 window.pending_configure.bounds = Some((width, height));

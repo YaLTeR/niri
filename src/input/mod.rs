@@ -2973,7 +2973,7 @@ fn should_intercept_key(
             }
         }
         (_, false) => {
-            // By this point, we know that the key was supressed on press. Even if we're inhibiting
+            // By this point, we know that the key was suppressed on press. Even if we're inhibiting
             // shortcuts, we should still suppress the release.
             // But we don't need to check for shortcuts inhibition here, because
             // if it was inhibited on press (forwarded to the client), it wouldn't be suppressed,

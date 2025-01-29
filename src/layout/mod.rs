@@ -3077,7 +3077,7 @@ impl<W: LayoutElement> Layout<W> {
         target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
 
         if target.options.empty_workspace_above_first && target.workspaces.len() == 1 {
-            // Insert a new empty workspace on top to prepare for insertion of new workspce.
+            // Insert a new empty workspace on top to prepare for insertion of new workspace.
             target.add_workspace_top();
         }
         // Insert the workspace after the currently active one. Unless the currently active one is
@@ -3159,7 +3159,7 @@ impl<W: LayoutElement> Layout<W> {
         target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
 
         if target.options.empty_workspace_above_first && target.workspaces.len() == 1 {
-            // Insert a new empty workspace on top to prepare for insertion of new workspce.
+            // Insert a new empty workspace on top to prepare for insertion of new workspace.
             target.add_workspace_top();
         }
         // Insert the workspace after the currently active one. Unless the currently active one is
