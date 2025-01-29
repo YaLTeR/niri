@@ -46,7 +46,7 @@ use smithay::desktop::{
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
-use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
+use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData, MotionEvent};
 use smithay::input::{Seat, SeatState};
 use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::generic::Generic;
@@ -3026,7 +3026,7 @@ impl Niri {
                 let hotspot = with_states(surface, |states| {
                     states
                         .data_map
-                        .get::<Mutex<CursorImageAttributes>>()
+                        .get::<CursorImageSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
