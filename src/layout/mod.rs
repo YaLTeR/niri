@@ -3046,6 +3046,9 @@ impl<W: LayoutElement> Layout<W> {
 
         // Do not do anything if the output is already correct
         if &current.output == output {
+            // Just update the original output since this is an explicit movement action.
+            current.active_workspace().original_output = OutputId::new(output);
+
             return false;
         }
 
@@ -3119,11 +3122,16 @@ impl<W: LayoutElement> Layout<W> {
             .position(|mon| mon.output == new_output)
             .unwrap();
 
+        let current = &mut monitors[current_idx];
+
+        // Do not do anything if the output is already correct
         if current_idx == target_idx {
+            // Just update the original output since this is an explicit movement action.
+            current.workspaces[old_idx].original_output = OutputId::new(&current.output);
+
             return false;
         }
 
-        let current = &mut monitors[current_idx];
         let current_active_ws_idx = current.active_workspace_idx;
 
         if old_idx == current.workspaces.len() - 1 {
@@ -6063,6 +6071,59 @@ mod tests {
         ];
 
         check_ops(&ops);
+    }
+
+    #[test]
+    fn workspaces_update_original_output_on_moving_to_same_output() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::SetWorkspaceName {
+                new_ws_name: 1,
+                ws_name: None,
+            },
+            Op::AddOutput(2),
+            Op::RemoveOutput(1),
+            Op::FocusWorkspaceUp,
+            Op::MoveWorkspaceToOutput(2),
+            Op::AddOutput(1),
+        ];
+
+        let layout = check_ops(&ops);
+        let (mon, _, ws) = layout
+            .workspaces()
+            .find(|(_, _, ws)| ws.name().is_some())
+            .unwrap();
+        assert!(ws.name().is_some()); // Sanity check.
+        let mon = mon.unwrap();
+        assert_eq!(mon.output_name(), "output2");
+    }
+
+    #[test]
+    fn workspaces_update_original_output_on_moving_to_same_monitor() {
+        let ops = [
+            Op::AddOutput(1),
+            Op::SetWorkspaceName {
+                new_ws_name: 1,
+                ws_name: None,
+            },
+            Op::AddOutput(2),
+            Op::RemoveOutput(1),
+            Op::FocusWorkspaceUp,
+            Op::MoveWorkspaceToMonitor {
+                ws_name: Some(1),
+                output_id: 2,
+            },
+            Op::AddOutput(1),
+        ];
+
+        let layout = check_ops(&ops);
+        let (mon, _, ws) = layout
+            .workspaces()
+            .find(|(_, _, ws)| ws.name().is_some())
+            .unwrap();
+        assert!(ws.name().is_some()); // Sanity check.
+        let mon = mon.unwrap();
+        assert_eq!(mon.output_name(), "output2");
     }
 
     #[test]
