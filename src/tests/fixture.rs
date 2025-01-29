@@ -125,7 +125,7 @@ impl Fixture {
         }
     }
 
-    /// Rountrip twice in a row.
+    /// Roundtrip twice in a row.
     ///
     /// For some reason, when running tests on many threads at once, a single roundtrip is
     /// sometimes not sufficient to get the configure events to the client.
