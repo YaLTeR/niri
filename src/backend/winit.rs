@@ -10,6 +10,7 @@ use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
+use smithay::input::pointer::CursorImageStatus;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -175,11 +176,26 @@ impl Winit {
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
 
+        let window = self.backend.window();
+
+        // Update the cursor.
+        // TODO: Support surface cursors and dnd icons
+        let include_pointer = if let (CursorImageStatus::Named(cursor_icon), None) =
+            (niri.cursor_manager.cursor_image(), niri.dnd_icon.as_ref())
+        {
+            window.set_cursor(*cursor_icon);
+            window.set_cursor_visible(true);
+            false
+        } else {
+            window.set_cursor_visible(false);
+            true
+        };
+
         // Render the elements.
         let mut elements = niri.render::<GlesRenderer>(
             self.backend.renderer(),
             output,
-            true,
+            include_pointer,
             RenderTarget::Output,
         );
 
