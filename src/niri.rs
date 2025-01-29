@@ -1776,6 +1776,10 @@ impl Niri {
 
         let (blocker_cleared_tx, blocker_cleared_rx) = mpsc::channel();
 
+        fn client_is_unrestricted(client: &Client) -> bool {
+            !client.get_data::<ClientState>().unwrap().restricted
+        }
+
         let compositor_state = CompositorState::new_v6::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
             &display_handle,
@@ -1799,14 +1803,12 @@ impl Niri {
                     .can_view_decoration_globals
             },
         );
-        let layer_shell_state =
-            WlrLayerShellState::new_with_filter::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+        let layer_shell_state = WlrLayerShellState::new_with_filter::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
         let session_lock_state =
-            SessionLockManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            SessionLockManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let shm_state = ShmState::new::<State>(
             &display_handle,
             vec![wl_shm::Format::Xbgr8888, wl_shm::Format::Abgr8888],
@@ -1834,42 +1836,29 @@ impl Niri {
         let data_control_state = DataControlState::new::<State, _>(
             &display_handle,
             Some(&primary_selection_state),
-            |client| !client.get_data::<ClientState>().unwrap().restricted,
+            client_is_unrestricted,
         );
         let presentation_state =
             PresentationState::new::<State>(&display_handle, Monotonic::ID as u32);
         let security_context_state =
-            SecurityContextState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            SecurityContextState::new::<State, _>(&display_handle, client_is_unrestricted);
 
         let text_input_state = TextInputManagerState::new::<State>(&display_handle);
         let input_method_state =
-            InputMethodManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            InputMethodManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let keyboard_shortcuts_inhibit_state =
             KeyboardShortcutsInhibitState::new::<State>(&display_handle);
         let virtual_keyboard_state =
-            VirtualKeyboardManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            VirtualKeyboardManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let virtual_pointer_state =
-            VirtualPointerManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            VirtualPointerManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let foreign_toplevel_state =
-            ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            ForeignToplevelManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let mut output_management_state =
-            OutputManagementManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            OutputManagementManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         output_management_state.on_config_changed(config_.outputs.clone());
-        let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
-            !client.get_data::<ClientState>().unwrap().restricted
-        });
+        let screencopy_state =
+            ScreencopyManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let viewporter_state = ViewporterState::new::<State>(&display_handle);
         let xdg_foreign_state = XdgForeignState::new::<State>(&display_handle);
 
