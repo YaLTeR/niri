@@ -2,7 +2,9 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, OutputName, PresetSize, Workspace as WorkspaceConfig};
+use niri_config::{
+    CenterFocusedColumn, DefaultPresetSize, OutputName, PresetSize, Workspace as WorkspaceConfig,
+};
 use niri_ipc::{PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -716,11 +718,17 @@ impl<W: LayoutElement> Workspace<W> {
         default_width: Option<Option<ColumnWidth>>,
         is_floating: bool,
     ) -> Option<ColumnWidth> {
-        match default_width {
-            Some(Some(width)) => Some(width),
-            Some(None) => None,
-            None if is_floating => None,
-            None => self.options.default_column_width,
+        let output_default_width = self
+            .output
+            .as_ref()
+            .map(|o| o.user_data().get::<Option<DefaultPresetSize>>())
+            .unwrap_or(None);
+        match (default_width, output_default_width) {
+            (Some(Some(width)), _) => Some(width),
+            (Some(None), _) => None,
+            (None, _) if is_floating => None,
+            (None, Some(Some(DefaultPresetSize(Some(width))))) => Some(ColumnWidth::from(*width)),
+            (None, _) => self.options.default_column_width,
         }
     }
 
