@@ -155,7 +155,7 @@ use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRende
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
+    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, logical_output,
     make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
 };
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -588,6 +588,8 @@ impl State {
 
         let mut state = Self { backend, niri };
 
+        // Load the xkb_file config option if set by the user.
+        state.load_xkb_file();
         // Initialize some IPC server state.
         state.ipc_keyboard_layouts_changed();
 
@@ -1083,6 +1085,31 @@ impl State {
         }
     }
 
+    /// Loads the xkb keymap from a file config setting.
+    fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
+        let xkb_file = PathBuf::from(xkb_file);
+        let xkb_file = expand_home(&xkb_file)
+            .context("failed to expand ~")?
+            .unwrap_or(xkb_file);
+
+        let keymap = std::fs::read_to_string(xkb_file).context("failed to read xkb_file")?;
+
+        let xkb = self.niri.seat.get_keyboard().unwrap();
+        xkb.set_keymap_from_string(self, keymap)
+            .context("failed to set keymap")?;
+
+        Ok(())
+    }
+
+    fn load_xkb_file(&mut self) {
+        let xkb_file = self.niri.config.borrow().input.keyboard.xkb.file.clone();
+        if let Some(xkb_file) = xkb_file {
+            if let Err(err) = self.set_xkb_file(xkb_file) {
+                warn!("error loading xkb_file: {err:?}");
+            }
+        }
+    }
+
     pub fn reload_config(&mut self, path: PathBuf) {
         let _span = tracy_client::span!("State::reload_config");
 
@@ -1247,10 +1274,25 @@ impl State {
         drop(old_config);
 
         // Now with a &mut self we can reload the xkb config.
-        if let Some(xkb) = reload_xkb {
-            let keyboard = self.niri.seat.get_keyboard().unwrap();
-            if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
-                warn!("error updating xkb config: {err:?}");
+        if let Some(mut xkb) = reload_xkb {
+            let mut set_xkb_config = true;
+
+            // It's fine to .take() the xkb file, as this is a
+            // clone and the file field is not used in the XkbConfig.
+            if let Some(xkb_file) = xkb.file.take() {
+                if let Err(err) = self.set_xkb_file(xkb_file) {
+                    warn!("error reloading xkb_file: {err:?}");
+                } else {
+                    // We successfully set xkb file so we don't need to fallback to XkbConfig.
+                    set_xkb_config = false;
+                }
+            }
+
+            if set_xkb_config {
+                let keyboard = self.niri.seat.get_keyboard().unwrap();
+                if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
+                    warn!("error updating xkb config: {err:?}");
+                }
             }
 
             self.ipc_keyboard_layouts_changed();
