@@ -588,8 +588,7 @@ impl State {
 
         let mut state = Self { backend, niri };
 
-        // Load the xkb_file config option,
-        // if set by the user.
+        // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
         // Initialize some IPC server state.
         state.ipc_keyboard_layouts_changed();
@@ -1086,9 +1085,7 @@ impl State {
         }
     }
 
-    /// Set the keyboard keymap from a file
-    ///
-    /// Returns true if the keymap was successfully set.
+    /// Loads the xkb keymap from a file config setting.
     fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
         let xkb_file = PathBuf::from(xkb_file);
         let xkb_file = expand_home(&xkb_file)
@@ -1280,14 +1277,13 @@ impl State {
         if let Some(mut xkb) = reload_xkb {
             let mut set_xkb_config = true;
 
-            // It's fine to .take the xkb file, as this is a
+            // It's fine to .take() the xkb file, as this is a
             // clone and the file field is not used in the XkbConfig.
             if let Some(xkb_file) = xkb.file.take() {
                 if let Err(err) = self.set_xkb_file(xkb_file) {
                     warn!("error reloading xkb_file: {err:?}");
                 } else {
-                    // We successfully set xkb file so we
-                    // don't need to fallback to the XkbConfig.
+                    // We successfully set xkb file so we don't need to fallback to XkbConfig.
                     set_xkb_config = false;
                 }
             }
