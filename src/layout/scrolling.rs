@@ -2569,7 +2569,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                                 && adj_col_w
                                     .filter(|adj_col_w| {
                                         center_on_overflow
-                                            && adj_col_w + gaps + col_w > working_area_width
+                                            && adj_col_w + 3.0 * gaps + col_w > working_area_width
                                     })
                                     .is_some()
                         };
