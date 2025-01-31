@@ -41,7 +41,7 @@ pub struct ResolvedWindowRules {
     ///
     /// - `None`: unset (global default should be used).
     /// - `Some(None)`: set to empty (window picks its own height).
-    /// - `Some(Some(width))`: set to a particular height.
+    /// - `Some(Some(height))`: set to a particular height.
     pub default_height: Option<Option<PresetSize>>,
 
     /// Default floating position for this window.
