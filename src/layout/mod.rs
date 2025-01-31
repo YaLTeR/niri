@@ -1,9 +1,18 @@
 //! Window layout logic.
 //!
-//! Niri implements scrollable tiling with workspaces. There's one primary output, and potentially
-//! multiple other outputs.
+//! Niri implements scrollable tiling with dynamic workspaces. The scrollable tiling is mostly
+//! orthogonal to any particular workspace system, though outputs living in separate coordinate
+//! spaces suggest per-output workspaces.
 //!
-//! Our layout has the following invariants:
+//! I chose a dynamic workspace system because I think it works very well. In particular, it works
+//! naturally across outputs getting added and removed, since workspaces can move between outputs
+//! as necessary.
+//!
+//! In the layout, one output (the first one to be added) is designated as *primary*. This is where
+//! workspaces from disconnected outputs will move. Currently, the primary output has no other
+//! distinction from other outputs.
+//!
+//! Where possible, niri tries to follow these principles with regards to outputs:
 //!
 //! 1. Disconnecting and reconnecting the same output must not change the layout.
 //!    * This includes both secondary outputs and the primary output.
@@ -11,10 +20,9 @@
 //!    output.
 //!
 //! Therefore, we implement the following logic: every workspace keeps track of which output it
-//! originated on. When an output disconnects, its workspace (or workspaces, in case of the primary
-//! output disconnecting) are appended to the (potentially new) primary output, but remember their
-//! original output. Then, if the original output connects again, all workspaces originally from
-//! there move back to that output.
+//! originated on—its *original output*. When an output disconnects, its workspaces are appended to
+//! the (potentially new) primary output, but remember their original output. Then, if the original
+//! output connects again, all workspaces originally from there move back to that output.
 //!
 //! In order to avoid surprising behavior, if the user creates or moves any new windows onto a
 //! workspace, it forgets its original output, and its current output becomes its original output.
@@ -22,12 +30,6 @@
 //! with them, disconnecting the monitor, and keeps working as normal, using the second monitor's
 //! workspace just like any other. Then they come back, reconnect the second monitor, and now we
 //! don't want an unassuming workspace to end up on it.
-//!
-//! ## Workspaces-only-on-primary considerations
-//!
-//! If this logic results in more than one workspace present on a secondary output, then as a
-//! compromise we only keep the first workspace there, and move the rest to the primary output,
-//! making the primary output their original output.
 
 use std::cmp::min;
 use std::collections::HashMap;
