@@ -178,8 +178,6 @@ layout {
 > `default-column-width {}` causes niri to send a (0, H) size in the initial configure request.
 >
 > This is a bit [unclearly defined](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/issues/155) in the Wayland protocol, so some clients may misinterpret it.
-> In practice, the only problematic client I saw is [foot](https://codeberg.org/dnkl/foot/), which takes this as a request to have a literal zero width.
->
 > Either way, `default-column-width {}` is most useful for specific windows, in form of a [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules) with the same syntax.
 
 ### `preset-window-heights`
