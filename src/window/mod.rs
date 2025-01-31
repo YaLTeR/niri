@@ -11,7 +11,6 @@ use smithay::wayland::shell::xdg::{
     SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceRoleAttributes,
 };
 
-use crate::layout::scrolling::ColumnWidth;
 use crate::utils::with_toplevel_role;
 
 pub mod mapped;
@@ -35,7 +34,7 @@ pub struct ResolvedWindowRules {
     /// - `None`: unset (global default should be used).
     /// - `Some(None)`: set to empty (window picks its own width).
     /// - `Some(Some(width))`: set to a particular width.
-    pub default_width: Option<Option<ColumnWidth>>,
+    pub default_width: Option<Option<PresetSize>>,
 
     /// Default height for this window.
     ///
@@ -230,12 +229,8 @@ impl ResolvedWindowRules {
                     continue;
                 }
 
-                if let Some(x) = rule
-                    .default_column_width
-                    .as_ref()
-                    .map(|d| d.0.map(ColumnWidth::from))
-                {
-                    resolved.default_width = Some(x);
+                if let Some(x) = rule.default_column_width {
+                    resolved.default_width = Some(x.0);
                 }
 
                 if let Some(x) = rule.default_window_height {

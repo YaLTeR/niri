@@ -316,10 +316,10 @@ pub struct Options {
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
     pub empty_workspace_above_first: bool,
-    /// Column widths that `toggle_width()` switches between.
-    pub preset_column_widths: Vec<ColumnWidth>,
+    /// Column or window widths that `toggle_width()` switches between.
+    pub preset_column_widths: Vec<PresetSize>,
     /// Initial width for new columns.
-    pub default_column_width: Option<ColumnWidth>,
+    pub default_column_width: Option<PresetSize>,
     /// Window height that `toggle_window_height()` switches between.
     pub preset_window_heights: Vec<PresetSize>,
     pub animations: niri_config::Animations,
@@ -341,9 +341,9 @@ impl Default for Options {
             always_center_single_column: false,
             empty_workspace_above_first: false,
             preset_column_widths: vec![
-                ColumnWidth::Proportion(1. / 3.),
-                ColumnWidth::Proportion(0.5),
-                ColumnWidth::Proportion(2. / 3.),
+                PresetSize::Proportion(1. / 3.),
+                PresetSize::Proportion(0.5),
+                PresetSize::Proportion(2. / 3.),
             ],
             default_column_width: None,
             animations: Default::default(),
@@ -492,12 +492,7 @@ impl Options {
         let preset_column_widths = if layout.preset_column_widths.is_empty() {
             Options::default().preset_column_widths
         } else {
-            layout
-                .preset_column_widths
-                .iter()
-                .copied()
-                .map(ColumnWidth::from)
-                .collect()
+            layout.preset_column_widths.clone()
         };
         let preset_window_heights = if layout.preset_window_heights.is_empty() {
             Options::default().preset_window_heights
@@ -505,13 +500,13 @@ impl Options {
             layout.preset_window_heights.clone()
         };
 
-        // Missing default_column_width maps to Some(ColumnWidth::Proportion(0.5)),
+        // Missing default_column_width maps to Some(PresetSize::Proportion(0.5)),
         // while present, but empty, maps to None.
         let default_column_width = layout
             .default_column_width
             .as_ref()
-            .map(|w| w.0.map(ColumnWidth::from))
-            .unwrap_or(Some(ColumnWidth::Proportion(0.5)));
+            .map(|w| w.0)
+            .unwrap_or(Some(PresetSize::Proportion(0.5)));
 
         Self {
             gaps: layout.gaps.0,
@@ -855,14 +850,14 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         window: W,
         target: AddWindowTarget<W>,
-        width: Option<ColumnWidth>,
+        width: Option<PresetSize>,
         height: Option<PresetSize>,
         is_full_width: bool,
         is_floating: bool,
         activate: ActivateWindow,
     ) -> Option<&Output> {
-        let resolved_width = self.resolve_default_width(&window, width, is_floating);
-        let resolved_height = height.map(SizeChange::from);
+        let scrolling_width = self.resolve_scrolling_width(&window, width);
+        let scrolling_height = height.map(SizeChange::from);
         let id = window.id().clone();
 
         match &mut self.monitor_set {
@@ -933,7 +928,7 @@ impl<W: LayoutElement> Layout<W> {
                     window,
                     target,
                     activate,
-                    resolved_width,
+                    scrolling_width,
                     is_full_width,
                     is_floating,
                 );
@@ -944,7 +939,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 // Set the default height for scrolling windows.
                 if !is_floating {
-                    if let Some(change) = resolved_height {
+                    if let Some(change) = scrolling_height {
                         let ws = mon
                             .workspaces
                             .iter_mut()
@@ -1005,14 +1000,14 @@ impl<W: LayoutElement> Layout<W> {
                     tile,
                     target,
                     activate,
-                    resolved_width,
+                    scrolling_width,
                     is_full_width,
                     is_floating,
                 );
 
                 // Set the default height for scrolling windows.
                 if !is_floating {
-                    if let Some(change) = resolved_height {
+                    if let Some(change) = scrolling_height {
                         ws.set_window_height(Some(&id), change);
                     }
                 }
@@ -4283,28 +4278,23 @@ impl<W: LayoutElement> Layout<W> {
         self.windows().any(|(_, win)| win.id() == window)
     }
 
-    fn resolve_default_width(
-        &self,
-        window: &W,
-        width: Option<ColumnWidth>,
-        is_floating: bool,
-    ) -> ColumnWidth {
-        let mut width = width.unwrap_or_else(|| ColumnWidth::Fixed(f64::from(window.size().w)));
-        if is_floating {
-            return width;
-        }
+    fn resolve_scrolling_width(&self, window: &W, width: Option<PresetSize>) -> ColumnWidth {
+        let width = width.unwrap_or_else(|| PresetSize::Fixed(window.size().w));
+        match width {
+            PresetSize::Fixed(fixed) => {
+                let mut fixed = f64::from(fixed);
 
-        // Add border width to account for the issue that the scrolling layout currently doesn't
-        // take borders into account for fixed sizes.
-        if let ColumnWidth::Fixed(w) = &mut width {
-            let rules = window.rules();
-            let border_config = rules.border.resolve_against(self.options.border);
-            if !border_config.off {
-                *w += border_config.width.0 * 2.;
+                // Add border width since ColumnWidth includes borders.
+                let rules = window.rules();
+                let border = rules.border.resolve_against(self.options.border);
+                if !border.off {
+                    fixed += border.width.0 * 2.;
+                }
+
+                ColumnWidth::Fixed(fixed)
             }
+            PresetSize::Proportion(prop) => ColumnWidth::Proportion(prop),
         }
-
-        width
     }
 }
 

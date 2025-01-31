@@ -3002,6 +3002,71 @@ fn move_workspace_to_same_monitor_doesnt_reorder() {
     assert_eq!(counts, &[1, 2, 0]);
 }
 
+#[test]
+fn preset_column_width_fixed_correct_with_border() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SwitchPresetColumnWidth,
+    ];
+
+    let options = Options {
+        preset_column_widths: vec![PresetSize::Fixed(500)],
+        ..Default::default()
+    };
+    let mut layout = check_ops_with_options(options, &ops);
+
+    let win = layout.windows().next().unwrap().1;
+    assert_eq!(win.requested_size().unwrap().w, 500);
+
+    // Add border.
+    let options = Options {
+        preset_column_widths: vec![PresetSize::Fixed(500)],
+        border: niri_config::Border {
+            off: false,
+            width: FloatOrInt(5.),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    layout.update_options(options);
+
+    // With border, the window gets less size.
+    let win = layout.windows().next().unwrap().1;
+    assert_eq!(win.requested_size().unwrap().w, 490);
+
+    // However, preset fixed width will still work correctly.
+    layout.toggle_width();
+    let win = layout.windows().next().unwrap().1;
+    assert_eq!(win.requested_size().unwrap().w, 500);
+}
+
+#[test]
+fn preset_column_width_reset_after_set_width() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SwitchPresetColumnWidth,
+        Op::SetWindowWidth {
+            id: None,
+            change: SizeChange::AdjustFixed(-10),
+        },
+        Op::SwitchPresetColumnWidth,
+    ];
+
+    let options = Options {
+        preset_column_widths: vec![PresetSize::Fixed(500), PresetSize::Fixed(1000)],
+        ..Default::default()
+    };
+    let layout = check_ops_with_options(options, &ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_eq!(win.requested_size().unwrap().w, 500);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;

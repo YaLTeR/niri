@@ -623,7 +623,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 .preset_column_widths
                 .iter()
                 .position(|preset| {
-                    let resolved = preset.resolve_no_gaps(&self.options, available_size);
+                    let resolved = resolve_preset_size(*preset, available_size);
                     match resolved {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
@@ -634,13 +634,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
 
         let preset = self.options.preset_column_widths[preset_idx];
-        let change = match preset {
-            ColumnWidth::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
-            ColumnWidth::Fixed(fixed) => SizeChange::SetFixed(fixed.round() as i32),
-            _ => unreachable!(),
-        };
-
-        self.set_window_width(Some(&id), change, true);
+        self.set_window_width(Some(&id), SizeChange::from(preset), true);
 
         self.tiles[idx].floating_preset_width_idx = Some(preset_idx);
 
@@ -1138,53 +1132,34 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
-    pub fn resolve_width(&self, width: ColumnWidth) -> ResolvedSize {
-        width.resolve_no_gaps(&self.options, self.working_area.size.w)
-    }
-
-    pub fn resolve_height(&self, height: PresetSize) -> ResolvedSize {
-        resolve_preset_size(height, self.working_area.size.h)
-    }
-
     pub fn new_window_size(
         &self,
-        width: Option<ColumnWidth>,
+        width: Option<PresetSize>,
         height: Option<PresetSize>,
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
         let border = rules.border.resolve_against(self.options.border);
 
-        let width = if let Some(width) = width {
-            let width = match self.resolve_width(width) {
-                ResolvedSize::Tile(mut size) => {
-                    if !border.off {
-                        size -= border.width.0 * 2.;
+        let resolve = |size: Option<PresetSize>, working_area_size: f64| {
+            if let Some(size) = size {
+                let size = match resolve_preset_size(size, working_area_size) {
+                    ResolvedSize::Tile(mut size) => {
+                        if !border.off {
+                            size -= border.width.0 * 2.;
+                        }
+                        size
                     }
-                    size
-                }
-                ResolvedSize::Window(size) => size,
-            };
+                    ResolvedSize::Window(size) => size,
+                };
 
-            max(1, width.floor() as i32)
-        } else {
-            0
+                max(1, size.floor() as i32)
+            } else {
+                0
+            }
         };
 
-        let height = if let Some(height) = height {
-            let height = match self.resolve_height(height) {
-                ResolvedSize::Tile(mut size) => {
-                    if !border.off {
-                        size -= border.width.0 * 2.;
-                    }
-                    size
-                }
-                ResolvedSize::Window(size) => size,
-            };
-
-            max(1, height.floor() as i32)
-        } else {
-            0
-        };
+        let width = resolve(width, self.working_area.size.w);
+        let height = resolve(height, self.working_area.size.h);
 
         Size::from((width, height))
     }

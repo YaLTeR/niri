@@ -2,10 +2,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use niri::animation::Clock;
-use niri::layout::scrolling::ColumnWidth;
 use niri::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _, Options};
 use niri::render_helpers::RenderTarget;
-use niri_config::{Color, FloatOrInt, OutputName};
+use niri_config::{Color, FloatOrInt, OutputName, PresetSize};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::layer_map_for_output;
@@ -84,13 +83,13 @@ impl Layout {
     pub fn open_in_between(args: Args) -> Self {
         let mut rv = Self::new(args);
 
-        rv.add_window(TestWindow::freeform(0), Some(ColumnWidth::Proportion(0.3)));
-        rv.add_window(TestWindow::freeform(1), Some(ColumnWidth::Proportion(0.3)));
+        rv.add_window(TestWindow::freeform(0), Some(PresetSize::Proportion(0.3)));
+        rv.add_window(TestWindow::freeform(1), Some(PresetSize::Proportion(0.3)));
         rv.layout.activate_window(&0);
 
         rv.add_step(500, |l| {
             let win = TestWindow::freeform(2);
-            l.add_window(win.clone(), Some(ColumnWidth::Proportion(0.3)));
+            l.add_window(win.clone(), Some(PresetSize::Proportion(0.3)));
             l.layout.start_open_animation_for_window(win.id());
         });
 
@@ -103,7 +102,7 @@ impl Layout {
         for delay in [100, 200, 300] {
             rv.add_step(delay, move |l| {
                 let win = TestWindow::freeform(delay as usize);
-                l.add_window(win.clone(), Some(ColumnWidth::Proportion(0.3)));
+                l.add_window(win.clone(), Some(PresetSize::Proportion(0.3)));
                 l.layout.start_open_animation_for_window(win.id());
             });
         }
@@ -117,7 +116,7 @@ impl Layout {
         for delay in [100, 200, 300] {
             rv.add_step(delay, move |l| {
                 let win = TestWindow::freeform(delay as usize);
-                l.add_window(win.clone(), Some(ColumnWidth::Proportion(0.5)));
+                l.add_window(win.clone(), Some(PresetSize::Proportion(0.5)));
                 l.layout.start_open_animation_for_window(win.id());
             });
         }
@@ -128,13 +127,13 @@ impl Layout {
     pub fn open_to_the_left(args: Args) -> Self {
         let mut rv = Self::new(args);
 
-        rv.add_window(TestWindow::freeform(0), Some(ColumnWidth::Proportion(0.3)));
-        rv.add_window(TestWindow::freeform(1), Some(ColumnWidth::Proportion(0.3)));
+        rv.add_window(TestWindow::freeform(0), Some(PresetSize::Proportion(0.3)));
+        rv.add_window(TestWindow::freeform(1), Some(PresetSize::Proportion(0.3)));
 
         rv.add_step(500, |l| {
             let win = TestWindow::freeform(2);
             let right_of = l.windows[0].clone();
-            l.add_window_right_of(&right_of, win.clone(), Some(ColumnWidth::Proportion(0.3)));
+            l.add_window_right_of(&right_of, win.clone(), Some(PresetSize::Proportion(0.3)));
             l.layout.start_open_animation_for_window(win.id());
         });
 
@@ -144,20 +143,20 @@ impl Layout {
     pub fn open_to_the_left_big(args: Args) -> Self {
         let mut rv = Self::new(args);
 
-        rv.add_window(TestWindow::freeform(0), Some(ColumnWidth::Proportion(0.3)));
-        rv.add_window(TestWindow::freeform(1), Some(ColumnWidth::Proportion(0.8)));
+        rv.add_window(TestWindow::freeform(0), Some(PresetSize::Proportion(0.3)));
+        rv.add_window(TestWindow::freeform(1), Some(PresetSize::Proportion(0.8)));
 
         rv.add_step(500, |l| {
             let win = TestWindow::freeform(2);
             let right_of = l.windows[0].clone();
-            l.add_window_right_of(&right_of, win.clone(), Some(ColumnWidth::Proportion(0.5)));
+            l.add_window_right_of(&right_of, win.clone(), Some(PresetSize::Proportion(0.5)));
             l.layout.start_open_animation_for_window(win.id());
         });
 
         rv
     }
 
-    fn add_window(&mut self, mut window: TestWindow, width: Option<ColumnWidth>) {
+    fn add_window(&mut self, mut window: TestWindow, width: Option<PresetSize>) {
         let ws = self.layout.active_workspace().unwrap();
         let min_size = window.min_size();
         let max_size = window.max_size();
@@ -184,7 +183,7 @@ impl Layout {
         &mut self,
         right_of: &TestWindow,
         mut window: TestWindow,
-        width: Option<ColumnWidth>,
+        width: Option<PresetSize>,
     ) {
         let ws = self.layout.active_workspace().unwrap();
         let min_size = window.min_size();

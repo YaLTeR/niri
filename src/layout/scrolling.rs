@@ -162,6 +162,9 @@ pub struct Column<W: LayoutElement> {
     /// upon unfullscreening and untoggling full-width.
     width: ColumnWidth,
 
+    /// Currently selected preset width index.
+    preset_width_idx: Option<usize>,
+
     /// Whether this column is full-width.
     is_full_width: bool,
 
@@ -209,8 +212,6 @@ pub enum ColumnWidth {
     Proportion(f64),
     /// Fixed width in logical pixels.
     Fixed(f64),
-    /// One of the preset widths.
-    Preset(usize),
 }
 
 /// Height of a window in a column.
@@ -417,22 +418,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn new_window_size(
         &self,
-        width: Option<ColumnWidth>,
+        width: Option<PresetSize>,
         height: Option<PresetSize>,
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
         let border = rules.border.resolve_against(self.options.border);
 
-        let width = if let Some(width) = width {
-            let is_fixed = matches!(width, ColumnWidth::Fixed(_));
+        let width = if let Some(size) = width {
+            let size = match resolve_preset_size(size, &self.options, self.working_area.size.w) {
+                ResolvedSize::Tile(mut size) => {
+                    if !border.off {
+                        size -= border.width.0 * 2.;
+                    }
+                    size
+                }
+                ResolvedSize::Window(size) => size,
+            };
 
-            let mut width = width.resolve(&self.options, self.working_area.size.w);
-
-            if !is_fixed && !border.off {
-                width -= border.width.0 * 2.;
-            }
-
-            max(1, width.floor() as i32)
+            max(1, size.floor() as i32)
         } else {
             0
         };
@@ -2173,7 +2176,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let col = &mut self.columns[self.active_column_idx];
-        col.toggle_width();
+        col.toggle_width(None);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2266,18 +2269,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let col = if let Some(window) = window {
+        let (col, tile_idx) = if let Some(window) = window {
             self.columns
                 .iter_mut()
-                .find(|col| col.contains(window))
+                .find_map(|col| {
+                    col.tiles
+                        .iter()
+                        .position(|tile| tile.window().id() == window)
+                        .map(|tile_idx| (col, Some(tile_idx)))
+                })
                 .unwrap()
         } else {
-            &mut self.columns[self.active_column_idx]
+            (&mut self.columns[self.active_column_idx], None)
         };
 
-        // FIXME: when we fix preset fixed width to be per-window, this should also be made
-        // window-specific to resolve the correct window width.
-        col.toggle_width();
+        col.toggle_width(tile_idx);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -3103,20 +3109,7 @@ impl ColumnWidth {
             ColumnWidth::Proportion(proportion) => {
                 (view_width - options.gaps) * proportion - options.gaps
             }
-            ColumnWidth::Preset(idx) => {
-                options.preset_column_widths[idx].resolve(options, view_width)
-            }
             ColumnWidth::Fixed(width) => width,
-        }
-    }
-
-    pub fn resolve_no_gaps(self, options: &Options, view_width: f64) -> ResolvedSize {
-        match self {
-            ColumnWidth::Proportion(proportion) => ResolvedSize::Tile(view_width * proportion),
-            ColumnWidth::Preset(idx) => {
-                options.preset_column_widths[idx].resolve_no_gaps(options, view_width)
-            }
-            ColumnWidth::Fixed(width) => ResolvedSize::Window(width),
         }
     }
 }
@@ -3152,6 +3145,7 @@ impl<W: LayoutElement> Column<W> {
             data: vec![],
             active_tile_idx: 0,
             width,
+            preset_width_idx: None,
             is_full_width,
             is_fullscreen: false,
             move_animation: None,
@@ -3186,11 +3180,9 @@ impl<W: LayoutElement> Column<W> {
             update_sizes = true;
         }
 
-        // If preset widths changed, make our width non-preset.
+        // If preset widths changed, clear our stored preset index.
         if self.options.preset_column_widths != options.preset_column_widths {
-            if let ColumnWidth::Preset(idx) = self.width {
-                self.width = self.options.preset_column_widths[idx];
-            }
+            self.preset_width_idx = None;
         }
 
         // If preset heights changed, make our heights non-preset.
@@ -3222,12 +3214,6 @@ impl<W: LayoutElement> Column<W> {
         if update_sizes {
             self.update_tile_sizes(false);
         }
-    }
-
-    fn set_width(&mut self, width: ColumnWidth, animate: bool) {
-        self.width = width;
-        self.is_full_width = false;
-        self.update_tile_sizes(animate);
     }
 
     pub fn advance_animations(&mut self) {
@@ -3673,30 +3659,42 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
-    fn toggle_width(&mut self) {
-        let width = if self.is_full_width {
-            ColumnWidth::Proportion(1.)
+    fn toggle_width(&mut self, tile_idx: Option<usize>) {
+        let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
+
+        let preset_idx = if self.is_full_width {
+            None
         } else {
-            self.width
+            self.preset_width_idx
         };
 
-        let idx = match width {
-            ColumnWidth::Preset(idx) => (idx + 1) % self.options.preset_column_widths.len(),
-            _ => {
-                let current = self.width();
-                self.options
-                    .preset_column_widths
-                    .iter()
-                    .position(|prop| {
-                        let resolved = prop.resolve(&self.options, self.working_area.size.w);
+        let preset_idx = if let Some(idx) = preset_idx {
+            (idx + 1) % self.options.preset_column_widths.len()
+        } else {
+            let tile = &self.tiles[tile_idx];
+            let current_window = tile.window_expected_or_current_size().w;
+            let current_tile = tile.tile_expected_or_current_size().w;
+
+            let available_size = self.working_area.size.w;
+
+            self.options
+                .preset_column_widths
+                .iter()
+                .position(|prop| {
+                    let resolved = resolve_preset_size(*prop, &self.options, available_size);
+                    match resolved {
                         // Some allowance for fractional scaling purposes.
-                        current + 1. < resolved
-                    })
-                    .unwrap_or(0)
-            }
+                        ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
+                        ResolvedSize::Window(resolved) => current_window + 1. < resolved,
+                    }
+                })
+                .unwrap_or(0)
         };
-        let width = ColumnWidth::Preset(idx);
-        self.set_width(width, true);
+
+        let preset = self.options.preset_column_widths[preset_idx];
+        self.set_column_width(SizeChange::from(preset), Some(tile_idx), true);
+
+        self.preset_width_idx = Some(preset_idx);
     }
 
     fn toggle_full_width(&mut self) {
@@ -3705,18 +3703,13 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn set_column_width(&mut self, change: SizeChange, tile_idx: Option<usize>, animate: bool) {
-        let width = if self.is_full_width {
+        let current = if self.is_full_width {
             ColumnWidth::Proportion(1.)
         } else {
             self.width
         };
 
-        let current_px = width.resolve(&self.options, self.working_area.size.w);
-
-        let current = match width {
-            ColumnWidth::Preset(idx) => self.options.preset_column_widths[idx],
-            current => current,
-        };
+        let current_px = current.resolve(&self.options, self.working_area.size.w);
 
         // FIXME: fix overflows then remove limits.
         const MAX_PX: f64 = 100000.;
@@ -3755,10 +3748,12 @@ impl<W: LayoutElement> Column<W> {
                 let proportion = (current + delta / 100.).clamp(0., MAX_F);
                 ColumnWidth::Proportion(proportion)
             }
-            (ColumnWidth::Preset(_), _) => unreachable!(),
         };
 
-        self.set_width(width, animate);
+        self.width = width;
+        self.preset_width_idx = None;
+        self.is_full_width = false;
+        self.update_tile_sizes(animate);
     }
 
     fn set_window_height(&mut self, change: SizeChange, tile_idx: Option<usize>, animate: bool) {
@@ -4041,6 +4036,10 @@ impl<W: LayoutElement> Column<W> {
 
         if self.is_fullscreen {
             assert_eq!(self.tiles.len(), 1);
+        }
+
+        if let Some(idx) = self.preset_width_idx {
+            assert!(idx < self.options.preset_column_widths.len());
         }
 
         let tile_count = self.tiles.len();
