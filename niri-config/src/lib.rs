@@ -768,6 +768,15 @@ pub enum PresetSize {
     Fixed(#[knuffel(argument)] i32),
 }
 
+impl From<PresetSize> for SizeChange {
+    fn from(value: PresetSize) -> Self {
+        match value {
+            PresetSize::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
+            PresetSize::Fixed(fixed) => SizeChange::SetFixed(fixed),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultPresetSize(pub Option<PresetSize>);
 

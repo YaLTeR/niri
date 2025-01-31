@@ -677,12 +677,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
 
         let preset = self.options.preset_window_heights[preset_idx];
-        let change = match preset {
-            PresetSize::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
-            PresetSize::Fixed(fixed) => SizeChange::SetFixed(fixed),
-        };
-
-        self.set_window_height(Some(&id), change, true);
+        self.set_window_height(Some(&id), SizeChange::from(preset), true);
 
         let tile = &mut self.tiles[idx];
         tile.floating_preset_height_idx = Some(preset_idx);

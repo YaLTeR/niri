@@ -862,10 +862,7 @@ impl<W: LayoutElement> Layout<W> {
         activate: ActivateWindow,
     ) -> Option<&Output> {
         let resolved_width = self.resolve_default_width(&window, width, is_floating);
-        let resolved_height = height.map(|h| match h {
-            PresetSize::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
-            PresetSize::Fixed(fixed) => SizeChange::SetFixed(fixed),
-        });
+        let resolved_height = height.map(SizeChange::from);
         let id = window.id().clone();
 
         match &mut self.monitor_set {
