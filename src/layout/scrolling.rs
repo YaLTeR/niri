@@ -3405,7 +3405,6 @@ impl<W: LayoutElement> Column<W> {
 
         let width = width.resolve(&self.options, self.working_area.size.w);
         let width = f64::max(f64::min(width, max_width), min_width);
-        let height = self.working_area.size.h;
 
         // If there are multiple windows in a column, clamp the non-auto window's height according
         // to other windows' min sizes.
@@ -3454,10 +3453,12 @@ impl<W: LayoutElement> Column<W> {
                 }
                 WindowHeight::Preset(idx) => {
                     let preset = self.options.preset_window_heights[idx];
-                    let window_height = match resolve_preset_size(preset, &self.options, height) {
-                        ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
-                        ResolvedSize::Window(h) => h,
-                    };
+                    let available_height = self.working_area.size.h;
+                    let window_height =
+                        match resolve_preset_size(preset, &self.options, available_height) {
+                            ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
+                            ResolvedSize::Window(h) => h,
+                        };
 
                     let mut window_height = window_height.round().clamp(1., 100000.);
                     if let Some(max) = max_non_auto_window_height {
