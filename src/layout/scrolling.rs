@@ -3443,6 +3443,11 @@ impl<W: LayoutElement> Column<W> {
                     let mut window_height = height.round().max(1.);
                     if let Some(max) = max_non_auto_window_height {
                         window_height = f64::min(window_height, max);
+                    } else {
+                        // In any case, clamp to the working area height.
+                        let height_left = self.working_area.size.h - self.options.gaps * 2.;
+                        let max = tile.window_height_for_tile_height(height_left).round();
+                        window_height = f64::min(window_height, max);
                     }
 
                     WindowHeight::Fixed(tile.tile_height_for_window_height(window_height))
@@ -4080,8 +4085,27 @@ impl<W: LayoutElement> Column<W> {
             }
 
             let requested_size = tile.window().requested_size().unwrap();
-            total_height += tile.tile_height_for_window_height(f64::from(requested_size.h));
-            total_min_height += f64::max(1., tile.min_size().h);
+            let requested_tile_height =
+                tile.tile_height_for_window_height(f64::from(requested_size.h));
+            let min_tile_height = f64::max(1., tile.min_size().h);
+
+            if !self.is_fullscreen
+                && self.scale.round() == self.scale
+                && self.working_area.size.h.round() == self.working_area.size.h
+                && self.options.gaps.round() == self.options.gaps
+            {
+                let total_height = requested_tile_height + self.options.gaps * 2.;
+                let total_min_height = min_tile_height + self.options.gaps * 2.;
+                let max_height = f64::max(total_min_height, self.working_area.size.h);
+                assert!(
+                    total_height <= max_height,
+                    "each tile in a column mustn't go beyond working area height \
+                     (tile height {total_height} > max height {max_height})"
+                );
+            }
+
+            total_height += requested_tile_height;
+            total_min_height += min_tile_height;
         }
 
         if tile_count > 1
