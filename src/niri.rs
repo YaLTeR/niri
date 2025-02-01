@@ -365,9 +365,7 @@ pub struct Niri {
     // Only defined when there is an active traversal in progress
     pub window_mru: Option<WindowMRU>,
 
-    pending_focus_lockin: Option<PendingFocusLockin>,
-
-    pub event_forwarded_to_focused_client: AtomicBool,
+    pending_mru_commit: Option<PendingMruCommit>,
 }
 
 #[derive(Debug)]
@@ -505,7 +503,7 @@ pub struct WindowMRU {
 
 /// Pending update to a window's focus timestamp.
 #[derive(Debug)]
-struct PendingFocusLockin {
+struct PendingMruCommit {
     id: MappedId,
     token: RegistrationToken,
     stamp: Instant,
@@ -785,7 +783,7 @@ impl State {
             .take()
             .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
 
-        if let Some(window) = wmru.mru_next(&self.niri) {
+        if let Some(window) = wmru.advance(&self.niri, false) {
             self.focus_window(&window);
         }
         self.niri.window_mru.replace(wmru);
@@ -799,7 +797,7 @@ impl State {
             .take()
             .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
 
-        if let Some(window) = wmru.mru_previous(&self.niri) {
+        if let Some(window) = wmru.advance(&self.niri, true) {
             self.focus_window(&window);
         }
         self.niri.window_mru.replace(wmru);
@@ -1062,19 +1060,19 @@ impl State {
                         }
                     } else if self.niri.window_mru.is_none() {
                         let timer = Timer::from_duration(Duration::from_millis(
-                            self.niri.config.borrow().focus_lockin_ms,
+                            self.niri.config.borrow().mru_commit_ms,
                         ));
 
                         let focus_token = self
                             .niri
                             .event_loop
                             .insert_source(timer, move |_, _, state| {
-                                state.niri.lockin_focus();
+                                state.niri.mru_commit();
                                 TimeoutAction::Drop
                             })
                             .unwrap();
-                        if let Some(PendingFocusLockin { token, .. }) =
-                            self.niri.pending_focus_lockin.replace(PendingFocusLockin {
+                        if let Some(PendingMruCommit { token, .. }) =
+                            self.niri.pending_mru_commit.replace(PendingMruCommit {
                                 id: focus_id,
                                 token: focus_token,
                                 stamp,
@@ -2221,8 +2219,7 @@ impl Niri {
             mapped_cast_output: HashMap::new(),
 
             window_mru: None,
-            pending_focus_lockin: None,
-            event_forwarded_to_focused_client: AtomicBool::new(false),
+            pending_mru_commit: None,
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -5282,10 +5279,10 @@ impl Niri {
         self.pointer_inactivity_timer = Some(token);
     }
 
-    // Consume the active PendingLockinFocus, if any, and use the information
+    // Consume the active `PendingMruCommit`, if any, and use the information
     // it contains to update the (active) window's focus timestamp
-    pub fn lockin_focus(&mut self) {
-        if let Some(pending) = self.pending_focus_lockin.take() {
+    pub fn mru_commit(&mut self) {
+        if let Some(pending) = self.pending_mru_commit.take() {
             if let Some(window) = self
                 .layout
                 .workspaces_mut()
@@ -5318,7 +5315,7 @@ impl WindowMRU {
     fn new(niri: &mut Niri) -> Self {
         // update the timestamp on the currently active window and
         // prepare a new WindowMRU
-        niri.lockin_focus();
+        niri.mru_commit();
 
         // and build a list of MappedId sorted by timestamp
         let mut ts_ids: Vec<(Instant, MappedId)> = niri
@@ -5349,14 +5346,6 @@ impl WindowMRU {
             }
         }
         None
-    }
-
-    fn mru_next(&mut self, niri: &Niri) -> Option<Window> {
-        self.advance(niri, false)
-    }
-
-    fn mru_previous(&mut self, niri: &Niri) -> Option<Window> {
-        self.advance(niri, true)
     }
 }
 

@@ -397,23 +397,22 @@ impl State {
                     }
                 }
 
-                if let Some(raw) = raw {
-                    // If the ESC key was pressed with the Alt modifier and
-                    // there is an active window-mru, cancel the window-mru and
-                    // refocus the initial window (first in the list)
-                    if pressed && mods.alt && raw == Keysym::Escape {
-                        if let Some(id) = this
-                            .niri
-                            .window_mru
-                            .take()
-                            .and_then(|wmru| wmru.ids.into_iter().next())
-                        {
-                            let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
-                            let window = window.map(|(_, m)| m.window.clone());
-                            if let Some(window) = window {
-                                this.focus_window(&window);
-                                return FilterResult::Intercept(None);
-                            }
+                // If the ESC key was pressed with the Alt modifier and
+                // there is an active window-mru, cancel the window-mru and
+                // refocus the initial window (first in the list).
+                if pressed && mods.alt && raw == Some(Keysym::Escape) {
+                    if let Some(id) = this
+                        .niri
+                        .window_mru
+                        .take()
+                        .and_then(|wmru| wmru.ids.into_iter().next())
+                    {
+                        this.niri.suppressed_keys.insert(key_code);
+                        let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
+                        let window = window.map(|(_, m)| m.window.clone());
+                        if let Some(window) = window {
+                            this.focus_window(&window);
+                            return FilterResult::Intercept(None);
                         }
                     }
                 }
@@ -437,8 +436,8 @@ impl State {
                 if matches!(intercept_result, FilterResult::Forward) {
                     // Interaction with the active window, immediately update
                     // the active window's focus timestamp without waiting for a
-                    // possible lockin period.
-                    this.niri.lockin_focus();
+                    // possible pending MRU lock-in delay.
+                    this.niri.mru_commit();
                 }
                 intercept_result
             },
@@ -2168,8 +2167,8 @@ impl State {
         }
 
         // The event is getting forwarded to a client, consider that the
-        // focus should be locked-in.
-        self.niri.lockin_focus();
+        // MRU Window order shoud be committed.
+        self.niri.mru_commit();
 
         pointer.button(
             self,
@@ -2388,6 +2387,8 @@ impl State {
 
         pointer.axis(self, frame);
         pointer.frame(self);
+
+        self.niri.mru_commit();
     }
 
     fn on_tablet_tool_axis<I: InputBackend>(&mut self, event: I::TabletToolAxisEvent)
@@ -2433,6 +2434,8 @@ impl State {
 
             self.niri.pointer_hidden = false;
             self.niri.tablet_cursor_location = Some(pos);
+
+            self.niri.mru_commit();
         }
 
         // Redraw to update the cursor position.
@@ -2463,6 +2466,7 @@ impl State {
                             self.niri.queue_redraw_all();
                         }
                         self.niri.focus_layer_surface_if_on_demand(under.layer);
+                        self.niri.mru_commit();
                     }
                 }
                 TabletToolTipState::Up => {
@@ -2497,6 +2501,7 @@ impl State {
                             SERIAL_COUNTER.next_serial(),
                             event.time_msec(),
                         );
+                        self.niri.mru_commit();
                     }
                     self.niri.pointer_hidden = false;
                     self.niri.tablet_cursor_location = Some(pos);
@@ -2532,6 +2537,7 @@ impl State {
                 SERIAL_COUNTER.next_serial(),
                 event.time_msec(),
             );
+            self.niri.mru_commit();
         }
     }
 
@@ -2558,6 +2564,7 @@ impl State {
                 fingers: event.fingers(),
             },
         );
+        self.niri.mru_commit();
     }
 
     fn on_gesture_swipe_update<I: InputBackend + 'static>(
@@ -2710,6 +2717,7 @@ impl State {
                 fingers: event.fingers(),
             },
         );
+        self.niri.mru_commit();
     }
 
     fn on_gesture_pinch_update<I: InputBackend>(&mut self, event: I::GesturePinchUpdateEvent) {
@@ -2764,6 +2772,7 @@ impl State {
                 fingers: event.fingers(),
             },
         );
+        self.niri.mru_commit();
     }
 
     fn on_gesture_hold_end<I: InputBackend>(&mut self, event: I::GestureHoldEndEvent) {
@@ -2876,6 +2885,7 @@ impl State {
 
         // We're using touch, hide the pointer.
         self.niri.pointer_hidden = true;
+        self.niri.mru_commit();
     }
     fn on_touch_up<I: InputBackend>(&mut self, evt: I::TouchUpEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {

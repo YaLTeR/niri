@@ -25,7 +25,7 @@ use smithay::reexports::input;
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
 
-pub const DEFAULT_FOCUS_LOCKIN_MS: u64 = 750;
+pub const DEFAULT_MRU_COMMIT_MS: u64 = 750;
 
 pub mod layer_rule;
 
@@ -74,8 +74,8 @@ pub struct Config {
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
-    #[knuffel(child, unwrap(argument), default = DEFAULT_FOCUS_LOCKIN_MS)]
-    pub focus_lockin_ms: u64,
+    #[knuffel(child, unwrap(argument), default = DEFAULT_MRU_COMMIT_MS)]
+    pub mru_commit_ms: u64,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -3570,7 +3570,7 @@ mod tests {
             workspace "workspace-2"
             workspace "workspace-3"
 
-            focus-lockin-ms 123
+            mru-commit-ms 123
             "##,
             Config {
                 input: Input {
@@ -4013,7 +4013,7 @@ mod tests {
                     render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
                 },
-                focus_lockin_ms: 123u64,
+                mru_commit_ms: 123u64,
             },
         );
     }
