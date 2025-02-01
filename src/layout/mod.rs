@@ -2063,6 +2063,13 @@ impl<W: LayoutElement> Layout<W> {
         monitor.swap_window_in_direction(direction);
     }
 
+    pub fn toggle_column_tabbed_display(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.toggle_column_tabbed_display();
+    }
+
     pub fn center_column(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;

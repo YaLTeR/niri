@@ -401,6 +401,7 @@ enum Op {
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
     SwapWindowInDirection(#[proptest(strategy = "arbitrary_scroll_direction()")] ScrollDirection),
+    ToggleColumnTabbedDisplay,
     CenterColumn,
     CenterWindow {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -959,6 +960,7 @@ impl Op {
             Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
             Op::ExpelWindowFromColumn => layout.expel_from_column(),
             Op::SwapWindowInDirection(direction) => layout.swap_window_in_direction(direction),
+            Op::ToggleColumnTabbedDisplay => layout.toggle_column_tabbed_display(),
             Op::CenterColumn => layout.center_column(),
             Op::CenterWindow { id } => {
                 let id = id.filter(|id| layout.has_window(id));
