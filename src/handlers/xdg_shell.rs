@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use calloop::Interest;
+use niri_config::PresetSize;
 use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, utils, LayerSurface,
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -42,7 +43,6 @@ use crate::input::resize_grab::ResizeGrab;
 use crate::input::touch_move_grab::TouchMoveGrab;
 use crate::input::touch_resize_grab::TouchResizeGrab;
 use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
-use crate::layout::scrolling::ColumnWidth;
 use crate::niri::{PopupGrabState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{get_monotonic_time, output_matches_name, send_scale_transform, ResizeEdge};
@@ -591,7 +591,7 @@ impl XdgShellHandler for State {
                         let configure_width = if is_floating {
                             *floating_width
                         } else if *is_full_width {
-                            Some(ColumnWidth::Proportion(1.))
+                            Some(PresetSize::Proportion(1.))
                         } else {
                             *width
                         };
@@ -921,7 +921,7 @@ impl State {
             let configure_width = if is_floating {
                 floating_width
             } else if is_full_width {
-                Some(ColumnWidth::Proportion(1.))
+                Some(PresetSize::Proportion(1.))
             } else {
                 width
             };

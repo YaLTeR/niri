@@ -672,6 +672,8 @@ pub enum LayoutSwitchTarget {
     Next,
     /// The previous configured layout.
     Prev,
+    /// The specific layout by index.
+    Index(u8),
 }
 
 /// Output actions that niri can perform.
@@ -1178,7 +1180,10 @@ impl FromStr for LayoutSwitchTarget {
         match s {
             "next" => Ok(Self::Next),
             "prev" => Ok(Self::Prev),
-            _ => Err(r#"invalid layout action, can be "next" or "prev""#),
+            other => match other.parse() {
+                Ok(layout) => Ok(Self::Index(layout)),
+                _ => Err(r#"invalid layout action, can be "next", "prev" or a layout index"#),
+            },
         }
     }
 }

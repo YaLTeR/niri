@@ -259,7 +259,9 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.add_column(column, activate);
 
         // After adding a new window, workspace becomes this output's own.
-        workspace.original_output = OutputId::new(&self.output);
+        if workspace.name().is_none() {
+            workspace.original_output = OutputId::new(&self.output);
+        }
 
         if workspace_idx == self.workspaces.len() - 1 {
             self.add_workspace_bottom();
@@ -311,7 +313,9 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.add_tile(tile, target, activate, width, is_full_width, is_floating);
 
         // After adding a new window, workspace becomes this output's own.
-        workspace.original_output = OutputId::new(&self.output);
+        if workspace.name().is_none() {
+            workspace.original_output = OutputId::new(&self.output);
+        }
 
         if workspace_idx == self.workspaces.len() - 1 {
             // Insert a new empty workspace.
@@ -341,7 +345,9 @@ impl<W: LayoutElement> Monitor<W> {
         workspace.add_tile_to_column(column_idx, tile_idx, tile, activate);
 
         // After adding a new window, workspace becomes this output's own.
-        workspace.original_output = OutputId::new(&self.output);
+        if workspace.name().is_none() {
+            workspace.original_output = OutputId::new(&self.output);
+        }
 
         // Since we're adding window to an existing column, the workspace isn't empty, and
         // therefore cannot be the last one, so we never need to insert a new empty workspace.

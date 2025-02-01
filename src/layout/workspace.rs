@@ -713,9 +713,9 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn resolve_default_width(
         &self,
-        default_width: Option<Option<ColumnWidth>>,
+        default_width: Option<Option<PresetSize>>,
         is_floating: bool,
-    ) -> Option<ColumnWidth> {
+    ) -> Option<PresetSize> {
         match default_width {
             Some(Some(width)) => Some(width),
             Some(None) => None,
@@ -740,7 +740,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn new_window_size(
         &self,
-        width: Option<ColumnWidth>,
+        width: Option<PresetSize>,
         height: Option<PresetSize>,
         is_floating: bool,
         rules: &ResolvedWindowRules,
@@ -772,7 +772,7 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn configure_new_window(
         &self,
         window: &Window,
-        width: Option<ColumnWidth>,
+        width: Option<PresetSize>,
         height: Option<PresetSize>,
         is_floating: bool,
         rules: &ResolvedWindowRules,

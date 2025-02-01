@@ -45,7 +45,16 @@ impl DBusServers {
         let mut dbus = Self::default();
 
         if is_session_instance {
-            let service_channel = ServiceChannel::new(niri.display_handle.clone());
+            let (to_niri, from_service_channel) = calloop::channel::channel();
+            let service_channel = ServiceChannel::new(to_niri);
+            niri.event_loop
+                .insert_source(from_service_channel, move |event, _, state| match event {
+                    calloop::channel::Event::Msg(new_client) => {
+                        state.niri.insert_client(new_client);
+                    }
+                    calloop::channel::Event::Closed => (),
+                })
+                .unwrap();
             dbus.conn_service_channel = try_start(service_channel);
         }
 

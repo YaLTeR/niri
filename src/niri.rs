@@ -1,6 +1,7 @@
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,7 +46,7 @@ use smithay::desktop::{
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
-use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus, MotionEvent};
+use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData, MotionEvent};
 use smithay::input::{Seat, SeatState};
 use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::generic::Generic;
@@ -154,7 +155,7 @@ use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRende
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, center_f64, get_monotonic_time, ipc_transform_to_smithay, logical_output,
+    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, logical_output,
     make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
 };
 use crate::window::mapped::MappedId;
@@ -181,7 +182,11 @@ pub struct Niri {
     pub scheduler: Scheduler<()>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
-    pub socket_name: OsString,
+
+    /// Name of the Wayland socket.
+    ///
+    /// This is `None` when creating `Niri` without a Wayland socket.
+    pub socket_name: Option<OsString>,
 
     pub start_time: Instant,
 
@@ -574,6 +579,7 @@ impl State {
         stop_signal: LoopSignal,
         display: Display<State>,
         headless: bool,
+        create_wayland_socket: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -595,11 +601,20 @@ impl State {
             Backend::Tty(tty)
         };
 
-        let mut niri = Niri::new(config.clone(), event_loop, stop_signal, display, &backend);
+        let mut niri = Niri::new(
+            config.clone(),
+            event_loop,
+            stop_signal,
+            display,
+            &backend,
+            create_wayland_socket,
+        );
         backend.init(&mut niri);
 
         let mut state = Self { backend, niri };
 
+        // Load the xkb_file config option if set by the user.
+        state.load_xkb_file();
         // Initialize some IPC server state.
         state.ipc_keyboard_layouts_changed();
 
@@ -1169,6 +1184,31 @@ impl State {
         }
     }
 
+    /// Loads the xkb keymap from a file config setting.
+    fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
+        let xkb_file = PathBuf::from(xkb_file);
+        let xkb_file = expand_home(&xkb_file)
+            .context("failed to expand ~")?
+            .unwrap_or(xkb_file);
+
+        let keymap = std::fs::read_to_string(xkb_file).context("failed to read xkb_file")?;
+
+        let xkb = self.niri.seat.get_keyboard().unwrap();
+        xkb.set_keymap_from_string(self, keymap)
+            .context("failed to set keymap")?;
+
+        Ok(())
+    }
+
+    fn load_xkb_file(&mut self) {
+        let xkb_file = self.niri.config.borrow().input.keyboard.xkb.file.clone();
+        if let Some(xkb_file) = xkb_file {
+            if let Err(err) = self.set_xkb_file(xkb_file) {
+                warn!("error loading xkb_file: {err:?}");
+            }
+        }
+    }
+
     pub fn reload_config(&mut self, path: PathBuf) {
         let _span = tracy_client::span!("State::reload_config");
 
@@ -1333,10 +1373,25 @@ impl State {
         drop(old_config);
 
         // Now with a &mut self we can reload the xkb config.
-        if let Some(xkb) = reload_xkb {
-            let keyboard = self.niri.seat.get_keyboard().unwrap();
-            if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
-                warn!("error updating xkb config: {err:?}");
+        if let Some(mut xkb) = reload_xkb {
+            let mut set_xkb_config = true;
+
+            // It's fine to .take() the xkb file, as this is a
+            // clone and the file field is not used in the XkbConfig.
+            if let Some(xkb_file) = xkb.file.take() {
+                if let Err(err) = self.set_xkb_file(xkb_file) {
+                    warn!("error reloading xkb_file: {err:?}");
+                } else {
+                    // We successfully set xkb file so we don't need to fallback to XkbConfig.
+                    set_xkb_config = false;
+                }
+            }
+
+            if set_xkb_config {
+                let keyboard = self.niri.seat.get_keyboard().unwrap();
+                if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
+                    warn!("error updating xkb config: {err:?}");
+                }
             }
 
             self.ipc_keyboard_layouts_changed();
@@ -1841,6 +1896,7 @@ impl Niri {
         stop_signal: LoopSignal,
         display: Display<State>,
         backend: &Backend,
+        create_wayland_socket: bool,
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
@@ -1860,6 +1916,10 @@ impl Niri {
         let layout = Layout::new(animation_clock.clone(), &config_);
 
         let (blocker_cleared_tx, blocker_cleared_rx) = mpsc::channel();
+
+        fn client_is_unrestricted(client: &Client) -> bool {
+            !client.get_data::<ClientState>().unwrap().restricted
+        }
 
         let compositor_state = CompositorState::new_v6::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
@@ -1884,14 +1944,12 @@ impl Niri {
                     .can_view_decoration_globals
             },
         );
-        let layer_shell_state =
-            WlrLayerShellState::new_with_filter::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+        let layer_shell_state = WlrLayerShellState::new_with_filter::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
         let session_lock_state =
-            SessionLockManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            SessionLockManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let shm_state = ShmState::new::<State>(
             &display_handle,
             vec![wl_shm::Format::Xbgr8888, wl_shm::Format::Abgr8888],
@@ -1919,42 +1977,29 @@ impl Niri {
         let data_control_state = DataControlState::new::<State, _>(
             &display_handle,
             Some(&primary_selection_state),
-            |client| !client.get_data::<ClientState>().unwrap().restricted,
+            client_is_unrestricted,
         );
         let presentation_state =
             PresentationState::new::<State>(&display_handle, Monotonic::ID as u32);
         let security_context_state =
-            SecurityContextState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            SecurityContextState::new::<State, _>(&display_handle, client_is_unrestricted);
 
         let text_input_state = TextInputManagerState::new::<State>(&display_handle);
         let input_method_state =
-            InputMethodManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            InputMethodManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let keyboard_shortcuts_inhibit_state =
             KeyboardShortcutsInhibitState::new::<State>(&display_handle);
         let virtual_keyboard_state =
-            VirtualKeyboardManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            VirtualKeyboardManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let virtual_pointer_state =
-            VirtualPointerManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            VirtualPointerManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let foreign_toplevel_state =
-            ForeignToplevelManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            ForeignToplevelManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let mut output_management_state =
-            OutputManagementManagerState::new::<State, _>(&display_handle, |client| {
-                !client.get_data::<ClientState>().unwrap().restricted
-            });
+            OutputManagementManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         output_management_state.on_config_changed(config_.outputs.clone());
-        let screencopy_state = ScreencopyManagerState::new::<State, _>(&display_handle, |client| {
-            !client.get_data::<ClientState>().unwrap().restricted
-        });
+        let screencopy_state =
+            ScreencopyManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let viewporter_state = ViewporterState::new::<State>(&display_handle);
         let xdg_foreign_state = XdgForeignState::new::<State>(&display_handle);
 
@@ -2027,26 +2072,22 @@ impl Niri {
             )
             .unwrap();
 
-        let socket_source = ListeningSocketSource::new_auto().unwrap();
-        let socket_name = socket_source.socket_name().to_os_string();
-        event_loop
-            .insert_source(socket_source, move |client, _, state| {
-                let config = state.niri.config.borrow();
-                let data = Arc::new(ClientState {
-                    compositor_state: Default::default(),
-                    can_view_decoration_globals: config.prefer_no_csd,
-                    primary_selection_disabled: config.clipboard.disable_primary,
-                    restricted: false,
-                    credentials_unknown: false,
-                });
+        let socket_name = create_wayland_socket.then(|| {
+            let socket_source = ListeningSocketSource::new_auto().unwrap();
+            let socket_name = socket_source.socket_name().to_os_string();
+            event_loop
+                .insert_source(socket_source, move |client, _, state| {
+                    state.niri.insert_client(NewClient {
+                        client,
+                        restricted: false,
+                        credentials_unknown: false,
+                    });
+                })
+                .unwrap();
+            socket_name
+        });
 
-                if let Err(err) = state.niri.display_handle.insert_client(client, data) {
-                    warn!("error inserting client: {err}");
-                }
-            })
-            .unwrap();
-
-        let ipc_server = match IpcServer::start(&event_loop, &socket_name.to_string_lossy()) {
+        let ipc_server = match IpcServer::start(&event_loop, socket_name.as_deref()) {
             Ok(server) => Some(server),
             Err(err) => {
                 warn!("error starting IPC server: {err:?}");
@@ -2225,6 +2266,27 @@ impl Niri {
         niri.reset_pointer_inactivity_timer();
 
         niri
+    }
+
+    pub fn insert_client(&mut self, client: NewClient) {
+        let NewClient {
+            client,
+            restricted,
+            credentials_unknown,
+        } = client;
+
+        let config = self.config.borrow();
+        let data = Arc::new(ClientState {
+            compositor_state: Default::default(),
+            can_view_decoration_globals: config.prefer_no_csd,
+            primary_selection_disabled: config.clipboard.disable_primary,
+            restricted,
+            credentials_unknown,
+        });
+
+        if let Err(err) = self.display_handle.insert_client(client, data) {
+            warn!("error inserting client: {err}");
+        }
     }
 
     #[cfg(feature = "dbus")]
@@ -3104,7 +3166,7 @@ impl Niri {
                 let hotspot = with_states(surface, |states| {
                     states
                         .data_map
-                        .get::<Mutex<CursorImageAttributes>>()
+                        .get::<CursorImageSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
@@ -5294,6 +5356,12 @@ impl Niri {
             self.event_loop.remove(pending.token);
         }
     }
+}
+
+pub struct NewClient {
+    pub client: UnixStream,
+    pub restricted: bool,
+    pub credentials_unknown: bool,
 }
 
 pub struct ClientState {

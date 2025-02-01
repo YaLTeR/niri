@@ -790,7 +790,7 @@ impl LayoutElement for Mapped {
         let _span =
             trace_span!("send_pending_configure", surface = ?toplevel.wl_surface().id()).entered();
 
-        // Check for pending changes manually to account fo RequestSizeOnce::UseWindowSize.
+        // Check for pending changes manually to account for RequestSizeOnce::UseWindowSize.
         let has_pending_changes = with_toplevel_role(self.toplevel(), |role| {
             if role.server_pending.is_none() {
                 return false;

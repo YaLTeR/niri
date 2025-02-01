@@ -339,7 +339,7 @@ window-rule {{
     window.ack_last_and_commit();
     f.double_roundtrip(id);
 
-    // Commit to the post-intial configures.
+    // Commit to the post-initial configures.
     let window = f.client(id).window(&surface);
     let new_serial = window.configures_received.last().unwrap().0;
     if new_serial != serial {
@@ -582,7 +582,7 @@ window-rule {
     window.ack_last_and_commit();
     f.double_roundtrip(id);
 
-    // Commit to the post-intial configures.
+    // Commit to the post-initial configures.
     let window = f.client(id).window(&surface);
     let new_serial = window.configures_received.last().unwrap().0;
     if new_serial != serial {

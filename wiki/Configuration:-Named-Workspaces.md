@@ -39,3 +39,9 @@ There's no way to give a name to an already existing workspace, but you can simp
 
 <sup>Since: 0.1.9</sup> `open-on-output` can now use monitor manufacturer, model, and serial.
 Before, it could only use the connector name.
+
+<sup>Since: 25.01</sup> You can use `set-workspace-name` and `unset-workspace-name` actions to change workspace names dynamically.
+
+<sup>Since: next release</sup> Named workspaces no longer update/forget their original output when opening a new window on them (unnamed workspaces will keep doing that).
+This means that named workspaces "stick" to their original output in more cases, reflecting their more permanent nature.
+Explicitly moving a named workspace to a different monitor will still update its original output.

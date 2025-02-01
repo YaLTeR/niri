@@ -17,6 +17,7 @@ input {
             // options "compose:ralt,ctrl:nocaps"
             // model ""
             // rules ""
+            // file "~/.config/keymap.xkb"
         }
 
         // repeat-delay 600
@@ -111,6 +112,21 @@ input {
     }
 }
 ```
+
+> [!TIP]
+>
+> Alternatively you can directly set a path to a .xkb file containing an xkb keymap.
+> This overrides all other xkb settings
+>
+> ```kdl
+> input {
+>     keyboard {
+>         xkb {
+>             file "~/.config/keymap.xkb"
+>         }
+>     }
+> }
+> ```
 
 When using multiple layouts, niri can remember the current layout globally (the default) or per-window.
 You can control this with the `track-layout` option.

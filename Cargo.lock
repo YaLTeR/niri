@@ -1764,13 +1764,14 @@ checksum = "bd4f5b4d1c00331c5245163aacfe5f20be75b564c7112d45893d4ae038119eb0"
 
 [[package]]
 name = "insta"
-version = "1.42.0"
+version = "1.42.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6513e4067e16e69ed1db5ab56048ed65db32d10ba5fc1217f5393f8f17d8b5a5"
+checksum = "71c1b125e30d93896b365e156c33dadfffab45ee8400afcbba4752f59de08a86"
 dependencies = [
  "console",
  "linked-hash-map",
  "once_cell",
+ "pin-project",
  "similar",
 ]
 
@@ -2002,7 +2003,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -2045,7 +2046,7 @@ dependencies = [
 [[package]]
 name = "libspa"
 version = "0.8.0"
-source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#86df39190c0ab67444666a42908f7e8c1344e24a"
+source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#fd3d8f7861a29c2eeaa4c393402e013578bb36d9"
 dependencies = [
  "bitflags 2.8.0",
  "cc",
@@ -2053,7 +2054,7 @@ dependencies = [
  "cookie-factory",
  "libc",
  "libspa-sys",
- "nix 0.27.1",
+ "nix",
  "nom",
  "system-deps 6.2.2",
 ]
@@ -2061,7 +2062,7 @@ dependencies = [
 [[package]]
 name = "libspa-sys"
 version = "0.8.0"
-source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#86df39190c0ab67444666a42908f7e8c1344e24a"
+source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#fd3d8f7861a29c2eeaa4c393402e013578bb36d9"
 dependencies = [
  "bindgen",
  "cc",
@@ -2327,17 +2328,6 @@ dependencies = [
  "smithay",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "nix"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
-dependencies = [
- "bitflags 2.8.0",
- "cfg-if",
- "libc",
 ]
 
 [[package]]
@@ -2824,14 +2814,14 @@ dependencies = [
 [[package]]
 name = "pipewire"
 version = "0.8.0"
-source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#86df39190c0ab67444666a42908f7e8c1344e24a"
+source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#fd3d8f7861a29c2eeaa4c393402e013578bb36d9"
 dependencies = [
  "anyhow",
  "bitflags 2.8.0",
  "libc",
  "libspa",
  "libspa-sys",
- "nix 0.27.1",
+ "nix",
  "once_cell",
  "pipewire-sys",
  "thiserror 1.0.69",
@@ -2840,7 +2830,7 @@ dependencies = [
 [[package]]
 name = "pipewire-sys"
 version = "0.8.0"
-source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#86df39190c0ab67444666a42908f7e8c1344e24a"
+source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#fd3d8f7861a29c2eeaa4c393402e013578bb36d9"
 dependencies = [
  "bindgen",
  "libspa-sys",
@@ -3324,9 +3314,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.137"
+version = "1.0.138"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "930cfb6e6abf99298aaad7d29abbef7a9999a9a8806a40088f55f0dcec03146b"
+checksum = "d434192e7da787e94a6ea7e9670b26a036d0ca41e0b7efb2676dd32bae872949"
 dependencies = [
  "itoa",
  "memchr",
@@ -3837,7 +3827,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69fff37da548239c3bf9e64a12193d261e8b22b660991c6fd2df057c168f435f"
 dependencies = [
  "cc",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -4746,7 +4736,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "hex",
- "nix 0.29.0",
+ "nix",
  "ordered-stream",
  "serde",
  "serde_repr",

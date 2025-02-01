@@ -140,6 +140,8 @@ pub struct Xkb {
     pub variant: String,
     #[knuffel(child, unwrap(argument))]
     pub options: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub file: Option<String>,
 }
 
 impl Xkb {
@@ -768,6 +770,15 @@ impl Default for Cursor {
 pub enum PresetSize {
     Proportion(#[knuffel(argument)] f64),
     Fixed(#[knuffel(argument)] i32),
+}
+
+impl From<PresetSize> for SizeChange {
+    fn from(value: PresetSize) -> Self {
+        match value {
+            PresetSize::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
+            PresetSize::Fixed(fixed) => SizeChange::SetFixed(fixed),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

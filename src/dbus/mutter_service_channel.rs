@@ -1,14 +1,12 @@
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
 
-use smithay::reexports::wayland_server::DisplayHandle;
 use zbus::{fdo, interface, zvariant};
 
 use super::Start;
-use crate::niri::ClientState;
+use crate::niri::NewClient;
 
 pub struct ServiceChannel {
-    display: DisplayHandle,
+    to_niri: calloop::channel::Sender<NewClient>,
 }
 
 #[interface(name = "org.gnome.Mutter.ServiceChannel")]
@@ -24,23 +22,24 @@ impl ServiceChannel {
         }
 
         let (sock1, sock2) = UnixStream::pair().unwrap();
-        let data = Arc::new(ClientState {
-            compositor_state: Default::default(),
-            // Would be nice to thread config here but for now it's fine.
-            can_view_decoration_globals: false,
-            primary_selection_disabled: false,
+        let client = NewClient {
+            client: sock2,
             restricted: false,
             // FIXME: maybe you can get the PID from D-Bus somehow?
             credentials_unknown: true,
-        });
-        self.display.insert_client(sock2, data).unwrap();
+        };
+        if let Err(err) = self.to_niri.send(client) {
+            warn!("error sending message to niri: {err:?}");
+            return Err(fdo::Error::Failed("internal error".to_owned()));
+        }
+
         Ok(zvariant::OwnedFd::from(std::os::fd::OwnedFd::from(sock1)))
     }
 }
 
 impl ServiceChannel {
-    pub fn new(display: DisplayHandle) -> Self {
-        Self { display }
+    pub fn new(to_niri: calloop::channel::Sender<NewClient>) -> Self {
+        Self { to_niri }
     }
 }
 
