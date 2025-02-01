@@ -72,6 +72,8 @@ pub enum Msg {
     FocusedOutput,
     /// Print information about the focused window.
     FocusedWindow,
+    /// Request picking a window.
+    PickWindow,
     /// Perform an action.
     Action {
         #[command(subcommand)]
