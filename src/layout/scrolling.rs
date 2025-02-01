@@ -3405,6 +3405,7 @@ impl<W: LayoutElement> Column<W> {
 
         let width = width.resolve(&self.options, self.working_area.size.w);
         let width = f64::max(f64::min(width, max_width), min_width);
+        let max_tile_height = self.working_area.size.h - self.options.gaps * 2.;
 
         // If there are multiple windows in a column, clamp the non-auto window's height according
         // to other windows' min sizes.
@@ -3423,10 +3424,7 @@ impl<W: LayoutElement> Column<W> {
                     .sum::<f64>();
 
                 let tile = &self.tiles[non_auto_idx];
-                let height_left = self.working_area.size.h
-                    - self.options.gaps
-                    - min_height_taken
-                    - self.options.gaps;
+                let height_left = max_tile_height - min_height_taken;
                 max_non_auto_window_height = Some(f64::max(
                     1.,
                     tile.window_height_for_tile_height(height_left).round(),
@@ -3444,8 +3442,7 @@ impl<W: LayoutElement> Column<W> {
                         window_height = f64::min(window_height, max);
                     } else {
                         // In any case, clamp to the working area height.
-                        let height_left = self.working_area.size.h - self.options.gaps * 2.;
-                        let max = tile.window_height_for_tile_height(height_left).round();
+                        let max = tile.window_height_for_tile_height(max_tile_height).round();
                         window_height = f64::min(window_height, max);
                     }
 
