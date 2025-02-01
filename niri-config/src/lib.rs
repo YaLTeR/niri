@@ -458,6 +458,8 @@ pub struct Layout {
     pub always_center_single_column: bool,
     #[knuffel(child)]
     pub empty_workspace_above_first: bool,
+    #[knuffel(child, unwrap(argument), default)]
+    pub default_column_display: ColumnDisplay,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
     pub gaps: FloatOrInt<0, 65535>,
     #[knuffel(child, default)]
@@ -476,6 +478,7 @@ impl Default for Layout {
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
+            default_column_display: Default::default(),
             gaps: FloatOrInt(16.),
             struts: Default::default(),
             preset_window_heights: Default::default(),
@@ -793,6 +796,16 @@ impl From<PresetSize> for SizeChange {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultPresetSize(pub Option<PresetSize>);
+
+/// How windows display in a column.
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnDisplay {
+    /// Windows arranged vertically, spread across the working area height.
+    #[default]
+    Normal,
+    /// Windows are in tabs.
+    Tabbed,
+}
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Struts {
@@ -1367,6 +1380,7 @@ pub enum Action {
     ExpelWindowFromColumn,
     SwapWindowLeft,
     SwapWindowRight,
+    ToggleColumnTabbedDisplay,
     CenterColumn,
     CenterWindow,
     #[knuffel(skip)]
@@ -1563,6 +1577,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,
             niri_ipc::Action::SwapWindowRight {} => Self::SwapWindowRight,
             niri_ipc::Action::SwapWindowLeft {} => Self::SwapWindowLeft,
+            niri_ipc::Action::ToggleColumnTabbedDisplay {} => Self::ToggleColumnTabbedDisplay,
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
@@ -3490,6 +3505,8 @@ mod tests {
 
                 center-focused-column "on-overflow"
 
+                default-column-display "tabbed"
+
                 insert-hint {
                     color "rgb(255, 200, 127)"
                     gradient from="rgba(10, 20, 30, 1.0)" to="#0080ffff" relative-to="workspace-view"
@@ -3754,6 +3771,7 @@ mod tests {
                         bottom: FloatOrInt(0.),
                     },
                     center_focused_column: CenterFocusedColumn::OnOverflow,
+                    default_column_display: ColumnDisplay::Tabbed,
                     always_center_single_column: false,
                     empty_workspace_above_first: false,
                 },

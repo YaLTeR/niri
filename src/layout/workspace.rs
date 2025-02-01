@@ -577,10 +577,10 @@ impl<W: LayoutElement> Workspace<W> {
                         self.floating.add_tile_above(next_to, tile, activate);
                     } else {
                         // FIXME: use static pos
-                        let (next_to_tile, render_pos) = self
+                        let (next_to_tile, render_pos, _visible) = self
                             .scrolling
                             .tiles_with_render_positions()
-                            .find(|(tile, _)| tile.window().id() == next_to)
+                            .find(|(tile, _, _)| tile.window().id() == next_to)
                             .unwrap();
 
                         // Position the new tile in the center above the next_to tile. Think a
@@ -1022,6 +1022,13 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.swap_window_in_direction(direction);
     }
 
+    pub fn toggle_column_tabbed_display(&mut self) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.toggle_column_tabbed_display();
+    }
+
     pub fn center_column(&mut self) {
         if self.floating_is_active.get() {
             self.floating.center_window(None);
@@ -1336,7 +1343,6 @@ impl<W: LayoutElement> Workspace<W> {
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
         let scrolling = self.scrolling.tiles_with_render_positions();
-        let scrolling = scrolling.map(|(tile, pos)| (tile, pos, true));
 
         let floating = self.floating.tiles_with_render_positions();
         let visible = self.is_floating_visible();

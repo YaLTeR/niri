@@ -39,7 +39,7 @@ use std::time::Duration;
 
 use monitor::MonitorAddWindowTarget;
 use niri_config::{
-    CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
+    CenterFocusedColumn, ColumnDisplay, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
 use niri_ipc::{PositionChange, SizeChange};
@@ -316,6 +316,7 @@ pub struct Options {
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
     pub empty_workspace_above_first: bool,
+    pub default_column_display: ColumnDisplay,
     /// Column or window widths that `toggle_width()` switches between.
     pub preset_column_widths: Vec<PresetSize>,
     /// Initial width for new columns.
@@ -340,6 +341,7 @@ impl Default for Options {
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
+            default_column_display: Default::default(),
             preset_column_widths: vec![
                 PresetSize::Proportion(1. / 3.),
                 PresetSize::Proportion(0.5),
@@ -552,6 +554,7 @@ impl Options {
             center_focused_column: layout.center_focused_column,
             always_center_single_column: layout.always_center_single_column,
             empty_workspace_above_first: layout.empty_workspace_above_first,
+            default_column_display: layout.default_column_display,
             preset_column_widths,
             default_column_width,
             animations: config.animations.clone(),
@@ -2139,6 +2142,13 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.swap_window_in_direction(direction);
+    }
+
+    pub fn toggle_column_tabbed_display(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.toggle_column_tabbed_display();
     }
 
     pub fn center_column(&mut self) {

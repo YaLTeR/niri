@@ -321,6 +321,8 @@ pub enum Action {
     SwapWindowRight {},
     /// Swap focused window with one to the left
     SwapWindowLeft {},
+    /// Toggle the focused column between normal and tabbed display.
+    ToggleColumnTabbedDisplay {},
     /// Center the focused column on the screen.
     CenterColumn {},
     /// Center a window on the screen.
