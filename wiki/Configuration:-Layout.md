@@ -10,6 +10,7 @@ layout {
     center-focused-column "never"
     always-center-single-column
     empty-workspace-above-first
+    default-column-display "tabbed"
 
     preset-column-widths {
         proportion 0.33333
@@ -120,6 +121,20 @@ If set, niri will always add an empty workspace at the very start, in addition t
 ```kdl
 layout {
     empty-workspace-above-first
+}
+```
+
+### `default-column-display`
+
+<sup>Since: next release</sup>
+
+Sets the default display mode for new columns.
+Can be `normal` or `tabbed`.
+
+```kdl
+// Make all new columns tabbed by default.
+layout {
+    default-column-display "tabbed"
 }
 ```
 

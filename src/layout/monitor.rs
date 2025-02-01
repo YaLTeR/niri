@@ -732,6 +732,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().swap_window_in_direction(direction);
     }
 
+    pub fn toggle_column_tabbed_display(&mut self) {
+        self.active_workspace().toggle_column_tabbed_display();
+    }
+
     pub fn center_column(&mut self) {
         self.active_workspace().center_column();
     }

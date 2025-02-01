@@ -1259,6 +1259,12 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::ToggleColumnTabbedDisplay => {
+                self.niri.layout.toggle_column_tabbed_display();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::SwitchPresetColumnWidth => {
                 self.niri.layout.toggle_width();
             }
