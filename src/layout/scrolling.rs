@@ -239,7 +239,7 @@ pub enum WindowHeight {
     Preset(usize),
 }
 
-/// Horizontal direction for an operation
+/// Horizontal direction for an operation.
 ///
 /// As operations often have a symmetrical counterpart, e.g. focus-right/focus-left, methods
 /// on `Scrolling` can sometimes be factored using the direction of the operation as a parameter.
@@ -1827,10 +1827,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             &mut source_col.tiles[source_tile_idx],
             &mut target_col.tiles[target_tile_idx],
         );
-        // std::mem::swap(
-        //     &mut source_col.data[source_tile_idx],
-        //     &mut target_col.data[target_tile_idx],
-        // );
+        std::mem::swap(
+            &mut source_col.data[source_tile_idx],
+            &mut target_col.data[target_tile_idx],
+        );
 
         // Animations
         let (source_tile, target_tile) = (
@@ -1841,7 +1841,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         target_tile.animate_move_from(target_pt - source_pt);
 
         // tile size swap
-        let (source_sz, target_sz) = (source_tile.tile_size(), target_tile.tile_size());
+        let (source_sz, target_sz) = (
+            source_tile.tile_expected_or_current_size(),
+            target_tile.tile_expected_or_current_size(),
+        );
         let transaction = Transaction::new();
         source_tile.request_tile_size(target_sz, true, Some(transaction.clone()));
         target_tile.request_tile_size(source_sz, true, Some(transaction.clone()));
@@ -1851,13 +1854,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         source_tile.inhibit_sibling_move_on_resize.replace(());
         target_tile.inhibit_sibling_move_on_resize.replace(());
 
-        // recompute all sizes in changed columns
-        source_col.update_tile_sizes_with_transaction(false, transaction.clone());
-        target_col.update_tile_sizes_with_transaction(false, transaction);
-
-        // update all data caches for changed tiles and columns
+        // resync tile data with target window sizes
         source_col.data[source_tile_idx].update(&source_col.tiles[source_tile_idx]);
         target_col.data[target_tile_idx].update(&target_col.tiles[target_tile_idx]);
+
+        // update column data
         self.data[source_column_idx].update(&source_col);
         self.data[target_column_idx].update(&target_col);
 
@@ -3009,7 +3010,7 @@ impl TileData {
     }
 
     pub fn update<W: LayoutElement>(&mut self, tile: &Tile<W>) {
-        self.size = tile.tile_size();
+        self.size = tile.tile_expected_or_current_size();
         self.interactively_resizing_by_left_edge = tile
             .window()
             .interactive_resize_data()
