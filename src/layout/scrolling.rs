@@ -1862,8 +1862,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         target_col.data[target_tile_idx].update(&target_col.tiles[target_tile_idx]);
 
         // update column data
-        self.data[source_column_idx].update(&source_col);
-        self.data[target_column_idx].update(&target_col);
+        self.data[source_column_idx].update(source_col);
+        self.data[target_column_idx].update(target_col);
 
         self.activate_column(target_column_idx);
     }
