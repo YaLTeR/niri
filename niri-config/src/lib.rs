@@ -530,6 +530,18 @@ pub struct Gradient {
     pub in_: GradientInterpolation,
 }
 
+impl From<Color> for Gradient {
+    fn from(value: Color) -> Self {
+        Self {
+            from: value,
+            to: value,
+            angle: 0,
+            relative_to: GradientRelativeTo::Window,
+            in_: GradientInterpolation::default(),
+        }
+    }
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum GradientRelativeTo {
     #[default]

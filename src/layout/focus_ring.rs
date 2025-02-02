@@ -1,7 +1,7 @@
 use std::iter::zip;
 
 use arrayvec::ArrayVec;
-use niri_config::{CornerRadius, Gradient, GradientInterpolation, GradientRelativeTo};
+use niri_config::{CornerRadius, Gradient, GradientRelativeTo};
 use smithay::backend::renderer::element::Kind;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
@@ -86,13 +86,7 @@ impl FocusRing {
         self.use_border_shader = radius != CornerRadius::default() || gradient.is_some();
 
         // Set the defaults for solid color + rounded corners.
-        let gradient = gradient.unwrap_or(Gradient {
-            from: color,
-            to: color,
-            angle: 0,
-            relative_to: GradientRelativeTo::Window,
-            in_: GradientInterpolation::default(),
-        });
+        let gradient = gradient.unwrap_or_else(|| Gradient::from(color));
 
         let full_rect = Rectangle::new(Point::from((-width, -width)), self.full_size);
         let gradient_area = match gradient.relative_to {
