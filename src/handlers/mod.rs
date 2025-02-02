@@ -71,7 +71,7 @@ use smithay::{
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
-use crate::niri::{ClientState, DndIcon, State};
+use crate::niri::{DndIcon, NewClient, State};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
@@ -471,20 +471,12 @@ impl SecurityContextHandler for State {
         self.niri
             .event_loop
             .insert_source(source, move |client, _, state| {
-                let config = state.niri.config.borrow();
-                let data = Arc::new(ClientState {
-                    compositor_state: Default::default(),
-                    can_view_decoration_globals: config.prefer_no_csd,
-                    primary_selection_disabled: config.clipboard.disable_primary,
+                trace!("inserting a new restricted client, context={context:?}");
+                state.niri.insert_client(NewClient {
+                    client,
                     restricted: true,
                     credentials_unknown: false,
                 });
-
-                if let Err(err) = state.niri.display_handle.insert_client(client, data) {
-                    warn!("error inserting client: {err}");
-                } else {
-                    trace!("inserted a new restricted client, context={context:?}");
-                }
             })
             .unwrap();
     }

@@ -5,7 +5,6 @@ use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::xdg_activation::XdgActivationTokenData;
 
 use super::ResolvedWindowRules;
-use crate::layout::scrolling::ColumnWidth;
 
 #[derive(Debug)]
 pub struct Unmapped {
@@ -34,7 +33,7 @@ pub enum InitialConfigureState {
         /// Resolved scrolling default width for this window.
         ///
         /// `None` means that the window will pick its own width.
-        width: Option<ColumnWidth>,
+        width: Option<PresetSize>,
 
         /// Resolved scrolling default height for this window.
         ///
@@ -44,7 +43,7 @@ pub enum InitialConfigureState {
         /// Resolved floating default width for this window.
         ///
         /// `None` means that the window will pick its own width.
-        floating_width: Option<ColumnWidth>,
+        floating_width: Option<PresetSize>,
 
         /// Resolved floating default height for this window.
         ///

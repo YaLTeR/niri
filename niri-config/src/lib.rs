@@ -136,6 +136,8 @@ pub struct Xkb {
     pub variant: String,
     #[knuffel(child, unwrap(argument))]
     pub options: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub file: Option<String>,
 }
 
 impl Xkb {
@@ -528,6 +530,18 @@ pub struct Gradient {
     pub in_: GradientInterpolation,
 }
 
+impl From<Color> for Gradient {
+    fn from(value: Color) -> Self {
+        Self {
+            from: value,
+            to: value,
+            angle: 0,
+            relative_to: GradientRelativeTo::Window,
+            in_: GradientInterpolation::default(),
+        }
+    }
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum GradientRelativeTo {
     #[default]
@@ -764,6 +778,15 @@ impl Default for Cursor {
 pub enum PresetSize {
     Proportion(#[knuffel(argument)] f64),
     Fixed(#[knuffel(argument)] i32),
+}
+
+impl From<PresetSize> for SizeChange {
+    fn from(value: PresetSize) -> Self {
+        match value {
+            PresetSize::Proportion(prop) => SizeChange::SetProportion(prop * 100.),
+            PresetSize::Fixed(fixed) => SizeChange::SetFixed(fixed),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

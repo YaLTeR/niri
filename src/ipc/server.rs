@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -33,7 +34,10 @@ use crate::window::Mapped;
 const EVENT_STREAM_BUFFER_SIZE: usize = 64;
 
 pub struct IpcServer {
-    pub socket_path: PathBuf,
+    /// Path to the IPC socket.
+    ///
+    /// This is `None` when creating `IpcServer` without a socket.
+    pub socket_path: Option<PathBuf>,
     event_streams: Rc<RefCell<Vec<EventStreamSender>>>,
     event_stream_state: Rc<RefCell<EventStreamState>>,
 }
@@ -60,31 +64,38 @@ struct EventStreamSender {
 impl IpcServer {
     pub fn start(
         event_loop: &LoopHandle<'static, State>,
-        wayland_socket_name: &str,
+        wayland_socket_name: Option<&OsStr>,
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("Ipc::start");
 
-        let socket_name = format!("niri.{wayland_socket_name}.{}.sock", process::id());
-        let mut socket_path = socket_dir();
-        socket_path.push(socket_name);
+        let socket_path = if let Some(wayland_socket_name) = wayland_socket_name {
+            let wayland_socket_name = wayland_socket_name.to_string_lossy();
+            let socket_name = format!("niri.{wayland_socket_name}.{}.sock", process::id());
+            let mut socket_path = socket_dir();
+            socket_path.push(socket_name);
 
-        let listener = UnixListener::bind(&socket_path).context("error binding socket")?;
-        listener
-            .set_nonblocking(true)
-            .context("error setting socket to non-blocking")?;
+            let listener = UnixListener::bind(&socket_path).context("error binding socket")?;
+            listener
+                .set_nonblocking(true)
+                .context("error setting socket to non-blocking")?;
 
-        let source = Generic::new(listener, Interest::READ, Mode::Level);
-        event_loop
-            .insert_source(source, |_, socket, state| {
-                match socket.accept() {
-                    Ok((stream, _)) => on_new_ipc_client(state, stream),
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
-                    Err(e) => return Err(e),
-                }
+            let source = Generic::new(listener, Interest::READ, Mode::Level);
+            event_loop
+                .insert_source(source, |_, socket, state| {
+                    match socket.accept() {
+                        Ok((stream, _)) => on_new_ipc_client(state, stream),
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
+                        Err(e) => return Err(e),
+                    }
 
-                Ok(PostAction::Continue)
-            })
-            .unwrap();
+                    Ok(PostAction::Continue)
+                })
+                .unwrap();
+
+            Some(socket_path)
+        } else {
+            None
+        };
 
         Ok(Self {
             socket_path,
@@ -119,7 +130,9 @@ impl IpcServer {
 
 impl Drop for IpcServer {
     fn drop(&mut self) {
-        let _ = unlink(&self.socket_path);
+        if let Some(socket_path) = &self.socket_path {
+            let _ = unlink(socket_path);
+        }
     }
 }
 

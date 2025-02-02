@@ -1,13 +1,11 @@
 use std::cmp::min;
 use std::collections::HashMap;
-use std::ffi::OsStr;
+use std::fmt;
 use std::fmt::Write as _;
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{env, fmt};
 
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
@@ -64,7 +62,7 @@ pub struct Window {
     pub viewport: WpViewport,
     pub pending_configure: Configure,
     pub configures_received: Vec<(u32, Configure)>,
-    pub close_requsted: bool,
+    pub close_requested: bool,
 
     pub configures_looked_at: usize,
 }
@@ -105,21 +103,13 @@ impl fmt::Display for Configure {
     }
 }
 
-fn connect(socket_name: &OsStr) -> Connection {
-    let mut socket_path = PathBuf::from(env::var_os("XDG_RUNTIME_DIR").unwrap());
-    socket_path.push(socket_name);
-
-    let stream = UnixStream::connect(socket_path).unwrap();
-    let backend = Backend::connect(stream).unwrap();
-    Connection::from_backend(backend)
-}
-
 impl Client {
-    pub fn new(socket_name: &OsStr) -> Self {
+    pub fn new(stream: UnixStream) -> Self {
         let id = ClientId::next();
 
         let event_loop = EventLoop::try_new().unwrap();
-        let connection = connect(socket_name);
+        let backend = Backend::connect(stream).unwrap();
+        let connection = Connection::from_backend(backend);
         let queue = connection.new_event_queue();
         let qh = queue.handle();
         WaylandSource::new(connection.clone(), queue)
@@ -204,7 +194,7 @@ impl State {
             viewport,
             pending_configure: Configure::default(),
             configures_received: Vec::new(),
-            close_requsted: false,
+            close_requested: false,
 
             configures_looked_at: 0,
         };
@@ -469,7 +459,7 @@ impl Dispatch<XdgToplevel, ()> for State {
                     .collect();
             }
             xdg_toplevel::Event::Close => {
-                window.close_requsted = true;
+                window.close_requested = true;
             }
             xdg_toplevel::Event::ConfigureBounds { width, height } => {
                 window.pending_configure.bounds = Some((width, height));

@@ -1,4 +1,5 @@
 use std::os::fd::AsFd as _;
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use smithay::output::Output;
 
 use super::client::{Client, ClientId};
 use super::server::Server;
-use crate::niri::Niri;
+use crate::niri::{NewClient, Niri};
 
 pub struct Fixture {
     pub event_loop: EventLoop<'static, State>,
@@ -88,7 +89,14 @@ impl Fixture {
     }
 
     pub fn add_client(&mut self) -> ClientId {
-        let client = Client::new(&self.state.server.state.niri.socket_name);
+        let (sock1, sock2) = UnixStream::pair().unwrap();
+        self.niri().insert_client(NewClient {
+            client: sock1,
+            restricted: false,
+            credentials_unknown: false,
+        });
+
+        let client = Client::new(sock2);
         let id = client.id;
 
         let fd = client.event_loop.as_fd().try_clone_to_owned().unwrap();
@@ -117,7 +125,7 @@ impl Fixture {
         }
     }
 
-    /// Rountrip twice in a row.
+    /// Roundtrip twice in a row.
     ///
     /// For some reason, when running tests on many threads at once, a single roundtrip is
     /// sometimes not sufficient to get the configure events to the client.

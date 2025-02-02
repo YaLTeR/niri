@@ -4,12 +4,11 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::rc::Rc;
-use std::sync::Mutex;
 
 use anyhow::{anyhow, Context};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
-use smithay::input::pointer::{CursorIcon, CursorImageAttributes, CursorImageStatus};
+use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Transform};
 use smithay::wayland::compositor::with_states;
@@ -67,7 +66,7 @@ impl CursorManager {
                 let hotspot = with_states(&surface, |states| {
                     states
                         .data_map
-                        .get::<Mutex<CursorImageAttributes>>()
+                        .get::<CursorImageSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()

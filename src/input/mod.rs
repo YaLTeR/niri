@@ -17,7 +17,7 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, ModifiersState};
+use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -691,6 +691,14 @@ impl State {
                 keyboard.with_xkb_state(self, |mut state| match action {
                     LayoutSwitchTarget::Next => state.cycle_next_layout(),
                     LayoutSwitchTarget::Prev => state.cycle_prev_layout(),
+                    LayoutSwitchTarget::Index(layout) => {
+                        let num_layouts = state.xkb().lock().unwrap().layouts().count();
+                        if usize::from(layout) >= num_layouts {
+                            warn!("requested layout doesn't exist")
+                        } else {
+                            state.set_layout(Layout(layout.into()))
+                        }
+                    }
                 });
             }
             Action::MoveColumnLeft => {
@@ -2965,7 +2973,7 @@ fn should_intercept_key(
             }
         }
         (_, false) => {
-            // By this point, we know that the key was supressed on press. Even if we're inhibiting
+            // By this point, we know that the key was suppressed on press. Even if we're inhibiting
             // shortcuts, we should still suppress the release.
             // But we don't need to check for shortcuts inhibition here, because
             // if it was inhibited on press (forwarded to the client), it wouldn't be suppressed,

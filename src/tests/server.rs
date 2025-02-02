@@ -22,6 +22,7 @@ impl Server {
             event_loop.get_signal(),
             display,
             true,
+            false,
         )
         .unwrap();
 

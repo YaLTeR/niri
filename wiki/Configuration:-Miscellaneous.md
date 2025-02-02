@@ -119,6 +119,10 @@ cursor {
 
 If set, hides the cursor when pressing a key on the keyboard.
 
+> [!NOTE]
+> This setting might interfere with games running in Wine in native Wayland mode that use mouselook, such as first-person games.
+> If your character's point of view jumps down when you press a key and move the mouse simultaneously, try disabling this setting.
+
 ```kdl
 cursor {
     hide-when-typing
