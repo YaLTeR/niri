@@ -127,6 +127,14 @@ pub fn round_logical_in_physical_max1(scale: f64, logical: f64) -> f64 {
     (logical * scale).max(1.).round() / scale
 }
 
+pub fn floor_logical_in_physical_max1(scale: f64, logical: f64) -> f64 {
+    if logical == 0. {
+        return 0.;
+    }
+
+    (logical * scale).max(1.).floor() / scale
+}
+
 pub fn output_size(output: &Output) -> Size<f64, Logical> {
     let output_scale = output.current_scale().fractional_scale();
     let output_transform = output.current_transform();

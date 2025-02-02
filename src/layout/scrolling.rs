@@ -11,6 +11,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
+use super::tab_indicator::{TabIndicator, TabIndicatorRenderElement, TabInfo};
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::workspace::{InteractiveResize, ResolvedSize};
 use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
@@ -94,6 +95,7 @@ niri_render_elements! {
     ScrollingSpaceRenderElement<R> => {
         Tile = TileRenderElement<R>,
         ClosingWindow = ClosingWindowRenderElement,
+        TabIndicator = TabIndicatorRenderElement,
         InsertHint = InsertHintRenderElement,
     }
 }
@@ -173,6 +175,9 @@ pub struct Column<W: LayoutElement> {
 
     /// How this column displays and arranges windows.
     display_mode: ColumnDisplay,
+
+    /// Tab indicator for the tabbed display mode.
+    tab_indicator: TabIndicator,
 
     /// Animation of the render offset during window swapping.
     move_animation: Option<Animation>,
@@ -2527,19 +2532,44 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let mut first = true;
-        for (tile, tile_pos, visible) in self.tiles_with_render_positions() {
-            // For the active tile (which comes first), draw the focus ring.
-            let focus_ring = focus_ring && first;
-            first = false;
 
-            if !visible {
-                continue;
+        // This matches self.tiles_in_render_order().
+        let view_off = Point::from((-self.view_pos(), 0.));
+        for (col, col_x) in self.columns_in_render_order() {
+            let col_off = Point::from((col_x, 0.));
+            let col_render_off = col.render_offset();
+
+            // Draw the tab indicator on top.
+            {
+                // This is the "static tile position" so to say: it excludes the tile offset (used
+                // for e.g. centering smaller tiles in always-center) and the tile render offset
+                // (used for tile-specific animations).
+                let pos = view_off + col_off + col_render_off + col.tiles_origin();
+                let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+                rv.extend(col.tab_indicator.render(renderer, pos).map(Into::into));
             }
 
-            rv.extend(
-                tile.render(renderer, tile_pos, scale, focus_ring, target)
-                    .map(Into::into),
-            );
+            for (tile, tile_off, visible) in col.tiles_in_render_order() {
+                let tile_pos =
+                    view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                // Round to physical pixels.
+                let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
+
+                // And now the drawing logic.
+
+                // For the active tile (which comes first), draw the focus ring.
+                let focus_ring = focus_ring && first;
+                first = false;
+
+                if !visible {
+                    continue;
+                }
+
+                rv.extend(
+                    tile.render(renderer, tile_pos, scale, focus_ring, target)
+                        .map(Into::into),
+                );
+            }
         }
 
         rv
@@ -3268,6 +3298,7 @@ impl<W: LayoutElement> Column<W> {
             is_full_width,
             is_fullscreen: false,
             display_mode,
+            tab_indicator: TabIndicator::new(options.tab_indicator),
             move_animation: None,
             view_size,
             working_area,
@@ -3326,6 +3357,7 @@ impl<W: LayoutElement> Column<W> {
             data.update(tile);
         }
 
+        self.tab_indicator.update_config(options.tab_indicator);
         self.view_size = view_size;
         self.working_area = working_area;
         self.scale = scale;
@@ -3361,6 +3393,31 @@ impl<W: LayoutElement> Column<W> {
             tile_view_rect.loc -= tile_off + tile.render_offset();
             tile.update_render_elements(is_active, tile_view_rect);
         }
+
+        let (tile, tile_off) = self.tiles().nth(self.active_tile_idx).unwrap();
+        let mut tile_view_rect = view_rect;
+        tile_view_rect.loc -= tile_off + tile.render_offset();
+
+        let config = self.tab_indicator.config();
+        let tabs = self.tiles.iter().enumerate().map(|(tile_idx, tile)| {
+            let is_active = tile_idx == active_idx;
+            TabInfo::from_tile(tile, is_active, &config)
+        });
+
+        // Hide the tab indicator in fullscreen. If you have it configured to overlap the window,
+        // you don't want that to happen in fullscreen. Also, laying things out correctly when the
+        // tab indicator is within the column and the column goes fullscreen, would require too
+        // many changes to the code for too little benefit (it's mostly invisible anyway).
+        let enabled = self.display_mode == ColumnDisplay::Tabbed && !self.is_fullscreen;
+
+        self.tab_indicator.update_render_elements(
+            enabled,
+            tile.animated_tile_size(),
+            tile_view_rect,
+            tabs,
+            is_active,
+            self.scale,
+        );
     }
 
     pub fn render_offset(&self) -> Point<f64, Logical> {
