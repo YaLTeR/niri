@@ -80,6 +80,7 @@ pub mod monitor;
 pub mod opening_window;
 pub mod scrolling;
 pub mod shadow;
+pub mod tab_indicator;
 pub mod tile;
 pub mod workspace;
 
@@ -312,6 +313,7 @@ pub struct Options {
     pub focus_ring: niri_config::FocusRing,
     pub border: niri_config::Border,
     pub shadow: niri_config::Shadow,
+    pub tab_indicator: niri_config::TabIndicator,
     pub insert_hint: niri_config::InsertHint,
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
@@ -337,6 +339,7 @@ impl Default for Options {
             focus_ring: Default::default(),
             border: Default::default(),
             shadow: Default::default(),
+            tab_indicator: Default::default(),
             insert_hint: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
@@ -550,6 +553,7 @@ impl Options {
             focus_ring: layout.focus_ring,
             border: layout.border,
             shadow: layout.shadow,
+            tab_indicator: layout.tab_indicator,
             insert_hint: layout.insert_hint,
             center_focused_column: layout.center_focused_column,
             always_center_single_column: layout.always_center_single_column,

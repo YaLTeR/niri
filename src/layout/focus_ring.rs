@@ -262,4 +262,8 @@ impl FocusRing {
     pub fn is_off(&self) -> bool {
         self.config.off
     }
+
+    pub fn config(&self) -> &niri_config::FocusRing {
+        &self.config
+    }
 }

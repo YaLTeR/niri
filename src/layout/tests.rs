@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-use niri_config::{FloatOrInt, OutputName, WorkspaceName, WorkspaceReference};
+use niri_config::{FloatOrInt, OutputName, TabIndicatorLength, WorkspaceName, WorkspaceReference};
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use smithay::output::{Mode, PhysicalProperties, Subpixel};
@@ -3240,12 +3240,30 @@ prop_compose! {
 }
 
 prop_compose! {
+    fn arbitrary_tab_indicator()(
+        off in any::<bool>(),
+        width in arbitrary_spacing(),
+        gap in arbitrary_spacing_neg(),
+        length in (0f64..2f64),
+    ) -> niri_config::TabIndicator {
+        niri_config::TabIndicator {
+            off,
+            width: FloatOrInt(width),
+            gap: FloatOrInt(gap),
+            length: TabIndicatorLength { total_proportion: Some(length) },
+            ..Default::default()
+        }
+    }
+}
+
+prop_compose! {
     fn arbitrary_options()(
         gaps in arbitrary_spacing(),
         struts in arbitrary_struts(),
         focus_ring in arbitrary_focus_ring(),
         border in arbitrary_border(),
         shadow in arbitrary_shadow(),
+        tab_indicator in arbitrary_tab_indicator(),
         center_focused_column in arbitrary_center_focused_column(),
         always_center_single_column in any::<bool>(),
         empty_workspace_above_first in any::<bool>(),
@@ -3259,6 +3277,7 @@ prop_compose! {
             focus_ring,
             border,
             shadow,
+            tab_indicator,
             ..Default::default()
         }
     }

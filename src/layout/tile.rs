@@ -563,7 +563,7 @@ impl<W: LayoutElement> Tile<W> {
         size
     }
 
-    fn animated_window_size(&self) -> Size<f64, Logical> {
+    pub fn animated_window_size(&self) -> Size<f64, Logical> {
         let mut size = self.window_size();
 
         if let Some(resize) = &self.resize_animation {
@@ -580,7 +580,7 @@ impl<W: LayoutElement> Tile<W> {
         size
     }
 
-    fn animated_tile_size(&self) -> Size<f64, Logical> {
+    pub fn animated_tile_size(&self) -> Size<f64, Logical> {
         let mut size = self.animated_window_size();
 
         if self.is_fullscreen {
@@ -1029,6 +1029,14 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn take_unmap_snapshot(&mut self) -> Option<TileRenderSnapshot> {
         self.unmap_snapshot.take()
+    }
+
+    pub fn border(&self) -> &FocusRing {
+        &self.border
+    }
+
+    pub fn focus_ring(&self) -> &FocusRing {
+        &self.focus_ring
     }
 
     pub fn options(&self) -> &Rc<Options> {

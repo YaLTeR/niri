@@ -445,6 +445,8 @@ pub struct Layout {
     #[knuffel(child, default)]
     pub shadow: Shadow,
     #[knuffel(child, default)]
+    pub tab_indicator: TabIndicator,
+    #[knuffel(child, default)]
     pub insert_hint: InsertHint,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetSize>,
@@ -472,6 +474,7 @@ impl Default for Layout {
             focus_ring: Default::default(),
             border: Default::default(),
             shadow: Default::default(),
+            tab_indicator: Default::default(),
             insert_hint: Default::default(),
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
@@ -674,6 +677,49 @@ pub struct ShadowOffset {
     pub x: FloatOrInt<-65535, 65535>,
     #[knuffel(property, default)]
     pub y: FloatOrInt<-65535, 65535>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct TabIndicator {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument), default = Self::default().gap)]
+    pub gap: FloatOrInt<-65535, 65535>,
+    #[knuffel(child, unwrap(argument), default = Self::default().width)]
+    pub width: FloatOrInt<0, 65535>,
+    #[knuffel(child, default = Self::default().length)]
+    pub length: TabIndicatorLength,
+    #[knuffel(child)]
+    pub active_color: Option<Color>,
+    #[knuffel(child)]
+    pub inactive_color: Option<Color>,
+    #[knuffel(child)]
+    pub active_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub inactive_gradient: Option<Gradient>,
+}
+
+impl Default for TabIndicator {
+    fn default() -> Self {
+        Self {
+            off: false,
+            gap: FloatOrInt(5.),
+            width: FloatOrInt(4.),
+            length: TabIndicatorLength {
+                total_proportion: Some(0.5),
+            },
+            active_color: None,
+            inactive_color: None,
+            active_gradient: None,
+            inactive_gradient: None,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct TabIndicatorLength {
+    #[knuffel(property)]
+    pub total_proportion: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -1101,6 +1147,8 @@ pub struct WindowRule {
     pub border: BorderRule,
     #[knuffel(child, default)]
     pub shadow: ShadowRule,
+    #[knuffel(child, default)]
+    pub tab_indicator: TabIndicatorRule,
     #[knuffel(child, unwrap(argument))]
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -1200,6 +1248,18 @@ pub struct ShadowRule {
     pub color: Option<Color>,
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct TabIndicatorRule {
+    #[knuffel(child)]
+    pub active_color: Option<Color>,
+    #[knuffel(child)]
+    pub inactive_color: Option<Color>,
+    #[knuffel(child)]
+    pub active_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub inactive_gradient: Option<Gradient>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -2036,6 +2096,23 @@ impl ShadowRule {
         }
 
         config
+    }
+}
+
+impl TabIndicatorRule {
+    pub fn merge_with(&mut self, other: &Self) {
+        if let Some(x) = other.active_color {
+            self.active_color = Some(x);
+        }
+        if let Some(x) = other.inactive_color {
+            self.inactive_color = Some(x);
+        }
+        if let Some(x) = other.active_gradient {
+            self.active_gradient = Some(x);
+        }
+        if let Some(x) = other.inactive_gradient {
+            self.inactive_gradient = Some(x);
+        }
     }
 }
 
@@ -3473,6 +3550,10 @@ mod tests {
                     offset x=10 y=-20
                 }
 
+                tab-indicator {
+                    width 10
+                }
+
                 preset-column-widths {
                     proportion 0.25
                     proportion 0.5
@@ -3570,6 +3651,10 @@ mod tests {
                 border {
                     on
                     width 8.5
+                }
+
+                tab-indicator {
+                    active-color "#f00"
                 }
             }
 
@@ -3729,6 +3814,10 @@ mod tests {
                         },
                         ..Default::default()
                     },
+                    tab_indicator: TabIndicator {
+                        width: FloatOrInt(10.),
+                        ..Default::default()
+                    },
                     insert_hint: InsertHint {
                         off: false,
                         color: Color::from_rgba8_unpremul(255, 200, 127, 255),
@@ -3873,6 +3962,10 @@ mod tests {
                     border: BorderRule {
                         on: true,
                         width: Some(FloatOrInt(8.5)),
+                        ..Default::default()
+                    },
+                    tab_indicator: TabIndicatorRule {
+                        active_color: Some(Color::from_rgba8_unpremul(255, 0, 0, 255)),
                         ..Default::default()
                     },
                     ..Default::default()
