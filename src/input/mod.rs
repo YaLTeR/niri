@@ -3218,6 +3218,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_tap_set_enabled(c.tap);
         let _ = device.config_dwt_set_enabled(c.dwt);
         let _ = device.config_dwtp_set_enabled(c.dwtp);
+        let _ = device.config_tap_set_drag_lock_enabled(c.drag_lock);
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
         let _ = device.config_left_handed_set(c.left_handed);
