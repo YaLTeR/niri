@@ -54,6 +54,19 @@ layout {
         // inactive-color "#00000054"
     }
 
+    tab-indicator {
+        // off
+        hide-when-single-tab
+        gap 5
+        width 4
+        length total-proportion=1.0
+        position "right"
+        active-color "red"
+        inactive-color "gray"
+        // active-gradient from="#80c8ff" to="#bbddff" angle=45
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+    }
+
     insert-hint {
         // off
         color "#ffc87f80"
@@ -389,6 +402,49 @@ layout {
 // Also ask windows to omit client-side decorations, so that
 // they don't draw their own window shadows.
 prefer-no-csd
+```
+
+### `tab-indicator`
+
+<sup>Since: next release</sup>
+
+Controls the appearance of the tab indicator that appears next to columns in tabbed display mode.
+
+Set `off` to hide the tab indicator.
+
+Set `hide-when-single-tab` to hide the indicator for tabbed columns that only have a single window.
+
+`gap` sets the gap between the tab indicator and the window.
+The gap can be negative, this will put the tab indicator on top of the window.
+
+`width` sets the thickness of the indicator.
+
+`length` controls the length of the indicator.
+Set the `total-proportion` property to make tabs take up this much length relative to the window size.
+By default, the tab indicator has length equal to half of the window size, or `length total-proportion=0.5`.
+
+`position` sets the position of the tab indicator relative to the window.
+It can be `left`, `right`, `top`, or `bottom`.
+
+`active-color`, `inactive-color`, `active-gradient`, `inactive-gradient` let you override the colors for the tabs.
+They have the same semantics as the border and focus ring colors and gradients.
+
+Tab colors are picked in this order:
+1. Colors from the `tab-indicator` window rule, if set.
+1. Colors from the `tab-indicator` layout options, if set (you're here).
+1. If neither are set, niri picks the color matching the window border or focus ring, whichever one is active.
+
+```kdl
+// Make the tab indicator wider and match the window height,
+// also put it at the top.
+layout {
+    tab-indicator {
+        width 8
+        gap 8
+        length total-proportion=1.0
+        position "top"
+    }
+}
 ```
 
 ### `insert-hint`
