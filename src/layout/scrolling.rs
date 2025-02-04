@@ -3934,6 +3934,14 @@ impl<W: LayoutElement> Column<W> {
         None
     }
 
+    fn tiles_origin(&self) -> Point<f64, Logical> {
+        if self.is_fullscreen {
+            Point::from((0., 0.))
+        } else {
+            Point::from((0., self.working_area.loc.y + self.options.gaps))
+        }
+    }
+
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
     fn tile_offsets_iter(
@@ -3950,11 +3958,7 @@ impl<W: LayoutElement> Column<W> {
         } else {
             self.width()
         };
-        let mut y = 0.;
-
-        if !self.is_fullscreen {
-            y = self.working_area.loc.y + self.options.gaps;
-        }
+        let mut origin = self.tiles_origin();
 
         // Chain with a dummy value to be able to get one past all tiles' Y.
         let dummy = TileData {
@@ -3965,15 +3969,16 @@ impl<W: LayoutElement> Column<W> {
         let data = data.chain(iter::once(dummy));
 
         data.map(move |data| {
-            let mut pos = Point::from((0., y));
+            let mut pos = origin;
 
             if center {
-                pos.x = (col_width - data.size.w) / 2.;
+                pos.x += (col_width - data.size.w) / 2.;
             } else if data.interactively_resizing_by_left_edge {
-                pos.x = col_width - data.size.w;
+                pos.x += col_width - data.size.w;
             }
 
-            y += data.size.h + gaps;
+            origin.y += data.size.h + gaps;
+
             pos
         })
     }
