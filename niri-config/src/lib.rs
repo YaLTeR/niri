@@ -184,6 +184,8 @@ pub struct Touchpad {
     #[knuffel(child)]
     pub dwtp: bool,
     #[knuffel(child)]
+    pub drag_lock: bool,
+    #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument, str))]
     pub click_method: Option<ClickMethod>,
@@ -3600,6 +3602,7 @@ mod tests {
                         tap: true,
                         dwt: true,
                         dwtp: true,
+                        drag_lock: false,
                         click_method: Some(ClickMethod::Clickfinger),
                         natural_scroll: false,
                         accel_speed: 0.2,
