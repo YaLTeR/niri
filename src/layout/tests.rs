@@ -3106,6 +3106,25 @@ fn preset_column_width_reset_after_set_width() {
     assert_eq!(win.requested_size().unwrap().w, 500);
 }
 
+#[test]
+fn disable_tabbed_mode_in_fullscreen() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: None },
+        Op::ToggleColumnTabbedDisplay,
+        Op::FullscreenWindow(0),
+        Op::ToggleColumnTabbedDisplay,
+    ];
+
+    check_ops(&ops);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;
