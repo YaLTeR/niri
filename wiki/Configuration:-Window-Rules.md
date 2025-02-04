@@ -81,6 +81,13 @@ window-rule {
         // inactive-color "#00000064"
     }
 
+    tab-indicator {
+        active-color "red"
+        inactive-color "gray"
+        // active-gradient from="#80c8ff" to="#bbddff" angle=45
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+    }
+
     geometry-corner-radius 12
     clip-to-geometry true
 
@@ -661,6 +668,25 @@ window-rule {
 
     shadow {
         on
+    }
+}
+```
+
+#### `tab-indicator`
+
+<sup>Since: next release</sup>
+
+Override the tab indicator options for the window.
+
+Options in this rule match the same options as the normal tab indicator config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+
+```kdl
+// Make KeePassXC tab have a dark red inactive color.
+window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+
+    tab-indicator {
+        inactive-color "darkred"
     }
 }
 ```
