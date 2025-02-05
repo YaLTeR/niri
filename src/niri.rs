@@ -14,8 +14,8 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout, WorkspaceReference,
-    DEFAULT_BACKGROUND_COLOR,
+    Config, FloatOrInt, Key, ModKey, Modifiers, OutputName, PreviewRender, TrackLayout,
+    WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -576,6 +576,7 @@ impl State {
             Backend::Tty(tty)
         };
 
+        let mod_key = get_mod_key(&*config.borrow(), &backend);
         let mut niri = Niri::new(
             config.clone(),
             event_loop,
@@ -583,6 +584,7 @@ impl State {
             display,
             &backend,
             create_wayland_socket,
+            mod_key,
         );
         backend.init(&mut niri);
 
@@ -1206,14 +1208,17 @@ impl State {
             preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
-        if config.binds != old_config.binds {
-            self.niri.hotkey_overlay.on_hotkey_config_updated();
-            self.niri.mods_with_mouse_binds =
-                mods_with_mouse_binds(self.backend.mod_key(), &config.binds);
-            self.niri.mods_with_wheel_binds =
-                mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
+        let new_mod_key = get_mod_key(&config, &self.backend);
+        if new_mod_key != get_mod_key(&old_config, &self.backend)
+            || config.binds != old_config.binds
+        {
+            self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
+            self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
-                mods_with_finger_scroll_binds(self.backend.mod_key(), &config.binds);
+                mods_with_finger_scroll_binds(new_mod_key, &config.binds);
+            self.niri
+                .hotkey_overlay
+                .on_hotkey_config_updated(new_mod_key);
         }
 
         if config.window_rules != old_config.window_rules {
@@ -1790,6 +1795,19 @@ impl State {
     }
 }
 
+pub fn get_mod_key(config: &Config, backend: &Backend) -> ModKey {
+    match backend {
+        Backend::Winit(_) => config
+            .input
+            .nested_mod_key
+            .or(config.input.mod_key)
+            .unwrap_or(ModKey(Modifiers::ALT)),
+        Backend::Tty(_) | Backend::Headless(_) => {
+            config.input.mod_key.unwrap_or(ModKey(Modifiers::SUPER))
+        }
+    }
+}
+
 impl Niri {
     pub fn new(
         config: Rc<RefCell<Config>>,
@@ -1798,6 +1816,7 @@ impl Niri {
         display: Display<State>,
         backend: &Backend,
         create_wayland_socket: bool,
+        mod_key: ModKey,
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
@@ -1941,16 +1960,15 @@ impl Niri {
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
-        let mods_with_mouse_binds = mods_with_mouse_binds(backend.mod_key(), &config_.binds);
-        let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
-        let mods_with_finger_scroll_binds =
-            mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
+        let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
+        let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
+        let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
-        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
+        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), mod_key);
         if !config_.hotkey_overlay.skip_at_startup {
             hotkey_overlay.show();
         }

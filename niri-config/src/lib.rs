@@ -74,8 +74,15 @@ pub struct Config {
     pub workspaces: Vec<Workspace>,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct ModKey(pub Modifiers);
+
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Input {
+    #[knuffel(child, unwrap(argument), default)]
+    pub mod_key: Option<ModKey>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub nested_mod_key: Option<ModKey>,
     #[knuffel(child, default)]
     pub keyboard: Keyboard,
     #[knuffel(child, default)]
@@ -3195,6 +3202,74 @@ where
     }
 }
 
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for ModKey {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        match &**val {
+            knuffel::ast::Literal::String(ref s) => Ok(s
+                .parse::<ModKey>()
+                .map_err(|e| DecodeError::conversion(val, e))?),
+            _ => {
+                ctx.emit_error(DecodeError::unsupported(
+                    val,
+                    "modifier key must be a string",
+                ));
+                Ok(Self(Modifiers::empty()))
+            }
+        }
+    }
+}
+
+impl FromStr for ModKey {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut modifiers = Modifiers::empty();
+
+        let split = s.split('+');
+
+        for part in split {
+            let part = part.trim();
+            if part.eq_ignore_ascii_case("ctrl") || part.eq_ignore_ascii_case("control") {
+                modifiers |= Modifiers::CTRL;
+            } else if part.eq_ignore_ascii_case("shift") {
+                modifiers |= Modifiers::SHIFT;
+            } else if part.eq_ignore_ascii_case("alt") {
+                modifiers |= Modifiers::ALT;
+            } else if part.eq_ignore_ascii_case("super") || part.eq_ignore_ascii_case("win") {
+                modifiers |= Modifiers::SUPER;
+            } else if part.eq_ignore_ascii_case("iso_level3_shift")
+                || part.eq_ignore_ascii_case("mod5")
+            {
+                modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
+            } else if part.eq_ignore_ascii_case("iso_level5_shift")
+                || part.eq_ignore_ascii_case("mod3")
+            {
+                modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
+            } else {
+                return Err(miette!("invalid modifier: {part}"));
+            }
+        }
+
+        Ok(Self(modifiers))
+    }
+}
+
 impl FromStr for Key {
     type Err = miette::Error;
 
@@ -3369,6 +3444,9 @@ mod tests {
         check(
             r##"
             input {
+                mod-key "Mod5"
+                nested-mod-key "Super"
+
                 keyboard {
                     repeat-delay 600
                     repeat-rate 25
@@ -3597,6 +3675,8 @@ mod tests {
             "##,
             Config {
                 input: Input {
+                    mod_key: Some(ModKey(Modifiers::ISO_LEVEL3_SHIFT)),
+                    nested_mod_key: Some(ModKey(Modifiers::SUPER)),
                     keyboard: Keyboard {
                         xkb: Xkb {
                             layout: "us,ru".to_owned(),
