@@ -14,8 +14,8 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout, WorkspaceReference,
-    DEFAULT_BACKGROUND_COLOR,
+    Config, ConfigOpts, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
+    WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -543,6 +543,7 @@ impl KeyboardFocus {
 }
 
 pub struct State {
+    pub config_opts: ConfigOpts,
     pub backend: Backend,
     pub niri: Niri,
 }
@@ -550,6 +551,7 @@ pub struct State {
 impl State {
     pub fn new(
         config: Config,
+        config_opts: ConfigOpts,
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
@@ -586,7 +588,11 @@ impl State {
         );
         backend.init(&mut niri);
 
-        let mut state = Self { backend, niri };
+        let mut state = Self {
+            backend,
+            niri,
+            config_opts,
+        };
 
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
@@ -1113,7 +1119,7 @@ impl State {
     pub fn reload_config(&mut self, path: PathBuf) {
         let _span = tracy_client::span!("State::reload_config");
 
-        let mut config = match Config::load(&path) {
+        let mut config = match Config::load_with_opts(&path, self.config_opts.clone()) {
             Ok(config) => config,
             Err(err) => {
                 warn!("{:?}", err.context("error loading config"));

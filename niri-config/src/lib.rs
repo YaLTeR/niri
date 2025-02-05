@@ -1885,22 +1885,33 @@ pub enum PreviewRender {
     ScreenCapture,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct ConfigOpts {
+    pub mod_override: Option<ModKey>,
+}
+
 impl Config {
     pub fn load(path: &Path) -> miette::Result<Self> {
         let _span = tracy_client::span!("Config::load");
-        Self::load_internal(path).context("error loading config")
+        Self::load_with_opts(path, ConfigOpts::default())
     }
 
-    fn load_internal(path: &Path) -> miette::Result<Self> {
+    pub fn load_with_opts(path: &Path, opts: ConfigOpts) -> miette::Result<Self> {
+        let _span = tracy_client::span!("Config::load_with_opts");
+        Self::load_internal(path, opts).context("error loading config")
+    }
+
+    fn load_internal(path: &Path, opts: ConfigOpts) -> miette::Result<Self> {
         let contents = std::fs::read_to_string(path)
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;
 
-        let config = Self::parse(
+        let config = Self::parse_with_opts(
             path.file_name()
                 .and_then(OsStr::to_str)
                 .unwrap_or("config.kdl"),
             &contents,
+            opts,
         )
         .context("error parsing")?;
         debug!("loaded config from {path:?}");
@@ -1909,7 +1920,22 @@ impl Config {
 
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
         let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
+        Self::parse_with_opts(filename, text, ConfigOpts::default())
+    }
+
+    pub fn parse_with_opts(
+        filename: &str,
+        text: &str,
+        opts: ConfigOpts,
+    ) -> Result<Self, knuffel::Error> {
+        let _span = tracy_client::span!("Config::parse_with_opts");
+        let mut config = knuffel::parse::<Self>(filename, text)?;
+
+        if let Some(mod_override) = opts.mod_override {
+            config.input.mod_key = mod_override;
+        }
+
+        Ok(config)
     }
 }
 

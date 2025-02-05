@@ -7,6 +7,7 @@ use std::io::{self, Write};
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::process::Command;
+use std::str::FromStr;
 use std::{env, mem};
 
 use clap::Parser;
@@ -22,7 +23,7 @@ use niri::utils::spawning::{
 };
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
-use niri_config::Config;
+use niri_config::{Config, ConfigOpts, ModKey};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -93,6 +94,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set a better error printer for config loading.
     niri_config::set_miette_hook().unwrap();
 
+    let mod_override = {
+        let s = std::env::var("NIRI_OVERRIDE_MOD").ok();
+        std::env::remove_var("NIRI_OVERRIDE_MOD");
+        s.and_then(|x| match ModKey::from_str(&x) {
+            Ok(x) => Some(x),
+            Err(err) => {
+                warn!("invalid value for NIRI_OVERRIDE_MOD: {err}");
+                None
+            }
+        })
+    };
+
+    let config_opts = ConfigOpts { mod_override };
+
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
         match subcommand {
@@ -100,7 +115,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tracy_client::Client::start();
 
                 let (path, _, _) = config_path(config);
-                Config::load(&path)?;
+                Config::load_with_opts(&path, config_opts)?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -160,7 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut config_errored = false;
-    let mut config = Config::load(&path)
+    let mut config = Config::load_with_opts(&path, config_opts.clone())
         .map_err(|err| {
             warn!("{err:?}");
             config_errored = true;
@@ -177,6 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let display = Display::new().unwrap();
     let mut state = State::new(
         config,
+        config_opts.clone(),
         event_loop.handle(),
         event_loop.get_signal(),
         display,
