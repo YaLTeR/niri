@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::{Action, Bind, Config, Key, Modifiers, Trigger};
+use niri_config::{Action, Bind, Config, Key, ModKey, Modifiers, Trigger};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::Kind;
@@ -14,7 +14,6 @@ use smithay::output::{Output, WeakOutput};
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Scale, Transform};
 
-use crate::input::CompositorMod;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
@@ -30,7 +29,7 @@ const TITLE: &str = "Important Hotkeys";
 pub struct HotkeyOverlay {
     is_open: bool,
     config: Rc<RefCell<Config>>,
-    comp_mod: CompositorMod,
+    mod_key: ModKey,
     buffers: RefCell<HashMap<WeakOutput, RenderedOverlay>>,
 }
 
@@ -39,11 +38,11 @@ pub struct RenderedOverlay {
 }
 
 impl HotkeyOverlay {
-    pub fn new(config: Rc<RefCell<Config>>, comp_mod: CompositorMod) -> Self {
+    pub fn new(config: Rc<RefCell<Config>>, mod_key: ModKey) -> Self {
         Self {
             is_open: false,
             config,
-            comp_mod,
+            mod_key,
             buffers: RefCell::new(HashMap::new()),
         }
     }
@@ -70,7 +69,8 @@ impl HotkeyOverlay {
         self.is_open
     }
 
-    pub fn on_hotkey_config_updated(&mut self) {
+    pub fn on_hotkey_config_updated(&mut self, mod_key: ModKey) {
+        self.mod_key = mod_key;
         self.buffers.borrow_mut().clear();
     }
 
@@ -101,7 +101,7 @@ impl HotkeyOverlay {
 
         let rendered = buffers.entry(weak).or_insert_with(|| {
             let renderer = renderer.as_gles_renderer();
-            render(renderer, &self.config.borrow(), self.comp_mod, scale)
+            render(renderer, &self.config.borrow(), self.mod_key, scale)
                 .unwrap_or_else(|_| RenderedOverlay { buffer: None })
         });
         let buffer = rendered.buffer.as_ref()?;
@@ -125,11 +125,7 @@ impl HotkeyOverlay {
     }
 }
 
-fn format_bind(
-    binds: &[Bind],
-    comp_mod: CompositorMod,
-    action: &Action,
-) -> Option<(String, String)> {
+fn format_bind(binds: &[Bind], mod_key: ModKey, action: &Action) -> Option<(String, String)> {
     let mut bind_with_non_null = None;
     let mut bind_with_custom_title = None;
     let mut found_null_title = false;
@@ -162,7 +158,7 @@ fn format_bind(
             title = Some(custom.clone());
         }
 
-        key_name(comp_mod, &bind.key)
+        key_name(mod_key, &bind.key)
     } else {
         String::from("(not bound)")
     };
@@ -174,7 +170,7 @@ fn format_bind(
 fn render(
     renderer: &mut GlesRenderer,
     config: &Config,
-    comp_mod: CompositorMod,
+    mod_key: ModKey,
     scale: f64,
 ) -> anyhow::Result<RenderedOverlay> {
     let _span = tracy_client::span!("hotkey_overlay::render");
@@ -290,7 +286,7 @@ fn render(
 
     let strings = actions
         .into_iter()
-        .filter_map(|action| format_bind(binds, comp_mod, action))
+        .filter_map(|action| format_bind(binds, mod_key, action))
         .collect::<Vec<_>>();
 
     let mut font = FontDescription::from_string(FONT);
@@ -448,38 +444,55 @@ fn action_name(action: &Action) -> String {
     }
 }
 
-fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
+fn key_name(mod_key: ModKey, key: &Key) -> String {
     let mut name = String::new();
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
 
     // Compositor mod goes first.
     if has_comp_mod {
-        if comp_mod == CompositorMod::Super {
-            name.push_str("Super + ");
-        } else if comp_mod == CompositorMod::Alt {
-            name.push_str("Alt + ");
+        match mod_key {
+            ModKey::Super => {
+                name.push_str("Super + ");
+            }
+            ModKey::Alt => {
+                name.push_str("Alt + ");
+            }
+            ModKey::Shift => {
+                name.push_str("Shift + ");
+            }
+            ModKey::Ctrl => {
+                name.push_str("Ctrl + ");
+            }
+            ModKey::IsoLevel3Shift => {
+                name.push_str("ISO_Level3_Shift + ");
+            }
+            ModKey::IsoLevel5Shift => {
+                name.push_str("ISO_Level5_Shift + ");
+            }
         }
     }
 
-    if key.modifiers.contains(Modifiers::SUPER)
-        && !(has_comp_mod && comp_mod == CompositorMod::Super)
-    {
+    if key.modifiers.contains(Modifiers::SUPER) && !(has_comp_mod && mod_key == ModKey::Super) {
         name.push_str("Super + ");
     }
-    if key.modifiers.contains(Modifiers::CTRL) {
+    if key.modifiers.contains(Modifiers::CTRL) && !(has_comp_mod && mod_key == ModKey::Ctrl) {
         name.push_str("Ctrl + ");
     }
-    if key.modifiers.contains(Modifiers::SHIFT) {
+    if key.modifiers.contains(Modifiers::SHIFT) && !(has_comp_mod && mod_key == ModKey::Shift) {
         name.push_str("Shift + ");
     }
-    if key.modifiers.contains(Modifiers::ALT) && !(has_comp_mod && comp_mod == CompositorMod::Alt) {
+    if key.modifiers.contains(Modifiers::ALT) && !(has_comp_mod && mod_key == ModKey::Alt) {
         name.push_str("Alt + ");
     }
-    if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT) {
+    if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT)
+        && !(has_comp_mod && mod_key == ModKey::IsoLevel3Shift)
+    {
         name.push_str("ISO_Level3_Shift + ");
     }
-    if key.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT) {
+    if key.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT)
+        && !(has_comp_mod && mod_key == ModKey::IsoLevel5Shift)
+    {
         name.push_str("ISO_Level5_Shift + ");
     }
 
@@ -538,7 +551,7 @@ mod tests {
     #[track_caller]
     fn check(config: &str, action: Action) -> String {
         let config = Config::parse("test.kdl", config).unwrap();
-        if let Some((key, title)) = format_bind(&config.binds.0, CompositorMod::Super, &action) {
+        if let Some((key, title)) = format_bind(&config.binds.0, ModKey::Super, &action) {
             format!("{key}: {title}")
         } else {
             String::from("None")
