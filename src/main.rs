@@ -48,6 +48,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         REMOVE_ENV_RUST_LIB_BACKTRACE.store(true, Ordering::Relaxed);
     }
 
+    let directives = env::var("RUST_LOG").unwrap_or_else(|_| DEFAULT_LOG_FILTER.to_owned());
+    let env_filter = EnvFilter::builder().parse_lossy(directives);
+    tracing_subscriber::fmt()
+        .compact()
+        .with_env_filter(env_filter)
+        .init();
+
     if env::var_os("NOTIFY_SOCKET").is_some() {
         IS_SYSTEMD_SERVICE.store(true, Ordering::Relaxed);
 
@@ -57,13 +64,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              Are you sure you did not forget to set `--features systemd`?"
         );
     }
-
-    let directives = env::var("RUST_LOG").unwrap_or_else(|_| DEFAULT_LOG_FILTER.to_owned());
-    let env_filter = EnvFilter::builder().parse_lossy(directives);
-    tracing_subscriber::fmt()
-        .compact()
-        .with_env_filter(env_filter)
-        .init();
 
     let cli = Cli::parse();
 
