@@ -683,6 +683,8 @@ pub struct ShadowOffset {
 pub struct TabIndicator {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child)]
+    pub hide_when_single_tab: bool,
     #[knuffel(child, unwrap(argument), default = Self::default().gap)]
     pub gap: FloatOrInt<-65535, 65535>,
     #[knuffel(child, unwrap(argument), default = Self::default().width)]
@@ -703,6 +705,7 @@ impl Default for TabIndicator {
     fn default() -> Self {
         Self {
             off: false,
+            hide_when_single_tab: false,
             gap: FloatOrInt(5.),
             width: FloatOrInt(4.),
             length: TabIndicatorLength {
