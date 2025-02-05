@@ -40,7 +40,7 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::LayoutElement as _;
-use crate::niri::{get_mod_key, State};
+use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
@@ -337,7 +337,7 @@ impl State {
         let time = Event::time_msec(&event);
         let pressed = event.state() == KeyState::Pressed;
 
-        let mod_key = get_mod_key(&self.niri.config.borrow(), &self.backend);
+        let mod_key = self.niri.config.borrow().input.mod_key;
 
         // Stop bind key repeat on any release. This won't work 100% correctly in cases like:
         // 1. Press Mod
@@ -1944,7 +1944,7 @@ impl State {
 
         let button_state = event.state();
 
-        let mod_key = get_mod_key(&self.niri.config.borrow(), &self.backend);
+        let mod_key = self.niri.config.borrow().input.mod_key;
 
         // Ignore release events for mouse clicks that triggered a bind.
         if self.niri.suppressed_buttons.remove(&button_code) {
@@ -2161,7 +2161,7 @@ impl State {
 
         let source = event.source();
 
-        let mod_key = get_mod_key(&self.niri.config.borrow(), &self.backend);
+        let mod_key = self.niri.config.borrow().input.mod_key;
 
         // We received an event for the regular pointer, so show it now. This is also needed for
         // update_pointer_contents() below to return the real contents, necessary for the pointer
@@ -2789,7 +2789,7 @@ impl State {
 
         let under = self.niri.contents_under(touch_location);
 
-        let mod_key = get_mod_key(&self.niri.config.borrow(), &self.backend);
+        let mod_key = self.niri.config.borrow().input.mod_key;
 
         if !handle.is_grabbed() {
             if let Some(window) = under.window {

@@ -29,7 +29,6 @@ const TITLE: &str = "Important Hotkeys";
 pub struct HotkeyOverlay {
     is_open: bool,
     config: Rc<RefCell<Config>>,
-    mod_key: ModKey,
     buffers: RefCell<HashMap<WeakOutput, RenderedOverlay>>,
 }
 
@@ -38,11 +37,10 @@ pub struct RenderedOverlay {
 }
 
 impl HotkeyOverlay {
-    pub fn new(config: Rc<RefCell<Config>>, mod_key: ModKey) -> Self {
+    pub fn new(config: Rc<RefCell<Config>>) -> Self {
         Self {
             is_open: false,
             config,
-            mod_key,
             buffers: RefCell::new(HashMap::new()),
         }
     }
@@ -69,8 +67,7 @@ impl HotkeyOverlay {
         self.is_open
     }
 
-    pub fn on_hotkey_config_updated(&mut self, mod_key: ModKey) {
-        self.mod_key = mod_key;
+    pub fn on_hotkey_config_updated(&mut self) {
         self.buffers.borrow_mut().clear();
     }
 
@@ -101,7 +98,7 @@ impl HotkeyOverlay {
 
         let rendered = buffers.entry(weak).or_insert_with(|| {
             let renderer = renderer.as_gles_renderer();
-            render(renderer, &self.config.borrow(), self.mod_key, scale)
+            render(renderer, &self.config.borrow(), scale)
                 .unwrap_or_else(|_| RenderedOverlay { buffer: None })
         });
         let buffer = rendered.buffer.as_ref()?;
@@ -128,10 +125,11 @@ impl HotkeyOverlay {
 fn render(
     renderer: &mut GlesRenderer,
     config: &Config,
-    mod_key: ModKey,
     scale: f64,
 ) -> anyhow::Result<RenderedOverlay> {
     let _span = tracy_client::span!("hotkey_overlay::render");
+
+    let mod_key = config.input.mod_key;
 
     // let margin = MARGIN * scale;
     let padding: i32 = to_physical_precise_round(scale, PADDING);

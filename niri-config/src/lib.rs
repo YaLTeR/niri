@@ -77,12 +77,16 @@ pub struct Config {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct ModKey(pub Modifiers);
 
+impl Default for ModKey {
+    fn default() -> Self {
+        Self(Modifiers::SUPER)
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Input {
     #[knuffel(child, unwrap(argument), default)]
-    pub mod_key: Option<ModKey>,
-    #[knuffel(child, unwrap(argument), default)]
-    pub nested_mod_key: Option<ModKey>,
+    pub mod_key: ModKey,
     #[knuffel(child, default)]
     pub keyboard: Keyboard,
     #[knuffel(child, default)]
@@ -3445,7 +3449,6 @@ mod tests {
             r##"
             input {
                 mod-key "Mod5"
-                nested-mod-key "Super"
 
                 keyboard {
                     repeat-delay 600
@@ -3675,8 +3678,7 @@ mod tests {
             "##,
             Config {
                 input: Input {
-                    mod_key: Some(ModKey(Modifiers::ISO_LEVEL3_SHIFT)),
-                    nested_mod_key: Some(ModKey(Modifiers::SUPER)),
+                    mod_key: ModKey(Modifiers::ISO_LEVEL3_SHIFT),
                     keyboard: Keyboard {
                         xkb: Xkb {
                             layout: "us,ru".to_owned(),
