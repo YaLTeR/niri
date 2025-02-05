@@ -65,6 +65,12 @@ pub struct Mapped {
     /// Certain Wayland requests require a configure in response, like un/fullscreen.
     needs_configure: bool,
 
+    /// Whether this window needs a frame callback.
+    ///
+    /// We set this after sending a configure to give invisible windows a chance to respond to
+    /// resizes immediately, without waiting for a 1 second throttled callback.
+    needs_frame_callback: bool,
+
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
@@ -178,6 +184,7 @@ impl Mapped {
             rules,
             need_to_recompute_rules: false,
             needs_configure: false,
+            needs_frame_callback: false,
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
@@ -419,12 +426,24 @@ impl Mapped {
         output: &Output,
         time: T,
         throttle: Option<Duration>,
-        primary_scan_out_output: F,
+        mut primary_scan_out_output: F,
     ) where
         T: Into<Duration>,
         F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
     {
-        self.window.send_frame(output, time, throttle, primary_scan_out_output);
+        let needs_frame_callback = self.needs_frame_callback;
+        self.needs_frame_callback = false;
+
+        let should_send = move |surface: &WlSurface, states: &SurfaceData| {
+            // Let primary_scan_out_output() run its logic and update internal state.
+            if let Some(output) = primary_scan_out_output(surface, states) {
+                return Some(output);
+            }
+
+            // Send unconditionally to all surfaces if the window needs a surface callback.
+            needs_frame_callback.then(|| output.clone())
+        };
+        self.window.send_frame(output, time, throttle, should_send);
     }
 }
 
@@ -846,6 +865,12 @@ impl LayoutElement for Mapped {
             trace!(?serial, "sending configure");
 
             self.needs_configure = false;
+
+            // Send the window a frame callback unconditionally to let it respond to size changes
+            // and such immediately, even when it's hidden. This especially matters for cases like
+            // tabbed columns which compute their width based on all windows in the column, even
+            // hidden ones.
+            self.needs_frame_callback = true;
 
             if self.animate_next_configure {
                 self.animate_serials.push(serial);
