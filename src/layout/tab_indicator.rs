@@ -1,6 +1,7 @@
 use std::iter::zip;
+use std::mem;
 
-use niri_config::{CornerRadius, Gradient, GradientRelativeTo};
+use niri_config::{CornerRadius, Gradient, GradientRelativeTo, TabIndicatorPosition};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::tile::Tile;
@@ -78,8 +79,12 @@ impl TabIndicator {
         let width = round(self.config.width.0);
         let gap = round(self.config.gap.0);
 
+        let side = match self.config.position {
+            TabIndicatorPosition::Left | TabIndicatorPosition::Right => tile_size.h,
+            TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => tile_size.w,
+        };
         let total_prop = self.config.length.total_proportion.unwrap_or(0.5);
-        let min_length = round(tile_size.h * total_prop.clamp(0., 2.));
+        let min_length = round(side * total_prop.clamp(0., 2.));
 
         self.shaders.resize_with(count, Default::default);
         self.shader_locs.resize_with(count, Default::default);
@@ -92,7 +97,16 @@ impl TabIndicator {
         let floored_length = count as f64 * px_per_tab;
         let mut ones_left = ((length - floored_length) / pixel).max(0.).round() as usize;
 
-        let mut shader_loc = Point::from((-gap - width, round((tile_size.h - length) / 2.)));
+        let mut shader_loc = Point::from((-gap - width, round((side - length) / 2.)));
+        match self.config.position {
+            TabIndicatorPosition::Left => (),
+            TabIndicatorPosition::Right => shader_loc.x = tile_size.w + gap,
+            TabIndicatorPosition::Top => mem::swap(&mut shader_loc.x, &mut shader_loc.y),
+            TabIndicatorPosition::Bottom => {
+                shader_loc.x = shader_loc.y;
+                shader_loc.y = tile_size.h + gap;
+            }
+        }
 
         for ((shader, loc), tab) in zip(&mut self.shaders, &mut self.shader_locs).zip(tabs) {
             *loc = shader_loc;
@@ -102,9 +116,24 @@ impl TabIndicator {
                 ones_left -= 1;
                 px_per_tab += pixel;
             }
-            shader_loc.y += px_per_tab;
 
-            let shader_size = Size::from((width, px_per_tab));
+            match self.config.position {
+                TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
+                    shader_loc.y += px_per_tab
+                }
+                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
+                    shader_loc.x += px_per_tab
+                }
+            }
+
+            let shader_size = match self.config.position {
+                TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
+                    Size::from((width, px_per_tab))
+                }
+                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
+                    Size::from((px_per_tab, width))
+                }
+            };
 
             let mut gradient_area = match tab.gradient.relative_to {
                 GradientRelativeTo::Window => tile_geo,

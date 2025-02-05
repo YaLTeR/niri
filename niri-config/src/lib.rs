@@ -691,6 +691,8 @@ pub struct TabIndicator {
     pub width: FloatOrInt<0, 65535>,
     #[knuffel(child, default = Self::default().length)]
     pub length: TabIndicatorLength,
+    #[knuffel(child, unwrap(argument), default = Self::default().position)]
+    pub position: TabIndicatorPosition,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -711,6 +713,7 @@ impl Default for TabIndicator {
             length: TabIndicatorLength {
                 total_proportion: Some(0.5),
             },
+            position: TabIndicatorPosition::Left,
             active_color: None,
             inactive_color: None,
             active_gradient: None,
@@ -723,6 +726,14 @@ impl Default for TabIndicator {
 pub struct TabIndicatorLength {
     #[knuffel(property)]
     pub total_proportion: Option<f64>,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+pub enum TabIndicatorPosition {
+    Left,
+    Right,
+    Top,
+    Bottom,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -3555,6 +3566,7 @@ mod tests {
 
                 tab-indicator {
                     width 10
+                    position "top"
                 }
 
                 preset-column-widths {
@@ -3819,6 +3831,7 @@ mod tests {
                     },
                     tab_indicator: TabIndicator {
                         width: FloatOrInt(10.),
+                        position: TabIndicatorPosition::Top,
                         ..Default::default()
                     },
                     insert_hint: InsertHint {
