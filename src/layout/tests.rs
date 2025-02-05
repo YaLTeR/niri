@@ -1,6 +1,9 @@
 use std::cell::Cell;
 
-use niri_config::{FloatOrInt, OutputName, TabIndicatorLength, WorkspaceName, WorkspaceReference};
+use niri_config::{
+    FloatOrInt, OutputName, TabIndicatorLength, TabIndicatorPosition, WorkspaceName,
+    WorkspaceReference,
+};
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use smithay::output::{Mode, PhysicalProperties, Subpixel};
@@ -3200,6 +3203,15 @@ fn arbitrary_center_focused_column() -> impl Strategy<Value = CenterFocusedColum
     ]
 }
 
+fn arbitrary_tab_indicator_position() -> impl Strategy<Value = TabIndicatorPosition> {
+    prop_oneof![
+        Just(TabIndicatorPosition::Left),
+        Just(TabIndicatorPosition::Right),
+        Just(TabIndicatorPosition::Top),
+        Just(TabIndicatorPosition::Bottom),
+    ]
+}
+
 prop_compose! {
     fn arbitrary_focus_ring()(
         off in any::<bool>(),
@@ -3246,6 +3258,7 @@ prop_compose! {
         width in arbitrary_spacing(),
         gap in arbitrary_spacing_neg(),
         length in (0f64..2f64),
+        position in arbitrary_tab_indicator_position(),
     ) -> niri_config::TabIndicator {
         niri_config::TabIndicator {
             off,
@@ -3253,6 +3266,7 @@ prop_compose! {
             width: FloatOrInt(width),
             gap: FloatOrInt(gap),
             length: TabIndicatorLength { total_proportion: Some(length) },
+            position,
             ..Default::default()
         }
     }
