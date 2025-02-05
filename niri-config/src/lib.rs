@@ -100,6 +100,10 @@ pub struct Input {
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
     pub workspace_auto_back_and_forth: bool,
+    #[knuffel(child, unwrap(argument, str))]
+    pub mod_key: Option<ModKey>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub mod_key_nested: Option<ModKey>,
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq, Eq)]
@@ -367,6 +371,29 @@ pub struct FocusFollowsMouse {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Percent(pub f64);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ModKey {
+    Ctrl,
+    Shift,
+    Alt,
+    Super,
+    IsoLevel3Shift,
+    IsoLevel5Shift,
+}
+
+impl ModKey {
+    pub fn to_modifiers(&self) -> Modifiers {
+        match self {
+            ModKey::Ctrl => Modifiers::CTRL,
+            ModKey::Shift => Modifiers::SHIFT,
+            ModKey::Alt => Modifiers::ALT,
+            ModKey::Super => Modifiers::SUPER,
+            ModKey::IsoLevel3Shift => Modifiers::ISO_LEVEL3_SHIFT,
+            ModKey::IsoLevel5Shift => Modifiers::ISO_LEVEL5_SHIFT,
+        }
+    }
+}
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Outputs(pub Vec<Output>);
@@ -3427,6 +3454,22 @@ where
     }
 }
 
+impl FromStr for ModKey {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match &*s.to_ascii_lowercase() {
+            "ctrl" | "control" => Ok(Self::Ctrl),
+            "shift" => Ok(Self::Shift),
+            "alt" => Ok(Self::Alt),
+            "super" | "win" => Ok(Self::Super),
+            "iso_level3_shift" | "mod5" => Ok(Self::IsoLevel3Shift),
+            "iso_level5_shift" | "mod3" => Ok(Self::IsoLevel5Shift),
+            _ => Err(miette!("invalid Mod key: {s}")),
+        }
+    }
+}
+
 impl FromStr for Key {
     type Err = miette::Error;
 
@@ -3664,6 +3707,9 @@ mod tests {
                 warp-mouse-to-focus
                 focus-follows-mouse
                 workspace-auto-back-and-forth
+
+                mod-key "Mod5"
+                mod-key-nested "Super"
             }
 
             output "eDP-1" {
@@ -3984,6 +4030,12 @@ mod tests {
                     },
                 ),
                 workspace_auto_back_and_forth: true,
+                mod_key: Some(
+                    IsoLevel3Shift,
+                ),
+                mod_key_nested: Some(
+                    Super,
+                ),
             },
             outputs: Outputs(
                 [
