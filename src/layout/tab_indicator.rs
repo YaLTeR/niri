@@ -63,6 +63,13 @@ impl TabIndicator {
             return;
         }
 
+        let count = tabs.clone().count();
+        if self.config.hide_when_single_tab && count == 1 {
+            self.shader_locs.clear();
+            self.shaders.clear();
+            return;
+        }
+
         // Tab indicators are rendered relative to the tile geometry.
         let tile_geo = Rectangle::new(Point::from((0., 0.)), tile_size);
 
@@ -74,7 +81,6 @@ impl TabIndicator {
         let total_prop = self.config.length.total_proportion.unwrap_or(0.5);
         let min_length = round(tile_size.h * total_prop.clamp(0., 2.));
 
-        let count = tabs.clone().count();
         self.shaders.resize_with(count, Default::default);
         self.shader_locs.resize_with(count, Default::default);
 
