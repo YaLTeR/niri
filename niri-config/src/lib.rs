@@ -1935,7 +1935,34 @@ impl Config {
             config.input.mod_key = mod_override;
         }
 
+        if config.has_duplicate_binds() {
+            return Err(knuffel::parse_with_context::<Self, knuffel::span::Span, _>(
+                filename,
+                text,
+                |ctx| {
+                    ctx.set(config.input.mod_key);
+                },
+            )
+            .expect_err("expected KDL parsing to fail"));
+        }
+
         Ok(config)
+    }
+
+    fn has_duplicate_binds(&self) -> bool {
+        let mut seen_keys = HashSet::new();
+        for bind in &self.binds.0 {
+            let mut key = bind.key;
+            if key.modifiers.contains(Modifiers::COMPOSITOR) {
+                key.modifiers.remove(Modifiers::COMPOSITOR);
+                key.modifiers.insert(self.input.mod_key.0);
+            }
+            if !seen_keys.insert(key) {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
@@ -3059,13 +3086,28 @@ where
 
         let mut binds = Vec::new();
 
+        let mod_key = ctx.get::<ModKey>().cloned();
+
         for child in node.children() {
             match Bind::decode_node(child, ctx) {
                 Err(e) => {
                     ctx.emit_error(e);
                 }
                 Ok(bind) => {
-                    if seen_keys.insert(bind.key) {
+                    let Some(mod_key) = &mod_key else {
+                        // On first config pass, we don't know what the ModKey is, so don't check
+                        // for bind collisions.
+                        binds.push(bind);
+                        continue;
+                    };
+
+                    let mut key = bind.key;
+                    if key.modifiers.contains(Modifiers::COMPOSITOR) {
+                        key.modifiers.remove(Modifiers::COMPOSITOR);
+                        key.modifiers.insert(mod_key.0);
+                    }
+
+                    if seen_keys.insert(key) {
                         binds.push(bind);
                     } else {
                         // ideally, this error should point to the previous instance of this keybind
