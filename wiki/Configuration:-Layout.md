@@ -148,6 +148,12 @@ Can be `normal` or `tabbed`.
 // Make all new columns tabbed by default.
 layout {
     default-column-display "tabbed"
+
+    // You may also want to hide the tab indicator
+    // when there's only a single window in a column.
+    tab-indicator {
+        hide-when-single-tab
+    }
 }
 ```
 
