@@ -60,6 +60,11 @@ pub struct Mapped {
     /// immediately, rather than setting this flag.
     need_to_recompute_rules: bool,
 
+    /// Whether this window needs a configure this loop cycle.
+    ///
+    /// Certain Wayland requests require a configure in response, like un/fullscreen.
+    needs_configure: bool,
+
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
@@ -172,6 +177,7 @@ impl Mapped {
             pre_commit_hook: hook,
             rules,
             need_to_recompute_rules: false,
+            needs_configure: false,
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
@@ -221,6 +227,10 @@ impl Mapped {
         }
 
         self.recompute_window_rules(rules, is_at_startup)
+    }
+
+    pub fn set_needs_configure(&mut self) {
+        self.needs_configure = true;
     }
 
     pub fn id(&self) -> MappedId {
@@ -733,6 +743,11 @@ impl LayoutElement for Mapped {
         let _span =
             trace_span!("configure_intent", surface = ?self.toplevel().wl_surface().id()).entered();
 
+        if self.needs_configure {
+            trace!("the window needs_configure");
+            return ConfigureIntent::ShouldSend;
+        }
+
         with_toplevel_role(self.toplevel(), |attributes| {
             if let Some(server_pending) = &attributes.server_pending {
                 let current_server = attributes.current_server_state();
@@ -783,24 +798,26 @@ impl LayoutElement for Mapped {
         let _span =
             trace_span!("send_pending_configure", surface = ?toplevel.wl_surface().id()).entered();
 
-        // Check for pending changes manually to account for RequestSizeOnce::UseWindowSize.
-        let has_pending_changes = with_toplevel_role(self.toplevel(), |role| {
-            if role.server_pending.is_none() {
-                return false;
-            }
+        // If the window needs a configure, send it regardless.
+        let has_pending_changes = self.needs_configure
+            || with_toplevel_role(self.toplevel(), |role| {
+                // Check for pending changes manually to account for RequestSizeOnce::UseWindowSize.
+                if role.server_pending.is_none() {
+                    return false;
+                }
 
-            let current_server_size = role.current_server_state().size;
-            let server_pending = role.server_pending.as_mut().unwrap();
+                let current_server_size = role.current_server_state().size;
+                let server_pending = role.server_pending.as_mut().unwrap();
 
-            // With UseWindowSize, we do not consider size-only changes, because we will
-            // request the current window size and do not expect it to actually change.
-            if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
-                server_pending.size = current_server_size;
-            }
+                // With UseWindowSize, we do not consider size-only changes, because we will
+                // request the current window size and do not expect it to actually change.
+                if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
+                    server_pending.size = current_server_size;
+                }
 
-            let server_pending = role.server_pending.as_ref().unwrap();
-            server_pending != role.current_server_state()
-        });
+                let server_pending = role.server_pending.as_ref().unwrap();
+                server_pending != role.current_server_state()
+            });
 
         if has_pending_changes {
             // If needed, replace the pending size with the current window size.
@@ -813,6 +830,8 @@ impl LayoutElement for Mapped {
 
             let serial = toplevel.send_configure();
             trace!(?serial, "sending configure");
+
+            self.needs_configure = false;
 
             if self.animate_next_configure {
                 self.animate_serials.push(serial);
