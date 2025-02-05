@@ -84,6 +84,7 @@ pub struct Mapped {
     /// Snapshot right before an animated commit.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
 
+    /// State for the logic to request a size once (for floating windows).
     request_size_once: Option<RequestSizeOnce>,
 
     /// Transaction that the next configure should take part in, if any.
@@ -148,10 +149,14 @@ impl InteractiveResize {
     }
 }
 
+/// Request-size-once logic state.
 #[derive(Debug, Clone, Copy)]
 enum RequestSizeOnce {
+    /// Waiting for configure to be sent with the requested size.
     WaitingForConfigure,
+    /// Waiting for the window to commit in response to the configure.
     WaitingForCommit(Serial),
+    /// When configuring, use the current window size.
     UseWindowSize,
 }
 
