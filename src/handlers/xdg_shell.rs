@@ -123,6 +123,10 @@ impl XdgShellHandler for State {
             return;
         };
 
+        let Some(output) = output else {
+            return;
+        };
+
         let window = mapped.window.clone();
         let output = output.clone();
 
@@ -434,7 +438,7 @@ impl XdgShellHandler for State {
             let window = mapped.window.clone();
 
             if let Some(requested_output) = requested_output {
-                if &requested_output != current_output {
+                if Some(&requested_output) != current_output {
                     self.niri
                         .layout
                         .move_to_output(Some(&window), &requested_output, None);
@@ -467,7 +471,7 @@ impl XdgShellHandler for State {
                             toplevel
                                 .parent()
                                 .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
-                                .map(|(_win, output)| output)
+                                .and_then(|(_win, output)| output)
                                 .and_then(|o| self.niri.layout.monitor_for_output(o))
                                 .map(|mon| (mon, true))
                         })
@@ -556,7 +560,7 @@ impl XdgShellHandler for State {
                                     .and_then(|parent| {
                                         self.niri.layout.find_window_and_output(&parent)
                                     })
-                                    .map(|(_win, output)| output)
+                                    .and_then(|(_win, output)| output)
                                     .and_then(|o| self.niri.layout.monitor_for_output(o))
                                     .map(|mon| (mon, true))
                             })
@@ -642,7 +646,7 @@ impl XdgShellHandler for State {
             return;
         };
         let window = mapped.window.clone();
-        let output = output.clone();
+        let output = output.cloned();
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri
@@ -678,7 +682,9 @@ impl XdgShellHandler for State {
             self.maybe_warp_cursor_to_focus();
         }
 
-        self.niri.queue_redraw(&output);
+        if let Some(output) = output {
+            self.niri.queue_redraw(&output);
+        }
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
@@ -862,7 +868,7 @@ impl State {
             toplevel
                 .parent()
                 .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
-                .map(|(_win, output)| output)
+                .and_then(|(_win, output)| output)
                 .and_then(|o| self.niri.layout.monitor_for_output(o))
                 .map(|mon| (mon, true))
         });

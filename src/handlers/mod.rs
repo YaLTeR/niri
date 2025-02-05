@@ -536,7 +536,7 @@ impl ForeignToplevelHandler for State {
             let window = mapped.window.clone();
 
             if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
-                if &requested_output != current_output {
+                if Some(&requested_output) != current_output {
                     self.niri
                         .layout
                         .move_to_output(Some(&window), &requested_output, None);

@@ -2898,6 +2898,9 @@ impl Niri {
         // Check the main layout.
         let win_out = self.layout.find_window_and_output(root);
         let layout_output = win_out.map(|(_, output)| output);
+        if let Some(output) = layout_output {
+            return output;
+        }
 
         // Check layer-shell.
         let has_layer_surface = |o: &&Output| {
@@ -2905,9 +2908,7 @@ impl Niri {
                 .layer_for_surface(root, WindowSurfaceType::TOPLEVEL)
                 .is_some()
         };
-        let layer_shell_output = || self.layout.outputs().find(has_layer_surface);
-
-        layout_output.or_else(layer_shell_output)
+        self.layout.outputs().find(has_layer_surface)
     }
 
     pub fn lock_surface_focus(&self) -> Option<WlSurface> {
