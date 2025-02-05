@@ -476,6 +476,13 @@ impl<W: LayoutElement> InteractiveMoveState<W> {
             _ => None,
         }
     }
+
+    fn moving_mut(&mut self) -> Option<&mut InteractiveMoveData<W>> {
+        match self {
+            InteractiveMoveState::Moving(move_) => Some(move_),
+            _ => None,
+        }
+    }
 }
 
 impl<W: LayoutElement> InteractiveMoveData<W> {
@@ -1604,6 +1611,28 @@ impl<W: LayoutElement> Layout<W> {
 
         let mon = monitors.iter().find(|mon| &mon.output == output).unwrap();
         let mon_windows = mon.workspaces.iter().flat_map(|ws| ws.windows());
+
+        moving_window.chain(mon_windows)
+    }
+
+    pub fn windows_for_output_mut(&mut self, output: &Output) -> impl Iterator<Item = &mut W> + '_ {
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+            panic!()
+        };
+
+        let moving_window = self
+            .interactive_move
+            .as_mut()
+            .and_then(|x| x.moving_mut())
+            .filter(|move_| move_.output == *output)
+            .map(|move_| move_.tile.window_mut())
+            .into_iter();
+
+        let mon = monitors
+            .iter_mut()
+            .find(|mon| &mon.output == output)
+            .unwrap();
+        let mon_windows = mon.workspaces.iter_mut().flat_map(|ws| ws.windows_mut());
 
         moving_window.chain(mon_windows)
     }

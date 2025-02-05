@@ -13,7 +13,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
-use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
+use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId, SurfaceData};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 use wayland_backend::server::Credentials;
@@ -412,6 +412,19 @@ impl Mapped {
 
             WindowCastRenderElements::from(elem)
         })
+    }
+
+    pub fn send_frame<T, F>(
+        &mut self,
+        output: &Output,
+        time: T,
+        throttle: Option<Duration>,
+        primary_scan_out_output: F,
+    ) where
+        T: Into<Duration>,
+        F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
+    {
+        self.window.send_frame(output, time, throttle, primary_scan_out_output);
     }
 }
 
