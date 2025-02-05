@@ -848,6 +848,13 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.focus_window_in_column(index);
+    }
+
     pub fn focus_down(&mut self) -> bool {
         if self.floating_is_active.get() {
             self.floating.focus_down()

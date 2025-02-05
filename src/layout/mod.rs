@@ -1893,6 +1893,13 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_in_column(index);
+    }
+
     pub fn focus_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;

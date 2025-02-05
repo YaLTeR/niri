@@ -681,6 +681,13 @@ impl State {
                     self.focus_window(&window);
                 }
             }
+            Action::FocusWindowInColumn(index) => {
+                self.niri.layout.focus_window_in_column(index);
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWindowPrevious => {
                 if let Some(window) = self.niri.previously_focused_window.clone() {
                     self.focus_window(&window);

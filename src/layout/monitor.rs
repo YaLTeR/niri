@@ -457,6 +457,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().focus_column_left_or_last();
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        self.active_workspace().focus_window_in_column(index);
+    }
+
     pub fn focus_down(&mut self) -> bool {
         self.active_workspace().focus_down()
     }

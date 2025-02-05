@@ -1362,6 +1362,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.activate_column(self.columns.len() - 1);
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].focus_index(index);
+    }
+
     pub fn focus_down(&mut self) -> bool {
         if self.columns.is_empty() {
             return false;
@@ -3612,6 +3620,10 @@ impl<W: LayoutElement> Column<W> {
             .max()
             .map(NotNan::into_inner)
             .unwrap()
+    }
+
+    fn focus_index(&mut self, index: u8) {
+        self.active_tile_idx = min(usize::from(index.saturating_sub(1)), self.tiles.len() - 1);
     }
 
     fn focus_up(&mut self) -> bool {

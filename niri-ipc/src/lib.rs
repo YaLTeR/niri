@@ -215,6 +215,14 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Focus a window in the focused column by index.
+    FocusWindowInColumn {
+        /// Index of the window in the column.
+        ///
+        /// The index starts from 1 for the topmost window.
+        #[cfg_attr(feature = "clap", arg())]
+        index: u8,
+    },
     /// Focus the previously focused window.
     FocusWindowPrevious {},
     /// Focus the column to the left.
