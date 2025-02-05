@@ -76,8 +76,35 @@ pub struct Config {
     pub workspaces: Vec<Workspace>,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ModKey {
+    Ctrl,
+    Shift,
+    Alt,
+    Super,
+    IsoLevel3Shift,
+    IsoLevel5Shift,
+}
+
+impl ModKey {
+    pub fn to_modifiers(&self) -> Modifiers {
+        match self {
+            ModKey::Ctrl => Modifiers::CTRL,
+            ModKey::Shift => Modifiers::SHIFT,
+            ModKey::Alt => Modifiers::ALT,
+            ModKey::Super => Modifiers::SUPER,
+            ModKey::IsoLevel3Shift => Modifiers::ISO_LEVEL3_SHIFT,
+            ModKey::IsoLevel5Shift => Modifiers::ISO_LEVEL5_SHIFT,
+        }
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Input {
+    #[knuffel(child, unwrap(argument), default)]
+    pub mod_key: Option<ModKey>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub mod_key_nested: Option<ModKey>,
     #[knuffel(child, default)]
     pub keyboard: Keyboard,
     #[knuffel(child, default)]
@@ -3364,6 +3391,52 @@ where
     }
 }
 
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for ModKey {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        match &**val {
+            knuffel::ast::Literal::String(ref s) => Ok(s
+                .parse::<ModKey>()
+                .map_err(|e| DecodeError::conversion(val, e))?),
+            _ => {
+                ctx.emit_error(DecodeError::unsupported(val, "Mod key must be a string"));
+                Ok(Self::Super)
+            }
+        }
+    }
+}
+
+impl FromStr for ModKey {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match &*s.to_ascii_lowercase() {
+            "ctrl" | "control" => Ok(Self::Ctrl),
+            "shift" => Ok(Self::Shift),
+            "alt" => Ok(Self::Alt),
+            "super" | "win" => Ok(Self::Super),
+            "iso_level3_shift" | "mod5" => Ok(Self::IsoLevel3Shift),
+            "iso_level5_shift" | "mod3" => Ok(Self::IsoLevel5Shift),
+            _ => Err(miette!("invalid Mod key: {s}")),
+        }
+    }
+}
+
 impl FromStr for Key {
     type Err = miette::Error;
 
@@ -3531,6 +3604,9 @@ mod tests {
         let parsed = do_parse(
             r##"
             input {
+                mod-key "Mod5"
+                mod-key-nested "Super"
+
                 keyboard {
                     repeat-delay 600
                     repeat-rate 25
@@ -3783,6 +3859,12 @@ mod tests {
         assert_debug_snapshot!(parsed, @r#"
         Config {
             input: Input {
+                mod_key: Some(
+                    IsoLevel3Shift,
+                ),
+                mod_key_nested: Some(
+                    Super,
+                ),
                 keyboard: Keyboard {
                     xkb: Xkb {
                         rules: "",
