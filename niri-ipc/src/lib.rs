@@ -253,6 +253,14 @@ pub enum Action {
     FocusWindowOrWorkspaceDown {},
     /// Focus the window or the workspace above.
     FocusWindowOrWorkspaceUp {},
+    /// Focus the topmost window.
+    FocusWindowTop {},
+    /// Focus the bottommost window.
+    FocusWindowBottom {},
+    /// Focus the window below or the topmost window.
+    FocusWindowDownOrTop {},
+    /// Focus the window above or the bottommost window.
+    FocusWindowUpOrBottom {},
     /// Move the focused column to the left.
     MoveColumnLeft {},
     /// Move the focused column to the right.

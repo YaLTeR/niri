@@ -896,6 +896,34 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn focus_window_top(&mut self) {
+        if self.floating_is_active.get() {
+            self.floating.focus_topmost();
+        } else {
+            self.scrolling.focus_top();
+        }
+    }
+
+    pub fn focus_window_bottom(&mut self) {
+        if self.floating_is_active.get() {
+            self.floating.focus_bottommost();
+        } else {
+            self.scrolling.focus_bottom();
+        }
+    }
+
+    pub fn focus_window_down_or_top(&mut self) {
+        if !self.focus_down() {
+            self.focus_window_top();
+        }
+    }
+
+    pub fn focus_window_up_or_bottom(&mut self) {
+        if !self.focus_up() {
+            self.focus_window_bottom();
+        }
+    }
+
     pub fn move_left(&mut self) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_left();

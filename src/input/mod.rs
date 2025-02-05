@@ -987,6 +987,34 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusWindowTop => {
+                self.niri.layout.focus_window_top();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowBottom => {
+                self.niri.layout.focus_window_bottom();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowDownOrTop => {
+                self.niri.layout.focus_window_down_or_top();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowUpOrBottom => {
+                self.niri.layout.focus_window_up_or_bottom();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::MoveWindowToWorkspaceDown => {
                 self.niri.layout.move_to_workspace_down();
                 self.maybe_warp_cursor_to_focus();

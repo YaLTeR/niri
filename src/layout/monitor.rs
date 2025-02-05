@@ -493,6 +493,22 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn focus_window_top(&mut self) {
+        self.active_workspace().focus_window_top();
+    }
+
+    pub fn focus_window_bottom(&mut self) {
+        self.active_workspace().focus_window_bottom();
+    }
+
+    pub fn focus_window_down_or_top(&mut self) {
+        self.active_workspace().focus_window_down_or_top();
+    }
+
+    pub fn focus_window_up_or_bottom(&mut self) {
+        self.active_workspace().focus_window_up_or_bottom();
+    }
+
     pub fn move_to_workspace_up(&mut self) {
         let source_workspace_idx = self.active_workspace_idx;
 

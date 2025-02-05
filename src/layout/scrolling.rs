@@ -1422,6 +1422,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    pub fn focus_top(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].focus_top()
+    }
+
+    pub fn focus_bottom(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].focus_bottom()
+    }
+
     fn move_column_to(&mut self, new_idx: usize) {
         if self.active_column_idx == new_idx {
             return;
@@ -3614,6 +3630,14 @@ impl<W: LayoutElement> Column<W> {
 
         self.active_tile_idx += 1;
         true
+    }
+
+    fn focus_top(&mut self) {
+        self.active_tile_idx = 0;
+    }
+
+    fn focus_bottom(&mut self) {
+        self.active_tile_idx = self.tiles.len() - 1;
     }
 
     fn move_up(&mut self) -> bool {
