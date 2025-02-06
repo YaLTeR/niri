@@ -323,6 +323,12 @@ pub enum Action {
     SwapWindowLeft {},
     /// Toggle the focused column between normal and tabbed display.
     ToggleColumnTabbedDisplay {},
+    /// Set the display mode of the focused column.
+    SetColumnDisplay {
+        /// Display mode to set.
+        #[cfg_attr(feature = "clap", arg())]
+        display: ColumnDisplay,
+    },
     /// Center the focused column on the screen.
     CenterColumn {},
     /// Center a window on the screen.
