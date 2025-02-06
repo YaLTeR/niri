@@ -1113,6 +1113,8 @@ pub struct WindowRule {
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, unwrap(argument))]
     pub variable_refresh_rate: Option<bool>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub default_column_display: Option<ColumnDisplay>,
     #[knuffel(child)]
     pub default_floating_position: Option<FloatingPosition>,
     #[knuffel(child, unwrap(argument))]
@@ -3557,6 +3559,7 @@ mod tests {
                 open-floating false
                 open-focused true
                 default-window-height { fixed 500; }
+                default-column-display "tabbed"
                 default-floating-position x=100 y=-200 relative-to="bottom-left"
 
                 focus-ring {
@@ -3856,6 +3859,7 @@ mod tests {
                     open_floating: Some(false),
                     open_focused: Some(true),
                     default_window_height: Some(DefaultPresetSize(Some(PresetSize::Fixed(500)))),
+                    default_column_display: Some(ColumnDisplay::Tabbed),
                     default_floating_position: Some(FloatingPosition {
                         x: FloatOrInt(100.),
                         y: FloatOrInt(-200.),
