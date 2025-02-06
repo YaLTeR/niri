@@ -3013,6 +3013,31 @@ fn move_workspace_to_same_monitor_doesnt_reorder() {
 }
 
 #[test]
+fn removing_window_above_preserves_focused_window() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FocusColumnFirst,
+        Op::ConsumeWindowIntoColumn,
+        Op::ConsumeWindowIntoColumn,
+        Op::FocusWindowDown,
+        Op::CloseWindow(0),
+    ];
+
+    let layout = check_ops(&ops);
+    let win = layout.focus().unwrap();
+    assert_eq!(win.0.id, 1);
+}
+
+#[test]
 fn preset_column_width_fixed_correct_with_border() {
     let ops = [
         Op::AddOutput(0),

@@ -984,7 +984,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             is_floating: false,
         };
 
-        column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
+        if tile_idx < column.active_tile_idx {
+            // A tile above was removed; preserve the current position.
+            column.active_tile_idx -= 1;
+        } else {
+            column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
+        }
+
         column.update_tile_sizes_with_transaction(true, transaction);
         self.data[column_idx].update(column);
         let offset = prev_width - column.width();
