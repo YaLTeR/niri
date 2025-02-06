@@ -214,6 +214,9 @@ pub enum Action {
         /// Id of the window to focus.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
+        /// Dont move the cursor when focussing the window.
+        #[cfg_attr(feature = "clap", arg(long = "dont-move-cursor", action = clap::ArgAction::SetFalse))]
+        move_cursor: bool,
     },
     /// Focus a window in the focused column by index.
     FocusWindowInColumn {

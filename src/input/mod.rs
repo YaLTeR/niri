@@ -674,11 +674,15 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::FocusWindow(id) => {
+            Action::FocusWindow(id, move_cursor) => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
                 let window = window.map(|(_, m)| m.window.clone());
                 if let Some(window) = window {
-                    self.focus_window(&window);
+                    if move_cursor {
+                        self.focus_window(&window);
+                        return;
+                    }
+                    self.focus_window_without_moving_cursor(&window);
                 }
             }
             Action::FocusWindowInColumn(index) => {
