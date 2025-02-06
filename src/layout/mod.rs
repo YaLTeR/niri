@@ -39,10 +39,10 @@ use std::time::Duration;
 
 use monitor::MonitorAddWindowTarget;
 use niri_config::{
-    CenterFocusedColumn, ColumnDisplay, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
+    CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
-use niri_ipc::{PositionChange, SizeChange};
+use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use scrolling::{Column, ColumnWidth, InsertHint, InsertPosition};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Id;
@@ -341,7 +341,7 @@ impl Default for Options {
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
-            default_column_display: Default::default(),
+            default_column_display: ColumnDisplay::Normal,
             preset_column_widths: vec![
                 PresetSize::Proportion(1. / 3.),
                 PresetSize::Proportion(0.5),

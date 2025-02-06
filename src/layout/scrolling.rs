@@ -3,8 +3,8 @@ use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, ColumnDisplay, CornerRadius, PresetSize, Struts};
-use niri_ipc::SizeChange;
+use niri_config::{CenterFocusedColumn, CornerRadius, PresetSize, Struts};
+use niri_ipc::{ColumnDisplay, SizeChange};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};

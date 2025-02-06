@@ -14,7 +14,7 @@ use knuffel::Decode as _;
 use layer_rule::LayerRule;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{
-    ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
+    ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
     WorkspaceReferenceArg,
 };
 use smithay::backend::renderer::Color32F;
@@ -458,7 +458,7 @@ pub struct Layout {
     pub always_center_single_column: bool,
     #[knuffel(child)]
     pub empty_workspace_above_first: bool,
-    #[knuffel(child, unwrap(argument), default)]
+    #[knuffel(child, unwrap(argument, str), default = Self::default().default_column_display)]
     pub default_column_display: ColumnDisplay,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
     pub gaps: FloatOrInt<0, 65535>,
@@ -478,7 +478,7 @@ impl Default for Layout {
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
-            default_column_display: Default::default(),
+            default_column_display: ColumnDisplay::Normal,
             gaps: FloatOrInt(16.),
             struts: Default::default(),
             preset_window_heights: Default::default(),
@@ -796,16 +796,6 @@ impl From<PresetSize> for SizeChange {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultPresetSize(pub Option<PresetSize>);
-
-/// How windows display in a column.
-#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum ColumnDisplay {
-    /// Windows arranged vertically, spread across the working area height.
-    #[default]
-    Normal,
-    /// Windows are in tabs.
-    Tabbed,
-}
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Struts {

@@ -690,6 +690,16 @@ pub enum LayoutSwitchTarget {
     Index(u8),
 }
 
+/// How windows display in a column.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ColumnDisplay {
+    /// Windows are tiled vertically across the working area height.
+    Normal,
+    /// Windows are in tabs.
+    Tabbed,
+}
+
 /// Output actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most thigs from
 // niri-config should be present here.
@@ -1198,6 +1208,18 @@ impl FromStr for LayoutSwitchTarget {
                 Ok(layout) => Ok(Self::Index(layout)),
                 _ => Err(r#"invalid layout action, can be "next", "prev" or a layout index"#),
             },
+        }
+    }
+}
+
+impl FromStr for ColumnDisplay {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "normal" => Ok(Self::Normal),
+            "tabbed" => Ok(Self::Tabbed),
+            _ => Err(r#"invalid column display, can be "normal" or "tabbed""#),
         }
     }
 }
