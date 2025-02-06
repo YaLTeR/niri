@@ -3823,7 +3823,7 @@ impl<W: LayoutElement> Column<W> {
         let current_prop = if full == 0. {
             1.
         } else {
-            (current_tile_px + self.options.gaps) / (full)
+            (current_tile_px + self.options.gaps) / full
         };
 
         // FIXME: fix overflows then remove limits.
