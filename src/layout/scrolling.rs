@@ -2116,26 +2116,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     error!("insert hint column index is out of range");
                     return None;
                 }
-                if tile_index > self.columns[column_index].tiles.len() {
+
+                let col = &self.columns[column_index];
+                if tile_index > col.tiles.len() {
                     error!("insert hint tile index is out of range");
                     return None;
                 }
 
                 let (height, y) = if tile_index == 0 {
-                    (150., self.columns[column_index].tile_offset(tile_index).y)
-                } else if tile_index == self.columns[column_index].tiles.len() {
+                    (150., col.tile_offset(tile_index).y)
+                } else if tile_index == col.tiles.len() {
                     (
                         150.,
-                        self.columns[column_index].tile_offset(tile_index).y
-                            - self.options.gaps
-                            - 150.,
+                        col.tile_offset(tile_index).y - self.options.gaps - 150.,
                     )
                 } else {
                     (
                         300.,
-                        self.columns[column_index].tile_offset(tile_index).y
-                            - self.options.gaps / 2.
-                            - 150.,
+                        col.tile_offset(tile_index).y - self.options.gaps / 2. - 150.,
                     )
                 };
 
