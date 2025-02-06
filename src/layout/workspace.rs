@@ -797,9 +797,9 @@ impl<W: LayoutElement> Workspace<W> {
             }
 
             if is_floating {
-                state.bounds = Some(self.floating.toplevel_bounds(rules));
+                state.bounds = Some(self.floating.new_window_toplevel_bounds(rules));
             } else {
-                state.bounds = Some(self.scrolling.toplevel_bounds(rules));
+                state.bounds = Some(self.scrolling.new_window_toplevel_bounds(rules));
             }
         });
     }

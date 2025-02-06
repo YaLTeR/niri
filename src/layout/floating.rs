@@ -318,7 +318,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         })
     }
 
-    pub fn toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
+    pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
         let border_config = rules.border.resolve_against(self.options.border);
         compute_toplevel_bounds(border_config, self.working_area.size)
     }
