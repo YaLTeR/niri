@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, OutputName, PresetSize, Workspace as WorkspaceConfig};
-use niri_ipc::{PositionChange, SizeChange};
+use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -1027,6 +1027,13 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
         self.scrolling.toggle_column_tabbed_display();
+    }
+
+    pub fn set_column_display(&mut self, display: ColumnDisplay) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.set_column_display(display);
     }
 
     pub fn center_column(&mut self) {

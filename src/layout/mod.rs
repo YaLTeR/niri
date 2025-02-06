@@ -2151,6 +2151,13 @@ impl<W: LayoutElement> Layout<W> {
         monitor.toggle_column_tabbed_display();
     }
 
+    pub fn set_column_display(&mut self, display: ColumnDisplay) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.set_column_display(display);
+    }
+
     pub fn center_column(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;

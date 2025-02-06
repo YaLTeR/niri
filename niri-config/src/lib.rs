@@ -1371,6 +1371,7 @@ pub enum Action {
     SwapWindowLeft,
     SwapWindowRight,
     ToggleColumnTabbedDisplay,
+    SetColumnDisplay(#[knuffel(argument, str)] ColumnDisplay),
     CenterColumn,
     CenterWindow,
     #[knuffel(skip)]
@@ -1568,6 +1569,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SwapWindowRight {} => Self::SwapWindowRight,
             niri_ipc::Action::SwapWindowLeft {} => Self::SwapWindowLeft,
             niri_ipc::Action::ToggleColumnTabbedDisplay {} => Self::ToggleColumnTabbedDisplay,
+            niri_ipc::Action::SetColumnDisplay { display } => Self::SetColumnDisplay(display),
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),

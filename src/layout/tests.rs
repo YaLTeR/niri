@@ -320,6 +320,10 @@ fn arbitrary_scroll_direction() -> impl Strategy<Value = ScrollDirection> {
     prop_oneof![Just(ScrollDirection::Left), Just(ScrollDirection::Right)]
 }
 
+fn arbitrary_column_display() -> impl Strategy<Value = ColumnDisplay> {
+    prop_oneof![Just(ColumnDisplay::Normal), Just(ColumnDisplay::Tabbed)]
+}
+
 #[derive(Debug, Clone, Copy, Arbitrary)]
 enum Op {
     AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -407,6 +411,7 @@ enum Op {
     ExpelWindowFromColumn,
     SwapWindowInDirection(#[proptest(strategy = "arbitrary_scroll_direction()")] ScrollDirection),
     ToggleColumnTabbedDisplay,
+    SetColumnDisplay(#[proptest(strategy = "arbitrary_column_display()")] ColumnDisplay),
     CenterColumn,
     CenterWindow {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -971,6 +976,7 @@ impl Op {
             Op::ExpelWindowFromColumn => layout.expel_from_column(),
             Op::SwapWindowInDirection(direction) => layout.swap_window_in_direction(direction),
             Op::ToggleColumnTabbedDisplay => layout.toggle_column_tabbed_display(),
+            Op::SetColumnDisplay(display) => layout.set_column_display(display),
             Op::CenterColumn => layout.center_column(),
             Op::CenterWindow { id } => {
                 let id = id.filter(|id| layout.has_window(id));

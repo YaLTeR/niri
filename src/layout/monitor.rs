@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_ipc::SizeChange;
+use niri_ipc::{ColumnDisplay, SizeChange};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
@@ -734,6 +734,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn toggle_column_tabbed_display(&mut self) {
         self.active_workspace().toggle_column_tabbed_display();
+    }
+
+    pub fn set_column_display(&mut self, display: ColumnDisplay) {
+        self.active_workspace().set_column_display(display);
     }
 
     pub fn center_column(&mut self) {

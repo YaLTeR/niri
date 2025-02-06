@@ -1968,8 +1968,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let col = &mut self.columns[self.active_column_idx];
+        let display = match col.display_mode {
+            ColumnDisplay::Normal => ColumnDisplay::Tabbed,
+            ColumnDisplay::Tabbed => ColumnDisplay::Normal,
+        };
+
+        self.set_column_display(display);
+    }
+
+    pub fn set_column_display(&mut self, display: ColumnDisplay) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        if col.display_mode == display {
+            return;
+        }
+
         cancel_resize_for_column(&mut self.interactive_resize, col);
-        col.toggle_tabbed_display();
+        col.set_column_display(display);
 
         // Disable fullscreen if needed.
         if col.display_mode != ColumnDisplay::Tabbed && col.tiles.len() > 1 {
@@ -4101,11 +4119,12 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(false);
     }
 
-    fn toggle_tabbed_display(&mut self) {
-        self.display_mode = match self.display_mode {
-            ColumnDisplay::Normal => ColumnDisplay::Tabbed,
-            ColumnDisplay::Tabbed => ColumnDisplay::Normal,
-        };
+    fn set_column_display(&mut self, display: ColumnDisplay) {
+        if self.display_mode == display {
+            return;
+        }
+
+        self.display_mode = display;
         self.update_tile_sizes(true);
     }
 
