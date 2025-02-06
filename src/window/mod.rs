@@ -4,6 +4,7 @@ use niri_config::{
     BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, Match, PresetSize, ShadowRule,
     WindowRule,
 };
+use niri_ipc::ColumnDisplay;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Size};
 use smithay::wayland::compositor::with_states;
@@ -42,6 +43,9 @@ pub struct ResolvedWindowRules {
     /// - `Some(None)`: set to empty (window picks its own height).
     /// - `Some(Some(height))`: set to a particular height.
     pub default_height: Option<Option<PresetSize>>,
+
+    /// Default column display for this window.
+    pub default_column_display: Option<ColumnDisplay>,
 
     /// Default floating position for this window.
     pub default_floating_position: Option<FloatingPosition>,
@@ -147,6 +151,7 @@ impl ResolvedWindowRules {
         Self {
             default_width: None,
             default_height: None,
+            default_column_display: None,
             default_floating_position: None,
             open_on_output: None,
             open_on_workspace: None,
@@ -235,6 +240,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.default_window_height {
                     resolved.default_height = Some(x.0);
+                }
+
+                if let Some(x) = rule.default_column_display {
+                    resolved.default_column_display = Some(x);
                 }
 
                 if let Some(x) = rule.default_floating_position {

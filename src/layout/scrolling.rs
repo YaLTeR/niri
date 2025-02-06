@@ -3253,6 +3253,12 @@ impl<W: LayoutElement> Column<W> {
     ) -> Self {
         let options = tile.options.clone();
 
+        let display_mode = tile
+            .window()
+            .rules()
+            .default_column_display
+            .unwrap_or(options.default_column_display);
+
         let mut rv = Self {
             tiles: vec![],
             data: vec![],
@@ -3261,7 +3267,7 @@ impl<W: LayoutElement> Column<W> {
             preset_width_idx: None,
             is_full_width,
             is_fullscreen: false,
-            display_mode: options.default_column_display,
+            display_mode,
             move_animation: None,
             view_size,
             working_area,

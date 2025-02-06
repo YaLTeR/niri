@@ -52,6 +52,7 @@ window-rule {
     block-out-from "screencast"
     // block-out-from "screen-capture"
     variable-refresh-rate true
+    default-column-display "tabbed"
     default-floating-position x=100 y=200 relative-to="bottom-left"
     scroll-factor 0.75
 
@@ -525,6 +526,27 @@ window-rule {
     match app-id="^mpv$"
 
     variable-refresh-rate true
+}
+```
+
+#### `default-column-display`
+
+<sup>Since: next release</sup>
+
+Set the default display mode for columns created from this window.
+
+This is used any time a window goes into its own column.
+For example:
+- Opening a new window.
+- Expelling a window into its own column.
+- Moving a window from the floating layout to the tiling layout.
+
+```kdl
+// Make Evince windows open as tabbed columns.
+window-rule {
+    match app-id="^evince$"
+
+    default-column-display "tabbed"
 }
 ```
 
