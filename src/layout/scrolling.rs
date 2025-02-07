@@ -3973,11 +3973,15 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn tiles_origin(&self) -> Point<f64, Logical> {
+        let mut origin = Point::from((0., 0.));
+
         if self.is_fullscreen {
-            Point::from((0., 0.))
-        } else {
-            Point::from((0., self.working_area.loc.y + self.options.gaps))
+            return origin;
         }
+
+        origin.y += self.working_area.loc.y + self.options.gaps;
+
+        origin
     }
 
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
