@@ -3439,9 +3439,11 @@ impl<W: LayoutElement> Column<W> {
             self.width
         };
 
+        let working_size = self.working_area.size;
+
         let width = self.resolve_column_width(width);
         let width = f64::max(f64::min(width, max_width), min_width);
-        let max_tile_height = self.working_area.size.h - self.options.gaps * 2.;
+        let max_tile_height = working_size.h - self.options.gaps * 2.;
 
         // If there are multiple windows in a column, clamp the non-auto window's height according
         // to other windows' min sizes.
@@ -3503,7 +3505,7 @@ impl<W: LayoutElement> Column<W> {
             .collect::<Vec<_>>();
 
         let gaps_left = self.options.gaps * (self.tiles.len() + 1) as f64;
-        let mut height_left = self.working_area.size.h - gaps_left;
+        let mut height_left = working_size.h - gaps_left;
         let mut auto_tiles_left = self.tiles.len();
 
         // Subtract all fixed-height tiles.
