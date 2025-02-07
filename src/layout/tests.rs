@@ -3255,6 +3255,7 @@ prop_compose! {
     fn arbitrary_tab_indicator()(
         off in any::<bool>(),
         hide_when_single_tab in any::<bool>(),
+        place_within_column in any::<bool>(),
         width in arbitrary_spacing(),
         gap in arbitrary_spacing_neg(),
         length in (0f64..2f64),
@@ -3263,6 +3264,7 @@ prop_compose! {
         niri_config::TabIndicator {
             off,
             hide_when_single_tab,
+            place_within_column,
             width: FloatOrInt(width),
             gap: FloatOrInt(gap),
             length: TabIndicatorLength { total_proportion: Some(length) },

@@ -174,6 +174,39 @@ impl TabIndicator {
         Some(rv).into_iter().flatten()
     }
 
+    /// Extra size occupied by the tab indicator.
+    pub fn extra_size(&self, tab_count: usize, scale: f64) -> Size<f64, Logical> {
+        if self.config.off
+            || !self.config.place_within_column
+            || (self.config.hide_when_single_tab && tab_count == 1)
+        {
+            return Size::from((0., 0.));
+        }
+
+        let round = |logical: f64| round_logical_in_physical(scale, logical);
+        let width = round(self.config.width.0);
+        let gap = round(self.config.gap.0);
+
+        // No, I am *not* falling into the rabbit hole of "what if the tab indicator is wide enough
+        // that it peeks from the other side of the window".
+        let size = f64::max(0., width + gap);
+
+        match self.config.position {
+            TabIndicatorPosition::Left | TabIndicatorPosition::Right => Size::from((size, 0.)),
+            TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => Size::from((0., size)),
+        }
+    }
+
+    /// Offset of the tabbed content due to space occupied by the tab indicator.
+    pub fn content_offset(&self, tab_count: usize, scale: f64) -> Point<f64, Logical> {
+        match self.config.position {
+            TabIndicatorPosition::Left | TabIndicatorPosition::Top => {
+                self.extra_size(tab_count, scale).to_point()
+            }
+            TabIndicatorPosition::Right | TabIndicatorPosition::Bottom => Point::from((0., 0.)),
+        }
+    }
+
     pub fn config(&self) -> niri_config::TabIndicator {
         self.config
     }

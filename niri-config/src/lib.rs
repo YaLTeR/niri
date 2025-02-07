@@ -685,6 +685,8 @@ pub struct TabIndicator {
     pub off: bool,
     #[knuffel(child)]
     pub hide_when_single_tab: bool,
+    #[knuffel(child)]
+    pub place_within_column: bool,
     #[knuffel(child, unwrap(argument), default = Self::default().gap)]
     pub gap: FloatOrInt<-65535, 65535>,
     #[knuffel(child, unwrap(argument), default = Self::default().width)]
@@ -708,6 +710,7 @@ impl Default for TabIndicator {
         Self {
             off: false,
             hide_when_single_tab: false,
+            place_within_column: false,
             gap: FloatOrInt(5.),
             width: FloatOrInt(4.),
             length: TabIndicatorLength {
