@@ -57,6 +57,7 @@ layout {
     tab-indicator {
         // off
         hide-when-single-tab
+        place-within-column
         gap 5
         width 4
         length total-proportion=1.0
@@ -420,6 +421,9 @@ Set `off` to hide the tab indicator.
 
 Set `hide-when-single-tab` to hide the indicator for tabbed columns that only have a single window.
 
+Set `place-within-column` to put the tab indicator "within" the column, rather than outside.
+This will include it in column sizing and avoid overlaying adjacent columns.
+
 `gap` sets the gap between the tab indicator and the window.
 The gap can be negative, this will put the tab indicator on top of the window.
 
@@ -442,13 +446,14 @@ Tab colors are picked in this order:
 
 ```kdl
 // Make the tab indicator wider and match the window height,
-// also put it at the top.
+// also put it at the top and within the column.
 layout {
     tab-indicator {
         width 8
         gap 8
         length total-proportion=1.0
         position "top"
+        place-within-column
     }
 }
 ```
