@@ -424,8 +424,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     ) -> Size<i32, Logical> {
         let border = rules.border.resolve_against(self.options.border);
 
+        let working_size = self.working_area.size;
+
         let width = if let Some(size) = width {
-            let size = match resolve_preset_size(size, &self.options, self.working_area.size.w) {
+            let size = match resolve_preset_size(size, &self.options, working_size.w) {
                 ResolvedSize::Tile(mut size) => {
                     if !border.off {
                         size -= border.width.0 * 2.;
@@ -446,8 +448,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let height = if let Some(height) = height {
-            let height = match resolve_preset_size(height, &self.options, self.working_area.size.h)
-            {
+            let height = match resolve_preset_size(height, &self.options, working_size.h) {
                 ResolvedSize::Tile(mut size) => {
                     if !border.off {
                         size -= border.width.0 * 2.;
