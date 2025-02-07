@@ -4100,6 +4100,9 @@ impl<W: LayoutElement> Column<W> {
             }
         }
 
+        let working_size = self.working_area.size;
+        let gaps = self.options.gaps;
+
         let mut found_fixed = false;
         let mut total_height = 0.;
         let mut total_min_height = 0.;
@@ -4134,12 +4137,12 @@ impl<W: LayoutElement> Column<W> {
 
             if !self.is_fullscreen
                 && self.scale.round() == self.scale
-                && self.working_area.size.h.round() == self.working_area.size.h
-                && self.options.gaps.round() == self.options.gaps
+                && working_size.h.round() == working_size.h
+                && gaps.round() == gaps
             {
-                let total_height = requested_tile_height + self.options.gaps * 2.;
-                let total_min_height = min_tile_height + self.options.gaps * 2.;
-                let max_height = f64::max(total_min_height, self.working_area.size.h);
+                let total_height = requested_tile_height + gaps * 2.;
+                let total_min_height = min_tile_height + gaps * 2.;
+                let max_height = f64::max(total_min_height, working_size.h);
                 assert!(
                     total_height <= max_height,
                     "each tile in a column mustn't go beyond working area height \
@@ -4153,12 +4156,12 @@ impl<W: LayoutElement> Column<W> {
 
         if tile_count > 1
             && self.scale.round() == self.scale
-            && self.working_area.size.h.round() == self.working_area.size.h
-            && self.options.gaps.round() == self.options.gaps
+            && working_size.h.round() == working_size.h
+            && gaps.round() == gaps
         {
-            total_height += self.options.gaps * (tile_count + 1) as f64;
-            total_min_height += self.options.gaps * (tile_count + 1) as f64;
-            let max_height = f64::max(total_min_height, self.working_area.size.h);
+            total_height += gaps * (tile_count + 1) as f64;
+            total_min_height += gaps * (tile_count + 1) as f64;
+            let max_height = f64::max(total_min_height, working_size.h);
             assert!(
                 total_height <= max_height,
                 "multiple tiles in a column mustn't go beyond working area height \
