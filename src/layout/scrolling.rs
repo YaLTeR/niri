@@ -3821,11 +3821,13 @@ impl<W: LayoutElement> Column<W> {
         };
         let current_tile_px = tile.tile_height_for_window_height(current_window_px);
 
-        let full = self.working_area.size.h - self.options.gaps;
+        let working_size = self.working_area.size.h;
+        let gaps = self.options.gaps;
+        let full = working_size - gaps;
         let current_prop = if full == 0. {
             1.
         } else {
-            (current_tile_px + self.options.gaps) / full
+            (current_tile_px + gaps) / full
         };
 
         // FIXME: fix overflows then remove limits.
@@ -3834,16 +3836,13 @@ impl<W: LayoutElement> Column<W> {
         let mut window_height = match change {
             SizeChange::SetFixed(fixed) => f64::from(fixed),
             SizeChange::SetProportion(proportion) => {
-                let tile_height = (self.working_area.size.h - self.options.gaps)
-                    * (proportion / 100.)
-                    - self.options.gaps;
+                let tile_height = (working_size - gaps) * (proportion / 100.) - gaps;
                 tile.window_height_for_tile_height(tile_height)
             }
             SizeChange::AdjustFixed(delta) => current_window_px + f64::from(delta),
             SizeChange::AdjustProportion(delta) => {
                 let proportion = current_prop + delta / 100.;
-                let tile_height =
-                    (self.working_area.size.h - self.options.gaps) * proportion - self.options.gaps;
+                let tile_height = (working_size - gaps) * proportion - gaps;
                 tile.window_height_for_tile_height(tile_height)
             }
         };
@@ -3856,8 +3855,7 @@ impl<W: LayoutElement> Column<W> {
             .filter(|(idx, _)| *idx != tile_idx)
             .map(|(_, tile)| f64::max(1., tile.min_size().h) + self.options.gaps)
             .sum::<f64>();
-        let height_left =
-            self.working_area.size.h - self.options.gaps - min_height_taken - self.options.gaps;
+        let height_left = working_size - gaps - min_height_taken - gaps;
         let height_left = f64::max(1., tile.window_height_for_tile_height(height_left));
         window_height = f64::min(height_left, window_height);
 
