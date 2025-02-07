@@ -62,6 +62,7 @@ layout {
         width 4
         length total-proportion=1.0
         position "right"
+        gaps-between-tabs 2
         active-color "red"
         inactive-color "gray"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
@@ -435,6 +436,8 @@ By default, the tab indicator has length equal to half of the window size, or `l
 
 `position` sets the position of the tab indicator relative to the window.
 It can be `left`, `right`, `top`, or `bottom`.
+
+`gaps-between-tabs` controls the gap between individual tabs.
 
 `active-color`, `inactive-color`, `active-gradient`, `inactive-gradient` let you override the colors for the tabs.
 They have the same semantics as the border and focus ring colors and gradients.

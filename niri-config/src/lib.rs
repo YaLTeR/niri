@@ -695,6 +695,8 @@ pub struct TabIndicator {
     pub length: TabIndicatorLength,
     #[knuffel(child, unwrap(argument), default = Self::default().position)]
     pub position: TabIndicatorPosition,
+    #[knuffel(child, unwrap(argument), default = Self::default().gaps_between_tabs)]
+    pub gaps_between_tabs: FloatOrInt<0, 65535>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -717,6 +719,7 @@ impl Default for TabIndicator {
                 total_proportion: Some(0.5),
             },
             position: TabIndicatorPosition::Left,
+            gaps_between_tabs: FloatOrInt(0.),
             active_color: None,
             inactive_color: None,
             active_gradient: None,
