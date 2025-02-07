@@ -405,6 +405,11 @@ post-map configures:
 
 #[test]
 fn target_size() {
+    if std::env::var_os("RUN_SLOW_TESTS").is_none() {
+        eprintln!("ignoring slow test");
+        return;
+    }
+
     // Here we test a massive powerset of settings that can affect the window size:
     //
     // * want fullscreen
