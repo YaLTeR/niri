@@ -3131,17 +3131,6 @@ impl TileData {
     }
 }
 
-impl ColumnWidth {
-    fn resolve(self, options: &Options, view_width: f64) -> f64 {
-        match self {
-            ColumnWidth::Proportion(proportion) => {
-                (view_width - options.gaps) * proportion - options.gaps
-            }
-            ColumnWidth::Fixed(width) => width,
-        }
-    }
-}
-
 impl From<PresetSize> for ColumnWidth {
     fn from(value: PresetSize) -> Self {
         match value {
@@ -3381,6 +3370,24 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
+    fn resolve_preset_width(&self, preset: PresetSize) -> ResolvedSize {
+        resolve_preset_size(preset, &self.options, self.working_area.size.w)
+    }
+
+    fn resolve_preset_height(&self, preset: PresetSize) -> ResolvedSize {
+        resolve_preset_size(preset, &self.options, self.working_area.size.h)
+    }
+
+    fn resolve_column_width(&self, width: ColumnWidth) -> f64 {
+        let working_size = self.working_area.size;
+        let gaps = self.options.gaps;
+
+        match width {
+            ColumnWidth::Proportion(proportion) => (working_size.w - gaps) * proportion - gaps,
+            ColumnWidth::Fixed(width) => width,
+        }
+    }
+
     fn update_tile_sizes(&mut self, animate: bool) {
         self.update_tile_sizes_with_transaction(animate, Transaction::new());
     }
@@ -3431,7 +3438,7 @@ impl<W: LayoutElement> Column<W> {
             self.width
         };
 
-        let width = width.resolve(&self.options, self.working_area.size.w);
+        let width = self.resolve_column_width(width);
         let width = f64::max(f64::min(width, max_width), min_width);
         let max_tile_height = self.working_area.size.h - self.options.gaps * 2.;
 
@@ -3478,12 +3485,10 @@ impl<W: LayoutElement> Column<W> {
                 }
                 WindowHeight::Preset(idx) => {
                     let preset = self.options.preset_window_heights[idx];
-                    let available_height = self.working_area.size.h;
-                    let window_height =
-                        match resolve_preset_size(preset, &self.options, available_height) {
-                            ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
-                            ResolvedSize::Window(h) => h,
-                        };
+                    let window_height = match self.resolve_preset_height(preset) {
+                        ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
+                        ResolvedSize::Window(h) => h,
+                    };
 
                     let mut window_height = window_height.round().clamp(1., 100000.);
                     if let Some(max) = max_non_auto_window_height {
@@ -3718,14 +3723,11 @@ impl<W: LayoutElement> Column<W> {
             let current_window = tile.window_expected_or_current_size().w;
             let current_tile = tile.tile_expected_or_current_size().w;
 
-            let available_size = self.working_area.size.w;
-
             self.options
                 .preset_column_widths
                 .iter()
                 .position(|prop| {
-                    let resolved = resolve_preset_size(*prop, &self.options, available_size);
-                    match resolved {
+                    match self.resolve_preset_width(*prop) {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
                         ResolvedSize::Window(resolved) => current_window + 1. < resolved,
@@ -3752,7 +3754,7 @@ impl<W: LayoutElement> Column<W> {
             self.width
         };
 
-        let current_px = current.resolve(&self.options, self.working_area.size.w);
+        let current_px = self.resolve_column_width(current);
 
         // FIXME: fix overflows then remove limits.
         const MAX_PX: f64 = 100000.;
@@ -3903,9 +3905,7 @@ impl<W: LayoutElement> Column<W> {
                     .iter()
                     .copied()
                     .position(|preset| {
-                        let resolved =
-                            resolve_preset_size(preset, &self.options, self.working_area.size.h);
-                        let window_height = match resolved {
+                        let window_height = match self.resolve_preset_height(preset) {
                             ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
                             ResolvedSize::Window(h) => h,
                         };
