@@ -78,6 +78,7 @@ impl TabIndicator {
 
         let width = round(self.config.width.0);
         let gap = round(self.config.gap.0);
+        let gaps_between = round(self.config.gaps_between_tabs.0);
 
         let side = match self.config.position {
             TabIndicatorPosition::Left | TabIndicatorPosition::Right => tile_size.h,
@@ -90,11 +91,11 @@ impl TabIndicator {
         self.shader_locs.resize_with(count, Default::default);
 
         let pixel = 1. / scale;
-        let shortest_length = count as f64 * pixel;
+        let shortest_length = count as f64 * (pixel + gaps_between) - gaps_between;
         let length = f64::max(min_length, shortest_length);
-        let px_per_tab = length / count as f64;
+        let px_per_tab = (length + gaps_between) / count as f64 - gaps_between;
         let px_per_tab = floor_logical_in_physical_max1(scale, px_per_tab);
-        let floored_length = count as f64 * px_per_tab;
+        let floored_length = count as f64 * (px_per_tab + gaps_between) - gaps_between;
         let mut ones_left = ((length - floored_length) / pixel).max(0.).round() as usize;
 
         let mut shader_loc = Point::from((-gap - width, round((side - length) / 2.)));
@@ -119,10 +120,10 @@ impl TabIndicator {
 
             match self.config.position {
                 TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
-                    shader_loc.y += px_per_tab
+                    shader_loc.y += px_per_tab + gaps_between
                 }
                 TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
-                    shader_loc.x += px_per_tab
+                    shader_loc.x += px_per_tab + gaps_between
                 }
             }
 
