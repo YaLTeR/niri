@@ -865,6 +865,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
+        let target_column = &mut self.columns[col_idx];
+        if target_column.display_mode == ColumnDisplay::Tabbed {
+            if target_column.active_tile_idx == tile_idx {
+                // Fade out the previously active tile.
+                let tile = &mut target_column.tiles[prev_active_tile_idx];
+                tile.animate_alpha(1., 0., self.options.animations.window_movement.0);
+            } else {
+                // Fade out when adding into a tabbed column into the background.
+                let tile = &mut target_column.tiles[tile_idx];
+                tile.animate_alpha(1., 0., self.options.animations.window_movement.0);
+            }
+        }
+
         // Adding a wider window into a column increases its width now (even if the window will
         // shrink later). Move the columns to account for this.
         let offset = self.column_x(col_idx + 1) - prev_next_x;
@@ -1004,12 +1017,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let column = &mut self.columns[column_idx];
         let prev_width = self.data[column_idx].width;
 
+        let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
+
         // Animate movement of other tiles.
         // FIXME: tiles can move by X too, in a centered or resizing layout with one window smaller
         // than the others.
         let offset_y = column.tile_offset(tile_idx + 1).y - column.tile_offset(tile_idx).y;
         for tile in &mut column.tiles[tile_idx + 1..] {
             tile.animate_move_y_from(offset_y);
+        }
+
+        if column.display_mode == ColumnDisplay::Tabbed && tile_idx != column.active_tile_idx {
+            // Fade in when removing background tab from a tabbed column.
+            let tile = &mut column.tiles[tile_idx];
+            tile.animate_alpha(0., 1., movement_config);
         }
 
         let tile = column.tiles.remove(tile_idx);
@@ -1036,6 +1057,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             is_floating: false,
         };
 
+        #[allow(clippy::comparison_chain)] // What do you even want here?
         if tile_idx < column.active_tile_idx {
             // A tile above was removed; preserve the current position.
             column.active_tile_idx -= 1;
@@ -1044,6 +1066,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if tile_idx == column.tiles.len() {
                 // The bottom tile was removed and it was active, update active idx to remain valid.
                 column.activate_idx(tile_idx - 1);
+            } else {
+                // Ensure the newly active tile animates to opaque.
+                column.tiles[tile_idx].ensure_alpha_animates_to_1();
             }
         }
 
@@ -1052,7 +1077,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let offset = prev_width - column.width();
 
         // Animate movement of the other columns.
-        let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
         if self.active_column_idx <= column_idx {
             for col in &mut self.columns[column_idx + 1..] {
                 col.animate_move_from_with_config(offset, movement_config);
@@ -1980,6 +2004,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // Animations
         self.columns[target_column_idx].tiles[target_tile_idx]
             .animate_move_from(source_pt - target_pt);
+        self.columns[target_column_idx].tiles[target_tile_idx].ensure_alpha_animates_to_1();
 
         // FIXME: this stop_move_animations() causes the target tile animation to "reset" when
         // swapping. It's here as a workaround to stop the unwanted animation of moving the source
@@ -1989,6 +2014,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns[source_column_idx].tiles[source_tile_idx].stop_move_animations();
         self.columns[source_column_idx].tiles[source_tile_idx]
             .animate_move_from(target_pt - source_pt);
+        self.columns[source_column_idx].tiles[source_tile_idx].ensure_alpha_animates_to_1();
 
         self.activate_column(target_column_idx);
     }
@@ -2602,6 +2628,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let focus_ring = focus_ring && first;
                 first = false;
 
+                // In the scrolling layout, we currently use visible only for hidden tabs in the
+                // tabbed mode. We want to animate their opacity when going in and out of tabbed
+                // mode, so we don't want to apply "visible" immediately. However, "visible" is
+                // also used for input handling, and there we *do* want to apply it immediately.
+                // So, let's just selectively ignore "visible" here when animating alpha.
+                let visible = visible || tile.alpha_animation.is_some();
                 if !visible {
                     continue;
                 }
@@ -3521,6 +3553,8 @@ impl<W: LayoutElement> Column<W> {
 
         self.active_tile_idx = idx;
 
+        self.tiles[idx].ensure_alpha_animates_to_1();
+
         true
     }
 
@@ -4258,6 +4292,47 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
+        // Animate the movement.
+        //
+        // We're doing some shortcuts here because we know that currently normal vs. tabbed can
+        // only cause a vertical shift + a shift to the origin.
+        //
+        // Doing it this way to avoid storing all tile positions in a vector. If more display modes
+        // are added it might be simpler to just collect everything into a smallvec.
+        let prev_origin = self.tiles_origin();
+        self.display_mode = display;
+        let new_origin = self.tiles_origin();
+        let origin_delta = prev_origin - new_origin;
+
+        // When need to walk the tiles in the normal display mode to get the right offsets.
+        self.display_mode = ColumnDisplay::Normal;
+        for (tile, pos) in self.tiles_mut() {
+            let mut y_delta = pos.y - prev_origin.y;
+
+            // Invert the Y motion when transitioning *to* normal display mode.
+            if display == ColumnDisplay::Normal {
+                y_delta *= -1.;
+            }
+
+            let mut delta = origin_delta;
+            delta.y += y_delta;
+            tile.animate_move_from(delta);
+        }
+
+        // Animate the opacity.
+        for (idx, tile) in self.tiles.iter_mut().enumerate() {
+            let is_active = idx == self.active_tile_idx;
+            if !is_active {
+                let (from, to) = if display == ColumnDisplay::Tabbed {
+                    (1., 0.)
+                } else {
+                    (0., 1.)
+                };
+                tile.animate_alpha(from, to, self.options.animations.window_movement.0);
+            }
+        }
+
+        // Now switch the display mode for real.
         self.display_mode = display;
         self.update_tile_sizes(true);
     }
