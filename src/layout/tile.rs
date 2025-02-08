@@ -84,6 +84,9 @@ pub struct Tile<W: LayoutElement> {
     /// The animation of a tile visually moving vertically.
     move_y_animation: Option<MoveAnimation>,
 
+    /// The animation of the tile's opacity.
+    pub(super) alpha_animation: Option<Animation>,
+
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
 
@@ -168,6 +171,7 @@ impl<W: LayoutElement> Tile<W> {
             resize_animation: None,
             move_x_animation: None,
             move_y_animation: None,
+            alpha_animation: None,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -301,6 +305,12 @@ impl<W: LayoutElement> Tile<W> {
                 self.move_y_animation = None;
             }
         }
+
+        if let Some(alpha) = &mut self.alpha_animation {
+            if alpha.is_done() {
+                self.alpha_animation = None;
+            }
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -308,10 +318,12 @@ impl<W: LayoutElement> Tile<W> {
             || self.resize_animation.is_some()
             || self.move_x_animation.is_some()
             || self.move_y_animation.is_some()
+            || self.alpha_animation.is_some()
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
+        let alpha = self.tile_alpha();
 
         let draw_border_with_background = rules
             .draw_border_with_background
@@ -336,7 +348,7 @@ impl<W: LayoutElement> Tile<W> {
             ),
             radius,
             self.scale,
-            1.,
+            alpha,
         );
 
         let radius = if self.is_fullscreen {
@@ -351,7 +363,7 @@ impl<W: LayoutElement> Tile<W> {
             is_active,
             radius,
             self.scale,
-            1.,
+            alpha,
         );
 
         let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
@@ -367,7 +379,7 @@ impl<W: LayoutElement> Tile<W> {
             view_rect,
             radius,
             self.scale,
-            1.,
+            alpha,
         );
     }
 
@@ -450,6 +462,31 @@ impl<W: LayoutElement> Tile<W> {
     pub fn stop_move_animations(&mut self) {
         self.move_x_animation = None;
         self.move_y_animation = None;
+    }
+
+    pub fn animate_alpha(&mut self, from: f64, to: f64, config: niri_config::Animation) {
+        let from = from.clamp(0., 1.);
+        let to = to.clamp(0., 1.);
+        let current = self.alpha_animation.take().map(|anim| anim.clamped_value());
+        let current = current.unwrap_or(from);
+        self.alpha_animation = Some(Animation::new(self.clock.clone(), current, to, 0., config));
+    }
+
+    pub fn ensure_alpha_animates_to_1(&mut self) {
+        if let Some(anim) = &self.alpha_animation {
+            if anim.to() != 1. {
+                // Cancel animation instead of starting a new one because the user likely wants to
+                // see the tile right away.
+                self.alpha_animation = None;
+            }
+        }
+    }
+
+    /// Opacity that applies to both window and decorations.
+    fn tile_alpha(&self) -> f32 {
+        self.alpha_animation
+            .as_ref()
+            .map_or(1., |anim| anim.clamped_value()) as f32
     }
 
     pub fn window(&self) -> &W {
@@ -740,6 +777,9 @@ impl<W: LayoutElement> Tile<W> {
             self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)
         };
 
+        let tile_alpha = self.tile_alpha();
+        let win_alpha = win_alpha * tile_alpha;
+
         let window_loc = self.window_loc();
         let window_size = self.window_size().to_f64();
         let animated_window_size = self.animated_window_size();
@@ -921,7 +961,7 @@ impl<W: LayoutElement> Tile<W> {
             SolidColorRenderElement::from_buffer(
                 &self.fullscreen_backdrop,
                 location,
-                1.,
+                tile_alpha,
                 Kind::Unspecified,
             )
             .into()
