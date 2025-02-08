@@ -403,6 +403,7 @@ impl Mapped {
                         0.,
                         radius,
                         scale.x as f32,
+                        1.,
                     )
                     .with_location(geo.loc)
                     .into();

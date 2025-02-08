@@ -38,6 +38,7 @@ impl Shadow {
         is_active: bool,
         radius: CornerRadius,
         scale: f64,
+        alpha: f32,
     ) {
         let ceil = |logical: f64| (logical * scale).ceil() / scale;
 
@@ -129,6 +130,7 @@ impl Shadow {
                     scale as f32,
                     Rectangle::new(window_geo.loc - offset - rect.loc, window_geo.size),
                     win_radius,
+                    alpha,
                 );
 
                 rect.loc += offset;
@@ -147,6 +149,7 @@ impl Shadow {
                 scale as f32,
                 Rectangle::zero(),
                 Default::default(),
+                alpha,
             );
 
             self.shader_rects[0].loc += offset;

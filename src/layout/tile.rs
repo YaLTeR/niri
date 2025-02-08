@@ -336,6 +336,7 @@ impl<W: LayoutElement> Tile<W> {
             ),
             radius,
             self.scale,
+            1.,
         );
 
         let radius = if self.is_fullscreen {
@@ -350,6 +351,7 @@ impl<W: LayoutElement> Tile<W> {
             is_active,
             radius,
             self.scale,
+            1.,
         );
 
         let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
@@ -365,6 +367,7 @@ impl<W: LayoutElement> Tile<W> {
             view_rect,
             radius,
             self.scale,
+            1.,
         );
     }
 
@@ -880,6 +883,7 @@ impl<W: LayoutElement> Tile<W> {
                             0.,
                             radius,
                             scale.x as f32,
+                            1.,
                         )
                         .with_location(geo.loc)
                         .into();

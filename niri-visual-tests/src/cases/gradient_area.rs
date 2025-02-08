@@ -84,6 +84,7 @@ impl TestCase for GradientArea {
             Rectangle::default(),
             CornerRadius::default(),
             1.,
+            1.,
         );
         rv.extend(
             self.border
@@ -102,6 +103,7 @@ impl TestCase for GradientArea {
                 Rectangle::from_size(rect_size).to_f64(),
                 0.,
                 CornerRadius::default(),
+                1.,
                 1.,
             )
             .with_location(area.loc)]

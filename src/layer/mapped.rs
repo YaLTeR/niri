@@ -74,7 +74,7 @@ impl MappedLayer {
         let radius = self.rules.geometry_corner_radius.unwrap_or_default();
         // FIXME: is_active based on keyboard focus?
         self.shadow
-            .update_render_elements(size, true, radius, scale.x);
+            .update_render_elements(size, true, radius, scale.x, 1.);
     }
 
     pub fn surface(&self) -> &LayerSurface {

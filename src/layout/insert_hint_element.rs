@@ -48,7 +48,7 @@ impl InsertHintElement {
         scale: f64,
     ) {
         self.inner
-            .update_render_elements(size, true, false, view_rect, radius, scale);
+            .update_render_elements(size, true, false, view_rect, radius, scale, 1.);
     }
 
     pub fn render(
