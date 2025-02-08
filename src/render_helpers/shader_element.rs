@@ -270,7 +270,7 @@ impl Element for ShaderRenderElement {
     }
 
     fn alpha(&self) -> f32 {
-        1.0
+        self.alpha
     }
 
     fn kind(&self) -> Kind {
