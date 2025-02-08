@@ -723,7 +723,7 @@ impl<W: LayoutElement> Tile<W> {
     ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render_inner");
 
-        let alpha = if self.is_fullscreen || self.window.is_ignoring_opacity_window_rule() {
+        let win_alpha = if self.is_fullscreen || self.window.is_ignoring_opacity_window_rule() {
             1.
         } else {
             self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)
@@ -747,7 +747,7 @@ impl<W: LayoutElement> Tile<W> {
         if let Some(resize) = &self.resize_animation {
             resize_popups = Some(
                 self.window
-                    .render_popups(renderer, window_render_loc, scale, alpha, target)
+                    .render_popups(renderer, window_render_loc, scale, win_alpha, target)
                     .into_iter()
                     .map(Into::into),
             );
@@ -797,7 +797,7 @@ impl<W: LayoutElement> Tile<W> {
                             resize.anim.clamped_value().clamp(0., 1.) as f32,
                             radius,
                             clip_to_geometry,
-                            alpha,
+                            win_alpha,
                         );
                         // FIXME: with split popups, this will use the resize element ID for
                         // popups, but we want the real IDs.
@@ -814,7 +814,7 @@ impl<W: LayoutElement> Tile<W> {
                     SolidColorRenderElement::from_buffer(
                         &fallback_buffer,
                         area.loc,
-                        alpha,
+                        win_alpha,
                         Kind::Unspecified,
                     )
                     .into(),
@@ -830,7 +830,7 @@ impl<W: LayoutElement> Tile<W> {
         if resize_shader.is_none() && resize_fallback.is_none() {
             let window = self
                 .window
-                .render(renderer, window_render_loc, scale, alpha, target);
+                .render(renderer, window_render_loc, scale, win_alpha, target);
 
             let geo = Rectangle::new(window_render_loc, window_size);
             let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
