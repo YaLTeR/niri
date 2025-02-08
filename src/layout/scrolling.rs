@@ -156,6 +156,9 @@ pub struct Column<W: LayoutElement> {
     /// Index of the currently active tile.
     active_tile_idx: usize,
 
+    /// Index of the active tile before fullscreening.
+    pre_fs_tile_idx: usize,
+
     /// Desired width of this column.
     ///
     /// If the column is full-width or full-screened, this is the width that should be restored
@@ -2342,11 +2345,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) -> bool {
-        let (mut col_idx, tile_idx) = self
+        let col_idx = self
             .columns
             .iter()
-            .enumerate()
-            .find_map(|(col_idx, col)| col.position(window).map(|tile_idx| (col_idx, tile_idx)))
+            .position(|col| col.contains(window))
             .unwrap();
 
         if is_fullscreen == self.columns[col_idx].is_fullscreen {
@@ -2360,31 +2362,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.view_offset_before_fullscreen = Some(self.view_offset.stationary());
         }
 
-        let mut col = &mut self.columns[col_idx];
+        let col = &mut self.columns[col_idx];
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
 
-        if is_fullscreen && col.tiles.len() > 1 {
-            // This wasn't the only window in its column; extract it into a separate column.
-            let activate = self.active_column_idx == col_idx && col.active_tile_idx == tile_idx;
-
-            let removed = self.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
-            // Create a column manually to disable the resize animation.
-            let column = Column::new_with_tile(
-                removed.tile,
-                self.view_size,
-                self.working_area,
-                self.scale,
-                removed.width,
-                removed.is_full_width,
-                false,
-            );
-            self.add_column(Some(col_idx + 1), column, activate, None);
-
-            col_idx += 1;
-            col = &mut self.columns[col_idx];
+        // Move tile to top of col before fullscreening
+        // Move back to original position after unfullscreening
+        if is_fullscreen {
+            col.pre_fs_tile_idx = col.active_tile_idx;
+            col.tiles.swap(col.active_tile_idx, 0);
+            col.data.swap(col.active_tile_idx, 0);
+            col.active_tile_idx = 0;
+        } else {
+            col.tiles.swap(col.active_tile_idx, col.pre_fs_tile_idx);
+            col.data.swap(col.active_tile_idx, col.pre_fs_tile_idx);
+            col.active_tile_idx = col.pre_fs_tile_idx;
         }
-
         col.set_fullscreen(is_fullscreen);
 
         // If we quickly fullscreen and unfullscreen before any window has a chance to receive the
@@ -3162,6 +3155,7 @@ impl<W: LayoutElement> Column<W> {
             tiles: vec![],
             data: vec![],
             active_tile_idx: 0,
+            pre_fs_tile_idx: 0,
             width,
             preset_width_idx: None,
             is_full_width,
@@ -3951,7 +3945,6 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
-        assert_eq!(self.tiles.len(), 1);
         self.is_fullscreen = is_fullscreen;
         self.update_tile_sizes(false);
     }
@@ -4087,10 +4080,6 @@ impl<W: LayoutElement> Column<W> {
         assert!(self.active_tile_idx < self.tiles.len());
         assert_eq!(self.tiles.len(), self.data.len());
 
-        if self.is_fullscreen {
-            assert_eq!(self.tiles.len(), 1);
-        }
-
         if let Some(idx) = self.preset_width_idx {
             assert!(idx < self.options.preset_column_widths.len());
         }
@@ -4109,15 +4098,18 @@ impl<W: LayoutElement> Column<W> {
         let gaps = self.options.gaps;
 
         let mut found_fixed = false;
+        let mut contains_pending_fs_window = false;
         let mut total_height = 0.;
         let mut total_min_height = 0.;
         for (tile, data) in zip(&self.tiles, &self.data) {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
-            assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
             assert_eq!(self.view_size, tile.view_size());
             tile.verify_invariants();
+
+            contains_pending_fs_window =
+                contains_pending_fs_window || tile.window().is_pending_fullscreen();
 
             let mut data2 = *data;
             data2.update(tile);
@@ -4159,7 +4151,10 @@ impl<W: LayoutElement> Column<W> {
             total_min_height += min_tile_height;
         }
 
+        assert_eq!(self.is_fullscreen, contains_pending_fs_window);
+
         if tile_count > 1
+            && !self.is_fullscreen
             && self.scale.round() == self.scale
             && working_size.h.round() == working_size.h
             && gaps.round() == gaps
