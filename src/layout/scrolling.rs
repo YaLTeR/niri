@@ -793,7 +793,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let target_column = &mut self.columns[col_idx];
         let tile_idx = tile_idx.unwrap_or(target_column.tiles.len());
-        let was_fullscreen = target_column.tiles[target_column.active_tile_idx].is_fullscreen();
+        let mut prev_active_tile_idx = target_column.active_tile_idx;
+        let was_fullscreen = target_column.tiles[prev_active_tile_idx].is_fullscreen();
 
         target_column.add_tile_at(tile_idx, tile, true);
         self.data[col_idx].update(target_column);
@@ -805,13 +806,16 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.view_offset_before_fullscreen = None;
         }
 
+        if tile_idx <= prev_active_tile_idx {
+            target_column.active_tile_idx += 1;
+            prev_active_tile_idx += 1;
+        }
+
         if activate {
-            target_column.active_tile_idx = tile_idx;
+            target_column.activate_idx(tile_idx);
             if self.active_column_idx != col_idx {
                 self.activate_column(col_idx);
             }
-        } else if tile_idx <= target_column.active_tile_idx {
-            target_column.active_tile_idx += 1;
         }
 
         // Adding a wider window into a column increases its width now (even if the window will
@@ -988,8 +992,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if tile_idx < column.active_tile_idx {
             // A tile above was removed; preserve the current position.
             column.active_tile_idx -= 1;
-        } else {
-            column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
+        } else if tile_idx == column.active_tile_idx {
+            // The active tile was removed, so the active tile index shifted to the next tile.
+            if tile_idx == column.tiles.len() {
+                // The bottom tile was removed and it was active, update active idx to remain valid.
+                column.activate_idx(tile_idx - 1);
+            }
         }
 
         column.update_tile_sizes_with_transaction(true, transaction);
@@ -3308,9 +3316,19 @@ impl<W: LayoutElement> Column<W> {
             .position(|win| win.id() == window)
     }
 
+    fn activate_idx(&mut self, idx: usize) -> bool {
+        if self.active_tile_idx == idx {
+            return false;
+        }
+
+        self.active_tile_idx = idx;
+
+        true
+    }
+
     fn activate_window(&mut self, window: &W::Id) {
         let idx = self.position(window).unwrap();
-        self.active_tile_idx = idx;
+        self.activate_idx(idx);
     }
 
     fn add_tile_at(&mut self, idx: usize, mut tile: Tile<W>, animate: bool) {
@@ -3635,33 +3653,24 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn focus_index(&mut self, index: u8) {
-        self.active_tile_idx = min(usize::from(index.saturating_sub(1)), self.tiles.len() - 1);
+        let idx = min(usize::from(index.saturating_sub(1)), self.tiles.len() - 1);
+        self.activate_idx(idx);
     }
 
     fn focus_up(&mut self) -> bool {
-        if self.active_tile_idx == 0 {
-            return false;
-        }
-
-        self.active_tile_idx -= 1;
-        true
+        self.activate_idx(self.active_tile_idx.saturating_sub(1))
     }
 
     fn focus_down(&mut self) -> bool {
-        if self.active_tile_idx == self.tiles.len() - 1 {
-            return false;
-        }
-
-        self.active_tile_idx += 1;
-        true
+        self.activate_idx(min(self.active_tile_idx + 1, self.tiles.len() - 1))
     }
 
     fn focus_top(&mut self) {
-        self.active_tile_idx = 0;
+        self.activate_idx(0);
     }
 
     fn focus_bottom(&mut self) {
-        self.active_tile_idx = self.tiles.len() - 1;
+        self.activate_idx(self.tiles.len() - 1);
     }
 
     fn move_up(&mut self) -> bool {
