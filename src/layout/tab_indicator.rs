@@ -20,7 +20,10 @@ pub struct TabIndicator {
 
 #[derive(Debug)]
 pub struct TabInfo {
+    /// Gradient for the tab indicator.
     pub gradient: Gradient,
+    /// Tab geometry in the same coordinate system as the area.
+    pub geometry: Rectangle<f64, Logical>,
 }
 
 niri_render_elements! {
@@ -48,12 +51,17 @@ impl TabIndicator {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn update_render_elements(
         &mut self,
         enabled: bool,
-        tile_size: Size<f64, Logical>,
-        tile_view_rect: Rectangle<f64, Logical>,
-        tabs: impl Iterator<Item = TabInfo> + Clone,
+        // Geometry of the tabs area.
+        area: Rectangle<f64, Logical>,
+        // View rect relative to the tabs area.
+        area_view_rect: Rectangle<f64, Logical>,
+        // Tab count, should match the tabs iterator length.
+        tab_count: usize,
+        tabs: impl Iterator<Item = TabInfo>,
         // TODO: do we indicate inactive-but-selected somehow?
         _is_active: bool,
         scale: f64,
@@ -64,15 +72,12 @@ impl TabIndicator {
             return;
         }
 
-        let count = tabs.clone().count();
+        let count = tab_count;
         if self.config.hide_when_single_tab && count == 1 {
             self.shader_locs.clear();
             self.shaders.clear();
             return;
         }
-
-        // Tab indicators are rendered relative to the tile geometry.
-        let tile_geo = Rectangle::new(Point::from((0., 0.)), tile_size);
 
         let round = |logical: f64| round_logical_in_physical(scale, logical);
 
@@ -81,8 +86,8 @@ impl TabIndicator {
         let gaps_between = round(self.config.gaps_between_tabs.0);
 
         let side = match self.config.position {
-            TabIndicatorPosition::Left | TabIndicatorPosition::Right => tile_size.h,
-            TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => tile_size.w,
+            TabIndicatorPosition::Left | TabIndicatorPosition::Right => area.size.h,
+            TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => area.size.w,
         };
         let total_prop = self.config.length.total_proportion.unwrap_or(0.5);
         let min_length = round(side * total_prop.clamp(0., 2.));
@@ -101,13 +106,14 @@ impl TabIndicator {
         let mut shader_loc = Point::from((-gap - width, round((side - length) / 2.)));
         match self.config.position {
             TabIndicatorPosition::Left => (),
-            TabIndicatorPosition::Right => shader_loc.x = tile_size.w + gap,
+            TabIndicatorPosition::Right => shader_loc.x = area.size.w + gap,
             TabIndicatorPosition::Top => mem::swap(&mut shader_loc.x, &mut shader_loc.y),
             TabIndicatorPosition::Bottom => {
                 shader_loc.x = shader_loc.y;
-                shader_loc.y = tile_size.h + gap;
+                shader_loc.y = area.size.h + gap;
             }
         }
+        shader_loc += area.loc;
 
         for ((shader, loc), tab) in zip(&mut self.shaders, &mut self.shader_locs).zip(tabs) {
             *loc = shader_loc;
@@ -137,8 +143,8 @@ impl TabIndicator {
             };
 
             let mut gradient_area = match tab.gradient.relative_to {
-                GradientRelativeTo::Window => tile_geo,
-                GradientRelativeTo::WorkspaceView => tile_view_rect,
+                GradientRelativeTo::Window => tab.geometry,
+                GradientRelativeTo::WorkspaceView => area_view_rect,
             };
             gradient_area.loc -= *loc;
 
@@ -161,7 +167,7 @@ impl TabIndicator {
     pub fn render(
         &self,
         renderer: &mut impl NiriRenderer,
-        tile_pos: Point<f64, Logical>,
+        pos: Point<f64, Logical>,
     ) -> impl Iterator<Item = TabIndicatorRenderElement> + '_ {
         let has_border_shader = BorderRenderElement::has_shader(renderer);
         if !has_border_shader {
@@ -169,7 +175,7 @@ impl TabIndicator {
         }
 
         let rv = zip(&self.shaders, &self.shader_locs)
-            .map(move |(shader, loc)| shader.clone().with_location(tile_pos + *loc))
+            .map(move |(shader, loc)| shader.clone().with_location(pos + *loc))
             .map(TabIndicatorRenderElement::from);
 
         Some(rv).into_iter().flatten()
@@ -216,6 +222,7 @@ impl TabIndicator {
 impl TabInfo {
     pub fn from_tile<W: LayoutElement>(
         tile: &Tile<W>,
+        position: Point<f64, Logical>,
         is_active: bool,
         config: &niri_config::TabIndicator,
     ) -> Self {
@@ -265,6 +272,8 @@ impl TabInfo {
             .or_else(gradient_from_config)
             .unwrap_or_else(gradient_from_border);
 
-        TabInfo { gradient }
+        let geometry = Rectangle::new(position, tile.animated_tile_size());
+
+        TabInfo { gradient, geometry }
     }
 }
