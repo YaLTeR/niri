@@ -2608,10 +2608,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             // Draw the tab indicator on top.
             {
-                // This is the "static tile position" so to say: it excludes the tile offset (used
-                // for e.g. centering smaller tiles in always-center) and the tile render offset
-                // (used for tile-specific animations).
-                let pos = view_off + col_off + col_render_off + col.tiles_origin();
+                let pos = view_off + col_off + col_render_off;
                 let pos = pos.to_physical_precise_round(scale).to_logical(scale);
                 rv.extend(col.tab_indicator.render(renderer, pos).map(Into::into));
             }
@@ -3473,15 +3470,15 @@ impl<W: LayoutElement> Column<W> {
             tile.update_render_elements(is_active, tile_view_rect);
         }
 
-        let (tile, tile_off) = self.tiles().nth(self.active_tile_idx).unwrap();
-        let mut tile_view_rect = view_rect;
-        tile_view_rect.loc -= tile_off + tile.render_offset();
-
         let config = self.tab_indicator.config();
-        let tabs = self.tiles.iter().enumerate().map(|(tile_idx, tile)| {
-            let is_active = tile_idx == active_idx;
-            TabInfo::from_tile(tile, is_active, &config)
-        });
+        let offsets = self.tile_offsets_iter(self.data.iter().copied());
+        let tabs = zip(&self.tiles, offsets)
+            .enumerate()
+            .map(|(tile_idx, (tile, tile_off))| {
+                let is_active = tile_idx == active_idx;
+                let tile_pos = tile_off + tile.render_offset();
+                TabInfo::from_tile(tile, tile_pos, is_active, &config)
+            });
 
         // Hide the tab indicator in fullscreen. If you have it configured to overlap the window,
         // you don't want that to happen in fullscreen. Also, laying things out correctly when the
@@ -3489,10 +3486,13 @@ impl<W: LayoutElement> Column<W> {
         // many changes to the code for too little benefit (it's mostly invisible anyway).
         let enabled = self.display_mode == ColumnDisplay::Tabbed && !self.is_fullscreen;
 
+        let area_size = self.tiles[active_idx].animated_tile_size();
+
         self.tab_indicator.update_render_elements(
             enabled,
-            tile.animated_tile_size(),
-            tile_view_rect,
+            Rectangle::new(self.tiles_origin(), area_size),
+            view_rect,
+            self.tiles.len(),
             tabs,
             is_active,
             self.scale,
