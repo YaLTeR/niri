@@ -797,9 +797,9 @@ impl<W: LayoutElement> Workspace<W> {
             }
 
             if is_floating {
-                state.bounds = Some(self.floating.toplevel_bounds(rules));
+                state.bounds = Some(self.floating.new_window_toplevel_bounds(rules));
             } else {
-                state.bounds = Some(self.scrolling.toplevel_bounds(rules));
+                state.bounds = Some(self.scrolling.new_window_toplevel_bounds(rules));
             }
         });
     }
@@ -848,6 +848,13 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.focus_window_in_column(index);
+    }
+
     pub fn focus_down(&mut self) -> bool {
         if self.floating_is_active.get() {
             self.floating.focus_down()
@@ -893,6 +900,34 @@ impl<W: LayoutElement> Workspace<W> {
             self.floating.focus_up();
         } else {
             self.scrolling.focus_up_or_right();
+        }
+    }
+
+    pub fn focus_window_top(&mut self) {
+        if self.floating_is_active.get() {
+            self.floating.focus_topmost();
+        } else {
+            self.scrolling.focus_top();
+        }
+    }
+
+    pub fn focus_window_bottom(&mut self) {
+        if self.floating_is_active.get() {
+            self.floating.focus_bottommost();
+        } else {
+            self.scrolling.focus_bottom();
+        }
+    }
+
+    pub fn focus_window_down_or_top(&mut self) {
+        if !self.focus_down() {
+            self.focus_window_top();
+        }
+    }
+
+    pub fn focus_window_up_or_bottom(&mut self) {
+        if !self.focus_up() {
+            self.focus_window_bottom();
         }
     }
 

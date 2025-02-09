@@ -184,6 +184,8 @@ pub struct Touchpad {
     #[knuffel(child)]
     pub dwtp: bool,
     #[knuffel(child)]
+    pub drag_lock: bool,
+    #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument, str))]
     pub click_method: Option<ClickMethod>,
@@ -1321,6 +1323,7 @@ pub enum Action {
     FullscreenWindowById(u64),
     #[knuffel(skip)]
     FocusWindow(u64),
+    FocusWindowInColumn(#[knuffel(argument)] u8),
     FocusWindowPrevious,
     FocusColumnLeft,
     FocusColumnRight,
@@ -1340,6 +1343,10 @@ pub enum Action {
     FocusWindowUpOrColumnRight,
     FocusWindowOrWorkspaceDown,
     FocusWindowOrWorkspaceUp,
+    FocusWindowTop,
+    FocusWindowBottom,
+    FocusWindowDownOrTop,
+    FocusWindowUpOrBottom,
     MoveColumnLeft,
     MoveColumnRight,
     MoveColumnToFirst,
@@ -1500,6 +1507,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
             niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
+            niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
             niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
             niri_ipc::Action::FocusColumnLeft {} => Self::FocusColumnLeft,
             niri_ipc::Action::FocusColumnRight {} => Self::FocusColumnRight,
@@ -1519,6 +1527,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWindowUpOrColumnRight {} => Self::FocusWindowUpOrColumnRight,
             niri_ipc::Action::FocusWindowOrWorkspaceDown {} => Self::FocusWindowOrWorkspaceDown,
             niri_ipc::Action::FocusWindowOrWorkspaceUp {} => Self::FocusWindowOrWorkspaceUp,
+            niri_ipc::Action::FocusWindowTop {} => Self::FocusWindowTop,
+            niri_ipc::Action::FocusWindowBottom {} => Self::FocusWindowBottom,
+            niri_ipc::Action::FocusWindowDownOrTop {} => Self::FocusWindowDownOrTop,
+            niri_ipc::Action::FocusWindowUpOrBottom {} => Self::FocusWindowUpOrBottom,
             niri_ipc::Action::MoveColumnLeft {} => Self::MoveColumnLeft,
             niri_ipc::Action::MoveColumnRight {} => Self::MoveColumnRight,
             niri_ipc::Action::MoveColumnToFirst {} => Self::MoveColumnToFirst,
@@ -3600,6 +3612,7 @@ mod tests {
                         tap: true,
                         dwt: true,
                         dwtp: true,
+                        drag_lock: false,
                         click_method: Some(ClickMethod::Clickfinger),
                         natural_scroll: false,
                         accel_speed: 0.2,

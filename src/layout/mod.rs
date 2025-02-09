@@ -1142,26 +1142,6 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, &Output)> {
-        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().is_wl_surface(wl_surface) {
-                return Some((move_.tile.window(), &move_.output));
-            }
-        }
-
-        if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
-            for mon in monitors {
-                for ws in &mon.workspaces {
-                    if let Some(window) = ws.find_wl_surface(wl_surface) {
-                        return Some((window, &mon.output));
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
     pub fn find_workspace_by_id(&self, id: WorkspaceId) -> Option<(usize, &Workspace<W>)> {
         match &self.monitor_set {
             MonitorSet::Normal { ref monitors, .. } => {
@@ -1276,6 +1256,35 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+    }
+
+    pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, Option<&Output>)> {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().is_wl_surface(wl_surface) {
+                return Some((move_.tile.window(), Some(&move_.output)));
+            }
+        }
+
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mon.workspaces {
+                        if let Some(window) = ws.find_wl_surface(wl_surface) {
+                            return Some((window, Some(&mon.output)));
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    if let Some(window) = ws.find_wl_surface(wl_surface) {
+                        return Some((window, None));
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     pub fn find_window_and_output_mut(
@@ -1884,6 +1893,13 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_in_column(index);
+    }
+
     pub fn focus_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1938,6 +1954,34 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.focus_window_or_workspace_up();
+    }
+
+    pub fn focus_window_top(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_top();
+    }
+
+    pub fn focus_window_bottom(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_bottom();
+    }
+
+    pub fn focus_window_down_or_top(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_down_or_top();
+    }
+
+    pub fn focus_window_up_or_bottom(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_up_or_bottom();
     }
 
     pub fn move_to_workspace_up(&mut self) {

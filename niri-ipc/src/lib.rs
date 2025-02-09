@@ -215,6 +215,14 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Focus a window in the focused column by index.
+    FocusWindowInColumn {
+        /// Index of the window in the column.
+        ///
+        /// The index starts from 1 for the topmost window.
+        #[cfg_attr(feature = "clap", arg())]
+        index: u8,
+    },
     /// Focus the previously focused window.
     FocusWindowPrevious {},
     /// Focus the column to the left.
@@ -253,6 +261,14 @@ pub enum Action {
     FocusWindowOrWorkspaceDown {},
     /// Focus the window or the workspace above.
     FocusWindowOrWorkspaceUp {},
+    /// Focus the topmost window.
+    FocusWindowTop {},
+    /// Focus the bottommost window.
+    FocusWindowBottom {},
+    /// Focus the window below or the topmost window.
+    FocusWindowDownOrTop {},
+    /// Focus the window above or the bottommost window.
+    FocusWindowUpOrBottom {},
     /// Move the focused column to the left.
     MoveColumnLeft {},
     /// Move the focused column to the right.

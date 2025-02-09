@@ -457,6 +457,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().focus_column_left_or_last();
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        self.active_workspace().focus_window_in_column(index);
+    }
+
     pub fn focus_down(&mut self) -> bool {
         self.active_workspace().focus_down()
     }
@@ -491,6 +495,22 @@ impl<W: LayoutElement> Monitor<W> {
         if !self.active_workspace().focus_up() {
             self.switch_workspace_up();
         }
+    }
+
+    pub fn focus_window_top(&mut self) {
+        self.active_workspace().focus_window_top();
+    }
+
+    pub fn focus_window_bottom(&mut self) {
+        self.active_workspace().focus_window_bottom();
+    }
+
+    pub fn focus_window_down_or_top(&mut self) {
+        self.active_workspace().focus_window_down_or_top();
+    }
+
+    pub fn focus_window_up_or_bottom(&mut self) {
+        self.active_workspace().focus_window_up_or_bottom();
     }
 
     pub fn move_to_workspace_up(&mut self) {

@@ -318,7 +318,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         })
     }
 
-    pub fn toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
+    pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
         let border_config = rules.border.resolve_against(self.options.border);
         compute_toplevel_bounds(border_config, self.working_area.size)
     }
@@ -827,6 +827,26 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let result = self
             .tiles_with_offsets()
             .max_by(|(_, pos_a), (_, pos_b)| f64::total_cmp(&pos_a.x, &pos_b.x));
+        if let Some((tile, _)) = result {
+            let id = tile.window().id().clone();
+            self.activate_window(&id);
+        }
+    }
+
+    pub fn focus_topmost(&mut self) {
+        let result = self
+            .tiles_with_offsets()
+            .min_by(|(_, pos_a), (_, pos_b)| f64::total_cmp(&pos_a.y, &pos_b.y));
+        if let Some((tile, _)) = result {
+            let id = tile.window().id().clone();
+            self.activate_window(&id);
+        }
+    }
+
+    pub fn focus_bottommost(&mut self) {
+        let result = self
+            .tiles_with_offsets()
+            .max_by(|(_, pos_a), (_, pos_b)| f64::total_cmp(&pos_a.y, &pos_b.y));
         if let Some((tile, _)) = result {
             let id = tile.window().id().clone();
             self.activate_window(&id);

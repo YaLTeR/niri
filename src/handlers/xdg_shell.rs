@@ -123,6 +123,10 @@ impl XdgShellHandler for State {
             return;
         };
 
+        let Some(output) = output else {
+            return;
+        };
+
         let window = mapped.window.clone();
         let output = output.clone();
 
@@ -429,12 +433,16 @@ impl XdgShellHandler for State {
         if let Some((mapped, current_output)) = self
             .niri
             .layout
-            .find_window_and_output(toplevel.wl_surface())
+            .find_window_and_output_mut(toplevel.wl_surface())
         {
+            // A configure is required in response to this event regardless if there are pending
+            // changes.
+            mapped.set_needs_configure();
+
             let window = mapped.window.clone();
 
             if let Some(requested_output) = requested_output {
-                if &requested_output != current_output {
+                if Some(&requested_output) != current_output {
                     self.niri
                         .layout
                         .move_to_output(Some(&window), &requested_output, None);
@@ -442,10 +450,6 @@ impl XdgShellHandler for State {
             }
 
             self.niri.layout.set_fullscreen(&window, true);
-
-            // A configure is required in response to this event regardless if there are pending
-            // changes.
-            toplevel.send_configure();
         } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             match &mut unmapped.state {
                 InitialConfigureState::NotConfigured { wants_fullscreen } => {
@@ -467,7 +471,7 @@ impl XdgShellHandler for State {
                             toplevel
                                 .parent()
                                 .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
-                                .map(|(_win, output)| output)
+                                .and_then(|(_win, output)| output)
                                 .and_then(|o| self.niri.layout.monitor_for_output(o))
                                 .map(|mon| (mon, true))
                         })
@@ -509,17 +513,14 @@ impl XdgShellHandler for State {
         if let Some((mapped, _)) = self
             .niri
             .layout
-            .find_window_and_output(toplevel.wl_surface())
+            .find_window_and_output_mut(toplevel.wl_surface())
         {
-            let window = mapped.window.clone();
-            self.niri.layout.set_fullscreen(&window, false);
-
             // A configure is required in response to this event regardless if there are pending
             // changes.
-            //
-            // FIXME: when unfullscreening to floating, this will send an extra configure with
-            // scrolling layout bounds. We should probably avoid it.
-            toplevel.send_configure();
+            mapped.set_needs_configure();
+
+            let window = mapped.window.clone();
+            self.niri.layout.set_fullscreen(&window, false);
         } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             match &mut unmapped.state {
                 InitialConfigureState::NotConfigured { wants_fullscreen } => {
@@ -556,7 +557,7 @@ impl XdgShellHandler for State {
                                     .and_then(|parent| {
                                         self.niri.layout.find_window_and_output(&parent)
                                     })
-                                    .map(|(_win, output)| output)
+                                    .and_then(|(_win, output)| output)
                                     .and_then(|o| self.niri.layout.monitor_for_output(o))
                                     .map(|mon| (mon, true))
                             })
@@ -642,7 +643,7 @@ impl XdgShellHandler for State {
             return;
         };
         let window = mapped.window.clone();
-        let output = output.clone();
+        let output = output.cloned();
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri
@@ -678,7 +679,9 @@ impl XdgShellHandler for State {
             self.maybe_warp_cursor_to_focus();
         }
 
-        self.niri.queue_redraw(&output);
+        if let Some(output) = output {
+            self.niri.queue_redraw(&output);
+        }
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
@@ -738,7 +741,13 @@ impl XdgDecorationHandler for State {
         // A configure is required in response to this event. However, if an initial configure
         // wasn't sent, then we will send this as part of the initial configure later.
         if toplevel.is_initial_configure_sent() {
-            toplevel.send_configure();
+            // If this is a mapped window, flag it as needs configure to avoid duplicate configures.
+            let surface = toplevel.wl_surface();
+            if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
+                mapped.set_needs_configure();
+            } else {
+                toplevel.send_configure();
+            }
         }
     }
 
@@ -751,7 +760,13 @@ impl XdgDecorationHandler for State {
         // A configure is required in response to this event. However, if an initial configure
         // wasn't sent, then we will send this as part of the initial configure later.
         if toplevel.is_initial_configure_sent() {
-            toplevel.send_configure();
+            // If this is a mapped window, flag it as needs configure to avoid duplicate configures.
+            let surface = toplevel.wl_surface();
+            if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
+                mapped.set_needs_configure();
+            } else {
+                toplevel.send_configure();
+            }
         }
     }
 }
@@ -862,7 +877,7 @@ impl State {
             toplevel
                 .parent()
                 .and_then(|parent| self.niri.layout.find_window_and_output(&parent))
-                .map(|(_win, output)| output)
+                .and_then(|(_win, output)| output)
                 .and_then(|o| self.niri.layout.monitor_for_output(o))
                 .map(|mon| (mon, true))
         });

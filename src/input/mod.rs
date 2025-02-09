@@ -681,6 +681,13 @@ impl State {
                     self.focus_window(&window);
                 }
             }
+            Action::FocusWindowInColumn(index) => {
+                self.niri.layout.focus_window_in_column(index);
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWindowPrevious => {
                 if let Some(window) = self.niri.previously_focused_window.clone() {
                     self.focus_window(&window);
@@ -982,6 +989,34 @@ impl State {
             }
             Action::FocusWindowOrWorkspaceUp => {
                 self.niri.layout.focus_window_or_workspace_up();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowTop => {
+                self.niri.layout.focus_window_top();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowBottom => {
+                self.niri.layout.focus_window_bottom();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowDownOrTop => {
+                self.niri.layout.focus_window_down_or_top();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowUpOrBottom => {
+                self.niri.layout.focus_window_up_or_bottom();
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -3218,6 +3253,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_tap_set_enabled(c.tap);
         let _ = device.config_dwt_set_enabled(c.dwt);
         let _ = device.config_dwtp_set_enabled(c.dwtp);
+        let _ = device.config_tap_set_drag_lock_enabled(c.drag_lock);
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
         let _ = device.config_left_handed_set(c.left_handed);

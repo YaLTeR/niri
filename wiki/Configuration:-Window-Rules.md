@@ -627,7 +627,7 @@ window-rule {
 
 Override the shadow options for the window.
 
-These rules have the same options as the normal shadow config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+This rule has the same options as the normal shadow config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
 
 However, in addition to `on` to enable the shadow, this window rule has an `off` flag that disables the shadow for the window even if it was otherwise enabled.
 The `on` flag has precedence over the `off` flag, in case both are set.
@@ -636,7 +636,7 @@ The `on` flag has precedence over the `off` flag, in case both are set.
 // Turn on shadows for floating windows.
 window-rule {
     match is-floating=true
-    
+
     shadow {
         on
     }

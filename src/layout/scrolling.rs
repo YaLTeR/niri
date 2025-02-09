@@ -417,7 +417,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col.is_fullscreen
     }
 
-    pub fn toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
+    pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
         let border_config = rules.border.resolve_against(self.options.border);
         compute_toplevel_bounds(border_config, self.working_area.size, self.options.gaps)
     }
@@ -430,8 +430,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     ) -> Size<i32, Logical> {
         let border = rules.border.resolve_against(self.options.border);
 
+        let working_size = self.working_area.size;
+
         let width = if let Some(size) = width {
-            let size = match resolve_preset_size(size, &self.options, self.working_area.size.w) {
+            let size = match resolve_preset_size(size, &self.options, working_size.w) {
                 ResolvedSize::Tile(mut size) => {
                     if !border.off {
                         size -= border.width.0 * 2.;
@@ -452,8 +454,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let height = if let Some(height) = height {
-            let height = match resolve_preset_size(height, &self.options, self.working_area.size.h)
-            {
+            let height = match resolve_preset_size(height, &self.options, working_size.h) {
                 ResolvedSize::Tile(mut size) => {
                     if !border.off {
                         size -= border.width.0 * 2.;
@@ -990,7 +991,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             is_floating: false,
         };
 
-        column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
+        if tile_idx < column.active_tile_idx {
+            // A tile above was removed; preserve the current position.
+            column.active_tile_idx -= 1;
+        } else {
+            column.active_tile_idx = min(column.active_tile_idx, column.tiles.len() - 1);
+        }
+
         column.update_tile_sizes_with_transaction(true, transaction);
         self.data[column_idx].update(column);
         let offset = prev_width - column.width();
@@ -1368,6 +1375,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.activate_column(self.columns.len() - 1);
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].focus_index(index);
+    }
+
     pub fn focus_down(&mut self) -> bool {
         if self.columns.is_empty() {
             return false;
@@ -1426,6 +1441,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if !column.focus_up() {
             self.focus_right();
         }
+    }
+
+    pub fn focus_top(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].focus_top()
+    }
+
+    pub fn focus_bottom(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.columns[self.active_column_idx].focus_bottom()
     }
 
     fn move_column_to(&mut self, new_idx: usize) {
@@ -2066,26 +2097,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     error!("insert hint column index is out of range");
                     return None;
                 }
-                if tile_index > self.columns[column_index].tiles.len() {
+
+                let col = &self.columns[column_index];
+                if tile_index > col.tiles.len() {
                     error!("insert hint tile index is out of range");
                     return None;
                 }
 
                 let (height, y) = if tile_index == 0 {
-                    (150., self.columns[column_index].tile_offset(tile_index).y)
-                } else if tile_index == self.columns[column_index].tiles.len() {
+                    (150., col.tile_offset(tile_index).y)
+                } else if tile_index == col.tiles.len() {
                     (
                         150.,
-                        self.columns[column_index].tile_offset(tile_index).y
-                            - self.options.gaps
-                            - 150.,
+                        col.tile_offset(tile_index).y - self.options.gaps - 150.,
                     )
                 } else {
                     (
                         300.,
-                        self.columns[column_index].tile_offset(tile_index).y
-                            - self.options.gaps / 2.
-                            - 150.,
+                        col.tile_offset(tile_index).y - self.options.gaps / 2. - 150.,
                     )
                 };
 
@@ -3087,17 +3116,6 @@ impl TileData {
     }
 }
 
-impl ColumnWidth {
-    fn resolve(self, options: &Options, view_width: f64) -> f64 {
-        match self {
-            ColumnWidth::Proportion(proportion) => {
-                (view_width - options.gaps) * proportion - options.gaps
-            }
-            ColumnWidth::Fixed(width) => width,
-        }
-    }
-}
-
 impl From<PresetSize> for ColumnWidth {
     fn from(value: PresetSize) -> Self {
         match value {
@@ -3340,6 +3358,24 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
+    fn resolve_preset_width(&self, preset: PresetSize) -> ResolvedSize {
+        resolve_preset_size(preset, &self.options, self.working_area.size.w)
+    }
+
+    fn resolve_preset_height(&self, preset: PresetSize) -> ResolvedSize {
+        resolve_preset_size(preset, &self.options, self.working_area.size.h)
+    }
+
+    fn resolve_column_width(&self, width: ColumnWidth) -> f64 {
+        let working_size = self.working_area.size;
+        let gaps = self.options.gaps;
+
+        match width {
+            ColumnWidth::Proportion(proportion) => (working_size.w - gaps) * proportion - gaps,
+            ColumnWidth::Fixed(width) => width,
+        }
+    }
+
     fn update_tile_sizes(&mut self, animate: bool) {
         self.update_tile_sizes_with_transaction(animate, Transaction::new());
     }
@@ -3390,9 +3426,11 @@ impl<W: LayoutElement> Column<W> {
             self.width
         };
 
-        let width = width.resolve(&self.options, self.working_area.size.w);
+        let working_size = self.working_area.size;
+
+        let width = self.resolve_column_width(width);
         let width = f64::max(f64::min(width, max_width), min_width);
-        let max_tile_height = self.working_area.size.h - self.options.gaps * 2.;
+        let max_tile_height = working_size.h - self.options.gaps * 2.;
 
         // If there are multiple windows in a column, clamp the non-auto window's height according
         // to other windows' min sizes.
@@ -3437,12 +3475,10 @@ impl<W: LayoutElement> Column<W> {
                 }
                 WindowHeight::Preset(idx) => {
                     let preset = self.options.preset_window_heights[idx];
-                    let available_height = self.working_area.size.h;
-                    let window_height =
-                        match resolve_preset_size(preset, &self.options, available_height) {
-                            ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
-                            ResolvedSize::Window(h) => h,
-                        };
+                    let window_height = match self.resolve_preset_height(preset) {
+                        ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
+                        ResolvedSize::Window(h) => h,
+                    };
 
                     let mut window_height = window_height.round().clamp(1., 100000.);
                     if let Some(max) = max_non_auto_window_height {
@@ -3456,7 +3492,7 @@ impl<W: LayoutElement> Column<W> {
             .collect::<Vec<_>>();
 
         let gaps_left = self.options.gaps * (self.tiles.len() + 1) as f64;
-        let mut height_left = self.working_area.size.h - gaps_left;
+        let mut height_left = working_size.h - gaps_left;
         let mut auto_tiles_left = self.tiles.len();
 
         // Subtract all fixed-height tiles.
@@ -3588,6 +3624,10 @@ impl<W: LayoutElement> Column<W> {
             .unwrap()
     }
 
+    fn focus_index(&mut self, index: u8) {
+        self.active_tile_idx = min(usize::from(index.saturating_sub(1)), self.tiles.len() - 1);
+    }
+
     fn focus_up(&mut self) -> bool {
         if self.active_tile_idx == 0 {
             return false;
@@ -3604,6 +3644,14 @@ impl<W: LayoutElement> Column<W> {
 
         self.active_tile_idx += 1;
         true
+    }
+
+    fn focus_top(&mut self) {
+        self.active_tile_idx = 0;
+    }
+
+    fn focus_bottom(&mut self) {
+        self.active_tile_idx = self.tiles.len() - 1;
     }
 
     fn move_up(&mut self) -> bool {
@@ -3668,14 +3716,11 @@ impl<W: LayoutElement> Column<W> {
             let current_window = tile.window_expected_or_current_size().w;
             let current_tile = tile.tile_expected_or_current_size().w;
 
-            let available_size = self.working_area.size.w;
-
             self.options
                 .preset_column_widths
                 .iter()
                 .position(|prop| {
-                    let resolved = resolve_preset_size(*prop, &self.options, available_size);
-                    match resolved {
+                    match self.resolve_preset_width(*prop) {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
                         ResolvedSize::Window(resolved) => current_window + 1. < resolved,
@@ -3702,7 +3747,7 @@ impl<W: LayoutElement> Column<W> {
             self.width
         };
 
-        let current_px = current.resolve(&self.options, self.working_area.size.w);
+        let current_px = self.resolve_column_width(current);
 
         // FIXME: fix overflows then remove limits.
         const MAX_PX: f64 = 100000.;
@@ -3769,11 +3814,13 @@ impl<W: LayoutElement> Column<W> {
         };
         let current_tile_px = tile.tile_height_for_window_height(current_window_px);
 
-        let full = self.working_area.size.h - self.options.gaps;
+        let working_size = self.working_area.size.h;
+        let gaps = self.options.gaps;
+        let full = working_size - gaps;
         let current_prop = if full == 0. {
             1.
         } else {
-            (current_tile_px + self.options.gaps) / (full)
+            (current_tile_px + gaps) / full
         };
 
         // FIXME: fix overflows then remove limits.
@@ -3782,16 +3829,13 @@ impl<W: LayoutElement> Column<W> {
         let mut window_height = match change {
             SizeChange::SetFixed(fixed) => f64::from(fixed),
             SizeChange::SetProportion(proportion) => {
-                let tile_height = (self.working_area.size.h - self.options.gaps)
-                    * (proportion / 100.)
-                    - self.options.gaps;
+                let tile_height = (working_size - gaps) * (proportion / 100.) - gaps;
                 tile.window_height_for_tile_height(tile_height)
             }
             SizeChange::AdjustFixed(delta) => current_window_px + f64::from(delta),
             SizeChange::AdjustProportion(delta) => {
                 let proportion = current_prop + delta / 100.;
-                let tile_height =
-                    (self.working_area.size.h - self.options.gaps) * proportion - self.options.gaps;
+                let tile_height = (working_size - gaps) * proportion - gaps;
                 tile.window_height_for_tile_height(tile_height)
             }
         };
@@ -3804,8 +3848,7 @@ impl<W: LayoutElement> Column<W> {
             .filter(|(idx, _)| *idx != tile_idx)
             .map(|(_, tile)| f64::max(1., tile.min_size().h) + self.options.gaps)
             .sum::<f64>();
-        let height_left =
-            self.working_area.size.h - self.options.gaps - min_height_taken - self.options.gaps;
+        let height_left = working_size - gaps - min_height_taken - gaps;
         let height_left = f64::max(1., tile.window_height_for_tile_height(height_left));
         window_height = f64::min(height_left, window_height);
 
@@ -3853,9 +3896,7 @@ impl<W: LayoutElement> Column<W> {
                     .iter()
                     .copied()
                     .position(|preset| {
-                        let resolved =
-                            resolve_preset_size(preset, &self.options, self.working_area.size.h);
-                        let window_height = match resolved {
+                        let window_height = match self.resolve_preset_height(preset) {
                             ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
                             ResolvedSize::Window(h) => h,
                         };
@@ -3924,6 +3965,18 @@ impl<W: LayoutElement> Column<W> {
         None
     }
 
+    fn tiles_origin(&self) -> Point<f64, Logical> {
+        let mut origin = Point::from((0., 0.));
+
+        if self.is_fullscreen {
+            return origin;
+        }
+
+        origin.y += self.working_area.loc.y + self.options.gaps;
+
+        origin
+    }
+
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
     fn tile_offsets_iter(
@@ -3940,11 +3993,7 @@ impl<W: LayoutElement> Column<W> {
         } else {
             self.width()
         };
-        let mut y = 0.;
-
-        if !self.is_fullscreen {
-            y = self.working_area.loc.y + self.options.gaps;
-        }
+        let mut origin = self.tiles_origin();
 
         // Chain with a dummy value to be able to get one past all tiles' Y.
         let dummy = TileData {
@@ -3956,15 +4005,16 @@ impl<W: LayoutElement> Column<W> {
         let data = data.chain(iter::once(dummy));
 
         data.map(move |data| {
-            let mut pos = Point::from((0., y));
+            let mut pos = origin;
 
             if center {
-                pos.x = (col_width - data.size.w) / 2.;
+                pos.x += (col_width - data.size.w) / 2.;
             } else if data.interactively_resizing_by_left_edge {
-                pos.x = col_width - data.size.w;
+                pos.x += col_width - data.size.w;
             }
 
-            y += data.size.h + gaps;
+            origin.y += data.size.h + gaps;
+
             pos
         })
     }
@@ -4046,6 +4096,9 @@ impl<W: LayoutElement> Column<W> {
             }
         }
 
+        let working_size = self.working_area.size;
+        let gaps = self.options.gaps;
+
         let mut found_fixed = false;
         let mut total_height = 0.;
         let mut total_min_height = 0.;
@@ -4080,12 +4133,12 @@ impl<W: LayoutElement> Column<W> {
 
             if !self.is_fullscreen
                 && self.scale.round() == self.scale
-                && self.working_area.size.h.round() == self.working_area.size.h
-                && self.options.gaps.round() == self.options.gaps
+                && working_size.h.round() == working_size.h
+                && gaps.round() == gaps
             {
-                let total_height = requested_tile_height + self.options.gaps * 2.;
-                let total_min_height = min_tile_height + self.options.gaps * 2.;
-                let max_height = f64::max(total_min_height, self.working_area.size.h);
+                let total_height = requested_tile_height + gaps * 2.;
+                let total_min_height = min_tile_height + gaps * 2.;
+                let max_height = f64::max(total_min_height, working_size.h);
                 assert!(
                     total_height <= max_height,
                     "each tile in a column mustn't go beyond working area height \
@@ -4099,12 +4152,12 @@ impl<W: LayoutElement> Column<W> {
 
         if tile_count > 1
             && self.scale.round() == self.scale
-            && self.working_area.size.h.round() == self.working_area.size.h
-            && self.options.gaps.round() == self.options.gaps
+            && working_size.h.round() == working_size.h
+            && gaps.round() == gaps
         {
-            total_height += self.options.gaps * (tile_count + 1) as f64;
-            total_min_height += self.options.gaps * (tile_count + 1) as f64;
-            let max_height = f64::max(total_min_height, self.working_area.size.h);
+            total_height += gaps * (tile_count + 1) as f64;
+            total_min_height += gaps * (tile_count + 1) as f64;
+            let max_height = f64::max(total_min_height, working_size.h);
             assert!(
                 total_height <= max_height,
                 "multiple tiles in a column mustn't go beyond working area height \

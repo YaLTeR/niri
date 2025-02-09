@@ -380,6 +380,11 @@ enum Op {
     FocusWindowOrWorkspaceDown,
     FocusWindowOrWorkspaceUp,
     FocusWindow(#[proptest(strategy = "1..=5usize")] usize),
+    FocusWindowInColumn(#[proptest(strategy = "1..=5u8")] u8),
+    FocusWindowTop,
+    FocusWindowBottom,
+    FocusWindowDownOrTop,
+    FocusWindowUpOrBottom,
     MoveColumnLeft,
     MoveColumnRight,
     MoveColumnToFirst,
@@ -924,6 +929,11 @@ impl Op {
             Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
             Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
             Op::FocusWindow(id) => layout.activate_window(&id),
+            Op::FocusWindowInColumn(index) => layout.focus_window_in_column(index),
+            Op::FocusWindowTop => layout.focus_window_top(),
+            Op::FocusWindowBottom => layout.focus_window_bottom(),
+            Op::FocusWindowDownOrTop => layout.focus_window_down_or_top(),
+            Op::FocusWindowUpOrBottom => layout.focus_window_up_or_bottom(),
             Op::MoveColumnLeft => layout.move_left(),
             Op::MoveColumnRight => layout.move_right(),
             Op::MoveColumnToFirst => layout.move_column_to_first(),
@@ -3000,6 +3010,31 @@ fn move_workspace_to_same_monitor_doesnt_reorder() {
         .map(|(_, _, ws)| ws.windows().count())
         .collect();
     assert_eq!(counts, &[1, 2, 0]);
+}
+
+#[test]
+fn removing_window_above_preserves_focused_window() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FocusColumnFirst,
+        Op::ConsumeWindowIntoColumn,
+        Op::ConsumeWindowIntoColumn,
+        Op::FocusWindowDown,
+        Op::CloseWindow(0),
+    ];
+
+    let layout = check_ops(&ops);
+    let win = layout.focus().unwrap();
+    assert_eq!(win.0.id, 1);
 }
 
 #[test]
