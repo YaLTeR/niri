@@ -3,7 +3,7 @@ extern crate tracing;
 
 use std::collections::HashSet;
 use std::ffi::OsStr;
-use std::ops::Mul;
+use std::ops::{Mul, MulAssign};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
@@ -819,6 +819,12 @@ impl Mul<f32> for Color {
     fn mul(mut self, rhs: f32) -> Self::Output {
         self.a *= rhs;
         self
+    }
+}
+
+impl MulAssign<f32> for Color {
+    fn mul_assign(&mut self, rhs: f32) {
+        self.a *= rhs;
     }
 }
 
