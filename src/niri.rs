@@ -2630,7 +2630,7 @@ impl Niri {
     /// locations to global space according to where they are rendered.
     ///
     /// This function does not take pointer or touch grabs into account.
-    pub fn contents_under(&mut self, pos: Point<f64, Logical>) -> PointContents {
+    pub fn contents_under(&self, pos: Point<f64, Logical>) -> PointContents {
         let mut rv = PointContents::default();
 
         let Some((output, pos_within_output)) = self.output_under(pos) else {
