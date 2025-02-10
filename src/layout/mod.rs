@@ -450,6 +450,20 @@ pub enum AddWindowTarget<'a, W: LayoutElement> {
     NextTo(&'a W::Id),
 }
 
+/// Type of the window hit from `window_under()`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HitType {
+    /// The hit is within a window's input region and can be used for sending events to it.
+    Input {
+        /// Position of the window's buffer.
+        win_pos: Point<f64, Logical>,
+    },
+    /// The hit can activate a window, but it is not in the input region so cannot send events.
+    ///
+    /// For example, this could be clicking on a tile border outside the window.
+    Activate,
+}
+
 impl<W: LayoutElement> InteractiveMoveState<W> {
     fn moving(&self) -> Option<&InteractiveMoveData<W>> {
         match self {
@@ -482,6 +496,16 @@ impl ActivateWindow {
             ActivateWindow::Smart => f(),
             ActivateWindow::No => false,
         }
+    }
+}
+
+impl HitType {
+    pub fn offset_win_pos(mut self, offset: Point<f64, Logical>) -> Self {
+        match &mut self {
+            HitType::Input { win_pos } => *win_pos += offset,
+            HitType::Activate => (),
+        }
+        self
     }
 }
 
@@ -2155,18 +2179,12 @@ impl<W: LayoutElement> Layout<W> {
         mon.active_window().map(|win| (win, &mon.output))
     }
 
-    /// Returns the window under the cursor and the position of its toplevel surface within the
-    /// output.
-    ///
-    /// `Some((w, Some(p)))` means that the cursor is within the window's input region and can be
-    /// used for delivering events to the window. `Some((w, None))` means that the cursor is within
-    /// the window's activation region, but not within the window's input region. For example, the
-    /// cursor may be on the window's server-side border.
+    /// Returns the window under the cursor and the hit type.
     pub fn window_under(
         &self,
         output: &Output,
         pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
+    ) -> Option<(&W, HitType)> {
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
         };
@@ -2177,9 +2195,9 @@ impl<W: LayoutElement> Layout<W> {
 
             if move_.tile.is_in_input_region(pos_within_tile) {
                 let win_pos = tile_pos + move_.tile.buf_loc();
-                return Some((move_.tile.window(), Some(win_pos)));
+                return Some((move_.tile.window(), HitType::Input { win_pos }));
             } else if move_.tile.is_in_activation_region(pos_within_tile) {
-                return Some((move_.tile.window(), None));
+                return Some((move_.tile.window(), HitType::Activate));
             }
 
             return None;

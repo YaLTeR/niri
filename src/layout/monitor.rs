@@ -14,7 +14,7 @@ use super::tile::Tile;
 use super::workspace::{
     OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId, WorkspaceRenderElement,
 };
-use super::{ActivateWindow, LayoutElement, Options};
+use super::{ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -1007,13 +1007,10 @@ impl<W: LayoutElement> Monitor<W> {
         Some((ws, bounds.loc))
     }
 
-    pub fn window_under(
-        &self,
-        pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
+    pub fn window_under(&self, pos_within_output: Point<f64, Logical>) -> Option<(&W, HitType)> {
         let (ws, offset) = self.workspace_under(pos_within_output)?;
-        let (win, win_pos) = ws.window_under(pos_within_output - offset)?;
-        Some((win, win_pos.map(|p| p + offset)))
+        let (win, hit) = ws.window_under(pos_within_output - offset)?;
+        Some((win, hit.offset_win_pos(offset)))
     }
 
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {

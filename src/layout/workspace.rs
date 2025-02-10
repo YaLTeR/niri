@@ -19,7 +19,9 @@ use super::scrolling::{
     ScrollingSpaceRenderElement,
 };
 use super::tile::{Tile, TileRenderSnapshot};
-use super::{ActivateWindow, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac};
+use super::{
+    ActivateWindow, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
+};
 use crate::animation::Clock;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -1459,10 +1461,7 @@ impl<W: LayoutElement> Workspace<W> {
             .start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
     }
 
-    pub fn window_under(
-        &self,
-        pos: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
         self.tiles_with_render_positions()
             .find_map(|(tile, tile_pos, visible)| {
                 if !visible {
@@ -1473,9 +1472,9 @@ impl<W: LayoutElement> Workspace<W> {
 
                 if tile.is_in_input_region(pos_within_tile) {
                     let win_pos = tile_pos + tile.buf_loc();
-                    return Some((tile.window(), Some(win_pos)));
+                    return Some((tile.window(), HitType::Input { win_pos }));
                 } else if tile.is_in_activation_region(pos_within_tile) {
-                    return Some((tile.window(), None));
+                    return Some((tile.window(), HitType::Activate));
                 }
 
                 None
