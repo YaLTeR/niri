@@ -128,7 +128,7 @@ use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::WorkspaceId;
-use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
+use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
 use crate::niri_render_elements;
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
@@ -450,6 +450,9 @@ pub struct PointContents {
     // Output under point.
     pub output: Option<Output>,
     // Surface under point and its location in the global coordinate space.
+    //
+    // Can be `None` even when `window` is set, for example when the pointer is over the niri
+    // border around the window.
     pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
     pub window: Option<Window>,
@@ -2693,7 +2696,7 @@ impl Niri {
                             )
                         })
                 })
-                .map(|(s, l)| (s, (None, Some(l.clone()))))
+                .map(|(s, l)| (Some(s), (None, Some(l.clone()))))
         };
 
         let layer_toplevel_under = |layer| layer_surface_under(layer, false);
@@ -2702,18 +2705,22 @@ impl Niri {
         let window_under = || {
             self.layout
                 .window_under(output, pos_within_output)
-                .and_then(|(mapped, win_pos_within_output)| {
-                    let win_pos_within_output = win_pos_within_output?;
+                .map(|(mapped, hit)| {
                     let window = &mapped.window;
-                    window
-                        .surface_under(
-                            pos_within_output - win_pos_within_output,
-                            WindowSurfaceType::ALL,
-                        )
-                        .map(|(s, pos_within_window)| {
-                            (s, pos_within_window.to_f64() + win_pos_within_output)
-                        })
-                        .map(|s| (s, (Some(window.clone()), None)))
+                    let surface_and_pos = if let HitType::Input { win_pos } = hit {
+                        let win_pos_within_output = win_pos;
+                        window
+                            .surface_under(
+                                pos_within_output - win_pos_within_output,
+                                WindowSurfaceType::ALL,
+                            )
+                            .map(|(s, pos_within_window)| {
+                                (s, pos_within_window.to_f64() + win_pos_within_output)
+                            })
+                    } else {
+                        None
+                    };
+                    (surface_and_pos, (Some(window.clone()), None))
                 })
         };
 
@@ -2744,14 +2751,15 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Background));
         }
 
-        let Some(((surface, surface_pos_within_output), (window, layer))) = under else {
+        let Some((mut surface_and_pos, (window, layer))) = under else {
             return rv;
         };
 
-        let surface_loc_in_global_space =
-            surface_pos_within_output + output_pos_in_global_space.to_f64();
+        if let Some((_, surface_pos)) = &mut surface_and_pos {
+            *surface_pos += output_pos_in_global_space.to_f64();
+        }
 
-        rv.surface = Some((surface, surface_loc_in_global_space));
+        rv.surface = surface_and_pos;
         rv.window = window;
         rv.layer = layer;
         rv
