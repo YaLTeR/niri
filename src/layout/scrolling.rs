@@ -201,12 +201,6 @@ struct TileData {
     /// Cached actual size of the tile.
     size: Size<f64, Logical>,
 
-    /// Cached expected size, used when sibling tiles and columns should
-    /// have their positions calculated assuming the tile has its expected
-    /// size instead of its actual size (e.g. when it is resized after
-    /// having been swapped in or out of a column)
-    expected: Option<Size<f64, Logical>>,
-
     /// Cached whether the tile is being interactively resized by its left edge.
     interactively_resizing_by_left_edge: bool,
 }
@@ -1889,17 +1883,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let transaction = Transaction::new();
         source_tile.request_tile_size(target_sz, true, Some(transaction.clone()));
         target_tile.request_tile_size(source_sz, true, Some(transaction));
+        source_tile.prefer_expected_size = true;
+        target_tile.prefer_expected_size = true;
 
         // resync tile data with target window sizes
         source_col.data[source_tile_idx].update(&source_col.tiles[source_tile_idx]);
         target_col.data[target_tile_idx].update(&target_col.tiles[target_tile_idx]);
-
-        // the final expected tile size is kept in the column tile data
-        // so that it can be used instead of the actual tile size while
-        // it is resizing. This avoids having sibling tiles also move
-        // during the swap.
-        source_col.data[source_tile_idx].expected = Some(source_sz);
-        target_col.data[target_tile_idx].expected = Some(target_sz);
 
         // update column data
         self.data[source_column_idx].update(source_col);
@@ -3097,7 +3086,6 @@ impl TileData {
         let mut rv = Self {
             height,
             size: Size::default(),
-            expected: None,
             interactively_resizing_by_left_edge: false,
         };
         rv.update(tile);
@@ -3106,9 +3094,6 @@ impl TileData {
 
     pub fn update<W: LayoutElement>(&mut self, tile: &Tile<W>) {
         self.size = tile.tile_size();
-        if tile.resize_animation().is_none() {
-            self.expected = None;
-        }
         self.interactively_resizing_by_left_edge = tile
             .window()
             .interactive_resize_data()
@@ -3330,7 +3315,7 @@ impl<W: LayoutElement> Column<W> {
             .find(|(_, tile)| tile.window().id() == window)
             .unwrap();
 
-        let offset = if self.data[tile_idx].expected.is_some() {
+        let offset = if tile.prefer_expected_size {
             0.
         } else {
             let height = f64::from(tile.window().size().h);
@@ -3610,15 +3595,18 @@ impl<W: LayoutElement> Column<W> {
             let size = Size::from((width, height));
             tile.request_tile_size(size, animate, Some(transaction.clone()));
         }
-
-        // Clear any expected size as it has become obsolete.
-        self.data.iter_mut().for_each(|data| data.expected = None);
     }
 
     fn width(&self) -> f64 {
-        self.data
-            .iter()
-            .map(|data| NotNan::new(data.expected.unwrap_or(data.size).w).unwrap())
+        zip(&self.tiles, &self.data)
+            .map(|(tile, data)| {
+                NotNan::new(if tile.prefer_expected_size {
+                    tile.tile_expected_or_current_size().w
+                } else {
+                    data.size.w
+                })
+                .unwrap()
+            })
             .max()
             .map(NotNan::into_inner)
             .unwrap()
@@ -3999,7 +3987,6 @@ impl<W: LayoutElement> Column<W> {
         let dummy = TileData {
             height: WindowHeight::auto_1(),
             size: Size::default(),
-            expected: None,
             interactively_resizing_by_left_edge: false,
         };
         let data = data.chain(iter::once(dummy));
