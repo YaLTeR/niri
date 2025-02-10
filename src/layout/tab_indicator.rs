@@ -51,6 +51,77 @@ impl TabIndicator {
         }
     }
 
+    fn tab_rects(
+        &self,
+        area: Rectangle<f64, Logical>,
+        count: usize,
+        scale: f64,
+    ) -> impl Iterator<Item = Rectangle<f64, Logical>> {
+        let round = |logical: f64| round_logical_in_physical(scale, logical);
+
+        let width = round(self.config.width.0);
+        let gap = round(self.config.gap.0);
+        let gaps_between = round(self.config.gaps_between_tabs.0);
+
+        let position = self.config.position;
+        let side = match position {
+            TabIndicatorPosition::Left | TabIndicatorPosition::Right => area.size.h,
+            TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => area.size.w,
+        };
+        let total_prop = self.config.length.total_proportion.unwrap_or(0.5);
+        let min_length = round(side * total_prop.clamp(0., 2.));
+
+        let pixel = 1. / scale;
+        let shortest_length = count as f64 * (pixel + gaps_between) - gaps_between;
+        let length = f64::max(min_length, shortest_length);
+        let px_per_tab = (length + gaps_between) / count as f64 - gaps_between;
+        let px_per_tab = floor_logical_in_physical_max1(scale, px_per_tab);
+        let floored_length = count as f64 * (px_per_tab + gaps_between) - gaps_between;
+        let mut ones_left = ((length - floored_length) / pixel).max(0.).round() as usize;
+
+        let mut shader_loc = Point::from((-gap - width, round((side - length) / 2.)));
+        match position {
+            TabIndicatorPosition::Left => (),
+            TabIndicatorPosition::Right => shader_loc.x = area.size.w + gap,
+            TabIndicatorPosition::Top => mem::swap(&mut shader_loc.x, &mut shader_loc.y),
+            TabIndicatorPosition::Bottom => {
+                shader_loc.x = shader_loc.y;
+                shader_loc.y = area.size.h + gap;
+            }
+        }
+        shader_loc += area.loc;
+
+        (0..count).map(move |_| {
+            let mut px_per_tab = px_per_tab;
+            if ones_left > 0 {
+                ones_left -= 1;
+                px_per_tab += pixel;
+            }
+
+            let loc = shader_loc;
+
+            match position {
+                TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
+                    shader_loc.y += px_per_tab + gaps_between
+                }
+                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
+                    shader_loc.x += px_per_tab + gaps_between
+                }
+            }
+
+            let size = match position {
+                TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
+                    Size::from((width, px_per_tab))
+                }
+                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
+                    Size::from((px_per_tab, width))
+                }
+            };
+
+            Rectangle::new(loc, size)
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn update_render_elements(
         &mut self,
@@ -79,68 +150,15 @@ impl TabIndicator {
             return;
         }
 
-        let round = |logical: f64| round_logical_in_physical(scale, logical);
-
-        let width = round(self.config.width.0);
-        let gap = round(self.config.gap.0);
-        let gaps_between = round(self.config.gaps_between_tabs.0);
-
-        let side = match self.config.position {
-            TabIndicatorPosition::Left | TabIndicatorPosition::Right => area.size.h,
-            TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => area.size.w,
-        };
-        let total_prop = self.config.length.total_proportion.unwrap_or(0.5);
-        let min_length = round(side * total_prop.clamp(0., 2.));
-
         self.shaders.resize_with(count, Default::default);
         self.shader_locs.resize_with(count, Default::default);
 
-        let pixel = 1. / scale;
-        let shortest_length = count as f64 * (pixel + gaps_between) - gaps_between;
-        let length = f64::max(min_length, shortest_length);
-        let px_per_tab = (length + gaps_between) / count as f64 - gaps_between;
-        let px_per_tab = floor_logical_in_physical_max1(scale, px_per_tab);
-        let floored_length = count as f64 * (px_per_tab + gaps_between) - gaps_between;
-        let mut ones_left = ((length - floored_length) / pixel).max(0.).round() as usize;
-
-        let mut shader_loc = Point::from((-gap - width, round((side - length) / 2.)));
-        match self.config.position {
-            TabIndicatorPosition::Left => (),
-            TabIndicatorPosition::Right => shader_loc.x = area.size.w + gap,
-            TabIndicatorPosition::Top => mem::swap(&mut shader_loc.x, &mut shader_loc.y),
-            TabIndicatorPosition::Bottom => {
-                shader_loc.x = shader_loc.y;
-                shader_loc.y = area.size.h + gap;
-            }
-        }
-        shader_loc += area.loc;
-
-        for ((shader, loc), tab) in zip(&mut self.shaders, &mut self.shader_locs).zip(tabs) {
-            *loc = shader_loc;
-
-            let mut px_per_tab = px_per_tab;
-            if ones_left > 0 {
-                ones_left -= 1;
-                px_per_tab += pixel;
-            }
-
-            match self.config.position {
-                TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
-                    shader_loc.y += px_per_tab + gaps_between
-                }
-                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
-                    shader_loc.x += px_per_tab + gaps_between
-                }
-            }
-
-            let shader_size = match self.config.position {
-                TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
-                    Size::from((width, px_per_tab))
-                }
-                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
-                    Size::from((px_per_tab, width))
-                }
-            };
+        let rects = self.tab_rects(area, count, scale);
+        for ((shader, loc), (tab, rect)) in zip(
+            zip(&mut self.shaders, &mut self.shader_locs),
+            zip(tabs, rects),
+        ) {
+            *loc = rect.loc;
 
             let mut gradient_area = match tab.gradient.relative_to {
                 GradientRelativeTo::Window => tab.geometry,
@@ -149,13 +167,13 @@ impl TabIndicator {
             gradient_area.loc -= *loc;
 
             shader.update(
-                shader_size,
+                rect.size,
                 gradient_area,
                 tab.gradient.in_,
                 tab.gradient.from,
                 tab.gradient.to,
                 ((tab.gradient.angle as f32) - 90.).to_radians(),
-                Rectangle::from_size(shader_size),
+                Rectangle::from_size(rect.size),
                 0.,
                 CornerRadius::default(),
                 scale as f32,
