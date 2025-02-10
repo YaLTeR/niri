@@ -2176,8 +2176,8 @@ impl<W: LayoutElement> Layout<W> {
             let pos_within_tile = pos_within_output - tile_pos;
 
             if move_.tile.is_in_input_region(pos_within_tile) {
-                let pos_within_surface = tile_pos + move_.tile.buf_loc();
-                return Some((move_.tile.window(), Some(pos_within_surface)));
+                let win_pos = tile_pos + move_.tile.buf_loc();
+                return Some((move_.tile.window(), Some(win_pos)));
             } else if move_.tile.is_in_activation_region(pos_within_tile) {
                 return Some((move_.tile.window(), None));
             }

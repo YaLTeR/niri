@@ -1472,8 +1472,8 @@ impl<W: LayoutElement> Workspace<W> {
                 let pos_within_tile = pos - tile_pos;
 
                 if tile.is_in_input_region(pos_within_tile) {
-                    let pos_within_surface = tile_pos + tile.buf_loc();
-                    return Some((tile.window(), Some(pos_within_surface)));
+                    let win_pos = tile_pos + tile.buf_loc();
+                    return Some((tile.window(), Some(win_pos)));
                 } else if tile.is_in_activation_region(pos_within_tile) {
                     return Some((tile.window(), None));
                 }
