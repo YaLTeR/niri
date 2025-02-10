@@ -3470,30 +3470,6 @@ impl<W: LayoutElement> Column<W> {
             tile.update_render_elements(is_active, tile_view_rect);
         }
 
-        // We'd like to use the active tile's animated size for the tab indicator, however we need
-        // to be mindful of the case where the active tile is smaller than some other tile in the
-        // column. The column assumes the size of the largest tile.
-        //
-        // We expect users to mainly resize tabbed columns by width, so matching the animated size
-        // is more important here. Besides, we always try to resize all windows in a column to the
-        // same width when possible, and also the animation for going into tabbed mode doesn't move
-        // tiles horizontally as much.
-        //
-        // For height though, it's a different story. First, users probably aren't resizing a
-        // tabbed column by height. Second, we don't match windows by height, so it's easy to have
-        // a smaller active tile than the rest of the column, e.g. by adding a fixed-size dialog.
-        // Then, switching to that dialog and back should ideally keep the tab indicator position
-        // fixed. Third, the animation for making a column tabbed moves tiles vertically, and using
-        // the active tile's animated size in this case only works for the topmost tile, and looks
-        // broken otherwise.
-        let mut max_height = 0.;
-        for tile in &self.tiles {
-            max_height = f64::max(max_height, tile.tile_size().h);
-        }
-
-        let tile = &self.tiles[active_idx];
-        let area_size = Size::from((tile.animated_tile_size().w, max_height));
-
         let config = self.tab_indicator.config();
         let offsets = self.tile_offsets_iter(self.data.iter().copied());
         let tabs = zip(&self.tiles, offsets)
@@ -3512,7 +3488,7 @@ impl<W: LayoutElement> Column<W> {
 
         self.tab_indicator.update_render_elements(
             enabled,
-            Rectangle::new(self.tiles_origin(), area_size),
+            self.tab_indicator_area(),
             view_rect,
             self.tiles.len(),
             tabs,
@@ -4504,6 +4480,34 @@ impl<W: LayoutElement> Column<W> {
 
         let tiles = active.iter_mut().chain(first).chain(rest);
         zip(tiles, offsets)
+    }
+
+    fn tab_indicator_area(&self) -> Rectangle<f64, Logical> {
+        // We'd like to use the active tile's animated size for the tab indicator, however we need
+        // to be mindful of the case where the active tile is smaller than some other tile in the
+        // column. The column assumes the size of the largest tile.
+        //
+        // We expect users to mainly resize tabbed columns by width, so matching the animated size
+        // is more important here. Besides, we always try to resize all windows in a column to the
+        // same width when possible, and also the animation for going into tabbed mode doesn't move
+        // tiles horizontally as much.
+        //
+        // For height though, it's a different story. First, users probably aren't resizing a
+        // tabbed column by height. Second, we don't match windows by height, so it's easy to have
+        // a smaller active tile than the rest of the column, e.g. by adding a fixed-size dialog.
+        // Then, switching to that dialog and back should ideally keep the tab indicator position
+        // fixed. Third, the animation for making a column tabbed moves tiles vertically, and using
+        // the active tile's animated size in this case only works for the topmost tile, and looks
+        // broken otherwise.
+        let mut max_height = 0.;
+        for tile in &self.tiles {
+            max_height = f64::max(max_height, tile.tile_size().h);
+        }
+
+        let tile = &self.tiles[self.active_tile_idx];
+        let area_size = Size::from((tile.animated_tile_size().w, max_height));
+
+        Rectangle::new(self.tiles_origin(), area_size)
     }
 
     #[cfg(test)]
