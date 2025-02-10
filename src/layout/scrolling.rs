@@ -14,7 +14,7 @@ use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::tab_indicator::{TabIndicator, TabIndicatorRenderElement, TabInfo};
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::workspace::{InteractiveResize, ResolvedSize};
-use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
+use super::{ConfigureIntent, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
@@ -2643,6 +2643,51 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         rv
+    }
+
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        // This matches self.tiles_with_render_positions().
+        let scale = self.scale;
+        let view_off = Point::from((-self.view_pos(), 0.));
+        for (col, col_x) in self.columns_in_render_order() {
+            let col_off = Point::from((col_x, 0.));
+            let col_render_off = col.render_offset();
+
+            // Hit the tab indicator.
+            if col.display_mode == ColumnDisplay::Tabbed && !col.is_fullscreen {
+                let col_pos = view_off + col_off + col_render_off;
+                let col_pos = col_pos.to_physical_precise_round(scale).to_logical(scale);
+
+                if let Some(idx) = col.tab_indicator.hit(
+                    col.tab_indicator_area(),
+                    col.tiles.len(),
+                    scale,
+                    pos - col_pos,
+                ) {
+                    let hit = HitType::Activate {
+                        is_tab_indicator: true,
+                    };
+                    return Some((col.tiles[idx].window(), hit));
+                }
+            }
+
+            for (tile, tile_off, visible) in col.tiles_in_render_order() {
+                if !visible {
+                    continue;
+                }
+
+                let tile_pos =
+                    view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                // Round to physical pixels.
+                let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
+
+                if let Some(rv) = HitType::hit_tile(tile, tile_pos, pos) {
+                    return Some(rv);
+                }
+            }
+        }
+
+        None
     }
 
     pub fn view_offset_gesture_begin(&mut self, is_touchpad: bool) {

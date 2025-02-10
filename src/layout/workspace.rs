@@ -1475,14 +1475,18 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
-        self.tiles_with_render_positions()
-            .find_map(|(tile, tile_pos, visible)| {
-                if !visible {
-                    return None;
-                }
+        // This logic is consistent with tiles_with_render_positions().
+        if self.is_floating_visible() {
+            if let Some(rv) = self
+                .floating
+                .tiles_with_render_positions()
+                .find_map(|(tile, tile_pos)| HitType::hit_tile(tile, tile_pos, pos))
+            {
+                return Some(rv);
+            }
+        }
 
-                HitType::hit_tile(tile, tile_pos, pos)
-            })
+        self.scrolling.window_under(pos)
     }
 
     pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {

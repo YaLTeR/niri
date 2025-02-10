@@ -5060,7 +5060,17 @@ impl Niri {
 
         if let Some(window) = &new_focus.window {
             if current_focus.window.as_ref() != Some(window) {
-                let (window, _) = window;
+                let (window, hit) = window;
+
+                // Don't trigger focus-follows-mouse over the tab indicator.
+                if matches!(
+                    hit,
+                    HitType::Activate {
+                        is_tab_indicator: true
+                    }
+                ) {
+                    return;
+                }
 
                 if !self.layout.should_trigger_focus_follows_mouse_on(window) {
                     return;

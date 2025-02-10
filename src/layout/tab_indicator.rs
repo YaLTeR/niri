@@ -182,6 +182,27 @@ impl TabIndicator {
         }
     }
 
+    pub fn hit(
+        &self,
+        area: Rectangle<f64, Logical>,
+        tab_count: usize,
+        scale: f64,
+        point: Point<f64, Logical>,
+    ) -> Option<usize> {
+        if self.config.off {
+            return None;
+        }
+
+        let count = tab_count;
+        if self.config.hide_when_single_tab && count == 1 {
+            return None;
+        }
+
+        self.tab_rects(area, count, scale)
+            .enumerate()
+            .find_map(|(idx, rect)| rect.contains(point).then_some(idx))
+    }
+
     pub fn render(
         &self,
         renderer: &mut impl NiriRenderer,
