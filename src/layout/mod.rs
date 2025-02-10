@@ -466,7 +466,10 @@ pub enum HitType {
     /// The hit can activate a window, but it is not in the input region so cannot send events.
     ///
     /// For example, this could be clicking on a tile border outside the window.
-    Activate,
+    Activate {
+        /// Whether the hit was on the tab indicator.
+        is_tab_indicator: bool,
+    },
 }
 
 impl<W: LayoutElement> InteractiveMoveState<W> {
@@ -515,7 +518,7 @@ impl HitType {
     pub fn offset_win_pos(mut self, offset: Point<f64, Logical>) -> Self {
         match &mut self {
             HitType::Input { win_pos } => *win_pos += offset,
-            HitType::Activate => (),
+            HitType::Activate { .. } => (),
         }
         self
     }
