@@ -1474,6 +1474,10 @@ impl<W: LayoutElement> Workspace<W> {
             .start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
     }
 
+    pub fn start_open_animation(&mut self, id: &W::Id) -> bool {
+        self.scrolling.start_open_animation(id) || self.floating.start_open_animation(id)
+    }
+
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
         // This logic is consistent with tiles_with_render_positions().
         if self.is_floating_visible() {

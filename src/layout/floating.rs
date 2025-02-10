@@ -641,6 +641,15 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.interactive_resize_end(Some(&id));
     }
 
+    pub fn start_open_animation(&mut self, id: &W::Id) -> bool {
+        let Some(idx) = self.idx_of(id) else {
+            return false;
+        };
+
+        self.tiles[idx].start_open_animation();
+        true
+    }
+
     pub fn toggle_window_height(&mut self, id: Option<&W::Id>) {
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;

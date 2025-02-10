@@ -1429,6 +1429,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    pub fn start_open_animation(&mut self, id: &W::Id) -> bool {
+        self.columns
+            .iter_mut()
+            .any(|col| col.start_open_animation(id))
+    }
+
     pub fn focus_left(&mut self) -> bool {
         if self.active_column_idx == 0 {
             return false;
@@ -3432,6 +3438,17 @@ impl<W: LayoutElement> Column<W> {
             rv.set_fullscreen(true);
         }
 
+        // Animate the tab indicator for new columns.
+        if display_mode == ColumnDisplay::Tabbed
+            && !rv.options.tab_indicator.hide_when_single_tab
+            && !is_pending_fullscreen
+        {
+            // Usually new columns are created together with window movement actions. For new
+            // windows, we handle that in start_open_animation().
+            rv.tab_indicator
+                .start_open_animation(rv.clock.clone(), rv.options.animations.window_movement.0);
+        }
+
         rv
     }
 
@@ -3499,10 +3516,14 @@ impl<W: LayoutElement> Column<W> {
         for tile in &mut self.tiles {
             tile.advance_animations();
         }
+
+        self.tab_indicator.advance_animations();
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.move_animation.is_some() || self.tiles.iter().any(Tile::are_animations_ongoing)
+        self.move_animation.is_some()
+            || self.tab_indicator.are_animations_ongoing()
+            || self.tiles.iter().any(Tile::are_animations_ongoing)
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
@@ -4375,6 +4396,14 @@ impl<W: LayoutElement> Column<W> {
             }
         }
 
+        // Animate the appearance of the tab indicator.
+        if display == ColumnDisplay::Tabbed {
+            self.tab_indicator.start_open_animation(
+                self.clock.clone(),
+                self.options.animations.window_movement.0,
+            );
+        }
+
         // Now switch the display mode for real.
         self.display_mode = display;
         self.update_tile_sizes(true);
@@ -4553,6 +4582,30 @@ impl<W: LayoutElement> Column<W> {
         let area_size = Size::from((tile.animated_tile_size().w, max_height));
 
         Rectangle::new(self.tiles_origin(), area_size)
+    }
+
+    pub fn start_open_animation(&mut self, id: &W::Id) -> bool {
+        for tile in &mut self.tiles {
+            if tile.window().id() == id {
+                tile.start_open_animation();
+
+                // Animate the appearance of the tab indicator.
+                if self.display_mode == ColumnDisplay::Tabbed
+                    && !self.is_fullscreen
+                    && self.tiles.len() == 1
+                    && !self.tab_indicator.config().hide_when_single_tab
+                {
+                    self.tab_indicator.start_open_animation(
+                        self.clock.clone(),
+                        self.options.animations.window_open.anim,
+                    );
+                }
+
+                return true;
+            }
+        }
+
+        false
     }
 
     #[cfg(test)]
