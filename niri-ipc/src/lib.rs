@@ -321,6 +321,14 @@ pub enum Action {
     SwapWindowRight {},
     /// Swap focused window with one to the left
     SwapWindowLeft {},
+    /// Toggle the focused column between normal and tabbed display.
+    ToggleColumnTabbedDisplay {},
+    /// Set the display mode of the focused column.
+    SetColumnDisplay {
+        /// Display mode to set.
+        #[cfg_attr(feature = "clap", arg())]
+        display: ColumnDisplay,
+    },
     /// Center the focused column on the screen.
     CenterColumn {},
     /// Center a window on the screen.
@@ -686,6 +694,16 @@ pub enum LayoutSwitchTarget {
     Prev,
     /// The specific layout by index.
     Index(u8),
+}
+
+/// How windows display in a column.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ColumnDisplay {
+    /// Windows are tiled vertically across the working area height.
+    Normal,
+    /// Windows are in tabs.
+    Tabbed,
 }
 
 /// Output actions that niri can perform.
@@ -1196,6 +1214,18 @@ impl FromStr for LayoutSwitchTarget {
                 Ok(layout) => Ok(Self::Index(layout)),
                 _ => Err(r#"invalid layout action, can be "next", "prev" or a layout index"#),
             },
+        }
+    }
+}
+
+impl FromStr for ColumnDisplay {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "normal" => Ok(Self::Normal),
+            "tabbed" => Ok(Self::Tabbed),
+            _ => Err(r#"invalid column display, can be "normal" or "tabbed""#),
         }
     }
 }

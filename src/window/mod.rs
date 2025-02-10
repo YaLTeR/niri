@@ -2,8 +2,9 @@ use std::cmp::{max, min};
 
 use niri_config::{
     BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, Match, PresetSize, ShadowRule,
-    WindowRule,
+    TabIndicatorRule, WindowRule,
 };
+use niri_ipc::ColumnDisplay;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Size};
 use smithay::wayland::compositor::with_states;
@@ -43,6 +44,9 @@ pub struct ResolvedWindowRules {
     /// - `Some(Some(height))`: set to a particular height.
     pub default_height: Option<Option<PresetSize>>,
 
+    /// Default column display for this window.
+    pub default_column_display: Option<ColumnDisplay>,
+
     /// Default floating position for this window.
     pub default_floating_position: Option<FloatingPosition>,
 
@@ -79,6 +83,8 @@ pub struct ResolvedWindowRules {
     pub border: BorderRule,
     /// Shadow overrides.
     pub shadow: ShadowRule,
+    /// Tab indicator overrides.
+    pub tab_indicator: TabIndicatorRule,
 
     /// Whether or not to draw the border with a solid background.
     ///
@@ -147,6 +153,7 @@ impl ResolvedWindowRules {
         Self {
             default_width: None,
             default_height: None,
+            default_column_display: None,
             default_floating_position: None,
             open_on_output: None,
             open_on_workspace: None,
@@ -185,6 +192,12 @@ impl ResolvedWindowRules {
                 draw_behind_window: None,
                 color: None,
                 inactive_color: None,
+            },
+            tab_indicator: TabIndicatorRule {
+                active_color: None,
+                inactive_color: None,
+                active_gradient: None,
+                inactive_gradient: None,
             },
             draw_border_with_background: None,
             opacity: None,
@@ -237,6 +250,10 @@ impl ResolvedWindowRules {
                     resolved.default_height = Some(x.0);
                 }
 
+                if let Some(x) = rule.default_column_display {
+                    resolved.default_column_display = Some(x);
+                }
+
                 if let Some(x) = rule.default_floating_position {
                     resolved.default_floating_position = Some(x);
                 }
@@ -281,6 +298,7 @@ impl ResolvedWindowRules {
                 resolved.focus_ring.merge_with(&rule.focus_ring);
                 resolved.border.merge_with(&rule.border);
                 resolved.shadow.merge_with(&rule.shadow);
+                resolved.tab_indicator.merge_with(&rule.tab_indicator);
 
                 if let Some(x) = rule.draw_border_with_background {
                     resolved.draw_border_with_background = Some(x);

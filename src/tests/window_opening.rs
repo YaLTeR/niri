@@ -405,6 +405,11 @@ post-map configures:
 
 #[test]
 fn target_size() {
+    if std::env::var_os("RUN_SLOW_TESTS").is_none() {
+        eprintln!("ignoring slow test");
+        return;
+    }
+
     // Here we test a massive powerset of settings that can affect the window size:
     //
     // * want fullscreen
@@ -413,6 +418,7 @@ fn target_size() {
     // * open-floating
     // * default-column-width
     // * border
+    // * default-column-display normal, tabbed
 
     let open_fullscreen = [None, Some("false"), Some("true")];
     let want_fullscreen = [
@@ -438,6 +444,7 @@ fn target_size() {
         Some(DefaultSize::Fixed("500")),
     ];
     let border = [false, true];
+    let tabbed = [false, true];
 
     let mut powerset = Vec::new();
     for fs in open_fullscreen {
@@ -447,7 +454,9 @@ fn target_size() {
                     for dw in default_column_width {
                         for dh in default_window_height {
                             for b in border {
-                                powerset.push((fs, wfs, om, of, dw, dh, b));
+                                for t in tabbed {
+                                    powerset.push((fs, wfs, om, of, dw, dh, b, t));
+                                }
                             }
                         }
                     }
@@ -458,11 +467,12 @@ fn target_size() {
 
     powerset
         .into_par_iter()
-        .for_each(|(fs, wfs, om, of, dw, dh, b)| {
-            check_target_size(fs, wfs, om, of, dw, dh, b);
+        .for_each(|(fs, wfs, om, of, dw, dh, b, t)| {
+            check_target_size(fs, wfs, om, of, dw, dh, b, t);
         });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_target_size(
     open_fullscreen: Option<&str>,
     want_fullscreen: WantFullscreen,
@@ -471,6 +481,7 @@ fn check_target_size(
     default_width: Option<DefaultSize>,
     default_height: Option<DefaultSize>,
     border: bool,
+    tabbed: bool,
 ) {
     let mut snapshot_desc = Vec::new();
     let mut snapshot_suffix = Vec::new();
@@ -529,6 +540,10 @@ window-rule {
         snapshot_suffix.push(String::from("b"));
     }
 
+    if tabbed {
+        writeln!(config, "    default-column-display \"tabbed\"").unwrap();
+    }
+
     config.push('}');
 
     match &want_fullscreen {
@@ -537,6 +552,18 @@ window-rule {
             snapshot_desc.push(format!("want fullscreen: {x}"));
             snapshot_suffix.push(format!("wfs{x}"));
         }
+    }
+
+    if tabbed {
+        config.push_str(
+            "\n
+layout {
+    tab-indicator {
+        place-within-column
+    }
+}",
+        );
+        snapshot_suffix.push(String::from("t"));
     }
 
     snapshot_desc.push(format!("config:{config}"));

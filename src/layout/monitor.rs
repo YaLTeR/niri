@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_ipc::SizeChange;
+use niri_ipc::{ColumnDisplay, SizeChange};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
@@ -14,7 +14,7 @@ use super::tile::Tile;
 use super::workspace::{
     OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId, WorkspaceRenderElement,
 };
-use super::{ActivateWindow, LayoutElement, Options};
+use super::{ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -732,6 +732,14 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().swap_window_in_direction(direction);
     }
 
+    pub fn toggle_column_tabbed_display(&mut self) {
+        self.active_workspace().toggle_column_tabbed_display();
+    }
+
+    pub fn set_column_display(&mut self, display: ColumnDisplay) {
+        self.active_workspace().set_column_display(display);
+    }
+
     pub fn center_column(&mut self) {
         self.active_workspace().center_column();
     }
@@ -1007,13 +1015,10 @@ impl<W: LayoutElement> Monitor<W> {
         Some((ws, bounds.loc))
     }
 
-    pub fn window_under(
-        &self,
-        pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
+    pub fn window_under(&self, pos_within_output: Point<f64, Logical>) -> Option<(&W, HitType)> {
         let (ws, offset) = self.workspace_under(pos_within_output)?;
-        let (win, win_pos) = ws.window_under(pos_within_output - offset)?;
-        Some((win, win_pos.map(|p| p + offset)))
+        let (win, hit) = ws.window_under(pos_within_output - offset)?;
+        Some((win, hit.offset_win_pos(offset)))
     }
 
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {

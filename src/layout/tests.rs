@@ -1,6 +1,9 @@
 use std::cell::Cell;
 
-use niri_config::{FloatOrInt, OutputName, WorkspaceName, WorkspaceReference};
+use niri_config::{
+    FloatOrInt, OutputName, TabIndicatorLength, TabIndicatorPosition, WorkspaceName,
+    WorkspaceReference,
+};
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use smithay::output::{Mode, PhysicalProperties, Subpixel};
@@ -320,6 +323,10 @@ fn arbitrary_scroll_direction() -> impl Strategy<Value = ScrollDirection> {
     prop_oneof![Just(ScrollDirection::Left), Just(ScrollDirection::Right)]
 }
 
+fn arbitrary_column_display() -> impl Strategy<Value = ColumnDisplay> {
+    prop_oneof![Just(ColumnDisplay::Normal), Just(ColumnDisplay::Tabbed)]
+}
+
 #[derive(Debug, Clone, Copy, Arbitrary)]
 enum Op {
     AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -406,6 +413,8 @@ enum Op {
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
     SwapWindowInDirection(#[proptest(strategy = "arbitrary_scroll_direction()")] ScrollDirection),
+    ToggleColumnTabbedDisplay,
+    SetColumnDisplay(#[proptest(strategy = "arbitrary_column_display()")] ColumnDisplay),
     CenterColumn,
     CenterWindow {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -969,6 +978,8 @@ impl Op {
             Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
             Op::ExpelWindowFromColumn => layout.expel_from_column(),
             Op::SwapWindowInDirection(direction) => layout.swap_window_in_direction(direction),
+            Op::ToggleColumnTabbedDisplay => layout.toggle_column_tabbed_display(),
+            Op::SetColumnDisplay(display) => layout.set_column_display(display),
             Op::CenterColumn => layout.center_column(),
             Op::CenterWindow { id } => {
                 let id = id.filter(|id| layout.has_window(id));
@@ -1462,6 +1473,7 @@ fn operations_dont_panic() {
         Op::ConsumeOrExpelWindowLeft { id: None },
         Op::ConsumeOrExpelWindowRight { id: None },
         Op::MoveWorkspaceToOutput(1),
+        Op::ToggleColumnTabbedDisplay,
     ];
 
     for third in every_op {
@@ -1636,6 +1648,7 @@ fn operations_from_starting_state_dont_panic() {
         Op::MoveWindowUpOrToWorkspaceUp,
         Op::ConsumeOrExpelWindowLeft { id: None },
         Op::ConsumeOrExpelWindowRight { id: None },
+        Op::ToggleColumnTabbedDisplay,
     ];
 
     for third in every_op {
@@ -3102,6 +3115,25 @@ fn preset_column_width_reset_after_set_width() {
     assert_eq!(win.requested_size().unwrap().w, 500);
 }
 
+#[test]
+fn disable_tabbed_mode_in_fullscreen() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: None },
+        Op::ToggleColumnTabbedDisplay,
+        Op::FullscreenWindow(0),
+        Op::ToggleColumnTabbedDisplay,
+    ];
+
+    check_ops(&ops);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;
@@ -3171,6 +3203,15 @@ fn arbitrary_center_focused_column() -> impl Strategy<Value = CenterFocusedColum
     ]
 }
 
+fn arbitrary_tab_indicator_position() -> impl Strategy<Value = TabIndicatorPosition> {
+    prop_oneof![
+        Just(TabIndicatorPosition::Left),
+        Just(TabIndicatorPosition::Right),
+        Just(TabIndicatorPosition::Top),
+        Just(TabIndicatorPosition::Bottom),
+    ]
+}
+
 prop_compose! {
     fn arbitrary_focus_ring()(
         off in any::<bool>(),
@@ -3211,12 +3252,36 @@ prop_compose! {
 }
 
 prop_compose! {
+    fn arbitrary_tab_indicator()(
+        off in any::<bool>(),
+        hide_when_single_tab in any::<bool>(),
+        place_within_column in any::<bool>(),
+        width in arbitrary_spacing(),
+        gap in arbitrary_spacing_neg(),
+        length in (0f64..2f64),
+        position in arbitrary_tab_indicator_position(),
+    ) -> niri_config::TabIndicator {
+        niri_config::TabIndicator {
+            off,
+            hide_when_single_tab,
+            place_within_column,
+            width: FloatOrInt(width),
+            gap: FloatOrInt(gap),
+            length: TabIndicatorLength { total_proportion: Some(length) },
+            position,
+            ..Default::default()
+        }
+    }
+}
+
+prop_compose! {
     fn arbitrary_options()(
         gaps in arbitrary_spacing(),
         struts in arbitrary_struts(),
         focus_ring in arbitrary_focus_ring(),
         border in arbitrary_border(),
         shadow in arbitrary_shadow(),
+        tab_indicator in arbitrary_tab_indicator(),
         center_focused_column in arbitrary_center_focused_column(),
         always_center_single_column in any::<bool>(),
         empty_workspace_above_first in any::<bool>(),
@@ -3230,6 +3295,7 @@ prop_compose! {
             focus_ring,
             border,
             shadow,
+            tab_indicator,
             ..Default::default()
         }
     }

@@ -10,8 +10,8 @@ use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::shadow::Shadow;
 use super::{
-    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options, SizeFrac,
-    RESIZE_ANIMATION_THRESHOLD,
+    HitType, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
+    SizeFrac, RESIZE_ANIMATION_THRESHOLD,
 };
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
@@ -83,6 +83,9 @@ pub struct Tile<W: LayoutElement> {
 
     /// The animation of a tile visually moving vertically.
     move_y_animation: Option<MoveAnimation>,
+
+    /// The animation of the tile's opacity.
+    pub(super) alpha_animation: Option<Animation>,
 
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
@@ -174,6 +177,7 @@ impl<W: LayoutElement> Tile<W> {
             resize_animation: None,
             move_x_animation: None,
             move_y_animation: None,
+            alpha_animation: None,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -310,6 +314,12 @@ impl<W: LayoutElement> Tile<W> {
                 self.move_y_animation = None;
             }
         }
+
+        if let Some(alpha) = &mut self.alpha_animation {
+            if alpha.is_done() {
+                self.alpha_animation = None;
+            }
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -317,10 +327,12 @@ impl<W: LayoutElement> Tile<W> {
             || self.resize_animation.is_some()
             || self.move_x_animation.is_some()
             || self.move_y_animation.is_some()
+            || self.alpha_animation.is_some()
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
+        let alpha = self.tile_alpha();
 
         let draw_border_with_background = rules
             .draw_border_with_background
@@ -345,6 +357,7 @@ impl<W: LayoutElement> Tile<W> {
             ),
             radius,
             self.scale,
+            alpha,
         );
 
         let radius = if self.is_fullscreen {
@@ -359,6 +372,7 @@ impl<W: LayoutElement> Tile<W> {
             is_active,
             radius,
             self.scale,
+            alpha,
         );
 
         let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
@@ -374,6 +388,7 @@ impl<W: LayoutElement> Tile<W> {
             view_rect,
             radius,
             self.scale,
+            alpha,
         );
     }
 
@@ -456,6 +471,31 @@ impl<W: LayoutElement> Tile<W> {
     pub fn stop_move_animations(&mut self) {
         self.move_x_animation = None;
         self.move_y_animation = None;
+    }
+
+    pub fn animate_alpha(&mut self, from: f64, to: f64, config: niri_config::Animation) {
+        let from = from.clamp(0., 1.);
+        let to = to.clamp(0., 1.);
+        let current = self.alpha_animation.take().map(|anim| anim.clamped_value());
+        let current = current.unwrap_or(from);
+        self.alpha_animation = Some(Animation::new(self.clock.clone(), current, to, 0., config));
+    }
+
+    pub fn ensure_alpha_animates_to_1(&mut self) {
+        if let Some(anim) = &self.alpha_animation {
+            if anim.to() != 1. {
+                // Cancel animation instead of starting a new one because the user likely wants to
+                // see the tile right away.
+                self.alpha_animation = None;
+            }
+        }
+    }
+
+    /// Opacity that applies to both window and decorations.
+    fn tile_alpha(&self) -> f32 {
+        self.alpha_animation
+            .as_ref()
+            .map_or(1., |anim| anim.clamped_value()) as f32
     }
 
     pub fn window(&self) -> &W {
@@ -569,7 +609,7 @@ impl<W: LayoutElement> Tile<W> {
         size
     }
 
-    fn animated_window_size(&self) -> Size<f64, Logical> {
+    pub fn animated_window_size(&self) -> Size<f64, Logical> {
         let mut size = self.window_size();
 
         if let Some(resize) = &self.resize_animation {
@@ -586,7 +626,7 @@ impl<W: LayoutElement> Tile<W> {
         size
     }
 
-    fn animated_tile_size(&self) -> Size<f64, Logical> {
+    pub fn animated_tile_size(&self) -> Size<f64, Logical> {
         let mut size = self.animated_window_size();
 
         if self.is_fullscreen {
@@ -612,14 +652,27 @@ impl<W: LayoutElement> Tile<W> {
         loc
     }
 
-    pub fn is_in_input_region(&self, mut point: Point<f64, Logical>) -> bool {
+    fn is_in_input_region(&self, mut point: Point<f64, Logical>) -> bool {
         point -= self.window_loc().to_f64();
         self.window.is_in_input_region(point)
     }
 
-    pub fn is_in_activation_region(&self, point: Point<f64, Logical>) -> bool {
+    fn is_in_activation_region(&self, point: Point<f64, Logical>) -> bool {
         let activation_region = Rectangle::from_size(self.tile_size());
         activation_region.contains(point)
+    }
+
+    pub fn hit(&self, point: Point<f64, Logical>) -> Option<HitType> {
+        if self.is_in_input_region(point) {
+            let win_pos = self.buf_loc();
+            Some(HitType::Input { win_pos })
+        } else if self.is_in_activation_region(point) {
+            Some(HitType::Activate {
+                is_tab_indicator: false,
+            })
+        } else {
+            None
+        }
     }
 
     pub fn request_tile_size(
@@ -729,11 +782,14 @@ impl<W: LayoutElement> Tile<W> {
     ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render_inner");
 
-        let alpha = if self.is_fullscreen || self.window.is_ignoring_opacity_window_rule() {
+        let win_alpha = if self.is_fullscreen || self.window.is_ignoring_opacity_window_rule() {
             1.
         } else {
             self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)
         };
+
+        let tile_alpha = self.tile_alpha();
+        let win_alpha = win_alpha * tile_alpha;
 
         let window_loc = self.window_loc();
         let window_size = self.window_size().to_f64();
@@ -753,7 +809,7 @@ impl<W: LayoutElement> Tile<W> {
         if let Some(resize) = &self.resize_animation {
             resize_popups = Some(
                 self.window
-                    .render_popups(renderer, window_render_loc, scale, alpha, target)
+                    .render_popups(renderer, window_render_loc, scale, win_alpha, target)
                     .into_iter()
                     .map(Into::into),
             );
@@ -803,7 +859,7 @@ impl<W: LayoutElement> Tile<W> {
                             resize.anim.clamped_value().clamp(0., 1.) as f32,
                             radius,
                             clip_to_geometry,
-                            alpha,
+                            win_alpha,
                         );
                         // FIXME: with split popups, this will use the resize element ID for
                         // popups, but we want the real IDs.
@@ -820,7 +876,7 @@ impl<W: LayoutElement> Tile<W> {
                     SolidColorRenderElement::from_buffer(
                         &fallback_buffer,
                         area.loc,
-                        alpha,
+                        win_alpha,
                         Kind::Unspecified,
                     )
                     .into(),
@@ -836,7 +892,7 @@ impl<W: LayoutElement> Tile<W> {
         if resize_shader.is_none() && resize_fallback.is_none() {
             let window = self
                 .window
-                .render(renderer, window_render_loc, scale, alpha, target);
+                .render(renderer, window_render_loc, scale, win_alpha, target);
 
             let geo = Rectangle::new(window_render_loc, window_size);
             let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
@@ -889,6 +945,7 @@ impl<W: LayoutElement> Tile<W> {
                             0.,
                             radius,
                             scale.x as f32,
+                            1.,
                         )
                         .with_location(geo.loc)
                         .into();
@@ -915,7 +972,7 @@ impl<W: LayoutElement> Tile<W> {
             SolidColorRenderElement::from_buffer(
                 &self.fullscreen_backdrop,
                 location,
-                1.,
+                tile_alpha,
                 Kind::Unspecified,
             )
             .into()
@@ -1023,6 +1080,14 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn take_unmap_snapshot(&mut self) -> Option<TileRenderSnapshot> {
         self.unmap_snapshot.take()
+    }
+
+    pub fn border(&self) -> &FocusRing {
+        &self.border
+    }
+
+    pub fn focus_ring(&self) -> &FocusRing {
+        &self.focus_ring
     }
 
     pub fn options(&self) -> &Rc<Options> {

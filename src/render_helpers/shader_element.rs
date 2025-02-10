@@ -227,12 +227,14 @@ impl ShaderRenderElement {
         size: Size<f64, Logical>,
         opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
         scale: f32,
+        alpha: f32,
         uniforms: Vec<Uniform<'static>>,
         textures: HashMap<String, GlesTexture>,
     ) {
         self.area.size = size;
         self.opaque_regions = opaque_regions.unwrap_or_default();
         self.scale = scale;
+        self.alpha = alpha;
         self.additional_uniforms = uniforms;
         self.textures = textures;
 
@@ -270,7 +272,7 @@ impl Element for ShaderRenderElement {
     }
 
     fn alpha(&self) -> f32 {
-        1.0
+        self.alpha
     }
 
     fn kind(&self) -> Kind {

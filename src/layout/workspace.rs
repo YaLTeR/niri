@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, OutputName, PresetSize, Workspace as WorkspaceConfig};
-use niri_ipc::{PositionChange, SizeChange};
+use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -19,7 +19,9 @@ use super::scrolling::{
     ScrollingSpaceRenderElement,
 };
 use super::tile::{Tile, TileRenderSnapshot};
-use super::{ActivateWindow, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac};
+use super::{
+    ActivateWindow, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
+};
 use crate::animation::Clock;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -575,10 +577,10 @@ impl<W: LayoutElement> Workspace<W> {
                         self.floating.add_tile_above(next_to, tile, activate);
                     } else {
                         // FIXME: use static pos
-                        let (next_to_tile, render_pos) = self
+                        let (next_to_tile, render_pos, _visible) = self
                             .scrolling
                             .tiles_with_render_positions()
-                            .find(|(tile, _)| tile.window().id() == next_to)
+                            .find(|(tile, _, _)| tile.window().id() == next_to)
                             .unwrap();
 
                         // Position the new tile in the center above the next_to tile. Think a
@@ -1020,6 +1022,20 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.swap_window_in_direction(direction);
     }
 
+    pub fn toggle_column_tabbed_display(&mut self) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.toggle_column_tabbed_display();
+    }
+
+    pub fn set_column_display(&mut self, display: ColumnDisplay) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.set_column_display(display);
+    }
+
     pub fn center_column(&mut self) {
         if self.floating_is_active.get() {
             self.floating.center_window(None);
@@ -1334,7 +1350,6 @@ impl<W: LayoutElement> Workspace<W> {
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
         let scrolling = self.scrolling.tiles_with_render_positions();
-        let scrolling = scrolling.map(|(tile, pos)| (tile, pos, true));
 
         let floating = self.floating.tiles_with_render_positions();
         let visible = self.is_floating_visible();
@@ -1459,27 +1474,23 @@ impl<W: LayoutElement> Workspace<W> {
             .start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
     }
 
-    pub fn window_under(
-        &self,
-        pos: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
-        self.tiles_with_render_positions()
-            .find_map(|(tile, tile_pos, visible)| {
-                if !visible {
-                    return None;
-                }
+    pub fn start_open_animation(&mut self, id: &W::Id) -> bool {
+        self.scrolling.start_open_animation(id) || self.floating.start_open_animation(id)
+    }
 
-                let pos_within_tile = pos - tile_pos;
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        // This logic is consistent with tiles_with_render_positions().
+        if self.is_floating_visible() {
+            if let Some(rv) = self
+                .floating
+                .tiles_with_render_positions()
+                .find_map(|(tile, tile_pos)| HitType::hit_tile(tile, tile_pos, pos))
+            {
+                return Some(rv);
+            }
+        }
 
-                if tile.is_in_input_region(pos_within_tile) {
-                    let pos_within_surface = tile_pos + tile.buf_loc();
-                    return Some((tile.window(), Some(pos_within_surface)));
-                } else if tile.is_in_activation_region(pos_within_tile) {
-                    return Some((tile.window(), None));
-                }
-
-                None
-            })
+        self.scrolling.window_under(pos)
     }
 
     pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
@@ -1493,9 +1504,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                 let pos_within_tile = pos - tile_pos;
 
-                if tile.is_in_input_region(pos_within_tile)
-                    || tile.is_in_activation_region(pos_within_tile)
-                {
+                if tile.hit(pos_within_tile).is_some() {
                     let size = tile.tile_size().to_f64();
 
                     let mut edges = ResizeEdge::empty();
@@ -1687,7 +1696,7 @@ impl<W: LayoutElement> Workspace<W> {
             );
         }
 
-        for (tile, tile_pos, _visible) in self.tiles_with_render_positions() {
+        for (tile, tile_pos, visible) in self.tiles_with_render_positions() {
             if Some(tile.window().id()) != move_win_id {
                 assert_eq!(tile.interactive_move_offset, Point::from((0., 0.)));
             }
@@ -1697,6 +1706,12 @@ impl<W: LayoutElement> Workspace<W> {
             // Tile positions must be rounded to physical pixels.
             assert_abs_diff_eq!(tile_pos.x, rounded_pos.x, epsilon = 1e-5);
             assert_abs_diff_eq!(tile_pos.y, rounded_pos.y, epsilon = 1e-5);
+
+            if let Some(anim) = &tile.alpha_animation {
+                if visible {
+                    assert_eq!(anim.to(), 1., "visible tiles can animate alpha only to 1");
+                }
+            }
         }
     }
 }
