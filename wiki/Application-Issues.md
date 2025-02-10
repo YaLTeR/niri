@@ -30,3 +30,22 @@ To fix this, run them with the `_JAVA_AWT_WM_NONREPARENTING=1` environment varia
 
 There's a bug in rofi-wayland that prevents it from accepting keyboard input on niri with errors in the output.
 It's been fixed in rofi, but the fix had not been released yet: https://github.com/davatorium/rofi/discussions/2008
+
+### Fullscreen games
+
+Some video games, both Linux-native and on Wine, have various issues when using non-stacking desktop environments.
+Most of these can be avoided with Valve's [gamescope](https://github.com/ValveSoftware/gamescope), for example:
+
+```sh
+gamescope -f -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor --backend sdl -- <game>
+```
+
+This command will run *<game>* in 1080p fullscreen – make sure to replace the width and height values to match your desired resolution.
+`--force-grab-cursor` forces gamescope to use relative mouse movement which prevents the cursor from escaping the game's window on multi-monitor setups.
+Note that `--backend sdl` is currently also required as gamescope's default Wayland backend doesn't lock the cursor properly (possibly related to [https://github.com/ValveSoftware/gamescope/issues/1711]).
+
+Steam users should use gamescope through a game's [launch options](https://help.steampowered.com/en/faqs/view/7D01-D2DD-D75E-2955) by replacing the game executable with `%command%`.
+Other game launchers such as [Lutris](https://lutris.net/) have their own ways of setting gamescope options.
+
+Running X11-based games with this method doesn't require Xwayland as gamescope creates its own Xwayland server.
+You can run Wayland-native games as well by passing `--expose-wayland` to gamescope, therefore eliminating X11 from the equation.
