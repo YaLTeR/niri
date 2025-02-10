@@ -1468,16 +1468,7 @@ impl<W: LayoutElement> Workspace<W> {
                     return None;
                 }
 
-                let pos_within_tile = pos - tile_pos;
-
-                if tile.is_in_input_region(pos_within_tile) {
-                    let win_pos = tile_pos + tile.buf_loc();
-                    return Some((tile.window(), HitType::Input { win_pos }));
-                } else if tile.is_in_activation_region(pos_within_tile) {
-                    return Some((tile.window(), HitType::Activate));
-                }
-
-                None
+                HitType::hit_tile(tile, tile_pos, pos)
             })
     }
 
@@ -1492,9 +1483,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                 let pos_within_tile = pos - tile_pos;
 
-                if tile.is_in_input_region(pos_within_tile)
-                    || tile.is_in_activation_region(pos_within_tile)
-                {
+                if tile.hit(pos_within_tile).is_some() {
                     let size = tile.tile_size().to_f64();
 
                     let mut edges = ResizeEdge::empty();
