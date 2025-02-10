@@ -455,7 +455,7 @@ pub struct PointContents {
     // border around the window.
     pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
-    pub window: Option<Window>,
+    pub window: Option<(Window, HitType)>,
     // If surface belongs to a layer surface, this is that layer surface.
     pub layer: Option<LayerSurface>,
 }
@@ -2720,7 +2720,7 @@ impl Niri {
                     } else {
                         None
                     };
-                    (surface_and_pos, (Some(window.clone()), None))
+                    (surface_and_pos, (Some((window.clone(), hit)), None))
                 })
         };
 
@@ -5060,6 +5060,8 @@ impl Niri {
 
         if let Some(window) = &new_focus.window {
             if current_focus.window.as_ref() != Some(window) {
+                let (window, _) = window;
+
                 if !self.layout.should_trigger_focus_follows_mouse_on(window) {
                     return;
                 }

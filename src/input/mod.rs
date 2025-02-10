@@ -2451,7 +2451,7 @@ impl State {
 
                     if let Some(pos) = self.niri.tablet_cursor_location {
                         let under = self.niri.contents_under(pos);
-                        if let Some(window) = under.window {
+                        if let Some((window, _)) = under.window {
                             self.niri.layout.activate_window(&window);
 
                             // FIXME: granular.
@@ -2823,7 +2823,7 @@ impl State {
         let under = self.niri.contents_under(touch_location);
 
         if !handle.is_grabbed() {
-            if let Some(window) = under.window {
+            if let Some((window, _)) = under.window {
                 self.niri.layout.activate_window(&window);
 
                 // Check if we need to start an interactive move.
