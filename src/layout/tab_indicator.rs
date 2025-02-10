@@ -133,8 +133,7 @@ impl TabIndicator {
         // Tab count, should match the tabs iterator length.
         tab_count: usize,
         tabs: impl Iterator<Item = TabInfo>,
-        // TODO: do we indicate inactive-but-selected somehow?
-        _is_active: bool,
+        is_active: bool,
         scale: f64,
     ) {
         if !enabled || self.config.off {
@@ -166,12 +165,19 @@ impl TabIndicator {
             };
             gradient_area.loc -= *loc;
 
+            let mut color_from = tab.gradient.from;
+            let mut color_to = tab.gradient.to;
+            if !is_active {
+                color_from *= 0.5;
+                color_to *= 0.5;
+            }
+
             shader.update(
                 rect.size,
                 gradient_area,
                 tab.gradient.in_,
-                tab.gradient.from,
-                tab.gradient.to,
+                color_from,
+                color_to,
                 ((tab.gradient.angle as f32) - 90.).to_radians(),
                 Rectangle::from_size(rect.size),
                 0.,
