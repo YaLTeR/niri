@@ -10,8 +10,8 @@ use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::shadow::Shadow;
 use super::{
-    LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options, SizeFrac,
-    RESIZE_ANIMATION_THRESHOLD,
+    HitType, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
+    SizeFrac, RESIZE_ANIMATION_THRESHOLD,
 };
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
@@ -606,14 +606,25 @@ impl<W: LayoutElement> Tile<W> {
         loc
     }
 
-    pub fn is_in_input_region(&self, mut point: Point<f64, Logical>) -> bool {
+    fn is_in_input_region(&self, mut point: Point<f64, Logical>) -> bool {
         point -= self.window_loc().to_f64();
         self.window.is_in_input_region(point)
     }
 
-    pub fn is_in_activation_region(&self, point: Point<f64, Logical>) -> bool {
+    fn is_in_activation_region(&self, point: Point<f64, Logical>) -> bool {
         let activation_region = Rectangle::from_size(self.tile_size());
         activation_region.contains(point)
+    }
+
+    pub fn hit(&self, point: Point<f64, Logical>) -> Option<HitType> {
+        if self.is_in_input_region(point) {
+            let win_pos = self.buf_loc();
+            Some(HitType::Input { win_pos })
+        } else if self.is_in_activation_region(point) {
+            Some(HitType::Activate)
+        } else {
+            None
+        }
     }
 
     pub fn request_tile_size(

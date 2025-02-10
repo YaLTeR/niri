@@ -507,6 +507,16 @@ impl HitType {
         }
         self
     }
+
+    pub fn hit_tile<W: LayoutElement>(
+        tile: &Tile<W>,
+        tile_pos: Point<f64, Logical>,
+        point: Point<f64, Logical>,
+    ) -> Option<(&W, Self)> {
+        let pos_within_tile = point - tile_pos;
+        tile.hit(pos_within_tile)
+            .map(|hit| (tile.window(), hit.offset_win_pos(tile_pos)))
+    }
 }
 
 impl Options {
@@ -2191,16 +2201,7 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             let tile_pos = move_.tile_render_location();
-            let pos_within_tile = pos_within_output - tile_pos;
-
-            if move_.tile.is_in_input_region(pos_within_tile) {
-                let win_pos = tile_pos + move_.tile.buf_loc();
-                return Some((move_.tile.window(), HitType::Input { win_pos }));
-            } else if move_.tile.is_in_activation_region(pos_within_tile) {
-                return Some((move_.tile.window(), HitType::Activate));
-            }
-
-            return None;
+            return HitType::hit_tile(&move_.tile, tile_pos, pos_within_output);
         };
 
         let mon = monitors.iter().find(|mon| &mon.output == output)?;
