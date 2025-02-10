@@ -761,6 +761,8 @@ pub struct Cursor {
     pub xcursor_size: u8,
     #[knuffel(child)]
     pub hide_when_typing: bool,
+    #[knuffel(child)]
+    pub keep_focus_when_hidden: bool,
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
 }
@@ -771,6 +773,7 @@ impl Default for Cursor {
             xcursor_theme: String::from("default"),
             xcursor_size: 24,
             hide_when_typing: false,
+            keep_focus_when_hidden: false,
             hide_after_inactive_ms: None,
         }
     }
@@ -3766,6 +3769,7 @@ mod tests {
                     xcursor_size: 16,
                     hide_when_typing: true,
                     hide_after_inactive_ms: Some(3000),
+                    keep_focus_when_hidden: false
                 },
                 screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
                 clipboard: Clipboard {
