@@ -6,6 +6,7 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::tile::Tile;
 use super::LayoutElement;
+use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -15,6 +16,7 @@ use crate::utils::{floor_logical_in_physical_max1, round_logical_in_physical};
 pub struct TabIndicator {
     shader_locs: Vec<Point<f64, Logical>>,
     shaders: Vec<BorderRenderElement>,
+    open_anim: Option<Animation>,
     config: niri_config::TabIndicator,
 }
 
@@ -37,6 +39,7 @@ impl TabIndicator {
         Self {
             shader_locs: Vec::new(),
             shaders: Vec::new(),
+            open_anim: None,
             config,
         }
     }
@@ -51,6 +54,22 @@ impl TabIndicator {
         }
     }
 
+    pub fn advance_animations(&mut self) {
+        if let Some(anim) = &mut self.open_anim {
+            if anim.is_done() {
+                self.open_anim = None;
+            }
+        }
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        self.open_anim.is_some()
+    }
+
+    pub fn start_open_animation(&mut self, clock: Clock, config: niri_config::Animation) {
+        self.open_anim = Some(Animation::new(clock, 0., 1., 0., config));
+    }
+
     fn tab_rects(
         &self,
         area: Rectangle<f64, Logical>,
@@ -58,6 +77,8 @@ impl TabIndicator {
         scale: f64,
     ) -> impl Iterator<Item = Rectangle<f64, Logical>> {
         let round = |logical: f64| round_logical_in_physical(scale, logical);
+
+        let progress = self.open_anim.as_ref().map_or(1., |a| a.value().max(0.));
 
         let width = round(self.config.width.0);
         let gap = round(self.config.gap.0);
@@ -71,13 +92,20 @@ impl TabIndicator {
         let total_prop = self.config.length.total_proportion.unwrap_or(0.5);
         let min_length = round(side * total_prop.clamp(0., 2.));
 
+        // Compute px_per_tab before applying the animation to gaps_between in order to avoid it
+        // growing and shrinking over the duration of the animation.
         let pixel = 1. / scale;
         let shortest_length = count as f64 * (pixel + gaps_between) - gaps_between;
         let length = f64::max(min_length, shortest_length);
         let px_per_tab = (length + gaps_between) / count as f64 - gaps_between;
+
+        let px_per_tab = px_per_tab * progress;
+        let gaps_between = round(self.config.gaps_between_tabs.0 * progress);
+
+        let length = count as f64 * (px_per_tab + gaps_between) - gaps_between;
         let px_per_tab = floor_logical_in_physical_max1(scale, px_per_tab);
         let floored_length = count as f64 * (px_per_tab + gaps_between) - gaps_between;
-        let mut ones_left = ((length - floored_length) / pixel).max(0.).round() as usize;
+        let mut ones_left = ((length - floored_length) / pixel).round() as usize;
 
         let mut shader_loc = Point::from((-gap - width, round((side - length) / 2.)));
         match position {

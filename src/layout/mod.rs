@@ -4112,11 +4112,8 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         for ws in self.workspaces_mut() {
-            for tile in ws.tiles_mut() {
-                if tile.window().id() == window {
-                    tile.start_open_animation();
-                    return;
-                }
+            if ws.start_open_animation(window) {
+                return;
             }
         }
     }
