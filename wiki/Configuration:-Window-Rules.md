@@ -34,6 +34,7 @@ window-rule {
     match is-focused=false
     match is-active-in-column=true
     match is-floating=true
+    match is-window-cast-target=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -238,6 +239,42 @@ window-rule {
     match is-floating=true
 }
 ```
+
+#### `is-window-cast-target`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches `true` for windows that are target of an ongoing window screencast.
+
+```kdl
+// Indicate screencasted windows with red colors.
+window-rule {
+    match is-window-cast-target=true
+
+    focus-ring {
+        active-color "#f38ba8"
+        inactive-color "#7d0d2d"
+    }
+
+    border {
+        inactive-color "#7d0d2d"
+    }
+
+    shadow {
+        color "#7d0d2d70"
+    }
+
+    tab-indicator {
+        active-color "#f38ba8"
+        inactive-color "#7d0d2d"
+    }
+}
+```
+
+Example:
+
+![](https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893)
 
 #### `at-startup`
 

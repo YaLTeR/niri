@@ -642,13 +642,18 @@ impl State {
         self.niri.refresh_idle_inhibit();
         self.refresh_pointer_contents();
         foreign_toplevel::refresh(self);
+
+        #[cfg(feature = "xdp-gnome-screencast")]
+        self.niri.refresh_mapped_cast_outputs();
+        // Should happen before refresh_window_rules(), but after anything that can start or stop
+        // screencasts.
+        #[cfg(feature = "xdp-gnome-screencast")]
+        self.niri.refresh_mapped_cast_window_rules();
+
         self.niri.refresh_window_rules();
         self.refresh_ipc_outputs();
         self.ipc_refresh_layout();
         self.ipc_refresh_keyboard_layout_index();
-
-        #[cfg(feature = "xdp-gnome-screencast")]
-        self.niri.refresh_mapped_cast_outputs();
     }
 
     fn notify_blocker_cleared(&mut self) {
@@ -3254,6 +3259,20 @@ impl Niri {
         for output in outputs {
             self.queue_redraw(&output);
         }
+    }
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub fn refresh_mapped_cast_window_rules(&mut self) {
+        // O(N^2) but should be fine since there aren't many casts usually.
+        self.layout.with_windows_mut(|mapped, _| {
+            let id = mapped.id().get();
+            // Find regardless of cast.is_active.
+            let value = self
+                .casts
+                .iter()
+                .any(|cast| cast.target == (CastTarget::Window { id }));
+            mapped.set_is_window_cast_target(value);
+        });
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]

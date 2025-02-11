@@ -1210,6 +1210,8 @@ pub struct Match {
     #[knuffel(property)]
     pub is_floating: Option<bool>,
     #[knuffel(property)]
+    pub is_window_cast_target: Option<bool>,
+    #[knuffel(property)]
     pub at_startup: Option<bool>,
 }
 
@@ -3948,6 +3950,7 @@ mod tests {
                         is_focused: None,
                         is_active_in_column: None,
                         is_floating: None,
+                        is_window_cast_target: None,
                         at_startup: None,
                     }],
                     excludes: vec![
@@ -3958,6 +3961,7 @@ mod tests {
                             is_focused: None,
                             is_active_in_column: None,
                             is_floating: None,
+                            is_window_cast_target: None,
                             at_startup: None,
                         },
                         Match {
@@ -3967,6 +3971,7 @@ mod tests {
                             is_focused: Some(false),
                             is_active_in_column: None,
                             is_floating: None,
+                            is_window_cast_target: None,
                             at_startup: None,
                         },
                     ],
