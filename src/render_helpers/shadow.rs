@@ -28,6 +28,7 @@ struct Parameters {
     corner_radius: CornerRadius,
     // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
     scale: f32,
+    alpha: f32,
 
     window_geometry: Rectangle<f64, Logical>,
     window_corner_radius: CornerRadius,
@@ -44,6 +45,7 @@ impl ShadowRenderElement {
         scale: f32,
         window_geometry: Rectangle<f64, Logical>,
         window_corner_radius: CornerRadius,
+        alpha: f32,
     ) -> Self {
         let inner = ShaderRenderElement::empty(ProgramType::Shadow, Kind::Unspecified);
         let mut rv = Self {
@@ -55,6 +57,7 @@ impl ShadowRenderElement {
                 sigma,
                 corner_radius,
                 scale,
+                alpha,
                 window_geometry,
                 window_corner_radius,
             },
@@ -74,6 +77,7 @@ impl ShadowRenderElement {
                 sigma: 0.,
                 corner_radius: Default::default(),
                 scale: 1.,
+                alpha: 1.,
                 window_geometry: Default::default(),
                 window_corner_radius: Default::default(),
             },
@@ -95,12 +99,14 @@ impl ShadowRenderElement {
         scale: f32,
         window_geometry: Rectangle<f64, Logical>,
         window_corner_radius: CornerRadius,
+        alpha: f32,
     ) {
         let params = Parameters {
             size,
             geometry,
             color,
             sigma,
+            alpha,
             corner_radius,
             scale,
             window_geometry,
@@ -120,6 +126,7 @@ impl ShadowRenderElement {
             geometry,
             color,
             sigma,
+            alpha,
             corner_radius,
             scale,
             window_geometry,
@@ -145,6 +152,7 @@ impl ShadowRenderElement {
             size,
             None,
             scale,
+            alpha,
             vec![
                 Uniform::new("shadow_color", color.to_array_premul()),
                 Uniform::new("sigma", sigma),

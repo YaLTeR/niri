@@ -13,7 +13,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
-use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId};
+use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId, SurfaceData};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 use wayland_backend::server::Credentials;
@@ -60,6 +60,17 @@ pub struct Mapped {
     /// immediately, rather than setting this flag.
     need_to_recompute_rules: bool,
 
+    /// Whether this window needs a configure this loop cycle.
+    ///
+    /// Certain Wayland requests require a configure in response, like un/fullscreen.
+    needs_configure: bool,
+
+    /// Whether this window needs a frame callback.
+    ///
+    /// We set this after sending a configure to give invisible windows a chance to respond to
+    /// resizes immediately, without waiting for a 1 second throttled callback.
+    needs_frame_callback: bool,
+
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
@@ -68,6 +79,9 @@ pub struct Mapped {
 
     /// Whether this window is floating.
     is_floating: bool,
+
+    /// Whether this window is a target of a window cast.
+    is_window_cast_target: bool,
 
     /// Whether this window should ignore opacity set through window rules.
     ignore_opacity_window_rule: bool,
@@ -84,6 +98,7 @@ pub struct Mapped {
     /// Snapshot right before an animated commit.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
 
+    /// State for the logic to request a size once (for floating windows).
     request_size_once: Option<RequestSizeOnce>,
 
     /// Transaction that the next configure should take part in, if any.
@@ -151,10 +166,14 @@ impl InteractiveResize {
     }
 }
 
+/// Request-size-once logic state.
 #[derive(Debug, Clone, Copy)]
 enum RequestSizeOnce {
+    /// Waiting for configure to be sent with the requested size.
     WaitingForConfigure,
+    /// Waiting for the window to commit in response to the configure.
     WaitingForCommit(Serial),
+    /// When configuring, use the current window size.
     UseWindowSize,
 }
 
@@ -170,9 +189,12 @@ impl Mapped {
             pre_commit_hook: hook,
             rules,
             need_to_recompute_rules: false,
+            needs_configure: false,
+            needs_frame_callback: false,
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
+            is_window_cast_target: false,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
@@ -222,6 +244,10 @@ impl Mapped {
         self.recompute_window_rules(rules, is_at_startup)
     }
 
+    pub fn set_needs_configure(&mut self) {
+        self.needs_configure = true;
+    }
+
     pub fn id(&self) -> MappedId {
         self.id
     }
@@ -242,6 +268,10 @@ impl Mapped {
         self.is_floating
     }
 
+    pub fn is_window_cast_target(&self) -> bool {
+        self.is_window_cast_target
+    }
+
     pub fn toggle_ignore_opacity_window_rule(&mut self) {
         self.ignore_opacity_window_rule = !self.ignore_opacity_window_rule;
     }
@@ -252,6 +282,15 @@ impl Mapped {
         }
 
         self.is_focused = is_focused;
+        self.need_to_recompute_rules = true;
+    }
+
+    pub fn set_is_window_cast_target(&mut self, value: bool) {
+        if self.is_window_cast_target == value {
+            return;
+        }
+
+        self.is_window_cast_target = value;
         self.need_to_recompute_rules = true;
     }
 
@@ -392,6 +431,7 @@ impl Mapped {
                         0.,
                         radius,
                         scale.x as f32,
+                        1.,
                     )
                     .with_location(geo.loc)
                     .into();
@@ -408,6 +448,31 @@ impl Mapped {
 
     pub fn update_focus_timestamp(&mut self, timestamp: Instant) {
         self.most_recent_focus.replace(timestamp);
+    }
+
+    pub fn send_frame<T, F>(
+        &mut self,
+        output: &Output,
+        time: T,
+        throttle: Option<Duration>,
+        mut primary_scan_out_output: F,
+    ) where
+        T: Into<Duration>,
+        F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
+    {
+        let needs_frame_callback = self.needs_frame_callback;
+        self.needs_frame_callback = false;
+
+        let should_send = move |surface: &WlSurface, states: &SurfaceData| {
+            // Let primary_scan_out_output() run its logic and update internal state.
+            if let Some(output) = primary_scan_out_output(surface, states) {
+                return Some(output);
+            }
+
+            // Send unconditionally to all surfaces if the window needs a surface callback.
+            needs_frame_callback.then(|| output.clone())
+        };
+        self.window.send_frame(output, time, throttle, should_send);
     }
 }
 
@@ -740,6 +805,11 @@ impl LayoutElement for Mapped {
         let _span =
             trace_span!("configure_intent", surface = ?self.toplevel().wl_surface().id()).entered();
 
+        if self.needs_configure {
+            trace!("the window needs_configure");
+            return ConfigureIntent::ShouldSend;
+        }
+
         with_toplevel_role(self.toplevel(), |attributes| {
             if let Some(server_pending) = &attributes.server_pending {
                 let current_server = attributes.current_server_state();
@@ -790,24 +860,26 @@ impl LayoutElement for Mapped {
         let _span =
             trace_span!("send_pending_configure", surface = ?toplevel.wl_surface().id()).entered();
 
-        // Check for pending changes manually to account for RequestSizeOnce::UseWindowSize.
-        let has_pending_changes = with_toplevel_role(self.toplevel(), |role| {
-            if role.server_pending.is_none() {
-                return false;
-            }
+        // If the window needs a configure, send it regardless.
+        let has_pending_changes = self.needs_configure
+            || with_toplevel_role(self.toplevel(), |role| {
+                // Check for pending changes manually to account for RequestSizeOnce::UseWindowSize.
+                if role.server_pending.is_none() {
+                    return false;
+                }
 
-            let current_server_size = role.current_server_state().size;
-            let server_pending = role.server_pending.as_mut().unwrap();
+                let current_server_size = role.current_server_state().size;
+                let server_pending = role.server_pending.as_mut().unwrap();
 
-            // With UseWindowSize, we do not consider size-only changes, because we will
-            // request the current window size and do not expect it to actually change.
-            if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
-                server_pending.size = current_server_size;
-            }
+                // With UseWindowSize, we do not consider size-only changes, because we will
+                // request the current window size and do not expect it to actually change.
+                if let Some(RequestSizeOnce::UseWindowSize) = self.request_size_once {
+                    server_pending.size = current_server_size;
+                }
 
-            let server_pending = role.server_pending.as_ref().unwrap();
-            server_pending != role.current_server_state()
-        });
+                let server_pending = role.server_pending.as_ref().unwrap();
+                server_pending != role.current_server_state()
+            });
 
         if has_pending_changes {
             // If needed, replace the pending size with the current window size.
@@ -820,6 +892,14 @@ impl LayoutElement for Mapped {
 
             let serial = toplevel.send_configure();
             trace!(?serial, "sending configure");
+
+            self.needs_configure = false;
+
+            // Send the window a frame callback unconditionally to let it respond to size changes
+            // and such immediately, even when it's hidden. This especially matters for cases like
+            // tabbed columns which compute their width based on all windows in the column, even
+            // hidden ones.
+            self.needs_frame_callback = true;
 
             if self.animate_next_configure {
                 self.animate_serials.push(serial);

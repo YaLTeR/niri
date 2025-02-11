@@ -854,3 +854,30 @@ window-rule {
         @"size: 300 × 100, bounds: 1920 × 1080, states: [Activated]"
     );
 }
+
+#[test]
+fn unfullscreen_to_floating_doesnt_send_extra_configure() {
+    let (mut f, id, surface) = set_up();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.roundtrip(id);
+
+    // Fullscreen.
+    let window = f.client(id).window(&surface);
+    window.set_fullscreen(None);
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Unfullscreen via the window request which requires a configure response.
+    let window = f.client(id).window(&surface);
+    window.unset_fullscreen();
+    f.double_roundtrip(id);
+
+    // This should configure only once and not twice.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 936 × 1048, bounds: 1920 × 1080, states: [Activated]"
+    );
+}

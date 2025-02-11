@@ -34,6 +34,7 @@ window-rule {
     match is-focused=false
     match is-active-in-column=true
     match is-floating=true
+    match is-window-cast-target=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -52,6 +53,7 @@ window-rule {
     block-out-from "screencast"
     // block-out-from "screen-capture"
     variable-refresh-rate true
+    default-column-display "tabbed"
     default-floating-position x=100 y=200 relative-to="bottom-left"
     scroll-factor 0.75
 
@@ -78,6 +80,13 @@ window-rule {
         draw-behind-window true
         color "#00000064"
         // inactive-color "#00000064"
+    }
+
+    tab-indicator {
+        active-color "red"
+        inactive-color "gray"
+        // active-gradient from="#80c8ff" to="#bbddff" angle=45
+        // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
     }
 
     geometry-corner-radius 12
@@ -230,6 +239,46 @@ window-rule {
     match is-floating=true
 }
 ```
+
+#### `is-window-cast-target`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches `true` for windows that are target of an ongoing window screencast.
+
+> [!NOTE]
+> This only matches individual-window screencasts.
+> It will not match windows that happen to be visible in a monitor screencast, for example.
+
+```kdl
+// Indicate screencasted windows with red colors.
+window-rule {
+    match is-window-cast-target=true
+
+    focus-ring {
+        active-color "#f38ba8"
+        inactive-color "#7d0d2d"
+    }
+
+    border {
+        inactive-color "#7d0d2d"
+    }
+
+    shadow {
+        color "#7d0d2d70"
+    }
+
+    tab-indicator {
+        active-color "#f38ba8"
+        inactive-color "#7d0d2d"
+    }
+}
+```
+
+Example:
+
+![](https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893)
 
 #### `at-startup`
 
@@ -493,11 +542,11 @@ This is applied on top of the window's own opacity, so semitransparent windows w
 
 Opacity is applied to every surface of the window individually, so subsurfaces and pop-up menus will show window content behind them.
 
-Opacity can be toggled on or off for a window using the [`toggle-window-rule-opacity`](./Configuration:-Key-Bindings.md) action.
-
 ![Screenshot showing Adwaita Demo with a semitransparent pop-up menu.](./img/opacity-popup.png)
 
 Also, focus ring and border with background will show through semitransparent windows (see `prefer-no-csd` and the `draw-border-with-background` window rule below).
+
+Opacity can be toggled on or off for a window using the [`toggle-window-rule-opacity`](./Configuration:-Key-Bindings.md) action.
 
 ```kdl
 // Make inactive windows semitransparent.
@@ -525,6 +574,27 @@ window-rule {
     match app-id="^mpv$"
 
     variable-refresh-rate true
+}
+```
+
+#### `default-column-display`
+
+<sup>Since: next release</sup>
+
+Set the default display mode for columns created from this window.
+
+This is used any time a window goes into its own column.
+For example:
+- Opening a new window.
+- Expelling a window into its own column.
+- Moving a window from the floating layout to the tiling layout.
+
+```kdl
+// Make Evince windows open as tabbed columns.
+window-rule {
+    match app-id="^evince$"
+
+    default-column-display "tabbed"
 }
 ```
 
@@ -627,7 +697,7 @@ window-rule {
 
 Override the shadow options for the window.
 
-These rules have the same options as the normal shadow config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+This rule has the same options as the normal shadow config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
 
 However, in addition to `on` to enable the shadow, this window rule has an `off` flag that disables the shadow for the window even if it was otherwise enabled.
 The `on` flag has precedence over the `off` flag, in case both are set.
@@ -636,9 +706,28 @@ The `on` flag has precedence over the `off` flag, in case both are set.
 // Turn on shadows for floating windows.
 window-rule {
     match is-floating=true
-    
+
     shadow {
         on
+    }
+}
+```
+
+#### `tab-indicator`
+
+<sup>Since: next release</sup>
+
+Override the tab indicator options for the window.
+
+Options in this rule match the same options as the normal tab indicator config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+
+```kdl
+// Make KeePassXC tab have a dark red inactive color.
+window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+
+    tab-indicator {
+        inactive-color "darkred"
     }
 }
 ```

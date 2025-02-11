@@ -3,7 +3,7 @@ extern crate tracing;
 
 use std::collections::HashSet;
 use std::ffi::OsStr;
-use std::ops::Mul;
+use std::ops::{Mul, MulAssign};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
@@ -14,7 +14,7 @@ use knuffel::Decode as _;
 use layer_rule::LayerRule;
 use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
 use niri_ipc::{
-    ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
+    ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
     WorkspaceReferenceArg,
 };
 use smithay::backend::renderer::Color32F;
@@ -187,6 +187,8 @@ pub struct Touchpad {
     pub dwt: bool,
     #[knuffel(child)]
     pub dwtp: bool,
+    #[knuffel(child)]
+    pub drag_lock: bool,
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument, str))]
@@ -447,6 +449,8 @@ pub struct Layout {
     #[knuffel(child, default)]
     pub shadow: Shadow,
     #[knuffel(child, default)]
+    pub tab_indicator: TabIndicator,
+    #[knuffel(child, default)]
     pub insert_hint: InsertHint,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetSize>,
@@ -460,6 +464,8 @@ pub struct Layout {
     pub always_center_single_column: bool,
     #[knuffel(child)]
     pub empty_workspace_above_first: bool,
+    #[knuffel(child, unwrap(argument, str), default = Self::default().default_column_display)]
+    pub default_column_display: ColumnDisplay,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
     pub gaps: FloatOrInt<0, 65535>,
     #[knuffel(child, default)]
@@ -472,12 +478,14 @@ impl Default for Layout {
             focus_ring: Default::default(),
             border: Default::default(),
             shadow: Default::default(),
+            tab_indicator: Default::default(),
             insert_hint: Default::default(),
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
+            default_column_display: ColumnDisplay::Normal,
             gaps: FloatOrInt(16.),
             struts: Default::default(),
             preset_window_heights: Default::default(),
@@ -532,6 +540,18 @@ pub struct Gradient {
     pub relative_to: GradientRelativeTo,
     #[knuffel(property(name = "in"), str, default)]
     pub in_: GradientInterpolation,
+}
+
+impl From<Color> for Gradient {
+    fn from(value: Color) -> Self {
+        Self {
+            from: value,
+            to: value,
+            angle: 0,
+            relative_to: GradientRelativeTo::Window,
+            in_: GradientInterpolation::default(),
+        }
+    }
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -664,6 +684,69 @@ pub struct ShadowOffset {
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct TabIndicator {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub hide_when_single_tab: bool,
+    #[knuffel(child)]
+    pub place_within_column: bool,
+    #[knuffel(child, unwrap(argument), default = Self::default().gap)]
+    pub gap: FloatOrInt<-65535, 65535>,
+    #[knuffel(child, unwrap(argument), default = Self::default().width)]
+    pub width: FloatOrInt<0, 65535>,
+    #[knuffel(child, default = Self::default().length)]
+    pub length: TabIndicatorLength,
+    #[knuffel(child, unwrap(argument), default = Self::default().position)]
+    pub position: TabIndicatorPosition,
+    #[knuffel(child, unwrap(argument), default = Self::default().gaps_between_tabs)]
+    pub gaps_between_tabs: FloatOrInt<0, 65535>,
+    #[knuffel(child)]
+    pub active_color: Option<Color>,
+    #[knuffel(child)]
+    pub inactive_color: Option<Color>,
+    #[knuffel(child)]
+    pub active_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub inactive_gradient: Option<Gradient>,
+}
+
+impl Default for TabIndicator {
+    fn default() -> Self {
+        Self {
+            off: false,
+            hide_when_single_tab: false,
+            place_within_column: false,
+            gap: FloatOrInt(5.),
+            width: FloatOrInt(4.),
+            length: TabIndicatorLength {
+                total_proportion: Some(0.5),
+            },
+            position: TabIndicatorPosition::Left,
+            gaps_between_tabs: FloatOrInt(0.),
+            active_color: None,
+            inactive_color: None,
+            active_gradient: None,
+            inactive_gradient: None,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct TabIndicatorLength {
+    #[knuffel(property)]
+    pub total_proportion: Option<f64>,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+pub enum TabIndicatorPosition {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct InsertHint {
     #[knuffel(child)]
     pub off: bool,
@@ -740,6 +823,12 @@ impl Mul<f32> for Color {
     fn mul(mut self, rhs: f32) -> Self::Output {
         self.a *= rhs;
         self
+    }
+}
+
+impl MulAssign<f32> for Color {
+    fn mul_assign(&mut self, rhs: f32) {
+        self.a *= rhs;
     }
 }
 
@@ -1088,6 +1177,8 @@ pub struct WindowRule {
     pub border: BorderRule,
     #[knuffel(child, default)]
     pub shadow: ShadowRule,
+    #[knuffel(child, default)]
+    pub tab_indicator: TabIndicatorRule,
     #[knuffel(child, unwrap(argument))]
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -1100,6 +1191,8 @@ pub struct WindowRule {
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, unwrap(argument))]
     pub variable_refresh_rate: Option<bool>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub default_column_display: Option<ColumnDisplay>,
     #[knuffel(child)]
     pub default_floating_position: Option<FloatingPosition>,
     #[knuffel(child, unwrap(argument))]
@@ -1120,6 +1213,8 @@ pub struct Match {
     pub is_active_in_column: Option<bool>,
     #[knuffel(property)]
     pub is_floating: Option<bool>,
+    #[knuffel(property)]
+    pub is_window_cast_target: Option<bool>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
 }
@@ -1185,6 +1280,18 @@ pub struct ShadowRule {
     pub color: Option<Color>,
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct TabIndicatorRule {
+    #[knuffel(child)]
+    pub active_color: Option<Color>,
+    #[knuffel(child)]
+    pub inactive_color: Option<Color>,
+    #[knuffel(child)]
+    pub active_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub inactive_gradient: Option<Gradient>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -1313,6 +1420,7 @@ pub enum Action {
     FullscreenWindowById(u64),
     #[knuffel(skip)]
     FocusWindow(u64),
+    FocusWindowInColumn(#[knuffel(argument)] u8),
     FocusWindowPrevious,
     #[knuffel(skip)]
     FocusWindowMruNext,
@@ -1336,6 +1444,10 @@ pub enum Action {
     FocusWindowUpOrColumnRight,
     FocusWindowOrWorkspaceDown,
     FocusWindowOrWorkspaceUp,
+    FocusWindowTop,
+    FocusWindowBottom,
+    FocusWindowDownOrTop,
+    FocusWindowUpOrBottom,
     MoveColumnLeft,
     MoveColumnRight,
     MoveColumnToFirst,
@@ -1356,6 +1468,8 @@ pub enum Action {
     ExpelWindowFromColumn,
     SwapWindowLeft,
     SwapWindowRight,
+    ToggleColumnTabbedDisplay,
+    SetColumnDisplay(#[knuffel(argument, str)] ColumnDisplay),
     CenterColumn,
     CenterWindow,
     #[knuffel(skip)]
@@ -1496,6 +1610,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
             niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
+            niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
             niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
             niri_ipc::Action::FocusWindowMruNext {} => Self::FocusWindowMruNext,
             niri_ipc::Action::FocusWindowMruPrevious {} => Self::FocusWindowMruPrevious,
@@ -1517,6 +1632,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWindowUpOrColumnRight {} => Self::FocusWindowUpOrColumnRight,
             niri_ipc::Action::FocusWindowOrWorkspaceDown {} => Self::FocusWindowOrWorkspaceDown,
             niri_ipc::Action::FocusWindowOrWorkspaceUp {} => Self::FocusWindowOrWorkspaceUp,
+            niri_ipc::Action::FocusWindowTop {} => Self::FocusWindowTop,
+            niri_ipc::Action::FocusWindowBottom {} => Self::FocusWindowBottom,
+            niri_ipc::Action::FocusWindowDownOrTop {} => Self::FocusWindowDownOrTop,
+            niri_ipc::Action::FocusWindowUpOrBottom {} => Self::FocusWindowUpOrBottom,
             niri_ipc::Action::MoveColumnLeft {} => Self::MoveColumnLeft,
             niri_ipc::Action::MoveColumnRight {} => Self::MoveColumnRight,
             niri_ipc::Action::MoveColumnToFirst {} => Self::MoveColumnToFirst,
@@ -1549,6 +1668,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,
             niri_ipc::Action::SwapWindowRight {} => Self::SwapWindowRight,
             niri_ipc::Action::SwapWindowLeft {} => Self::SwapWindowLeft,
+            niri_ipc::Action::ToggleColumnTabbedDisplay {} => Self::ToggleColumnTabbedDisplay,
+            niri_ipc::Action::SetColumnDisplay { display } => Self::SetColumnDisplay(display),
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
@@ -2013,6 +2134,23 @@ impl ShadowRule {
         }
 
         config
+    }
+}
+
+impl TabIndicatorRule {
+    pub fn merge_with(&mut self, other: &Self) {
+        if let Some(x) = other.active_color {
+            self.active_color = Some(x);
+        }
+        if let Some(x) = other.inactive_color {
+            self.inactive_color = Some(x);
+        }
+        if let Some(x) = other.active_gradient {
+            self.active_gradient = Some(x);
+        }
+        if let Some(x) = other.inactive_gradient {
+            self.inactive_gradient = Some(x);
+        }
     }
 }
 
@@ -3450,6 +3588,11 @@ mod tests {
                     offset x=10 y=-20
                 }
 
+                tab-indicator {
+                    width 10
+                    position "top"
+                }
+
                 preset-column-widths {
                     proportion 0.25
                     proportion 0.5
@@ -3475,6 +3618,8 @@ mod tests {
                 }
 
                 center-focused-column "on-overflow"
+
+                default-column-display "tabbed"
 
                 insert-hint {
                     color "rgb(255, 200, 127)"
@@ -3534,6 +3679,7 @@ mod tests {
                 open-floating false
                 open-focused true
                 default-window-height { fixed 500; }
+                default-column-display "tabbed"
                 default-floating-position x=100 y=-200 relative-to="bottom-left"
 
                 focus-ring {
@@ -3544,6 +3690,10 @@ mod tests {
                 border {
                     on
                     width 8.5
+                }
+
+                tab-indicator {
+                    active-color "#f00"
                 }
             }
 
@@ -3600,6 +3750,7 @@ mod tests {
                         tap: true,
                         dwt: true,
                         dwtp: true,
+                        drag_lock: false,
                         click_method: Some(ClickMethod::Clickfinger),
                         natural_scroll: false,
                         accel_speed: 0.2,
@@ -3704,6 +3855,11 @@ mod tests {
                         },
                         ..Default::default()
                     },
+                    tab_indicator: TabIndicator {
+                        width: FloatOrInt(10.),
+                        position: TabIndicatorPosition::Top,
+                        ..Default::default()
+                    },
                     insert_hint: InsertHint {
                         off: false,
                         color: Color::from_rgba8_unpremul(255, 200, 127, 255),
@@ -3741,6 +3897,7 @@ mod tests {
                         bottom: FloatOrInt(0.),
                     },
                     center_focused_column: CenterFocusedColumn::OnOverflow,
+                    default_column_display: ColumnDisplay::Tabbed,
                     always_center_single_column: false,
                     empty_workspace_above_first: false,
                 },
@@ -3805,6 +3962,7 @@ mod tests {
                         is_focused: None,
                         is_active_in_column: None,
                         is_floating: None,
+                        is_window_cast_target: None,
                         at_startup: None,
                     }],
                     excludes: vec![
@@ -3815,6 +3973,7 @@ mod tests {
                             is_focused: None,
                             is_active_in_column: None,
                             is_floating: None,
+                            is_window_cast_target: None,
                             at_startup: None,
                         },
                         Match {
@@ -3824,6 +3983,7 @@ mod tests {
                             is_focused: Some(false),
                             is_active_in_column: None,
                             is_floating: None,
+                            is_window_cast_target: None,
                             at_startup: None,
                         },
                     ],
@@ -3833,6 +3993,7 @@ mod tests {
                     open_floating: Some(false),
                     open_focused: Some(true),
                     default_window_height: Some(DefaultPresetSize(Some(PresetSize::Fixed(500)))),
+                    default_column_display: Some(ColumnDisplay::Tabbed),
                     default_floating_position: Some(FloatingPosition {
                         x: FloatOrInt(100.),
                         y: FloatOrInt(-200.),
@@ -3846,6 +4007,10 @@ mod tests {
                     border: BorderRule {
                         on: true,
                         width: Some(FloatOrInt(8.5)),
+                        ..Default::default()
+                    },
+                    tab_indicator: TabIndicatorRule {
+                        active_color: Some(Color::from_rgba8_unpremul(255, 0, 0, 255)),
                         ..Default::default()
                     },
                     ..Default::default()

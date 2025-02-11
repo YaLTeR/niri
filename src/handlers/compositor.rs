@@ -166,7 +166,9 @@ impl CompositorHandler for State {
                         // None. If the configured output is set, that means it was set explicitly
                         // by a window rule or a fullscreen request.
                         .filter(|(_, parent_output)| {
-                            output.is_none() || output.as_ref() == Some(*parent_output)
+                            parent_output.is_none()
+                                || output.is_none()
+                                || output.as_ref() == *parent_output
                         })
                         .map(|(mapped, _)| mapped.window.clone());
 
@@ -223,7 +225,7 @@ impl CompositorHandler for State {
             // This is a commit of a previously-mapped root or a non-toplevel root.
             if let Some((mapped, output)) = self.niri.layout.find_window_and_output(surface) {
                 let window = mapped.window.clone();
-                let output = output.clone();
+                let output = output.cloned();
 
                 #[cfg(feature = "xdp-gnome-screencast")]
                 let id = mapped.id();
@@ -284,7 +286,9 @@ impl CompositorHandler for State {
                     let unmapped = Unmapped::new(window);
                     self.niri.unmapped_windows.insert(surface.clone(), unmapped);
 
-                    self.niri.queue_redraw(&output);
+                    if let Some(output) = output {
+                        self.niri.queue_redraw(&output);
+                    }
                     return;
                 }
 
@@ -327,7 +331,9 @@ impl CompositorHandler for State {
                 // Popup placement depends on window size which might have changed.
                 self.update_reactive_popups(&window);
 
-                self.niri.queue_redraw(&output);
+                if let Some(output) = output {
+                    self.niri.queue_redraw(&output);
+                }
                 return;
             }
 
@@ -338,10 +344,12 @@ impl CompositorHandler for State {
         let root_window_output = self.niri.layout.find_window_and_output(&root_surface);
         if let Some((mapped, output)) = root_window_output {
             let window = mapped.window.clone();
-            let output = output.clone();
+            let output = output.cloned();
             window.on_commit();
             self.niri.layout.update_window(&window, None);
-            self.niri.queue_redraw(&output);
+            if let Some(output) = output {
+                self.niri.queue_redraw(&output);
+            }
             return;
         }
 

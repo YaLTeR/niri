@@ -12,12 +12,12 @@ authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 repository = "https://github.com/YaLTeR/niri"
-rust-version = "1.80"
+rust-version = "1.80.1"
 
 [workspace.dependencies]
 anyhow = "1.0.95"
 bitflags = "2.8.0"
-clap = { version = "4.5.27", features = ["derive"] }
+clap = { version = "4.5.28", features = ["derive"] }
 insta = "1.42.1"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
@@ -87,10 +87,10 @@ tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
 url = { version = "2.5.4", optional = true }
-wayland-backend = "0.3.7"
-wayland-scanner = "0.31.5"
+wayland-backend = "0.3.8"
+wayland-scanner = "0.31.6"
 xcursor = "0.3.8"
-zbus = { version = "5.3.1", optional = true }
+zbus = { version = "5.5.0", optional = true }
 
 [dependencies.smithay]
 workspace = true
@@ -117,7 +117,7 @@ insta.workspace = true
 proptest = "1.6.0"
 proptest-derive = { version = "0.5.1", features = ["boxed_union"] }
 rayon = "1.10.0"
-wayland-client = "0.31.7"
+wayland-client = "0.31.8"
 xshell = "0.2.7"
 
 [features]

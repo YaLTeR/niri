@@ -42,7 +42,7 @@ use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
-use niri_ipc::{PositionChange, SizeChange};
+use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use scrolling::{Column, ColumnWidth, InsertHint, InsertPosition};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Id;
@@ -80,6 +80,7 @@ pub mod monitor;
 pub mod opening_window;
 pub mod scrolling;
 pub mod shadow;
+pub mod tab_indicator;
 pub mod tile;
 pub mod workspace;
 
@@ -312,10 +313,12 @@ pub struct Options {
     pub focus_ring: niri_config::FocusRing,
     pub border: niri_config::Border,
     pub shadow: niri_config::Shadow,
+    pub tab_indicator: niri_config::TabIndicator,
     pub insert_hint: niri_config::InsertHint,
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
     pub empty_workspace_above_first: bool,
+    pub default_column_display: ColumnDisplay,
     /// Column or window widths that `toggle_width()` switches between.
     pub preset_column_widths: Vec<PresetSize>,
     /// Initial width for new columns.
@@ -336,10 +339,12 @@ impl Default for Options {
             focus_ring: Default::default(),
             border: Default::default(),
             shadow: Default::default(),
+            tab_indicator: Default::default(),
             insert_hint: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
+            default_column_display: ColumnDisplay::Normal,
             preset_column_widths: vec![
                 PresetSize::Proportion(1. / 3.),
                 PresetSize::Proportion(0.5),
@@ -450,8 +455,32 @@ pub enum AddWindowTarget<'a, W: LayoutElement> {
     NextTo(&'a W::Id),
 }
 
+/// Type of the window hit from `window_under()`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HitType {
+    /// The hit is within a window's input region and can be used for sending events to it.
+    Input {
+        /// Position of the window's buffer.
+        win_pos: Point<f64, Logical>,
+    },
+    /// The hit can activate a window, but it is not in the input region so cannot send events.
+    ///
+    /// For example, this could be clicking on a tile border outside the window.
+    Activate {
+        /// Whether the hit was on the tab indicator.
+        is_tab_indicator: bool,
+    },
+}
+
 impl<W: LayoutElement> InteractiveMoveState<W> {
     fn moving(&self) -> Option<&InteractiveMoveData<W>> {
+        match self {
+            InteractiveMoveState::Moving(move_) => Some(move_),
+            _ => None,
+        }
+    }
+
+    fn moving_mut(&mut self) -> Option<&mut InteractiveMoveData<W>> {
         match self {
             InteractiveMoveState::Moving(move_) => Some(move_),
             _ => None,
@@ -485,6 +514,26 @@ impl ActivateWindow {
     }
 }
 
+impl HitType {
+    pub fn offset_win_pos(mut self, offset: Point<f64, Logical>) -> Self {
+        match &mut self {
+            HitType::Input { win_pos } => *win_pos += offset,
+            HitType::Activate { .. } => (),
+        }
+        self
+    }
+
+    pub fn hit_tile<W: LayoutElement>(
+        tile: &Tile<W>,
+        tile_pos: Point<f64, Logical>,
+        point: Point<f64, Logical>,
+    ) -> Option<(&W, Self)> {
+        let pos_within_tile = point - tile_pos;
+        tile.hit(pos_within_tile)
+            .map(|hit| (tile.window(), hit.offset_win_pos(tile_pos)))
+    }
+}
+
 impl Options {
     fn from_config(config: &Config) -> Self {
         let layout = &config.layout;
@@ -514,10 +563,12 @@ impl Options {
             focus_ring: layout.focus_ring,
             border: layout.border,
             shadow: layout.shadow,
+            tab_indicator: layout.tab_indicator,
             insert_hint: layout.insert_hint,
             center_focused_column: layout.center_focused_column,
             always_center_single_column: layout.always_center_single_column,
             empty_workspace_above_first: layout.empty_workspace_above_first,
+            default_column_display: layout.default_column_display,
             preset_column_widths,
             default_column_width,
             animations: config.animations.clone(),
@@ -1142,26 +1193,6 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, &Output)> {
-        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().is_wl_surface(wl_surface) {
-                return Some((move_.tile.window(), &move_.output));
-            }
-        }
-
-        if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
-            for mon in monitors {
-                for ws in &mon.workspaces {
-                    if let Some(window) = ws.find_wl_surface(wl_surface) {
-                        return Some((window, &mon.output));
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
     pub fn find_workspace_by_id(&self, id: WorkspaceId) -> Option<(usize, &Workspace<W>)> {
         match &self.monitor_set {
             MonitorSet::Normal { ref monitors, .. } => {
@@ -1276,6 +1307,35 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+    }
+
+    pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, Option<&Output>)> {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().is_wl_surface(wl_surface) {
+                return Some((move_.tile.window(), Some(&move_.output)));
+            }
+        }
+
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mon.workspaces {
+                        if let Some(window) = ws.find_wl_surface(wl_surface) {
+                            return Some((window, Some(&mon.output)));
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    if let Some(window) = ws.find_wl_surface(wl_surface) {
+                        return Some((window, None));
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     pub fn find_window_and_output_mut(
@@ -1554,6 +1614,28 @@ impl<W: LayoutElement> Layout<W> {
 
         let mon = monitors.iter().find(|mon| &mon.output == output).unwrap();
         let mon_windows = mon.workspaces.iter().flat_map(|ws| ws.windows());
+
+        moving_window.chain(mon_windows)
+    }
+
+    pub fn windows_for_output_mut(&mut self, output: &Output) -> impl Iterator<Item = &mut W> + '_ {
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+            panic!()
+        };
+
+        let moving_window = self
+            .interactive_move
+            .as_mut()
+            .and_then(|x| x.moving_mut())
+            .filter(|move_| move_.output == *output)
+            .map(|move_| move_.tile.window_mut())
+            .into_iter();
+
+        let mon = monitors
+            .iter_mut()
+            .find(|mon| &mon.output == output)
+            .unwrap();
+        let mon_windows = mon.workspaces.iter_mut().flat_map(|ws| ws.windows_mut());
 
         moving_window.chain(mon_windows)
     }
@@ -1884,6 +1966,13 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn focus_window_in_column(&mut self, index: u8) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_in_column(index);
+    }
+
     pub fn focus_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -1938,6 +2027,34 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.focus_window_or_workspace_up();
+    }
+
+    pub fn focus_window_top(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_top();
+    }
+
+    pub fn focus_window_bottom(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_bottom();
+    }
+
+    pub fn focus_window_down_or_top(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_down_or_top();
+    }
+
+    pub fn focus_window_up_or_bottom(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.focus_window_up_or_bottom();
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -2063,6 +2180,20 @@ impl<W: LayoutElement> Layout<W> {
         monitor.swap_window_in_direction(direction);
     }
 
+    pub fn toggle_column_tabbed_display(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.toggle_column_tabbed_display();
+    }
+
+    pub fn set_column_display(&mut self, display: ColumnDisplay) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.set_column_display(display);
+    }
+
     pub fn center_column(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
@@ -2111,34 +2242,19 @@ impl<W: LayoutElement> Layout<W> {
         mon.active_window().map(|win| (win, &mon.output))
     }
 
-    /// Returns the window under the cursor and the position of its toplevel surface within the
-    /// output.
-    ///
-    /// `Some((w, Some(p)))` means that the cursor is within the window's input region and can be
-    /// used for delivering events to the window. `Some((w, None))` means that the cursor is within
-    /// the window's activation region, but not within the window's input region. For example, the
-    /// cursor may be on the window's server-side border.
+    /// Returns the window under the cursor and the hit type.
     pub fn window_under(
         &self,
         output: &Output,
         pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&W, Option<Point<f64, Logical>>)> {
+    ) -> Option<(&W, HitType)> {
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
         };
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             let tile_pos = move_.tile_render_location();
-            let pos_within_tile = pos_within_output - tile_pos;
-
-            if move_.tile.is_in_input_region(pos_within_tile) {
-                let pos_within_surface = tile_pos + move_.tile.buf_loc();
-                return Some((move_.tile.window(), Some(pos_within_surface)));
-            } else if move_.tile.is_in_activation_region(pos_within_tile) {
-                return Some((move_.tile.window(), None));
-            }
-
-            return None;
+            return HitType::hit_tile(&move_.tile, tile_pos, pos_within_output);
         };
 
         let mon = monitors.iter().find(|mon| &mon.output == output)?;
@@ -3996,11 +4112,8 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         for ws in self.workspaces_mut() {
-            for tile in ws.tiles_mut() {
-                if tile.window().id() == window {
-                    tile.start_open_animation();
-                    return;
-                }
+            if ws.start_open_animation(window) {
+                return;
             }
         }
     }

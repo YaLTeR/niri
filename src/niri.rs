@@ -128,7 +128,7 @@ use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::WorkspaceId;
-use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
+use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
 use crate::niri_render_elements;
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
@@ -457,9 +457,12 @@ pub struct PointContents {
     // Output under point.
     pub output: Option<Output>,
     // Surface under point and its location in the global coordinate space.
+    //
+    // Can be `None` even when `window` is set, for example when the pointer is over the niri
+    // border around the window.
     pub surface: Option<(WlSurface, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
-    pub window: Option<Window>,
+    pub window: Option<(Window, HitType)>,
     // If surface belongs to a layer surface, this is that layer surface.
     pub layer: Option<LayerSurface>,
 }
@@ -664,13 +667,18 @@ impl State {
         self.niri.refresh_idle_inhibit();
         self.refresh_pointer_contents();
         foreign_toplevel::refresh(self);
+
+        #[cfg(feature = "xdp-gnome-screencast")]
+        self.niri.refresh_mapped_cast_outputs();
+        // Should happen before refresh_window_rules(), but after anything that can start or stop
+        // screencasts.
+        #[cfg(feature = "xdp-gnome-screencast")]
+        self.niri.refresh_mapped_cast_window_rules();
+
         self.niri.refresh_window_rules();
         self.refresh_ipc_outputs();
         self.ipc_refresh_layout();
         self.ipc_refresh_keyboard_layout_index();
-
-        #[cfg(feature = "xdp-gnome-screencast")]
-        self.niri.refresh_mapped_cast_outputs();
     }
 
     fn notify_blocker_cleared(&mut self) {
@@ -2732,7 +2740,7 @@ impl Niri {
     /// locations to global space according to where they are rendered.
     ///
     /// This function does not take pointer or touch grabs into account.
-    pub fn contents_under(&mut self, pos: Point<f64, Logical>) -> PointContents {
+    pub fn contents_under(&self, pos: Point<f64, Logical>) -> PointContents {
         let mut rv = PointContents::default();
 
         let Some((output, pos_within_output)) = self.output_under(pos) else {
@@ -2795,7 +2803,7 @@ impl Niri {
                             )
                         })
                 })
-                .map(|(s, l)| (s, (None, Some(l.clone()))))
+                .map(|(s, l)| (Some(s), (None, Some(l.clone()))))
         };
 
         let layer_toplevel_under = |layer| layer_surface_under(layer, false);
@@ -2804,18 +2812,22 @@ impl Niri {
         let window_under = || {
             self.layout
                 .window_under(output, pos_within_output)
-                .and_then(|(mapped, win_pos_within_output)| {
-                    let win_pos_within_output = win_pos_within_output?;
+                .map(|(mapped, hit)| {
                     let window = &mapped.window;
-                    window
-                        .surface_under(
-                            pos_within_output - win_pos_within_output,
-                            WindowSurfaceType::ALL,
-                        )
-                        .map(|(s, pos_within_window)| {
-                            (s, pos_within_window.to_f64() + win_pos_within_output)
-                        })
-                        .map(|s| (s, (Some(window.clone()), None)))
+                    let surface_and_pos = if let HitType::Input { win_pos } = hit {
+                        let win_pos_within_output = win_pos;
+                        window
+                            .surface_under(
+                                pos_within_output - win_pos_within_output,
+                                WindowSurfaceType::ALL,
+                            )
+                            .map(|(s, pos_within_window)| {
+                                (s, pos_within_window.to_f64() + win_pos_within_output)
+                            })
+                    } else {
+                        None
+                    };
+                    (surface_and_pos, (Some((window.clone(), hit)), None))
                 })
         };
 
@@ -2846,14 +2858,15 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Background));
         }
 
-        let Some(((surface, surface_pos_within_output), (window, layer))) = under else {
+        let Some((mut surface_and_pos, (window, layer))) = under else {
             return rv;
         };
 
-        let surface_loc_in_global_space =
-            surface_pos_within_output + output_pos_in_global_space.to_f64();
+        if let Some((_, surface_pos)) = &mut surface_and_pos {
+            *surface_pos += output_pos_in_global_space.to_f64();
+        }
 
-        rv.surface = Some((surface, surface_loc_in_global_space));
+        rv.surface = surface_and_pos;
         rv.window = window;
         rv.layer = layer;
         rv
@@ -3007,6 +3020,9 @@ impl Niri {
         // Check the main layout.
         let win_out = self.layout.find_window_and_output(root);
         let layout_output = win_out.map(|(_, output)| output);
+        if let Some(output) = layout_output {
+            return output;
+        }
 
         // Check layer-shell.
         let has_layer_surface = |o: &&Output| {
@@ -3014,9 +3030,7 @@ impl Niri {
                 .layer_for_surface(root, WindowSurfaceType::TOPLEVEL)
                 .is_some()
         };
-        let layer_shell_output = || self.layout.outputs().find(has_layer_surface);
-
-        layout_output.or_else(layer_shell_output)
+        self.layout.outputs().find(has_layer_surface)
     }
 
     pub fn lock_surface_focus(&self) -> Option<WlSurface> {
@@ -3354,6 +3368,20 @@ impl Niri {
         for output in outputs {
             self.queue_redraw(&output);
         }
+    }
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub fn refresh_mapped_cast_window_rules(&mut self) {
+        // O(N^2) but should be fine since there aren't many casts usually.
+        self.layout.with_windows_mut(|mapped, _| {
+            let id = mapped.id().get();
+            // Find regardless of cast.is_active.
+            let value = self
+                .casts
+                .iter()
+                .any(|cast| cast.target == (CastTarget::Window { id }));
+            mapped.set_is_window_cast_target(value);
+        });
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -3995,7 +4023,7 @@ impl Niri {
         }
     }
 
-    pub fn send_frame_callbacks(&self, output: &Output) {
+    pub fn send_frame_callbacks(&mut self, output: &Output) {
         let _span = tracy_client::span!("Niri::send_frame_callbacks");
 
         let state = self.output_state.get(output).unwrap();
@@ -4036,8 +4064,8 @@ impl Niri {
 
         let frame_callback_time = get_monotonic_time();
 
-        for mapped in self.layout.windows_for_output(output) {
-            mapped.window.send_frame(
+        for mapped in self.layout.windows_for_output_mut(output) {
+            mapped.send_frame(
                 output,
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,
@@ -4085,7 +4113,7 @@ impl Niri {
         }
     }
 
-    pub fn send_frame_callbacks_on_fallback_timer(&self) {
+    pub fn send_frame_callbacks_on_fallback_timer(&mut self) {
         let _span = tracy_client::span!("Niri::send_frame_callbacks_on_fallback_timer");
 
         // Make up a bogus output; we don't care about it here anyway, just the throttling timer.
@@ -4102,8 +4130,8 @@ impl Niri {
 
         let frame_callback_time = get_monotonic_time();
 
-        self.layout.with_windows(|mapped, _, _| {
-            mapped.window.send_frame(
+        self.layout.with_windows_mut(|mapped, _| {
+            mapped.send_frame(
                 output,
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,
@@ -5160,6 +5188,18 @@ impl Niri {
 
         if let Some(window) = &new_focus.window {
             if current_focus.window.as_ref() != Some(window) {
+                let (window, hit) = window;
+
+                // Don't trigger focus-follows-mouse over the tab indicator.
+                if matches!(
+                    hit,
+                    HitType::Activate {
+                        is_tab_indicator: true
+                    }
+                ) {
+                    return;
+                }
+
                 if !self.layout.should_trigger_focus_follows_mouse_on(window) {
                     return;
                 }
