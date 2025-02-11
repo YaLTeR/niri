@@ -3,6 +3,7 @@
 * [Example systemd Setup](./Example-systemd-Setup.md)
 * [Important Software](./Important-Software.md)
 * [Floating Windows](./Floating-Windows.md)
+* [Tabs](./Tabs.md)
 * [Layer‐Shell Components](./Layer%E2%80%90Shell-Components.md)
 * [IPC, `niri msg`](./IPC.md)
 * [Application-Specific Issues](./Application-Issues.md)
