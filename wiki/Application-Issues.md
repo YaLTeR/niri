@@ -40,7 +40,7 @@ Most of these can be avoided with Valve's [gamescope](https://github.com/ValveSo
 gamescope -f -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor --backend sdl -- <game>
 ```
 
-This command will run *<game>* in 1080p fullscreen – make sure to replace the width and height values to match your desired resolution.
+This command will run *<game>* in 1080p fullscreen—make sure to replace the width and height values to match your desired resolution.
 `--force-grab-cursor` forces gamescope to use relative mouse movement which prevents the cursor from escaping the game's window on multi-monitor setups.
 Note that `--backend sdl` is currently also required as gamescope's default Wayland backend doesn't lock the cursor properly (possibly related to [https://github.com/ValveSoftware/gamescope/issues/1711]).
 
