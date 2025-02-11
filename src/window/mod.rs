@@ -146,6 +146,13 @@ impl<'a> WindowRef<'a> {
             WindowRef::Mapped(mapped) => mapped.is_floating(),
         }
     }
+
+    pub fn is_window_cast_target(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_window_cast_target(),
+        }
+    }
 }
 
 impl ResolvedWindowRules {
@@ -442,6 +449,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_floating) = m.is_floating {
         if window.is_floating() != is_floating {
+            return false;
+        }
+    }
+
+    if let Some(is_window_cast_target) = m.is_window_cast_target {
+        if window.is_window_cast_target() != is_window_cast_target {
             return false;
         }
     }

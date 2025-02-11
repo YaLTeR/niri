@@ -34,6 +34,7 @@ window-rule {
     match is-focused=false
     match is-active-in-column=true
     match is-floating=true
+    match is-window-cast-target=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -238,6 +239,46 @@ window-rule {
     match is-floating=true
 }
 ```
+
+#### `is-window-cast-target`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches `true` for windows that are target of an ongoing window screencast.
+
+> [!NOTE]
+> This only matches individual-window screencasts.
+> It will not match windows that happen to be visible in a monitor screencast, for example.
+
+```kdl
+// Indicate screencasted windows with red colors.
+window-rule {
+    match is-window-cast-target=true
+
+    focus-ring {
+        active-color "#f38ba8"
+        inactive-color "#7d0d2d"
+    }
+
+    border {
+        inactive-color "#7d0d2d"
+    }
+
+    shadow {
+        color "#7d0d2d70"
+    }
+
+    tab-indicator {
+        active-color "#f38ba8"
+        inactive-color "#7d0d2d"
+    }
+}
+```
+
+Example:
+
+![](https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893)
 
 #### `at-startup`
 
@@ -501,11 +542,11 @@ This is applied on top of the window's own opacity, so semitransparent windows w
 
 Opacity is applied to every surface of the window individually, so subsurfaces and pop-up menus will show window content behind them.
 
-Opacity can be toggled on or off for a window using the [`toggle-window-rule-opacity`](./Configuration:-Key-Bindings.md) action.
-
 ![Screenshot showing Adwaita Demo with a semitransparent pop-up menu.](./img/opacity-popup.png)
 
 Also, focus ring and border with background will show through semitransparent windows (see `prefer-no-csd` and the `draw-border-with-background` window rule below).
+
+Opacity can be toggled on or off for a window using the [`toggle-window-rule-opacity`](./Configuration:-Key-Bindings.md) action.
 
 ```kdl
 // Make inactive windows semitransparent.

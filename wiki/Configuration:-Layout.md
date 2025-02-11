@@ -425,10 +425,10 @@ Set `hide-when-single-tab` to hide the indicator for tabbed columns that only ha
 Set `place-within-column` to put the tab indicator "within" the column, rather than outside.
 This will include it in column sizing and avoid overlaying adjacent columns.
 
-`gap` sets the gap between the tab indicator and the window.
+`gap` sets the gap between the tab indicator and the window in logical pixels.
 The gap can be negative, this will put the tab indicator on top of the window.
 
-`width` sets the thickness of the indicator.
+`width` sets the thickness of the indicator in logical pixels.
 
 `length` controls the length of the indicator.
 Set the `total-proportion` property to make tabs take up this much length relative to the window size.
@@ -437,7 +437,7 @@ By default, the tab indicator has length equal to half of the window size, or `l
 `position` sets the position of the tab indicator relative to the window.
 It can be `left`, `right`, `top`, or `bottom`.
 
-`gaps-between-tabs` controls the gap between individual tabs.
+`gaps-between-tabs` controls the gap between individual tabs in logical pixels.
 
 `active-color`, `inactive-color`, `active-gradient`, `inactive-gradient` let you override the colors for the tabs.
 They have the same semantics as the border and focus ring colors and gradients.

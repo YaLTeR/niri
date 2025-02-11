@@ -80,6 +80,9 @@ pub struct Mapped {
     /// Whether this window is floating.
     is_floating: bool,
 
+    /// Whether this window is a target of a window cast.
+    is_window_cast_target: bool,
+
     /// Whether this window should ignore opacity set through window rules.
     ignore_opacity_window_rule: bool,
 
@@ -188,6 +191,7 @@ impl Mapped {
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
+            is_window_cast_target: false,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
@@ -260,6 +264,10 @@ impl Mapped {
         self.is_floating
     }
 
+    pub fn is_window_cast_target(&self) -> bool {
+        self.is_window_cast_target
+    }
+
     pub fn toggle_ignore_opacity_window_rule(&mut self) {
         self.ignore_opacity_window_rule = !self.ignore_opacity_window_rule;
     }
@@ -270,6 +278,15 @@ impl Mapped {
         }
 
         self.is_focused = is_focused;
+        self.need_to_recompute_rules = true;
+    }
+
+    pub fn set_is_window_cast_target(&mut self, value: bool) {
+        if self.is_window_cast_target == value {
+            return;
+        }
+
+        self.is_window_cast_target = value;
         self.need_to_recompute_rules = true;
     }
 
