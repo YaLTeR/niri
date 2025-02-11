@@ -247,6 +247,10 @@ window-rule {
 Can be `true` or `false`.
 Matches `true` for windows that are target of an ongoing window screencast.
 
+> [!NOTE]
+> This only matches individual-window screencasts.
+> It will not match windows that happen to be visible in a monitor screencast, for example.
+
 ```kdl
 // Indicate screencasted windows with red colors.
 window-rule {
