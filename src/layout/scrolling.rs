@@ -342,7 +342,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn are_transitions_ongoing(&self) -> bool {
         !self.view_offset.is_static()
-            || self.columns.iter().any(Column::are_animations_ongoing)
+            || self.columns.iter().any(Column::are_transitions_ongoing)
             || !self.closing_windows.is_empty()
     }
 
@@ -3524,6 +3524,12 @@ impl<W: LayoutElement> Column<W> {
         self.move_animation.is_some()
             || self.tab_indicator.are_animations_ongoing()
             || self.tiles.iter().any(Tile::are_animations_ongoing)
+    }
+
+    pub fn are_transitions_ongoing(&self) -> bool {
+        self.move_animation.is_some()
+            || self.tab_indicator.are_animations_ongoing()
+            || self.tiles.iter().any(Tile::are_transitions_ongoing)
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {

@@ -100,6 +100,9 @@ pub struct ResolvedWindowRules {
     /// Whether to clip this window to its geometry, including the corner radius.
     pub clip_to_geometry: Option<bool>,
 
+    /// Whether bob this window up and down.
+    pub baba_is_float: Option<bool>,
+
     /// Whether to block out this window from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 
@@ -210,6 +213,7 @@ impl ResolvedWindowRules {
             opacity: None,
             geometry_corner_radius: None,
             clip_to_geometry: None,
+            baba_is_float: None,
             block_out_from: None,
             variable_refresh_rate: None,
             scroll_factor: None,
@@ -318,6 +322,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.clip_to_geometry {
                     resolved.clip_to_geometry = Some(x);
+                }
+                if let Some(x) = rule.baba_is_float {
+                    resolved.baba_is_float = Some(x);
                 }
                 if let Some(x) = rule.block_out_from {
                     resolved.block_out_from = Some(x);

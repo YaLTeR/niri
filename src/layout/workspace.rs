@@ -333,7 +333,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
-        self.scrolling.are_transitions_ongoing() || self.floating.are_animations_ongoing()
+        self.scrolling.are_transitions_ongoing() || self.floating.are_transitions_ongoing()
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
