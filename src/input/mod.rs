@@ -3449,6 +3449,19 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else {
             input::SendEventsMode::ENABLED
         });
+
+        #[rustfmt::skip]
+        const MATRIX: [f32; 6] = [
+            1., 0., 0.,
+            0., 1., 0.,
+        ];
+
+        let _ = device.config_calibration_set_matrix(
+            c.calibration_matrix
+                .as_deref()
+                .and_then(|m| m.try_into().ok())
+                .unwrap_or(MATRIX),
+        );
         let _ = device.config_left_handed_set(c.left_handed);
     }
 }
