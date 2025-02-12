@@ -1787,12 +1787,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "io-lifetimes"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06432fb54d3be7964ecd3649233cddf80db2832f47fec34c01f65b3d9d774983"
-
-[[package]]
 name = "is-terminal"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3410,7 +3404,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.4.0"
-source = "git+https://github.com/Smithay/smithay.git#f93476cebab3d47f6729354805b3e184f6878ef2"
+source = "git+https://github.com/Smithay/smithay.git#10d03afbd18e1a9ac684aeafad01a7ecd3aad737"
 dependencies = [
  "appendlist",
  "bitflags 2.8.0",
@@ -3481,7 +3475,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#f93476cebab3d47f6729354805b3e184f6878ef2"
+source = "git+https://github.com/Smithay/smithay.git#10d03afbd18e1a9ac684aeafad01a7ecd3aad737"
 dependencies = [
  "drm",
  "libdisplay-info",
@@ -3836,7 +3830,7 @@ version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af4e37e9ea4401fc841ff54b9ddfc9be1079b1e89434c1a6a865dd68980f7e9f"
 dependencies = [
- "io-lifetimes 1.0.11",
+ "io-lifetimes",
  "libc",
  "libudev-sys",
  "pkg-config",
@@ -4065,9 +4059,9 @@ dependencies = [
 
 [[package]]
 name = "wayland-cursor"
-version = "0.31.7"
+version = "0.31.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32b08bc3aafdb0035e7fe0fdf17ba0c09c268732707dca4ae098f60cb28c9e4c"
+checksum = "a93029cbb6650748881a00e4922b076092a6a08c11e7fbdb923f064b23968c5d"
 dependencies = [
  "rustix",
  "wayland-client",
@@ -4076,9 +4070,9 @@ dependencies = [
 
 [[package]]
 name = "wayland-egl"
-version = "0.32.4"
+version = "0.32.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e3cb8b84ff95310fe59ce6c61f1fa344ec22f4c240c369a2b20f15caebfede4"
+checksum = "504838241a10e271f48ffd429ac4033e0ac468b399fe7c2e2840f5c3a82d9902"
 dependencies = [
  "wayland-backend",
  "wayland-sys",
@@ -4086,9 +4080,9 @@ dependencies = [
 
 [[package]]
 name = "wayland-protocols"
-version = "0.32.5"
+version = "0.32.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cd0ade57c4e6e9a8952741325c30bf82f4246885dca8bf561898b86d0c1f58e"
+checksum = "0781cf46869b37e36928f7b432273c0995aa8aed9552c556fb18754420541efc"
 dependencies = [
  "bitflags 2.8.0",
  "wayland-backend",
@@ -4099,9 +4093,9 @@ dependencies = [
 
 [[package]]
 name = "wayland-protocols-misc"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da2e42969764e469a115d4bb1c16e9588ef8b75b127ba7a2c9ddf1e140b25ca7"
+checksum = "feb7ee1810026d1bb15d47086d03a7e5c68651c707e305ba1e8cc796fcbf5a54"
 dependencies = [
  "bitflags 2.8.0",
  "wayland-backend",
@@ -4125,9 +4119,9 @@ dependencies = [
 
 [[package]]
 name = "wayland-protocols-wlr"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "782e12f6cd923c3c316130d56205ebab53f55d6666b7faddfad36cecaeeb4022"
+checksum = "248a02e6f595aad796561fa82d25601bd2c8c3b145b1c7453fc8f94c1a58f8b2"
 dependencies = [
  "bitflags 2.8.0",
  "wayland-backend",
@@ -4150,13 +4144,12 @@ dependencies = [
 
 [[package]]
 name = "wayland-server"
-version = "0.31.6"
+version = "0.31.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c89532cc712a2adb119eb4d09694b402576052254d0bb284f82ac1c47fb786ad"
+checksum = "97fabd7ed68cff8e7657b8a8a1fbe90cb4a3f0c30d90da4bf179a7a23008a4cb"
 dependencies = [
  "bitflags 2.8.0",
  "downcast-rs",
- "io-lifetimes 2.0.4",
  "rustix",
  "wayland-backend",
  "wayland-scanner",
