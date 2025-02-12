@@ -697,6 +697,8 @@ pub struct TabIndicator {
     pub position: TabIndicatorPosition,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps_between_tabs)]
     pub gaps_between_tabs: FloatOrInt<0, 65535>,
+    #[knuffel(child, unwrap(argument), default = Self::default().corner_radius)]
+    pub corner_radius: FloatOrInt<0, 65535>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -720,6 +722,7 @@ impl Default for TabIndicator {
             },
             position: TabIndicatorPosition::Left,
             gaps_between_tabs: FloatOrInt(0.),
+            corner_radius: FloatOrInt(0.),
             active_color: None,
             inactive_color: None,
             active_gradient: None,
@@ -1231,6 +1234,17 @@ impl From<CornerRadius> for [f32; 4] {
             value.bottom_right,
             value.bottom_left,
         ]
+    }
+}
+
+impl From<f32> for CornerRadius {
+    fn from(value: f32) -> Self {
+        Self {
+            top_left: value,
+            top_right: value,
+            bottom_right: value,
+            bottom_left: value,
+        }
     }
 }
 
