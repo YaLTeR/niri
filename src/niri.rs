@@ -1118,13 +1118,12 @@ impl State {
         }
     }
 
-    pub fn reload_config(&mut self, path: PathBuf) {
+    pub fn reload_config(&mut self, config: Result<Config, ()>) {
         let _span = tracy_client::span!("State::reload_config");
 
-        let mut config = match Config::load(&path) {
+        let mut config = match config {
             Ok(config) => config,
-            Err(err) => {
-                warn!("{:?}", err.context("error loading config"));
+            Err(()) => {
                 self.niri.config_error_notification.show();
                 self.niri.queue_redraw_all();
                 return;
