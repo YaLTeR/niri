@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use calloop::EventLoop;
-use niri_config::Config;
+use niri_config::{Config, ConfigOpts};
 use smithay::reexports::wayland_server::Display;
 
 use crate::niri::State;
@@ -18,6 +18,7 @@ impl Server {
         let display = Display::new().unwrap();
         let state = State::new(
             config,
+            ConfigOpts::default(),
             handle.clone(),
             event_loop.get_signal(),
             display,

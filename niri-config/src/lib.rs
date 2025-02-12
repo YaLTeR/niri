@@ -74,8 +74,19 @@ pub struct Config {
     pub workspaces: Vec<Workspace>,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct ModKey(pub Modifiers);
+
+impl Default for ModKey {
+    fn default() -> Self {
+        Self(Modifiers::SUPER)
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Input {
+    #[knuffel(child, unwrap(argument), default)]
+    pub mod_key: ModKey,
     #[knuffel(child, default)]
     pub keyboard: Keyboard,
     #[knuffel(child, default)]
@@ -1985,22 +1996,33 @@ pub enum PreviewRender {
     ScreenCapture,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct ConfigOpts {
+    pub mod_override: Option<ModKey>,
+}
+
 impl Config {
     pub fn load(path: &Path) -> miette::Result<Self> {
         let _span = tracy_client::span!("Config::load");
-        Self::load_internal(path).context("error loading config")
+        Self::load_with_opts(path, ConfigOpts::default())
     }
 
-    fn load_internal(path: &Path) -> miette::Result<Self> {
+    pub fn load_with_opts(path: &Path, opts: ConfigOpts) -> miette::Result<Self> {
+        let _span = tracy_client::span!("Config::load_with_opts");
+        Self::load_internal(path, opts).context("error loading config")
+    }
+
+    fn load_internal(path: &Path, opts: ConfigOpts) -> miette::Result<Self> {
         let contents = std::fs::read_to_string(path)
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;
 
-        let config = Self::parse(
+        let config = Self::parse_with_opts(
             path.file_name()
                 .and_then(OsStr::to_str)
                 .unwrap_or("config.kdl"),
             &contents,
+            opts,
         )
         .context("error parsing")?;
         debug!("loaded config from {path:?}");
@@ -2009,7 +2031,49 @@ impl Config {
 
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
         let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
+        Self::parse_with_opts(filename, text, ConfigOpts::default())
+    }
+
+    pub fn parse_with_opts(
+        filename: &str,
+        text: &str,
+        opts: ConfigOpts,
+    ) -> Result<Self, knuffel::Error> {
+        let _span = tracy_client::span!("Config::parse_with_opts");
+        let mut config = knuffel::parse::<Self>(filename, text)?;
+
+        if let Some(mod_override) = opts.mod_override {
+            config.input.mod_key = mod_override;
+        }
+
+        if config.has_duplicate_binds() {
+            return Err(knuffel::parse_with_context::<Self, knuffel::span::Span, _>(
+                filename,
+                text,
+                |ctx| {
+                    ctx.set(config.input.mod_key);
+                },
+            )
+            .expect_err("expected KDL parsing to fail"));
+        }
+
+        Ok(config)
+    }
+
+    fn has_duplicate_binds(&self) -> bool {
+        let mut seen_keys = HashSet::new();
+        for bind in &self.binds.0 {
+            let mut key = bind.key;
+            if key.modifiers.contains(Modifiers::COMPOSITOR) {
+                key.modifiers.remove(Modifiers::COMPOSITOR);
+                key.modifiers.insert(self.input.mod_key.0);
+            }
+            if !seen_keys.insert(key) {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
@@ -3150,13 +3214,28 @@ where
 
         let mut binds = Vec::new();
 
+        let mod_key = ctx.get::<ModKey>().cloned();
+
         for child in node.children() {
             match Bind::decode_node(child, ctx) {
                 Err(e) => {
                     ctx.emit_error(e);
                 }
                 Ok(bind) => {
-                    if seen_keys.insert(bind.key) {
+                    let Some(mod_key) = &mod_key else {
+                        // On first config pass, we don't know what the ModKey is, so don't check
+                        // for bind collisions.
+                        binds.push(bind);
+                        continue;
+                    };
+
+                    let mut key = bind.key;
+                    if key.modifiers.contains(Modifiers::COMPOSITOR) {
+                        key.modifiers.remove(Modifiers::COMPOSITOR);
+                        key.modifiers.insert(mod_key.0);
+                    }
+
+                    if seen_keys.insert(key) {
                         binds.push(bind);
                     } else {
                         // ideally, this error should point to the previous instance of this keybind
@@ -3320,6 +3399,74 @@ where
             ));
             Ok(dummy)
         }
+    }
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for ModKey {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        match &**val {
+            knuffel::ast::Literal::String(ref s) => Ok(s
+                .parse::<ModKey>()
+                .map_err(|e| DecodeError::conversion(val, e))?),
+            _ => {
+                ctx.emit_error(DecodeError::unsupported(
+                    val,
+                    "modifier key must be a string",
+                ));
+                Ok(Self(Modifiers::empty()))
+            }
+        }
+    }
+}
+
+impl FromStr for ModKey {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut modifiers = Modifiers::empty();
+
+        let split = s.split('+');
+
+        for part in split {
+            let part = part.trim();
+            if part.eq_ignore_ascii_case("ctrl") || part.eq_ignore_ascii_case("control") {
+                modifiers |= Modifiers::CTRL;
+            } else if part.eq_ignore_ascii_case("shift") {
+                modifiers |= Modifiers::SHIFT;
+            } else if part.eq_ignore_ascii_case("alt") {
+                modifiers |= Modifiers::ALT;
+            } else if part.eq_ignore_ascii_case("super") || part.eq_ignore_ascii_case("win") {
+                modifiers |= Modifiers::SUPER;
+            } else if part.eq_ignore_ascii_case("iso_level3_shift")
+                || part.eq_ignore_ascii_case("mod5")
+            {
+                modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
+            } else if part.eq_ignore_ascii_case("iso_level5_shift")
+                || part.eq_ignore_ascii_case("mod3")
+            {
+                modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
+            } else {
+                return Err(miette!("invalid modifier: {part}"));
+            }
+        }
+
+        Ok(Self(modifiers))
     }
 }
 
@@ -3497,6 +3644,8 @@ mod tests {
         check(
             r##"
             input {
+                mod-key "Mod5"
+
                 keyboard {
                     repeat-delay 600
                     repeat-rate 25
@@ -3737,6 +3886,7 @@ mod tests {
             "##,
             Config {
                 input: Input {
+                    mod_key: ModKey(Modifiers::ISO_LEVEL3_SHIFT),
                     keyboard: Keyboard {
                         xkb: Xkb {
                             layout: "us,ru".to_owned(),

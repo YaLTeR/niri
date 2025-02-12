@@ -14,8 +14,8 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout, WorkspaceReference,
-    DEFAULT_BACKGROUND_COLOR,
+    Config, ConfigOpts, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
+    WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -546,6 +546,7 @@ impl KeyboardFocus {
 }
 
 pub struct State {
+    pub config_opts: ConfigOpts,
     pub backend: Backend,
     pub niri: Niri,
 }
@@ -553,6 +554,7 @@ pub struct State {
 impl State {
     pub fn new(
         config: Config,
+        config_opts: ConfigOpts,
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
@@ -589,7 +591,11 @@ impl State {
         );
         backend.init(&mut niri);
 
-        let mut state = Self { backend, niri };
+        let mut state = Self {
+            backend,
+            niri,
+            config_opts,
+        };
 
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
@@ -1121,7 +1127,7 @@ impl State {
     pub fn reload_config(&mut self, path: PathBuf) {
         let _span = tracy_client::span!("State::reload_config");
 
-        let mut config = match Config::load(&path) {
+        let mut config = match Config::load_with_opts(&path, self.config_opts.clone()) {
             Ok(config) => config,
             Err(err) => {
                 warn!("{:?}", err.context("error loading config"));
@@ -1214,14 +1220,14 @@ impl State {
             preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
-        if config.binds != old_config.binds {
-            self.niri.hotkey_overlay.on_hotkey_config_updated();
+        if config.input.mod_key != old_config.input.mod_key || config.binds != old_config.binds {
             self.niri.mods_with_mouse_binds =
-                mods_with_mouse_binds(self.backend.mod_key(), &config.binds);
+                mods_with_mouse_binds(config.input.mod_key, &config.binds);
             self.niri.mods_with_wheel_binds =
-                mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
+                mods_with_wheel_binds(config.input.mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
-                mods_with_finger_scroll_binds(self.backend.mod_key(), &config.binds);
+                mods_with_finger_scroll_binds(config.input.mod_key, &config.binds);
+            self.niri.hotkey_overlay.on_hotkey_config_updated();
         }
 
         if config.window_rules != old_config.window_rules {
@@ -1949,16 +1955,16 @@ impl Niri {
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
-        let mods_with_mouse_binds = mods_with_mouse_binds(backend.mod_key(), &config_.binds);
-        let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
+        let mods_with_mouse_binds = mods_with_mouse_binds(config_.input.mod_key, &config_.binds);
+        let mods_with_wheel_binds = mods_with_wheel_binds(config_.input.mod_key, &config_.binds);
         let mods_with_finger_scroll_binds =
-            mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
+            mods_with_finger_scroll_binds(config_.input.mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
-        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
+        let mut hotkey_overlay = HotkeyOverlay::new(config.clone());
         if !config_.hotkey_overlay.skip_at_startup {
             hotkey_overlay.show();
         }

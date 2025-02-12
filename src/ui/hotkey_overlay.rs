@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::{Action, Config, Key, Modifiers, Trigger};
+use niri_config::{Action, Config, Key, ModKey, Modifiers, Trigger};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::Kind;
@@ -14,7 +14,6 @@ use smithay::output::{Output, WeakOutput};
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Scale, Transform};
 
-use crate::input::CompositorMod;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
@@ -30,7 +29,6 @@ const TITLE: &str = "Important Hotkeys";
 pub struct HotkeyOverlay {
     is_open: bool,
     config: Rc<RefCell<Config>>,
-    comp_mod: CompositorMod,
     buffers: RefCell<HashMap<WeakOutput, RenderedOverlay>>,
 }
 
@@ -39,11 +37,10 @@ pub struct RenderedOverlay {
 }
 
 impl HotkeyOverlay {
-    pub fn new(config: Rc<RefCell<Config>>, comp_mod: CompositorMod) -> Self {
+    pub fn new(config: Rc<RefCell<Config>>) -> Self {
         Self {
             is_open: false,
             config,
-            comp_mod,
             buffers: RefCell::new(HashMap::new()),
         }
     }
@@ -101,7 +98,7 @@ impl HotkeyOverlay {
 
         let rendered = buffers.entry(weak).or_insert_with(|| {
             let renderer = renderer.as_gles_renderer();
-            render(renderer, &self.config.borrow(), self.comp_mod, scale)
+            render(renderer, &self.config.borrow(), scale)
                 .unwrap_or_else(|_| RenderedOverlay { buffer: None })
         });
         let buffer = rendered.buffer.as_ref()?;
@@ -128,10 +125,11 @@ impl HotkeyOverlay {
 fn render(
     renderer: &mut GlesRenderer,
     config: &Config,
-    comp_mod: CompositorMod,
     scale: f64,
 ) -> anyhow::Result<RenderedOverlay> {
     let _span = tracy_client::span!("hotkey_overlay::render");
+
+    let mod_key = config.input.mod_key;
 
     // let margin = MARGIN * scale;
     let padding: i32 = to_physical_precise_round(scale, PADDING);
@@ -239,7 +237,7 @@ fn render(
                 .0
                 .iter()
                 .find(|bind| bind.action == *action)
-                .map(|bind| key_name(comp_mod, &bind.key))
+                .map(|bind| key_name(mod_key, &bind.key))
                 .unwrap_or_else(|| String::from("(not bound)"));
 
             (format!(" {key} "), action_name(action))
@@ -393,29 +391,39 @@ fn action_name(action: &Action) -> String {
     }
 }
 
-fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
+fn key_name(mod_key: ModKey, key: &Key) -> String {
     let mut name = String::new();
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
 
     if key.modifiers.contains(Modifiers::SUPER)
-        || (has_comp_mod && comp_mod == CompositorMod::Super)
+        || (has_comp_mod && mod_key.0.contains(Modifiers::SUPER))
     {
         name.push_str("Super + ");
     }
-    if key.modifiers.contains(Modifiers::ALT) || (has_comp_mod && comp_mod == CompositorMod::Alt) {
+    if key.modifiers.contains(Modifiers::ALT)
+        || (has_comp_mod && mod_key.0.contains(Modifiers::ALT))
+    {
         name.push_str("Alt + ");
     }
-    if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT) {
+    if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT)
+        || (has_comp_mod && mod_key.0.contains(Modifiers::ISO_LEVEL3_SHIFT))
+    {
         name.push_str("ISO_Level3_Shift + ");
     }
-    if key.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT) {
+    if key.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT)
+        || (has_comp_mod && mod_key.0.contains(Modifiers::ISO_LEVEL5_SHIFT))
+    {
         name.push_str("ISO_Level5_Shift + ");
     }
-    if key.modifiers.contains(Modifiers::SHIFT) {
+    if key.modifiers.contains(Modifiers::SHIFT)
+        || (has_comp_mod && mod_key.0.contains(Modifiers::SHIFT))
+    {
         name.push_str("Shift + ");
     }
-    if key.modifiers.contains(Modifiers::CTRL) {
+    if key.modifiers.contains(Modifiers::CTRL)
+        || (has_comp_mod && mod_key.0.contains(Modifiers::CTRL))
+    {
         name.push_str("Ctrl + ");
     }
 
