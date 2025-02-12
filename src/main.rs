@@ -231,7 +231,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set up config file watcher.
     let _watcher = {
         let (tx, rx) = calloop::channel::sync_channel(1);
-        let watcher = Watcher::new(watch_path.clone(), tx);
+        let watcher = Watcher::new(watch_path.clone(), |_| (), tx);
         event_loop
             .handle()
             .insert_source(rx, move |event, _, state| match event {
