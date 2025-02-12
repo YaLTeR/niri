@@ -3451,7 +3451,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         });
 
         #[rustfmt::skip]
-        const MATRIX: [f32; 6] = [
+        const IDENTITY_MATRIX: [f32; 6] = [
             1., 0., 0.,
             0., 1., 0.,
         ];
@@ -3460,7 +3460,8 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             c.calibration_matrix
                 .as_deref()
                 .and_then(|m| m.try_into().ok())
-                .unwrap_or(MATRIX),
+                .or(device.config_calibration_default_matrix())
+                .unwrap_or(IDENTITY_MATRIX),
         );
         let _ = device.config_left_handed_set(c.left_handed);
     }
