@@ -398,12 +398,27 @@ fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
 
+    // Compositor mod goes first.
+    if has_comp_mod {
+        if comp_mod == CompositorMod::Super {
+            name.push_str("Super + ");
+        } else if comp_mod == CompositorMod::Alt {
+            name.push_str("Alt + ");
+        }
+    }
+
     if key.modifiers.contains(Modifiers::SUPER)
-        || (has_comp_mod && comp_mod == CompositorMod::Super)
+        && !(has_comp_mod && comp_mod == CompositorMod::Super)
     {
         name.push_str("Super + ");
     }
-    if key.modifiers.contains(Modifiers::ALT) || (has_comp_mod && comp_mod == CompositorMod::Alt) {
+    if key.modifiers.contains(Modifiers::CTRL) {
+        name.push_str("Ctrl + ");
+    }
+    if key.modifiers.contains(Modifiers::SHIFT) {
+        name.push_str("Shift + ");
+    }
+    if key.modifiers.contains(Modifiers::ALT) && !(has_comp_mod && comp_mod == CompositorMod::Alt) {
         name.push_str("Alt + ");
     }
     if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT) {
@@ -411,12 +426,6 @@ fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
     }
     if key.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT) {
         name.push_str("ISO_Level5_Shift + ");
-    }
-    if key.modifiers.contains(Modifiers::SHIFT) {
-        name.push_str("Shift + ");
-    }
-    if key.modifiers.contains(Modifiers::CTRL) {
-        name.push_str("Ctrl + ");
     }
 
     let pretty = match key.trigger {
