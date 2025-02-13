@@ -166,3 +166,6 @@ hotkey-overlay {
     skip-at-startup
 }
 ```
+
+You can customize which binds the hotkey overlay shows using the `hotkey-overlay-title` property.
+Check the [key bindings](./Configuration:-Key-Bindings.md) wiki page for details.

@@ -119,6 +119,45 @@ Mouse clicks operate on the window that was focused at the time of the click, no
 
 Note that binding `Mod+MouseLeft` or `Mod+MouseRight` will override the corresponding gesture (moving or resizing the window).
 
+### Custom Hotkey Overlay Titles
+
+<sup>Since: next release</sup>
+
+The hotkey overlay (the Important Hotkeys dialog) shows a hardcoded list of binds.
+You can customize this list using the `hotkey-overlay-title` property.
+
+To add a bind to the hotkey overlay, set the property to the title that you want to show:
+```kdl
+binds {
+    Mod+Shift+S hotkey-overlay-title="Toggle Dark/Light Style" { spawn "some-script.sh"; }
+}
+```
+
+Binds with custom titles are listed after the hardcoded binds and before non-customized Spawn binds.
+
+To remove a hardcoded bind from the hotkey overlay, set the property to null:
+```kdl
+binds {
+    Mod+Q hotkey-overlay-title=null { close-window; }
+}
+```
+
+> [!TIP]
+> When multiple key combinations are bound to the same action:
+> - If any of the binds has a custom hotkey overlay title, niri will show that bind.
+> - Otherwise, if any of the binds has a null title, niri will hide the bind.
+> - Otherwise, niri will show the first key combination.
+
+Custom titles support [Pango markup](https://docs.gtk.org/Pango/pango_markup.html):
+
+```kdl
+binds {
+    Mod+Shift+S hotkey-overlay-title="<b>Toggle</b> <span foreground='red'>Dark</span>/Light Style" { spawn "some-script.sh"; }
+}
+```
+
+![Custom markup example.](https://github.com/user-attachments/assets/2a2ba914-bfa7-4dfa-bb5e-49839034765d)
+
 ### Actions
 
 Every action that you can bind is also available for programmatic invocation via `niri msg action`.

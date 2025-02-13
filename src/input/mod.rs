@@ -3009,6 +3009,7 @@ fn should_intercept_key(
                     // But logically, nothing can inhibit its actions. Only opening it can be
                     // inhibited.
                     allow_inhibiting: false,
+                    hotkey_overlay_title: None,
                 });
             }
         }
@@ -3074,6 +3075,7 @@ fn find_bind(
             // It also makes no sense to inhibit the default power key handling.
             // Hardcoded binds must never be inhibited.
             allow_inhibiting: false,
+            hotkey_overlay_title: None,
         });
     }
 
@@ -3541,6 +3543,7 @@ mod tests {
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
+            hotkey_overlay_title: None,
         }]);
 
         let comp_mod = CompositorMod::Super;
@@ -3726,6 +3729,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
             Bind {
                 key: Key {
@@ -3737,6 +3741,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
             Bind {
                 key: Key {
@@ -3748,6 +3753,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
             Bind {
                 key: Key {
@@ -3759,6 +3765,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
             Bind {
                 key: Key {
@@ -3770,6 +3777,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
         ]);
 

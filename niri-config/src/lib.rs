@@ -1334,6 +1334,7 @@ pub struct Bind {
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
+    pub hotkey_overlay_title: Option<Option<String>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -3232,6 +3233,7 @@ where
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
+        let mut hotkey_overlay_title = None;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -3248,6 +3250,9 @@ where
                 }
                 "allow-inhibiting" => {
                     allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
+                "hotkey-overlay-title" => {
+                    hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
@@ -3271,6 +3276,7 @@ where
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
+            hotkey_overlay_title: None,
         };
 
         if let Some(child) = children.next() {
@@ -3306,6 +3312,7 @@ where
                         cooldown,
                         allow_when_locked,
                         allow_inhibiting,
+                        hotkey_overlay_title,
                     })
                 }
                 Err(e) => {
@@ -3707,10 +3714,10 @@ mod tests {
             }
 
             binds {
-                Mod+Escape { toggle-keyboard-shortcuts-inhibit; }
+                Mod+Escape hotkey-overlay-title="Inhibit" { toggle-keyboard-shortcuts-inhibit; }
                 Mod+Shift+Escape allow-inhibiting=true { toggle-keyboard-shortcuts-inhibit; }
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
-                Mod+Q { close-window; }
+                Mod+Q hotkey-overlay-title=null { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
                 Mod+Comma { consume-window-into-column; }
@@ -4055,6 +4062,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        hotkey_overlay_title: Some(Some("Inhibit".to_owned())),
                     },
                     Bind {
                         key: Key {
@@ -4066,6 +4074,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
@@ -4077,6 +4086,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
@@ -4088,6 +4098,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: Some(None),
                     },
                     Bind {
                         key: Key {
@@ -4099,6 +4110,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
@@ -4110,6 +4122,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
@@ -4121,6 +4134,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
@@ -4132,6 +4146,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
@@ -4145,6 +4160,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
@@ -4156,6 +4172,7 @@ mod tests {
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
@@ -4167,6 +4184,7 @@ mod tests {
                         cooldown: Some(Duration::from_millis(150)),
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                 ]),
                 switch_events: SwitchBinds {
