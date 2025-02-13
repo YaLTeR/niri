@@ -317,9 +317,9 @@ pub enum Action {
     ConsumeWindowIntoColumn {},
     /// Expel the focused window from the column.
     ExpelWindowFromColumn {},
-    /// Swap focused window with one to the right
+    /// Swap focused window with one to the right.
     SwapWindowRight {},
-    /// Swap focused window with one to the left
+    /// Swap focused window with one to the left.
     SwapWindowLeft {},
     /// Toggle the focused column between normal and tabbed display.
     ToggleColumnTabbedDisplay {},
