@@ -23,6 +23,7 @@ cursor {
 
     hide-when-typing
     hide-after-inactive-ms 1000
+    keep-focus-when-hidden
 }
 
 clipboard {
@@ -139,6 +140,16 @@ If set, the cursor will automatically hide once this number of milliseconds pass
 cursor {
     // Hide the cursor after one second of inactivity.
     hide-after-inactive-ms 1000
+}
+```
+
+#### `keep-focus-when-hidden`
+
+When the cursor is hidden, pointer focus will be kept. This will leave items hovered upon, keep tooltips open, etc.
+
+```kdl
+cursor {
+    keep-focus-when-hidden
 }
 ```
 
