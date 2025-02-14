@@ -47,6 +47,9 @@ use smithay::wayland::selection::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
 };
+use smithay::wayland::selection::ext_data_control::{
+    DataControlHandler as ExtDataControlHandler, DataControlState as ExtDataControlState,
+};
 use smithay::wayland::selection::primary_selection::{
     set_primary_focus, PrimarySelectionHandler, PrimarySelectionState,
 };
@@ -63,13 +66,13 @@ use smithay::wayland::xdg_activation::{
 };
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
-    delegate_drm_lease, delegate_fractional_scale, delegate_idle_inhibit, delegate_idle_notify,
-    delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_output,
-    delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat,
-    delegate_security_context, delegate_session_lock, delegate_single_pixel_buffer,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation,
+    delegate_drm_lease, delegate_ext_data_control, delegate_fractional_scale,
+    delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager,
+    delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_pointer_constraints,
+    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
+    delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
+    delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
@@ -395,6 +398,14 @@ impl WlrDataControlHandler for State {
 }
 
 delegate_data_control!(State);
+
+impl ExtDataControlHandler for State {
+    fn data_control_state(&self) -> &ExtDataControlState {
+        &self.niri.ext_data_control_state
+    }
+}
+
+delegate_ext_data_control!(State);
 
 impl OutputHandler for State {
     fn output_bound(&mut self, output: Output, wl_output: WlOutput) {

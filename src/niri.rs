@@ -88,6 +88,7 @@ use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::security_context::SecurityContextState;
 use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
+use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
 use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
@@ -272,6 +273,7 @@ pub struct Niri {
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
     pub wlr_data_control_state: WlrDataControlState,
+    pub ext_data_control_state: ExtDataControlState,
     pub popups: PopupManager,
     pub popup_grab: Option<PopupGrabState>,
     pub presentation_state: PresentationState,
@@ -1887,6 +1889,11 @@ impl Niri {
             Some(&primary_selection_state),
             client_is_unrestricted,
         );
+        let ext_data_control_state = ExtDataControlState::new::<State, _>(
+            &display_handle,
+            Some(&primary_selection_state),
+            client_is_unrestricted,
+        );
         let presentation_state =
             PresentationState::new::<State>(&display_handle, Monotonic::ID as u32);
         let security_context_state =
@@ -2101,6 +2108,7 @@ impl Niri {
             data_device_state,
             primary_selection_state,
             wlr_data_control_state,
+            ext_data_control_state,
             popups: PopupManager::default(),
             popup_grab: None,
             suppressed_keys: HashSet::new(),
