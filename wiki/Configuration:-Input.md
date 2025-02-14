@@ -81,6 +81,7 @@ input {
         // off
         map-to-output "eDP-1"
         // left-handed
+        // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
 
     touch {
@@ -194,6 +195,10 @@ Settings specific to `touchpad` and `mouse`:
 Settings specific to `touchpad`, `mouse` and `tablet`:
 
 - `left-handed`: if set, changes the device to left-handed mode.
+
+Settings specific to `tablet`s:
+
+- `calibration-matrix`: <sup>Since: next release</sup> set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
