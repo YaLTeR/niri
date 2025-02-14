@@ -337,6 +337,8 @@ impl From<TapButtonMap> for input::TapButtonMap {
 pub struct Tablet {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child, unwrap(arguments))]
+    pub calibration_matrix: Option<Vec<f32>>,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
     #[knuffel(child)]
@@ -3560,6 +3562,8 @@ mod tests {
 
                 tablet {
                     map-to-output "eDP-1"
+                    calibration-matrix 1.0 2.0 3.0 \
+                                       4.0 5.0 6.0
                 }
 
                 touch {
@@ -3804,6 +3808,8 @@ mod tests {
                     },
                     tablet: Tablet {
                         off: false,
+                        calibration_matrix: Some(vec![1., 2., 3.,
+                                                      4., 5., 6.]),
                         map_to_output: Some("eDP-1".to_owned()),
                         left_handed: false,
                     },
