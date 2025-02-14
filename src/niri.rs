@@ -1,5 +1,5 @@
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -159,6 +159,7 @@ use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, logical_output,
     make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
 };
+use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -345,6 +346,8 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
+
+    pub pick_window: VecDeque<async_channel::Sender<Option<MappedId>>>,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -2155,6 +2158,8 @@ impl Niri {
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
+
+            pick_window: VecDeque::new(),
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
