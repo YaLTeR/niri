@@ -89,7 +89,7 @@ use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::security_context::SecurityContextState;
 use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
-use smithay::wayland::selection::wlr_data_control::DataControlState;
+use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
 use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellState};
@@ -271,7 +271,7 @@ pub struct Niri {
     pub idle_inhibit_manager_state: IdleInhibitManagerState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
-    pub data_control_state: DataControlState,
+    pub wlr_data_control_state: WlrDataControlState,
     pub popups: PopupManager,
     pub popup_grab: Option<PopupGrabState>,
     pub presentation_state: PresentationState,
@@ -1882,7 +1882,7 @@ impl Niri {
                     .unwrap()
                     .primary_selection_disabled
             });
-        let data_control_state = DataControlState::new::<State, _>(
+        let wlr_data_control_state = WlrDataControlState::new::<State, _>(
             &display_handle,
             Some(&primary_selection_state),
             client_is_unrestricted,
@@ -2100,7 +2100,7 @@ impl Niri {
             idle_inhibit_manager_state,
             data_device_state,
             primary_selection_state,
-            data_control_state,
+            wlr_data_control_state,
             popups: PopupManager::default(),
             popup_grab: None,
             suppressed_keys: HashSet::new(),

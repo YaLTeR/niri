@@ -50,7 +50,9 @@ use smithay::wayland::selection::data_device::{
 use smithay::wayland::selection::primary_selection::{
     set_primary_focus, PrimarySelectionHandler, PrimarySelectionState,
 };
-use smithay::wayland::selection::wlr_data_control::{DataControlHandler, DataControlState};
+use smithay::wayland::selection::wlr_data_control::{
+    DataControlHandler as WlrDataControlHandler, DataControlState as WlrDataControlState,
+};
 use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
 use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
@@ -386,9 +388,9 @@ impl PrimarySelectionHandler for State {
 }
 delegate_primary_selection!(State);
 
-impl DataControlHandler for State {
-    fn data_control_state(&self) -> &DataControlState {
-        &self.niri.data_control_state
+impl WlrDataControlHandler for State {
+    fn data_control_state(&self) -> &WlrDataControlState {
+        &self.niri.wlr_data_control_state
     }
 }
 
