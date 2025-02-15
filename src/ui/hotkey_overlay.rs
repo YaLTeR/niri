@@ -210,8 +210,12 @@ fn render(
         &Action::FocusColumnRight,
         &Action::MoveColumnLeft,
         &Action::MoveColumnRight,
-        &Action::FocusWorkspaceDown,
-        &Action::FocusWorkspaceUp,
+        &Action::FocusWorkspaceDown(niri_config::FocusWorkspaceArgument {
+            no_mouse_warp: false,
+        }),
+        &Action::FocusWorkspaceUp(niri_config::FocusWorkspaceArgument {
+            no_mouse_warp: false,
+        }),
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
@@ -422,8 +426,8 @@ fn action_name(action: &Action) -> String {
         Action::FocusColumnRight => String::from("Focus Column to the Right"),
         Action::MoveColumnLeft => String::from("Move Column Left"),
         Action::MoveColumnRight => String::from("Move Column Right"),
-        Action::FocusWorkspaceDown => String::from("Switch Workspace Down"),
-        Action::FocusWorkspaceUp => String::from("Switch Workspace Up"),
+        Action::FocusWorkspaceDown { .. } => String::from("Switch Workspace Down"),
+        Action::FocusWorkspaceUp { .. } => String::from("Switch Workspace Up"),
         Action::MoveColumnToWorkspaceDown => String::from("Move Column to Workspace Down"),
         Action::MoveColumnToWorkspaceUp => String::from("Move Column to Workspace Up"),
         Action::MoveWindowToWorkspaceDown => String::from("Move Window to Workspace Down"),

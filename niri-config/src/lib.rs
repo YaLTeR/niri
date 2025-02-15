@@ -1434,7 +1434,10 @@ pub enum Action {
     #[knuffel(skip)]
     FullscreenWindowById(u64),
     #[knuffel(skip)]
-    FocusWindow(u64),
+    FocusWindow {
+        id: u64,
+        no_mouse_warp: bool,
+    },
     FocusWindowInColumn(#[knuffel(argument)] u8),
     FocusWindowPrevious,
     FocusColumnLeft,
@@ -1485,9 +1488,9 @@ pub enum Action {
     CenterWindow,
     #[knuffel(skip)]
     CenterWindowById(u64),
-    FocusWorkspaceDown,
-    FocusWorkspaceUp,
-    FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
+    FocusWorkspaceDown(FocusWorkspaceArgument),
+    FocusWorkspaceUp(FocusWorkspaceArgument),
+    FocusWorkspace(FocusWorkspaceWithReference),
     FocusWorkspacePrevious,
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
@@ -1596,6 +1599,20 @@ pub enum Action {
     ToggleWindowRuleOpacityById(u64),
 }
 
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct FocusWorkspaceArgument {
+    #[knuffel(argument, default)]
+    pub no_mouse_warp: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct FocusWorkspaceWithReference {
+    #[knuffel(argument)]
+    pub reference: WorkspaceReference,
+    #[knuffel(argument, default)]
+    pub no_mouse_warp: bool,
+}
+
 impl From<niri_ipc::Action> for Action {
     fn from(value: niri_ipc::Action) -> Self {
         match value {
@@ -1620,7 +1637,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
             niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
-            niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
+            niri_ipc::Action::FocusWindow { id, no_mouse_warp } => {
+                Self::FocusWindow { id, no_mouse_warp }
+            }
             niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
             niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
             niri_ipc::Action::FocusColumnLeft {} => Self::FocusColumnLeft,
@@ -1682,11 +1701,19 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
-            niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
-            niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
-            niri_ipc::Action::FocusWorkspace { reference } => {
-                Self::FocusWorkspace(WorkspaceReference::from(reference))
+            niri_ipc::Action::FocusWorkspaceDown { no_mouse_warp } => {
+                Self::FocusWorkspaceDown(FocusWorkspaceArgument { no_mouse_warp })
             }
+            niri_ipc::Action::FocusWorkspaceUp { no_mouse_warp } => {
+                Self::FocusWorkspaceUp(FocusWorkspaceArgument { no_mouse_warp })
+            }
+            niri_ipc::Action::FocusWorkspace {
+                reference,
+                no_mouse_warp,
+            } => Self::FocusWorkspace(FocusWorkspaceWithReference {
+                reference: WorkspaceReference::from(reference),
+                no_mouse_warp,
+            }),
             niri_ipc::Action::FocusWorkspacePrevious {} => Self::FocusWorkspacePrevious,
             niri_ipc::Action::MoveWindowToWorkspaceDown {} => Self::MoveWindowToWorkspaceDown,
             niri_ipc::Action::MoveWindowToWorkspaceUp {} => Self::MoveWindowToWorkspaceUp,
@@ -4149,7 +4176,7 @@ mod tests {
                             trigger: Trigger::Keysym(Keysym::_1),
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        action: Action::FocusWorkspace(WorkspaceReference::Index(1)),
+                        action: Action::FocusWorkspace( FocusWorkspaceWithReference{reference: WorkspaceReference::Index(1), no_mouse_warp: false}),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -4163,7 +4190,7 @@ mod tests {
                         },
                         action: Action::FocusWorkspace(WorkspaceReference::Name(
                             "workspace-1".to_string(),
-                        )),
+                        ), false),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -4187,7 +4214,7 @@ mod tests {
                             trigger: Trigger::WheelScrollDown,
                             modifiers: Modifiers::COMPOSITOR,
                         },
-                        action: Action::FocusWorkspaceDown,
+                        action: Action::FocusWorkspaceDown(FocusWorkspaceArgument{no_mouse_warp: false}),
                         repeat: true,
                         cooldown: Some(Duration::from_millis(150)),
                         allow_when_locked: false,
