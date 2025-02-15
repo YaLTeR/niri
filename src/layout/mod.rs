@@ -2535,8 +2535,11 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn are_animations_ongoing(&self, output: Option<&Output>) -> bool {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.are_animations_ongoing() {
-                return true;
+            #[allow(clippy::collapsible_if)]
+            if output.map_or(true, |output| *output == move_.output) {
+                if move_.tile.are_animations_ongoing() {
+                    return true;
+                }
             }
         }
 
