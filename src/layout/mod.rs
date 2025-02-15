@@ -1087,6 +1087,12 @@ impl<W: LayoutElement> Layout<W> {
                         else {
                             unreachable!()
                         };
+
+                        // Unlock the view on the workspaces.
+                        for ws in self.workspaces_mut() {
+                            ws.view_offset_gesture_end(false, None);
+                        }
+
                         return Some(RemovedTile {
                             tile: move_.tile,
                             width: move_.width,
@@ -2372,6 +2378,8 @@ impl<W: LayoutElement> Layout<W> {
         assert!(primary_idx < monitors.len());
         assert!(active_monitor_idx < monitors.len());
 
+        let mut saw_view_offset_gesture = false;
+
         for (idx, monitor) in monitors.iter().enumerate() {
             assert!(
                 !monitor.workspaces.is_empty(),
@@ -2508,6 +2516,28 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 workspace.verify_invariants(move_win_id.as_ref());
+
+                let has_view_offset_gesture = workspace.scrolling().view_offset().is_gesture();
+                if self.interactive_move.is_some() {
+                    // We'd like to check that all workspaces have the gesture here, furthermore we
+                    // want to check that they have the gesture only if the interactive move
+                    // targets the scrolling layout. However, we cannot do that because we start
+                    // and stop the gesture lazily. Otherwise the gesture code would pollute a lot
+                    // of places like adding new workspaces, implicitly moving windows between
+                    // floating and tiling on fullscreen, etc.
+                    //
+                    // assert!(
+                    //     has_view_offset_gesture,
+                    //     "during an interactive move in the scrolling layout, \
+                    //      all workspaces should be in a view offset gesture"
+                    // );
+                } else if saw_view_offset_gesture {
+                    assert!(
+                        !has_view_offset_gesture,
+                        "only one workspace can have an ongoing view offset gesture"
+                    );
+                }
+                saw_view_offset_gesture = has_view_offset_gesture;
             }
         }
     }
@@ -2517,6 +2547,23 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             move_.tile.advance_animations();
+
+            // Scroll the view if needed.
+            if !move_.is_floating {
+                let output = move_.output.clone();
+                let pos_within_output = move_.pointer_pos_within_output;
+                if let Some(mon) = self.monitor_for_output_mut(&output) {
+                    if let Some((ws, offset)) = mon.workspace_under(pos_within_output) {
+                        let ws_id = ws.id();
+                        let ws = mon
+                            .workspaces
+                            .iter_mut()
+                            .find(|ws| ws.id() == ws_id)
+                            .unwrap();
+                        ws.dnd_scroll_gesture_scroll(pos_within_output - offset);
+                    }
+                }
+            }
         }
 
         match &mut self.monitor_set {
@@ -2535,9 +2582,13 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn are_animations_ongoing(&self, output: Option<&Output>) -> bool {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            #[allow(clippy::collapsible_if)]
             if output.map_or(true, |output| *output == move_.output) {
                 if move_.tile.are_animations_ongoing() {
+                    return true;
+                }
+
+                // Keep advancing animations if we might need to scroll the view.
+                if !move_.is_floating {
                     return true;
                 }
             }
@@ -2919,6 +2970,7 @@ impl<W: LayoutElement> Layout<W> {
 
                     win.request_size_once(size, true);
                 }
+
                 return;
             }
         }
@@ -3516,6 +3568,7 @@ impl<W: LayoutElement> Layout<W> {
             return false;
         }
 
+        let is_floating = ws.is_floating(&window_id);
         let (tile, tile_offset, _visible) = ws
             .tiles_with_render_positions()
             .find(|(tile, _, _)| tile.window().id() == &window_id)
@@ -3536,6 +3589,13 @@ impl<W: LayoutElement> Layout<W> {
             pointer_delta: Point::from((0., 0.)),
             pointer_ratio_within_window,
         });
+
+        // Lock the view for scrolling interactive move.
+        if !is_floating {
+            for ws in self.workspaces_mut() {
+                ws.dnd_scroll_gesture_begin();
+            }
+        }
 
         true
     }
@@ -3744,14 +3804,25 @@ impl<W: LayoutElement> Layout<W> {
                     unreachable!()
                 };
 
-                let tile = self
-                    .workspaces_mut()
-                    .flat_map(|ws| ws.tiles_mut())
-                    .find(|tile| *tile.window().id() == window_id)
-                    .unwrap();
-                let offset = tile.interactive_move_offset;
-                tile.interactive_move_offset = Point::from((0., 0.));
-                tile.animate_move_from(offset);
+                for ws in self.workspaces_mut() {
+                    if let Some(tile) = ws.tiles_mut().find(|tile| *tile.window().id() == window_id)
+                    {
+                        let offset = tile.interactive_move_offset;
+                        tile.interactive_move_offset = Point::from((0., 0.));
+                        tile.animate_move_from(offset);
+                    }
+
+                    // Unlock the view on the workspaces, but if the moved window was active,
+                    // preserve that.
+                    let moved_tile_was_active =
+                        ws.active_window().is_some_and(|win| *win.id() == window_id);
+
+                    ws.view_offset_gesture_end(false, None);
+
+                    if moved_tile_was_active {
+                        ws.activate_window(&window_id);
+                    }
+                }
 
                 return;
             }
@@ -3765,6 +3836,13 @@ impl<W: LayoutElement> Layout<W> {
         let Some(InteractiveMoveState::Moving(move_)) = self.interactive_move.take() else {
             unreachable!()
         };
+
+        // Unlock the view on the workspaces.
+        if !move_.is_floating {
+            for ws in self.workspaces_mut() {
+                ws.view_offset_gesture_end(false, None);
+            }
+        }
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -4271,6 +4349,7 @@ impl<W: LayoutElement> Layout<W> {
 
         self.is_active = is_active;
 
+        let mut ongoing_scrolling_dnd = None;
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             let win = move_.tile.window_mut();
 
@@ -4284,6 +4363,16 @@ impl<W: LayoutElement> Layout<W> {
 
             win.send_pending_configure();
             win.refresh();
+
+            ongoing_scrolling_dnd = Some(!move_.is_floating);
+        } else if let Some(InteractiveMoveState::Starting { window_id, .. }) =
+            &self.interactive_move
+        {
+            let (_, _, ws) = self
+                .workspaces()
+                .find(|(_, _, ws)| ws.has_window(window_id))
+                .unwrap();
+            ongoing_scrolling_dnd = Some(!ws.is_floating(window_id));
         }
 
         match &mut self.monitor_set {
@@ -4299,9 +4388,18 @@ impl<W: LayoutElement> Layout<W> {
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         ws.refresh(is_active);
 
-                        // Cancel the view offset gesture after workspace switches, moves, etc.
-                        if ws_idx != mon.active_workspace_idx {
-                            ws.view_offset_gesture_end(false, None);
+                        if let Some(is_scrolling) = ongoing_scrolling_dnd {
+                            // Lock or unlock the view for scrolling interactive move.
+                            if is_scrolling {
+                                ws.dnd_scroll_gesture_begin();
+                            } else {
+                                ws.view_offset_gesture_end(false, None);
+                            }
+                        } else {
+                            // Cancel the view offset gesture after workspace switches, moves, etc.
+                            if ws_idx != mon.active_workspace_idx {
+                                ws.view_offset_gesture_end(false, None);
+                            }
                         }
                     }
                 }

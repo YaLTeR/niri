@@ -1609,6 +1609,34 @@ impl<W: LayoutElement> Workspace<W> {
             .view_offset_gesture_end(cancelled, is_touchpad)
     }
 
+    pub fn dnd_scroll_gesture_begin(&mut self) {
+        self.scrolling.dnd_scroll_gesture_begin();
+    }
+
+    pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>) {
+        // Taken from GTK 4.
+        const SCROLL_EDGE_SIZE: f64 = 30.;
+
+        // This working area intentionally does not include extra struts from Options.
+        let x = pos.x - self.working_area.loc.x;
+        let width = self.working_area.size.w;
+        let x = x.clamp(0., width);
+
+        let delta = if x < SCROLL_EDGE_SIZE {
+            -(SCROLL_EDGE_SIZE - x)
+        } else if width - x < SCROLL_EDGE_SIZE {
+            SCROLL_EDGE_SIZE - (width - x)
+        } else {
+            0.
+        };
+
+        self.scrolling.dnd_scroll_gesture_scroll(delta);
+    }
+
+    pub fn dnd_scroll_gesture_update_time(&mut self) {
+        self.scrolling.dnd_scroll_gesture_scroll(0.);
+    }
+
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
         if self.floating.has_window(&window) {
             self.floating.interactive_resize_begin(window, edges)

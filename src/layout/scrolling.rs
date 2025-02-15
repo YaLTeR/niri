@@ -123,7 +123,7 @@ struct ColumnData {
 }
 
 #[derive(Debug)]
-enum ViewOffset {
+pub(super) enum ViewOffset {
     /// The view offset is static.
     Static(f64),
     /// The view offset is animating.
@@ -133,7 +133,7 @@ enum ViewOffset {
 }
 
 #[derive(Debug)]
-struct ViewGesture {
+pub(super) struct ViewGesture {
     current_view_offset: f64,
     tracker: SwipeTracker,
     delta_from_tracker: f64,
@@ -141,6 +141,10 @@ struct ViewGesture {
     stationary_view_offset: f64,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
+
+    // If this gesture is for drag-and-drop scrolling, this is the last event's unadjusted
+    // timestamp.
+    dnd_last_event_time: Option<Duration>,
 }
 
 #[derive(Debug)]
@@ -321,6 +325,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if let ViewOffset::Animation(anim) = &self.view_offset {
             if anim.is_done() {
                 self.view_offset = ViewOffset::Static(anim.to());
+            }
+        }
+
+        if let ViewOffset::Gesture(gesture) = &mut self.view_offset {
+            // Make sure the last event time doesn't go too much out of date (for
+            // workspaces not under cursor), causing sudden jumps.
+            //
+            // This happens after any dnd_scroll_gesture_scroll() calls (in
+            // Layout::advance_animations()), so it doesn't mess up the time delta there.
+            if let Some(last_time) = &mut gesture.dnd_last_event_time {
+                *last_time = self.clock.now_unadjusted();
             }
         }
 
@@ -2711,8 +2726,32 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             delta_from_tracker: self.view_offset.current(),
             stationary_view_offset: self.view_offset.stationary(),
             is_touchpad,
+            dnd_last_event_time: None,
         };
         self.view_offset = ViewOffset::Gesture(gesture);
+    }
+
+    pub fn dnd_scroll_gesture_begin(&mut self) {
+        if let ViewOffset::Gesture(ViewGesture {
+            dnd_last_event_time: Some(_),
+            ..
+        }) = &self.view_offset
+        {
+            // Already active.
+            return;
+        }
+
+        let gesture = ViewGesture {
+            current_view_offset: self.view_offset.current(),
+            tracker: SwipeTracker::new(),
+            delta_from_tracker: self.view_offset.current(),
+            stationary_view_offset: self.view_offset.stationary(),
+            is_touchpad: false,
+            dnd_last_event_time: Some(self.clock.now_unadjusted()),
+        };
+        self.view_offset = ViewOffset::Gesture(gesture);
+
+        self.interactive_resize = None;
     }
 
     pub fn view_offset_gesture_update(
@@ -2725,7 +2764,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return None;
         };
 
-        if gesture.is_touchpad != is_touchpad {
+        if gesture.is_touchpad != is_touchpad || gesture.dnd_last_event_time.is_some() {
             return None;
         }
 
@@ -2741,6 +2780,61 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         gesture.current_view_offset = view_offset;
 
         Some(true)
+    }
+
+    pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) {
+        let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
+            return;
+        };
+
+        let Some(last_time) = gesture.dnd_last_event_time else {
+            // Not a DnD scroll.
+            return;
+        };
+
+        let now = self.clock.now_unadjusted();
+        gesture.dnd_last_event_time = Some(now);
+        let time_delta = now.saturating_sub(last_time).as_secs_f64();
+
+        let delta = delta * time_delta * 50.;
+
+        gesture.tracker.push(delta, now);
+
+        let view_offset = gesture.tracker.pos() + gesture.delta_from_tracker;
+
+        // Clamp it so that it doesn't go too much out of bounds.
+        let (leftmost, rightmost) = if self.columns.is_empty() {
+            (0., 0.)
+        } else {
+            let gaps = self.options.gaps;
+
+            let mut leftmost = -self.working_area.size.w;
+
+            let last_col_idx = self.columns.len() - 1;
+            let last_col_x = self
+                .columns
+                .iter()
+                .take(last_col_idx)
+                .fold(0., |col_x, col| col_x + col.width() + gaps);
+            let last_col_width = self.data[last_col_idx].width;
+            let mut rightmost = last_col_x + last_col_width - self.working_area.loc.x;
+
+            let active_col_x = self
+                .columns
+                .iter()
+                .take(self.active_column_idx)
+                .fold(0., |col_x, col| col_x + col.width() + gaps);
+            leftmost -= active_col_x;
+            rightmost -= active_col_x;
+
+            (leftmost, rightmost)
+        };
+        let min_offset = f64::min(leftmost, rightmost);
+        let max_offset = f64::max(leftmost, rightmost);
+        let clamped_offset = view_offset.clamp(min_offset, max_offset);
+
+        gesture.delta_from_tracker += clamped_offset - view_offset;
+        gesture.current_view_offset = clamped_offset;
     }
 
     pub fn view_offset_gesture_end(&mut self, _cancelled: bool, is_touchpad: Option<bool>) -> bool {
@@ -3226,6 +3320,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     #[cfg(test)]
     pub fn active_column_idx(&self) -> usize {
         self.active_column_idx
+    }
+
+    #[cfg(test)]
+    pub(super) fn view_offset(&self) -> &ViewOffset {
+        &self.view_offset
     }
 
     #[cfg(test)]
