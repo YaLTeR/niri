@@ -344,6 +344,9 @@ impl ClientDndGrabHandler for State {
     fn dropped(&mut self, target: Option<WlSurface>, validated: bool, _seat: Seat<Self>) {
         trace!("client dropped, target: {target:?}, validated: {validated}");
 
+        // End DnD before activating a specific window below so that it takes precedence.
+        self.niri.layout.dnd_end();
+
         // Activate the target output, since that's how Firefox drag-tab-into-new-window works for
         // example. On successful drop, additionally activate the target window.
         let mut activate_output = true;

@@ -278,6 +278,8 @@ pub struct Layout<W: LayoutElement> {
     last_active_workspace_id: HashMap<String, WorkspaceId>,
     /// Ongoing interactive move.
     interactive_move: Option<InteractiveMoveState<W>>,
+    /// Ongoing drag-and-drop operation.
+    dnd: Option<DndData>,
     /// Clock for driving animations.
     clock: Clock,
     /// Time that we last updated render elements for.
@@ -398,6 +400,14 @@ struct InteractiveMoveData<W: LayoutElement> {
     ///
     /// This helps the pointer remain inside the window as it resizes.
     pub(self) pointer_ratio_within_window: (f64, f64),
+}
+
+#[derive(Debug)]
+pub struct DndData {
+    /// Output where the pointer is currently located.
+    output: Output,
+    /// Current pointer position within output.
+    pointer_pos_within_output: Point<f64, Logical>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -600,6 +610,7 @@ impl<W: LayoutElement> Layout<W> {
             is_active: true,
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
+            dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
             options: Rc::new(options),
@@ -622,6 +633,7 @@ impl<W: LayoutElement> Layout<W> {
             is_active: true,
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
+            dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
             options: opts,
@@ -2518,7 +2530,7 @@ impl<W: LayoutElement> Layout<W> {
                 workspace.verify_invariants(move_win_id.as_ref());
 
                 let has_view_offset_gesture = workspace.scrolling().view_offset().is_gesture();
-                if self.interactive_move.is_some() {
+                if self.dnd.is_some() || self.interactive_move.is_some() {
                     // We'd like to check that all workspaces have the gesture here, furthermore we
                     // want to check that they have the gesture only if the interactive move
                     // targets the scrolling layout. However, we cannot do that because we start
@@ -2545,23 +2557,30 @@ impl<W: LayoutElement> Layout<W> {
     pub fn advance_animations(&mut self) {
         let _span = tracy_client::span!("Layout::advance_animations");
 
+        let mut dnd_scroll = None;
+        if let Some(dnd) = &self.dnd {
+            dnd_scroll = Some((dnd.output.clone(), dnd.pointer_pos_within_output));
+        }
+
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             move_.tile.advance_animations();
 
-            // Scroll the view if needed.
-            if !move_.is_floating {
-                let output = move_.output.clone();
-                let pos_within_output = move_.pointer_pos_within_output;
-                if let Some(mon) = self.monitor_for_output_mut(&output) {
-                    if let Some((ws, offset)) = mon.workspace_under(pos_within_output) {
-                        let ws_id = ws.id();
-                        let ws = mon
-                            .workspaces
-                            .iter_mut()
-                            .find(|ws| ws.id() == ws_id)
-                            .unwrap();
-                        ws.dnd_scroll_gesture_scroll(pos_within_output - offset);
-                    }
+            if !move_.is_floating && dnd_scroll.is_none() {
+                dnd_scroll = Some((move_.output.clone(), move_.pointer_pos_within_output));
+            }
+        }
+
+        // Scroll the view if needed.
+        if let Some((output, pos_within_output)) = dnd_scroll {
+            if let Some(mon) = self.monitor_for_output_mut(&output) {
+                if let Some((ws, offset)) = mon.workspace_under(pos_within_output) {
+                    let ws_id = ws.id();
+                    let ws = mon
+                        .workspaces
+                        .iter_mut()
+                        .find(|ws| ws.id() == ws_id)
+                        .unwrap();
+                    ws.dnd_scroll_gesture_scroll(pos_within_output - offset);
                 }
             }
         }
@@ -2581,6 +2600,13 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn are_animations_ongoing(&self, output: Option<&Output>) -> bool {
+        // Keep advancing animations if we might need to scroll the view.
+        if let Some(dnd) = &self.dnd {
+            if output.map_or(true, |output| *output == dnd.output) {
+                return true;
+            }
+        }
+
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if output.map_or(true, |output| *output == move_.output) {
                 if move_.tile.are_animations_ongoing() {
@@ -3991,6 +4017,33 @@ impl<W: LayoutElement> Layout<W> {
         move_.output == *output
     }
 
+    pub fn dnd_update(&mut self, output: Output, pointer_pos_within_output: Point<f64, Logical>) {
+        let begin_gesture = self.dnd.is_none();
+
+        self.dnd = Some(DndData {
+            output,
+            pointer_pos_within_output,
+        });
+
+        if begin_gesture {
+            for ws in self.workspaces_mut() {
+                ws.dnd_scroll_gesture_begin();
+            }
+        }
+    }
+
+    pub fn dnd_end(&mut self) {
+        if self.dnd.is_none() {
+            return;
+        }
+
+        self.dnd = None;
+
+        for ws in self.workspaces_mut() {
+            ws.view_offset_gesture_end(false, None);
+        }
+    }
+
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -4349,7 +4402,8 @@ impl<W: LayoutElement> Layout<W> {
 
         self.is_active = is_active;
 
-        let mut ongoing_scrolling_dnd = None;
+        let mut ongoing_scrolling_dnd = self.dnd.is_some().then_some(true);
+
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             let win = move_.tile.window_mut();
 
@@ -4364,15 +4418,17 @@ impl<W: LayoutElement> Layout<W> {
             win.send_pending_configure();
             win.refresh();
 
-            ongoing_scrolling_dnd = Some(!move_.is_floating);
+            ongoing_scrolling_dnd.get_or_insert(!move_.is_floating);
         } else if let Some(InteractiveMoveState::Starting { window_id, .. }) =
             &self.interactive_move
         {
-            let (_, _, ws) = self
-                .workspaces()
-                .find(|(_, _, ws)| ws.has_window(window_id))
-                .unwrap();
-            ongoing_scrolling_dnd = Some(!ws.is_floating(window_id));
+            ongoing_scrolling_dnd.get_or_insert_with(|| {
+                let (_, _, ws) = self
+                    .workspaces()
+                    .find(|(_, _, ws)| ws.has_window(window_id))
+                    .unwrap();
+                !ws.is_floating(window_id)
+            });
         }
 
         match &mut self.monitor_set {

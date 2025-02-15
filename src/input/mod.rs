@@ -32,6 +32,7 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
+use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_move_grab::TouchMoveGrab;
 
@@ -1888,6 +1889,18 @@ impl State {
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint();
 
+        // Inform the layout of an ongoing DnD operation.
+        let mut is_dnd_grab = false;
+        pointer.with_grab(|_, grab| {
+            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+        });
+        if is_dnd_grab {
+            if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
+                let output = output.clone();
+                self.niri.layout.dnd_update(output, pos_within_output);
+            }
+        }
+
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
         self.niri.queue_redraw_all();
@@ -1949,6 +1962,18 @@ impl State {
 
         // We moved the regular pointer, so show it now.
         self.niri.tablet_cursor_location = None;
+
+        // Inform the layout of an ongoing DnD operation.
+        let mut is_dnd_grab = false;
+        pointer.with_grab(|_, grab| {
+            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+        });
+        if is_dnd_grab {
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                let output = output.clone();
+                self.niri.layout.dnd_update(output, pos_within_output);
+            }
+        }
 
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
@@ -2912,6 +2937,18 @@ impl State {
                 time: evt.time_msec(),
             },
         );
+
+        // Inform the layout of an ongoing DnD operation.
+        let mut is_dnd_grab = false;
+        handle.with_grab(|_, grab| {
+            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+        });
+        if is_dnd_grab {
+            if let Some((output, pos_within_output)) = self.niri.output_under(touch_location) {
+                let output = output.clone();
+                self.niri.layout.dnd_update(output, pos_within_output);
+            }
+        }
     }
     fn on_touch_frame<I: InputBackend>(&mut self, _evt: I::TouchFrameEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {

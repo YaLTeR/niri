@@ -589,6 +589,15 @@ enum Op {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
     },
+    DndUpdate {
+        #[proptest(strategy = "1..=5usize")]
+        output_idx: usize,
+        #[proptest(strategy = "-20000f64..20000f64")]
+        px: f64,
+        #[proptest(strategy = "-20000f64..20000f64")]
+        py: f64,
+    },
+    DndEnd,
     InteractiveResizeBegin {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
@@ -1352,6 +1361,16 @@ impl Op {
             }
             Op::InteractiveMoveEnd { window } => {
                 layout.interactive_move_end(&window);
+            }
+            Op::DndUpdate { output_idx, px, py } => {
+                let name = format!("output{output_idx}");
+                let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                    return;
+                };
+                layout.dnd_update(output, Point::from((px, py)));
+            }
+            Op::DndEnd => {
+                layout.dnd_end();
             }
             Op::InteractiveResizeBegin { window, edges } => {
                 layout.interactive_resize_begin(window, edges);
