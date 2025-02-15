@@ -679,11 +679,15 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::FocusWindow(id) => {
+            Action::FocusWindow { id, no_mouse_warp } => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
                 let window = window.map(|(_, m)| m.window.clone());
                 if let Some(window) = window {
-                    self.focus_window(&window);
+                    if !no_mouse_warp {
+                        self.focus_window(&window);
+                        return;
+                    }
+                    self.focus_window_without_moving_cursor(&window);
                 }
             }
             Action::FocusWindowInColumn(index) => {
@@ -1149,21 +1153,25 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::FocusWorkspaceDown => {
+            Action::FocusWorkspaceDown { no_mouse_warp } => {
                 self.niri.layout.switch_workspace_down();
-                self.maybe_warp_cursor_to_focus();
+                if !no_mouse_warp {
+                    self.maybe_warp_cursor_to_focus();
+                }
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWorkspaceUp => {
+            Action::FocusWorkspaceUp { no_mouse_warp } => {
                 self.niri.layout.switch_workspace_up();
-                self.maybe_warp_cursor_to_focus();
+                if !no_mouse_warp {
+                    self.maybe_warp_cursor_to_focus();
+                }
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWorkspace(reference) => {
+            Action::FocusWorkspace(reference, no_mouse_warp) => {
                 if let Some((mut output, index)) =
                     self.niri.find_output_and_workspace_index(reference)
                 {
@@ -1176,7 +1184,7 @@ impl State {
                     if let Some(output) = output {
                         self.niri.layout.focus_output(&output);
                         self.niri.layout.switch_workspace(index);
-                        if !self.maybe_warp_cursor_to_focus_centered() {
+                        if !no_mouse_warp && !self.maybe_warp_cursor_to_focus_centered() {
                             self.move_cursor_to_output(&output);
                         }
                     } else {
@@ -1186,7 +1194,9 @@ impl State {
                         } else {
                             self.niri.layout.switch_workspace(index);
                         }
-                        self.maybe_warp_cursor_to_focus();
+                        if !no_mouse_warp {
+                            self.maybe_warp_cursor_to_focus();
+                        }
                     }
                     self.niri.layer_shell_on_demand_focus = None;
 

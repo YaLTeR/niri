@@ -214,6 +214,9 @@ pub enum Action {
         /// Id of the window to focus.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
+        /// Dont move the cursor when focussing the window.
+        #[cfg_attr(feature = "clap", arg(long = "no_mouse_warp", action = clap::ArgAction::SetTrue))]
+        no_mouse_warp: bool,
     },
     /// Focus a window in the focused column by index.
     FocusWindowInColumn {
@@ -344,14 +347,25 @@ pub enum Action {
         id: Option<u64>,
     },
     /// Focus the workspace below.
-    FocusWorkspaceDown {},
+    FocusWorkspaceDown {
+        /// Dont move the cursor when focussing the window.
+        #[cfg_attr(feature = "clap", arg(long = "no_mouse_warp", action = clap::ArgAction::SetTrue))]
+        no_mouse_warp: bool,
+    },
     /// Focus the workspace above.
-    FocusWorkspaceUp {},
+    FocusWorkspaceUp {
+        /// Dont move the cursor when focussing the window.
+        #[cfg_attr(feature = "clap", arg(long = "no_mouse_warp", action = clap::ArgAction::SetTrue))]
+        no_mouse_warp: bool,
+    },
     /// Focus a workspace by reference (index or name).
     FocusWorkspace {
         /// Reference (index or name) of the workspace to focus.
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
+        /// Dont move the cursor when focussing the window.
+        #[cfg_attr(feature = "clap", arg(long = "no_mouse_warp", action = clap::ArgAction::SetTrue))]
+        no_mouse_warp: bool,
     },
     /// Focus the previous workspace.
     FocusWorkspacePrevious {},

@@ -775,6 +775,13 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    /// Focus a specific window without moving the cursor.
+    pub fn focus_window_without_moving_cursor(&mut self, window: &Window) {
+        self.niri.layout.activate_window(window);
+        // FIXME: granular
+        self.niri.queue_redraw_all();
+    }
+
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
         if !self.niri.config.borrow().input.warp_mouse_to_focus {
             return false;
