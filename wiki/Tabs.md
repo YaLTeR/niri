@@ -2,7 +2,7 @@
 
 <sup>Since: next release</sup>
 
-You can switch a column to display windows as tabs, rather than as vertical tiles.
+You can switch a column to present windows as tabs, rather than as vertical tiles.
 All tabs in a column have the same window size, so this is useful to get more vertical space.
 
 ![Terminal with a tab indicator on the left.](https://github.com/user-attachments/assets/0e94ac0d-796d-4f85-a264-c105ef41c13f)
