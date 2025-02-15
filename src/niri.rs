@@ -825,7 +825,9 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = if self.niri.pointer_hidden {
+        let under = if self.niri.pointer_hidden
+            && !self.niri.config.borrow().cursor.keep_focus_when_hidden
+        {
             PointContents::default()
         } else {
             self.niri.contents_under(location)
