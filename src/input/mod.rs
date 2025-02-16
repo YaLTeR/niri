@@ -3502,6 +3502,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 .or(device.config_calibration_default_matrix())
                 .unwrap_or(IDENTITY_MATRIX),
         );
+
         let _ = device.config_left_handed_set(c.left_handed);
     }
 }
