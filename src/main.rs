@@ -90,9 +90,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::set_var("XDG_SESSION_TYPE", "wayland");
     }
 
-    // Set a better error printer for config loading.
-    niri_config::set_miette_hook().unwrap();
-
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
         match subcommand {

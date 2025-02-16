@@ -12,7 +12,7 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 use layer_rule::LayerRule;
-use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
+use miette::{miette, Context, IntoDiagnostic};
 use niri_ipc::{
     ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
     WorkspaceReferenceArg,
@@ -3509,10 +3509,6 @@ impl FromStr for Percent {
     }
 }
 
-pub fn set_miette_hook() -> Result<(), miette::InstallError> {
-    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())))
-}
-
 #[cfg(test)]
 mod tests {
     use insta::{assert_debug_snapshot, assert_snapshot};
@@ -3523,8 +3519,6 @@ mod tests {
 
     #[track_caller]
     fn do_parse(text: &str) -> Config {
-        let _ = set_miette_hook();
-
         Config::parse("test.kdl", text)
             .map_err(miette::Report::new)
             .unwrap()
