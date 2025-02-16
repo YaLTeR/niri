@@ -145,6 +145,10 @@ pub(super) struct ViewGesture {
     // If this gesture is for drag-and-drop scrolling, this is the last event's unadjusted
     // timestamp.
     dnd_last_event_time: Option<Duration>,
+    // Time when the drag-and-drop scroll delta became non-zero, used for debouncing.
+    //
+    // If `None` then the scroll delta is currently zero.
+    dnd_nonzero_start_time: Option<Duration>,
 }
 
 #[derive(Debug)]
@@ -335,7 +339,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // This happens after any dnd_scroll_gesture_scroll() calls (in
             // Layout::advance_animations()), so it doesn't mess up the time delta there.
             if let Some(last_time) = &mut gesture.dnd_last_event_time {
-                *last_time = self.clock.now_unadjusted();
+                let now = self.clock.now_unadjusted();
+                if *last_time != now {
+                    *last_time = now;
+
+                    // If last_time was already == now, then dnd_scroll_gesture_scroll() must've
+                    // updated the gesture already. Therefore, when this code runs, the pointer
+                    // must be outside the DnD scrolling zone.
+                    gesture.dnd_nonzero_start_time = None;
+                }
             }
         }
 
@@ -2727,6 +2739,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             stationary_view_offset: self.view_offset.stationary(),
             is_touchpad,
             dnd_last_event_time: None,
+            dnd_nonzero_start_time: None,
         };
         self.view_offset = ViewOffset::Gesture(gesture);
     }
@@ -2748,6 +2761,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             stationary_view_offset: self.view_offset.stationary(),
             is_touchpad: false,
             dnd_last_event_time: Some(self.clock.now_unadjusted()),
+            dnd_nonzero_start_time: None,
         };
         self.view_offset = ViewOffset::Gesture(gesture);
 
@@ -2794,6 +2808,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let now = self.clock.now_unadjusted();
         gesture.dnd_last_event_time = Some(now);
+
+        if delta == 0. {
+            // We're outside the scrolling zone.
+            gesture.dnd_nonzero_start_time = None;
+            return;
+        }
+
+        let nonzero_start = *gesture.dnd_nonzero_start_time.get_or_insert(now);
+
+        // Delay starting the gesture a bit to avoid unwanted movement when dragging across
+        // monitors.
+        if now.saturating_sub(nonzero_start) < Duration::from_millis(50) {
+            return;
+        }
+
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
 
         let delta = delta * time_delta * 50.;
