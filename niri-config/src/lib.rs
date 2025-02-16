@@ -59,6 +59,8 @@ pub struct Config {
     #[knuffel(child, default)]
     pub animations: Animations,
     #[knuffel(child, default)]
+    pub gestures: Gestures,
+    #[knuffel(child, default)]
     pub environment: Environment,
     #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
@@ -1113,6 +1115,32 @@ pub struct SpringParams {
     pub damping_ratio: f64,
     pub stiffness: u32,
     pub epsilon: f64,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct Gestures {
+    #[knuffel(child, default)]
+    pub dnd_edge_view_scroll: DndEdgeViewScroll,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct DndEdgeViewScroll {
+    #[knuffel(child, unwrap(argument), default = Self::default().trigger_width)]
+    pub trigger_width: FloatOrInt<0, 65535>,
+    #[knuffel(child, unwrap(argument), default = Self::default().delay_ms)]
+    pub delay_ms: u16,
+    #[knuffel(child, unwrap(argument), default = Self::default().max_speed)]
+    pub max_speed: FloatOrInt<0, 1_000_000>,
+}
+
+impl Default for DndEdgeViewScroll {
+    fn default() -> Self {
+        Self {
+            trigger_width: FloatOrInt(30.), // Taken from GTK 4.
+            delay_ms: 50,
+            max_speed: FloatOrInt(1500.),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
@@ -3679,6 +3707,13 @@ mod tests {
                 window-open { off; }
             }
 
+            gestures {
+                dnd-edge-view-scroll {
+                    trigger-width 10
+                    max-speed 50
+                }
+            }
+
             environment {
                 QT_QPA_PLATFORM "wayland"
                 DISPLAY null
@@ -4251,6 +4286,17 @@ mod tests {
                         ),
                     },
                 ),
+            },
+            gestures: Gestures {
+                dnd_edge_view_scroll: DndEdgeViewScroll {
+                    trigger_width: FloatOrInt(
+                        10.0,
+                    ),
+                    delay_ms: 50,
+                    max_speed: FloatOrInt(
+                        50.0,
+                    ),
+                },
             },
             environment: Environment(
                 [

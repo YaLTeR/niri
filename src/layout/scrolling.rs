@@ -2806,6 +2806,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         };
 
+        let config = &self.options.gestures.dnd_edge_view_scroll;
+
         let now = self.clock.now_unadjusted();
         gesture.dnd_last_event_time = Some(now);
 
@@ -2819,13 +2821,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Delay starting the gesture a bit to avoid unwanted movement when dragging across
         // monitors.
-        if now.saturating_sub(nonzero_start) < Duration::from_millis(50) {
+        let delay = Duration::from_millis(u64::from(config.delay_ms));
+        if now.saturating_sub(nonzero_start) < delay {
             return;
         }
 
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
 
-        let delta = delta * time_delta * 50.;
+        let delta = delta * time_delta * config.max_speed.0;
 
         gesture.tracker.push(delta, now);
 

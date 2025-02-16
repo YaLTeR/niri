@@ -328,6 +328,7 @@ pub struct Options {
     /// Window height that `toggle_window_height()` switches between.
     pub preset_window_heights: Vec<PresetSize>,
     pub animations: niri_config::Animations,
+    pub gestures: niri_config::Gestures,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -354,6 +355,7 @@ impl Default for Options {
             ],
             default_column_width: None,
             animations: Default::default(),
+            gestures: Default::default(),
             disable_resize_throttling: false,
             disable_transactions: false,
             preset_window_heights: vec![
@@ -582,6 +584,7 @@ impl Options {
             preset_column_widths,
             default_column_width,
             animations: config.animations.clone(),
+            gestures: config.gestures,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             preset_window_heights,

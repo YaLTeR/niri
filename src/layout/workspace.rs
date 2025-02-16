@@ -1614,20 +1614,30 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>) {
-        // Taken from GTK 4.
-        const SCROLL_EDGE_SIZE: f64 = 30.;
+        let config = &self.options.gestures.dnd_edge_view_scroll;
+        let trigger_width = config.trigger_width.0;
 
         // This working area intentionally does not include extra struts from Options.
         let x = pos.x - self.working_area.loc.x;
         let width = self.working_area.size.w;
-        let x = x.clamp(0., width);
 
-        let delta = if x < SCROLL_EDGE_SIZE {
-            -(SCROLL_EDGE_SIZE - x)
-        } else if width - x < SCROLL_EDGE_SIZE {
-            SCROLL_EDGE_SIZE - (width - x)
+        let x = x.clamp(0., width);
+        let trigger_width = trigger_width.clamp(0., width / 2.);
+
+        let delta = if x < trigger_width {
+            -(trigger_width - x)
+        } else if width - x < trigger_width {
+            trigger_width - (width - x)
         } else {
             0.
+        };
+
+        let delta = if trigger_width < 0.01 {
+            // Sanity check for trigger-width 0 or small window sizes.
+            0.
+        } else {
+            // Normalize to [0, 1].
+            delta / trigger_width
         };
 
         self.scrolling.dnd_scroll_gesture_scroll(delta);
