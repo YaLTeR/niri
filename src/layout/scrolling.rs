@@ -2555,6 +2555,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let mut width_taken = 0.;
         let mut leftmost_col_x = None;
         let mut active_col_x = None;
+        let mut counted_non_active_column = false;
 
         let gap = self.options.gaps;
         let col_xs = self.column_xs(self.data.iter().copied());
@@ -2574,6 +2575,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             if idx == self.active_column_idx {
                 active_col_x = Some(col_x);
+            } else {
+                counted_non_active_column = true;
             }
 
             width_taken += width + gap;
@@ -2590,15 +2593,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let active_width = self.data[self.active_column_idx].width;
-
         let col = &mut self.columns[self.active_column_idx];
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        if !counted_non_active_column {
+            // Only the active column was fully on-screen (maybe it's the only column), so we're
+            // about to set its width to 100% of the working area. Let's do it via
+            // toggle_full_width() as it lets you back out of it more intuitively.
+            col.toggle_full_width();
+            return;
+        }
+
+        let active_width = self.data[self.active_column_idx].width;
         col.width = ColumnWidth::Fixed(active_width + available_width);
         col.preset_width_idx = None;
         col.is_full_width = false;
         col.update_tile_sizes(true);
-
-        cancel_resize_for_column(&mut self.interactive_resize, col);
 
         // Put the leftmost window into the view.
         let new_view_x = leftmost_col_x.unwrap() - gap - working_x;
