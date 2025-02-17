@@ -2541,7 +2541,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // on screen while taking into account that the active column will remain centered
             // after resizing. But I'm not sure it's that useful? So let's do the simple thing.
             let col = &mut self.columns[self.active_column_idx];
-            col.set_column_width(SizeChange::SetProportion(1.), None, true);
+            col.toggle_full_width();
             cancel_resize_for_column(&mut self.interactive_resize, col);
             return;
         }
