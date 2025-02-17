@@ -451,9 +451,7 @@ impl SessionLockHandler for State {
     fn unlock(&mut self) {
         self.niri.unlock();
         self.niri.activate_monitors(&mut self.backend);
-        self.niri
-            .idle_notifier_state
-            .notify_activity(&self.niri.seat);
+        self.niri.notify_activity();
     }
 
     fn new_surface(&mut self, surface: LockSurface, output: WlOutput) {

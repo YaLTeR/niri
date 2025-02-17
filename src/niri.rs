@@ -334,6 +334,11 @@ pub struct Niri {
     /// Used for limiting the reset to once per iteration, so that it's not spammed with high
     /// resolution mice.
     pub pointer_inactivity_timer_got_reset: bool,
+    /// Whether the (idle notifier) activity was notified this event loop iteration.
+    ///
+    /// Used for limiting the notify to once per iteration, so that it's not spammed with high
+    /// resolution mice.
+    pub notified_activity_this_iteration: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -627,6 +632,7 @@ impl State {
         // Clear the time so it's fetched afresh next iteration.
         self.niri.clock.clear();
         self.niri.pointer_inactivity_timer_got_reset = false;
+        self.niri.notified_activity_this_iteration = false;
     }
 
     fn refresh(&mut self) {
@@ -2146,6 +2152,7 @@ impl Niri {
             pointer_hidden: false,
             pointer_inactivity_timer: None,
             pointer_inactivity_timer_got_reset: false,
+            notified_activity_this_iteration: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -5292,6 +5299,18 @@ impl Niri {
         self.pointer_inactivity_timer = Some(token);
 
         self.pointer_inactivity_timer_got_reset = true;
+    }
+
+    pub fn notify_activity(&mut self) {
+        if self.notified_activity_this_iteration {
+            return;
+        }
+
+        let _span = tracy_client::span!("Niri::notify_activity");
+
+        self.idle_notifier_state.notify_activity(&self.seat);
+
+        self.notified_activity_this_iteration = true;
     }
 }
 

@@ -97,10 +97,7 @@ impl State {
         if self.niri.monitors_active {
             // Notify the idle-notifier of activity.
             if should_notify_activity(&event) {
-                let _span = tracy_client::span!("IdleNotifierState::notify_activity");
-                self.niri
-                    .idle_notifier_state
-                    .notify_activity(&self.niri.seat);
+                self.niri.notify_activity();
             }
         } else {
             // Power on monitors if they were off.
@@ -109,9 +106,7 @@ impl State {
 
                 // Notify the idle-notifier of activity only if we're also powering on the
                 // monitors.
-                self.niri
-                    .idle_notifier_state
-                    .notify_activity(&self.niri.seat);
+                self.niri.notify_activity();
             }
         }
 
