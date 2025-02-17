@@ -10,11 +10,13 @@ repository.workspace = true
 [dependencies]
 bitflags.workspace = true
 csscolorparser = "0.7.0"
+kdl = { version = "6.3.4", features = ["v1-fallback"] }
 knuffel = "3.2.0"
-miette = { version = "5.10.0", features = ["fancy-no-backtrace"] }
+miette = { version = "7.5.0", features = ["fancy-no-backtrace"] }
 niri-ipc = { version = "25.1.0", path = "../niri-ipc" }
 regex = "1.11.1"
 smithay = { workspace = true, features = ["backend_libinput"] }
+thiserror = "2.0.11"
 tracing.workspace = true
 tracy-client.workspace = true
 
