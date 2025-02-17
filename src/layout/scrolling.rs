@@ -2587,13 +2587,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let available_width = working_w - gap - width_taken;
+        let col = &mut self.columns[self.active_column_idx];
+
+        let available_width = working_w - gap - width_taken - col.extra_size().w;
         if available_width <= 0. {
             // Nowhere to expand.
             return;
         }
 
-        let col = &mut self.columns[self.active_column_idx];
         cancel_resize_for_column(&mut self.interactive_resize, col);
 
         if !counted_non_active_column {
