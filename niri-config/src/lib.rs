@@ -1593,6 +1593,7 @@ pub enum Action {
     SwitchPresetWindowHeightById(u64),
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
+    ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
     ShowHotkeyOverlay,
     MoveWorkspaceToMonitorLeft,
@@ -1794,6 +1795,7 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
+            niri_ipc::Action::ExpandColumnToAvailableWidth {} => Self::ExpandColumnToAvailableWidth,
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),
             niri_ipc::Action::ShowHotkeyOverlay {} => Self::ShowHotkeyOverlay,
             niri_ipc::Action::MoveWorkspaceToMonitorLeft {} => Self::MoveWorkspaceToMonitorLeft,

@@ -1128,6 +1128,13 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn expand_column_to_available_width(&mut self) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.expand_column_to_available_width();
+    }
+
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
         let mut unfullscreen_to_floating = false;
         if self.floating.has_window(window) {

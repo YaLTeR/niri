@@ -2524,6 +2524,89 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
+    pub fn expand_column_to_available_width(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        if col.is_fullscreen || col.is_full_width {
+            return;
+        }
+
+        if self.is_centering_focused_column() {
+            // Always-centered mode is different since the active window position cannot be
+            // controlled (it's always at the center). I guess you could come up with different
+            // logic here that computes the width in such a way so as to leave nearby columns fully
+            // on screen while taking into account that the active column will remain centered
+            // after resizing. But I'm not sure it's that useful? So let's do the simple thing.
+            let col = &mut self.columns[self.active_column_idx];
+            col.set_column_width(SizeChange::SetProportion(1.), None, true);
+            cancel_resize_for_column(&mut self.interactive_resize, col);
+            return;
+        }
+
+        // Consider the end of an ongoing animation because that's what compute to fit does too.
+        let view_x = self.target_view_pos();
+        let working_x = self.working_area.loc.x;
+        let working_w = self.working_area.size.w;
+
+        // Count all columns that are fully visible inside the working area.
+        let mut width_taken = 0.;
+        let mut leftmost_col_x = None;
+        let mut active_col_x = None;
+
+        let gap = self.options.gaps;
+        let col_xs = self.column_xs(self.data.iter().copied());
+        for (idx, col_x) in col_xs.take(self.columns.len()).enumerate() {
+            if col_x < view_x + working_x + gap {
+                // Column goes off-screen to the left.
+                continue;
+            }
+
+            leftmost_col_x.get_or_insert(col_x);
+
+            let width = self.data[idx].width;
+            if view_x + working_x + working_w < col_x + width + gap {
+                // Column goes off-screen to the right. We can stop here.
+                break;
+            }
+
+            if idx == self.active_column_idx {
+                active_col_x = Some(col_x);
+            }
+
+            width_taken += width + gap;
+        }
+
+        if active_col_x.is_none() {
+            // The active column wasn't fully on screen, so we can't meaningfully do anything.
+            return;
+        }
+
+        let available_width = working_w - gap - width_taken;
+        if available_width <= 0. {
+            // Nowhere to expand.
+            return;
+        }
+
+        let active_width = self.data[self.active_column_idx].width;
+
+        let col = &mut self.columns[self.active_column_idx];
+        col.width = ColumnWidth::Fixed(active_width + available_width);
+        col.preset_width_idx = None;
+        col.is_full_width = false;
+        col.update_tile_sizes(true);
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        // Put the leftmost window into the view.
+        let new_view_x = leftmost_col_x.unwrap() - gap - working_x;
+        self.animate_view_offset(self.active_column_idx, new_view_x - active_col_x.unwrap());
+        // Just in case.
+        self.animate_view_offset_to_column(None, self.active_column_idx, None);
+    }
+
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) -> bool {
         let (mut col_idx, tile_idx) = self
             .columns

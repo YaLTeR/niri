@@ -2977,6 +2977,13 @@ impl<W: LayoutElement> Layout<W> {
         workspace.reset_window_height(window);
     }
 
+    pub fn expand_column_to_available_width(&mut self) {
+        let Some(monitor) = self.active_monitor() else {
+            return;
+        };
+        monitor.expand_column_to_available_width();
+    }
+
     pub fn toggle_window_floating(&mut self, window: Option<&W::Id>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {

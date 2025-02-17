@@ -1511,6 +1511,9 @@ impl State {
                     self.niri.layout.reset_window_height(Some(&window));
                 }
             }
+            Action::ExpandColumnToAvailableWidth => {
+                self.niri.layout.expand_column_to_available_width();
+            }
             Action::ShowHotkeyOverlay => {
                 if self.niri.hotkey_overlay.show() {
                     self.niri.queue_redraw_all();
