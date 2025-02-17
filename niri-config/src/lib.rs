@@ -4188,9 +4188,9 @@ mod tests {
                             trigger: Trigger::Keysym(Keysym::_1),
                             modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
                         },
-                        action: Action::FocusWorkspace(WorkspaceReference::Name(
+                        action: Action::FocusWorkspace(FocusWorkspaceWithReference{reference: WorkspaceReference::Name(
                             "workspace-1".to_string(),
-                        ), false),
+                        ), no_mouse_warp: false}),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
