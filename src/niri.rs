@@ -159,6 +159,7 @@ use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, logical_output,
     make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
 };
+use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -355,6 +356,8 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
+
+    pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -2172,6 +2175,8 @@ impl Niri {
             hotkey_overlay,
             exit_confirm_dialog,
 
+            pick_window: None,
+
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
 
@@ -3007,7 +3012,23 @@ impl Niri {
 
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
-        let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
+        let render_cursor = if self.pick_window.is_some() {
+            // FIXME: override the cursor without repeating the logic of `get_render_cursor`
+            self.cursor_manager
+                .get_cursor_with_name(CursorIcon::Crosshair, cursor_scale)
+                .map(|cursor| RenderCursor::Named {
+                    icon: CursorIcon::Crosshair,
+                    scale: cursor_scale,
+                    cursor,
+                })
+                .unwrap_or_else(|| RenderCursor::Named {
+                    icon: Default::default(),
+                    scale: cursor_scale,
+                    cursor: self.cursor_manager.get_default_cursor(cursor_scale),
+                })
+        } else {
+            self.cursor_manager.get_render_cursor(cursor_scale)
+        };
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 

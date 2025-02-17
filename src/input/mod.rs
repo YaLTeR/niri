@@ -45,6 +45,7 @@ use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
+use crate::window::Mapped;
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -381,6 +382,16 @@ impl State {
                         this.niri.suppressed_keys.insert(key_code);
                         return FilterResult::Intercept(None);
                     }
+                }
+
+                if let Some(tx) = this
+                    .niri
+                    .pick_window
+                    .take_if(|_| pressed && raw == Some(Keysym::Escape))
+                {
+                    this.niri.suppressed_keys.insert(key_code);
+                    let _ = tx.send_blocking(None);
+                    return FilterResult::Intercept(None);
                 }
 
                 should_intercept_key(
@@ -2020,6 +2031,11 @@ impl State {
             // We received an event for the regular pointer, so show it now.
             self.niri.pointer_hidden = false;
             self.niri.tablet_cursor_location = None;
+
+            if let Some(tx) = self.niri.pick_window.take() {
+                let _ = tx.send_blocking(self.niri.window_under_cursor().map(Mapped::id));
+                return;
+            }
 
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();

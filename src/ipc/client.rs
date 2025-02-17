@@ -19,6 +19,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
         Msg::FocusedOutput => Request::FocusedOutput,
+        Msg::PickWindow => Request::PickWindow,
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
@@ -250,6 +251,23 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 print_output(output)?;
             } else {
                 println!("No output is focused.");
+            }
+        }
+        Msg::PickWindow => {
+            let Response::PickedWindow(window) = response else {
+                bail!("unexpected response: expected PickedWindow, got {response:?}");
+            };
+
+            if json {
+                let window = serde_json::to_string(&window).context("error formatting response")?;
+                println!("{window}");
+                return Ok(());
+            }
+
+            if let Some(window) = window {
+                print_window(&window);
+            } else {
+                println!("No window selected.");
             }
         }
         Msg::Action { .. } => {
