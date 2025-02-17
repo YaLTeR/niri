@@ -326,8 +326,12 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
                 if let Some(tx) = state.niri.pick_window.replace(tx) {
+                    // Cancel previous ongoing pick, if any.
                     let _ = tx.send_blocking(None);
                 }
+
+                // Redraw to update the cursor.
+                state.niri.queue_redraw_all();
             });
             let result = rx.recv().await;
             let id = result.map_err(|_| String::from("error getting picked window info"))?;

@@ -3013,19 +3013,8 @@ impl Niri {
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
         let render_cursor = if self.pick_window.is_some() {
-            // FIXME: override the cursor without repeating the logic of `get_render_cursor`
             self.cursor_manager
-                .get_cursor_with_name(CursorIcon::Crosshair, cursor_scale)
-                .map(|cursor| RenderCursor::Named {
-                    icon: CursorIcon::Crosshair,
-                    scale: cursor_scale,
-                    cursor,
-                })
-                .unwrap_or_else(|| RenderCursor::Named {
-                    icon: Default::default(),
-                    scale: cursor_scale,
-                    cursor: self.cursor_manager.get_default_cursor(cursor_scale),
-                })
+                .get_render_cursor_named(CursorIcon::Crosshair, cursor_scale)
         } else {
             self.cursor_manager.get_render_cursor(cursor_scale)
         };

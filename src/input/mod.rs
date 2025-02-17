@@ -368,7 +368,6 @@ impl State {
             serial,
             time,
             |this, mods, keysym| {
-                let bindings = &this.niri.config.borrow().binds;
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
@@ -384,16 +383,17 @@ impl State {
                     }
                 }
 
-                if let Some(tx) = this
-                    .niri
-                    .pick_window
-                    .take_if(|_| pressed && raw == Some(Keysym::Escape))
-                {
-                    this.niri.suppressed_keys.insert(key_code);
-                    let _ = tx.send_blocking(None);
-                    return FilterResult::Intercept(None);
+                if pressed && raw == Some(Keysym::Escape) {
+                    if let Some(tx) = this.niri.pick_window.take() {
+                        this.niri.suppressed_keys.insert(key_code);
+                        let _ = tx.send_blocking(None);
+                        // Redraw to update the cursor.
+                        this.niri.queue_redraw_all();
+                        return FilterResult::Intercept(None);
+                    }
                 }
 
+                let bindings = &this.niri.config.borrow().binds;
                 should_intercept_key(
                     &mut this.niri.suppressed_keys,
                     bindings,
@@ -2034,6 +2034,8 @@ impl State {
 
             if let Some(tx) = self.niri.pick_window.take() {
                 let _ = tx.send_blocking(self.niri.window_under_cursor().map(Mapped::id));
+                // Redraw to update the cursor.
+                self.niri.queue_redraw_all();
                 return;
             }
 
