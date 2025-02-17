@@ -73,7 +73,7 @@ log = { version = "0.4.25", features = ["max_level_trace", "release_max_level_de
 niri-config = { version = "25.1.0", path = "niri-config" }
 niri-ipc = { version = "25.1.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "4.6.0"
-pango = { version = "0.20.7", features = ["v1_44"] }
+pango = { version = "0.20.9", features = ["v1_44"] }
 pangocairo = "0.20.7"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
 png = "0.17.16"
