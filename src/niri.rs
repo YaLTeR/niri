@@ -329,6 +329,11 @@ pub struct Niri {
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
+    /// Whether the pointer inactivity timer got reset this event loop iteration.
+    ///
+    /// Used for limiting the reset to once per iteration, so that it's not spammed with high
+    /// resolution mice.
+    pub pointer_inactivity_timer_got_reset: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -621,6 +626,7 @@ impl State {
 
         // Clear the time so it's fetched afresh next iteration.
         self.niri.clock.clear();
+        self.niri.pointer_inactivity_timer_got_reset = false;
     }
 
     fn refresh(&mut self) {
@@ -1331,6 +1337,8 @@ impl State {
         }
 
         if cursor_inactivity_timeout_changed {
+            // Force reset due to timeout change.
+            self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
         }
 
@@ -2137,6 +2145,7 @@ impl Niri {
             pointer_contents: PointContents::default(),
             pointer_hidden: false,
             pointer_inactivity_timer: None,
+            pointer_inactivity_timer_got_reset: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -5254,6 +5263,10 @@ impl Niri {
     }
 
     pub fn reset_pointer_inactivity_timer(&mut self) {
+        if self.pointer_inactivity_timer_got_reset {
+            return;
+        }
+
         let _span = tracy_client::span!("Niri::reset_pointer_inactivity_timer");
 
         if let Some(token) = self.pointer_inactivity_timer.take() {
@@ -5277,6 +5290,8 @@ impl Niri {
             })
             .unwrap();
         self.pointer_inactivity_timer = Some(token);
+
+        self.pointer_inactivity_timer_got_reset = true;
     }
 }
 
