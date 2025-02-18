@@ -2024,6 +2024,37 @@ impl State {
             self.niri.pointer_hidden = false;
             self.niri.tablet_cursor_location = None;
 
+            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
+                let mod_down = match self.backend.mod_key() {
+                    CompositorMod::Super => mods.logo,
+                    CompositorMod::Alt => mods.alt,
+                };
+                if mod_down {
+                    if let Some(output) = self.niri.output_under_cursor() {
+                        self.niri.layout.activate_output(&output);
+
+                        let location = pointer.current_location();
+                        let start_data = PointerGrabStartData {
+                            focus: None,
+                            button: button_code,
+                            location,
+                        };
+                        let grab = SpatialMovementGrab::new(start_data, output);
+                        pointer.set_grab(self, grab, serial, Focus::Clear);
+                        self.niri
+                            .cursor_manager
+                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
+
+                        // FIXME: granular.
+                        self.niri.queue_redraw_all();
+
+                        // Don't activate the window under the cursor to avoid unnecessary
+                        // scrolling when e.g. Mod+MMB clicking on a partially off-screen window.
+                        return;
+                    }
+                }
+            }
+
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();
 
@@ -2141,28 +2172,6 @@ impl State {
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
-            }
-
-            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
-                let mod_down = match self.backend.mod_key() {
-                    CompositorMod::Super => mods.logo,
-                    CompositorMod::Alt => mods.alt,
-                };
-                if mod_down {
-                    if let Some(output) = self.niri.output_under_cursor() {
-                        let location = pointer.current_location();
-                        let start_data = PointerGrabStartData {
-                            focus: None,
-                            button: button_code,
-                            location,
-                        };
-                        let grab = SpatialMovementGrab::new(start_data, output);
-                        pointer.set_grab(self, grab, serial, Focus::Clear);
-                        self.niri
-                            .cursor_manager
-                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
-                    }
-                }
             }
         };
 
