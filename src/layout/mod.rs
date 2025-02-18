@@ -1105,7 +1105,7 @@ impl<W: LayoutElement> Layout<W> {
 
                         // Unlock the view on the workspaces.
                         for ws in self.workspaces_mut() {
-                            ws.view_offset_gesture_end(false, None);
+                            ws.dnd_scroll_gesture_end();
                         }
 
                         return Some(RemovedTile {
@@ -3853,7 +3853,7 @@ impl<W: LayoutElement> Layout<W> {
                     let moved_tile_was_active =
                         ws.active_window().is_some_and(|win| *win.id() == window_id);
 
-                    ws.view_offset_gesture_end(false, None);
+                    ws.dnd_scroll_gesture_end();
 
                     if moved_tile_was_active {
                         ws.activate_window(&window_id);
@@ -3876,7 +3876,7 @@ impl<W: LayoutElement> Layout<W> {
         // Unlock the view on the workspaces.
         if !move_.is_floating {
             for ws in self.workspaces_mut() {
-                ws.view_offset_gesture_end(false, None);
+                ws.dnd_scroll_gesture_end();
             }
         }
 
@@ -4050,7 +4050,7 @@ impl<W: LayoutElement> Layout<W> {
         self.dnd = None;
 
         for ws in self.workspaces_mut() {
-            ws.view_offset_gesture_end(false, None);
+            ws.dnd_scroll_gesture_end();
         }
     }
 
@@ -4459,7 +4459,7 @@ impl<W: LayoutElement> Layout<W> {
                             if is_scrolling {
                                 ws.dnd_scroll_gesture_begin();
                             } else {
-                                ws.view_offset_gesture_end(false, None);
+                                ws.dnd_scroll_gesture_end();
                             }
                         } else {
                             // Cancel the view offset gesture after workspace switches, moves, etc.

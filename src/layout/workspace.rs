@@ -1650,6 +1650,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.dnd_scroll_gesture_scroll(delta);
     }
 
+    pub fn dnd_scroll_gesture_end(&mut self) {
+        self.scrolling.dnd_scroll_gesture_end();
+    }
+
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
         if self.floating.has_window(&window) {
             self.floating.interactive_resize_begin(window, edges)

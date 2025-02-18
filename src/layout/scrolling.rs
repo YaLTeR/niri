@@ -3232,6 +3232,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
+    pub fn dnd_scroll_gesture_end(&mut self) {
+        let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
+            return;
+        };
+
+        if gesture.dnd_last_event_time.is_some() && gesture.tracker.pos() == 0. {
+            // DnD didn't scroll anything, so preserve the current view position (rather than
+            // snapping the window).
+            self.view_offset = ViewOffset::Static(gesture.delta_from_tracker);
+
+            if !self.columns.is_empty() {
+                // Just in case, make sure the active window remains on screen.
+                self.animate_view_offset_to_column(None, self.active_column_idx, None);
+            }
+            return;
+        }
+
+        self.view_offset_gesture_end(false, None);
+    }
+
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
         if self.interactive_resize.is_some() {
             return false;
