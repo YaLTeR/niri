@@ -465,10 +465,10 @@ fn key_name(mod_key: ModKey, key: &Key) -> String {
                 name.push_str("Ctrl + ");
             }
             ModKey::IsoLevel3Shift => {
-                name.push_str("ISO_Level3_Shift + ");
+                name.push_str("Mod5 + ");
             }
             ModKey::IsoLevel5Shift => {
-                name.push_str("ISO_Level5_Shift + ");
+                name.push_str("Mod3 + ");
             }
         }
     }
@@ -488,12 +488,12 @@ fn key_name(mod_key: ModKey, key: &Key) -> String {
     if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT)
         && !(has_comp_mod && mod_key == ModKey::IsoLevel3Shift)
     {
-        name.push_str("ISO_Level3_Shift + ");
+        name.push_str("Mod5 + ");
     }
     if key.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT)
         && !(has_comp_mod && mod_key == ModKey::IsoLevel5Shift)
     {
-        name.push_str("ISO_Level5_Shift + ");
+        name.push_str("Mod3 + ");
     }
 
     let pretty = match key.trigger {
