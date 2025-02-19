@@ -3211,6 +3211,7 @@ const PRESET_BINDINGS: &[Bind] = &[
         cooldown: None,
         allow_when_locked: false,
         allow_inhibiting: true,
+        hotkey_overlay_title: None,
     },
     Bind {
         key: Key {
@@ -3222,6 +3223,7 @@ const PRESET_BINDINGS: &[Bind] = &[
         cooldown: None,
         allow_when_locked: false,
         allow_inhibiting: true,
+        hotkey_overlay_title: None,
     },
 ];
 
