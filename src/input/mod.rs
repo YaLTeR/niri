@@ -45,10 +45,10 @@ use crate::niri::State;
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
-use crate::window::Mapped;
 
 pub mod backend_ext;
 pub mod move_grab;
+pub mod pick_window_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
@@ -383,14 +383,16 @@ impl State {
                     }
                 }
 
-                if pressed && raw == Some(Keysym::Escape) {
-                    if let Some(tx) = this.niri.pick_window.take() {
-                        this.niri.suppressed_keys.insert(key_code);
-                        let _ = tx.send_blocking(None);
-                        // Redraw to update the cursor.
-                        this.niri.queue_redraw_all();
-                        return FilterResult::Intercept(None);
-                    }
+                if pressed && raw == Some(Keysym::Escape) && this.niri.pick_window.is_some() {
+                    // We window picking state so the pick window grab must be active.
+                    // Unsetting it cancels window picking.
+                    this.niri
+                        .seat
+                        .get_pointer()
+                        .unwrap()
+                        .unset_grab(this, serial, time);
+                    this.niri.suppressed_keys.insert(key_code);
+                    return FilterResult::Intercept(None);
                 }
 
                 let bindings = &this.niri.config.borrow().binds;
@@ -2031,13 +2033,6 @@ impl State {
             // We received an event for the regular pointer, so show it now.
             self.niri.pointer_hidden = false;
             self.niri.tablet_cursor_location = None;
-
-            if let Some(tx) = self.niri.pick_window.take() {
-                let _ = tx.send_blocking(self.niri.window_under_cursor().map(Mapped::id));
-                // Redraw to update the cursor.
-                self.niri.queue_redraw_all();
-                return;
-            }
 
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();
