@@ -25,6 +25,8 @@ use smithay::reexports::input;
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
 
+/// Delay before the window focus is considered to be locked-in for Window
+/// MRU ordering. For now the delay is not configurable.
 pub const DEFAULT_MRU_COMMIT_MS: u64 = 750;
 
 pub mod layer_rule;
@@ -74,8 +76,6 @@ pub struct Config {
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
-    #[knuffel(child, unwrap(argument), default = DEFAULT_MRU_COMMIT_MS)]
-    pub mru_commit_ms: u64,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -3730,8 +3730,6 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
-
-            mru-commit-ms 123
             "##,
             Config {
                 input: Input {
@@ -4189,7 +4187,6 @@ mod tests {
                     render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
                     ..Default::default()
                 },
-                mru_commit_ms: 123u64,
             },
         );
     }

@@ -1,5 +1,4 @@
 use std::cell::{Cell, OnceCell, RefCell};
-use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
@@ -9,14 +8,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::{env, mem, thread};
+use std::{cmp, env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout, WorkspaceReference,
-    DEFAULT_BACKGROUND_COLOR,
+    DEFAULT_BACKGROUND_COLOR, DEFAULT_MRU_COMMIT_MS,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -1083,9 +1082,8 @@ impl State {
                             wmru.ids.insert(wmru.current, focus_id);
                         }
                     } else if self.niri.window_mru.is_none() {
-                        let timer = Timer::from_duration(Duration::from_millis(
-                            self.niri.config.borrow().mru_commit_ms,
-                        ));
+                        let timer =
+                            Timer::from_duration(Duration::from_millis(DEFAULT_MRU_COMMIT_MS));
 
                         let focus_token = self
                             .niri
