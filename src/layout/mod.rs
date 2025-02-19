@@ -1711,6 +1711,34 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn with_windows_and_areas(
+        &self,
+        mut f: impl FnMut(&W, Option<Rectangle<f64, Logical>>, Option<&Output>, Option<WorkspaceId>),
+    ) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            f(move_.tile.window(), None, Some(&move_.output), None);
+        }
+
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mon.workspaces {
+                        for wa in ws.windows_with_areas() {
+                            f(wa.0, Some(wa.1), Some(&mon.output), Some(ws.id()));
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    for wa in ws.windows_with_areas() {
+                        f(wa.0, Some(wa.1), None, Some(ws.id()));
+                    }
+                }
+            }
+        }
+    }
+
     fn active_monitor(&mut self) -> Option<&mut Monitor<W>> {
         let MonitorSet::Normal {
             monitors,

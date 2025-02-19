@@ -322,6 +322,16 @@ impl<W: LayoutElement> FloatingSpace<W> {
         })
     }
 
+    pub fn tiles_with_areas(
+        &self,
+    ) -> impl Iterator<Item = (&Tile<W>, Rectangle<f64, Logical>)> + '_ {
+        self.tiles_with_offsets().map(move |(tile, offset)| {
+            let pos = offset + tile.render_offset();
+            let size = tile.tile_size().clone();
+            (tile, Rectangle::new(pos, size))
+        })
+    }
+
     pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
         let border_config = rules.border.resolve_against(self.options.border);
         compute_toplevel_bounds(border_config, self.working_area.size)
