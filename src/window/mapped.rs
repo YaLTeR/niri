@@ -478,7 +478,7 @@ impl Mapped {
 
 impl Drop for Mapped {
     fn drop(&mut self) {
-        remove_pre_commit_hook(self.toplevel().wl_surface(), self.pre_commit_hook);
+        remove_pre_commit_hook(self.toplevel().wl_surface(), self.pre_commit_hook.clone());
     }
 }
 

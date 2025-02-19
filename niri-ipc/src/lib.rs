@@ -543,6 +543,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
     },
+    /// Expand the focused column to space not taken up by other fully visible columns.
+    ExpandColumnToAvailableWidth {},
     /// Switch between keyboard layouts.
     SwitchLayout {
         /// Layout to switch to.

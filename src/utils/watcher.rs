@@ -1,6 +1,6 @@
 //! File modification watcher.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -19,13 +19,18 @@ impl Drop for Watcher {
 }
 
 impl Watcher {
-    pub fn new(path: PathBuf, changed: SyncSender<()>) -> Self {
-        Self::with_start_notification(path, changed, None)
+    pub fn new<T: Send + 'static>(
+        path: PathBuf,
+        process: impl FnMut(&Path) -> T + Send + 'static,
+        changed: SyncSender<T>,
+    ) -> Self {
+        Self::with_start_notification(path, process, changed, None)
     }
 
-    pub fn with_start_notification(
+    pub fn with_start_notification<T: Send + 'static>(
         path: PathBuf,
-        changed: SyncSender<()>,
+        mut process: impl FnMut(&Path) -> T + Send + 'static,
+        changed: SyncSender<T>,
         started: Option<mpsc::SyncSender<()>>,
     ) -> Self {
         let should_stop = Arc::new(AtomicBool::new(false));
@@ -66,7 +71,9 @@ impl Watcher {
                             if last_props.as_ref() != Some(&new_props) {
                                 trace!("file changed: {}", path.to_string_lossy());
 
-                                if let Err(err) = changed.send(()) {
+                                let rv = process(&path);
+
+                                if let Err(err) = changed.send(rv) {
                                     warn!("error sending change notification: {err:?}");
                                     break;
                                 }
@@ -123,7 +130,8 @@ mod tests {
 
         let (tx, rx) = sync_channel(1);
         let (started_tx, started_rx) = mpsc::sync_channel(1);
-        let _watcher = Watcher::with_start_notification(config_path.clone(), tx, Some(started_tx));
+        let _watcher =
+            Watcher::with_start_notification(config_path.clone(), |_| (), tx, Some(started_tx));
         loop_handle
             .insert_source(rx, |_, _, _| {
                 changed.fetch_add(1, Ordering::SeqCst);

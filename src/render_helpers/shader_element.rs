@@ -310,7 +310,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
 
                 let rect_constrained_loc = rect
                     .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                    .constrain(Rectangle::from_extremities((0, 0), dest_size.to_point()));
                 let rect_clamped_size = rect.size.clamp(
                     (0, 0),
                     (dest_size.to_point() - rect_constrained_loc).to_size(),
@@ -330,7 +330,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
 
                 let rect_constrained_loc = rect
                     .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                    .constrain(Rectangle::from_extremities((0, 0), dest_size.to_point()));
                 let rect_clamped_size = rect.size.clamp(
                     (0, 0),
                     (dest_size.to_point() - rect_constrained_loc).to_size(),

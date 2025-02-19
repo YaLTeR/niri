@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use smithay::backend::input::ButtonState;
 use smithay::desktop::Window;
 use smithay::input::pointer::{
@@ -17,7 +15,6 @@ pub struct MoveGrab {
     start_data: PointerGrabStartData<State>,
     last_location: Point<f64, Logical>,
     window: Window,
-    is_moving: bool,
 }
 
 impl MoveGrab {
@@ -26,7 +23,6 @@ impl MoveGrab {
             last_location: start_data.location,
             start_data,
             window,
-            is_moving: false,
         }
     }
 
@@ -64,14 +60,6 @@ impl PointerGrab<State> for MoveGrab {
                     pos_within_output,
                 );
                 if ongoing {
-                    let timestamp = Duration::from_millis(u64::from(event.time));
-                    if self.is_moving {
-                        data.niri.layout.view_offset_gesture_update(
-                            -event_delta.x,
-                            timestamp,
-                            false,
-                        );
-                    }
                     // FIXME: only redraw the previous and the new output.
                     data.niri.queue_redraw_all();
                     return;
@@ -103,25 +91,6 @@ impl PointerGrab<State> for MoveGrab {
         event: &ButtonEvent,
     ) {
         handle.button(data, event);
-
-        // MouseButton::Middle
-        if event.button == 0x112 {
-            if event.state == ButtonState::Pressed {
-                let output = data
-                    .niri
-                    .output_under(handle.current_location())
-                    .map(|(output, _)| output)
-                    .cloned();
-                // FIXME: workspace switch gesture.
-                if let Some(output) = output {
-                    self.is_moving = true;
-                    data.niri.layout.view_offset_gesture_begin(&output, false);
-                }
-            } else if event.state == ButtonState::Released {
-                self.is_moving = false;
-                data.niri.layout.view_offset_gesture_end(false, None);
-            }
-        }
 
         // When moving with the left button, right toggles floating, and vice versa.
         let toggle_floating_button = if self.start_data.button == 0x110 {

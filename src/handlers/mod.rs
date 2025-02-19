@@ -47,10 +47,15 @@ use smithay::wayland::selection::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
 };
+use smithay::wayland::selection::ext_data_control::{
+    DataControlHandler as ExtDataControlHandler, DataControlState as ExtDataControlState,
+};
 use smithay::wayland::selection::primary_selection::{
     set_primary_focus, PrimarySelectionHandler, PrimarySelectionState,
 };
-use smithay::wayland::selection::wlr_data_control::{DataControlHandler, DataControlState};
+use smithay::wayland::selection::wlr_data_control::{
+    DataControlHandler as WlrDataControlHandler, DataControlState as WlrDataControlState,
+};
 use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
 use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
@@ -61,13 +66,13 @@ use smithay::wayland::xdg_activation::{
 };
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
-    delegate_drm_lease, delegate_fractional_scale, delegate_idle_inhibit, delegate_idle_notify,
-    delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_output,
-    delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat,
-    delegate_security_context, delegate_session_lock, delegate_single_pixel_buffer,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation,
+    delegate_drm_lease, delegate_ext_data_control, delegate_fractional_scale,
+    delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager,
+    delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_pointer_constraints,
+    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
+    delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
+    delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
@@ -339,6 +344,9 @@ impl ClientDndGrabHandler for State {
     fn dropped(&mut self, target: Option<WlSurface>, validated: bool, _seat: Seat<Self>) {
         trace!("client dropped, target: {target:?}, validated: {validated}");
 
+        // End DnD before activating a specific window below so that it takes precedence.
+        self.niri.layout.dnd_end();
+
         // Activate the target output, since that's how Firefox drag-tab-into-new-window works for
         // example. On successful drop, additionally activate the target window.
         let mut activate_output = true;
@@ -386,13 +394,21 @@ impl PrimarySelectionHandler for State {
 }
 delegate_primary_selection!(State);
 
-impl DataControlHandler for State {
-    fn data_control_state(&self) -> &DataControlState {
-        &self.niri.data_control_state
+impl WlrDataControlHandler for State {
+    fn data_control_state(&self) -> &WlrDataControlState {
+        &self.niri.wlr_data_control_state
     }
 }
 
 delegate_data_control!(State);
+
+impl ExtDataControlHandler for State {
+    fn data_control_state(&self) -> &ExtDataControlState {
+        &self.niri.ext_data_control_state
+    }
+}
+
+delegate_ext_data_control!(State);
 
 impl OutputHandler for State {
     fn output_bound(&mut self, output: Output, wl_output: WlOutput) {
@@ -435,9 +451,7 @@ impl SessionLockHandler for State {
     fn unlock(&mut self) {
         self.niri.unlock();
         self.niri.activate_monitors(&mut self.backend);
-        self.niri
-            .idle_notifier_state
-            .notify_activity(&self.niri.seat);
+        self.niri.notify_activity();
     }
 
     fn new_surface(&mut self, surface: LockSurface, output: WlOutput) {

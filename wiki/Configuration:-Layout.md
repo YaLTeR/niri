@@ -63,6 +63,7 @@ layout {
         length total-proportion=1.0
         position "right"
         gaps-between-tabs 2
+        corner-radius 8
         active-color "red"
         inactive-color "gray"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
@@ -438,6 +439,9 @@ By default, the tab indicator has length equal to half of the window size, or `l
 It can be `left`, `right`, `top`, or `bottom`.
 
 `gaps-between-tabs` controls the gap between individual tabs in logical pixels.
+
+`corner-radius` sets the rounded corner radius for tabs in the indicator in logical pixels.
+When `gaps-between-tabs` is zero, only the first and the last tabs have rounded corners, otherwise all tabs do.
 
 `active-color`, `inactive-color`, `active-gradient`, `inactive-gradient` let you override the colors for the tabs.
 They have the same semantics as the border and focus ring colors and gradients.

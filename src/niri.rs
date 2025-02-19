@@ -88,8 +88,9 @@ use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::security_context::SecurityContextState;
 use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
+use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
-use smithay::wayland::selection::wlr_data_control::DataControlState;
+use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
 use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellState};
@@ -272,7 +273,8 @@ pub struct Niri {
     pub idle_inhibit_manager_state: IdleInhibitManagerState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
-    pub data_control_state: DataControlState,
+    pub wlr_data_control_state: WlrDataControlState,
+    pub ext_data_control_state: ExtDataControlState,
     pub popups: PopupManager,
     pub popup_grab: Option<PopupGrabState>,
     pub presentation_state: PresentationState,
@@ -328,6 +330,16 @@ pub struct Niri {
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
+    /// Whether the pointer inactivity timer got reset this event loop iteration.
+    ///
+    /// Used for limiting the reset to once per iteration, so that it's not spammed with high
+    /// resolution mice.
+    pub pointer_inactivity_timer_got_reset: bool,
+    /// Whether the (idle notifier) activity was notified this event loop iteration.
+    ///
+    /// Used for limiting the notify to once per iteration, so that it's not spammed with high
+    /// resolution mice.
+    pub notified_activity_this_iteration: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -644,6 +656,8 @@ impl State {
 
         // Clear the time so it's fetched afresh next iteration.
         self.niri.clock.clear();
+        self.niri.pointer_inactivity_timer_got_reset = false;
+        self.niri.notified_activity_this_iteration = false;
     }
 
     fn refresh(&mut self) {
@@ -1216,13 +1230,12 @@ impl State {
         }
     }
 
-    pub fn reload_config(&mut self, path: PathBuf) {
+    pub fn reload_config(&mut self, config: Result<Config, ()>) {
         let _span = tracy_client::span!("State::reload_config");
 
-        let mut config = match Config::load(&path) {
+        let mut config = match config {
             Ok(config) => config,
-            Err(err) => {
-                warn!("{:?}", err.context("error loading config"));
+            Err(()) => {
                 self.niri.config_error_notification.show();
                 self.niri.queue_redraw_all();
                 return;
@@ -1428,6 +1441,8 @@ impl State {
         }
 
         if cursor_inactivity_timeout_changed {
+            // Force reset due to timeout change.
+            self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
         }
 
@@ -1981,7 +1996,12 @@ impl Niri {
                     .unwrap()
                     .primary_selection_disabled
             });
-        let data_control_state = DataControlState::new::<State, _>(
+        let wlr_data_control_state = WlrDataControlState::new::<State, _>(
+            &display_handle,
+            Some(&primary_selection_state),
+            client_is_unrestricted,
+        );
+        let ext_data_control_state = ExtDataControlState::new::<State, _>(
             &display_handle,
             Some(&primary_selection_state),
             client_is_unrestricted,
@@ -2199,7 +2219,8 @@ impl Niri {
             idle_inhibit_manager_state,
             data_device_state,
             primary_selection_state,
-            data_control_state,
+            wlr_data_control_state,
+            ext_data_control_state,
             popups: PopupManager::default(),
             popup_grab: None,
             suppressed_keys: HashSet::new(),
@@ -2228,6 +2249,8 @@ impl Niri {
             pointer_contents: PointContents::default(),
             pointer_hidden: false,
             pointer_inactivity_timer: None,
+            pointer_inactivity_timer_got_reset: false,
+            notified_activity_this_iteration: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -5355,6 +5378,10 @@ impl Niri {
     }
 
     pub fn reset_pointer_inactivity_timer(&mut self) {
+        if self.pointer_inactivity_timer_got_reset {
+            return;
+        }
+
         let _span = tracy_client::span!("Niri::reset_pointer_inactivity_timer");
 
         if let Some(token) = self.pointer_inactivity_timer.take() {
@@ -5378,6 +5405,20 @@ impl Niri {
             })
             .unwrap();
         self.pointer_inactivity_timer = Some(token);
+
+        self.pointer_inactivity_timer_got_reset = true;
+    }
+
+    pub fn notify_activity(&mut self) {
+        if self.notified_activity_this_iteration {
+            return;
+        }
+
+        let _span = tracy_client::span!("Niri::notify_activity");
+
+        self.idle_notifier_state.notify_activity(&self.seat);
+
+        self.notified_activity_this_iteration = true;
     }
 
     // Consume the active `PendingMruCommit`, if any, and use the information

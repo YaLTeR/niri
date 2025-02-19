@@ -840,6 +840,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace().set_column_width(change);
     }
 
+    pub fn expand_column_to_available_width(&mut self) {
+        self.active_workspace().expand_column_to_available_width();
+    }
+
     pub fn move_workspace_down(&mut self) {
         let mut new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
         if new_idx == self.active_workspace_idx {

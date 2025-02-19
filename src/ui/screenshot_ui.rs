@@ -657,7 +657,7 @@ pub fn rect_from_corner_points(
     let y2 = max(a.y, b.y);
     // We're adding + 1 because the pointer is clamped to output size - 1, so to get the full
     // screen worth of selection we must add back that + 1.
-    Rectangle::from_extemities((x1, y1), (x2 + 1, y2 + 1))
+    Rectangle::from_extremities((x1, y1), (x2 + 1, y2 + 1))
 }
 
 fn render_panel(

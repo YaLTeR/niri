@@ -496,6 +496,7 @@ enum Op {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
     },
+    ExpandColumnToAvailableWidth,
     ToggleWindowFloating {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
@@ -589,6 +590,15 @@ enum Op {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
     },
+    DndUpdate {
+        #[proptest(strategy = "1..=5usize")]
+        output_idx: usize,
+        #[proptest(strategy = "-20000f64..20000f64")]
+        px: f64,
+        #[proptest(strategy = "-20000f64..20000f64")]
+        py: f64,
+    },
+    DndEnd,
     InteractiveResizeBegin {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
@@ -1124,6 +1134,7 @@ impl Op {
                 let id = id.filter(|id| layout.has_window(id));
                 layout.reset_window_height(id.as_ref());
             }
+            Op::ExpandColumnToAvailableWidth => layout.expand_column_to_available_width(),
             Op::ToggleWindowFloating { id } => {
                 let id = id.filter(|id| layout.has_window(id));
                 layout.toggle_window_floating(id.as_ref());
@@ -1352,6 +1363,16 @@ impl Op {
             }
             Op::InteractiveMoveEnd { window } => {
                 layout.interactive_move_end(&window);
+            }
+            Op::DndUpdate { output_idx, px, py } => {
+                let name = format!("output{output_idx}");
+                let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                    return;
+                };
+                layout.dnd_update(output, Point::from((px, py)));
+            }
+            Op::DndEnd => {
+                layout.dnd_end();
             }
             Op::InteractiveResizeBegin { window, edges } => {
                 layout.interactive_resize_begin(window, edges);

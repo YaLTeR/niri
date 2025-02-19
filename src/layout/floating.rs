@@ -259,6 +259,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.tiles.iter().any(Tile::are_animations_ongoing) || !self.closing_windows.is_empty()
     }
 
+    pub fn are_transitions_ongoing(&self) -> bool {
+        self.tiles.iter().any(Tile::are_transitions_ongoing) || !self.closing_windows.is_empty()
+    }
+
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let active = self.active_window_id.clone();
         for (tile, offset) in self.tiles_with_offsets_mut() {

@@ -1,3 +1,4 @@
+use core::f64;
 use std::rc::Rc;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
@@ -24,6 +25,7 @@ use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
+use crate::utils::round_logical_in_physical;
 use crate::utils::transaction::Transaction;
 
 /// Toplevel window with decorations.
@@ -314,6 +316,10 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
+        self.are_transitions_ongoing() || self.window.rules().baba_is_float == Some(true)
+    }
+
+    pub fn are_transitions_ongoing(&self) -> bool {
         self.open_animation.is_some()
             || self.resize_animation.is_some()
             || self.move_x_animation.is_some()
@@ -654,8 +660,11 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn hit(&self, point: Point<f64, Logical>) -> Option<HitType> {
+        let offset = self.bob_offset();
+        let point = point - offset;
+
         if self.is_in_input_region(point) {
-            let win_pos = self.buf_loc();
+            let win_pos = self.buf_loc() + offset;
             Some(HitType::Input { win_pos })
         } else if self.is_in_activation_region(point) {
             Some(HitType::Activate {
@@ -752,6 +761,18 @@ impl<W: LayoutElement> Tile<W> {
         size
     }
 
+    pub fn bob_offset(&self) -> Point<f64, Logical> {
+        if self.window.rules().baba_is_float != Some(true) {
+            return Point::from((0., 0.));
+        }
+
+        let now = self.clock.now().as_secs_f64();
+        let amplitude = self.view_size.h / 96.;
+        let y = amplitude * ((f64::consts::TAU * now / 3.6).sin() - 1.);
+        let y = round_logical_in_physical(self.scale, y);
+        Point::from((0., y))
+    }
+
     pub fn draw_border_with_background(&self) -> bool {
         if self.effective_border_width().is_some() {
             return false;
@@ -781,6 +802,16 @@ impl<W: LayoutElement> Tile<W> {
 
         let tile_alpha = self.tile_alpha();
         let win_alpha = win_alpha * tile_alpha;
+
+        // This is here rather than in render_offset() because render_offset() is currently assumed
+        // by the code to be temporary. So, for example, interactive move will try to "grab" the
+        // tile at its current render offset and reset the render offset to zero by cancelling the
+        // tile move animations. On the other hand, bob_offset() is not resettable, so adding it in
+        // render_offset() would cause obvious animation glitches.
+        //
+        // This isn't to say that adding it here is perfect; indeed, it kind of breaks view_rect
+        // passed to update_render_elements(). But, it works well enough for what it is.
+        let location = location + self.bob_offset();
 
         let window_loc = self.window_loc();
         let window_size = self.window_size().to_f64();
