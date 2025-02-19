@@ -1,4 +1,5 @@
 use std::cell::{Cell, OnceCell, RefCell};
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
@@ -5421,19 +5422,24 @@ impl ClientData for ClientState {
 
 impl WindowMRU {
     fn new(niri: &mut Niri) -> Self {
-        // update the timestamp on the currently active window and
+        // update the focus timestamp on the currently active window and
         // prepare a new WindowMRU
         niri.mru_commit();
 
         // and build a list of MappedId sorted by timestamp
-        let mut ts_ids: Vec<(Instant, MappedId)> = niri
+        let mut ts_ids: Vec<(Option<Instant>, MappedId)> = niri
             .layout
             .windows()
-            .filter_map(|(_, w)| w.get_focus_timestamp().map(|t| (t, w.id())))
+            .map(|(_, w)| (w.get_focus_timestamp(), w.id()))
             .collect();
-        ts_ids.sort_by_key(|(t, _)| *t);
+        ts_ids.sort_by(|(t1, _), (t2, _)| match (t1, t2) {
+            (None, None) => cmp::Ordering::Equal,
+            (Some(_), None) => cmp::Ordering::Less,
+            (None, Some(_)) => cmp::Ordering::Greater,
+            (Some(t1), Some(t2)) => t1.cmp(t2).reverse(),
+        });
 
-        let ids = ts_ids.into_iter().map(|(_, id)| id).rev().collect();
+        let ids = ts_ids.into_iter().map(|(_, id)| id).collect();
 
         WindowMRU { ids, current: 0 }
     }
