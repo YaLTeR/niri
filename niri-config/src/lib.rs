@@ -1137,7 +1137,7 @@ impl Default for DndEdgeViewScroll {
     fn default() -> Self {
         Self {
             trigger_width: FloatOrInt(30.), // Taken from GTK 4.
-            delay_ms: 50,
+            delay_ms: 100,
             max_speed: FloatOrInt(1500.),
         }
     }
@@ -4288,7 +4288,7 @@ mod tests {
                     trigger_width: FloatOrInt(
                         10.0,
                     ),
-                    delay_ms: 50,
+                    delay_ms: 100,
                     max_speed: FloatOrInt(
                         50.0,
                     ),

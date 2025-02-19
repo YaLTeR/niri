@@ -11,7 +11,7 @@ Here's a quick glance at the available settings along with their default values.
 gestures {
     dnd-edge-view-scroll {
         trigger-width 30
-        delay-ms 50
+        delay-ms 100
         max-speed 1500
     }
 }
