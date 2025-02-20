@@ -303,3 +303,17 @@ binds {
     Mod+O { toggle-window-rule-opacity; }
 }
 ```
+
+#### `screenshot-screen`, `screenshot-window`
+
+Take a screenshot of the focused screen or window respectively.
+The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md).
+
+<sup>Since: next release</sup> You can disable saving to disk for a specific bind with the `write-to-disk=false` property:
+
+```kdl
+binds {
+    Ctrl+Print { screenshot-screen write-to-disk=false; }
+    Alt+Print { screenshot-window write-to-disk=false; }
+}
+```
