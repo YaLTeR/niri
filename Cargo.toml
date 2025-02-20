@@ -15,12 +15,12 @@ repository = "https://github.com/YaLTeR/niri"
 rust-version = "1.80.1"
 
 [workspace.dependencies]
-anyhow = "1.0.95"
+anyhow = "1.0.96"
 bitflags = "2.8.0"
 clap = { version = "4.5.30", features = ["derive"] }
 insta = "1.42.1"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.139"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracy-client = { version = "0.18.0", default-features = false }
@@ -64,7 +64,7 @@ drm-ffi = "0.9.0"
 fastrand = "2.3.0"
 futures-util = { version = "0.3.31", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.29.2"
+glam = "0.30.0"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.169"
