@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 use niri_ipc::{Action, OutputAction};
 
 use crate::utils::version;
@@ -54,6 +55,8 @@ pub enum Sub {
     },
     /// Cause a panic to check if the backtraces are good.
     Panic,
+    /// Generate completions for [`Shell`]
+    Completions { shell: Shell },
 }
 
 #[derive(Subcommand)]
