@@ -1370,6 +1370,15 @@ impl State {
                     self.niri.layer_shell_on_demand_focus = None;
                 }
             }
+            Action::FocusMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                    self.niri.layer_shell_on_demand_focus = None;
+                }
+            }
             Action::MoveWindowToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_to_output(None, &output, None);

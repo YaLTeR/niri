@@ -1557,6 +1557,7 @@ pub enum Action {
     FocusMonitorUp,
     FocusMonitorPrevious,
     FocusMonitorNext,
+    FocusMonitor(#[knuffel(argument)] String),
     MoveWindowToMonitorLeft,
     MoveWindowToMonitorRight,
     MoveWindowToMonitorDown,
@@ -1758,6 +1759,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusMonitorUp {} => Self::FocusMonitorUp,
             niri_ipc::Action::FocusMonitorPrevious {} => Self::FocusMonitorPrevious,
             niri_ipc::Action::FocusMonitorNext {} => Self::FocusMonitorNext,
+            niri_ipc::Action::FocusMonitor { output } => Self::FocusMonitor(output),
             niri_ipc::Action::MoveWindowToMonitorLeft {} => Self::MoveWindowToMonitorLeft,
             niri_ipc::Action::MoveWindowToMonitorRight {} => Self::MoveWindowToMonitorRight,
             niri_ipc::Action::MoveWindowToMonitorDown {} => Self::MoveWindowToMonitorDown,
@@ -3755,6 +3757,7 @@ mod tests {
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
                 Mod+Q hotkey-overlay-title=null { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
+                Mod+Shift+O { focus-monitor "eDP-1"; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
@@ -4581,6 +4584,24 @@ mod tests {
                             ),
                         },
                         action: FocusMonitorLeft,
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_o,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
+                        },
+                        action: FocusMonitor(
+                            "eDP-1",
+                        ),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
