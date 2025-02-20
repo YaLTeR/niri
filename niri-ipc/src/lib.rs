@@ -475,6 +475,12 @@ pub enum Action {
     MoveWindowToMonitorPrevious {},
     /// Move the focused window to the next monitor.
     MoveWindowToMonitorNext {},
+    /// Move the focused window to a specific monitor.
+    MoveWindowToMonitor {
+        /// The target output name.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Move the focused column to the monitor to the left.
     MoveColumnToMonitorLeft {},
     /// Move the focused column to the monitor to the right.
@@ -487,6 +493,12 @@ pub enum Action {
     MoveColumnToMonitorPrevious {},
     /// Move the focused column to the next monitor.
     MoveColumnToMonitorNext {},
+    /// Move the focused column to a specific monitor.
+    MoveColumnToMonitor {
+        /// The target output name.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Change the width of a window.
     #[cfg_attr(
         feature = "clap",
