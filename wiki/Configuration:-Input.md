@@ -117,8 +117,10 @@ input {
 
 > [!TIP]
 >
-> Alternatively you can directly set a path to a .xkb file containing an xkb keymap.
-> This overrides all other xkb settings
+> <sup>Since: next release</sup>
+>
+> Alternatively, you can directly set a path to a .xkb file containing an xkb keymap.
+> This overrides all other xkb settings.
 >
 > ```kdl
 > input {
