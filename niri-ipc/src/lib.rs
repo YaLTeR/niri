@@ -457,6 +457,12 @@ pub enum Action {
     FocusMonitorPrevious {},
     /// Focus the next monitor.
     FocusMonitorNext {},
+    /// Focus a monitor by name.
+    FocusMonitor {
+        /// Name of the output to focus.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Move the focused window to the monitor to the left.
     MoveWindowToMonitorLeft {},
     /// Move the focused window to the monitor to the right.
