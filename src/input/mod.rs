@@ -1433,6 +1433,15 @@ impl State {
                     }
                 }
             }
+            Action::MoveWindowToMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                }
+            }
             Action::MoveColumnToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output);
@@ -1480,6 +1489,15 @@ impl State {
             }
             Action::MoveColumnToMonitorNext => {
                 if let Some(output) = self.niri.output_next() {
+                    self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                }
+            }
+            Action::MoveColumnToMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
                     self.niri.layout.move_column_to_output(&output);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
