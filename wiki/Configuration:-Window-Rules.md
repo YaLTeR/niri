@@ -242,7 +242,7 @@ window-rule {
 
 #### `is-window-cast-target`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Can be `true` or `false`.
 Matches `true` for windows that are target of an ongoing window screencast.
@@ -579,7 +579,7 @@ window-rule {
 
 #### `default-column-display`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Set the default display mode for columns created from this window.
 
@@ -630,7 +630,7 @@ window-rule {
 
 #### `scroll-factor`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Set a scroll factor for all scroll events sent to a window.
 
@@ -693,7 +693,7 @@ window-rule {
 
 #### `shadow`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Override the shadow options for the window.
 
@@ -715,7 +715,7 @@ window-rule {
 
 #### `tab-indicator`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Override the tab indicator options for the window.
 
