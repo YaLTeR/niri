@@ -1,6 +1,6 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 The `gestures` config section contains gesture settings.
 For an overview of all niri gestures, see the [Gestures](./Gestures.md) wiki page.

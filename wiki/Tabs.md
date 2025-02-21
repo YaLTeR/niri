@@ -1,6 +1,6 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 You can switch a column to present windows as tabs, rather than as vertical tiles.
 All tabs in a column have the same window size, so this is useful to get more vertical space.
