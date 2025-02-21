@@ -349,6 +349,8 @@ pub struct Tablet {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Touch {
+    #[knuffel(child)]
+    pub off: bool,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
@@ -3900,6 +3902,7 @@ mod tests {
                     left_handed: false,
                 },
                 touch: Touch {
+                    off: false,
                     map_to_output: Some(
                         "eDP-1",
                     ),
