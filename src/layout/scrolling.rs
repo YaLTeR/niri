@@ -1952,40 +1952,48 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let (a, b) = self.columns.split_at_mut(source_column_idx);
             (&mut b[0], &mut a[target_column_idx])
         };
-        std::mem::swap(
-            &mut source_col.tiles[source_tile_idx],
-            &mut target_col.tiles[target_tile_idx],
-        );
-        std::mem::swap(
-            &mut source_col.data[source_tile_idx],
-            &mut target_col.data[target_tile_idx],
-        );
 
-        // Animations
+        // If either column is full-screen consider it a no-op because
+        // the change is harder to perceive when both swapped windows aren't
+        // visible.
+        if source_col.is_fullscreen || target_col.is_fullscreen {
+            return;
+        }
+
+        // Source_tile and target_tile are going to be `mem::swap`ped, so
+        // the next statement looks backwards.
         let (source_tile, target_tile) = (
             &mut target_col.tiles[target_tile_idx],
             &mut source_col.tiles[source_tile_idx],
         );
+
+        // Swap only the tiles themselves and not the data for the tiles,
+        // that way the `height` (Auto, Fixed, etc) is preserved
+        // in the column. As for the actual size, it will get updated
+        // when TileData.update is called explicitly.
+        std::mem::swap(source_tile, target_tile);
+
+        // Animations
         source_tile.animate_move_from(source_pt - target_pt);
         target_tile.animate_move_from(target_pt - source_pt);
 
-        // tile size swap
-        let (source_sz, target_sz) = (
-            source_tile.tile_expected_or_current_size(),
-            target_tile.tile_expected_or_current_size(),
-        );
-
-        let transaction = Transaction::new();
-        source_tile.request_tile_size(target_sz, true, Some(transaction.clone()));
-        target_tile.request_tile_size(source_sz, true, Some(transaction));
+        // Mark swapped tiles so that sibling tiles and columns compute
+        // their position using the expected_size instead of the current
+        // size.
         source_tile.prefer_expected_size = true;
         target_tile.prefer_expected_size = true;
 
-        // resync tile data with target window sizes
+        // Recalculate sizes of *all* tiles in both columns
+        // (other tiles may need to have their size adjusted if the
+        // constraints on the inbound tile differ from the outbound's)
+        source_col.update_tile_sizes(true);
+        target_col.update_tile_sizes(true);
+
+        // Resync tile data with target window sizes
         source_col.data[source_tile_idx].update(&source_col.tiles[source_tile_idx]);
         target_col.data[target_tile_idx].update(&target_col.tiles[target_tile_idx]);
 
-        // update column data
+        // Update column data
         self.data[source_column_idx].update(source_col);
         self.data[target_column_idx].update(target_col);
 
@@ -3980,14 +3988,15 @@ impl<W: LayoutElement> Column<W> {
 
     fn width(&self) -> f64 {
         let mut tiles_width = zip(&self.tiles, &self.data)
-            .map(|(tile, data)| {
-                NotNan::new(if tile.prefer_expected_size {
-                    tile.tile_expected_or_current_size().w
-                } else {
-                    data.size.w
-                })
-                .unwrap()
-            })
+            // .map(|(tile, data)| {
+            //     NotNan::new(if tile.prefer_expected_size {
+            //         tile.tile_expected_or_current_size().w
+            //     } else {
+            //         data.size.w
+            //     })
+            //     .unwrap()
+            // })
+            .map(|(_, data)| NotNan::new(data.size.w).unwrap())
             .max()
             .map(NotNan::into_inner)
             .unwrap();
