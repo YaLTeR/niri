@@ -133,6 +133,7 @@ use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
 use crate::niri_render_elements;
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
+use crate::protocols::hyprland_global_shortcuts::HyprlandGlobalShortcutsManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
@@ -281,6 +282,7 @@ pub struct Niri {
     pub gamma_control_manager_state: GammaControlManagerState,
     pub activation_state: XdgActivationState,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
+    pub hyprland_global_shortcuts_state: HyprlandGlobalShortcutsManagerState,
 
     // This will not work as is outside of tests, so it is gated with #[cfg(test)] for now. In
     // particular, shaders will need to learn about the single pixel buffer. Also, it must be
@@ -304,7 +306,7 @@ pub struct Niri {
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
     pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
-
+    // pub global_shortcuts: HashMap<String, HyprlandGlobalShortcut>,
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
@@ -607,6 +609,7 @@ impl State {
         state.load_xkb_file();
         // Initialize some IPC server state.
         state.ipc_keyboard_layouts_changed();
+        state.ipc_global_shortcuts_changed();
 
         Ok(state)
     }
@@ -1953,6 +1956,11 @@ impl Niri {
         let mutter_x11_interop_state =
             MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
 
+        let hyprland_global_shortcuts_state = HyprlandGlobalShortcutsManagerState::new::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
+
         #[cfg(test)]
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
@@ -2134,6 +2142,7 @@ impl Niri {
             gamma_control_manager_state,
             activation_state,
             mutter_x11_interop_state,
+            hyprland_global_shortcuts_state,
             #[cfg(test)]
             single_pixel_buffer_state,
 
