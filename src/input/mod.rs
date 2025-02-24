@@ -3512,6 +3512,16 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
         let _ = device.config_left_handed_set(c.left_handed);
     }
+
+    let is_touch = device.has_capability(input::DeviceCapability::Touch);
+    if is_touch {
+        let c = &config.touch;
+        let _ = device.config_send_events_set_mode(if c.off {
+            input::SendEventsMode::DISABLED
+        } else {
+            input::SendEventsMode::ENABLED
+        });
+    }
 }
 
 pub fn mods_with_binds(
