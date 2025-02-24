@@ -67,9 +67,9 @@ git-version = "0.3.9"
 glam = "0.30.0"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.169"
+libc = "0.2.170"
 libdisplay-info = "0.2.2"
-log = { version = "0.4.25", features = ["max_level_trace", "release_max_level_debug"] }
+log = { version = "0.4.26", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "25.2.0", path = "niri-config" }
 niri-ipc = { version = "25.2.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.0.0"
