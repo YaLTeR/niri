@@ -315,10 +315,22 @@ window-rule {
     geometry-corner-radius 12
     clip-to-geometry true
 }
+// Example: drop down terminal from the bottom of the screen
+// (This example rule is commented out with a "/-" in front.)
+/-window-rule {
+    match app-id="dropdown"
+    open-focused true
+    open-floating true
+    default-floating-position x=0 y=0 relative-to="bottom"
+    default-window-height { proportion 0.500; }
+    default-column-width { proportion 0.8; }  
+}
+
 
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program
+// (This example rule is commented out with a "/-" in front.)
     // like wev.
     //
     // "Mod" is a special modifier equal to Super when running on a TTY, and to Alt
