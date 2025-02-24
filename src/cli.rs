@@ -74,9 +74,13 @@ pub enum Msg {
     FocusedWindow,
     /// Perform an action.
     Action {
+        // NOTE: This is only optional because of clap_derive limitations and will never be `None`.
+        // If an action is not provided it reads actions from stdin and turns to [`Msg::Actions`].
         #[command(subcommand)]
-        action: Action,
+        action: Option<Action>,
     },
+    #[clap(skip)]
+    Actions { actions: Vec<Action> },
     /// Change output configuration temporarily.
     ///
     /// The configuration is changed temporarily and not saved into the config file. If the output

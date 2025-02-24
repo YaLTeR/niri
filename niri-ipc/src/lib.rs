@@ -43,6 +43,8 @@ use serde::{Deserialize, Serialize};
 pub mod socket;
 pub mod state;
 
+mod utils;
+
 /// Request from client to niri.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -63,8 +65,8 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
-    /// Perform an action.
-    Action(Action),
+    /// Perform actions.
+    Action(#[serde(with = "utils::one_or_many")] Vec<Action>),
     /// Change output configuration temporarily.
     ///
     /// The configuration is changed temporarily and not saved into the config file. If the output
