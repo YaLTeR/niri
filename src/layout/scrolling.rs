@@ -1960,7 +1960,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let source_tile_idx = self.columns[source_column_idx].active_tile_idx;
         let target_tile_idx = self.columns[target_column_idx].active_tile_idx;
-        let source_column_drained = self.columns[source_column_idx].tiles.len() == 1;
 
         // capture the original positions of the tiles
         let (mut source_pt, mut target_pt) = (
@@ -1972,82 +1971,53 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         source_pt.x += self.column_x(source_column_idx);
         target_pt.x += self.column_x(target_column_idx);
 
-        let transaction = Transaction::new();
-
-        // If the source column contains a single tile, this will also remove the column.
-        // When this happens `source_column_drained` will be set and the column will need to be
-        // recreated with `add_tile`
-        let source_removed = self.remove_tile_by_idx(
-            source_column_idx,
-            source_tile_idx,
-            transaction.clone(),
-            None,
+        // swap the two tiles directly in their respective column structs
+        let (source_col, target_col) = if source_column_idx < target_column_idx {
+            let (a, b) = self.columns.split_at_mut(target_column_idx);
+            (&mut a[source_column_idx], &mut b[0])
+        } else {
+            let (a, b) = self.columns.split_at_mut(source_column_idx);
+            (&mut b[0], &mut a[target_column_idx])
+        };
+        std::mem::swap(
+            &mut source_col.tiles[source_tile_idx],
+            &mut target_col.tiles[target_tile_idx],
+        );
+        std::mem::swap(
+            &mut source_col.data[source_tile_idx],
+            &mut target_col.data[target_tile_idx],
         );
 
-        {
-            // special case when the source column disappears after removing its last tile
-            let adjusted_target_column_idx =
-                if direction == ScrollDirection::Right && source_column_drained {
-                    target_column_idx - 1
-                } else {
-                    target_column_idx
-                };
-
-            self.add_tile_to_column(
-                adjusted_target_column_idx,
-                Some(target_tile_idx),
-                source_removed.tile,
-                false,
-            );
-
-            let RemovedTile {
-                tile: target_tile, ..
-            } = self.remove_tile_by_idx(
-                adjusted_target_column_idx,
-                target_tile_idx + 1,
-                transaction.clone(),
-                None,
-            );
-
-            if source_column_drained {
-                // recreate the drained column with only the target tile
-                self.add_tile(
-                    Some(source_column_idx),
-                    target_tile,
-                    true,
-                    source_removed.width,
-                    source_removed.is_full_width,
-                    None,
-                )
-            } else {
-                // simply add the removed target tile to the source column
-                self.add_tile_to_column(
-                    source_column_idx,
-                    Some(source_tile_idx),
-                    target_tile,
-                    false,
-                );
-            }
-        }
-
-        // update the active tile in the modified columns
-        self.columns[source_column_idx].active_tile_idx = source_tile_idx;
-        self.columns[target_column_idx].active_tile_idx = target_tile_idx;
-
         // Animations
-        self.columns[target_column_idx].tiles[target_tile_idx]
-            .animate_move_from(source_pt - target_pt);
-        self.columns[target_column_idx].tiles[target_tile_idx].ensure_alpha_animates_to_1();
+        let (source_tile, target_tile) = (
+            &mut target_col.tiles[target_tile_idx],
+            &mut source_col.tiles[source_tile_idx],
+        );
+        source_tile.animate_move_from(source_pt - target_pt);
+        target_tile.animate_move_from(target_pt - source_pt);
 
-        // FIXME: this stop_move_animations() causes the target tile animation to "reset" when
-        // swapping. It's here as a workaround to stop the unwanted animation of moving the source
-        // tile down when adding the target tile above it. This code needs to be written in some
-        // other way not to trigger that animation, or to cancel it properly, so that swap doesn't
-        // cancel all ongoing target tile animations.
-        self.columns[source_column_idx].tiles[source_tile_idx].stop_move_animations();
-        self.columns[source_column_idx].tiles[source_tile_idx]
-            .animate_move_from(target_pt - source_pt);
+        // tile size swap
+        let (source_sz, target_sz) = (
+            source_tile.tile_expected_or_current_size(),
+            target_tile.tile_expected_or_current_size(),
+        );
+
+        let transaction = Transaction::new();
+        source_tile.request_tile_size(target_sz, true, Some(transaction.clone()));
+        target_tile.request_tile_size(source_sz, true, Some(transaction));
+        source_tile.prefer_expected_size = true;
+        target_tile.prefer_expected_size = true;
+
+        // resync tile data with target window sizes
+        source_col.data[source_tile_idx].update(&source_col.tiles[source_tile_idx]);
+        target_col.data[target_tile_idx].update(&target_col.tiles[target_tile_idx]);
+
+        // update column data
+        self.data[source_column_idx].update(source_col);
+        self.data[target_column_idx].update(target_col);
+
         self.columns[source_column_idx].tiles[source_tile_idx].ensure_alpha_animates_to_1();
+        self.columns[target_column_idx].tiles[target_tile_idx].ensure_alpha_animates_to_1();
 
         self.activate_column(target_column_idx);
     }
@@ -3914,11 +3884,14 @@ impl<W: LayoutElement> Column<W> {
             .find(|(_, tile)| tile.window().id() == window)
             .unwrap();
 
-        let height = f64::from(tile.window().size().h);
-        let offset = tile
-            .window()
-            .animation_snapshot()
-            .map_or(0., |from| from.size.h - height);
+        let offset = if tile.prefer_expected_size {
+            0.
+        } else {
+            let height = f64::from(tile.window().size().h);
+            tile.window()
+                .animation_snapshot()
+                .map_or(0., |from| from.size.h - height)
+        };
 
         tile.update_window();
         self.data[tile_idx].update(tile);
@@ -4257,10 +4230,15 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn width(&self) -> f64 {
-        let mut tiles_width = self
-            .data
-            .iter()
-            .map(|data| NotNan::new(data.size.w).unwrap())
+        let mut tiles_width = zip(&self.tiles, &self.data)
+            .map(|(tile, data)| {
+                NotNan::new(if tile.prefer_expected_size {
+                    tile.tile_expected_or_current_size().w
+                } else {
+                    data.size.w
+                })
+                .unwrap()
+            })
             .max()
             .map(NotNan::into_inner)
             .unwrap();
