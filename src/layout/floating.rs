@@ -1203,7 +1203,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             tile.window().rules().default_floating_position.map(|pos| {
                 let mode = match pos.mode {
                     Some(p) => p,
-                    None => PositionMode::Fixed,
+                    None => PositionMode::Absolute,
                 };
                 let relative_to = match pos.relative_to {
                     Some(p) => p,
@@ -1223,8 +1223,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
                 let transform = |p: f64, dim: f64, mode| -> f64 {
                     match mode {
-                        PositionMode::Fixed => p,
-                        PositionMode::Proportional => p * dim,
+                        PositionMode::Absolute => p,
+                        PositionMode::Relative => p * dim,
                     }
                 };
 

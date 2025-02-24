@@ -1360,8 +1360,8 @@ pub enum RelativeTo {
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum PositionMode {
     #[default]
-    Fixed,
-    Proportional,
+    Absolute,
+    Relative,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -3740,7 +3740,7 @@ mod tests {
                   x 100
                   y -200
                   relative-to "bottom-left"
-                  mode "proportional"
+                  mode "absolute"
                 }
 
                 focus-ring {
