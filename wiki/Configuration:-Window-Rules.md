@@ -54,7 +54,12 @@ window-rule {
     // block-out-from "screen-capture"
     variable-refresh-rate true
     default-column-display "tabbed"
-    default-floating-position x=100 y=200 relative-to="bottom-left"
+    default-floating-position {
+        mode "fixed" // fixed: size in px; proportional: relative size to the work area
+        relative-to "bottom-left"
+        x 100
+        y 200
+    }
     scroll-factor 0.75
 
     focus-ring {
@@ -609,14 +614,19 @@ Afterward, the window will remember its last floating position.
 By default, new floating windows open at the center of the screen, and windows from the tiling layout open close to their visual screen position.
 
 The position uses logical coordinates relative to the working area.
+The coordinates can be absolutes (default) or relatives to the size of the working area, by setting `mode` to one of these values: `absolute`, `relative`
 By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`.
 
-For example, if you have a bar at the top, then `x=0 y=0` will put the top-left corner of the window directly below the bar.
-If instead you write `x=0 y=0 relative-to="top-right"`, then the top-right corner of the window will align with the top-right corner of the workspace, also directly below the bar.
+For example, if you have a bar at the top, then `{ x 0; y 0; }` will put the top-left corner of the window directly below the bar.
+If instead you write `{ x 0; y 0; relative-to "top-right"; }`, then the top-right corner of the window will align with the top-right corner of the workspace, also directly below the bar.
 
 The coordinates change direction based on `relative-to`.
-For example, by default (top-left), `x=100 y=200` will put the window 100 pixels to the right and 200 pixels down from the top-left corner.
-If you use `x=100 y=200 relative-to="bottom-left"`, it will put the window 100 pixels to the right and 200 pixels *up* from the bottom-left corner.
+For example, by default (top-left), `{ x 100; y 200; }` will put the window 100 pixels to the right and 200 pixels down from the top-left corner.
+If you use `{ x 100; y 200; relative-to "bottom-left"; }`, it will put the window 100 pixels to the right and 200 pixels *up* from the bottom-left corner.
+
+If you want to use proportinal coordinates you can do it by setting `mode "relative"`.
+For example `{ x 0.1; y 0.05; mode "relative"; }` will put the windows 10% of the working area width to the right and 5% of the working area height down from the top-left corner.
+This is particularly useful if combined with proportional window size. 
 
 ```kdl
 // Open the Firefox picture-in-picture window at the bottom-left corner of the screen
@@ -624,7 +634,7 @@ If you use `x=100 y=200 relative-to="bottom-left"`, it will put the window 100 p
 window-rule {
     match app-id="firefox$" title="^Picture-in-Picture$"
 
-    default-floating-position x=32 y=32 relative-to="bottom-left"
+    default-floating-position { mode "absolute"; x 32; y 32; relative-to "bottom-left"; }
 }
 ```
 
