@@ -1336,14 +1336,16 @@ pub struct TabIndicatorRule {
     pub inactive_gradient: Option<Gradient>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct FloatingPosition {
-    #[knuffel(property)]
-    pub x: FloatOrInt<-65535, 65535>,
-    #[knuffel(property)]
-    pub y: FloatOrInt<-65535, 65535>,
-    #[knuffel(property, default)]
-    pub relative_to: RelativeTo,
+    #[knuffel(child, unwrap(argument))]
+    pub x: Option<FloatOrInt<-65000, 65000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub y: Option<FloatOrInt<-65000, 65000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub relative_to: Option<RelativeTo>,
+    #[knuffel(child, unwrap(argument))]
+    pub mode: Option<PositionMode>,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -1353,6 +1355,13 @@ pub enum RelativeTo {
     TopRight,
     BottomLeft,
     BottomRight,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum PositionMode {
+    #[default]
+    Fixed,
+    Proportional,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -3727,7 +3736,12 @@ mod tests {
                 open-focused true
                 default-window-height { fixed 500; }
                 default-column-display "tabbed"
-                default-floating-position x=100 y=-200 relative-to="bottom-left"
+                default-floating-position {
+                  x 100
+                  y -200
+                  relative-to "bottom-left"
+                  mode "proportional"
+                }
 
                 focus-ring {
                     off
@@ -3742,6 +3756,7 @@ mod tests {
                 tab-indicator {
                     active-color "#f00"
                 }
+
             }
 
             layer-rule {
