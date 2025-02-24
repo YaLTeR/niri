@@ -332,7 +332,7 @@ window-rule {
     // 
     default-floating-position {
         relative-to "top-left"
-        mode "proportional"    // proportional position in order to match multi display setup
+        mode "relative"    // proportional position in order to match multi display setup
         x 0.1 // 10% left of the screen
         y 0  
     }
