@@ -380,6 +380,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.tiles_mut().map(Tile::window_mut)
     }
 
+    pub fn windows_with_areas(&self) -> impl Iterator<Item = (&W, Rectangle<f64, Logical>)> {
+        self.tiles_with_areas().map(|(t, r)| (t.window(), r))
+    }
+
     pub fn tiles(&self) -> impl Iterator<Item = &Tile<W>> + '_ {
         let scrolling = self.scrolling.tiles();
         let floating = self.floating.tiles();
@@ -389,6 +393,14 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn tiles_mut(&mut self) -> impl Iterator<Item = &mut Tile<W>> + '_ {
         let scrolling = self.scrolling.tiles_mut();
         let floating = self.floating.tiles_mut();
+        scrolling.chain(floating)
+    }
+
+    pub fn tiles_with_areas(
+        &self,
+    ) -> impl Iterator<Item = (&Tile<W>, Rectangle<f64, Logical>)> + '_ {
+        let scrolling = self.scrolling.tiles_with_areas();
+        let floating = self.floating.tiles_with_areas();
         scrolling.chain(floating)
     }
 

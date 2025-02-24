@@ -396,6 +396,13 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::KeyboardLayoutSwitched { idx } => {
                         println!("Keyboard layout switched: {idx}");
                     }
+                    Event::WindowAreaChanged {
+                        workspace_id: _,
+                        window_id,
+                        area,
+                    } => {
+                        println!("Window area changed: {window_id}, {area:?}");
+                    }
                 }
             }
         }

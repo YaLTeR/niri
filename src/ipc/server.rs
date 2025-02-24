@@ -16,11 +16,14 @@ use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
-use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
+use niri_ipc::{
+    Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, WindowArea, Workspace,
+};
 use smithay::desktop::layer_map_for_output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
+use smithay::utils::Rectangle;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 
 use crate::backend::IpcOutputMap;
@@ -429,6 +432,18 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
     })
 }
 
+fn make_ipc_window_area<Kind>(area: &Rectangle<f64, Kind>, is_floating: bool) -> WindowArea {
+    let area = area.to_i32_round::<i32>();
+    let area = WindowArea {
+        x: area.loc.x,
+        y: area.loc.y,
+        w: area.size.w,
+        h: area.size.h,
+        is_floating,
+    };
+    area
+}
+
 impl State {
     pub fn ipc_keyboard_layouts_changed(&mut self) {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
@@ -591,7 +606,7 @@ impl State {
         // Check for window changes.
         let mut seen = HashSet::new();
         let mut focused_id = None;
-        layout.with_windows(|mapped, _, ws_id| {
+        layout.with_windows_and_areas(|mapped, area, _, ws_id| {
             let id = mapped.id().get();
             seen.insert(id);
 
@@ -599,13 +614,22 @@ impl State {
                 focused_id = Some(id);
             }
 
+            let workspace_id = ws_id.map(|id| id.get());
+
+            let area = area.map(|area| make_ipc_window_area(&area, mapped.is_floating()));
+            let window_area_change_event_fn = || Event::WindowAreaChanged {
+                window_id: id,
+                workspace_id,
+                area: area.clone(),
+            };
+
             let Some(ipc_win) = state.windows.get(&id) else {
                 let window = make_ipc_window(mapped, ws_id);
                 events.push(Event::WindowOpenedOrChanged { window });
+                events.push(window_area_change_event_fn());
                 return;
             };
 
-            let workspace_id = ws_id.map(|id| id.get());
             let mut changed =
                 ipc_win.workspace_id != workspace_id || ipc_win.is_floating != mapped.is_floating();
 
@@ -616,6 +640,14 @@ impl State {
             if changed {
                 let window = make_ipc_window(mapped, ws_id);
                 events.push(Event::WindowOpenedOrChanged { window });
+            }
+
+            // Check if ipc area equals to the new area.
+            if state.window_areas.get(&id).map(|e| e.clone()) != area {
+                events.push(window_area_change_event_fn());
+            }
+
+            if changed {
                 return;
             }
 

@@ -925,6 +925,22 @@ pub enum Transform {
     Flipped270,
 }
 
+/// Window Area
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WindowArea {
+    /// The left top x of window
+    pub x: i32,
+    /// The left top y of window
+    pub y: i32,
+    /// The width of window
+    pub w: i32,
+    /// The height of window
+    pub h: i32,
+    /// Window floating state
+    pub is_floating: bool,
+}
+
 /// Toplevel window.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1096,6 +1112,15 @@ pub enum Event {
         /// This configuration completely replaces the previous configuration. I.e. if any windows
         /// are missing from here, then they were closed.
         windows: Vec<Window>,
+    },
+    /// The window location has changed.
+    WindowAreaChanged {
+        /// Id of the workspace
+        workspace_id: Option<u64>,
+        /// Unique id of this window.
+        window_id: u64,
+        /// The new window area configuration.
+        area: Option<WindowArea>,
     },
     /// A new toplevel window was opened, or an existing toplevel window changed.
     WindowOpenedOrChanged {
