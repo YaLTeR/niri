@@ -316,6 +316,28 @@ window-rule {
     clip-to-geometry true
 }
 
+// Example: a floating drop down terminal with proportional size and position
+// (This example rule is commented out with a "/-" in front.)
+/-window-rule {
+    match app-id="dropdown"
+    // open focused and floating
+    open-focused true
+    open-floating true
+    // no corner radius
+    geometry-corner-radius 0
+    // half screen height
+    default-window-height { proportion 0.500; }
+    // 80% screen width
+    default-column-width { proportion 0.8; }
+    // 
+    default-floating-position {
+        relative-to "top-left"
+        mode "proportional"    // proportional position in order to match multi display setup
+        x 0.1 // 10% left of the screen
+        y 0  
+    }
+}
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program
