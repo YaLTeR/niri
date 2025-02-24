@@ -1353,6 +1353,10 @@ pub enum RelativeTo {
     TopRight,
     BottomLeft,
     BottomRight,
+    Top,
+    Bottom,
+    Left,
+    Right,
 }
 
 #[derive(Debug, Default, PartialEq)]
