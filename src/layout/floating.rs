@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::{PresetSize, RelativeTo};
+use niri_config::{PositionMode, PresetSize, RelativeTo};
 use niri_ipc::{PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
@@ -1201,11 +1201,37 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let pos = tile.floating_pos.map(|pos| self.scale_by_working_area(pos));
         pos.or_else(|| {
             tile.window().rules().default_floating_position.map(|pos| {
-                let relative_to = pos.relative_to;
+                let mode = match pos.mode {
+                    Some(p) => p,
+                    None => PositionMode::Fixed,
+                };
+                let relative_to = match pos.relative_to {
+                    Some(p) => p,
+                    None => RelativeTo::TopLeft,
+                };
                 let size = tile.tile_size();
                 let area = self.working_area;
 
-                let mut pos = Point::from((pos.x.0, pos.y.0));
+                let x = match pos.x {
+                    Some(p) => p.0,
+                    None => 0.0,
+                };
+                let y = match pos.y {
+                    Some(p) => p.0,
+                    None => 0.0,
+                };
+
+                let transform = |p: f64, dim: f64, mode| -> f64 {
+                    match mode {
+                        PositionMode::Fixed => p,
+                        PositionMode::Proportional => p * dim,
+                    }
+                };
+
+                let mut pos = Point::from((
+                    transform(x, self.working_area.size.w, mode),
+                    transform(y, self.working_area.size.h, mode),
+                ));
                 if relative_to == RelativeTo::TopRight || relative_to == RelativeTo::BottomRight {
                     pos.x = area.size.w - size.w - pos.x;
                 }
