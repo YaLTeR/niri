@@ -717,11 +717,19 @@ impl XdgActivationHandler for State {
             return false;
         };
 
-        let keyboard = seat.get_keyboard().unwrap();
-        keyboard
-            .last_enter()
-            .map(|last_enter| serial.is_no_older_than(&last_enter))
-            .unwrap_or(false)
+        // Check the serial against both a keyboard and a pointer, since layer-shell surfaces
+        // with no keyboard interactivity won't have any keyboard focus.
+        let kb_last_enter = seat.get_keyboard().unwrap().last_enter();
+        if kb_last_enter.is_some_and(|last_enter| serial.is_no_older_than(&last_enter)) {
+            return true;
+        }
+
+        let pointer_last_enter = seat.get_pointer().unwrap().last_enter();
+        if pointer_last_enter.is_some_and(|last_enter| serial.is_no_older_than(&last_enter)) {
+            return true;
+        }
+
+        false
     }
 
     fn request_activation(
