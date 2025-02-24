@@ -16,7 +16,10 @@ use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
-use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
+use niri_ipc::{
+    Event, GlobalShortcut, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response,
+    Workspace,
+};
 use smithay::desktop::layer_map_for_output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -316,6 +319,11 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let layout = layout.expect("keyboard layouts should be set at startup");
             Response::KeyboardLayouts(layout)
         }
+        Request::GlobalShortcuts => {
+            let state = ctx.event_stream_state.borrow();
+            let shortcuts = state.global_shortcuts.global_shortcuts.clone();
+            Response::GlobalShortcuts(shortcuts)
+        }
         Request::FocusedWindow => {
             let state = ctx.event_stream_state.borrow();
             let windows = &state.windows.windows;
@@ -474,6 +482,31 @@ impl State {
         }
 
         let event = Event::KeyboardLayoutSwitched { idx };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    pub fn ipc_global_shortcuts_changed(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.keyboard_layouts;
+
+        let global_shortcuts = self
+            .niri
+            .hyprland_global_shortcuts_state
+            .shortcuts()
+            .map(|shortcut| GlobalShortcut {
+                id: shortcut.id.clone(),
+                app_id: shortcut.app_id.clone(),
+                description: shortcut.description.clone(),
+                trigger_description: shortcut.trigger_description.clone(),
+            })
+            .collect();
+
+        let event = Event::GlobalShortcutsChanged { global_shortcuts };
         state.apply(event.clone());
         server.send_event(event);
     }

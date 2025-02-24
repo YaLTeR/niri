@@ -59,6 +59,8 @@ pub enum Request {
     Layers,
     /// Request information about the configured keyboard layouts.
     KeyboardLayouts,
+    /// Request information about global shortcuts.
+    GlobalShortcuts,
     /// Request information about the focused output.
     FocusedOutput,
     /// Request information about the focused window.
@@ -125,6 +127,8 @@ pub enum Response {
     Layers(Vec<LayerSurface>),
     /// Information about the keyboard layout.
     KeyboardLayouts(KeyboardLayouts),
+    /// Information about global shortcuts.
+    GlobalShortcuts(Vec<GlobalShortcut>),
     /// Information about the focused output.
     FocusedOutput(Option<Output>),
     /// Information about the focused window.
@@ -648,6 +652,15 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Trigger (press and release) a global shortcut.
+    TriggerGlobalShortcut {
+        /// Application id of the global shortcut.
+        #[cfg_attr(feature = "clap", arg())]
+        app_id: String,
+        /// Id of the global shortcut.
+        #[cfg_attr(feature = "clap", arg())]
+        id: String,
+    },
 }
 
 /// Change in window or column size.
@@ -1057,6 +1070,19 @@ pub struct LayerSurface {
     pub keyboard_interactivity: LayerSurfaceKeyboardInteractivity,
 }
 
+/// A registered global shortcut.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GlobalShortcut {
+    /// A unique id for the shortcut.
+    pub id: String,
+    /// The app_id of the application requesting the shortcut.
+    pub app_id: String,
+    /// User-readable text describing what the shortcut does.
+    pub description: String,
+    /// User-readable text describing how to trigger the shortcut for the client to render.
+    pub trigger_description: String,
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1125,6 +1151,22 @@ pub enum Event {
     KeyboardLayoutSwitched {
         /// Index of the newly active layout.
         idx: u8,
+    },
+    // FIXME: Which one is better?
+    // /// A global shortcut was registered.
+    // GlobalShortcutRegistered {
+    //     /// Id of the newly registered global shortcut.
+    //     id: String,
+    // },
+    // /// A global shortcut was destroyed.
+    // GlobalShortcutDestroyed {
+    //     /// Id of the destroyed global shortcut.
+    //     id: String,
+    // },
+    /// The registered global shortcuts have changed.
+    GlobalShortcutsChanged {
+        /// The new list of registered global shortcuts.
+        global_shortcuts: Vec<GlobalShortcut>,
     },
 }
 
