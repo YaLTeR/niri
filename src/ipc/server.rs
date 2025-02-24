@@ -1,22 +1,29 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ffi::OsStr;
+use std::future::Future;
+use std::ops::Deref;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 use std::{env, io, process};
 
 use anyhow::Context;
 use async_channel::{Receiver, Sender, TrySendError};
-use calloop::futures::Scheduler;
 use calloop::io::Async;
 use directories::BaseDirs;
-use futures_util::io::{AsyncReadExt, BufReader};
-use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
+use futures_util::future::{Either, FutureExt};
+use futures_util::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader, ReadHalf};
+use futures_util::io::{AsyncWrite, AsyncWriteExt};
+use futures_util::pin_mut;
+use futures_util::stream::{AbortHandle, Abortable, Stream, StreamExt};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
+use serde::Serialize;
 use smithay::desktop::layer_map_for_output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -44,21 +51,14 @@ pub struct IpcServer {
 
 struct ClientCtx {
     event_loop: LoopHandle<'static, State>,
-    scheduler: Scheduler<()>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
     event_streams: Rc<RefCell<Vec<EventStreamSender>>>,
     event_stream_state: Rc<RefCell<EventStreamState>>,
 }
 
-struct EventStreamClient {
-    events: Receiver<Event>,
-    disconnect: Receiver<()>,
-    write: Box<dyn AsyncWrite + Unpin>,
-}
-
 struct EventStreamSender {
     events: Sender<Event>,
-    disconnect: Sender<()>,
+    abort: AbortHandle,
 }
 
 impl IpcServer {
@@ -123,7 +123,7 @@ impl IpcServer {
 
         for idx in to_remove.into_iter().rev() {
             let stream = streams.swap_remove(idx);
-            let _ = stream.disconnect.send_blocking(());
+            stream.abort.abort();
         }
     }
 }
@@ -160,7 +160,6 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
 
     let ctx = ClientCtx {
         event_loop: state.niri.event_loop.clone(),
-        scheduler: state.niri.scheduler.clone(),
         ipc_outputs: state.backend.ipc_outputs(),
         event_streams: ipc_server.event_streams.clone(),
         event_stream_state: ipc_server.event_stream_state.clone(),
@@ -176,81 +175,113 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
     }
 }
 
-async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> anyhow::Result<()> {
-    let (read, mut write) = stream.split();
-    let mut buf = String::new();
-
-    // Read a single line to allow extensibility in the future to keep reading.
-    BufReader::new(read)
-        .read_line(&mut buf)
-        .await
-        .context("error reading request")?;
-
-    let request = serde_json::from_str(&buf)
-        .context("error parsing request")
-        .map_err(|err| err.to_string());
-    let requested_error = matches!(request, Ok(Request::ReturnError));
-    let requested_event_stream = matches!(request, Ok(Request::EventStream));
-
-    let reply = match request {
-        Ok(request) => process(&ctx, request).await,
-        Err(err) => Err(err),
-    };
-
-    if let Err(err) = &reply {
-        if !requested_error {
-            warn!("error processing IPC request: {err:?}");
-        }
-    }
-
-    let mut buf = serde_json::to_vec(&reply).context("error formatting reply")?;
-    buf.push(b'\n');
-    write.write_all(&buf).await.context("error writing reply")?;
-
-    if requested_event_stream {
-        let (events_tx, events_rx) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
-        let (disconnect_tx, disconnect_rx) = async_channel::bounded(1);
-
-        // Spawn a task for the client.
-        let client = EventStreamClient {
-            events: events_rx,
-            disconnect: disconnect_rx,
-            write: Box::new(write) as _,
-        };
-        let future = async move {
-            if let Err(err) = handle_event_stream_client(client).await {
-                warn!("error handling IPC event stream client: {err:?}");
-            }
-        };
-        if let Err(err) = ctx.scheduler.schedule(future) {
-            warn!("error scheduling IPC event stream future: {err:?}");
-        }
-
-        // Send the initial state.
-        {
-            let state = ctx.event_stream_state.borrow();
-            for event in state.replicate() {
-                events_tx
-                    .try_send(event)
-                    .expect("initial event burst had more events than buffer size");
-            }
-        }
-
-        // Add it to the list.
-        {
-            let mut streams = ctx.event_streams.borrow_mut();
-            let sender = EventStreamSender {
-                events: events_tx,
-                disconnect: disconnect_tx,
-            };
-            streams.push(sender);
-        }
-    }
-
-    Ok(())
+async fn read_line<'a, R>(
+    read: &'a mut R,
+    buf: &'a mut Vec<u8>,
+) -> (io::Result<usize>, &'a mut R, &'a mut Vec<u8>)
+where
+    R: AsyncBufRead + Unpin,
+{
+    buf.clear();
+    (read.read_until(b'\n', buf).await, read, buf)
 }
 
-async fn process(ctx: &ClientCtx, request: Request) -> Reply {
+async fn write_json_reply<W, T>(mut write: W, buf: &mut Vec<u8>, value: &T) -> anyhow::Result<()>
+where
+    W: AsyncWrite + Unpin,
+    T: Serialize,
+{
+    buf.clear();
+    serde_json::to_writer(&mut *buf, value).context("error formatting reply")?;
+    buf.push(b'\n');
+    write.write_all(buf).await.context("error writing reply")
+}
+
+struct OptionStream<S>(Option<S>);
+
+impl<S> Future for OptionStream<S>
+where
+    S: Stream + Unpin,
+{
+    type Output = Option<S::Item>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        match &mut self.as_mut().0 {
+            Some(stream) => stream.poll_next_unpin(cx),
+            None => Poll::Pending,
+        }
+    }
+}
+
+async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> anyhow::Result<()> {
+    let (read, mut write) = stream.split();
+
+    let mut input_buf = Vec::<u8>::new();
+    let mut read: BufReader<ReadHalf<Async<'_, UnixStream>>> = BufReader::new(read);
+
+    let read_line_fut = read_line(&mut read, &mut input_buf).fuse();
+    pin_mut!(read_line_fut);
+
+    let event_stream: Option<EventStream> = None;
+    pin_mut!(event_stream);
+
+    let mut output_buf = Vec::<u8>::new();
+
+    // First check whether there are new events from the `EventStream` and then read and process
+    // messages from the socket.
+    loop {
+        match futures_util::future::select(
+            OptionStream(event_stream.as_mut().as_pin_mut()),
+            read_line_fut.as_mut(),
+        )
+        .await
+        {
+            Either::Left((event, _)) => {
+                // Close the client when its event_stream was closed for any reason
+                let Some(event) = event else { return Ok(()) };
+                write_json_reply(&mut write, &mut output_buf, &event).await?;
+            }
+            Either::Right(((res, read, input_buf), _)) => {
+                match res {
+                    Ok(0) => continue,
+                    Ok(_) => {}
+                    Err(err) if err.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
+                    Err(err) => {
+                        return Err(err).context("error parsing request");
+                    }
+                }
+
+                let request = serde_json::from_slice(input_buf)
+                    .context("error parsing request")
+                    .map_err(|err| err.to_string());
+                let requested_error = matches!(request, Ok(Request::ReturnError));
+
+                let reply = match request {
+                    Ok(request) => process_request(&ctx, request, &mut event_stream).await,
+                    Err(err) => Err(err),
+                };
+
+                if let Err(err) = &reply {
+                    if !requested_error {
+                        warn!("error processing IPC request: {err:?}");
+                    }
+                }
+
+                write_json_reply(&mut write, &mut output_buf, &reply).await?;
+
+                read_line_fut.set(read_line(read, input_buf).fuse());
+            }
+        }
+    }
+}
+
+type EventStream = Abortable<Receiver<Event>>;
+
+async fn process_request(
+    ctx: &ClientCtx,
+    request: Request,
+    event_stream: &mut Pin<&mut Option<EventStream>>,
+) -> Reply {
     let response = match request {
         Request::ReturnError => return Err(String::from("example compositor error")),
         Request::Version => Response::Version(version()),
@@ -384,37 +415,59 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let output = result.map_err(|_| String::from("error getting active output info"))?;
             Response::FocusedOutput(output)
         }
-        Request::EventStream => Response::Handled,
+        Request::EventStream => {
+            // A lot of pin transformations here, but basically it comes down to to just
+            // ```rust
+            // Option<Abortable>::map(Abortable::is_aborted)::unwrap_or(true)
+            // ```
+            // to make sure we don't open *two* `EventStream`s for one client.
+            //
+            // Theoretically doing that *should* be fine, but I don't see any case where that would
+            // be something the client actually wants.
+            if event_stream
+                .as_ref()
+                .as_pin_ref()
+                .map(|event_stream| event_stream.deref().is_aborted())
+                .unwrap_or(true)
+            {
+                let (events_tx, events_rx) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
+                let (abort_handle, abort_registration) = AbortHandle::new_pair();
+
+                event_stream.set(Some(Abortable::new(events_rx, abort_registration)));
+
+                // Send the initial state.
+                {
+                    let state = ctx.event_stream_state.borrow();
+                    for event in state.replicate() {
+                        events_tx
+                            .try_send(event)
+                            .expect("initial event burst had more events than buffer size");
+                    }
+                }
+
+                // Add it to the list.
+                {
+                    let mut streams = ctx.event_streams.borrow_mut();
+                    let sender = EventStreamSender {
+                        events: events_tx,
+                        abort: abort_handle,
+                    };
+                    streams.push(sender);
+                }
+
+                Response::Handled
+            } else {
+                // How should we handle trying to register a new stream when there already is one.
+                // For now just act as if we did set it up.
+                // Even though we are still using the current stream.
+                //
+                // *Maybe* this could be used to request sending the initial state again?
+                Response::Handled
+            }
+        }
     };
 
     Ok(response)
-}
-
-async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result<()> {
-    let EventStreamClient {
-        events,
-        disconnect,
-        mut write,
-    } = client;
-
-    while let Ok(event) = events.recv().await {
-        let mut buf = serde_json::to_vec(&event).context("error formatting event")?;
-        buf.push(b'\n');
-
-        let res = select_biased! {
-            _ = disconnect.recv().fuse() => return Ok(()),
-            res = write.write_all(&buf).fuse() => res,
-        };
-
-        match res {
-            Ok(()) => (),
-            // Normal client disconnection.
-            Err(err) if err.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
-            res @ Err(_) => res.context("error writing event")?,
-        }
-    }
-
-    Ok(())
 }
 
 fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_ipc::Window {
