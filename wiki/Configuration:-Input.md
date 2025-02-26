@@ -85,6 +85,7 @@ input {
     }
 
     touch {
+        // off
         map-to-output "eDP-1"
     }
 
