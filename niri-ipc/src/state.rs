@@ -9,7 +9,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-use crate::{Event, KeyboardLayouts, Window, Workspace};
+use crate::{Event, KeyboardLayouts, Window, WindowArea, Workspace};
 
 /// Part of the state communicated via the event stream.
 pub trait EventStreamStatePart {
@@ -54,6 +54,8 @@ pub struct WorkspacesState {
 pub struct WindowsState {
     /// Map from a window id to the window.
     pub windows: HashMap<u64, Window>,
+    /// Map from a window id to the window area.
+    pub window_areas: HashMap<u64, WindowArea>,
 }
 
 /// The keyboard layout state communicated over the event stream.
@@ -162,6 +164,18 @@ impl EventStreamStatePart for WindowsState {
                     win.is_focused = Some(win.id) == id;
                 }
             }
+            Event::WindowAreaChanged {
+                workspace_id: _,
+                window_id,
+                area,
+            } => match area {
+                Some(area) => {
+                    self.window_areas.insert(window_id, area);
+                }
+                None => {
+                    self.window_areas.remove(&window_id);
+                }
+            },
             event => return Some(event),
         }
         None

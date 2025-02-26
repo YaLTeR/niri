@@ -406,6 +406,38 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns.iter_mut().flat_map(|col| col.tiles.iter_mut())
     }
 
+    pub fn tiles_with_areas(
+        &self,
+    ) -> impl Iterator<Item = (&Tile<W>, Rectangle<f64, Logical>)> + '_ {
+        self.columns
+            .iter()
+            .scan(self.working_area.loc.x, move |x, c| {
+                let current_x = *x;
+                *x += c.width();
+                Some((current_x, c))
+            })
+            .flat_map(move |(x, col)| {
+                let init_y = col.working_area.loc.y;
+                let areas: Box<dyn Iterator<Item = Rectangle<f64, Logical>>> = match col
+                    .display_mode
+                {
+                    ColumnDisplay::Normal => Box::new(col.data.iter().scan(init_y, move |y, d| {
+                        let current_y = *y;
+                        *y += d.size.h;
+                        Some(Rectangle::new(
+                            (x, current_y).into(),
+                            (d.size.w, d.size.h).into(),
+                        ))
+                    })),
+                    ColumnDisplay::Tabbed => Box::new(col.data.iter().map(move |d| {
+                        Rectangle::new((x, init_y).into(), (d.size.w, d.size.h).into())
+                    })),
+                };
+
+                zip(&col.tiles, areas)
+            })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.columns.is_empty()
     }
