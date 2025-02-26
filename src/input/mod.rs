@@ -48,6 +48,7 @@ use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
+pub mod pick_window_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
@@ -367,7 +368,6 @@ impl State {
             serial,
             time,
             |this, mods, keysym| {
-                let bindings = &this.niri.config.borrow().binds;
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
@@ -383,6 +383,19 @@ impl State {
                     }
                 }
 
+                if pressed && raw == Some(Keysym::Escape) && this.niri.pick_window.is_some() {
+                    // We window picking state so the pick window grab must be active.
+                    // Unsetting it cancels window picking.
+                    this.niri
+                        .seat
+                        .get_pointer()
+                        .unwrap()
+                        .unset_grab(this, serial, time);
+                    this.niri.suppressed_keys.insert(key_code);
+                    return FilterResult::Intercept(None);
+                }
+
+                let bindings = &this.niri.config.borrow().binds;
                 should_intercept_key(
                     &mut this.niri.suppressed_keys,
                     bindings,
