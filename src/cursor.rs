@@ -75,19 +75,22 @@ impl CursorManager {
 
                 RenderCursor::Surface { hotspot, surface }
             }
-            CursorImageStatus::Named(icon) => self
-                .get_cursor_with_name(icon, scale)
-                .map(|cursor| RenderCursor::Named {
-                    icon,
-                    scale,
-                    cursor,
-                })
-                .unwrap_or_else(|| RenderCursor::Named {
-                    icon: Default::default(),
-                    scale,
-                    cursor: self.get_default_cursor(scale),
-                }),
+            CursorImageStatus::Named(icon) => self.get_render_cursor_named(icon, scale),
         }
+    }
+
+    fn get_render_cursor_named(&self, icon: CursorIcon, scale: i32) -> RenderCursor {
+        self.get_cursor_with_name(icon, scale)
+            .map(|cursor| RenderCursor::Named {
+                icon,
+                scale,
+                cursor,
+            })
+            .unwrap_or_else(|| RenderCursor::Named {
+                icon: Default::default(),
+                scale,
+                cursor: self.get_default_cursor(scale),
+            })
     }
 
     pub fn is_current_cursor_animated(&self, scale: i32) -> bool {
