@@ -2014,6 +2014,8 @@ pub struct DebugConfig {
     pub disable_monitor_names: bool,
     #[knuffel(child)]
     pub strict_new_window_focus_policy: bool,
+    #[knuffel(child)]
+    pub honor_xdg_activation_with_invalid_serial: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
@@ -4738,6 +4740,7 @@ mod tests {
                 keep_laptop_panel_on_when_lid_is_closed: false,
                 disable_monitor_names: false,
                 strict_new_window_focus_policy: false,
+                honor_xdg_activation_with_invalid_serial: false,
             },
             workspaces: [
                 Workspace {

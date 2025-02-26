@@ -709,13 +709,30 @@ impl XdgActivationHandler for State {
     }
 
     fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
-        // Only tokens that were created while the application has keyboard focus are valid.
+        // Tokens without a serial are urgency-only. This is not specified, but it seems to be the
+        // common client behavior.
+        //
+        // We don't have urgency yet, so just ignore such tokens.
+        //
+        // See also: https://gitlab.freedesktop.org/wayland/wayland-protocols/-/issues/150
         let Some((serial, seat)) = data.serial else {
             return false;
         };
         let Some(seat) = Seat::<State>::from_resource(&seat) else {
             return false;
         };
+
+        // Widely-used clients such as Discord and Telegram make new tokens (with invalid serials)
+        // upon clicking on their tray icon or on their notification. This debug flag makes that
+        // work.
+        //
+        // Clicking on a notification sends clients a perfectly valid activation token from the
+        // notification daemon, but alas they ignore it. Maybe in the future the clients are fixed,
+        // and we can remove this debug flag.
+        let config = self.niri.config.borrow();
+        if config.debug.honor_xdg_activation_with_invalid_serial {
+            return true;
+        }
 
         // Check the serial against both a keyboard and a pointer, since layer-shell surfaces
         // with no keyboard interactivity won't have any keyboard focus.
