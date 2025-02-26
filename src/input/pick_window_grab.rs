@@ -1,7 +1,12 @@
 use smithay::backend::input::ButtonState;
 use smithay::input::pointer::{
-    CursorImageStatus, GrabStartData as PointerGrabStartData, PointerGrab,
+    AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
+    GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
+    GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData,
+    MotionEvent, PointerGrab, PointerInnerHandle, RelativeMotionEvent,
 };
+use smithay::input::SeatHandler;
+use smithay::utils::{Logical, Point};
 
 use crate::niri::State;
 use crate::window::Mapped;
@@ -32,12 +37,9 @@ impl PointerGrab<State> for PickWindowGrab {
     fn motion(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        _focus: Option<(
-            <State as smithay::input::SeatHandler>::PointerFocus,
-            smithay::utils::Point<f64, smithay::utils::Logical>,
-        )>,
-        event: &smithay::input::pointer::MotionEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        _focus: Option<(<State as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
+        event: &MotionEvent,
     ) {
         handle.motion(data, None, event);
     }
@@ -45,12 +47,9 @@ impl PointerGrab<State> for PickWindowGrab {
     fn relative_motion(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        _focus: Option<(
-            <State as smithay::input::SeatHandler>::PointerFocus,
-            smithay::utils::Point<f64, smithay::utils::Logical>,
-        )>,
-        event: &smithay::input::pointer::RelativeMotionEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        _focus: Option<(<State as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
+        event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, None, event);
     }
@@ -58,8 +57,8 @@ impl PointerGrab<State> for PickWindowGrab {
     fn button(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::ButtonEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &ButtonEvent,
     ) {
         if event.state == ButtonState::Pressed {
             if let Some(tx) = data.niri.pick_window.take() {
@@ -76,25 +75,21 @@ impl PointerGrab<State> for PickWindowGrab {
     fn axis(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        details: smithay::input::pointer::AxisFrame,
+        handle: &mut PointerInnerHandle<'_, State>,
+        details: AxisFrame,
     ) {
         handle.axis(data, details);
     }
 
-    fn frame(
-        &mut self,
-        data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-    ) {
+    fn frame(&mut self, data: &mut State, handle: &mut PointerInnerHandle<'_, State>) {
         handle.frame(data);
     }
 
     fn gesture_swipe_begin(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::GestureSwipeBeginEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &GestureSwipeBeginEvent,
     ) {
         handle.gesture_swipe_begin(data, event);
     }
@@ -102,8 +97,8 @@ impl PointerGrab<State> for PickWindowGrab {
     fn gesture_swipe_update(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::GestureSwipeUpdateEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &GestureSwipeUpdateEvent,
     ) {
         handle.gesture_swipe_update(data, event);
     }
@@ -111,8 +106,8 @@ impl PointerGrab<State> for PickWindowGrab {
     fn gesture_swipe_end(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::GestureSwipeEndEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &GestureSwipeEndEvent,
     ) {
         handle.gesture_swipe_end(data, event);
     }
@@ -120,8 +115,8 @@ impl PointerGrab<State> for PickWindowGrab {
     fn gesture_pinch_begin(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::GesturePinchBeginEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &GesturePinchBeginEvent,
     ) {
         handle.gesture_pinch_begin(data, event);
     }
@@ -129,8 +124,8 @@ impl PointerGrab<State> for PickWindowGrab {
     fn gesture_pinch_update(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::GesturePinchUpdateEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &GesturePinchUpdateEvent,
     ) {
         handle.gesture_pinch_update(data, event);
     }
@@ -138,8 +133,8 @@ impl PointerGrab<State> for PickWindowGrab {
     fn gesture_pinch_end(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::GesturePinchEndEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &GesturePinchEndEvent,
     ) {
         handle.gesture_pinch_end(data, event);
     }
@@ -147,8 +142,8 @@ impl PointerGrab<State> for PickWindowGrab {
     fn gesture_hold_begin(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::GestureHoldBeginEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &GestureHoldBeginEvent,
     ) {
         handle.gesture_hold_begin(data, event);
     }
@@ -156,13 +151,13 @@ impl PointerGrab<State> for PickWindowGrab {
     fn gesture_hold_end(
         &mut self,
         data: &mut State,
-        handle: &mut smithay::input::pointer::PointerInnerHandle<'_, State>,
-        event: &smithay::input::pointer::GestureHoldEndEvent,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &GestureHoldEndEvent,
     ) {
         handle.gesture_hold_end(data, event);
     }
 
-    fn start_data(&self) -> &smithay::input::pointer::GrabStartData<State> {
+    fn start_data(&self) -> &PointerGrabStartData<State> {
         &self.start_data
     }
 

@@ -330,10 +330,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         Request::PickWindow => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
-                let Some(pointer) = state.niri.seat.get_pointer() else {
-                    let _ = tx.send_blocking(None);
-                    return;
-                };
+                let pointer = state.niri.seat.get_pointer().unwrap();
                 let start_data = PointerGrabStartData {
                     focus: None,
                     button: 0,
@@ -342,7 +339,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 let grab = PickWindowGrab::new(start_data);
                 // The `WindowPickGrab` ungrab handler will cancel the previous ongoing pick, if
                 // any.
-                pointer.set_grab(state, grab, SERIAL_COUNTER.next_serial(), Focus::Keep);
+                pointer.set_grab(state, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
                 state.niri.pick_window = Some(tx);
                 state
                     .niri
