@@ -322,15 +322,16 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let window = windows.values().find(|win| win.is_focused).cloned();
             Response::FocusedWindow(window)
         }
-        Request::Action(action) => {
+        Request::Action(actions) => {
             let (tx, rx) = async_channel::bounded(1);
 
-            let action = niri_config::Action::from(action);
             ctx.event_loop.insert_idle(move |state| {
                 // Make sure some logic like workspace clean-up has a chance to run before doing
                 // actions.
                 state.niri.advance_animations();
-                state.do_action(action, false);
+                for action in actions.into_iter().map(niri_config::Action::from) {
+                    state.do_action(action, false);
+                }
                 let _ = tx.send_blocking(());
             });
 

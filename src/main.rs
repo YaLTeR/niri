@@ -7,11 +7,11 @@ use std::io::{self, Write};
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::{env, mem};
+use std::{env, iter, mem};
 
 use clap::Parser;
 use directories::ProjectDirs;
-use niri::cli::{Cli, Sub};
+use niri::cli::{Cli, Msg, Sub};
 #[cfg(feature = "dbus")]
 use niri::dbus;
 use niri::ipc::client::handle_msg;
@@ -24,6 +24,7 @@ use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
 use niri_config::Config;
 use niri_ipc::socket::SOCKET_PATH_ENV;
+use niri_ipc::Action;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
 use smithay::reexports::calloop::EventLoop;
@@ -101,7 +102,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 info!("config is valid");
                 return Ok(());
             }
-            Sub::Msg { msg, json } => {
+            Sub::Msg { mut msg, json } => {
+                if let Msg::Action { action: None } = msg {
+                    let actions = io::stdin()
+                        .lines()
+                        .map(|line| {
+                            line.map(|line| {
+                                Action::parse_from(iter::once("action").chain(line.split(' ')))
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    if actions.is_empty() {
+                        warn!("read actions from stdin but no actions were provided");
+                        return Ok(());
+                    }
+                    msg = Msg::Actions { actions }
+                }
                 handle_msg(msg, json)?;
                 return Ok(());
             }
