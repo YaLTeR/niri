@@ -1778,36 +1778,36 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn move_left(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.move_left();
+        workspace.move_left();
     }
 
     pub fn move_right(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.move_right();
+        workspace.move_right();
     }
 
     pub fn move_column_to_first(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.move_column_to_first();
+        workspace.move_column_to_first();
     }
 
     pub fn move_column_to_last(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.move_column_to_last();
+        workspace.move_column_to_last();
     }
 
     pub fn move_column_left_or_to_output(&mut self, output: &Output) -> bool {
-        if let Some(monitor) = self.active_monitor() {
-            if monitor.move_left() {
+        if let Some(workspace) = self.active_workspace_mut() {
+            if workspace.move_left() {
                 return false;
             }
         }
@@ -1817,8 +1817,8 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn move_column_right_or_to_output(&mut self, output: &Output) -> bool {
-        if let Some(monitor) = self.active_monitor() {
-            if monitor.move_right() {
+        if let Some(workspace) = self.active_workspace_mut() {
+            if workspace.move_right() {
                 return false;
             }
         }
@@ -1828,17 +1828,17 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn move_down(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.move_down();
+        workspace.move_down();
     }
 
     pub fn move_up(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.move_up();
+        workspace.move_up();
     }
 
     pub fn move_down_or_to_workspace_down(&mut self) {
@@ -1902,50 +1902,50 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus_left(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_left();
+        workspace.focus_left();
     }
 
     pub fn focus_right(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_right();
+        workspace.focus_right();
     }
 
     pub fn focus_column_first(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_column_first();
+        workspace.focus_column_first();
     }
 
     pub fn focus_column_last(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_column_last();
+        workspace.focus_column_last();
     }
 
     pub fn focus_column_right_or_first(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_column_right_or_first();
+        workspace.focus_column_right_or_first();
     }
 
     pub fn focus_column_left_or_last(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_column_left_or_last();
+        workspace.focus_column_left_or_last();
     }
 
     pub fn focus_window_up_or_output(&mut self, output: &Output) -> bool {
-        if let Some(monitor) = self.active_monitor() {
-            if monitor.focus_up() {
+        if let Some(workspace) = self.active_workspace_mut() {
+            if workspace.focus_up() {
                 return false;
             }
         }
@@ -1955,8 +1955,8 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus_window_down_or_output(&mut self, output: &Output) -> bool {
-        if let Some(monitor) = self.active_monitor() {
-            if monitor.focus_down() {
+        if let Some(workspace) = self.active_workspace_mut() {
+            if workspace.focus_down() {
                 return false;
             }
         }
@@ -1966,8 +1966,8 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus_column_left_or_output(&mut self, output: &Output) -> bool {
-        if let Some(monitor) = self.active_monitor() {
-            if monitor.focus_left() {
+        if let Some(workspace) = self.active_workspace_mut() {
+            if workspace.focus_left() {
                 return false;
             }
         }
@@ -1977,8 +1977,8 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus_column_right_or_output(&mut self, output: &Output) -> bool {
-        if let Some(monitor) = self.active_monitor() {
-            if monitor.focus_right() {
+        if let Some(workspace) = self.active_workspace_mut() {
+            if workspace.focus_right() {
                 return false;
             }
         }
@@ -1988,52 +1988,52 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus_window_in_column(&mut self, index: u8) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_window_in_column(index);
+        workspace.focus_window_in_column(index);
     }
 
     pub fn focus_down(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_down();
+        workspace.focus_down();
     }
 
     pub fn focus_up(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_up();
+        workspace.focus_up();
     }
 
     pub fn focus_down_or_left(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_down_or_left();
+        workspace.focus_down_or_left();
     }
 
     pub fn focus_down_or_right(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_down_or_right();
+        workspace.focus_down_or_right();
     }
 
     pub fn focus_up_or_left(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_up_or_left();
+        workspace.focus_up_or_left();
     }
 
     pub fn focus_up_or_right(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_up_or_right();
+        workspace.focus_up_or_right();
     }
 
     pub fn focus_window_or_workspace_down(&mut self) {
@@ -2051,31 +2051,31 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus_window_top(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_window_top();
+        workspace.focus_window_top();
     }
 
     pub fn focus_window_bottom(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_window_bottom();
+        workspace.focus_window_bottom();
     }
 
     pub fn focus_window_down_or_top(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_window_down_or_top();
+        workspace.focus_window_down_or_top();
     }
 
     pub fn focus_window_up_or_bottom(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.focus_window_up_or_bottom();
+        workspace.focus_window_up_or_bottom();
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -2181,45 +2181,45 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn consume_into_column(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.consume_into_column();
+        workspace.consume_into_column();
     }
 
     pub fn expel_from_column(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.expel_from_column();
+        workspace.expel_from_column();
     }
 
     pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.swap_window_in_direction(direction);
+        workspace.swap_window_in_direction(direction);
     }
 
     pub fn toggle_column_tabbed_display(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.toggle_column_tabbed_display();
+        workspace.toggle_column_tabbed_display();
     }
 
     pub fn set_column_display(&mut self, display: ColumnDisplay) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.set_column_display(display);
+        workspace.set_column_display(display);
     }
 
     pub fn center_column(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.center_column();
+        workspace.center_column();
     }
 
     pub fn center_window(&mut self, id: Option<&W::Id>) {
@@ -2842,10 +2842,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn toggle_width(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.toggle_width();
+        workspace.toggle_width();
     }
 
     pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
@@ -2895,17 +2895,17 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn toggle_full_width(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.toggle_full_width();
+        workspace.toggle_full_width();
     }
 
     pub fn set_column_width(&mut self, change: SizeChange) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.set_column_width(change);
+        workspace.set_column_width(change);
     }
 
     pub fn set_window_width(&mut self, window: Option<&W::Id>, change: SizeChange) {
@@ -2978,10 +2978,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn expand_column_to_available_width(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        monitor.expand_column_to_available_width();
+        workspace.expand_column_to_available_width();
     }
 
     pub fn toggle_window_floating(&mut self, window: Option<&W::Id>) {
