@@ -2,14 +2,13 @@ use std::cmp::min;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_ipc::{ColumnDisplay, SizeChange};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
-use super::scrolling::{Column, ColumnWidth, ScrollDirection};
+use super::scrolling::{Column, ColumnWidth};
 use super::tile::Tile;
 use super::workspace::{
     OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId, WorkspaceRenderElement,
@@ -397,30 +396,6 @@ impl<W: LayoutElement> Monitor<W> {
         true
     }
 
-    pub fn move_left(&mut self) -> bool {
-        self.active_workspace().move_left()
-    }
-
-    pub fn move_right(&mut self) -> bool {
-        self.active_workspace().move_right()
-    }
-
-    pub fn move_column_to_first(&mut self) {
-        self.active_workspace().move_column_to_first();
-    }
-
-    pub fn move_column_to_last(&mut self) {
-        self.active_workspace().move_column_to_last();
-    }
-
-    pub fn move_down(&mut self) {
-        self.active_workspace().move_down();
-    }
-
-    pub fn move_up(&mut self) {
-        self.active_workspace().move_up();
-    }
-
     pub fn move_down_or_to_workspace_down(&mut self) {
         if !self.active_workspace().move_down() {
             self.move_to_workspace_down();
@@ -433,58 +408,6 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn focus_left(&mut self) -> bool {
-        self.active_workspace().focus_left()
-    }
-
-    pub fn focus_right(&mut self) -> bool {
-        self.active_workspace().focus_right()
-    }
-
-    pub fn focus_column_first(&mut self) {
-        self.active_workspace().focus_column_first();
-    }
-
-    pub fn focus_column_last(&mut self) {
-        self.active_workspace().focus_column_last();
-    }
-
-    pub fn focus_column_right_or_first(&mut self) {
-        self.active_workspace().focus_column_right_or_first();
-    }
-
-    pub fn focus_column_left_or_last(&mut self) {
-        self.active_workspace().focus_column_left_or_last();
-    }
-
-    pub fn focus_window_in_column(&mut self, index: u8) {
-        self.active_workspace().focus_window_in_column(index);
-    }
-
-    pub fn focus_down(&mut self) -> bool {
-        self.active_workspace().focus_down()
-    }
-
-    pub fn focus_up(&mut self) -> bool {
-        self.active_workspace().focus_up()
-    }
-
-    pub fn focus_down_or_left(&mut self) {
-        self.active_workspace().focus_down_or_left();
-    }
-
-    pub fn focus_down_or_right(&mut self) {
-        self.active_workspace().focus_down_or_right();
-    }
-
-    pub fn focus_up_or_left(&mut self) {
-        self.active_workspace().focus_up_or_left();
-    }
-
-    pub fn focus_up_or_right(&mut self) {
-        self.active_workspace().focus_up_or_right();
-    }
-
     pub fn focus_window_or_workspace_down(&mut self) {
         if !self.active_workspace().focus_down() {
             self.switch_workspace_down();
@@ -495,22 +418,6 @@ impl<W: LayoutElement> Monitor<W> {
         if !self.active_workspace().focus_up() {
             self.switch_workspace_up();
         }
-    }
-
-    pub fn focus_window_top(&mut self) {
-        self.active_workspace().focus_window_top();
-    }
-
-    pub fn focus_window_bottom(&mut self) {
-        self.active_workspace().focus_window_bottom();
-    }
-
-    pub fn focus_window_down_or_top(&mut self) {
-        self.active_workspace().focus_window_down_or_top();
-    }
-
-    pub fn focus_window_up_or_bottom(&mut self) {
-        self.active_workspace().focus_window_up_or_bottom();
     }
 
     pub fn move_to_workspace_up(&mut self) {
@@ -720,30 +627,6 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn consume_into_column(&mut self) {
-        self.active_workspace().consume_into_column();
-    }
-
-    pub fn expel_from_column(&mut self) {
-        self.active_workspace().expel_from_column();
-    }
-
-    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
-        self.active_workspace().swap_window_in_direction(direction);
-    }
-
-    pub fn toggle_column_tabbed_display(&mut self) {
-        self.active_workspace().toggle_column_tabbed_display();
-    }
-
-    pub fn set_column_display(&mut self, display: ColumnDisplay) {
-        self.active_workspace().set_column_display(display);
-    }
-
-    pub fn center_column(&mut self) {
-        self.active_workspace().center_column();
-    }
-
     pub fn active_window(&self) -> Option<&W> {
         self.active_workspace_ref().active_window()
     }
@@ -826,22 +709,6 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         self.options = options;
-    }
-
-    pub fn toggle_width(&mut self) {
-        self.active_workspace().toggle_width();
-    }
-
-    pub fn toggle_full_width(&mut self) {
-        self.active_workspace().toggle_full_width();
-    }
-
-    pub fn set_column_width(&mut self, change: SizeChange) {
-        self.active_workspace().set_column_width(change);
-    }
-
-    pub fn expand_column_to_available_width(&mut self) {
-        self.active_workspace().expand_column_to_available_width();
     }
 
     pub fn move_workspace_down(&mut self) {
