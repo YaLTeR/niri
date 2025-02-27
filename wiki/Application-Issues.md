@@ -7,7 +7,7 @@ Apparently, VSCode currently unconditionally queries the X server for a keymap.
 ### WezTerm
 
 > [!NOTE]
-> Both these issues seem to be fixed in the nightly build of wezterm.
+> Both of these issues seem to be fixed in the nightly build of WezTerm.
 
 There's [a bug](https://github.com/wez/wezterm/issues/4708) in WezTerm that it waits for a zero-sized Wayland configure event, so its window never shows up in niri. To work around it, put this window rule in the niri config (included in the default config):
 
