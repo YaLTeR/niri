@@ -631,10 +631,6 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace_ref().active_window()
     }
 
-    pub fn is_active_fullscreen(&self) -> bool {
-        self.active_workspace_ref().is_active_fullscreen()
-    }
-
     pub fn advance_animations(&mut self) {
         if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
             if anim.is_done() {
