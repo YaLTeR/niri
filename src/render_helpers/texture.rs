@@ -1,5 +1,6 @@
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
+use smithay::backend::renderer::gles::GlesTexture;
 use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
 use smithay::backend::renderer::{Frame as _, ImportMem, Renderer, Texture};
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
@@ -104,6 +105,10 @@ impl<T> TextureBuffer<T> {
     pub fn set_texture_transform(&mut self, transform: Transform) {
         self.transform = transform;
     }
+
+    pub fn increment_commit_counter(&mut self) {
+        self.commit_counter.increment();
+    }
 }
 
 impl<T: Texture> TextureBuffer<T> {
@@ -112,6 +117,12 @@ impl<T: Texture> TextureBuffer<T> {
             .size()
             .to_f64()
             .to_logical(self.scale, self.transform)
+    }
+}
+
+impl TextureBuffer<GlesTexture> {
+    pub fn is_texture_reference_unique(&mut self) -> bool {
+        self.texture.is_unique_reference()
     }
 }
 

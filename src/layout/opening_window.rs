@@ -2,27 +2,27 @@ use std::collections::HashMap;
 
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
-use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, Uniform};
 use smithay::backend::renderer::Texture;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use crate::animation::Animation;
 use crate::niri_render_elements;
+use crate::render_helpers::offscreen::OffscreenBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use crate::render_helpers::render_to_encompassing_texture;
 use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
-use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
+use crate::render_helpers::texture::TextureRenderElement;
 
 #[derive(Debug)]
 pub struct OpenAnimation {
     anim: Animation,
     random_seed: f32,
+    buffer: OffscreenBuffer,
 }
 
 niri_render_elements! {
@@ -37,6 +37,7 @@ impl OpenAnimation {
         Self {
             anim,
             random_seed: fastrand::f32(),
+            buffer: OffscreenBuffer::default(),
         }
     }
 
@@ -59,17 +60,15 @@ impl OpenAnimation {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
-        let (texture, _sync_point, geo) = render_to_encompassing_texture(
-            renderer,
-            scale,
-            Transform::Normal,
-            Fourcc::Abgr8888,
-            elements,
-        )
-        .context("error rendering to texture")?;
+        let (buffer, _sync_point, offset) = self
+            .buffer
+            .render(renderer, scale, elements)
+            .context("error rendering to offscreen buffer")?;
 
-        let offset = geo.loc.to_f64().to_logical(scale);
-        let texture_size = geo.size.to_f64().to_logical(scale);
+        // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we can
+        // assume that below.
+        let texture = buffer.texture();
+        let texture_size = buffer.logical_size();
 
         if Shaders::get(renderer).program(ProgramType::Open).is_some() {
             let mut area = Rectangle::new(location + offset, texture_size);
@@ -120,8 +119,6 @@ impl OpenAnimation {
             .into());
         }
 
-        let buffer =
-            TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, Vec::new());
         let elem = TextureRenderElement::from_texture_buffer(
             buffer,
             Point::from((0., 0.)),
