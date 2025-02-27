@@ -170,7 +170,7 @@ pub fn render_to_encompassing_texture(
         .reduce(|a, b| a.merge(b))
         .unwrap_or_default();
     let elements = elements.iter().rev().map(|ele| {
-        RelocateRenderElement::from_element(ele, (-geo.loc.x, -geo.loc.y), Relocate::Relative)
+        RelocateRenderElement::from_element(ele, geo.loc.upscale(-1), Relocate::Relative)
     });
 
     let (texture, sync_point) =
