@@ -609,11 +609,11 @@ Afterward, the window will remember its last floating position.
 By default, new floating windows open at the center of the screen, and windows from the tiling layout open close to their visual screen position.
 
 The position uses logical coordinates relative to the working area.
-By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`, `top`, `bottom`, `left` or `right`.
+By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`, `top`, `bottom`, `left`, or `right`.
 
 For example, if you have a bar at the top, then `x=0 y=0` will put the top-left corner of the window directly below the bar.
 If instead you write `x=0 y=0 relative-to="top-right"`, then the top-right corner of the window will align with the top-right corner of the workspace, also directly below the bar.
-When only one side is secified (e.g. top) the window will allign to the center of that side.
+When only one side is specified (e.g. top) the window will allign to the center of that side.
 
 The coordinates change direction based on `relative-to`.
 For example, by default (top-left), `x=100 y=200` will put the window 100 pixels to the right and 200 pixels down from the top-left corner.
@@ -629,6 +629,20 @@ window-rule {
 }
 ```
 
+Below a simple dropdown application that fill 80% of the width and it is anchored to the top
+of the screen.
+
+```kdl
+// Example: drop down terminal from the bottom of the screen
+window-rule {
+    match app-id="dropdown"
+    open-focused true
+    open-floating true
+    default-floating-position x=0 y=0 relative-to="top"
+    default-window-height { proportion 0.500; }
+    default-column-width { proportion 0.8; }  
+}
+```
 #### `scroll-factor`
 
 <sup>Since: 25.02</sup>
