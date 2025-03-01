@@ -12,11 +12,9 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use crate::animation::Animation;
 use crate::niri_render_elements;
-use crate::render_helpers::offscreen::OffscreenBuffer;
-use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
-use crate::render_helpers::texture::TextureRenderElement;
 
 #[derive(Debug)]
 pub struct OpenAnimation {
@@ -27,7 +25,7 @@ pub struct OpenAnimation {
 
 niri_render_elements! {
     OpeningWindowRenderElement => {
-        Texture = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
+        Offscreen = RelocateRenderElement<RescaleRenderElement<OffscreenRenderElement>>,
         Shader = ShaderRenderElement,
     }
 }
@@ -60,17 +58,18 @@ impl OpenAnimation {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
-        let (buffer, _sync_point, offset) = self
+        let (elem, _sync_point) = self
             .buffer
             .render(renderer, scale, elements)
             .context("error rendering to offscreen buffer")?;
 
-        // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we can
-        // assume that below.
-        let texture = buffer.texture();
-        let texture_size = buffer.logical_size();
-
         if Shaders::get(renderer).program(ProgramType::Open).is_some() {
+            // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we
+            // can assume that below.
+            let offset = elem.offset();
+            let texture = elem.texture();
+            let texture_size = elem.logical_size();
+
             let mut area = Rectangle::new(location + offset, texture_size);
 
             // Expand the area a bit to allow for more varied effects.
@@ -119,27 +118,18 @@ impl OpenAnimation {
             .into());
         }
 
-        let elem = TextureRenderElement::from_texture_buffer(
-            buffer,
-            Point::from((0., 0.)),
-            clamped_progress as f32,
-            None,
-            None,
-            Kind::Unspecified,
-        );
-
-        let elem = PrimaryGpuTextureRenderElement(elem);
+        let elem = elem.with_alpha(clamped_progress as f32);
 
         let center = geo_size.to_point().downscale(2.);
         let elem = RescaleRenderElement::from_element(
             elem,
-            (center - offset).to_physical_precise_round(scale),
+            center.to_physical_precise_round(scale),
             (progress / 2. + 0.5).max(0.),
         );
 
         let elem = RelocateRenderElement::from_element(
             elem,
-            (location + offset).to_physical_precise_round(scale),
+            location.to_physical_precise_round(scale),
             Relocate::Relative,
         );
 
