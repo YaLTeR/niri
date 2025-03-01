@@ -54,6 +54,7 @@ impl OpenAnimation {
         geo_size: Size<f64, Logical>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> anyhow::Result<OpeningWindowRenderElement> {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
@@ -102,7 +103,7 @@ impl OpenAnimation {
                 area.size,
                 None,
                 scale.x as f32,
-                1.,
+                alpha,
                 vec![
                     mat3_uniform("niri_input_to_geo", input_to_geo),
                     Uniform::new("niri_geo_size", geo_size.to_array()),
@@ -118,7 +119,7 @@ impl OpenAnimation {
             .into());
         }
 
-        let elem = elem.with_alpha(clamped_progress as f32);
+        let elem = elem.with_alpha(clamped_progress as f32 * alpha);
 
         let center = geo_size.to_point().downscale(2.);
         let elem = RescaleRenderElement::from_element(

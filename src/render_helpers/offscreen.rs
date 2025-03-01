@@ -206,6 +206,11 @@ impl OffscreenRenderElement {
         self
     }
 
+    pub fn with_offset(mut self, offset: Point<f64, Logical>) -> Self {
+        self.offset = offset;
+        self
+    }
+
     pub fn logical_size(&self) -> Size<f64, Logical> {
         self.src_size
             .to_f64()
