@@ -29,8 +29,7 @@ use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Element as _, Id, Kind, PrimaryScanoutOutput,
-    RenderElementStates,
+    default_primary_scanout_output_compare, Id, Kind, PrimaryScanoutOutput, RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -145,8 +144,8 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
-    render_to_dmabuf, render_to_encompassing_texture, render_to_shm, render_to_texture,
-    render_to_vec, shaders, RenderTarget, SplitElements,
+    encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
+    render_to_texture, render_to_vec, shaders, RenderTarget, SplitElements,
 };
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
@@ -356,6 +355,8 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
+
+    pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -2269,6 +2270,8 @@ impl Niri {
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
+
+            pick_window: None,
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
@@ -4838,12 +4841,7 @@ impl Niri {
             alpha,
             RenderTarget::ScreenCapture,
         );
-        let geo = elements
-            .iter()
-            .map(|ele| ele.geometry(scale))
-            .reduce(|a, b| a.merge(b))
-            .unwrap_or_default();
-
+        let geo = encompassing_geo(scale, elements.iter());
         let elements = elements.iter().rev().map(|elem| {
             RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
         });

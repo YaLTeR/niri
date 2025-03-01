@@ -18,12 +18,17 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
 use smithay::desktop::layer_map_for_output;
+use smithay::input::pointer::{
+    CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
+};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
+use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 
 use crate::backend::IpcOutputMap;
+use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
 use crate::utils::{version, with_toplevel_role};
@@ -321,6 +326,35 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let windows = &state.windows.windows;
             let window = windows.values().find(|win| win.is_focused).cloned();
             Response::FocusedWindow(window)
+        }
+        Request::PickWindow => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let pointer = state.niri.seat.get_pointer().unwrap();
+                let start_data = PointerGrabStartData {
+                    focus: None,
+                    button: 0,
+                    location: pointer.current_location(),
+                };
+                let grab = PickWindowGrab::new(start_data);
+                // The `WindowPickGrab` ungrab handler will cancel the previous ongoing pick, if
+                // any.
+                pointer.set_grab(state, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
+                state.niri.pick_window = Some(tx);
+                state
+                    .niri
+                    .cursor_manager
+                    .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+                // Redraw to update the cursor.
+                state.niri.queue_redraw_all();
+            });
+            let result = rx.recv().await;
+            let id = result.map_err(|_| String::from("error getting picked window info"))?;
+            let window = id.and_then(|id| {
+                let state = ctx.event_stream_state.borrow();
+                state.windows.windows.get(&id.get()).cloned()
+            });
+            Response::PickedWindow(window)
         }
         Request::Action(action) => {
             let (tx, rx) = async_channel::bounded(1);

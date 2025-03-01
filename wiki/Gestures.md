@@ -64,7 +64,7 @@ Move the view horizontally with three-finger horizontal swipes.
 
 #### Drag-and-Drop Edge View Scroll
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Scroll the tiling view when moving the mouse cursor against a monitor edge during drag-and-drop (DnD).
 Also works on a touchscreen.

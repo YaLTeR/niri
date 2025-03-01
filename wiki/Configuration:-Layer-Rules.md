@@ -111,7 +111,7 @@ layer-rule {
 
 #### `shadow`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Override the shadow options for the surface.
 
@@ -142,7 +142,7 @@ layer-rule {
 
 #### `geometry-corner-radius`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Set the corner radius of the surface.
 

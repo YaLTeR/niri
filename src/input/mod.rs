@@ -48,6 +48,7 @@ use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
+pub mod pick_window_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
@@ -397,23 +398,36 @@ impl State {
                     }
                 }
 
-                // If the ESC key was pressed with the Alt modifier and
-                // there is an active window-mru, cancel the window-mru and
-                // refocus the initial window (first in the list).
-                if pressed && mods.alt && raw == Some(Keysym::Escape) {
-                    if let Some(id) = this
-                        .niri
-                        .window_mru
-                        .take()
-                        .and_then(|wmru| wmru.ids.into_iter().next())
-                    {
-                        this.niri.suppressed_keys.insert(key_code);
-                        let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
-                        let window = window.map(|(_, m)| m.window.clone());
-                        if let Some(window) = window {
-                            this.focus_window(&window);
-                            return FilterResult::Intercept(None);
+                if pressed && raw == Some(Keysym::Escape) {
+                    // If the ESC key was pressed with the Alt modifier and
+                    // there is an active window-mru, cancel the window-mru and
+                    // refocus the initial window (first in the list).
+                    if mods.alt {
+                        if let Some(id) = this
+                            .niri
+                            .window_mru
+                            .take()
+                            .and_then(|wmru| wmru.ids.into_iter().next())
+                        {
+                            this.niri.suppressed_keys.insert(key_code);
+                            let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
+                            let window = window.map(|(_, m)| m.window.clone());
+                            if let Some(window) = window {
+                                this.focus_window(&window);
+                                return FilterResult::Intercept(None);
+                            }
                         }
+                    }
+                    if this.niri.pick_window.is_some() {
+                        // We window picking state so the pick window grab must be active.
+                        // Unsetting it cancels window picking.
+                        this.niri
+                            .seat
+                            .get_pointer()
+                            .unwrap()
+                            .unset_grab(this, serial, time);
+                        this.niri.suppressed_keys.insert(key_code);
+                        return FilterResult::Intercept(None);
                     }
                 }
 
@@ -3613,6 +3627,16 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         );
 
         let _ = device.config_left_handed_set(c.left_handed);
+    }
+
+    let is_touch = device.has_capability(input::DeviceCapability::Touch);
+    if is_touch {
+        let c = &config.touch;
+        let _ = device.config_send_events_set_mode(if c.off {
+            input::SendEventsMode::DISABLED
+        } else {
+            input::SendEventsMode::ENABLED
+        });
     }
 }
 

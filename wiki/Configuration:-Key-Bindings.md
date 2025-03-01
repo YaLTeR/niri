@@ -121,7 +121,7 @@ Note that binding `Mod+MouseLeft` or `Mod+MouseRight` will override the correspo
 
 ### Custom Hotkey Overlay Titles
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 The hotkey overlay (the Important Hotkeys dialog) shows a hardcoded list of binds.
 You can customize this list using the `hotkey-overlay-title` property.
@@ -301,5 +301,19 @@ This only has an effect if the window's opacity window rule is already set to se
 ```kdl
 binds {
     Mod+O { toggle-window-rule-opacity; }
+}
+```
+
+#### `screenshot-screen`, `screenshot-window`
+
+Take a screenshot of the focused screen or window respectively.
+The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md).
+
+<sup>Since: 25.02</sup> You can disable saving to disk for a specific bind with the `write-to-disk=false` property:
+
+```kdl
+binds {
+    Ctrl+Print { screenshot-screen write-to-disk=false; }
+    Alt+Print { screenshot-window write-to-disk=false; }
 }
 ```

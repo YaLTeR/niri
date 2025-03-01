@@ -13,7 +13,7 @@ readme = "README.md"
 
 [dependencies]
 clap = { workspace = true, optional = true }
-schemars = { version = "0.8.21", optional = true }
+schemars = { version = "0.8.22", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 

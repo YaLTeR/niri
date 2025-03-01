@@ -353,6 +353,8 @@ pub struct Tablet {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Touch {
+    #[knuffel(child)]
+    pub off: bool,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
@@ -2022,6 +2024,8 @@ pub struct DebugConfig {
     pub disable_monitor_names: bool,
     #[knuffel(child)]
     pub strict_new_window_focus_policy: bool,
+    #[knuffel(child)]
+    pub honor_xdg_activation_with_invalid_serial: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
@@ -3910,6 +3914,7 @@ mod tests {
                     left_handed: false,
                 },
                 touch: Touch {
+                    off: false,
                     map_to_output: Some(
                         "eDP-1",
                     ),
@@ -4745,6 +4750,7 @@ mod tests {
                 keep_laptop_panel_on_when_lid_is_closed: false,
                 disable_monitor_names: false,
                 strict_new_window_focus_policy: false,
+                honor_xdg_activation_with_invalid_serial: false,
             },
             workspaces: [
                 Workspace {

@@ -17,13 +17,6 @@ This is because windows using client-side decorations can have an arbitrary shap
 
 You can also override this behavior with the `draw-border-with-background` [window rule](./Configuration:-Window-Rules.md).
 
-### Why is the Waybar pop-up menu showing behind windows?
-
-Set `"layer": "top"` in your Waybar config.
-
-Niri currently draws pop-up menus on the same layer as their parent surface.
-By default, Waybar is on the `bottom` layer, which is behind windows, so Waybar pop-up menus also show behind windows.
-
 ### How to enable rounded corners for all windows?
 
 Put this window rule in your config:
