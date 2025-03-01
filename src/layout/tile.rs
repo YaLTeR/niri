@@ -2,10 +2,9 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
-use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
@@ -24,7 +23,7 @@ use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
+use crate::render_helpers::RenderTarget;
 use crate::utils::round_logical_in_physical;
 use crate::utils::transaction::Transaction;
 
@@ -135,6 +134,7 @@ struct ResizeAnimation {
     anim: Animation,
     size_from: Size<f64, Logical>,
     snapshot: LayoutElementRenderSnapshot,
+    offscreen: OffscreenBuffer,
 }
 
 #[derive(Debug)]
@@ -228,7 +228,7 @@ impl<W: LayoutElement> Tile<W> {
         self.is_fullscreen = self.window.is_fullscreen();
 
         if let Some(animate_from) = self.window.take_animation_snapshot() {
-            let size_from = if let Some(resize) = self.resize_animation.take() {
+            let (size_from, offscreen) = if let Some(resize) = self.resize_animation.take() {
                 // Compute like in animated_window_size(), but using the snapshot geometry (since
                 // the current one is already overwritten).
                 let mut size = animate_from.size;
@@ -239,9 +239,10 @@ impl<W: LayoutElement> Tile<W> {
                 size.w = size_from.w + (size.w - size_from.w) * val;
                 size.h = size_from.h + (size.h - size_from.h) * val;
 
-                size
+                // Also try to reuse the existing offscreen buffer if we have one.
+                (size, resize.offscreen)
             } else {
-                animate_from.size
+                (animate_from.size, OffscreenBuffer::default())
             };
 
             let change = self.window.size().to_f64().to_point() - size_from.to_point();
@@ -258,6 +259,7 @@ impl<W: LayoutElement> Tile<W> {
                     anim,
                     size_from,
                     snapshot: animate_from,
+                    offscreen,
                 });
             } else {
                 self.resize_animation = None;
@@ -848,15 +850,11 @@ impl<W: LayoutElement> Tile<W> {
                         target,
                     );
 
-                    let current = render_to_encompassing_texture(
-                        gles_renderer,
-                        scale,
-                        Transform::Normal,
-                        Fourcc::Abgr8888,
-                        &window_elements,
-                    )
-                    .map_err(|err| warn!("error rendering window to texture: {err:?}"))
-                    .ok();
+                    let current = resize
+                        .offscreen
+                        .render(gles_renderer, scale, &window_elements)
+                        .map_err(|err| warn!("error rendering window to texture: {err:?}"))
+                        .ok();
 
                     // Clip blocked-out resizes unconditionally because they use solid color render
                     // elements.
@@ -869,7 +867,13 @@ impl<W: LayoutElement> Tile<W> {
                         clip_to_geometry
                     };
 
-                    if let Some((texture_current, _sync_point, texture_current_geo)) = current {
+                    if let Some((elem_current, _sync_point)) = current {
+                        let texture_current = elem_current.texture().clone();
+                        // The offset and size are computed in physical pixels and converted to
+                        // logical with the same `scale`, so converting them back with rounding
+                        // inside the geometry() call gives us the same physical result back.
+                        let texture_current_geo = elem_current.geometry(scale);
+
                         let elem = ResizeRenderElement::new(
                             area,
                             scale,
