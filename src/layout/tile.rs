@@ -888,7 +888,7 @@ impl<W: LayoutElement> Tile<W> {
                         clip_to_geometry
                     };
 
-                    if let Some((elem_current, _sync_point)) = current {
+                    if let Some((elem_current, _sync_point, mut data)) = current {
                         let texture_current = elem_current.texture().clone();
                         // The offset and size are computed in physical pixels and converted to
                         // logical with the same `scale`, so converting them back with rounding
@@ -908,10 +908,13 @@ impl<W: LayoutElement> Tile<W> {
                             clip_to_geometry,
                             win_alpha,
                         );
-                        // FIXME: with split popups, this will use the resize element ID for
-                        // popups, but we want the real IDs.
-                        self.window
-                            .set_offscreen_element_id(Some(elem.id().clone()));
+
+                        // We're drawing the resize shader, not the offscreen directly.
+                        data.id = elem.id().clone();
+
+                        // This is not a problem for split popups as the code will look for them by
+                        // original id when it doesn't find them on the offscreen.
+                        self.window.set_offscreen_data(Some(data));
                         resize_shader = Some(elem.into());
                     }
                 }
@@ -928,7 +931,6 @@ impl<W: LayoutElement> Tile<W> {
                     )
                     .into(),
                 );
-                self.window.set_offscreen_element_id(None);
             }
         }
 
@@ -1058,6 +1060,8 @@ impl<W: LayoutElement> Tile<W> {
         let mut alpha_anim_elem = None;
         let mut window_elems = None;
 
+        self.window().set_offscreen_data(None);
+
         if let Some(open) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
             let elements =
@@ -1071,9 +1075,8 @@ impl<W: LayoutElement> Tile<W> {
                 scale,
                 tile_alpha,
             ) {
-                Ok(elem) => {
-                    self.window()
-                        .set_offscreen_element_id(Some(elem.id().clone()));
+                Ok((elem, data)) => {
+                    self.window().set_offscreen_data(Some(data));
                     open_anim_elem = Some(elem.into());
                 }
                 Err(err) => {
@@ -1086,12 +1089,11 @@ impl<W: LayoutElement> Tile<W> {
                 self.render_inner(renderer, Point::from((0., 0.)), scale, focus_ring, target);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
             match alpha.offscreen.render(renderer, scale, &elements) {
-                Ok((elem, _sync)) => {
+                Ok((elem, _sync, data)) => {
                     let offset = elem.offset();
                     let elem = elem.with_alpha(tile_alpha).with_offset(location + offset);
 
-                    self.window()
-                        .set_offscreen_element_id(Some(elem.id().clone()));
+                    self.window().set_offscreen_data(Some(data));
                     alpha_anim_elem = Some(elem.into());
                 }
                 Err(err) => {
@@ -1101,7 +1103,6 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if open_anim_elem.is_none() && alpha_anim_elem.is_none() {
-            self.window().set_offscreen_element_id(None);
             window_elems = Some(self.render_inner(renderer, location, scale, focus_ring, target));
         }
 

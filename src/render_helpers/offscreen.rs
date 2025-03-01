@@ -4,7 +4,9 @@ use anyhow::Context as _;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
+use smithay::backend::renderer::element::{
+    Element, Id, Kind, RenderElement, RenderElementStates, UnderlyingStorage,
+};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::utils::{
@@ -57,13 +59,21 @@ pub struct OffscreenRenderElement {
     kind: Kind,
 }
 
+#[derive(Debug)]
+pub struct OffscreenData {
+    /// Id of the offscreen element.
+    pub id: Id,
+    /// States for the render into the offscreen buffer.
+    pub states: RenderElementStates,
+}
+
 impl OffscreenBuffer {
     pub fn render(
         &self,
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
         elements: &[impl RenderElement<GlesRenderer>],
-    ) -> anyhow::Result<(OffscreenRenderElement, SyncPoint)> {
+    ) -> anyhow::Result<(OffscreenRenderElement, SyncPoint, OffscreenData)> {
         let _span = tracy_client::span!("OffscreenBuffer::render");
 
         let geo = encompassing_geo(scale, elements.iter());
@@ -179,7 +189,12 @@ impl OffscreenBuffer {
             kind: Kind::Unspecified,
         };
 
-        Ok((elem, res.sync))
+        let data = OffscreenData {
+            id: self.id.clone(),
+            states: res.states,
+        };
+
+        Ok((elem, res.sync, data))
     }
 }
 

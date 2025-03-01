@@ -29,7 +29,7 @@ use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Kind, PrimaryScanoutOutput, RenderElementStates,
+    default_primary_scanout_output_compare, Id, Kind, PrimaryScanoutOutput, RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -3793,21 +3793,49 @@ impl Niri {
 
         for mapped in self.layout.windows_for_output(output) {
             let win = &mapped.window;
-            let offscreen_id = mapped.offscreen_element_id().clone();
+            let offscreen_data = mapped.offscreen_data();
+            let offscreen_data = offscreen_data.as_ref();
 
             win.with_surfaces(|surface, states| {
-                let surface_primary_scanout_output = states
+                let primary_scanout_output = states
                     .data_map
                     .get_or_insert_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
-                surface_primary_scanout_output
-                    .lock()
-                    .unwrap()
-                    .update_from_render_element_states(
-                        offscreen_id.clone().unwrap_or_else(|| surface.into()),
-                        output,
-                        render_element_states,
-                        |_, _, output, _| output,
-                    );
+                let mut primary_scanout_output = primary_scanout_output.lock().unwrap();
+
+                let mut id = Id::from_wayland_resource(surface);
+
+                if let Some(data) = offscreen_data {
+                    // We have offscreen data; it's likely that all surfaces are on it.
+                    if data.states.element_was_presented(id.clone()) {
+                        // If the surface was presented to the offscreen, use the offscreen's id.
+                        id = data.id.clone();
+                    }
+
+                    // If we the surface wasn't presented to the offscreen it can mean:
+                    //
+                    // - The surface was invisible. For example, it's obscured by another surface on
+                    //   the offscreen, or simply isn't mapped.
+                    // - The surface is rendered separately from the offscreen, for example: popups
+                    //   during the window resize animation.
+                    //
+                    // In both of these cases, using the original surface element id and the
+                    // original states is the correct thing to do. We may find the surface in the
+                    // original states (in the second case). Either way, we definitely know it is
+                    // *not* in the offscreen, and we won't miss it.
+                    //
+                    // There's one edge case: if the surface is both in the offscreen and separate,
+                    // and the offscreen itself is invisible, while the separate surface is
+                    // visible. In this case we'll currently mark the surface as invisible. We
+                    // don't really use offscreens like that however, and if we start, it's easy
+                    // enough to fix (need an extra check).
+                }
+
+                primary_scanout_output.update_from_render_element_states(
+                    id,
+                    output,
+                    render_element_states,
+                    |_, _, output, _| output,
+                );
             });
         }
 

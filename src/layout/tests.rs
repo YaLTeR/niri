@@ -162,7 +162,7 @@ impl LayoutElement for TestWindow {
 
     fn output_leave(&self, _output: &Output) {}
 
-    fn set_offscreen_element_id(&self, _id: Option<Id>) {}
+    fn set_offscreen_data(&self, _data: Option<OffscreenData>) {}
 
     fn set_activated(&mut self, active: bool) {
         self.0.pending_activated.set(active);
