@@ -1,5 +1,4 @@
 use smithay::backend::input::ButtonState;
-use smithay::desktop::Window;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
@@ -7,37 +6,34 @@ use smithay::input::pointer::{
     MotionEvent, PointerGrab, PointerInnerHandle, RelativeMotionEvent,
 };
 use smithay::input::SeatHandler;
-use smithay::utils::{IsAlive, Logical, Point};
+use smithay::utils::{Logical, Point};
 
 use crate::niri::State;
+use crate::window::Mapped;
 
-pub struct MoveGrab {
+pub struct PickWindowGrab {
     start_data: PointerGrabStartData<State>,
-    last_location: Point<f64, Logical>,
-    window: Window,
 }
 
-impl MoveGrab {
-    pub fn new(start_data: PointerGrabStartData<State>, window: Window) -> Self {
-        Self {
-            last_location: start_data.location,
-            start_data,
-            window,
-        }
+impl PickWindowGrab {
+    pub fn new(start_data: PointerGrabStartData<State>) -> Self {
+        Self { start_data }
     }
 
     fn on_ungrab(&mut self, state: &mut State) {
-        state.niri.layout.interactive_move_end(&self.window);
-        // FIXME: only redraw the window output.
-        state.niri.queue_redraw_all();
+        if let Some(tx) = state.niri.pick_window.take() {
+            let _ = tx.send_blocking(None);
+        }
         state
             .niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::default_named());
+        // Redraw to update the cursor.
+        state.niri.queue_redraw_all();
     }
 }
 
-impl PointerGrab<State> for MoveGrab {
+impl PointerGrab<State> for PickWindowGrab {
     fn motion(
         &mut self,
         data: &mut State,
@@ -45,32 +41,7 @@ impl PointerGrab<State> for MoveGrab {
         _focus: Option<(<State as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        // While the grab is active, no client has pointer focus.
         handle.motion(data, None, event);
-
-        if self.window.alive() {
-            if let Some((output, pos_within_output)) = data.niri.output_under(event.location) {
-                let output = output.clone();
-                let event_delta = event.location - self.last_location;
-                self.last_location = event.location;
-                let ongoing = data.niri.layout.interactive_move_update(
-                    &self.window,
-                    event_delta,
-                    output,
-                    pos_within_output,
-                );
-                if ongoing {
-                    // FIXME: only redraw the previous and the new output.
-                    data.niri.queue_redraw_all();
-                    return;
-                }
-            } else {
-                return;
-            }
-        }
-
-        // The move is no longer ongoing.
-        handle.unset_grab(self, data, event.serial, event.time, true);
     }
 
     fn relative_motion(
@@ -80,7 +51,6 @@ impl PointerGrab<State> for MoveGrab {
         _focus: Option<(<State as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
-        // While the grab is active, no client has pointer focus.
         handle.relative_motion(data, None, event);
     }
 
@@ -90,20 +60,14 @@ impl PointerGrab<State> for MoveGrab {
         handle: &mut PointerInnerHandle<'_, State>,
         event: &ButtonEvent,
     ) {
-        handle.button(data, event);
-
-        // When moving with the left button, right toggles floating, and vice versa.
-        let toggle_floating_button = if self.start_data.button == 0x110 {
-            0x111
-        } else {
-            0x110
-        };
-        if event.button == toggle_floating_button && event.state == ButtonState::Pressed {
-            data.niri.layout.toggle_window_floating(Some(&self.window));
-        }
-
-        if !handle.current_pressed().contains(&self.start_data.button) {
-            // The button that initiated the grab was released.
+        if event.state == ButtonState::Pressed {
+            if let Some(tx) = data.niri.pick_window.take() {
+                let _ = tx.send_blocking(
+                    data.niri
+                        .window_under(handle.current_location())
+                        .map(Mapped::id),
+                );
+            }
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }

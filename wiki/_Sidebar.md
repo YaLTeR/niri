@@ -24,6 +24,7 @@
 * [Window Rules](./Configuration:-Window-Rules.md)
 * [Layer Rules](./Configuration:-Layer-Rules.md)
 * [Animations](./Configuration:-Animations.md)
+* [Gestures](./Configuration:-Gestures.md)
 * [Debug Options](./Configuration:-Debug-Options.md)
 
 ## Development

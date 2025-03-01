@@ -12,7 +12,7 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 use layer_rule::LayerRule;
-use miette::{miette, Context, IntoDiagnostic, NarratableReportHandler};
+use miette::{miette, Context, IntoDiagnostic};
 use niri_ipc::{
     ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
     WorkspaceReferenceArg,
@@ -58,6 +58,8 @@ pub struct Config {
     pub hotkey_overlay: HotkeyOverlay,
     #[knuffel(child, default)]
     pub animations: Animations,
+    #[knuffel(child, default)]
+    pub gestures: Gestures,
     #[knuffel(child, default)]
     pub environment: Environment,
     #[knuffel(children(name = "window-rule"))]
@@ -337,6 +339,8 @@ impl From<TapButtonMap> for input::TapButtonMap {
 pub struct Tablet {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child, unwrap(arguments))]
+    pub calibration_matrix: Option<Vec<f32>>,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
     #[knuffel(child)]
@@ -345,6 +349,8 @@ pub struct Tablet {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Touch {
+    #[knuffel(child)]
+    pub off: bool,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
@@ -697,6 +703,8 @@ pub struct TabIndicator {
     pub position: TabIndicatorPosition,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps_between_tabs)]
     pub gaps_between_tabs: FloatOrInt<0, 65535>,
+    #[knuffel(child, unwrap(argument), default = Self::default().corner_radius)]
+    pub corner_radius: FloatOrInt<0, 65535>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -720,6 +728,7 @@ impl Default for TabIndicator {
             },
             position: TabIndicatorPosition::Left,
             gaps_between_tabs: FloatOrInt(0.),
+            corner_radius: FloatOrInt(0.),
             active_color: None,
             inactive_color: None,
             active_gradient: None,
@@ -1110,6 +1119,32 @@ pub struct SpringParams {
     pub epsilon: f64,
 }
 
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct Gestures {
+    #[knuffel(child, default)]
+    pub dnd_edge_view_scroll: DndEdgeViewScroll,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct DndEdgeViewScroll {
+    #[knuffel(child, unwrap(argument), default = Self::default().trigger_width)]
+    pub trigger_width: FloatOrInt<0, 65535>,
+    #[knuffel(child, unwrap(argument), default = Self::default().delay_ms)]
+    pub delay_ms: u16,
+    #[knuffel(child, unwrap(argument), default = Self::default().max_speed)]
+    pub max_speed: FloatOrInt<0, 1_000_000>,
+}
+
+impl Default for DndEdgeViewScroll {
+    fn default() -> Self {
+        Self {
+            trigger_width: FloatOrInt(30.), // Taken from GTK 4.
+            delay_ms: 100,
+            max_speed: FloatOrInt(1500.),
+        }
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
 pub struct Environment(#[knuffel(children)] pub Vec<EnvironmentVariable>);
 
@@ -1184,6 +1219,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub clip_to_geometry: Option<bool>,
     #[knuffel(child, unwrap(argument))]
+    pub baba_is_float: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, unwrap(argument))]
     pub variable_refresh_rate: Option<bool>,
@@ -1231,6 +1268,17 @@ impl From<CornerRadius> for [f32; 4] {
             value.bottom_right,
             value.bottom_left,
         ]
+    }
+}
+
+impl From<f32> for CornerRadius {
+    fn from(value: f32) -> Self {
+        Self {
+            top_left: value,
+            top_right: value,
+            bottom_right: value,
+            bottom_left: value,
+        }
     }
 }
 
@@ -1320,6 +1368,7 @@ pub struct Bind {
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
+    pub hotkey_overlay_title: Option<Option<String>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -1546,6 +1595,7 @@ pub enum Action {
     SwitchPresetWindowHeightById(u64),
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
+    ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
     ShowHotkeyOverlay,
     MoveWorkspaceToMonitorLeft,
@@ -1747,6 +1797,7 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
+            niri_ipc::Action::ExpandColumnToAvailableWidth {} => Self::ExpandColumnToAvailableWidth,
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),
             niri_ipc::Action::ShowHotkeyOverlay {} => Self::ShowHotkeyOverlay,
             niri_ipc::Action::MoveWorkspaceToMonitorLeft {} => Self::MoveWorkspaceToMonitorLeft,
@@ -1963,6 +2014,8 @@ pub struct DebugConfig {
     pub disable_monitor_names: bool,
     #[knuffel(child)]
     pub strict_new_window_focus_policy: bool,
+    #[knuffel(child)]
+    pub honor_xdg_activation_with_invalid_serial: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
@@ -3218,6 +3271,7 @@ where
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
+        let mut hotkey_overlay_title = None;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -3234,6 +3288,9 @@ where
                 }
                 "allow-inhibiting" => {
                     allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
+                "hotkey-overlay-title" => {
+                    hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
@@ -3257,6 +3314,7 @@ where
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
+            hotkey_overlay_title: None,
         };
 
         if let Some(child) = children.next() {
@@ -3292,6 +3350,7 @@ where
                         cooldown,
                         allow_when_locked,
                         allow_inhibiting,
+                        hotkey_overlay_title,
                     })
                 }
                 Err(e) => {
@@ -3456,10 +3515,6 @@ impl FromStr for Percent {
     }
 }
 
-pub fn set_miette_hook() -> Result<(), miette::InstallError> {
-    miette::set_hook(Box::new(|_| Box::new(NarratableReportHandler::new())))
-}
-
 #[cfg(test)]
 mod tests {
     use insta::{assert_debug_snapshot, assert_snapshot};
@@ -3469,18 +3524,15 @@ mod tests {
     use super::*;
 
     #[track_caller]
-    fn check(text: &str, expected: Config) {
-        let _ = set_miette_hook();
-
-        let parsed = Config::parse("test.kdl", text)
+    fn do_parse(text: &str) -> Config {
+        Config::parse("test.kdl", text)
             .map_err(miette::Report::new)
-            .unwrap();
-        assert_eq!(parsed, expected);
+            .unwrap()
     }
 
     #[test]
     fn parse() {
-        check(
+        let parsed = do_parse(
             r##"
             input {
                 keyboard {
@@ -3539,6 +3591,8 @@ mod tests {
 
                 tablet {
                     map-to-output "eDP-1"
+                    calibration-matrix 1.0 2.0 3.0 \
+                                       4.0 5.0 6.0
                 }
 
                 touch {
@@ -3653,6 +3707,13 @@ mod tests {
                 window-open { off; }
             }
 
+            gestures {
+                dnd-edge-view-scroll {
+                    trigger-width 10
+                    max-speed 50
+                }
+            }
+
             environment {
                 QT_QPA_PLATFORM "wayland"
                 DISPLAY null
@@ -3693,10 +3754,10 @@ mod tests {
             }
 
             binds {
-                Mod+Escape { toggle-keyboard-shortcuts-inhibit; }
+                Mod+Escape hotkey-overlay-title="Inhibit" { toggle-keyboard-shortcuts-inhibit; }
                 Mod+Shift+Escape allow-inhibiting=true { toggle-keyboard-shortcuts-inhibit; }
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
-                Mod+Q { close-window; }
+                Mod+Q hotkey-overlay-title=null { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
                 Mod+Comma { consume-window-into-column; }
@@ -3721,242 +3782,567 @@ mod tests {
             workspace "workspace-2"
             workspace "workspace-3"
             "##,
-            Config {
-                input: Input {
-                    keyboard: Keyboard {
-                        xkb: Xkb {
-                            layout: "us,ru".to_owned(),
-                            options: Some("grp:win_space_toggle".to_owned()),
-                            ..Default::default()
-                        },
-                        repeat_delay: 600,
-                        repeat_rate: 25,
-                        track_layout: TrackLayout::Window,
+        );
+
+        assert_debug_snapshot!(parsed, @r#"
+        Config {
+            input: Input {
+                keyboard: Keyboard {
+                    xkb: Xkb {
+                        rules: "",
+                        model: "",
+                        layout: "us,ru",
+                        variant: "",
+                        options: Some(
+                            "grp:win_space_toggle",
+                        ),
+                        file: None,
                     },
-                    touchpad: Touchpad {
-                        off: false,
-                        tap: true,
-                        dwt: true,
-                        dwtp: true,
-                        drag_lock: false,
-                        click_method: Some(ClickMethod::Clickfinger),
-                        natural_scroll: false,
-                        accel_speed: 0.2,
-                        accel_profile: Some(AccelProfile::Flat),
-                        scroll_method: Some(ScrollMethod::TwoFinger),
-                        scroll_button: Some(272),
-                        tap_button_map: Some(TapButtonMap::LeftMiddleRight),
-                        left_handed: false,
-                        disabled_on_external_mouse: true,
-                        middle_emulation: false,
-                        scroll_factor: Some(FloatOrInt(0.9)),
-                    },
-                    mouse: Mouse {
-                        off: false,
-                        natural_scroll: true,
-                        accel_speed: 0.4,
-                        accel_profile: Some(AccelProfile::Flat),
-                        scroll_method: Some(ScrollMethod::NoScroll),
-                        scroll_button: Some(273),
-                        left_handed: false,
-                        middle_emulation: true,
-                        scroll_factor: Some(FloatOrInt(0.2)),
-                    },
-                    trackpoint: Trackpoint {
-                        off: true,
-                        natural_scroll: true,
-                        accel_speed: 0.0,
-                        accel_profile: Some(AccelProfile::Flat),
-                        scroll_method: Some(ScrollMethod::OnButtonDown),
-                        scroll_button: Some(274),
-                        middle_emulation: false,
-                    },
-                    trackball: Trackball {
-                        off: true,
-                        natural_scroll: true,
-                        accel_speed: 0.0,
-                        accel_profile: Some(AccelProfile::Flat),
-                        scroll_method: Some(ScrollMethod::Edge),
-                        scroll_button: Some(275),
-                        left_handed: true,
-                        middle_emulation: true,
-                    },
-                    tablet: Tablet {
-                        off: false,
-                        map_to_output: Some("eDP-1".to_owned()),
-                        left_handed: false,
-                    },
-                    touch: Touch {
-                        map_to_output: Some("eDP-1".to_owned()),
-                    },
-                    disable_power_key_handling: true,
-                    warp_mouse_to_focus: true,
-                    focus_follows_mouse: Some(FocusFollowsMouse {
-                        max_scroll_amount: None,
-                    }),
-                    workspace_auto_back_and_forth: true,
+                    repeat_delay: 600,
+                    repeat_rate: 25,
+                    track_layout: Window,
                 },
-                outputs: Outputs(vec![Output {
+                touchpad: Touchpad {
                     off: false,
-                    name: "eDP-1".to_owned(),
-                    scale: Some(FloatOrInt(2.)),
-                    transform: Transform::Flipped90,
-                    position: Some(Position { x: 10, y: 20 }),
-                    mode: Some(ConfiguredMode {
-                        width: 1920,
-                        height: 1080,
-                        refresh: Some(144.),
-                    }),
-                    variable_refresh_rate: Some(Vrr { on_demand: true }),
-                    background_color: Color::from_rgba8_unpremul(25, 25, 102, 255),
-                }]),
-                layout: Layout {
-                    focus_ring: FocusRing {
+                    tap: true,
+                    dwt: true,
+                    dwtp: true,
+                    drag_lock: false,
+                    natural_scroll: false,
+                    click_method: Some(
+                        Clickfinger,
+                    ),
+                    accel_speed: 0.2,
+                    accel_profile: Some(
+                        Flat,
+                    ),
+                    scroll_method: Some(
+                        TwoFinger,
+                    ),
+                    scroll_button: Some(
+                        272,
+                    ),
+                    tap_button_map: Some(
+                        LeftMiddleRight,
+                    ),
+                    left_handed: false,
+                    disabled_on_external_mouse: true,
+                    middle_emulation: false,
+                    scroll_factor: Some(
+                        FloatOrInt(
+                            0.9,
+                        ),
+                    ),
+                },
+                mouse: Mouse {
+                    off: false,
+                    natural_scroll: true,
+                    accel_speed: 0.4,
+                    accel_profile: Some(
+                        Flat,
+                    ),
+                    scroll_method: Some(
+                        NoScroll,
+                    ),
+                    scroll_button: Some(
+                        273,
+                    ),
+                    left_handed: false,
+                    middle_emulation: true,
+                    scroll_factor: Some(
+                        FloatOrInt(
+                            0.2,
+                        ),
+                    ),
+                },
+                trackpoint: Trackpoint {
+                    off: true,
+                    natural_scroll: true,
+                    accel_speed: 0.0,
+                    accel_profile: Some(
+                        Flat,
+                    ),
+                    scroll_method: Some(
+                        OnButtonDown,
+                    ),
+                    scroll_button: Some(
+                        274,
+                    ),
+                    middle_emulation: false,
+                },
+                trackball: Trackball {
+                    off: true,
+                    natural_scroll: true,
+                    accel_speed: 0.0,
+                    accel_profile: Some(
+                        Flat,
+                    ),
+                    scroll_method: Some(
+                        Edge,
+                    ),
+                    scroll_button: Some(
+                        275,
+                    ),
+                    left_handed: true,
+                    middle_emulation: true,
+                },
+                tablet: Tablet {
+                    off: false,
+                    calibration_matrix: Some(
+                        [
+                            1.0,
+                            2.0,
+                            3.0,
+                            4.0,
+                            5.0,
+                            6.0,
+                        ],
+                    ),
+                    map_to_output: Some(
+                        "eDP-1",
+                    ),
+                    left_handed: false,
+                },
+                touch: Touch {
+                    off: false,
+                    map_to_output: Some(
+                        "eDP-1",
+                    ),
+                },
+                disable_power_key_handling: true,
+                warp_mouse_to_focus: true,
+                focus_follows_mouse: Some(
+                    FocusFollowsMouse {
+                        max_scroll_amount: None,
+                    },
+                ),
+                workspace_auto_back_and_forth: true,
+            },
+            outputs: Outputs(
+                [
+                    Output {
                         off: false,
-                        width: FloatOrInt(5.),
-                        active_color: Color::from_rgba8_unpremul(0, 100, 200, 255),
-                        inactive_color: Color::from_rgba8_unpremul(255, 200, 100, 0),
-                        active_gradient: Some(Gradient {
-                            from: Color::from_rgba8_unpremul(10, 20, 30, 255),
-                            to: Color::from_rgba8_unpremul(0, 128, 255, 255),
-                            angle: 180,
-                            relative_to: GradientRelativeTo::WorkspaceView,
-                            in_: GradientInterpolation {
-                                color_space: GradientColorSpace::Srgb,
-                                hue_interpolation: HueInterpolation::Shorter,
+                        name: "eDP-1",
+                        scale: Some(
+                            FloatOrInt(
+                                2.0,
+                            ),
+                        ),
+                        transform: Flipped90,
+                        position: Some(
+                            Position {
+                                x: 10,
+                                y: 20,
                             },
-                        }),
-                        inactive_gradient: None,
-                    },
-                    border: Border {
-                        off: false,
-                        width: FloatOrInt(3.),
-                        active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
-                        inactive_color: Color::from_rgba8_unpremul(255, 200, 100, 0),
-                        active_gradient: None,
-                        inactive_gradient: None,
-                    },
-                    shadow: Shadow {
-                        offset: ShadowOffset {
-                            x: FloatOrInt(10.),
-                            y: FloatOrInt(-20.),
+                        ),
+                        mode: Some(
+                            ConfiguredMode {
+                                width: 1920,
+                                height: 1080,
+                                refresh: Some(
+                                    144.0,
+                                ),
+                            },
+                        ),
+                        variable_refresh_rate: Some(
+                            Vrr {
+                                on_demand: true,
+                            },
+                        ),
+                        background_color: Color {
+                            r: 0.09803922,
+                            g: 0.09803922,
+                            b: 0.4,
+                            a: 1.0,
                         },
-                        ..Default::default()
                     },
-                    tab_indicator: TabIndicator {
-                        width: FloatOrInt(10.),
-                        position: TabIndicatorPosition::Top,
-                        ..Default::default()
-                    },
-                    insert_hint: InsertHint {
-                        off: false,
-                        color: Color::from_rgba8_unpremul(255, 200, 127, 255),
-                        gradient: Some(Gradient {
-                            from: Color::from_rgba8_unpremul(10, 20, 30, 255),
-                            to: Color::from_rgba8_unpremul(0, 128, 255, 255),
-                            angle: 180,
-                            relative_to: GradientRelativeTo::WorkspaceView,
-                            in_: GradientInterpolation {
-                                color_space: GradientColorSpace::Srgb,
-                                hue_interpolation: HueInterpolation::Shorter,
-                            },
-                        }),
-                    },
-                    preset_column_widths: vec![
-                        PresetSize::Proportion(0.25),
-                        PresetSize::Proportion(0.5),
-                        PresetSize::Fixed(960),
-                        PresetSize::Fixed(1280),
+                ],
+            ),
+            spawn_at_startup: [
+                SpawnAtStartup {
+                    command: [
+                        "alacritty",
+                        "-e",
+                        "fish",
                     ],
-                    default_column_width: Some(DefaultPresetSize(Some(PresetSize::Proportion(
+                },
+            ],
+            layout: Layout {
+                focus_ring: FocusRing {
+                    off: false,
+                    width: FloatOrInt(
+                        5.0,
+                    ),
+                    active_color: Color {
+                        r: 0.0,
+                        g: 0.39215687,
+                        b: 0.78431374,
+                        a: 1.0,
+                    },
+                    inactive_color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.39215687,
+                        a: 0.0,
+                    },
+                    active_gradient: Some(
+                        Gradient {
+                            from: Color {
+                                r: 0.039215688,
+                                g: 0.078431375,
+                                b: 0.11764706,
+                                a: 1.0,
+                            },
+                            to: Color {
+                                r: 0.0,
+                                g: 0.5019608,
+                                b: 1.0,
+                                a: 1.0,
+                            },
+                            angle: 180,
+                            relative_to: WorkspaceView,
+                            in_: GradientInterpolation {
+                                color_space: Srgb,
+                                hue_interpolation: Shorter,
+                            },
+                        },
+                    ),
+                    inactive_gradient: None,
+                },
+                border: Border {
+                    off: false,
+                    width: FloatOrInt(
+                        3.0,
+                    ),
+                    active_color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.49803922,
+                        a: 1.0,
+                    },
+                    inactive_color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.39215687,
+                        a: 0.0,
+                    },
+                    active_gradient: None,
+                    inactive_gradient: None,
+                },
+                shadow: Shadow {
+                    on: false,
+                    offset: ShadowOffset {
+                        x: FloatOrInt(
+                            10.0,
+                        ),
+                        y: FloatOrInt(
+                            -20.0,
+                        ),
+                    },
+                    softness: FloatOrInt(
+                        30.0,
+                    ),
+                    spread: FloatOrInt(
+                        5.0,
+                    ),
+                    draw_behind_window: false,
+                    color: Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.4392157,
+                    },
+                    inactive_color: None,
+                },
+                tab_indicator: TabIndicator {
+                    off: false,
+                    hide_when_single_tab: false,
+                    place_within_column: false,
+                    gap: FloatOrInt(
+                        5.0,
+                    ),
+                    width: FloatOrInt(
+                        10.0,
+                    ),
+                    length: TabIndicatorLength {
+                        total_proportion: Some(
+                            0.5,
+                        ),
+                    },
+                    position: Top,
+                    gaps_between_tabs: FloatOrInt(
+                        0.0,
+                    ),
+                    corner_radius: FloatOrInt(
+                        0.0,
+                    ),
+                    active_color: None,
+                    inactive_color: None,
+                    active_gradient: None,
+                    inactive_gradient: None,
+                },
+                insert_hint: InsertHint {
+                    off: false,
+                    color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.49803922,
+                        a: 1.0,
+                    },
+                    gradient: Some(
+                        Gradient {
+                            from: Color {
+                                r: 0.039215688,
+                                g: 0.078431375,
+                                b: 0.11764706,
+                                a: 1.0,
+                            },
+                            to: Color {
+                                r: 0.0,
+                                g: 0.5019608,
+                                b: 1.0,
+                                a: 1.0,
+                            },
+                            angle: 180,
+                            relative_to: WorkspaceView,
+                            in_: GradientInterpolation {
+                                color_space: Srgb,
+                                hue_interpolation: Shorter,
+                            },
+                        },
+                    ),
+                },
+                preset_column_widths: [
+                    Proportion(
                         0.25,
-                    )))),
-                    preset_window_heights: vec![
-                        PresetSize::Proportion(0.25),
-                        PresetSize::Proportion(0.5),
-                        PresetSize::Fixed(960),
-                        PresetSize::Fixed(1280),
-                    ],
-                    gaps: FloatOrInt(8.),
-                    struts: Struts {
-                        left: FloatOrInt(1.),
-                        right: FloatOrInt(2.),
-                        top: FloatOrInt(3.),
-                        bottom: FloatOrInt(0.),
-                    },
-                    center_focused_column: CenterFocusedColumn::OnOverflow,
-                    default_column_display: ColumnDisplay::Tabbed,
-                    always_center_single_column: false,
-                    empty_workspace_above_first: false,
+                    ),
+                    Proportion(
+                        0.5,
+                    ),
+                    Fixed(
+                        960,
+                    ),
+                    Fixed(
+                        1280,
+                    ),
+                ],
+                default_column_width: Some(
+                    DefaultPresetSize(
+                        Some(
+                            Proportion(
+                                0.25,
+                            ),
+                        ),
+                    ),
+                ),
+                preset_window_heights: [
+                    Proportion(
+                        0.25,
+                    ),
+                    Proportion(
+                        0.5,
+                    ),
+                    Fixed(
+                        960,
+                    ),
+                    Fixed(
+                        1280,
+                    ),
+                ],
+                center_focused_column: OnOverflow,
+                always_center_single_column: false,
+                empty_workspace_above_first: false,
+                default_column_display: Tabbed,
+                gaps: FloatOrInt(
+                    8.0,
+                ),
+                struts: Struts {
+                    left: FloatOrInt(
+                        1.0,
+                    ),
+                    right: FloatOrInt(
+                        2.0,
+                    ),
+                    top: FloatOrInt(
+                        3.0,
+                    ),
+                    bottom: FloatOrInt(
+                        0.0,
+                    ),
                 },
-                spawn_at_startup: vec![SpawnAtStartup {
-                    command: vec!["alacritty".to_owned(), "-e".to_owned(), "fish".to_owned()],
-                }],
-                prefer_no_csd: true,
-                cursor: Cursor {
-                    xcursor_theme: String::from("breeze_cursors"),
-                    xcursor_size: 16,
-                    hide_when_typing: true,
-                    hide_after_inactive_ms: Some(3000),
-                },
-                screenshot_path: Some(String::from("~/Screenshots/screenshot.png")),
-                clipboard: Clipboard {
-                    disable_primary: true,
-                },
-                hotkey_overlay: HotkeyOverlay {
-                    skip_at_startup: true,
-                },
-                animations: Animations {
-                    slowdown: 2.,
-                    workspace_switch: WorkspaceSwitchAnim(Animation {
+            },
+            prefer_no_csd: true,
+            cursor: Cursor {
+                xcursor_theme: "breeze_cursors",
+                xcursor_size: 16,
+                hide_when_typing: true,
+                hide_after_inactive_ms: Some(
+                    3000,
+                ),
+            },
+            screenshot_path: Some(
+                "~/Screenshots/screenshot.png",
+            ),
+            clipboard: Clipboard {
+                disable_primary: true,
+            },
+            hotkey_overlay: HotkeyOverlay {
+                skip_at_startup: true,
+            },
+            animations: Animations {
+                off: false,
+                slowdown: 2.0,
+                workspace_switch: WorkspaceSwitchAnim(
+                    Animation {
                         off: false,
-                        kind: AnimationKind::Spring(SpringParams {
-                            damping_ratio: 1.,
-                            stiffness: 1000,
-                            epsilon: 0.0001,
-                        }),
-                    }),
-                    horizontal_view_movement: HorizontalViewMovementAnim(Animation {
-                        off: false,
-                        kind: AnimationKind::Easing(EasingParams {
-                            duration_ms: 100,
-                            curve: AnimationCurve::EaseOutExpo,
-                        }),
-                    }),
-                    window_open: WindowOpenAnim {
-                        anim: Animation {
-                            off: true,
-                            ..WindowOpenAnim::default().anim
-                        },
-                        custom_shader: None,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 1000,
+                                epsilon: 0.0001,
+                            },
+                        ),
                     },
-                    ..Default::default()
+                ),
+                window_open: WindowOpenAnim {
+                    anim: Animation {
+                        off: true,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 150,
+                                curve: EaseOutExpo,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
                 },
-                environment: Environment(vec![
+                window_close: WindowCloseAnim {
+                    anim: Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 150,
+                                curve: EaseOutQuad,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
+                horizontal_view_movement: HorizontalViewMovementAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 100,
+                                curve: EaseOutExpo,
+                            },
+                        ),
+                    },
+                ),
+                window_movement: WindowMovementAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                window_resize: WindowResizeAnim {
+                    anim: Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
+                config_notification_open_close: ConfigNotificationOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 0.6,
+                                stiffness: 1000,
+                                epsilon: 0.001,
+                            },
+                        ),
+                    },
+                ),
+                screenshot_ui_open: ScreenshotUiOpenAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 200,
+                                curve: EaseOutQuad,
+                            },
+                        ),
+                    },
+                ),
+            },
+            gestures: Gestures {
+                dnd_edge_view_scroll: DndEdgeViewScroll {
+                    trigger_width: FloatOrInt(
+                        10.0,
+                    ),
+                    delay_ms: 100,
+                    max_speed: FloatOrInt(
+                        50.0,
+                    ),
+                },
+            },
+            environment: Environment(
+                [
                     EnvironmentVariable {
-                        name: String::from("QT_QPA_PLATFORM"),
-                        value: Some(String::from("wayland")),
+                        name: "QT_QPA_PLATFORM",
+                        value: Some(
+                            "wayland",
+                        ),
                     },
                     EnvironmentVariable {
-                        name: String::from("DISPLAY"),
+                        name: "DISPLAY",
                         value: None,
                     },
-                ]),
-                window_rules: vec![WindowRule {
-                    matches: vec![Match {
-                        app_id: Some(RegexEq::from_str(".*alacritty").unwrap()),
-                        title: None,
-                        is_active: None,
-                        is_focused: None,
-                        is_active_in_column: None,
-                        is_floating: None,
-                        is_window_cast_target: None,
-                        at_startup: None,
-                    }],
-                    excludes: vec![
+                ],
+            ),
+            window_rules: [
+                WindowRule {
+                    matches: [
+                        Match {
+                            app_id: Some(
+                                RegexEq(
+                                    Regex(
+                                        ".*alacritty",
+                                    ),
+                                ),
+                            ),
+                            title: None,
+                            is_active: None,
+                            is_focused: None,
+                            is_active_in_column: None,
+                            is_floating: None,
+                            is_window_cast_target: None,
+                            at_startup: None,
+                        },
+                    ],
+                    excludes: [
                         Match {
                             app_id: None,
-                            title: Some(RegexEq::from_str("~").unwrap()),
+                            title: Some(
+                                RegexEq(
+                                    Regex(
+                                        "~",
+                                    ),
+                                ),
+                            ),
                             is_active: None,
                             is_focused: None,
                             is_active_in_column: None,
@@ -3967,218 +4353,419 @@ mod tests {
                         Match {
                             app_id: None,
                             title: None,
-                            is_active: Some(true),
-                            is_focused: Some(false),
+                            is_active: Some(
+                                true,
+                            ),
+                            is_focused: Some(
+                                false,
+                            ),
                             is_active_in_column: None,
                             is_floating: None,
                             is_window_cast_target: None,
                             at_startup: None,
                         },
                     ],
-                    open_on_output: Some("eDP-1".to_owned()),
-                    open_maximized: Some(true),
-                    open_fullscreen: Some(false),
-                    open_floating: Some(false),
-                    open_focused: Some(true),
-                    default_window_height: Some(DefaultPresetSize(Some(PresetSize::Fixed(500)))),
-                    default_column_display: Some(ColumnDisplay::Tabbed),
-                    default_floating_position: Some(FloatingPosition {
-                        x: FloatOrInt(100.),
-                        y: FloatOrInt(-200.),
-                        relative_to: RelativeTo::BottomLeft,
-                    }),
+                    default_column_width: None,
+                    default_window_height: Some(
+                        DefaultPresetSize(
+                            Some(
+                                Fixed(
+                                    500,
+                                ),
+                            ),
+                        ),
+                    ),
+                    open_on_output: Some(
+                        "eDP-1",
+                    ),
+                    open_on_workspace: None,
+                    open_maximized: Some(
+                        true,
+                    ),
+                    open_fullscreen: Some(
+                        false,
+                    ),
+                    open_floating: Some(
+                        false,
+                    ),
+                    open_focused: Some(
+                        true,
+                    ),
+                    min_width: None,
+                    min_height: None,
+                    max_width: None,
+                    max_height: None,
                     focus_ring: BorderRule {
                         off: true,
-                        width: Some(FloatOrInt(3.)),
-                        ..Default::default()
+                        on: false,
+                        width: Some(
+                            FloatOrInt(
+                                3.0,
+                            ),
+                        ),
+                        active_color: None,
+                        inactive_color: None,
+                        active_gradient: None,
+                        inactive_gradient: None,
                     },
                     border: BorderRule {
+                        off: false,
                         on: true,
-                        width: Some(FloatOrInt(8.5)),
-                        ..Default::default()
+                        width: Some(
+                            FloatOrInt(
+                                8.5,
+                            ),
+                        ),
+                        active_color: None,
+                        inactive_color: None,
+                        active_gradient: None,
+                        inactive_gradient: None,
+                    },
+                    shadow: ShadowRule {
+                        off: false,
+                        on: false,
+                        offset: None,
+                        softness: None,
+                        spread: None,
+                        draw_behind_window: None,
+                        color: None,
+                        inactive_color: None,
                     },
                     tab_indicator: TabIndicatorRule {
-                        active_color: Some(Color::from_rgba8_unpremul(255, 0, 0, 255)),
-                        ..Default::default()
+                        active_color: Some(
+                            Color {
+                                r: 1.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            },
+                        ),
+                        inactive_color: None,
+                        active_gradient: None,
+                        inactive_gradient: None,
                     },
-                    ..Default::default()
-                }],
-                layer_rules: vec![
-                    LayerRule {
-                        matches: vec![layer_rule::Match {
-                            namespace: Some(RegexEq::from_str("^notifications$").unwrap()),
+                    draw_border_with_background: None,
+                    opacity: None,
+                    geometry_corner_radius: None,
+                    clip_to_geometry: None,
+                    baba_is_float: None,
+                    block_out_from: None,
+                    variable_refresh_rate: None,
+                    default_column_display: Some(
+                        Tabbed,
+                    ),
+                    default_floating_position: Some(
+                        FloatingPosition {
+                            x: FloatOrInt(
+                                100.0,
+                            ),
+                            y: FloatOrInt(
+                                -200.0,
+                            ),
+                            relative_to: BottomLeft,
+                        },
+                    ),
+                    scroll_factor: None,
+                },
+            ],
+            layer_rules: [
+                LayerRule {
+                    matches: [
+                        Match {
+                            namespace: Some(
+                                RegexEq(
+                                    Regex(
+                                        "^notifications$",
+                                    ),
+                                ),
+                            ),
                             at_startup: None,
-                        }],
-                        excludes: vec![],
-                        opacity: None,
-                        block_out_from: Some(BlockOutFrom::Screencast),
-                        shadow: ShadowRule::default(),
-                        geometry_corner_radius: None,
-                    }
-                ],
-                workspaces: vec![
-                    Workspace {
-                        name: WorkspaceName("workspace-1".to_string()),
-                        open_on_output: Some("eDP-1".to_string()),
+                        },
+                    ],
+                    excludes: [],
+                    opacity: None,
+                    block_out_from: Some(
+                        Screencast,
+                    ),
+                    shadow: ShadowRule {
+                        off: false,
+                        on: false,
+                        offset: None,
+                        softness: None,
+                        spread: None,
+                        draw_behind_window: None,
+                        color: None,
+                        inactive_color: None,
                     },
-                    Workspace {
-                        name: WorkspaceName("workspace-2".to_string()),
-                        open_on_output: None,
-                    },
-                    Workspace {
-                        name: WorkspaceName("workspace-3".to_string()),
-                        open_on_output: None,
-                    },
-                ],
-                binds: Binds(vec![
+                    geometry_corner_radius: None,
+                },
+            ],
+            binds: Binds(
+                [
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::Escape),
-                            modifiers: Modifiers::COMPOSITOR,
+                            trigger: Keysym(
+                                XK_Escape,
+                            ),
+                            modifiers: Modifiers(
+                                COMPOSITOR,
+                            ),
                         },
-                        action: Action::ToggleKeyboardShortcutsInhibit,
+                        action: ToggleKeyboardShortcutsInhibit,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        hotkey_overlay_title: Some(
+                            Some(
+                                "Inhibit",
+                            ),
+                        ),
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::Escape),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                            trigger: Keysym(
+                                XK_Escape,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
                         },
-                        action: Action::ToggleKeyboardShortcutsInhibit,
+                        action: ToggleKeyboardShortcutsInhibit,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::t),
-                            modifiers: Modifiers::COMPOSITOR,
+                            trigger: Keysym(
+                                XK_t,
+                            ),
+                            modifiers: Modifiers(
+                                COMPOSITOR,
+                            ),
                         },
-                        action: Action::Spawn(vec!["alacritty".to_owned()]),
+                        action: Spawn(
+                            [
+                                "alacritty",
+                            ],
+                        ),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::q),
-                            modifiers: Modifiers::COMPOSITOR,
+                            trigger: Keysym(
+                                XK_q,
+                            ),
+                            modifiers: Modifiers(
+                                COMPOSITOR,
+                            ),
                         },
-                        action: Action::CloseWindow,
+                        action: CloseWindow,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: Some(
+                            None,
+                        ),
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::h),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                            trigger: Keysym(
+                                XK_h,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
                         },
-                        action: Action::FocusMonitorLeft,
+                        action: FocusMonitorLeft,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::l),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT | Modifiers::CTRL,
+                            trigger: Keysym(
+                                XK_l,
+                            ),
+                            modifiers: Modifiers(
+                                CTRL | SHIFT | COMPOSITOR,
+                            ),
                         },
-                        action: Action::MoveWindowToMonitorRight,
+                        action: MoveWindowToMonitorRight,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::comma),
-                            modifiers: Modifiers::COMPOSITOR,
+                            trigger: Keysym(
+                                XK_comma,
+                            ),
+                            modifiers: Modifiers(
+                                COMPOSITOR,
+                            ),
                         },
-                        action: Action::ConsumeWindowIntoColumn,
+                        action: ConsumeWindowIntoColumn,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::_1),
-                            modifiers: Modifiers::COMPOSITOR,
+                            trigger: Keysym(
+                                XK_1,
+                            ),
+                            modifiers: Modifiers(
+                                COMPOSITOR,
+                            ),
                         },
-                        action: Action::FocusWorkspace(WorkspaceReference::Index(1)),
+                        action: FocusWorkspace(
+                            Index(
+                                1,
+                            ),
+                        ),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::_1),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                            trigger: Keysym(
+                                XK_1,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
                         },
-                        action: Action::FocusWorkspace(WorkspaceReference::Name(
-                            "workspace-1".to_string(),
-                        )),
+                        action: FocusWorkspace(
+                            Name(
+                                "workspace-1",
+                            ),
+                        ),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::Keysym(Keysym::e),
-                            modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                            trigger: Keysym(
+                                XK_e,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
                         },
-                        action: Action::Quit(true),
+                        action: Quit(
+                            true,
+                        ),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        hotkey_overlay_title: None,
                     },
                     Bind {
                         key: Key {
-                            trigger: Trigger::WheelScrollDown,
-                            modifiers: Modifiers::COMPOSITOR,
+                            trigger: WheelScrollDown,
+                            modifiers: Modifiers(
+                                COMPOSITOR,
+                            ),
                         },
-                        action: Action::FocusWorkspaceDown,
+                        action: FocusWorkspaceDown,
                         repeat: true,
-                        cooldown: Some(Duration::from_millis(150)),
+                        cooldown: Some(
+                            150ms,
+                        ),
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        hotkey_overlay_title: None,
                     },
-                ]),
-                switch_events: SwitchBinds {
-                    lid_open: None,
-                    lid_close: None,
-                    tablet_mode_on: Some(SwitchAction {
-                        spawn: vec![
-                            "bash".to_owned(),
-                            "-c".to_owned(),
-                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true".to_owned(),
+                ],
+            ),
+            switch_events: SwitchBinds {
+                lid_open: None,
+                lid_close: None,
+                tablet_mode_on: Some(
+                    SwitchAction {
+                        spawn: [
+                            "bash",
+                            "-c",
+                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true",
                         ],
-                    }),
-                    tablet_mode_off: Some(SwitchAction {
-                        spawn: vec![
-                            "bash".to_owned(),
-                            "-c".to_owned(),
-                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false".to_owned(),
+                    },
+                ),
+                tablet_mode_off: Some(
+                    SwitchAction {
+                        spawn: [
+                            "bash",
+                            "-c",
+                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false",
                         ],
-                    }),
-                },
-                debug: DebugConfig {
-                    render_drm_device: Some(PathBuf::from("/dev/dri/renderD129")),
-                    ..Default::default()
-                },
+                    },
+                ),
             },
-        );
+            debug: DebugConfig {
+                preview_render: None,
+                dbus_interfaces_in_non_session_instances: false,
+                wait_for_frame_completion_before_queueing: false,
+                enable_overlay_planes: false,
+                disable_cursor_plane: false,
+                disable_direct_scanout: false,
+                restrict_primary_scanout_to_matching_format: false,
+                render_drm_device: Some(
+                    "/dev/dri/renderD129",
+                ),
+                force_pipewire_invalid_modifier: false,
+                emulate_zero_presentation_time: false,
+                disable_resize_throttling: false,
+                disable_transactions: false,
+                keep_laptop_panel_on_when_lid_is_closed: false,
+                disable_monitor_names: false,
+                strict_new_window_focus_policy: false,
+                honor_xdg_activation_with_invalid_serial: false,
+            },
+            workspaces: [
+                Workspace {
+                    name: WorkspaceName(
+                        "workspace-1",
+                    ),
+                    open_on_output: Some(
+                        "eDP-1",
+                    ),
+                },
+                Workspace {
+                    name: WorkspaceName(
+                        "workspace-2",
+                    ),
+                    open_on_output: None,
+                },
+                Workspace {
+                    name: WorkspaceName(
+                        "workspace-3",
+                    ),
+                    open_on_output: None,
+                },
+            ],
+        }
+        "#);
     }
 
     #[test]

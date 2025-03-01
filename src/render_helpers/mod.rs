@@ -157,6 +157,16 @@ impl ToRenderElement for BakedBuffer<SolidColorBuffer> {
     }
 }
 
+pub fn encompassing_geo(
+    scale: Scale<f64>,
+    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+) -> Rectangle<i32, Physical> {
+    elements
+        .map(|ele| ele.geometry(scale))
+        .reduce(|a, b| a.merge(b))
+        .unwrap_or_default()
+}
+
 pub fn render_to_encompassing_texture(
     renderer: &mut GlesRenderer,
     scale: Scale<f64>,
@@ -164,13 +174,9 @@ pub fn render_to_encompassing_texture(
     fourcc: Fourcc,
     elements: &[impl RenderElement<GlesRenderer>],
 ) -> anyhow::Result<(GlesTexture, SyncPoint, Rectangle<i32, Physical>)> {
-    let geo = elements
-        .iter()
-        .map(|ele| ele.geometry(scale))
-        .reduce(|a, b| a.merge(b))
-        .unwrap_or_default();
+    let geo = encompassing_geo(scale, elements.iter());
     let elements = elements.iter().rev().map(|ele| {
-        RelocateRenderElement::from_element(ele, (-geo.loc.x, -geo.loc.y), Relocate::Relative)
+        RelocateRenderElement::from_element(ele, geo.loc.upscale(-1), Relocate::Relative)
     });
 
     let (texture, sync_point) =

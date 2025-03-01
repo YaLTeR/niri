@@ -63,6 +63,7 @@ layout {
         length total-proportion=1.0
         position "right"
         gaps-between-tabs 2
+        corner-radius 8
         active-color "red"
         inactive-color "gray"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
@@ -141,7 +142,7 @@ layout {
 
 ### `default-column-display`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Sets the default display mode for new columns.
 Can be `normal` or `tabbed`.
@@ -167,7 +168,7 @@ Set the widths that the `switch-preset-column-width` action (Mod+R) toggles betw
 For example, you can perfectly fit four windows sized `proportion 0.25` on an output, regardless of the gaps setting.
 The default preset widths are <sup>1</sup>&frasl;<sub>3</sub>, <sup>1</sup>&frasl;<sub>2</sub> and <sup>2</sup>&frasl;<sub>3</sub> of the output.
 
-`fixed` sets the width in logical pixels exactly.
+`fixed` sets the window width in logical pixels exactly.
 
 ```kdl
 layout {
@@ -180,13 +181,6 @@ layout {
     }
 }
 ```
-
-> [!NOTE]
-> Until next release, a preset `fixed` width does not take borders into account in the tiling layout.
-> I.e., preset `fixed 1000` with 4-wide borders will make the window 992 logical pixels wide.
-> This may eventually be corrected.
->
-> All other ways of using `fixed` (i.e. `default-column-width` or `set-column-width`) do take borders into account and give you the exact window width that you request.
 
 ### `default-column-width`
 
@@ -368,7 +362,7 @@ layout {
 
 ### `shadow`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Shadow rendered behind a window.
 
@@ -414,7 +408,7 @@ prefer-no-csd
 
 ### `tab-indicator`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.02</sup>
 
 Controls the appearance of the tab indicator that appears next to columns in tabbed display mode.
 
@@ -438,6 +432,9 @@ By default, the tab indicator has length equal to half of the window size, or `l
 It can be `left`, `right`, `top`, or `bottom`.
 
 `gaps-between-tabs` controls the gap between individual tabs in logical pixels.
+
+`corner-radius` sets the rounded corner radius for tabs in the indicator in logical pixels.
+When `gaps-between-tabs` is zero, only the first and the last tabs have rounded corners, otherwise all tabs do.
 
 `active-color`, `inactive-color`, `active-gradient`, `inactive-gradient` let you override the colors for the tabs.
 They have the same semantics as the border and focus ring colors and gradients.

@@ -6,6 +6,9 @@ Apparently, VSCode currently unconditionally queries the X server for a keymap.
 
 ### WezTerm
 
+> [!NOTE]
+> Both of these issues seem to be fixed in the nightly build of WezTerm.
+
 There's [a bug](https://github.com/wez/wezterm/issues/4708) in WezTerm that it waits for a zero-sized Wayland configure event, so its window never shows up in niri. To work around it, put this window rule in the niri config (included in the default config):
 
 ```kdl
@@ -42,7 +45,7 @@ gamescope -f -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor --backend sdl -
 
 This command will run *<game>* in 1080p fullscreen—make sure to replace the width and height values to match your desired resolution.
 `--force-grab-cursor` forces gamescope to use relative mouse movement which prevents the cursor from escaping the game's window on multi-monitor setups.
-Note that `--backend sdl` is currently also required as gamescope's default Wayland backend doesn't lock the cursor properly (possibly related to [https://github.com/ValveSoftware/gamescope/issues/1711]).
+Note that `--backend sdl` is currently also required as gamescope's default Wayland backend doesn't lock the cursor properly (possibly related to https://github.com/ValveSoftware/gamescope/issues/1711).
 
 Steam users should use gamescope through a game's [launch options](https://help.steampowered.com/en/faqs/view/7D01-D2DD-D75E-2955) by replacing the game executable with `%command%`.
 Other game launchers such as [Lutris](https://lutris.net/) have their own ways of setting gamescope options.

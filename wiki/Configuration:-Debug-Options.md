@@ -27,6 +27,7 @@ debug {
     keep-laptop-panel-on-when-lid-is-closed
     disable-monitor-names
     strict-new-window-focus-policy
+    honor-xdg-activation-with-invalid-serial 
 }
 
 binds {
@@ -235,6 +236,25 @@ Only windows that activate themselves with a valid xdg-activation token will be 
 ```kdl
 debug {
     strict-new-window-focus-policy
+}
+```
+
+### `honor-xdg-activation-with-invalid-serial`
+
+<sup>Since: next release</sup>
+
+Widely-used clients such as Discord and Telegram make fresh xdg-activation tokens upon clicking on their tray icon or on their notification.
+Most of the time, these fresh tokens will have invalid serials, because the app needs to be focused to get a valid serial, and if the user clicks on a tray icon or a notification, it is usually because the app *isn't* focused, and the user wants to focus it.
+
+By default, niri ignores xdg-activation tokens with invalid serials, to prevent windows from randomly stealing focus.
+This debug flag makes niri honor such tokens, making the aforementioned widely-used apps get focus when clicking on their tray icon or notification.
+
+Amusingly, clicking on a notification sends the app a perfectly valid activation token from the notification daemon, but these apps seem to simply ignore it.
+Maybe in the future these apps/toolkits (Electron, Qt) are fixed, making this debug flag unnecessary.
+
+```kdl
+debug {
+    honor-xdg-activation-with-invalid-serial
 }
 ```
 

@@ -333,7 +333,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
-        self.scrolling.are_transitions_ongoing() || self.floating.are_animations_ongoing()
+        self.scrolling.are_transitions_ongoing() || self.floating.are_transitions_ongoing()
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
@@ -1128,6 +1128,13 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn expand_column_to_available_width(&mut self) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.expand_column_to_available_width();
+    }
+
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
         let mut unfullscreen_to_floating = false;
         if self.floating.has_window(window) {
@@ -1607,6 +1614,44 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn view_offset_gesture_end(&mut self, cancelled: bool, is_touchpad: Option<bool>) -> bool {
         self.scrolling
             .view_offset_gesture_end(cancelled, is_touchpad)
+    }
+
+    pub fn dnd_scroll_gesture_begin(&mut self) {
+        self.scrolling.dnd_scroll_gesture_begin();
+    }
+
+    pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>) {
+        let config = &self.options.gestures.dnd_edge_view_scroll;
+        let trigger_width = config.trigger_width.0;
+
+        // This working area intentionally does not include extra struts from Options.
+        let x = pos.x - self.working_area.loc.x;
+        let width = self.working_area.size.w;
+
+        let x = x.clamp(0., width);
+        let trigger_width = trigger_width.clamp(0., width / 2.);
+
+        let delta = if x < trigger_width {
+            -(trigger_width - x)
+        } else if width - x < trigger_width {
+            trigger_width - (width - x)
+        } else {
+            0.
+        };
+
+        let delta = if trigger_width < 0.01 {
+            // Sanity check for trigger-width 0 or small window sizes.
+            0.
+        } else {
+            // Normalize to [0, 1].
+            delta / trigger_width
+        };
+
+        self.scrolling.dnd_scroll_gesture_scroll(delta);
+    }
+
+    pub fn dnd_scroll_gesture_end(&mut self) {
+        self.scrolling.dnd_scroll_gesture_end();
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {

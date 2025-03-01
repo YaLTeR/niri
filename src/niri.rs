@@ -29,8 +29,7 @@ use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Element as _, Id, Kind, PrimaryScanoutOutput,
-    RenderElementStates,
+    default_primary_scanout_output_compare, Id, Kind, PrimaryScanoutOutput, RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -88,8 +87,9 @@ use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::security_context::SecurityContextState;
 use smithay::wayland::selection::data_device::{set_data_device_selection, DataDeviceState};
+use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
-use smithay::wayland::selection::wlr_data_control::DataControlState;
+use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
 use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellState};
@@ -144,8 +144,8 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
-    render_to_dmabuf, render_to_encompassing_texture, render_to_shm, render_to_texture,
-    render_to_vec, shaders, RenderTarget, SplitElements,
+    encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
+    render_to_texture, render_to_vec, shaders, RenderTarget, SplitElements,
 };
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
@@ -158,6 +158,7 @@ use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, logical_output,
     make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
 };
+use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -271,7 +272,8 @@ pub struct Niri {
     pub idle_inhibit_manager_state: IdleInhibitManagerState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
-    pub data_control_state: DataControlState,
+    pub wlr_data_control_state: WlrDataControlState,
+    pub ext_data_control_state: ExtDataControlState,
     pub popups: PopupManager,
     pub popup_grab: Option<PopupGrabState>,
     pub presentation_state: PresentationState,
@@ -327,6 +329,16 @@ pub struct Niri {
     /// various tooltips from sticking around.
     pub pointer_hidden: bool,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
+    /// Whether the pointer inactivity timer got reset this event loop iteration.
+    ///
+    /// Used for limiting the reset to once per iteration, so that it's not spammed with high
+    /// resolution mice.
+    pub pointer_inactivity_timer_got_reset: bool,
+    /// Whether the (idle notifier) activity was notified this event loop iteration.
+    ///
+    /// Used for limiting the notify to once per iteration, so that it's not spammed with high
+    /// resolution mice.
+    pub notified_activity_this_iteration: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -343,6 +355,8 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
+
+    pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -619,6 +633,8 @@ impl State {
 
         // Clear the time so it's fetched afresh next iteration.
         self.niri.clock.clear();
+        self.niri.pointer_inactivity_timer_got_reset = false;
+        self.niri.notified_activity_this_iteration = false;
     }
 
     fn refresh(&mut self) {
@@ -1118,13 +1134,12 @@ impl State {
         }
     }
 
-    pub fn reload_config(&mut self, path: PathBuf) {
+    pub fn reload_config(&mut self, config: Result<Config, ()>) {
         let _span = tracy_client::span!("State::reload_config");
 
-        let mut config = match Config::load(&path) {
+        let mut config = match config {
             Ok(config) => config,
-            Err(err) => {
-                warn!("{:?}", err.context("error loading config"));
+            Err(()) => {
                 self.niri.config_error_notification.show();
                 self.niri.queue_redraw_all();
                 return;
@@ -1330,6 +1345,8 @@ impl State {
         }
 
         if cursor_inactivity_timeout_changed {
+            // Force reset due to timeout change.
+            self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
         }
 
@@ -1883,7 +1900,12 @@ impl Niri {
                     .unwrap()
                     .primary_selection_disabled
             });
-        let data_control_state = DataControlState::new::<State, _>(
+        let wlr_data_control_state = WlrDataControlState::new::<State, _>(
+            &display_handle,
+            Some(&primary_selection_state),
+            client_is_unrestricted,
+        );
+        let ext_data_control_state = ExtDataControlState::new::<State, _>(
             &display_handle,
             Some(&primary_selection_state),
             client_is_unrestricted,
@@ -2101,7 +2123,8 @@ impl Niri {
             idle_inhibit_manager_state,
             data_device_state,
             primary_selection_state,
-            data_control_state,
+            wlr_data_control_state,
+            ext_data_control_state,
             popups: PopupManager::default(),
             popup_grab: None,
             suppressed_keys: HashSet::new(),
@@ -2130,6 +2153,8 @@ impl Niri {
             pointer_contents: PointContents::default(),
             pointer_hidden: false,
             pointer_inactivity_timer: None,
+            pointer_inactivity_timer_got_reset: false,
+            notified_activity_this_iteration: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -2148,6 +2173,8 @@ impl Niri {
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
+
+            pick_window: None,
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
@@ -4707,12 +4734,7 @@ impl Niri {
             alpha,
             RenderTarget::ScreenCapture,
         );
-        let geo = elements
-            .iter()
-            .map(|ele| ele.geometry(scale))
-            .reduce(|a, b| a.merge(b))
-            .unwrap_or_default();
-
+        let geo = encompassing_geo(scale, elements.iter());
         let elements = elements.iter().rev().map(|elem| {
             RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
         });
@@ -5247,6 +5269,10 @@ impl Niri {
     }
 
     pub fn reset_pointer_inactivity_timer(&mut self) {
+        if self.pointer_inactivity_timer_got_reset {
+            return;
+        }
+
         let _span = tracy_client::span!("Niri::reset_pointer_inactivity_timer");
 
         if let Some(token) = self.pointer_inactivity_timer.take() {
@@ -5270,6 +5296,20 @@ impl Niri {
             })
             .unwrap();
         self.pointer_inactivity_timer = Some(token);
+
+        self.pointer_inactivity_timer_got_reset = true;
+    }
+
+    pub fn notify_activity(&mut self) {
+        if self.notified_activity_this_iteration {
+            return;
+        }
+
+        let _span = tracy_client::span!("Niri::notify_activity");
+
+        self.idle_notifier_state.notify_activity(&self.seat);
+
+        self.notified_activity_this_iteration = true;
     }
 }
 

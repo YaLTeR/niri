@@ -180,6 +180,11 @@ impl TabIndicator {
         self.shaders.resize_with(count, Default::default);
         self.shader_locs.resize_with(count, Default::default);
 
+        let position = self.config.position;
+        let radius = self.config.corner_radius.0 as f32;
+        let shared_rounded_corners = self.config.gaps_between_tabs.0 == 0.;
+        let mut tabs_left = tab_count;
+
         let rects = self.tab_rects(area, count, scale);
         for ((shader, loc), (tab, rect)) in zip(
             zip(&mut self.shaders, &mut self.shader_locs),
@@ -200,6 +205,50 @@ impl TabIndicator {
                 color_to *= 0.5;
             }
 
+            let radius = if shared_rounded_corners && tab_count > 1 {
+                if tabs_left == tab_count {
+                    // First tab.
+                    match position {
+                        TabIndicatorPosition::Left | TabIndicatorPosition::Right => CornerRadius {
+                            top_left: radius,
+                            top_right: radius,
+                            bottom_right: 0.,
+                            bottom_left: 0.,
+                        },
+                        TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => CornerRadius {
+                            top_left: radius,
+                            top_right: 0.,
+                            bottom_right: 0.,
+                            bottom_left: radius,
+                        },
+                    }
+                } else if tabs_left == 1 {
+                    // Last tab.
+                    match position {
+                        TabIndicatorPosition::Left | TabIndicatorPosition::Right => CornerRadius {
+                            top_left: 0.,
+                            top_right: 0.,
+                            bottom_right: radius,
+                            bottom_left: radius,
+                        },
+                        TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => CornerRadius {
+                            top_left: 0.,
+                            top_right: radius,
+                            bottom_right: radius,
+                            bottom_left: 0.,
+                        },
+                    }
+                } else {
+                    // Tab in the middle.
+                    CornerRadius::default()
+                }
+            } else {
+                // Separate tabs, or the only tab.
+                CornerRadius::from(radius)
+            };
+            let radius = radius.fit_to(rect.size.w as f32, rect.size.h as f32);
+            tabs_left -= 1;
+
             shader.update(
                 rect.size,
                 gradient_area,
@@ -209,7 +258,7 @@ impl TabIndicator {
                 ((tab.gradient.angle as f32) - 90.).to_radians(),
                 Rectangle::from_size(rect.size),
                 0.,
-                CornerRadius::default(),
+                radius,
                 scale as f32,
                 1.,
             );

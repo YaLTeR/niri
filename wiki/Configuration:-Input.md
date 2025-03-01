@@ -81,9 +81,11 @@ input {
         // off
         map-to-output "eDP-1"
         // left-handed
+        // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
 
     touch {
+        // off
         map-to-output "eDP-1"
     }
 
@@ -116,8 +118,10 @@ input {
 
 > [!TIP]
 >
-> Alternatively you can directly set a path to a .xkb file containing an xkb keymap.
-> This overrides all other xkb settings
+> <sup>Since: 25.02</sup>
+>
+> Alternatively, you can directly set a path to a .xkb file containing an xkb keymap.
+> This overrides all other xkb settings.
 >
 > ```kdl
 > input {
@@ -182,7 +186,7 @@ Settings specific to `touchpad`s:
 - `tap`: tap-to-click.
 - `dwt`: disable-when-typing.
 - `dwtp`: disable-when-trackpointing.
-- `drag-lock`: <sup>Since: next release</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
+- `drag-lock`: <sup>Since: 25.02</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
@@ -194,6 +198,10 @@ Settings specific to `touchpad` and `mouse`:
 Settings specific to `touchpad`, `mouse` and `tablet`:
 
 - `left-handed`: if set, changes the device to left-handed mode.
+
+Settings specific to `tablet`s:
+
+- `calibration-matrix`: <sup>Since: 25.02</sup> set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 

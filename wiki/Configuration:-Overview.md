@@ -11,6 +11,7 @@ You can find documentation for various sections of the config on these wiki page
 * [`window-rule {}`](./Configuration:-Window-Rules.md)
 * [`layer-rule {}`](./Configuration:-Layer-Rules.md)
 * [`animations {}`](./Configuration:-Animations.md)
+* [`gestures {}`](./Configuration:-Gestures.md)
 * [`debug {}`](./Configuration:-Debug-Options.md)
 
 ### Loading

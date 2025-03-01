@@ -2,6 +2,8 @@
 
 There are several gestures in niri.
 
+Also see the [gestures configuration](./Configuration:-Gestures.md) wiki page.
+
 ### Mouse
 
 #### Interactive Move
@@ -57,3 +59,12 @@ Switch workspaces with three-finger vertical swipes.
 #### Horizontal View Movement
 
 Move the view horizontally with three-finger horizontal swipes.
+
+### All Pointing Devices
+
+#### Drag-and-Drop Edge View Scroll
+
+<sup>Since: 25.02</sup>
+
+Scroll the tiling view when moving the mouse cursor against a monitor edge during drag-and-drop (DnD).
+Also works on a touchscreen.

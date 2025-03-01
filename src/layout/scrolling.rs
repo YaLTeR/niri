@@ -123,7 +123,7 @@ struct ColumnData {
 }
 
 #[derive(Debug)]
-enum ViewOffset {
+pub(super) enum ViewOffset {
     /// The view offset is static.
     Static(f64),
     /// The view offset is animating.
@@ -133,7 +133,7 @@ enum ViewOffset {
 }
 
 #[derive(Debug)]
-struct ViewGesture {
+pub(super) struct ViewGesture {
     current_view_offset: f64,
     tracker: SwipeTracker,
     delta_from_tracker: f64,
@@ -141,6 +141,14 @@ struct ViewGesture {
     stationary_view_offset: f64,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
+
+    // If this gesture is for drag-and-drop scrolling, this is the last event's unadjusted
+    // timestamp.
+    dnd_last_event_time: Option<Duration>,
+    // Time when the drag-and-drop scroll delta became non-zero, used for debouncing.
+    //
+    // If `None` then the scroll delta is currently zero.
+    dnd_nonzero_start_time: Option<Duration>,
 }
 
 #[derive(Debug)]
@@ -324,6 +332,25 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
+        if let ViewOffset::Gesture(gesture) = &mut self.view_offset {
+            // Make sure the last event time doesn't go too much out of date (for
+            // workspaces not under cursor), causing sudden jumps.
+            //
+            // This happens after any dnd_scroll_gesture_scroll() calls (in
+            // Layout::advance_animations()), so it doesn't mess up the time delta there.
+            if let Some(last_time) = &mut gesture.dnd_last_event_time {
+                let now = self.clock.now_unadjusted();
+                if *last_time != now {
+                    *last_time = now;
+
+                    // If last_time was already == now, then dnd_scroll_gesture_scroll() must've
+                    // updated the gesture already. Therefore, when this code runs, the pointer
+                    // must be outside the DnD scrolling zone.
+                    gesture.dnd_nonzero_start_time = None;
+                }
+            }
+        }
+
         for col in &mut self.columns {
             col.advance_animations();
         }
@@ -342,7 +369,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn are_transitions_ongoing(&self) -> bool {
         !self.view_offset.is_static()
-            || self.columns.iter().any(Column::are_animations_ongoing)
+            || self.columns.iter().any(Column::are_transitions_ongoing)
             || !self.closing_windows.is_empty()
     }
 
@@ -2467,6 +2494,100 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
+    pub fn expand_column_to_available_width(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        if col.is_fullscreen || col.is_full_width {
+            return;
+        }
+
+        if self.is_centering_focused_column() {
+            // Always-centered mode is different since the active window position cannot be
+            // controlled (it's always at the center). I guess you could come up with different
+            // logic here that computes the width in such a way so as to leave nearby columns fully
+            // on screen while taking into account that the active column will remain centered
+            // after resizing. But I'm not sure it's that useful? So let's do the simple thing.
+            let col = &mut self.columns[self.active_column_idx];
+            col.toggle_full_width();
+            cancel_resize_for_column(&mut self.interactive_resize, col);
+            return;
+        }
+
+        // Consider the end of an ongoing animation because that's what compute to fit does too.
+        let view_x = self.target_view_pos();
+        let working_x = self.working_area.loc.x;
+        let working_w = self.working_area.size.w;
+
+        // Count all columns that are fully visible inside the working area.
+        let mut width_taken = 0.;
+        let mut leftmost_col_x = None;
+        let mut active_col_x = None;
+        let mut counted_non_active_column = false;
+
+        let gap = self.options.gaps;
+        let col_xs = self.column_xs(self.data.iter().copied());
+        for (idx, col_x) in col_xs.take(self.columns.len()).enumerate() {
+            if col_x < view_x + working_x + gap {
+                // Column goes off-screen to the left.
+                continue;
+            }
+
+            leftmost_col_x.get_or_insert(col_x);
+
+            let width = self.data[idx].width;
+            if view_x + working_x + working_w < col_x + width + gap {
+                // Column goes off-screen to the right. We can stop here.
+                break;
+            }
+
+            if idx == self.active_column_idx {
+                active_col_x = Some(col_x);
+            } else {
+                counted_non_active_column = true;
+            }
+
+            width_taken += width + gap;
+        }
+
+        if active_col_x.is_none() {
+            // The active column wasn't fully on screen, so we can't meaningfully do anything.
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+
+        let available_width = working_w - gap - width_taken - col.extra_size().w;
+        if available_width <= 0. {
+            // Nowhere to expand.
+            return;
+        }
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        if !counted_non_active_column {
+            // Only the active column was fully on-screen (maybe it's the only column), so we're
+            // about to set its width to 100% of the working area. Let's do it via
+            // toggle_full_width() as it lets you back out of it more intuitively.
+            col.toggle_full_width();
+            return;
+        }
+
+        let active_width = self.data[self.active_column_idx].width;
+        col.width = ColumnWidth::Fixed(active_width + available_width);
+        col.preset_width_idx = None;
+        col.is_full_width = false;
+        col.update_tile_sizes(true);
+
+        // Put the leftmost window into the view.
+        let new_view_x = leftmost_col_x.unwrap() - gap - working_x;
+        self.animate_view_offset(self.active_column_idx, new_view_x - active_col_x.unwrap());
+        // Just in case.
+        self.animate_view_offset_to_column(None, self.active_column_idx, None);
+    }
+
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) -> bool {
         let (mut col_idx, tile_idx) = self
             .columns
@@ -2681,8 +2802,34 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             delta_from_tracker: self.view_offset.current(),
             stationary_view_offset: self.view_offset.stationary(),
             is_touchpad,
+            dnd_last_event_time: None,
+            dnd_nonzero_start_time: None,
         };
         self.view_offset = ViewOffset::Gesture(gesture);
+    }
+
+    pub fn dnd_scroll_gesture_begin(&mut self) {
+        if let ViewOffset::Gesture(ViewGesture {
+            dnd_last_event_time: Some(_),
+            ..
+        }) = &self.view_offset
+        {
+            // Already active.
+            return;
+        }
+
+        let gesture = ViewGesture {
+            current_view_offset: self.view_offset.current(),
+            tracker: SwipeTracker::new(),
+            delta_from_tracker: self.view_offset.current(),
+            stationary_view_offset: self.view_offset.stationary(),
+            is_touchpad: false,
+            dnd_last_event_time: Some(self.clock.now_unadjusted()),
+            dnd_nonzero_start_time: None,
+        };
+        self.view_offset = ViewOffset::Gesture(gesture);
+
+        self.interactive_resize = None;
     }
 
     pub fn view_offset_gesture_update(
@@ -2695,7 +2842,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return None;
         };
 
-        if gesture.is_touchpad != is_touchpad {
+        if gesture.is_touchpad != is_touchpad || gesture.dnd_last_event_time.is_some() {
             return None;
         }
 
@@ -2711,6 +2858,79 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         gesture.current_view_offset = view_offset;
 
         Some(true)
+    }
+
+    pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) {
+        let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
+            return;
+        };
+
+        let Some(last_time) = gesture.dnd_last_event_time else {
+            // Not a DnD scroll.
+            return;
+        };
+
+        let config = &self.options.gestures.dnd_edge_view_scroll;
+
+        let now = self.clock.now_unadjusted();
+        gesture.dnd_last_event_time = Some(now);
+
+        if delta == 0. {
+            // We're outside the scrolling zone.
+            gesture.dnd_nonzero_start_time = None;
+            return;
+        }
+
+        let nonzero_start = *gesture.dnd_nonzero_start_time.get_or_insert(now);
+
+        // Delay starting the gesture a bit to avoid unwanted movement when dragging across
+        // monitors.
+        let delay = Duration::from_millis(u64::from(config.delay_ms));
+        if now.saturating_sub(nonzero_start) < delay {
+            return;
+        }
+
+        let time_delta = now.saturating_sub(last_time).as_secs_f64();
+
+        let delta = delta * time_delta * config.max_speed.0;
+
+        gesture.tracker.push(delta, now);
+
+        let view_offset = gesture.tracker.pos() + gesture.delta_from_tracker;
+
+        // Clamp it so that it doesn't go too much out of bounds.
+        let (leftmost, rightmost) = if self.columns.is_empty() {
+            (0., 0.)
+        } else {
+            let gaps = self.options.gaps;
+
+            let mut leftmost = -self.working_area.size.w;
+
+            let last_col_idx = self.columns.len() - 1;
+            let last_col_x = self
+                .columns
+                .iter()
+                .take(last_col_idx)
+                .fold(0., |col_x, col| col_x + col.width() + gaps);
+            let last_col_width = self.data[last_col_idx].width;
+            let mut rightmost = last_col_x + last_col_width - self.working_area.loc.x;
+
+            let active_col_x = self
+                .columns
+                .iter()
+                .take(self.active_column_idx)
+                .fold(0., |col_x, col| col_x + col.width() + gaps);
+            leftmost -= active_col_x;
+            rightmost -= active_col_x;
+
+            (leftmost, rightmost)
+        };
+        let min_offset = f64::min(leftmost, rightmost);
+        let max_offset = f64::max(leftmost, rightmost);
+        let clamped_offset = view_offset.clamp(min_offset, max_offset);
+
+        gesture.delta_from_tracker += clamped_offset - view_offset;
+        gesture.current_view_offset = clamped_offset;
     }
 
     pub fn view_offset_gesture_end(&mut self, _cancelled: bool, is_touchpad: Option<bool>) -> bool {
@@ -2982,6 +3202,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
+    pub fn dnd_scroll_gesture_end(&mut self) {
+        let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
+            return;
+        };
+
+        if gesture.dnd_last_event_time.is_some() && gesture.tracker.pos() == 0. {
+            // DnD didn't scroll anything, so preserve the current view position (rather than
+            // snapping the window).
+            self.view_offset = ViewOffset::Static(gesture.delta_from_tracker);
+
+            if !self.columns.is_empty() {
+                // Just in case, make sure the active window remains on screen.
+                self.animate_view_offset_to_column(None, self.active_column_idx, None);
+            }
+            return;
+        }
+
+        self.view_offset_gesture_end(false, None);
+    }
+
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
         if self.interactive_resize.is_some() {
             return false;
@@ -3197,6 +3437,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     #[cfg(test)]
     pub fn active_column_idx(&self) -> usize {
         self.active_column_idx
+    }
+
+    #[cfg(test)]
+    pub(super) fn view_offset(&self) -> &ViewOffset {
+        &self.view_offset
     }
 
     #[cfg(test)]
@@ -3495,6 +3740,12 @@ impl<W: LayoutElement> Column<W> {
         self.move_animation.is_some()
             || self.tab_indicator.are_animations_ongoing()
             || self.tiles.iter().any(Tile::are_animations_ongoing)
+    }
+
+    pub fn are_transitions_ongoing(&self) -> bool {
+        self.move_animation.is_some()
+            || self.tab_indicator.are_animations_ongoing()
+            || self.tiles.iter().any(Tile::are_transitions_ongoing)
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {

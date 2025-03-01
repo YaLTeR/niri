@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, mem};
 
@@ -89,9 +89,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Ensure the session type is set to Wayland for xdg-autostart and Qt apps.
         env::set_var("XDG_SESSION_TYPE", "wayland");
     }
-
-    // Set a better error printer for config loading.
-    niri_config::set_miette_hook().unwrap();
 
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
@@ -230,12 +227,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up config file watcher.
     let _watcher = {
+        // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
+        // watcher thread.
+        let process = |path: &Path| {
+            Config::load(path).map_err(|err| {
+                warn!("{:?}", err.context("error loading config"));
+            })
+        };
+
         let (tx, rx) = calloop::channel::sync_channel(1);
-        let watcher = Watcher::new(watch_path.clone(), tx);
+        let watcher = Watcher::new(watch_path.clone(), process, tx);
         event_loop
             .handle()
-            .insert_source(rx, move |event, _, state| match event {
-                calloop::channel::Event::Msg(()) => state.reload_config(watch_path.clone()),
+            .insert_source(rx, |event, _, state| match event {
+                calloop::channel::Event::Msg(config) => state.reload_config(config),
                 calloop::channel::Event::Closed => (),
             })
             .unwrap();

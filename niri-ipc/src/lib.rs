@@ -24,7 +24,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! niri-ipc = "=25.1.0"
+//! niri-ipc = "=25.2.0"
 //! ```
 //!
 //! ## Features
@@ -63,6 +63,8 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
+    /// Request picking a window and get its information.
+    PickWindow,
     /// Perform an action.
     Action(Action),
     /// Change output configuration temporarily.
@@ -129,6 +131,8 @@ pub enum Response {
     FocusedOutput(Option<Output>),
     /// Information about the focused window.
     FocusedWindow(Option<Window>),
+    /// Information about the picked window.
+    PickedWindow(Option<Window>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
 }
@@ -317,9 +321,9 @@ pub enum Action {
     ConsumeWindowIntoColumn {},
     /// Expel the focused window from the column.
     ExpelWindowFromColumn {},
-    /// Swap focused window with one to the right
+    /// Swap focused window with one to the right.
     SwapWindowRight {},
-    /// Swap focused window with one to the left
+    /// Swap focused window with one to the left.
     SwapWindowLeft {},
     /// Toggle the focused column between normal and tabbed display.
     ToggleColumnTabbedDisplay {},
@@ -539,6 +543,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
     },
+    /// Expand the focused column to space not taken up by other fully visible columns.
+    ExpandColumnToAvailableWidth {},
     /// Switch between keyboard layouts.
     SwitchLayout {
         /// Layout to switch to.

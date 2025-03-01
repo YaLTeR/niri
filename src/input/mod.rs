@@ -32,6 +32,7 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
+use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_move_grab::TouchMoveGrab;
 
@@ -47,6 +48,7 @@ use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
+pub mod pick_window_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
@@ -96,10 +98,7 @@ impl State {
         if self.niri.monitors_active {
             // Notify the idle-notifier of activity.
             if should_notify_activity(&event) {
-                let _span = tracy_client::span!("IdleNotifierState::notify_activity");
-                self.niri
-                    .idle_notifier_state
-                    .notify_activity(&self.niri.seat);
+                self.niri.notify_activity();
             }
         } else {
             // Power on monitors if they were off.
@@ -108,9 +107,7 @@ impl State {
 
                 // Notify the idle-notifier of activity only if we're also powering on the
                 // monitors.
-                self.niri
-                    .idle_notifier_state
-                    .notify_activity(&self.niri.seat);
+                self.niri.notify_activity();
             }
         }
 
@@ -371,7 +368,6 @@ impl State {
             serial,
             time,
             |this, mods, keysym| {
-                let bindings = &this.niri.config.borrow().binds;
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
@@ -387,6 +383,19 @@ impl State {
                     }
                 }
 
+                if pressed && raw == Some(Keysym::Escape) && this.niri.pick_window.is_some() {
+                    // We window picking state so the pick window grab must be active.
+                    // Unsetting it cancels window picking.
+                    this.niri
+                        .seat
+                        .get_pointer()
+                        .unwrap()
+                        .unset_grab(this, serial, time);
+                    this.niri.suppressed_keys.insert(key_code);
+                    return FilterResult::Intercept(None);
+                }
+
+                let bindings = &this.niri.config.borrow().binds;
                 should_intercept_key(
                     &mut this.niri.suppressed_keys,
                     bindings,
@@ -1515,6 +1524,9 @@ impl State {
                     self.niri.layout.reset_window_height(Some(&window));
                 }
             }
+            Action::ExpandColumnToAvailableWidth => {
+                self.niri.layout.expand_column_to_available_width();
+            }
             Action::ShowHotkeyOverlay => {
                 if self.niri.hotkey_overlay.show() {
                     self.niri.queue_redraw_all();
@@ -1888,6 +1900,18 @@ impl State {
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint();
 
+        // Inform the layout of an ongoing DnD operation.
+        let mut is_dnd_grab = false;
+        pointer.with_grab(|_, grab| {
+            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+        });
+        if is_dnd_grab {
+            if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
+                let output = output.clone();
+                self.niri.layout.dnd_update(output, pos_within_output);
+            }
+        }
+
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
         self.niri.queue_redraw_all();
@@ -1950,6 +1974,18 @@ impl State {
         // We moved the regular pointer, so show it now.
         self.niri.tablet_cursor_location = None;
 
+        // Inform the layout of an ongoing DnD operation.
+        let mut is_dnd_grab = false;
+        pointer.with_grab(|_, grab| {
+            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+        });
+        if is_dnd_grab {
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                let output = output.clone();
+                self.niri.layout.dnd_update(output, pos_within_output);
+            }
+        }
+
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
         self.niri.queue_redraw_all();
@@ -2000,6 +2036,37 @@ impl State {
             // We received an event for the regular pointer, so show it now.
             self.niri.pointer_hidden = false;
             self.niri.tablet_cursor_location = None;
+
+            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
+                let mod_down = match self.backend.mod_key() {
+                    CompositorMod::Super => mods.logo,
+                    CompositorMod::Alt => mods.alt,
+                };
+                if mod_down {
+                    if let Some(output) = self.niri.output_under_cursor() {
+                        self.niri.layout.activate_output(&output);
+
+                        let location = pointer.current_location();
+                        let start_data = PointerGrabStartData {
+                            focus: None,
+                            button: button_code,
+                            location,
+                        };
+                        let grab = SpatialMovementGrab::new(start_data, output);
+                        pointer.set_grab(self, grab, serial, Focus::Clear);
+                        self.niri
+                            .cursor_manager
+                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
+
+                        // FIXME: granular.
+                        self.niri.queue_redraw_all();
+
+                        // Don't activate the window under the cursor to avoid unnecessary
+                        // scrolling when e.g. Mod+MMB clicking on a partially off-screen window.
+                        return;
+                    }
+                }
+            }
 
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();
@@ -2118,28 +2185,6 @@ impl State {
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
-            }
-
-            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
-                let mod_down = match self.backend.mod_key() {
-                    CompositorMod::Super => mods.logo,
-                    CompositorMod::Alt => mods.alt,
-                };
-                if mod_down {
-                    if let Some(output) = self.niri.output_under_cursor() {
-                        let location = pointer.current_location();
-                        let start_data = PointerGrabStartData {
-                            focus: None,
-                            button: button_code,
-                            location,
-                        };
-                        let grab = SpatialMovementGrab::new(start_data, output);
-                        pointer.set_grab(self, grab, serial, Focus::Clear);
-                        self.niri
-                            .cursor_manager
-                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
-                    }
-                }
             }
         };
 
@@ -2912,6 +2957,18 @@ impl State {
                 time: evt.time_msec(),
             },
         );
+
+        // Inform the layout of an ongoing DnD operation.
+        let mut is_dnd_grab = false;
+        handle.with_grab(|_, grab| {
+            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+        });
+        if is_dnd_grab {
+            if let Some((output, pos_within_output)) = self.niri.output_under(touch_location) {
+                let output = output.clone();
+                self.niri.layout.dnd_update(output, pos_within_output);
+            }
+        }
     }
     fn on_touch_frame<I: InputBackend>(&mut self, _evt: I::TouchFrameEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {
@@ -3009,6 +3066,7 @@ fn should_intercept_key(
                     // But logically, nothing can inhibit its actions. Only opening it can be
                     // inhibited.
                     allow_inhibiting: false,
+                    hotkey_overlay_title: None,
                 });
             }
         }
@@ -3074,6 +3132,7 @@ fn find_bind(
             // It also makes no sense to inhibit the default power key handling.
             // Hardcoded binds must never be inhibited.
             allow_inhibiting: false,
+            hotkey_overlay_title: None,
         });
     }
 
@@ -3449,7 +3508,32 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else {
             input::SendEventsMode::ENABLED
         });
+
+        #[rustfmt::skip]
+        const IDENTITY_MATRIX: [f32; 6] = [
+            1., 0., 0.,
+            0., 1., 0.,
+        ];
+
+        let _ = device.config_calibration_set_matrix(
+            c.calibration_matrix
+                .as_deref()
+                .and_then(|m| m.try_into().ok())
+                .or(device.config_calibration_default_matrix())
+                .unwrap_or(IDENTITY_MATRIX),
+        );
+
         let _ = device.config_left_handed_set(c.left_handed);
+    }
+
+    let is_touch = device.has_capability(input::DeviceCapability::Touch);
+    if is_touch {
+        let c = &config.touch;
+        let _ = device.config_send_events_set_mode(if c.off {
+            input::SendEventsMode::DISABLED
+        } else {
+            input::SendEventsMode::ENABLED
+        });
     }
 }
 
@@ -3541,6 +3625,7 @@ mod tests {
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
+            hotkey_overlay_title: None,
         }]);
 
         let comp_mod = CompositorMod::Super;
@@ -3726,6 +3811,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
             Bind {
                 key: Key {
@@ -3737,6 +3823,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
             Bind {
                 key: Key {
@@ -3748,6 +3835,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
             Bind {
                 key: Key {
@@ -3759,6 +3847,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
             Bind {
                 key: Key {
@@ -3770,6 +3859,7 @@ mod tests {
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
+                hotkey_overlay_title: None,
             },
         ]);
 
