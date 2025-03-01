@@ -319,3 +319,27 @@ binds {
     Alt+Print { screenshot-window write-to-disk=false; }
 }
 ```
+
+#### `toggle-keyboard-shortcuts-inhibit`
+
+<sup>Since: 25.02</sup>
+
+Applications such as remote-desktop clients and software KVM switches may request that niri stops processing its keyboard shortcuts so that they may, for example, forward the key presses as-is to a remote machine.
+`toggle-keyboard-shortcuts-inhibit` is an escape hatch that toggles the inhibitor.
+It's a good idea to bind it, so a buggy application can't hold your session hostage.
+
+```kdl
+binds {
+    Mod+Escape { toggle-keyboard-shortcuts-inhibit; }
+}
+```
+
+You can also make certain binds ignore inhibiting with the `allow-inhibiting=false` property.
+They will always be handled by niri and never passed to the window.
+
+```kdl
+binds {
+    // This bind will always work, even when using a virtual machine.
+    Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
+}
+```
