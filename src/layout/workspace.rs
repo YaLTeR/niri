@@ -1757,6 +1757,11 @@ impl<W: LayoutElement> Workspace<W> {
                 if visible {
                     assert_eq!(anim.to(), 1., "visible tiles can animate alpha only to 1");
                 }
+
+                assert!(
+                    !alpha.hold_after_done,
+                    "tiles in the layout cannot have held alpha animation"
+                );
             }
         }
     }

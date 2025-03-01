@@ -93,6 +93,9 @@ pub const RESIZE_ANIMATION_THRESHOLD: f64 = 10.;
 /// Pointer needs to move this far to pull a window from the layout.
 const INTERACTIVE_MOVE_START_THRESHOLD: f64 = 256. * 256.;
 
+/// Opacity of interactively moved tiles targeting the scrolling layout.
+const INTERACTIVE_MOVE_ALPHA: f64 = 0.75;
+
 /// Size-relative units.
 pub struct SizeFrac;
 
@@ -2334,6 +2337,34 @@ impl<W: LayoutElement> Layout<W> {
                     // Tile position must be rounded to physical pixels.
                     assert_abs_diff_eq!(tile_pos.x, rounded_pos.x, epsilon = 1e-5);
                     assert_abs_diff_eq!(tile_pos.y, rounded_pos.y, epsilon = 1e-5);
+
+                    if let Some(alpha) = &move_.tile.alpha_animation {
+                        if move_.is_floating {
+                            assert_eq!(
+                                alpha.anim.to(),
+                                1.,
+                                "interactively moved floating tile can animate alpha only to 1"
+                            );
+
+                            assert!(
+                                !alpha.hold_after_done,
+                                "interactively moved floating tile \
+                                 cannot have held alpha animation"
+                            );
+                        } else {
+                            assert_ne!(
+                                alpha.anim.to(),
+                                1.,
+                                "interactively moved scrolling tile must animate alpha to not 1"
+                            );
+
+                            assert!(
+                                alpha.hold_after_done,
+                                "interactively moved scrolling tile \
+                                 must have held alpha animation"
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -3005,6 +3036,21 @@ impl<W: LayoutElement> Layout<W> {
                     size.h = ensure_min_max_size_maybe_zero(size.h, min_size.h, max_size.h);
 
                     win.request_size_once(size, true);
+
+                    // Animate the tile back to opaque.
+                    move_.tile.animate_alpha(
+                        INTERACTIVE_MOVE_ALPHA,
+                        1.,
+                        self.options.animations.window_movement.0,
+                    );
+                } else {
+                    // Animate the tile back to semitransparent.
+                    move_.tile.animate_alpha(
+                        1.,
+                        INTERACTIVE_MOVE_ALPHA,
+                        self.options.animations.window_movement.0,
+                    );
+                    move_.tile.hold_alpha_animation_after_done();
                 }
 
                 return;
@@ -3773,6 +3819,16 @@ impl<W: LayoutElement> Layout<W> {
                     is_floating = unfullscreen_to_floating;
                 }
 
+                // Animate to semitransparent.
+                if !is_floating {
+                    tile.animate_alpha(
+                        1.,
+                        INTERACTIVE_MOVE_ALPHA,
+                        self.options.animations.window_movement.0,
+                    );
+                    tile.hold_alpha_animation_after_done();
+                }
+
                 let mut data = InteractiveMoveData {
                     tile,
                     output,
@@ -3869,7 +3925,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
-        let Some(InteractiveMoveState::Moving(move_)) = self.interactive_move.take() else {
+        let Some(InteractiveMoveState::Moving(mut move_)) = self.interactive_move.take() else {
             unreachable!()
         };
 
@@ -3878,6 +3934,13 @@ impl<W: LayoutElement> Layout<W> {
             for ws in self.workspaces_mut() {
                 ws.dnd_scroll_gesture_end();
             }
+
+            // Also animate the tile back to opaque.
+            move_.tile.animate_alpha(
+                INTERACTIVE_MOVE_ALPHA,
+                1.,
+                self.options.animations.window_movement.0,
+            );
         }
 
         match &mut self.monitor_set {

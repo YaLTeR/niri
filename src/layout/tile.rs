@@ -148,6 +148,12 @@ struct MoveAnimation {
 #[derive(Debug)]
 pub(super) struct AlphaAnimation {
     pub(super) anim: Animation,
+    /// Whether the animation should persist after it's done.
+    ///
+    /// This is used by things like interactive move which need to animate alpha to
+    /// semitransparent, then hold it at semitransparent for a while, until the operation
+    /// completes.
+    pub(super) hold_after_done: bool,
     offscreen: OffscreenBuffer,
 }
 
@@ -319,7 +325,7 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if let Some(alpha) = &mut self.alpha_animation {
-            if alpha.anim.is_done() {
+            if !alpha.hold_after_done && alpha.anim.is_done() {
                 self.alpha_animation = None;
             }
         }
@@ -334,7 +340,10 @@ impl<W: LayoutElement> Tile<W> {
             || self.resize_animation.is_some()
             || self.move_x_animation.is_some()
             || self.move_y_animation.is_some()
-            || self.alpha_animation.is_some()
+            || self
+                .alpha_animation
+                .as_ref()
+                .is_some_and(|alpha| !alpha.anim.is_done())
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
@@ -491,6 +500,7 @@ impl<W: LayoutElement> Tile<W> {
 
         self.alpha_animation = Some(AlphaAnimation {
             anim: Animation::new(self.clock.clone(), current, to, 0., config),
+            hold_after_done: false,
             offscreen,
         });
     }
@@ -502,6 +512,12 @@ impl<W: LayoutElement> Tile<W> {
                 // see the tile right away.
                 self.alpha_animation = None;
             }
+        }
+    }
+
+    pub fn hold_alpha_animation_after_done(&mut self) {
+        if let Some(alpha) = &mut self.alpha_animation {
+            alpha.hold_after_done = true;
         }
     }
 
