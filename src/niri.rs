@@ -29,7 +29,7 @@ use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, Relocate, RelocateRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Id, Kind, PrimaryScanoutOutput, RenderElementStates,
+    default_primary_scanout_output_compare, Kind, PrimaryScanoutOutput, RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -502,9 +502,6 @@ pub enum CenterCoords {
     Separately,
     Both,
 }
-
-#[derive(Default)]
-pub struct WindowOffscreenId(pub RefCell<Option<Id>>);
 
 impl RedrawState {
     fn queue_redraw(self) -> Self {
@@ -3796,12 +3793,7 @@ impl Niri {
 
         for mapped in self.layout.windows_for_output(output) {
             let win = &mapped.window;
-            let offscreen_id = win
-                .user_data()
-                .get_or_insert(WindowOffscreenId::default)
-                .0
-                .borrow();
-            let offscreen_id = offscreen_id.as_ref();
+            let offscreen_id = mapped.offscreen_element_id().clone();
 
             win.with_surfaces(|surface, states| {
                 let surface_primary_scanout_output = states
@@ -3811,7 +3803,7 @@ impl Niri {
                     .lock()
                     .unwrap()
                     .update_from_render_element_states(
-                        offscreen_id.cloned().unwrap_or_else(|| surface.into()),
+                        offscreen_id.clone().unwrap_or_else(|| surface.into()),
                         output,
                         render_element_states,
                         |_, _, output, _| output,

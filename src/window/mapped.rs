@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
@@ -24,7 +24,6 @@ use crate::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
     LayoutElementRenderSnapshot,
 };
-use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -70,6 +69,11 @@ pub struct Mapped {
     /// We set this after sending a configure to give invisible windows a chance to respond to
     /// resizes immediately, without waiting for a 1 second throttled callback.
     needs_frame_callback: bool,
+
+    /// Id of the offscreen element rendered in place of this window.
+    ///
+    /// If `None`, then the window is not offscreened.
+    offscreen_element_id: RefCell<Option<Id>>,
 
     /// Whether this window has the keyboard focus.
     is_focused: bool,
@@ -188,6 +192,7 @@ impl Mapped {
             need_to_recompute_rules: false,
             needs_configure: false,
             needs_frame_callback: false,
+            offscreen_element_id: RefCell::new(None),
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
@@ -250,6 +255,10 @@ impl Mapped {
 
     pub fn credentials(&self) -> Option<&Credentials> {
         self.credentials.as_ref()
+    }
+
+    pub fn offscreen_element_id(&self) -> Ref<Option<Id>> {
+        self.offscreen_element_id.borrow()
     }
 
     pub fn is_focused(&self) -> bool {
@@ -743,11 +752,7 @@ impl LayoutElement for Mapped {
     }
 
     fn set_offscreen_element_id(&self, id: Option<Id>) {
-        let data = self
-            .window
-            .user_data()
-            .get_or_insert(WindowOffscreenId::default);
-        data.0.replace(id);
+        self.offscreen_element_id.replace(id);
     }
 
     fn set_activated(&mut self, active: bool) {
