@@ -1977,25 +1977,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         source_tile.animate_move_from(source_pt - target_pt);
         target_tile.animate_move_from(target_pt - source_pt);
 
-        // Mark swapped tiles so that sibling tiles and columns compute
-        // their position using the expected_size instead of the current
-        // size.
-        source_tile.prefer_expected_size = true;
-        target_tile.prefer_expected_size = true;
-
         // Recalculate sizes of *all* tiles in both columns
         // (other tiles may need to have their size adjusted if the
         // constraints on the inbound tile differ from the outbound's)
         source_col.update_tile_sizes(true);
         target_col.update_tile_sizes(true);
 
-        // Resync tile data with target window sizes
-        source_col.data[source_tile_idx].update(&source_col.tiles[source_tile_idx]);
-        target_col.data[target_tile_idx].update(&target_col.tiles[target_tile_idx]);
-
-        // Update column data
-        self.data[source_column_idx].update(source_col);
-        self.data[target_column_idx].update(target_col);
+        // Mark swapped tiles so that sibling tiles and columns compute
+        // their position using the expected_size instead of the current
+        // size.
+        source_col.tiles[source_tile_idx].prefer_expected_size = true;
+        target_col.tiles[target_tile_idx].prefer_expected_size = true;
 
         self.columns[source_column_idx].tiles[source_tile_idx].ensure_alpha_animates_to_1();
         self.columns[target_column_idx].tiles[target_tile_idx].ensure_alpha_animates_to_1();
@@ -3021,6 +3013,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.interactive_resize = Some(resize);
 
         self.view_offset.stop_anim_and_gesture();
+        tile.prefer_expected_size = false;
 
         true
     }

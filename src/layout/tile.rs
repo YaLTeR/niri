@@ -693,6 +693,8 @@ impl<W: LayoutElement> Tile<W> {
         // exactly.
         self.window
             .request_size(size.to_i32_floor(), animate, transaction);
+
+        self.prefer_expected_size = false;
     }
 
     pub fn tile_width_for_window_width(&self, size: f64) -> f64 {

@@ -1088,6 +1088,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
     pub fn refresh(&mut self, is_active: bool) {
         let active = self.active_window_id.clone();
         for tile in &mut self.tiles {
+            tile.prefer_expected_size = false;
             let win = tile.window_mut();
 
             win.set_active_in_column(true);
