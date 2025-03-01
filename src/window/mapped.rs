@@ -95,7 +95,7 @@ pub struct Mapped {
     /// Serials of commits that should be animated.
     animate_serials: Vec<Serial>,
 
-    /// Snapshot right before an animated commit.
+    /// Snapshot right before an animated commit, without popups.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
 
     /// State for the logic to request a size once (for floating windows).
@@ -290,6 +290,7 @@ impl Mapped {
         self.need_to_recompute_rules = true;
     }
 
+    /// Renders a snapshot of the window without popups.
     fn render_snapshot(&self, renderer: &mut GlesRenderer) -> LayoutElementRenderSnapshot {
         let _span = tracy_client::span!("Mapped::render_snapshot");
 
@@ -309,17 +310,6 @@ impl Mapped {
         let mut contents = vec![];
 
         let surface = self.toplevel().wl_surface();
-        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-            let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
-
-            render_snapshot_from_surface_tree(
-                renderer,
-                popup.wl_surface(),
-                buf_pos + offset.to_f64(),
-                &mut contents,
-            );
-        }
-
         render_snapshot_from_surface_tree(renderer, surface, buf_pos, &mut contents);
 
         RenderSnapshot {
