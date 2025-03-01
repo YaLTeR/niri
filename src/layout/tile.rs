@@ -1036,7 +1036,13 @@ impl<W: LayoutElement> Tile<W> {
             let elements =
                 self.render_inner(renderer, Point::from((0., 0.)), scale, focus_ring, target);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
-            match open.render(renderer, &elements, self.tile_size(), location, scale) {
+            match open.render(
+                renderer,
+                &elements,
+                self.animated_tile_size(),
+                location,
+                scale,
+            ) {
                 Ok(elem) => {
                     self.window()
                         .set_offscreen_element_id(Some(elem.id().clone()));
