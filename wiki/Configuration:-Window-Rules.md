@@ -609,10 +609,11 @@ Afterward, the window will remember its last floating position.
 By default, new floating windows open at the center of the screen, and windows from the tiling layout open close to their visual screen position.
 
 The position uses logical coordinates relative to the working area.
-By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`.
+By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`, `top`, `bottom`, `left`, or `right`.
 
 For example, if you have a bar at the top, then `x=0 y=0` will put the top-left corner of the window directly below the bar.
 If instead you write `x=0 y=0 relative-to="top-right"`, then the top-right corner of the window will align with the top-right corner of the workspace, also directly below the bar.
+When only one side is specified (e.g. top) the window will align to the center of that side.
 
 The coordinates change direction based on `relative-to`.
 For example, by default (top-left), `x=100 y=200` will put the window 100 pixels to the right and 200 pixels down from the top-left corner.
@@ -625,6 +626,27 @@ window-rule {
     match app-id="firefox$" title="^Picture-in-Picture$"
 
     default-floating-position x=32 y=32 relative-to="bottom-left"
+}
+```
+
+You can use single-side `relative-to` to get a dropdown-like effect.
+
+```kdl
+// Example: a "dropdown" terminal.
+window-rule {
+    // Match by "dropdown" app ID.
+    // You need to set this app ID when running your terminal, e.g.:
+    // spawn "alacritty" "--class" "dropdown"
+    match app-id="^dropdown$"
+
+    // Open it as floating.
+    open-floating true
+    // Anchor to the top edge of the screen.
+    default-floating-position x=0 y=0 relative-to="top"
+    // Half of the screen high.
+    default-window-height { proportion 0.5; }
+    // 80% of the screen wide.
+    default-column-width { proportion 0.8; }
 }
 ```
 
