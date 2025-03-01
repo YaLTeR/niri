@@ -6,6 +6,7 @@ use niri::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
     LayoutElementRenderSnapshot,
 };
+use niri::render_helpers::offscreen::OffscreenData;
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use niri::render_helpers::{RenderTarget, SplitElements};
@@ -214,7 +215,7 @@ impl LayoutElement for TestWindow {
 
     fn output_leave(&self, _output: &Output) {}
 
-    fn set_offscreen_element_id(&self, _id: Option<Id>) {}
+    fn set_offscreen_data(&self, _data: Option<OffscreenData>) {}
 
     fn set_activated(&mut self, _active: bool) {}
 

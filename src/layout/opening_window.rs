@@ -5,14 +5,14 @@ use glam::{Mat3, Vec2};
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::{Kind, RenderElement};
+use smithay::backend::renderer::element::{Element as _, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, Uniform};
 use smithay::backend::renderer::Texture;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use crate::animation::Animation;
 use crate::niri_render_elements;
-use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
+use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenData, OffscreenRenderElement};
 use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
 
@@ -55,11 +55,11 @@ impl OpenAnimation {
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> anyhow::Result<OpeningWindowRenderElement> {
+    ) -> anyhow::Result<(OpeningWindowRenderElement, OffscreenData)> {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
-        let (elem, _sync_point) = self
+        let (elem, _sync_point, mut data) = self
             .buffer
             .render(renderer, scale, elements)
             .context("error rendering to offscreen buffer")?;
@@ -98,7 +98,7 @@ impl OpenAnimation {
             let geo_to_tex =
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
-            return Ok(ShaderRenderElement::new(
+            let elem = ShaderRenderElement::new(
                 ProgramType::Open,
                 area.size,
                 None,
@@ -115,8 +115,12 @@ impl OpenAnimation {
                 HashMap::from([(String::from("niri_tex"), texture.clone())]),
                 Kind::Unspecified,
             )
-            .with_location(area.loc)
-            .into());
+            .with_location(area.loc);
+
+            // We're drawing the shader, not the offscreen itself.
+            data.id = elem.id().clone();
+
+            return Ok((elem.into(), data));
         }
 
         let elem = elem.with_alpha(clamped_progress as f32 * alpha);
@@ -134,6 +138,6 @@ impl OpenAnimation {
             Relocate::Relative,
         );
 
-        Ok(elem.into())
+        Ok((elem.into(), data))
     }
 }
