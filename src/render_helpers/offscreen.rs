@@ -50,6 +50,7 @@ pub struct OffscreenRenderElement {
     scale: Scale<f64>,
     damage: DamageSnapshot<i32, Buffer>,
     offset: Point<f64, Logical>,
+    src_size: Size<i32, Buffer>,
     alpha: f32,
     kind: Kind,
 }
@@ -68,7 +69,8 @@ impl OffscreenBuffer {
             RelocateRenderElement::from_element(ele, geo.loc.upscale(-1), Relocate::Relative)
         }));
 
-        let buffer_size = geo.size.to_logical(1).to_buffer(1, Transform::Normal);
+        let src_size = geo.size;
+        let src_size = src_size.to_logical(1).to_buffer(1, Transform::Normal);
         let offset = geo.loc.to_f64().to_logical(scale);
 
         let mut inner = self.inner.borrow_mut();
@@ -83,10 +85,10 @@ impl OffscreenBuffer {
         }) = inner.as_mut()
         {
             let old_size = texture.size();
-            if old_size != buffer_size {
+            if old_size.w < src_size.w || old_size.h < src_size.h {
                 size_string = format!(
-                    "size changed from {} × {} to {} × {}",
-                    old_size.w, old_size.h, buffer_size.w, buffer_size.h
+                    "size increased from {} × {} to {} × {}",
+                    old_size.w, old_size.h, src_size.w, src_size.h
                 );
                 reason = &size_string;
 
@@ -115,7 +117,8 @@ impl OffscreenBuffer {
                 .create_buffer(Fourcc::Abgr8888, buffer_size)
                 .context("error creating texture")?;
 
-            let damage = OutputDamageTracker::new(geo.size, scale, Transform::Normal);
+            let buffer_size = src_size.to_logical(1, Transform::Normal).to_physical(1);
+            let damage = OutputDamageTracker::new(buffer_size, scale, Transform::Normal);
 
             inner.insert(Inner {
                 texture,
@@ -126,13 +129,17 @@ impl OffscreenBuffer {
             })
         };
 
+        // When leaving the old texture as is, its size might be bigger than src_size.
+        let texture_size = inner.texture.size();
+        let buffer_size = texture_size.to_logical(1, Transform::Normal).to_physical(1);
+
         // Recreate the damage tracker if the scale changes. We already recreate it for buffer size
         // changes, and transform is always Normal.
         if inner.scale != scale {
             inner.scale = scale;
 
             trace!("recreating damage tracker due to scale change");
-            inner.damage = OutputDamageTracker::new(geo.size, scale, Transform::Normal);
+            inner.damage = OutputDamageTracker::new(buffer_size, scale, Transform::Normal);
             inner.outer_damage = DamageBag::default();
         }
 
@@ -148,7 +155,7 @@ impl OffscreenBuffer {
         if let Some(damage) = res.damage {
             // OutputDamageTracker gives us Physical coordinate space, but it's actually the Buffer
             // space because we were rendering to a texture.
-            let size = geo.size.to_logical(1);
+            let size = buffer_size.to_logical(1);
             let damage = damage
                 .iter()
                 .map(|rect| rect.to_logical(1).to_buffer(1, Transform::Normal, &size));
@@ -162,6 +169,7 @@ impl OffscreenBuffer {
             scale,
             damage: inner.outer_damage.snapshot(),
             offset,
+            src_size,
             alpha: 1.,
             kind: Kind::Unspecified,
         };
@@ -194,8 +202,7 @@ impl OffscreenRenderElement {
     }
 
     pub fn logical_size(&self) -> Size<f64, Logical> {
-        self.texture
-            .size()
+        self.src_size
             .to_f64()
             .to_logical(self.scale, Transform::Normal)
     }
@@ -226,7 +233,7 @@ impl Element for OffscreenRenderElement {
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        Rectangle::from_size(self.texture.size()).to_f64()
+        Rectangle::from_size(self.src_size).to_f64()
     }
 
     fn damage_since(
@@ -235,13 +242,18 @@ impl Element for OffscreenRenderElement {
         commit: Option<CommitCounter>,
     ) -> DamageSet<i32, Physical> {
         let texture_size = self.texture.size().to_f64();
+        let src = self.src();
 
         self.damage_since(commit)
             .into_iter()
-            .map(|rect| {
-                rect.to_f64()
-                    .to_logical(self.scale, Transform::Normal, &texture_size)
-                    .to_physical_precise_up(scale)
+            .filter_map(|region| {
+                let mut region = region.to_f64().intersection(src)?;
+
+                region.loc -= src.loc;
+                region.upscale(texture_size / src.size);
+
+                let logical = region.to_logical(self.scale, Transform::Normal, &src.size);
+                Some(logical.to_physical_precise_up(scale))
             })
             .collect()
     }
