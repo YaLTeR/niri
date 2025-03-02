@@ -1458,6 +1458,32 @@ impl State {
                     }
                 }
             }
+            Action::MoveWindowToMonitorById { id, output } => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                    let window = window.map(|(_, m)| m.window.clone());
+
+                    if let Some(window) = window {
+                        let target_was_active = self
+                            .niri
+                            .layout
+                            .active_output()
+                            .is_some_and(|active| output == *active);
+
+                        self.niri
+                            .layout
+                            .move_to_output(Some(&window), &output, None);
+
+                        // If the active output changed (window was moved and focused).
+                        #[allow(clippy::collapsible_if)]
+                        if !target_was_active && self.niri.layout.active_output() == Some(&output) {
+                            if !self.maybe_warp_cursor_to_focus_centered() {
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                    }
+                }
+            }
             Action::MoveColumnToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output);
