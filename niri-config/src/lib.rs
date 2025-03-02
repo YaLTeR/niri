@@ -1576,6 +1576,11 @@ pub enum Action {
     MoveWindowToMonitorPrevious,
     MoveWindowToMonitorNext,
     MoveWindowToMonitor(#[knuffel(argument)] String),
+    #[knuffel(skip)]
+    MoveWindowToMonitorById {
+        id: u64,
+        output: String,
+    },
     MoveColumnToMonitorLeft,
     MoveColumnToMonitorRight,
     MoveColumnToMonitorDown,
@@ -1780,7 +1785,13 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWindowToMonitorUp {} => Self::MoveWindowToMonitorUp,
             niri_ipc::Action::MoveWindowToMonitorPrevious {} => Self::MoveWindowToMonitorPrevious,
             niri_ipc::Action::MoveWindowToMonitorNext {} => Self::MoveWindowToMonitorNext,
-            niri_ipc::Action::MoveWindowToMonitor { output } => Self::MoveWindowToMonitor(output),
+            niri_ipc::Action::MoveWindowToMonitor { id: None, output } => {
+                Self::MoveWindowToMonitor(output)
+            }
+            niri_ipc::Action::MoveWindowToMonitor {
+                id: Some(id),
+                output,
+            } => Self::MoveWindowToMonitorById { id, output },
             niri_ipc::Action::MoveColumnToMonitorLeft {} => Self::MoveColumnToMonitorLeft,
             niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
             niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
