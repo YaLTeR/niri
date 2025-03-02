@@ -1455,6 +1455,23 @@ impl State {
                     }
                 }
             }
+            Action::MoveWindowToMonitorById { id, output } => {
+                let output = self.niri.output_by_name_match(&output).cloned();
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+
+                if let Some(output) = output {
+                    if let Some(window) = window {
+                        self.niri
+                            .layout
+                            .move_to_output(Some(&window), &output, None);
+                        self.niri.layout.focus_output(&output);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
+                    }
+                }
+            }
             Action::MoveColumnToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output);

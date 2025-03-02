@@ -477,6 +477,12 @@ pub enum Action {
         clap(about = "Move the focused window to a specific monitor")
     )]
     MoveWindowToMonitor {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
         /// The target output name.
         #[cfg_attr(feature = "clap", arg())]
         output: String,
