@@ -169,7 +169,11 @@ pub enum Action {
         delay_ms: Option<u16>,
     },
     /// Open the screenshot UI.
-    Screenshot {},
+    Screenshot {
+        /// Sets the default state for the pointer (cursor) upon opening the screenshot UI.
+        #[cfg_attr(feature = "clap", arg(short = 'c', long, action = clap::ArgAction::Set, default_value_t = true))]
+        show_pointer: bool,
+    },
     /// Screenshot the focused screen.
     ScreenshotScreen {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
@@ -177,6 +181,10 @@ pub enum Action {
         /// The screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
+
+        /// Show the pointer (cursor)
+        #[cfg_attr(feature = "clap", arg(short = 'c', long, action = clap::ArgAction::Set, default_value_t = true))]
+        show_pointer: bool,
     },
     /// Screenshot a window.
     #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
