@@ -3361,6 +3361,13 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
+        if let Some(drag) = c.drag {
+            let _ = device.config_tap_set_drag_enabled(drag);
+        } else {
+            let default = device.config_tap_default_drag_enabled();
+            let _ = device.config_tap_set_drag_enabled(default);
+        }
+
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
         } else if let Some(default) = device.config_accel_default_profile() {
