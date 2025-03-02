@@ -7,7 +7,6 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
-use crate::input::CompositorMod;
 use crate::niri::Niri;
 use crate::utils::id::IdCounter;
 
@@ -91,14 +90,6 @@ impl Backend {
             Backend::Tty(tty) => tty.render(niri, output, target_presentation_time),
             Backend::Winit(winit) => winit.render(niri, output),
             Backend::Headless(headless) => headless.render(niri, output),
-        }
-    }
-
-    pub fn mod_key(&self) -> CompositorMod {
-        match self {
-            Backend::Tty(_) => CompositorMod::Super,
-            Backend::Winit(_) => CompositorMod::Alt,
-            Backend::Headless(_) => CompositorMod::Super,
         }
     }
 
