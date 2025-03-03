@@ -1541,7 +1541,7 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self) {
+    pub fn open_screenshot_ui(&mut self, pointer_default_state: Option<bool>) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
         }
@@ -1571,9 +1571,12 @@ impl State {
         );
 
         self.backend.with_primary_renderer(|renderer| {
-            self.niri
-                .screenshot_ui
-                .open(renderer, screenshots, default_output)
+            self.niri.screenshot_ui.open(
+                renderer,
+                screenshots,
+                default_output,
+                pointer_default_state.unwrap_or(true),
+            )
         });
 
         self.niri
@@ -4685,6 +4688,7 @@ impl Niri {
         renderer: &mut GlesRenderer,
         output: &Output,
         write_to_disk: bool,
+        include_pointer: bool,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
@@ -4695,8 +4699,12 @@ impl Niri {
         let size = transform.transform_size(size);
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let elements =
-            self.render::<GlesRenderer>(renderer, output, true, RenderTarget::ScreenCapture);
+        let elements = self.render::<GlesRenderer>(
+            renderer,
+            output,
+            include_pointer,
+            RenderTarget::ScreenCapture,
+        );
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
