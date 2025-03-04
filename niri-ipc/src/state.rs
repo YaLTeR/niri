@@ -9,7 +9,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-use crate::{Event, KeyboardLayouts, Window, Workspace};
+use crate::{Event, GlobalShortcut, KeyboardLayouts, Window, Workspace};
 
 /// Part of the state communicated via the event stream.
 pub trait EventStreamStatePart {
@@ -40,6 +40,9 @@ pub struct EventStreamState {
 
     /// State of the keyboard layouts.
     pub keyboard_layouts: KeyboardLayoutsState,
+
+    /// State of global shortcuts.
+    pub global_shortcuts: GlobalShortcutsState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -63,12 +66,20 @@ pub struct KeyboardLayoutsState {
     pub keyboard_layouts: Option<KeyboardLayouts>,
 }
 
+/// The global shortcut state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct GlobalShortcutsState {
+    /// Configured global shortcuts.
+    pub global_shortcuts: Vec<GlobalShortcut>,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
         events.extend(self.workspaces.replicate());
         events.extend(self.windows.replicate());
         events.extend(self.keyboard_layouts.replicate());
+        events.extend(self.global_shortcuts.replicate());
         events
     }
 
@@ -76,6 +87,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.workspaces.apply(event)?;
         let event = self.windows.apply(event)?;
         let event = self.keyboard_layouts.apply(event)?;
+        let event = self.global_shortcuts.apply(event)?;
         Some(event)
     }
 }
@@ -186,6 +198,23 @@ impl EventStreamStatePart for KeyboardLayoutsState {
                 let kb = self.keyboard_layouts.as_mut();
                 let kb = kb.expect("keyboard layouts must be set before a layout can be switched");
                 kb.current_idx = idx;
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for GlobalShortcutsState {
+    fn replicate(&self) -> Vec<Event> {
+        let global_shortcuts = self.global_shortcuts.clone();
+        vec![Event::GlobalShortcutsChanged { global_shortcuts }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::GlobalShortcutsChanged { global_shortcuts } => {
+                self.global_shortcuts = global_shortcuts;
             }
             event => return Some(event),
         }
