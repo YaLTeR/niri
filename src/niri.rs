@@ -45,7 +45,10 @@ use smithay::desktop::{
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
-use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData, MotionEvent};
+use smithay::input::pointer::{
+    CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
+    GrabStartData as PointerGrabStartData, MotionEvent,
+};
 use smithay::input::{Seat, SeatState};
 use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel, WeakOutput};
 use smithay::reexports::calloop::generic::Generic;
@@ -118,6 +121,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
+use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
@@ -358,6 +362,7 @@ pub struct Niri {
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
+    pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -1612,6 +1617,22 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    pub fn handle_pick_color(&mut self, tx: async_channel::Sender<Option<niri_ipc::PickedColor>>) {
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        let start_data = PointerGrabStartData {
+            focus: None,
+            button: 0,
+            location: pointer.current_location(),
+        };
+        let grab = PickColorGrab::new(start_data);
+        pointer.set_grab(self, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
+        self.niri.pick_color = Some(tx);
+        self.niri
+            .cursor_manager
+            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+        self.niri.queue_redraw_all();
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_pw_msg(&mut self, msg: PwToNiri) {
         match msg {
@@ -1903,7 +1924,22 @@ impl State {
         to_screenshot: &async_channel::Sender<NiriToScreenshot>,
         msg: ScreenshotToNiri,
     ) {
-        let ScreenshotToNiri::TakeScreenshot { include_cursor } = msg;
+        match msg {
+            ScreenshotToNiri::TakeScreenshot { include_cursor } => {
+                self.handle_take_screenshot(to_screenshot, include_cursor);
+            }
+            ScreenshotToNiri::PickColor(tx) => {
+                self.handle_pick_color(tx);
+            }
+        }
+    }
+
+    #[cfg(feature = "dbus")]
+    fn handle_take_screenshot(
+        &mut self,
+        to_screenshot: &async_channel::Sender<NiriToScreenshot>,
+        include_cursor: bool,
+    ) {
         let _span = tracy_client::span!("TakeScreenshot");
 
         let rv = self.backend.with_primary_renderer(|renderer| {
@@ -2351,6 +2387,7 @@ impl Niri {
             exit_confirm_dialog,
 
             pick_window: None,
+            pick_color: None,
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,

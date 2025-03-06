@@ -65,6 +65,8 @@ pub enum Request {
     FocusedWindow,
     /// Request picking a window and get its information.
     PickWindow,
+    /// Request picking a color from the screen.
+    PickColor,
     /// Perform an action.
     Action(Action),
     /// Change output configuration temporarily.
@@ -133,8 +135,18 @@ pub enum Response {
     FocusedWindow(Option<Window>),
     /// Information about the picked window.
     PickedWindow(Option<Window>),
+    /// Information about the picked color.
+    PickedColor(Option<PickedColor>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+}
+
+/// Color picked from the screen.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PickedColor {
+    /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
+    pub rgb: [f64; 3],
 }
 
 /// Actions that niri can perform.

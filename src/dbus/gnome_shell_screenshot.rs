@@ -1,7 +1,10 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
+use niri_ipc::PickedColor;
 use zbus::fdo::{self, RequestNameFlags};
 use zbus::interface;
+use zbus::zvariant::OwnedValue;
 
 use super::Start;
 
@@ -12,6 +15,7 @@ pub struct Screenshot {
 
 pub enum ScreenshotToNiri {
     TakeScreenshot { include_cursor: bool },
+    PickColor(async_channel::Sender<Option<PickedColor>>),
 }
 
 pub enum NiriToScreenshot {
@@ -46,6 +50,34 @@ impl Screenshot {
         };
 
         Ok((true, filename))
+    }
+
+    async fn pick_color(&self) -> fdo::Result<HashMap<String, OwnedValue>> {
+        let (tx, rx) = async_channel::bounded(1);
+        if let Err(err) = self.to_niri.send(ScreenshotToNiri::PickColor(tx)) {
+            warn!("error sending pick color message to niri: {err:?}");
+            return Err(fdo::Error::Failed("internal error".to_owned()));
+        }
+
+        let color = match rx.recv().await {
+            Ok(Some(color)) => color,
+            Ok(None) => {
+                return Err(fdo::Error::Failed("no color picked".to_owned()));
+            }
+            Err(err) => {
+                warn!("error receiving message from niri: {err:?}");
+                return Err(fdo::Error::Failed("internal error".to_owned()));
+            }
+        };
+
+        let mut result = HashMap::new();
+        let rgb_slice: &[f64] = &color.rgb;
+        result.insert(
+            "color".to_string(),
+            zbus::zvariant::Value::from(rgb_slice).try_into().unwrap(),
+        );
+
+        Ok(result)
     }
 }
 
