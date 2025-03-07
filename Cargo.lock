@@ -31,6 +31,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "aliasable"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "250f629c0161ad8107cf89319e990051fae62832fd343083bea452d93e2205fd"
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3360,8 +3366,9 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.5.0"
-source = "git+https://github.com/Smithay/smithay.git#25cf3cf41c5027ffeb55f90c683736726a81d71f"
+source = "git+https://github.com/Smithay/smithay.git#99cd2507255f62c46e67467db2fc378451d58aa7"
 dependencies = [
+ "aliasable",
  "appendlist",
  "bitflags 2.9.0",
  "calloop 0.14.2",
@@ -3431,7 +3438,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#25cf3cf41c5027ffeb55f90c683736726a81d71f"
+source = "git+https://github.com/Smithay/smithay.git#99cd2507255f62c46e67467db2fc378451d58aa7"
 dependencies = [
  "drm",
  "libdisplay-info",
