@@ -19,7 +19,7 @@ use pipewire::spa::param::format::{FormatProperties, MediaSubtype, MediaType};
 use pipewire::spa::param::format_utils::parse_format;
 use pipewire::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pipewire::spa::param::ParamType;
-use pipewire::spa::pod::deserialize::PodDeserializer;
+use pipewire::spa::pod::deserialize::{ChoiceLongVisitor, DeserializeError, DeserializeSuccess, PodDeserialize, PodDeserializer};
 use pipewire::spa::pod::serialize::PodSerializer;
 use pipewire::spa::pod::{self, ChoiceValue, Pod, PodPropFlags, Property, PropertyFlags};
 use pipewire::spa::sys::*;
@@ -247,7 +247,7 @@ impl PipeWire {
                                         &signal_ctx,
                                         id,
                                     )
-                                    .await;
+                                        .await;
 
                                     if let Err(err) = res {
                                         warn!("error sending PipeWireStreamAdded: {err:?}");
@@ -346,7 +346,7 @@ impl PipeWire {
                         debug!("pw stream: fixating the modifier");
 
                         let pod_modifier = prop_modifier.value();
-                        let Ok((_, modifiers)) = PodDeserializer::deserialize_from::<Choice<i64>>(
+                        let Ok((_, wrapper)) = PodDeserializer::deserialize_from::<ChoiceI64Wrapper>(
                             pod_modifier.as_bytes(),
                         ) else {
                             warn!("pw stream: wrong modifier property type");
@@ -354,11 +354,13 @@ impl PipeWire {
                             return;
                         };
 
+                        let modifiers = wrapper.0; // Unwrap the Choice<i64> from your wrapper
                         let ChoiceEnum::Enum { alternatives, .. } = modifiers.1 else {
                             warn!("pw stream: wrong modifier choice type");
                             stop_cast();
                             return;
                         };
+
 
                         let (modifier, plane_count) = match find_preferred_modifier(
                             &gbm,
@@ -435,31 +437,31 @@ impl PipeWire {
                             ..
                         } if *alpha == format_has_alpha
                             && *modifier == Modifier::from(format.modifier()) =>
-                        {
-                            let size = *size;
-                            let alpha = *alpha;
-                            let modifier = *modifier;
-                            let plane_count = *plane_count;
+                            {
+                                let size = *size;
+                                let alpha = *alpha;
+                                let modifier = *modifier;
+                                let plane_count = *plane_count;
 
-                            let damage_tracker =
-                                if let CastState::Ready { damage_tracker, .. } = &mut *state {
-                                    damage_tracker.take()
-                                } else {
-                                    None
+                                let damage_tracker =
+                                    if let CastState::Ready { damage_tracker, .. } = &mut *state {
+                                        damage_tracker.take()
+                                    } else {
+                                        None
+                                    };
+
+                                debug!("pw stream: moving to ready state");
+
+                                *state = CastState::Ready {
+                                    size,
+                                    alpha,
+                                    modifier,
+                                    plane_count,
+                                    damage_tracker,
                                 };
 
-                            debug!("pw stream: moving to ready state");
-
-                            *state = CastState::Ready {
-                                size,
-                                alpha,
-                                modifier,
-                                plane_count,
-                                damage_tracker,
-                            };
-
-                            plane_count
-                        }
+                                plane_count
+                            }
                         _ => {
                             // We're negotiating a single modifier, or alpha or modifier changed,
                             // so we need to do a test allocation.
@@ -669,6 +671,23 @@ impl PipeWire {
     }
 }
 
+// Define a wrapper type around Choice<i64>
+struct ChoiceI64Wrapper(Choice<i64>);
+
+// Implement PodDeserialize
+impl<'de> PodDeserialize<'de> for ChoiceI64Wrapper {
+    fn deserialize(
+        deserializer: PodDeserializer<'de>,
+    ) -> Result<(Self, DeserializeSuccess<'de>), DeserializeError<&'de [u8]>>
+    where
+        Self: Sized,
+    {
+        deserializer.deserialize_choice(ChoiceLongVisitor)
+            .map(|(choice, success)| (ChoiceI64Wrapper(choice), success))
+    }
+}
+
+
 impl Cast {
     pub fn ensure_size(&self, size: Size<i32, Physical>) -> anyhow::Result<CastSizeChange> {
         let new_size = Size::from((size.w as u32, size.h as u32));
@@ -852,7 +871,7 @@ impl Cast {
         let fd = buffer.datas_mut()[0].as_raw().fd;
         let dmabuf = &self.dmabufs.borrow()[&fd];
 
-        if let Err(err) = render_to_dmabuf(
+        match render_to_dmabuf(
             renderer,
             dmabuf.clone(),
             size,
@@ -860,8 +879,17 @@ impl Cast {
             Transform::Normal,
             elements.iter().rev(),
         ) {
-            warn!("error rendering to dmabuf: {err:?}");
-            return false;
+            Ok(sync_point) => {
+                trace!("Successfully rendered to dmabuf, waiting for GPU operations to complete");
+                if let Err(sync_err) = sync_point.wait() {
+                    warn!("error waiting for GPU operations to complete: {sync_err:?}");
+                    return false;
+                }
+            }
+            Err(err) => {
+                warn!("error rendering to dmabuf: {err:?}");
+                return false;
+            }
         }
 
         for (data, (stride, offset)) in
