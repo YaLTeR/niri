@@ -28,6 +28,7 @@ debug {
     disable-monitor-names
     strict-new-window-focus-policy
     honor-xdg-activation-with-invalid-serial 
+    wait-for-gpu-sync-in-screencasting
 }
 
 binds {
@@ -257,6 +258,22 @@ debug {
     honor-xdg-activation-with-invalid-serial
 }
 ```
+
+
+### 'wait-for-gpu-sync-in-screencasting'
+
+<sup>Since: next release</sup>
+
+Allows niri to wait for full GPU completion of each frame before handing it to PipeWire.
+
+Eliminates screen tearing in screencasts but may increase latency.
+
+```kdl
+debug {```
+    wait-for-gpu-sync-in-screencasting
+}
+```
+
 
 ### Key Bindings
 
