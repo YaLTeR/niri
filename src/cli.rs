@@ -55,7 +55,7 @@ pub enum Sub {
     },
     /// Cause a panic to check if the backtraces are good.
     Panic,
-    /// Generate completions for [`Shell`]
+    /// Generate shell completions.
     Completions { shell: Shell },
 }
 
