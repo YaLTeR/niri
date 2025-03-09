@@ -144,6 +144,8 @@ cursor {
 
 ### `clipboard`
 
+<sup>Since: 25.02</sup>
+
 Clipboard settings.
 
 Set the `disable-primary` flag to disable the primary clipboard (middle-click paste).
