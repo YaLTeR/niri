@@ -230,7 +230,6 @@ binds {
 ```
 
 As a special case, niri will expand `~` to the home directory *only* at the beginning of the program name.
-As a special case, niri will expand `~` to the home directory _only_ at the beginning of the program name.
 
 ```kdl
 binds {
@@ -305,18 +304,33 @@ binds {
 }
 ```
 
-#### `screenshot`, screenshot-screen`,`screenshot-window`
+#### `screenshot`
+
+_Encompassing `screenshot`, `screenshot-window` and `screenshot-screen`_
 
 Take a screenshot of the focused screen or window respectively.
 The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md).
 
 <sup>Since: 25.02</sup> You can disable saving to disk for a specific bind with the `write-to-disk=false` property:
-<sup>Since: ...</sup> For `screenshot` and `screenshot-screen`, you can disable showing the pointer and configure the default state of the pointer using the show-pointer property:
 
 ```kdl
 binds {
     Print { screenshot show-pointer=false; }
     Ctrl+Print { screenshot-screen write-to-disk=false; }
     Alt+Print { screenshot-window write-to-disk=false; }
+}
+```
+
+<sup>Since: next release</sup> Disabling the mouse pointer in screenshots is possible using the `show-pointer` property:
+Note that `show-pointer` is only valid for `screenshot` and `screenshot-screen`
+
+```kdl
+binds {
+    // This is valid
+    Print { screenshot show-pointer=false; }
+    Ctrl+Print { screenshot-screen show-pointer=false; }
+
+    // This is invalid
+    Alt+Print { screenshot-window show-pointer=true; }
 }
 ```

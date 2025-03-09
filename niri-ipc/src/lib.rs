@@ -170,7 +170,7 @@ pub enum Action {
     },
     /// Open the screenshot UI.
     Screenshot {
-        /// Sets the default state for the pointer (cursor) upon opening the screenshot UI.
+        ///  Whether to show the mouse pointer by default in the screenshot UI.
         #[cfg_attr(feature = "clap", arg(short = 'c', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
     },
@@ -182,7 +182,7 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
-        /// Show the pointer (cursor)
+        /// Whether to include the mouse pointer in the screenshot
         #[cfg_attr(feature = "clap", arg(short = 'c', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
     },

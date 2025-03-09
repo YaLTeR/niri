@@ -253,12 +253,15 @@ fn render(
         &Action::SwitchFocusBetweenFloatingAndTiling,
     ]);
 
-    for bind in binds {
-        // Screenshot is not as important, can omit if not bound.
-        if let Action::Screenshot(_) = bind.action {
-            actions.push(&bind.action);
-        }
+    // Screenshot is not as important, can omit if not bound.
+    if binds
+        .iter()
+        .any(|bind| matches!(bind.action, Action::Screenshot(_)))
+    {
+        actions.push(&Action::Screenshot(true));
+    }
 
+    for bind in binds {
         // Add actions with a custom hotkey-overlay-title.
         if matches!(bind.hotkey_overlay_title, Some(Some(_))) {
             // Avoid duplicate actions.

@@ -1650,7 +1650,6 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ScreenshotWindow {
                 id: Some(id),
                 write_to_disk,
-                ..
             } => Self::ScreenshotWindowById { id, write_to_disk },
             niri_ipc::Action::CloseWindow { id: None } => Self::CloseWindow,
             niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
