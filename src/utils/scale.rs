@@ -1,7 +1,7 @@
 //! Default monitor scale calculation.
 //!
 //! This module follows logic and tests from Mutter:
-//! https://gitlab.gnome.org/GNOME/mutter/-/blob/gnome-46/src/backends/meta-monitor.c
+//! <https://gitlab.gnome.org/GNOME/mutter/-/blob/gnome-46/src/backends/meta-monitor.c>
 
 use smithay::utils::{Physical, Raw, Size};
 
