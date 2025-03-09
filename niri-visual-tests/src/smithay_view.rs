@@ -18,7 +18,7 @@ mod imp {
     use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
     use smithay::backend::renderer::gles::GlesRenderer;
-    use smithay::backend::renderer::{Color32F, Frame, Renderer, Unbind};
+    use smithay::backend::renderer::{Color32F, Frame, Renderer};
     use smithay::utils::{Physical, Rectangle, Scale, Transform};
 
     use super::*;
@@ -154,7 +154,7 @@ mod imp {
             }?;
 
             let mut frame = renderer
-                .render(rect.size, Transform::Normal)
+                .render(todo!(), rect.size, Transform::Normal)
                 .context("error creating frame")?;
 
             frame
@@ -223,7 +223,6 @@ mod imp {
 
         let rv = f(renderer);
 
-        renderer.unbind().context("error unbinding")?;
         renderer
             .with_context(|gl| unsafe {
                 gl.BindFramebuffer(

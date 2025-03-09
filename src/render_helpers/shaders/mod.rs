@@ -107,7 +107,7 @@ impl Shaders {
         }
     }
 
-    pub fn get_from_frame<'a>(frame: &'a mut GlesFrame<'_>) -> &'a Self {
+    pub fn get_from_frame<'a>(frame: &'a mut GlesFrame<'_, '_>) -> &'a Self {
         let data = frame.egl_context().user_data();
         data.get()
             .expect("shaders::init() must be called when creating the renderer")

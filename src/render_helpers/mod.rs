@@ -6,7 +6,7 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Kind, RenderElement};
-use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTarget, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
@@ -197,15 +197,18 @@ pub fn render_to_texture(
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
 
-    let texture: GlesTexture = renderer
+    let mut texture: GlesTexture = renderer
         .create_buffer(fourcc, buffer_size)
         .context("error creating texture")?;
 
-    renderer
-        .bind(texture.clone())
-        .context("error binding texture")?;
+    let sync_point = {
+        let mut target = renderer
+            .bind(&mut texture)
+            .context("error binding texture")?;
 
-    let sync_point = render_elements(renderer, size, scale, transform, elements)?;
+        render_elements(renderer, &mut target, size, scale, transform, elements)?
+    };
+
     Ok((texture, sync_point))
 }
 
@@ -219,11 +222,16 @@ pub fn render_and_download(
 ) -> anyhow::Result<GlesMapping> {
     let _span = tracy_client::span!();
 
-    let (_, _) = render_to_texture(renderer, size, scale, transform, fourcc, elements)?;
+    let (mut texture, _) = render_to_texture(renderer, size, scale, transform, fourcc, elements)?;
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
+    // FIXME: would be nice to avoid binding the second time here (after render_to_texture()), but
+    // borrowing makes this invonvenient.
+    let target = renderer
+        .bind(&mut texture)
+        .context("error binding texture")?;
     let mapping = renderer
-        .copy_framebuffer(Rectangle::from_size(buffer_size), fourcc)
+        .copy_framebuffer(&target, Rectangle::from_size(buffer_size), fourcc)
         .context("error copying framebuffer")?;
     Ok(mapping)
 }
@@ -248,7 +256,7 @@ pub fn render_to_vec(
 
 pub fn render_to_dmabuf(
     renderer: &mut GlesRenderer,
-    dmabuf: Dmabuf,
+    mut dmabuf: Dmabuf,
     size: Size<i32, Physical>,
     scale: Scale<f64>,
     transform: Transform,
@@ -259,8 +267,10 @@ pub fn render_to_dmabuf(
         dmabuf.width() == size.w as u32 && dmabuf.height() == size.h as u32,
         "invalid buffer size"
     );
-    renderer.bind(dmabuf).context("error binding texture")?;
-    render_elements(renderer, size, scale, transform, elements)
+    let mut target = renderer
+        .bind(&mut dmabuf)
+        .context("error binding texture")?;
+    render_elements(renderer, &mut target, size, scale, transform, elements)
 }
 
 pub fn render_to_shm(
@@ -301,6 +311,7 @@ pub fn render_to_shm(
 
 fn render_elements(
     renderer: &mut GlesRenderer,
+    target: &mut GlesTarget,
     size: Size<i32, Physical>,
     scale: Scale<f64>,
     transform: Transform,
@@ -310,7 +321,7 @@ fn render_elements(
     let output_rect = Rectangle::from_size(transform.transform_size(size));
 
     let mut frame = renderer
-        .render(size, transform)
+        .render(target, size, transform)
         .context("error starting frame")?;
 
     frame

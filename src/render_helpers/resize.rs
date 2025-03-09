@@ -163,7 +163,7 @@ impl Element for ResizeRenderElement {
 impl RenderElement<GlesRenderer> for ResizeRenderElement {
     fn draw(
         &self,
-        frame: &mut GlesFrame<'_>,
+        frame: &mut GlesFrame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -181,7 +181,7 @@ impl RenderElement<GlesRenderer> for ResizeRenderElement {
 impl<'render> RenderElement<TtyRenderer<'render>> for ResizeRenderElement {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'_, '_>,
+        frame: &mut TtyFrame<'_, '_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
