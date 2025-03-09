@@ -711,7 +711,7 @@ pub struct Shadow {
     #[knuffel(child, unwrap(argument), default = Self::default().softness)]
     pub softness: FloatOrInt<0, 1024>,
     #[knuffel(child, unwrap(argument), default = Self::default().spread)]
-    pub spread: FloatOrInt<0, 1024>,
+    pub spread: FloatOrInt<-1024, 1024>,
     #[knuffel(child, unwrap(argument), default = Self::default().draw_behind_window)]
     pub draw_behind_window: bool,
     #[knuffel(child, default = Self::default().color)]
@@ -1379,7 +1379,7 @@ pub struct ShadowRule {
     #[knuffel(child, unwrap(argument))]
     pub softness: Option<FloatOrInt<0, 1024>>,
     #[knuffel(child, unwrap(argument))]
-    pub spread: Option<FloatOrInt<0, 1024>>,
+    pub spread: Option<FloatOrInt<-1024, 1024>>,
     #[knuffel(child, unwrap(argument))]
     pub draw_behind_window: Option<bool>,
     #[knuffel(child)]
@@ -2346,6 +2346,7 @@ impl CornerRadius {
     }
 
     pub fn expanded_by(mut self, width: f32) -> Self {
+        // Radius = 0 is preserved, so that square corners remain square.
         if self.top_left > 0. {
             self.top_left += width;
         }
@@ -2357,6 +2358,13 @@ impl CornerRadius {
         }
         if self.bottom_left > 0. {
             self.bottom_left += width;
+        }
+
+        if width < 0. {
+            self.top_left = self.top_left.max(0.);
+            self.top_right = self.top_right.max(0.);
+            self.bottom_left = self.bottom_left.max(0.);
+            self.bottom_right = self.bottom_right.max(0.);
         }
 
         self
