@@ -11,7 +11,7 @@ use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElemen
 use niri::render_helpers::{RenderTarget, SplitElements};
 use niri::utils::transaction::Transaction;
 use niri::window::ResolvedWindowRules;
-use smithay::backend::renderer::element::{Id, Kind};
+use smithay::backend::renderer::element::Kind;
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};

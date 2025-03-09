@@ -190,12 +190,16 @@ impl Winit {
         }
 
         // Hand them over to winit.
-        self.backend.bind().unwrap();
-        let age = self.backend.buffer_age().unwrap();
-        let res = self
-            .damage_tracker
-            .render_output(self.backend.renderer(), age, &elements, [0.; 4])
-            .unwrap();
+        let res = {
+            let (renderer, mut framebuffer) = self.backend.bind().unwrap();
+            // FIXME: currently impossible to call due to a mutable borrow.
+            //
+            // let age = self.backend.buffer_age().unwrap();
+            let age = 0;
+            self.damage_tracker
+                .render_output(renderer, &mut framebuffer, age, &elements, [0.; 4])
+                .unwrap()
+        };
 
         niri.update_primary_scanout_output(output, &res.states);
 

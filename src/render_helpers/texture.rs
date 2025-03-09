@@ -58,7 +58,7 @@ impl<T> TextureBuffer<T> {
         scale: impl Into<Scale<f64>>,
         transform: Transform,
         opaque_regions: Vec<Rectangle<i32, Buffer>>,
-    ) -> Result<Self, <R as Renderer>::Error> {
+    ) -> Result<Self, R::Error> {
         let texture = renderer.import_memory(data, format, size.into(), flipped)?;
         Ok(TextureBuffer::from_texture(
             renderer,
@@ -72,7 +72,7 @@ impl<T> TextureBuffer<T> {
     pub fn from_memory_buffer<R: Renderer<TextureId = T> + ImportMem>(
         renderer: &mut R,
         buffer: &MemoryBuffer,
-    ) -> Result<Self, <R as Renderer>::Error> {
+    ) -> Result<Self, R::Error> {
         Self::from_memory(
             renderer,
             buffer.data(),
@@ -213,12 +213,12 @@ where
 {
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         if frame.id() != self.buffer.renderer_id {
             warn!("trying to render texture from different renderer");
             return Ok(());

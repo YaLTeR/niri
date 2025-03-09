@@ -33,7 +33,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Color32F, Unbind};
+use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -4535,10 +4535,6 @@ impl Niri {
                 None
             }
         };
-
-        if let Err(err) = renderer.unbind() {
-            warn!("error unbinding after rendering for screencopy: {err:?}");
-        }
 
         Ok((sync, damages))
     }
