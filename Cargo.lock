@@ -630,6 +630,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.5.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e3040c8291884ddf39445dc033c70abc2bc44a42f0a3a00571a0f483a83f0cd"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.5.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2213,6 +2222,7 @@ dependencies = [
  "calloop 0.14.2",
  "calloop-wayland-source 0.4.0",
  "clap",
+ "clap_complete",
  "directories",
  "drm-ffi",
  "fastrand",
