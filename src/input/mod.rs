@@ -565,11 +565,14 @@ impl State {
                     self.niri.do_screen_transition(renderer, delay_ms);
                 });
             }
-            Action::ScreenshotScreen(write_to_disk) => {
+            Action::ScreenshotScreen(write_to_disk, show_pointer) => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) = self.niri.screenshot(renderer, &active, write_to_disk) {
+                        if let Err(err) =
+                            self.niri
+                                .screenshot(renderer, &active, write_to_disk, show_pointer)
+                        {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
@@ -615,8 +618,8 @@ impl State {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();
             }
-            Action::Screenshot => {
-                self.open_screenshot_ui();
+            Action::Screenshot(show_cursor) => {
+                self.open_screenshot_ui(show_cursor);
             }
             Action::ScreenshotWindow(write_to_disk) => {
                 let focus = self.niri.layout.focus_with_output();

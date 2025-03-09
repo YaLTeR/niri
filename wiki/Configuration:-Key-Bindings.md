@@ -306,9 +306,13 @@ binds {
 }
 ```
 
-#### `screenshot-screen`, `screenshot-window`
+#### `screenshot`, `screenshot-screen`, `screenshot-window`
 
-Take a screenshot of the focused screen or window respectively.
+Actions for taking screenshots.
+
+- `screenshot`: opens the built-in interactive screenshot UI.
+- `screenshot-screen`, `screenshow-window`: takes a screenshot of the focused screen or window respectively.
+
 The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md).
 
 <sup>Since: 25.02</sup> You can disable saving to disk for a specific bind with the `write-to-disk=false` property:
@@ -317,6 +321,21 @@ The screenshot is both stored to the clipboard and saved to disk, according to t
 binds {
     Ctrl+Print { screenshot-screen write-to-disk=false; }
     Alt+Print { screenshot-window write-to-disk=false; }
+}
+```
+
+In the interactive screenshot UI, pressing <kbd>Ctrl</kbd><kbd>C</kbd> will copy the screenshot to the clipboard without writing it to disk.
+
+<sup>Since: next release</sup> You can hide the mouse pointer in screenshots with the `show-pointer=false` property:
+
+```kdl
+binds {
+    // The pointer will be hidden by default
+    // (you can still show it by pressing P).
+    Print { screenshot show-pointer=false; }
+
+    // The pointer will be hidden on the screenshot.
+    Ctrl+Print { screenshot-screen show-pointer=false; }
 }
 ```
 

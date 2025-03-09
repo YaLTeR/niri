@@ -1454,8 +1454,11 @@ pub enum Action {
     CancelScreenshot,
     #[knuffel(skip)]
     ScreenshotTogglePointer,
-    Screenshot,
-    ScreenshotScreen(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
+    Screenshot(#[knuffel(property(name = "show-pointer"), default = true)] bool),
+    ScreenshotScreen(
+        #[knuffel(property(name = "write-to-disk"), default = true)] bool,
+        #[knuffel(property(name = "show-pointer"), default = true)] bool,
+    ),
     ScreenshotWindow(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
     #[knuffel(skip)]
     ScreenshotWindowById {
@@ -1641,10 +1644,11 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
-            niri_ipc::Action::Screenshot {} => Self::Screenshot,
-            niri_ipc::Action::ScreenshotScreen { write_to_disk } => {
-                Self::ScreenshotScreen(write_to_disk)
-            }
+            niri_ipc::Action::Screenshot { show_pointer } => Self::Screenshot(show_pointer),
+            niri_ipc::Action::ScreenshotScreen {
+                write_to_disk,
+                show_pointer,
+            } => Self::ScreenshotScreen(write_to_disk, show_pointer),
             niri_ipc::Action::ScreenshotWindow {
                 id: None,
                 write_to_disk,
