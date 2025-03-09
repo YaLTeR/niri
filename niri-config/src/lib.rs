@@ -1565,18 +1565,26 @@ pub enum Action {
     FocusMonitorUp,
     FocusMonitorPrevious,
     FocusMonitorNext,
+    FocusMonitor(#[knuffel(argument)] String),
     MoveWindowToMonitorLeft,
     MoveWindowToMonitorRight,
     MoveWindowToMonitorDown,
     MoveWindowToMonitorUp,
     MoveWindowToMonitorPrevious,
     MoveWindowToMonitorNext,
+    MoveWindowToMonitor(#[knuffel(argument)] String),
+    #[knuffel(skip)]
+    MoveWindowToMonitorById {
+        id: u64,
+        output: String,
+    },
     MoveColumnToMonitorLeft,
     MoveColumnToMonitorRight,
     MoveColumnToMonitorDown,
     MoveColumnToMonitorUp,
     MoveColumnToMonitorPrevious,
     MoveColumnToMonitorNext,
+    MoveColumnToMonitor(#[knuffel(argument)] String),
     SetWindowWidth(#[knuffel(argument, str)] SizeChange),
     #[knuffel(skip)]
     SetWindowWidthById {
@@ -1766,18 +1774,27 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusMonitorUp {} => Self::FocusMonitorUp,
             niri_ipc::Action::FocusMonitorPrevious {} => Self::FocusMonitorPrevious,
             niri_ipc::Action::FocusMonitorNext {} => Self::FocusMonitorNext,
+            niri_ipc::Action::FocusMonitor { output } => Self::FocusMonitor(output),
             niri_ipc::Action::MoveWindowToMonitorLeft {} => Self::MoveWindowToMonitorLeft,
             niri_ipc::Action::MoveWindowToMonitorRight {} => Self::MoveWindowToMonitorRight,
             niri_ipc::Action::MoveWindowToMonitorDown {} => Self::MoveWindowToMonitorDown,
             niri_ipc::Action::MoveWindowToMonitorUp {} => Self::MoveWindowToMonitorUp,
             niri_ipc::Action::MoveWindowToMonitorPrevious {} => Self::MoveWindowToMonitorPrevious,
             niri_ipc::Action::MoveWindowToMonitorNext {} => Self::MoveWindowToMonitorNext,
+            niri_ipc::Action::MoveWindowToMonitor { id: None, output } => {
+                Self::MoveWindowToMonitor(output)
+            }
+            niri_ipc::Action::MoveWindowToMonitor {
+                id: Some(id),
+                output,
+            } => Self::MoveWindowToMonitorById { id, output },
             niri_ipc::Action::MoveColumnToMonitorLeft {} => Self::MoveColumnToMonitorLeft,
             niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
             niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
             niri_ipc::Action::MoveColumnToMonitorUp {} => Self::MoveColumnToMonitorUp,
             niri_ipc::Action::MoveColumnToMonitorPrevious {} => Self::MoveColumnToMonitorPrevious,
             niri_ipc::Action::MoveColumnToMonitorNext {} => Self::MoveColumnToMonitorNext,
+            niri_ipc::Action::MoveColumnToMonitor { output } => Self::MoveColumnToMonitor(output),
             niri_ipc::Action::SetWindowWidth { id: None, change } => Self::SetWindowWidth(change),
             niri_ipc::Action::SetWindowWidth {
                 id: Some(id),
@@ -3766,7 +3783,10 @@ mod tests {
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
                 Mod+Q hotkey-overlay-title=null { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
+                Mod+Shift+O { focus-monitor "eDP-1"; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
+                Mod+Ctrl+Alt+O { move-window-to-monitor "eDP-1"; }
+                Mod+Ctrl+Alt+P { move-column-to-monitor "DP-1"; }
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
                 Mod+Shift+1 { focus-workspace "workspace-1"; }
@@ -4605,6 +4625,24 @@ mod tests {
                     Bind {
                         key: Key {
                             trigger: Keysym(
+                                XK_o,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
+                        },
+                        action: FocusMonitor(
+                            "eDP-1",
+                        ),
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
                                 XK_l,
                             ),
                             modifiers: Modifiers(
@@ -4612,6 +4650,42 @@ mod tests {
                             ),
                         },
                         action: MoveWindowToMonitorRight,
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_o,
+                            ),
+                            modifiers: Modifiers(
+                                CTRL | ALT | COMPOSITOR,
+                            ),
+                        },
+                        action: MoveWindowToMonitor(
+                            "eDP-1",
+                        ),
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_p,
+                            ),
+                            modifiers: Modifiers(
+                                CTRL | ALT | COMPOSITOR,
+                            ),
+                        },
+                        action: MoveColumnToMonitor(
+                            "DP-1",
+                        ),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
