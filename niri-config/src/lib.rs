@@ -1631,6 +1631,7 @@ pub enum Action {
     ToggleWindowRuleOpacity,
     #[knuffel(skip)]
     ToggleWindowRuleOpacityById(u64),
+    TriggerGlobalShortcut(#[knuffel(argument)] String, #[knuffel(argument)] String),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1862,6 +1863,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowRuleOpacity { id: None } => Self::ToggleWindowRuleOpacity,
             niri_ipc::Action::ToggleWindowRuleOpacity { id: Some(id) } => {
                 Self::ToggleWindowRuleOpacityById(id)
+            }
+            niri_ipc::Action::TriggerGlobalShortcut { app_id, id } => {
+                Self::TriggerGlobalShortcut(app_id, id)
             }
         }
     }
