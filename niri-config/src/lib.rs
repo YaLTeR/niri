@@ -1,8 +1,9 @@
 #[macro_use]
 extern crate tracing;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
+use std::fmt::{self, Write};
 use std::ops::{Mul, MulAssign};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -19,7 +20,7 @@ use niri_ipc::{
 };
 use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
-use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
+use smithay::input::keyboard::xkb::{keysym_from_name, keysym_get_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 use smithay::reexports::input;
 
@@ -1364,7 +1365,7 @@ pub enum RelativeTo {
 }
 
 #[derive(Debug, Default, PartialEq)]
-pub struct Binds(pub Vec<Bind>);
+pub struct Binds(pub HashMap<Submap, Vec<Bind>>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
@@ -1375,6 +1376,13 @@ pub struct Bind {
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BindWithSubmap {
+    bind: Bind,
+    submap: Submap,
+    subbinds: Vec<BindWithSubmap>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -1411,6 +1419,78 @@ bitflags! {
         const ISO_LEVEL3_SHIFT = 1 << 4;
         const ISO_LEVEL5_SHIFT = 1 << 5;
         const COMPOSITOR = 1 << 6;
+    }
+}
+
+impl std::fmt::Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.modifiers.contains(Modifiers::COMPOSITOR) {
+            f.write_str("Mod+")?;
+        }
+        if self.modifiers.contains(Modifiers::SUPER) {
+            f.write_str("Super+")?;
+        }
+        if self.modifiers.contains(Modifiers::CTRL) {
+            f.write_str("Ctrl+")?;
+        }
+        if self.modifiers.contains(Modifiers::SHIFT) {
+            f.write_str("Shift+")?;
+        }
+        if self.modifiers.contains(Modifiers::ALT) {
+            f.write_str("Alt+")?;
+        }
+        if self.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT) {
+            f.write_str("ISO_Level3_Shift+")?;
+        }
+        if self.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT) {
+            f.write_str("ISO_Level5_Shift+")?;
+        }
+
+        let mut name;
+        let pretty: &str = match self.trigger {
+            Trigger::Keysym(keysym) => {
+                name = keysym_get_name(keysym);
+
+                if name.len() == 1 && name.is_ascii() {
+                    name.make_ascii_uppercase()
+                }
+
+                let mut name = name.as_str();
+
+                name = match name {
+                    "slash" => "/",
+                    "comma" => ",",
+                    "period" => ".",
+                    "minus" => "-",
+                    "equal" => "=",
+                    "grave" => "`",
+                    "bracketleft" => "[",
+                    "bracketright" => "]",
+                    "Next" => "Page Down",
+                    "Prior" => "Page Up",
+                    "Print" => "PrtSc",
+                    "Return" => "Enter",
+                    "space" => "Space",
+                    _ => name,
+                };
+
+                name
+            }
+            Trigger::MouseLeft => "MouseLeft",
+            Trigger::MouseRight => "MouseRight",
+            Trigger::MouseMiddle => "MouseMiddle",
+            Trigger::MouseBack => "MouseBack",
+            Trigger::MouseForward => "MouseForward",
+            Trigger::WheelScrollDown => "WheelScrollDown",
+            Trigger::WheelScrollUp => "WheelScrollUp",
+            Trigger::WheelScrollLeft => "WheelScrollLeft",
+            Trigger::WheelScrollRight => "WheelScrollRight",
+            Trigger::TouchpadScrollDown => "TouchpadScrollDown",
+            Trigger::TouchpadScrollUp => "TouchpadScrollUp",
+            Trigger::TouchpadScrollLeft => "TouchpadScrollLeft",
+            Trigger::TouchpadScrollRight => "TouchpadScrollRight",
+        };
+        f.write_str(pretty)
     }
 }
 
@@ -1604,6 +1684,7 @@ pub enum Action {
     ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
     ShowHotkeyOverlay,
+    SubmapSet(#[knuffel(argument, default = Submap::Default)] Submap),
     MoveWorkspaceToMonitorLeft,
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,
@@ -1631,6 +1712,57 @@ pub enum Action {
     ToggleWindowRuleOpacity,
     #[knuffel(skip)]
     ToggleWindowRuleOpacityById(u64),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Submap {
+    Default,
+    ResolveCurrent,
+    Custom(String),
+}
+
+impl Submap {
+    pub fn write_submap_name<W>(&self, mut writer: W) -> fmt::Result
+    where
+        W: std::fmt::Write,
+    {
+        match self {
+            Submap::Custom(name) => writer.write_str(name),
+            Submap::Default | Submap::ResolveCurrent => Ok(()),
+        }
+    }
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for Submap {
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        _: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        match &**val {
+            knuffel::ast::Literal::String(ref s) => match &s[..] {
+                "default" => Ok(Submap::Default),
+                other => Ok(Submap::Custom(other.to_owned())),
+            },
+            _ => Err(::knuffel::errors::DecodeError::scalar_kind(
+                ::knuffel::decode::Kind::String,
+                val,
+            )),
+        }
+    }
+
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(typ) = type_name {
+            ctx.emit_error(::knuffel::errors::DecodeError::TypeName {
+                span: typ.span().clone(),
+                found: Some((**typ).clone()),
+                expected: ::knuffel::errors::ExpectedType::no_type(),
+                rust_type: "Submap",
+            });
+        }
+    }
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -3191,18 +3323,76 @@ where
     ) -> Result<Self, DecodeError<S>> {
         expect_only_children(node, ctx);
 
-        let mut seen_keys = HashSet::new();
+        let mut seen_keys: HashMap<Submap, HashSet<Key>> = HashMap::new();
 
-        let mut binds = Vec::new();
+        let mut binds: HashMap<Submap, Vec<Bind>> = HashMap::new();
+
+        let mut submap_name = String::new();
+        let mut submap_stack = Vec::new();
 
         for child in node.children() {
-            match Bind::decode_node(child, ctx) {
+            match BindWithSubmap::decode_node(child, ctx) {
                 Err(e) => {
                     ctx.emit_error(e);
                 }
-                Ok(bind) => {
-                    if seen_keys.insert(bind.key) {
-                        binds.push(bind);
+                Ok(mut submap_bind) => {
+                    if seen_keys
+                        .entry(submap_bind.submap.clone())
+                        .or_default()
+                        .insert(submap_bind.bind.key)
+                    {
+                        submap_name.clear();
+                        submap_stack.clear();
+                        submap_bind.resolve_submap(&mut submap_name);
+
+                        let BindWithSubmap {
+                            bind: bind @ Bind { key, .. },
+                            submap,
+                            subbinds,
+                        } = submap_bind;
+
+                        binds.entry(submap).or_default().push(bind);
+
+                        if !subbinds.is_empty() {
+                            BindWithSubmap::append_key(key, &mut submap_name);
+                            submap_stack.push((submap_name.len(), subbinds.into_iter()));
+
+                            while let Some((cur_len, subbinds)) = submap_stack.last_mut() {
+                                submap_name.truncate(*cur_len);
+                                match subbinds.next() {
+                                    Some(mut submap_bind) => {
+                                        submap_bind.resolve_submap(&mut submap_name);
+                                        let BindWithSubmap {
+                                            bind: bind @ Bind { key, .. },
+                                            submap,
+                                            subbinds,
+                                        } = submap_bind;
+
+                                        if !seen_keys
+                                            .entry(submap.clone())
+                                            .or_default()
+                                            .insert(bind.key)
+                                        {
+                                            ctx.emit_error(DecodeError::unexpected(
+                                                &child.node_name,
+                                                "keybind",
+                                                "duplicate keybind",
+                                            ));
+                                        }
+                                        binds.entry(submap).or_default().push(bind);
+
+                                        if !subbinds.is_empty() {
+                                            BindWithSubmap::append_key(key, &mut submap_name);
+                                            submap_stack
+                                                .push((submap_name.len(), subbinds.into_iter()));
+                                        }
+                                    }
+                                    None => {
+                                        submap_stack.pop();
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         // ideally, this error should point to the previous instance of this keybind
                         //
@@ -3243,7 +3433,7 @@ where
     }
 }
 
-impl<S> knuffel::Decode<S> for Bind
+impl<S> knuffel::Decode<S> for BindWithSubmap
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -3278,6 +3468,7 @@ where
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
         let mut hotkey_overlay_title = None;
+        let mut submap = Submap::Default;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -3298,6 +3489,9 @@ where
                 "hotkey-overlay-title" => {
                     hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
+                "submap" => {
+                    submap = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
                         name,
@@ -3314,54 +3508,86 @@ where
         // That way, the parent can handle the existence of duplicate keybinds,
         // even if their contents are not valid.
         let dummy = Self {
-            key,
-            action: Action::Spawn(vec![]),
-            repeat: true,
-            cooldown: None,
-            allow_when_locked: false,
-            allow_inhibiting: true,
-            hotkey_overlay_title: None,
+            bind: Bind {
+                key,
+                action: Action::Spawn(vec![]),
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+            },
+            submap,
+            subbinds: Vec::new(),
         };
 
+        let mut subbinds = Vec::new();
+
         if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
-            match Action::decode_node(child, ctx) {
-                Ok(action) => {
-                    if !matches!(action, Action::Spawn(_)) {
-                        if let Some(node) = allow_when_locked_node {
-                            ctx.emit_error(DecodeError::unexpected(
-                                node,
-                                "property",
-                                "allow-when-locked can only be set on spawn binds",
-                            ));
-                        }
-                    }
+            if Key::from_str(&child.node_name).is_ok() {
+                subbinds.push(BindWithSubmap::decode_node(child, ctx)?);
 
-                    // The toggle-inhibit action must always be uninhibitable.
-                    // Otherwise, it would be impossible to trigger it.
-                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
-                        allow_inhibiting = false;
-                    }
+                for child in children {
+                    subbinds.push(BindWithSubmap::decode_node(child, ctx)?);
+                }
 
-                    Ok(Self {
+                Ok(Self {
+                    bind: Bind {
                         key,
-                        action,
+                        action: Action::SubmapSet(Submap::ResolveCurrent),
                         repeat,
                         cooldown,
                         allow_when_locked,
                         allow_inhibiting,
                         hotkey_overlay_title,
-                    })
+                    },
+                    submap: dummy.submap,
+                    subbinds,
+                })
+            } else {
+                for unwanted_child in children {
+                    ctx.emit_error(DecodeError::unexpected(
+                        unwanted_child,
+                        "node",
+                        "only one action is allowed per keybind",
+                    ));
                 }
-                Err(e) => {
-                    ctx.emit_error(e);
-                    Ok(dummy)
+                match Action::decode_node(child, ctx) {
+                    Ok(action) => {
+                        if !matches!(action, Action::Spawn(_)) {
+                            if let Some(node) = allow_when_locked_node {
+                                ctx.emit_error(DecodeError::unexpected(
+                                    node,
+                                    "property",
+                                    "allow-when-locked can only be set on spawn binds",
+                                ));
+                            }
+                        }
+
+                        // The toggle-inhibit action must always be uninhibitable.
+                        // Otherwise, it would be impossible to trigger it.
+                        if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
+                            allow_inhibiting = false;
+                        }
+
+                        Ok(Self {
+                            bind: Bind {
+                                key,
+                                action,
+                                repeat,
+                                cooldown,
+                                allow_when_locked,
+                                allow_inhibiting,
+                                hotkey_overlay_title,
+                            },
+                            submap: dummy.submap,
+                            subbinds,
+                        })
+                    }
+                    Err(e) => {
+                        ctx.emit_error(e);
+                        Ok(dummy)
+                    }
                 }
             }
         } else {
@@ -3371,6 +3597,48 @@ where
             ));
             Ok(dummy)
         }
+    }
+}
+
+impl BindWithSubmap {
+    pub fn resolve_submap(&mut self, current: &mut String) {
+        self.resolve_submap_name(current);
+        self.resolve_submap_action(current);
+    }
+
+    fn resolve_submap_name(&mut self, current: &mut String) {
+        match (&self.submap, current.is_empty()) {
+            (Submap::Default | Submap::ResolveCurrent, true) => {}
+            (Submap::Default | Submap::ResolveCurrent, false) => {
+                self.submap = Submap::Custom(current.to_owned());
+            }
+            (Submap::Custom(name), is_empty) => {
+                if !is_empty {
+                    current.push(';');
+                }
+                current.push_str(name);
+                self.submap = Submap::Custom(current.to_owned());
+            }
+        }
+    }
+
+    fn resolve_submap_action(&mut self, current: &str) {
+        if let Action::SubmapSet(action @ Submap::ResolveCurrent) = &mut self.bind.action {
+            *action = if current.is_empty() {
+                Submap::Default
+            } else {
+                Submap::Custom(current.to_owned())
+            };
+        }
+    }
+
+    pub fn append_key(key: Key, current: &mut String) {
+        if !current.is_empty() {
+            current.push(';');
+        }
+        current
+            .write_fmt(format_args!("{key}"))
+            .expect("writing Key to String should never fail");
     }
 }
 
