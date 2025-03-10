@@ -2,9 +2,10 @@ use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::iter::zip;
+use std::ops::Deref;
 use std::rc::Rc;
 
-use niri_config::{Action, Bind, Config, Key, Modifiers, Trigger};
+use niri_config::{Action, Bind, Config, Key, Modifiers, Submap, Trigger};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::Kind;
@@ -30,6 +31,7 @@ const TITLE: &str = "Important Hotkeys";
 pub struct HotkeyOverlay {
     is_open: bool,
     config: Rc<RefCell<Config>>,
+    submap_state: Submap,
     comp_mod: CompositorMod,
     buffers: RefCell<HashMap<WeakOutput, RenderedOverlay>>,
 }
@@ -43,6 +45,7 @@ impl HotkeyOverlay {
         Self {
             is_open: false,
             config,
+            submap_state: Submap::Default,
             comp_mod,
             buffers: RefCell::new(HashMap::new()),
         }
@@ -68,6 +71,10 @@ impl HotkeyOverlay {
 
     pub fn is_open(&self) -> bool {
         self.is_open
+    }
+
+    pub fn set_submap_state(&mut self, submap_state: Submap) {
+        self.submap_state = submap_state;
     }
 
     pub fn on_hotkey_config_updated(&mut self) {
@@ -101,8 +108,14 @@ impl HotkeyOverlay {
 
         let rendered = buffers.entry(weak).or_insert_with(|| {
             let renderer = renderer.as_gles_renderer();
-            render(renderer, &self.config.borrow(), self.comp_mod, scale)
-                .unwrap_or_else(|_| RenderedOverlay { buffer: None })
+            render(
+                renderer,
+                &self.config.borrow(),
+                &self.submap_state,
+                self.comp_mod,
+                scale,
+            )
+            .unwrap_or_else(|_| RenderedOverlay { buffer: None })
         });
         let buffer = rendered.buffer.as_ref()?;
 
@@ -174,6 +187,7 @@ fn format_bind(
 fn render(
     renderer: &mut GlesRenderer,
     config: &Config,
+    submap_state: &Submap,
     comp_mod: CompositorMod,
     scale: f64,
 ) -> anyhow::Result<RenderedOverlay> {
@@ -189,7 +203,12 @@ fn render(
     // target_size.h -= margin * 2;
     // anyhow::ensure!(target_size.w > 0 && target_size.h > 0);
 
-    let binds = &config.binds.0;
+    let binds = config
+        .binds
+        .0
+        .get(submap_state)
+        .map(Deref::deref)
+        .unwrap_or_default();
 
     // Collect actions that we want to show.
     let mut actions = vec![&Action::ShowHotkeyOverlay];
@@ -445,7 +464,7 @@ fn action_name(action: &Action) -> String {
     }
 }
 
-fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
+pub fn key_name(comp_mod: CompositorMod, key: &Key) -> String {
     let mut name = String::new();
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
@@ -528,14 +547,26 @@ fn prettify_keysym_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+
     use insta::assert_snapshot;
+    use niri_config::Submap;
 
     use super::*;
 
     #[track_caller]
     fn check(config: &str, action: Action) -> String {
         let config = Config::parse("test.kdl", config).unwrap();
-        if let Some((key, title)) = format_bind(&config.binds.0, CompositorMod::Super, &action) {
+        if let Some((key, title)) = format_bind(
+            config
+                .binds
+                .0
+                .get(&Submap::Default)
+                .map(Deref::deref)
+                .unwrap_or(&[]),
+            CompositorMod::Super,
+            &action,
+        ) {
             format!("{key}: {title}")
         } else {
             String::from("None")
