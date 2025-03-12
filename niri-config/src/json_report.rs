@@ -58,6 +58,13 @@ impl JsonReport {
                         span: Span {
                             offset: label.offset(),
                             length: label.len(),
+                            start: LineSpan::from_label(src, label.inner()),
+                            // Because miette doesn't just give us the ending line + column for
+                            // some reason.
+                            end: LineSpan::from_label(src, &{
+                                let label = label.inner();
+                                SourceSpan::from(label.len() + label.offset())
+                            }),
                         },
                     })
                     .collect()
@@ -105,4 +112,26 @@ pub struct Label {
 pub struct Span {
     pub offset: usize,
     pub length: usize,
+    pub start: Option<LineSpan>,
+    pub end: Option<LineSpan>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct LineSpan {
+    /// 0-indexed line into the file
+    line: usize,
+    /// 0-indexed column into the file
+    col: usize,
+}
+
+impl LineSpan {
+    fn from_label<S: SourceCode + ?Sized>(code: Option<&S>, span: &SourceSpan) -> Option<Self> {
+        let code = code?;
+        let content = code.read_span(span, 0, 0).ok()?;
+        Some(Self {
+            line: content.line(),
+            col: content.column(),
+        })
+    }
 }
