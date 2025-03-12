@@ -2241,6 +2241,7 @@ dependencies = [
  "libc",
  "libdisplay-info",
  "log",
+ "miette",
  "niri-config",
  "niri-ipc",
  "ordered-float",

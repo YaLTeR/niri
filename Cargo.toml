@@ -19,6 +19,7 @@ anyhow = "1.0.97"
 bitflags = "2.9.0"
 clap = { version = "4.5.32", features = ["derive"] }
 insta = "1.42.2"
+miette = { version = "5.10.0", features = ["fancy-no-backtrace"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
@@ -71,6 +72,7 @@ keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.171"
 libdisplay-info = "0.2.2"
 log = { version = "0.4.26", features = ["max_level_trace", "release_max_level_debug"] }
+miette.workspace = true
 niri-config = { version = "25.2.0", path = "niri-config" }
 niri-ipc = { version = "25.2.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.0.0"

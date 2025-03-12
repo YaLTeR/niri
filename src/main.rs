@@ -52,6 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env_filter = EnvFilter::builder().parse_lossy(directives);
     tracing_subscriber::fmt()
         .compact()
+        .with_writer(io::stderr)
         .with_env_filter(env_filter)
         .init();
 
@@ -93,13 +94,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
         match subcommand {
-            Sub::Validate { config } => {
+            Sub::Validate { config, json } => {
                 tracy_client::Client::start();
-
                 let (path, _, _) = config_path(config);
-                Config::load(&path)?;
-                info!("config is valid");
-                return Ok(());
+                let Err(report) = Config::load(&path) else {
+                    info!("config is valid");
+                    return Ok(());
+                };
+                if json {
+                    let mut json = String::new();
+                    miette::JSONReportHandler::new().render_report(&mut json, report.as_ref())?;
+                    println!("{json}");
+                }
+                return Err(report.into());
             }
             Sub::Msg { msg, json } => {
                 handle_msg(msg, json)?;
