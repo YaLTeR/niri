@@ -30,6 +30,8 @@ pub mod layer_rule;
 mod utils;
 pub use utils::RegexEq;
 
+pub mod ipc_diagnostic;
+
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
     #[knuffel(child, default)]

@@ -3,7 +3,7 @@ extern crate tracing;
 
 use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,7 +22,7 @@ use niri::utils::spawning::{
 };
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
-use niri_config::Config;
+use niri_config::{ipc_diagnostic, Config};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -94,13 +94,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
         match subcommand {
-            Sub::Validate { config } => {
+            Sub::Validate { config, json } => {
                 tracy_client::Client::start();
 
                 let (path, _, _) = config_path(config);
-                Config::load(&path)?;
-                info!("config is valid");
-                return Ok(());
+                let Err(report) = Config::load(&path) else {
+                    // Print to stderr because:
+                    // - the human-readable error also goes to stderr
+                    // - JSON output must be empty
+                    eprintln!("The config is valid.");
+                    return Ok(());
+                };
+
+                if json {
+                    let diagnostic = ipc_diagnostic::convert_to_ipc(&*report);
+                    serde_json::to_writer(BufWriter::new(io::stdout()), &diagnostic)?;
+                }
+
+                return Err(report.into());
             }
             Sub::Msg { msg, json } => {
                 handle_msg(msg, json)?;
