@@ -2,6 +2,7 @@ use miette::{Diagnostic, LabeledSpan, SourceCode, SourceSpan, SpanContents};
 use serde::Serialize;
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct JsonReport {
     pub message: String,
     pub severity: Severity,
@@ -75,6 +76,7 @@ impl JsonReport {
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Severity {
     Advice,
     Warning,
@@ -92,12 +94,14 @@ impl From<miette::Severity> for Severity {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Label {
     pub label: String,
     pub span: Span,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Span {
     pub offset: usize,
     pub length: usize,

@@ -2282,6 +2282,7 @@ dependencies = [
  "niri-ipc",
  "pretty_assertions",
  "regex",
+ "schemars",
  "serde",
  "smithay",
  "tracing",
