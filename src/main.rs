@@ -3,7 +3,7 @@ extern crate tracing;
 
 use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,7 +22,7 @@ use niri::utils::spawning::{
 };
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
-use niri_config::Config;
+use niri_config::{Config, JsonReport};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -102,9 +102,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return Ok(());
                 };
                 if json {
-                    let mut json = String::new();
-                    miette::JSONReportHandler::new().render_report(&mut json, report.as_ref())?;
-                    println!("{json}");
+                    let json = JsonReport::from(&report);
+                    serde_json::to_writer(BufWriter::new(io::stdout()), &json)?;
                 }
                 return Err(report.into());
             }
