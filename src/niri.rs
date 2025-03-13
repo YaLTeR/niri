@@ -1965,12 +1965,23 @@ impl Niri {
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
-        seat.add_keyboard(
+        if let Err(err) = seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
             config_.input.keyboard.repeat_delay.into(),
             config_.input.keyboard.repeat_rate.into(),
-        )
-        .unwrap();
+        ) {
+            if let smithay::input::keyboard::Error::BadKeymap = err {
+                warn!("error loading the configured xkb keymap, trying default");
+            } else {
+                warn!("error adding keyboard: {err:?}");
+            }
+            seat.add_keyboard(
+                Default::default(),
+                config_.input.keyboard.repeat_delay.into(),
+                config_.input.keyboard.repeat_rate.into(),
+            )
+            .unwrap();
+        }
         seat.add_pointer();
 
         let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
