@@ -250,6 +250,8 @@ pub struct Trackpoint {
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
     #[knuffel(child)]
+    pub left_handed: bool,
+    #[knuffel(child)]
     pub middle_emulation: bool,
 }
 
@@ -3902,6 +3904,7 @@ mod tests {
                     scroll_button: Some(
                         274,
                     ),
+                    left_handed: false,
                     middle_emulation: false,
                 },
                 trackball: Trackball {
