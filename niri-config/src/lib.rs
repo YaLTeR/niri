@@ -95,7 +95,7 @@ pub struct Input {
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
     #[knuffel(child)]
-    pub warp_mouse_to_focus: bool,
+    pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
@@ -367,6 +367,32 @@ pub struct Touch {
 pub struct FocusFollowsMouse {
     #[knuffel(property, str)]
     pub max_scroll_amount: Option<Percent>,
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct WarpMouseToFocus {
+    #[knuffel(property, str)]
+    pub mode: Option<WarpMouseToFocusMode>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum WarpMouseToFocusMode {
+    CenterXy,
+    CenterXyAlways,
+}
+
+impl FromStr for WarpMouseToFocusMode {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "center-xy" => Ok(Self::CenterXy),
+            "center-xy-always" => Ok(Self::CenterXyAlways),
+            _ => Err(miette!(
+                r#"invalid mode for warp-mouse-to-focus, can be "center-xy" or "center-xy-always" (or leave unset for separate centering)"#
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -4023,7 +4049,11 @@ mod tests {
                     ),
                 },
                 disable_power_key_handling: true,
-                warp_mouse_to_focus: true,
+                warp_mouse_to_focus: Some(
+                    WarpMouseToFocus {
+                        mode: None,
+                    },
+                ),
                 focus_follows_mouse: Some(
                     FocusFollowsMouse {
                         max_scroll_amount: None,

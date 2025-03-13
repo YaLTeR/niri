@@ -14,8 +14,8 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout, WorkspaceReference,
-    DEFAULT_BACKGROUND_COLOR,
+    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
+    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -510,6 +510,8 @@ struct SurfaceFrameThrottlingState {
 pub enum CenterCoords {
     Separately,
     Both,
+    // Force centering even if the cursor is already in the rectangle.
+    BothAlways,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -753,6 +755,7 @@ impl State {
                     center_f64(rect)
                 }
             }
+            CenterCoords::BothAlways => center_f64(rect),
         };
 
         self.move_cursor(p);
@@ -808,19 +811,27 @@ impl State {
     }
 
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
-        if !self.niri.config.borrow().input.warp_mouse_to_focus {
-            return false;
-        }
-
-        self.move_cursor_to_focused_tile(CenterCoords::Separately)
+        let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
+            None => return false,
+            Some(inner) => match inner.mode {
+                None => CenterCoords::Separately,
+                Some(WarpMouseToFocusMode::CenterXy) => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXyAlways) => CenterCoords::BothAlways,
+            },
+        };
+        self.move_cursor_to_focused_tile(focused)
     }
 
     pub fn maybe_warp_cursor_to_focus_centered(&mut self) -> bool {
-        if !self.niri.config.borrow().input.warp_mouse_to_focus {
-            return false;
-        }
-
-        self.move_cursor_to_focused_tile(CenterCoords::Both)
+        let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
+            None => return false,
+            Some(inner) => match inner.mode {
+                None => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXy) => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXyAlways) => CenterCoords::BothAlways,
+            },
+        };
+        self.move_cursor_to_focused_tile(focused)
     }
 
     pub fn refresh_pointer_contents(&mut self) {
