@@ -646,6 +646,10 @@ impl State {
         self.refresh_popup_grab();
         self.update_keyboard_focus();
 
+        // Should be called before refresh_layout() because that one will refresh other window
+        // states and then send a pending configure.
+        self.niri.refresh_window_states();
+
         // Needs to be called after updating the keyboard focus.
         self.niri.refresh_layout();
 
@@ -3255,6 +3259,16 @@ impl Niri {
         self.idle_notifier_state.set_is_inhibited(is_inhibited);
     }
 
+    pub fn refresh_window_states(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_window_states");
+
+        let config = self.config.borrow();
+        self.layout.with_windows_mut(|mapped, _output| {
+            mapped.update_tiled_state(config.prefer_no_csd);
+        });
+        drop(config);
+    }
+
     pub fn refresh_window_rules(&mut self) {
         let _span = tracy_client::span!("Niri::refresh_window_rules");
 
@@ -3270,6 +3284,11 @@ impl Niri {
                 if let Some(output) = output {
                     outputs.insert(output.clone());
                 }
+
+                // Since refresh_window_rules() is called after refresh_layout(), we need to update
+                // the tiled state right here, so that it's picked up by the following
+                // send_pending_configure().
+                mapped.update_tiled_state(config.prefer_no_csd);
             }
         });
         drop(config);

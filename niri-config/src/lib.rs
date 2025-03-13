@@ -1234,6 +1234,8 @@ pub struct WindowRule {
     pub default_floating_position: Option<FloatingPosition>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub tiled_state: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -4503,6 +4505,7 @@ mod tests {
                         },
                     ),
                     scroll_factor: None,
+                    tiled_state: None,
                 },
             ],
             layer_rules: [

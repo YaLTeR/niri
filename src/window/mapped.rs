@@ -35,7 +35,8 @@ use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
-    get_credentials_for_surface, send_scale_transform, with_toplevel_role, ResizeEdge,
+    get_credentials_for_surface, send_scale_transform, update_tiled_state, with_toplevel_role,
+    ResizeEdge,
 };
 
 #[derive(Debug)]
@@ -461,6 +462,10 @@ impl Mapped {
             needs_frame_callback.then(|| output.clone())
         };
         self.window.send_frame(output, time, throttle, should_send);
+    }
+
+    pub fn update_tiled_state(&self, prefer_no_csd: bool) {
+        update_tiled_state(self.toplevel(), prefer_no_csd, self.rules.tiled_state);
     }
 }
 
