@@ -31,7 +31,8 @@ window-rule {
 }
 ```
 
-Named workspaces initially appear in the order they are declared in the config file.
+Named workspaces initially appear in the order they are declared in the config file and that's the number they are assigned implicitely. If you modify them or create them while using Niri the order would not be assigned correctly, you'll need to restart Niri for their ordering to take effect. 
+
 When editing the config while niri is running, newly declared named workspaces will appear at the very top of a monitor.
 
 If you delete some named workspace from the config, the workspace will become normal (unnamed), and if there are no windows on it, it will be removed (as any other normal workspace).
