@@ -1946,6 +1946,13 @@ impl<W: LayoutElement> Layout<W> {
         workspace.focus_column_left_or_last();
     }
 
+    pub fn focus_column(&mut self, index: usize) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.focus_column(index);
+    }
+
     pub fn focus_window_up_or_output(&mut self, output: &Output) -> bool {
         if let Some(workspace) = self.active_workspace_mut() {
             if workspace.focus_up() {

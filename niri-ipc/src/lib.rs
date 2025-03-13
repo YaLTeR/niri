@@ -249,6 +249,14 @@ pub enum Action {
     FocusColumnRightOrFirst {},
     /// Focus the next column to the left, looping if at start.
     FocusColumnLeftOrLast {},
+    /// Focus a column by index.
+    FocusColumn {
+        /// Index of the column to focus.
+        ///
+        /// The index starts from 1 for the first column.
+        #[cfg_attr(feature = "clap", arg())]
+        index: usize,
+    },
     /// Focus the window or the monitor above.
     FocusWindowOrMonitorUp {},
     /// Focus the window or the monitor below.
