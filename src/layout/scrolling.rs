@@ -1583,6 +1583,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns[self.active_column_idx].focus_bottom()
     }
 
+    pub fn move_column_to_index(&mut self, index: usize) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.move_column_to(index.saturating_sub(1).min(self.columns.len() - 1));
+    }
+
     fn move_column_to(&mut self, new_idx: usize) {
         if self.active_column_idx == new_idx {
             return;

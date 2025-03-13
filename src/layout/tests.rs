@@ -399,6 +399,7 @@ enum Op {
     MoveColumnToLast,
     MoveColumnLeftOrToMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
     MoveColumnRightOrToMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
+    MoveColumnToIndex(#[proptest(strategy = "1..=5usize")] usize),
     MoveWindowDown,
     MoveWindowUp,
     MoveWindowDownOrToWorkspaceDown,
@@ -975,6 +976,7 @@ impl Op {
 
                 layout.move_column_right_or_to_output(&output);
             }
+            Op::MoveColumnToIndex(index) => layout.move_column_to_index(index),
             Op::MoveWindowDown => layout.move_down(),
             Op::MoveWindowUp => layout.move_up(),
             Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),

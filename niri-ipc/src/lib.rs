@@ -301,6 +301,14 @@ pub enum Action {
     MoveColumnLeftOrToMonitorLeft {},
     /// Move the focused column to the right or to the monitor to the right.
     MoveColumnRightOrToMonitorRight {},
+    /// Move the focused column to a specific index on its workspace.
+    MoveColumnToIndex {
+        /// New index for the column.
+        ///
+        /// The index starts from 1 for the first column.
+        #[cfg_attr(feature = "clap", arg())]
+        index: usize,
+    },
     /// Move the focused window down in a column.
     MoveWindowDown {},
     /// Move the focused window up in a column.
