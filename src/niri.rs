@@ -155,8 +155,9 @@ use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRende
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, logical_output,
-    make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
+    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
+    logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
+    write_png_rgba8,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -474,10 +475,14 @@ pub struct PointContents {
     pub layer: Option<LayerSurface>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub enum LockState {
     #[default]
     Unlocked,
+    WaitingForSurfaces {
+        confirmation: SessionLocker,
+        deadline_token: RegistrationToken,
+    },
     Locking(SessionLocker),
     Locked(ExtSessionLockV1),
 }
@@ -2505,7 +2510,10 @@ impl Niri {
                     self.lock_state = LockState::Locking(confirmation);
                 }
             }
-            lock_state => self.lock_state = lock_state,
+            lock_state => {
+                self.lock_state = lock_state;
+                self.maybe_continue_to_locking();
+            }
         }
 
         if self.screenshot_ui.close() {
@@ -2519,7 +2527,6 @@ impl Niri {
         let output_size = output_size(output).to_i32_round();
         let scale = output.current_scale();
         let transform = output.current_transform();
-        let is_locked = self.is_locked();
 
         {
             let mut layer_map = layer_map_for_output(output);
@@ -2537,10 +2544,8 @@ impl Niri {
             state.background_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
-            if is_locked {
-                if let Some(lock_surface) = &state.lock_surface {
-                    configure_lock_surface(lock_surface, output);
-                }
+            if let Some(lock_surface) = &state.lock_surface {
+                configure_lock_surface(lock_surface, output);
             }
         }
 
@@ -4945,12 +4950,18 @@ impl Niri {
     }
 
     pub fn is_locked(&self) -> bool {
-        !matches!(self.lock_state, LockState::Unlocked)
+        match self.lock_state {
+            LockState::Unlocked | LockState::WaitingForSurfaces { .. } => false,
+            LockState::Locking(_) | LockState::Locked(_) => true,
+        }
     }
 
     pub fn lock(&mut self, confirmation: SessionLocker) {
         // Check if another client is in the process of locking.
-        if matches!(self.lock_state, LockState::Locking(_)) {
+        if matches!(
+            self.lock_state,
+            LockState::WaitingForSurfaces { .. } | LockState::Locking(_)
+        ) {
             info!("refusing lock as another client is currently locking");
             return;
         }
@@ -4963,30 +4974,111 @@ impl Niri {
             }
 
             // If the client had died, continue with the new lock.
+            info!("locking session (replacing existing dead lock)");
+
+            // Since the session was already locked, we know that the outputs are blanked, and
+            // can lock right away.
+            let lock = confirmation.ext_session_lock().clone();
+            confirmation.lock();
+            self.lock_state = LockState::Locked(lock);
+
+            return;
         }
 
         info!("locking session");
 
-        self.screenshot_ui.close();
-        self.cursor_manager
-            .set_cursor_image(CursorImageStatus::default_named());
-
         if self.output_state.is_empty() {
             // There are no outputs, lock the session right away.
+            self.screenshot_ui.close();
+            self.cursor_manager
+                .set_cursor_image(CursorImageStatus::default_named());
+
             let lock = confirmation.ext_session_lock().clone();
             confirmation.lock();
             self.lock_state = LockState::Locked(lock);
         } else {
-            // There are outputs, which we need to redraw before locking.
-            self.lock_state = LockState::Locking(confirmation);
-            self.queue_redraw_all();
+            // There are outputs which we need to redraw before locking. But before we do that,
+            // let's wait for the lock surfaces.
+            //
+            // Give them a second; swaylock can take its time to paint a big enough image.
+            let timer = Timer::from_duration(Duration::from_millis(1000));
+            let deadline_token = self
+                .event_loop
+                .insert_source(timer, |_, _, state| {
+                    trace!("lock deadline expired, continuing");
+                    state.niri.continue_to_locking();
+                    TimeoutAction::Drop
+                })
+                .unwrap();
+
+            self.lock_state = LockState::WaitingForSurfaces {
+                confirmation,
+                deadline_token,
+            };
+        }
+    }
+
+    pub fn maybe_continue_to_locking(&mut self) {
+        if !matches!(self.lock_state, LockState::WaitingForSurfaces { .. }) {
+            // Not waiting.
+            return;
+        }
+
+        // Check if there are any outputs whose lock surfaces had not had a commit yet.
+        for state in self.output_state.values() {
+            let Some(surface) = &state.lock_surface else {
+                // Surface not created yet.
+                return;
+            };
+
+            if !is_mapped(surface.wl_surface()) {
+                return;
+            }
+        }
+
+        // All good.
+        trace!("lock surfaces are ready, continuing");
+        self.continue_to_locking();
+    }
+
+    fn continue_to_locking(&mut self) {
+        match mem::take(&mut self.lock_state) {
+            LockState::WaitingForSurfaces {
+                confirmation,
+                deadline_token,
+            } => {
+                self.event_loop.remove(deadline_token);
+
+                self.screenshot_ui.close();
+                self.cursor_manager
+                    .set_cursor_image(CursorImageStatus::default_named());
+
+                if self.output_state.is_empty() {
+                    // There are no outputs, lock the session right away.
+                    let lock = confirmation.ext_session_lock().clone();
+                    confirmation.lock();
+                    self.lock_state = LockState::Locked(lock);
+                } else {
+                    // There are outputs which we need to redraw before locking.
+                    self.lock_state = LockState::Locking(confirmation);
+                    self.queue_redraw_all();
+                }
+            }
+            other => {
+                error!("continue_to_locking() called with wrong lock state: {other:?}",);
+                self.lock_state = other;
+            }
         }
     }
 
     pub fn unlock(&mut self) {
         info!("unlocking session");
 
-        self.lock_state = LockState::Unlocked;
+        let prev = mem::take(&mut self.lock_state);
+        if let LockState::WaitingForSurfaces { deadline_token, .. } = prev {
+            self.event_loop.remove(deadline_token);
+        }
+
         for output_state in self.output_state.values_mut() {
             output_state.lock_surface = None;
         }
@@ -4994,7 +5086,7 @@ impl Niri {
     }
 
     pub fn new_lock_surface(&mut self, surface: LockSurface, output: &Output) {
-        if !self.is_locked() {
+        if matches!(self.lock_state, LockState::Unlocked) {
             error!("tried to add a lock surface on an unlocked session");
             return;
         }
