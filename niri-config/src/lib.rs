@@ -31,7 +31,6 @@ mod utils;
 pub use utils::RegexEq;
 
 pub mod json_report;
-pub use json_report::JsonReport;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {

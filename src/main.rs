@@ -22,7 +22,7 @@ use niri::utils::spawning::{
 };
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
-use niri_config::{Config, JsonReport};
+use niri_config::{json_report, Config};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return Ok(());
                 };
                 if json {
-                    let json = JsonReport::from(&report);
+                    let json = json_report::convert_to_json(&report);
                     serde_json::to_writer(BufWriter::new(io::stdout()), &json)?;
                 }
                 return Err(report.into());

@@ -1,137 +1,89 @@
 use miette::{Diagnostic, LabeledSpan, SourceCode, SourceSpan, SpanContents};
-use serde::Serialize;
+use niri_ipc::json_report::{JsonReport, Label, LineSpan, Severity, Span};
 
-#[derive(Serialize)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct JsonReport {
-    pub message: String,
-    pub severity: Severity,
-    pub url: Option<String>,
-    pub help: Option<String>,
-    pub filename: String,
-    pub labels: Vec<Label>,
-    pub related: Vec<JsonReport>,
+pub fn convert_to_json(report: &miette::Report) -> JsonReport {
+    report_from_diagnostic(report.as_ref(), None)
 }
 
-impl From<&miette::Report> for JsonReport {
-    fn from(report: &miette::Report) -> Self {
-        JsonReport::from_diagnostic(report.as_ref(), None)
-    }
-}
-
-impl JsonReport {
-    /// Implementation based on [miette::JSONReportHandler::render_report()].
-    fn from_diagnostic(diagnostic: &dyn Diagnostic, parent_src: Option<&dyn SourceCode>) -> Self {
-        let src = diagnostic.source_code().or(parent_src);
-        Self {
-            message: diagnostic.to_string(),
-            severity: diagnostic
-                .severity()
-                .map(Into::into)
-                .unwrap_or(Severity::Error),
-            url: diagnostic.url().as_ref().map(ToString::to_string),
-            help: diagnostic.help().as_ref().map(ToString::to_string),
-            filename: {
-                // If there are no labels available, fall back to a meaningless default span as we
-                // **really** just want the file name.
-                // (Though if that fails because (0,0) is out of bounds that isn't too bad)
-                let span = diagnostic
-                    .labels()
-                    .as_mut()
-                    .and_then(Iterator::next)
-                    .unwrap_or(LabeledSpan::new_with_span(None, SourceSpan::from((0, 0))));
-
-                src.and_then(|src| {
-                    src.read_span(span.inner(), 0, 0)
-                        .ok()
-                        .as_deref()
-                        .and_then(SpanContents::name)
-                        .map(ToOwned::to_owned)
-                })
-                .unwrap_or_default()
-            },
-            labels: diagnostic
+/// Implementation based on [miette::JSONReportHandler::render_report()].
+fn report_from_diagnostic(
+    diagnostic: &dyn Diagnostic,
+    parent_src: Option<&dyn SourceCode>,
+) -> JsonReport {
+    let src = diagnostic.source_code().or(parent_src);
+    JsonReport {
+        message: diagnostic.to_string(),
+        severity: diagnostic
+            .severity()
+            .map(convert_severity)
+            .unwrap_or(Severity::Error),
+        url: diagnostic.url().as_ref().map(ToString::to_string),
+        help: diagnostic.help().as_ref().map(ToString::to_string),
+        filename: {
+            // If there are no labels available, fall back to a meaningless default span as we
+            // **really** just want the file name.
+            // (Though if that fails because (0,0) is out of bounds that isn't too bad)
+            let span = diagnostic
                 .labels()
-                .map(|iter| {
-                    iter.map(|label| Label {
-                        label: label.label().map(ToOwned::to_owned).unwrap_or_default(),
-                        span: Span {
-                            offset: label.offset(),
-                            length: label.len(),
-                            start: LineSpan::from_label(src, label.inner()),
-                            // Because miette doesn't just give us the ending line + column for
-                            // some reason.
-                            end: LineSpan::from_label(src, &{
-                                let label = label.inner();
-                                SourceSpan::from(label.len() + label.offset())
-                            }),
-                        },
-                    })
+                .as_mut()
+                .and_then(Iterator::next)
+                .unwrap_or(LabeledSpan::new_with_span(None, SourceSpan::from((0, 0))));
+
+            src.and_then(|src| {
+                src.read_span(span.inner(), 0, 0)
+                    .ok()
+                    .as_deref()
+                    .and_then(SpanContents::name)
+                    .map(ToOwned::to_owned)
+            })
+            .unwrap_or_default()
+        },
+        labels: diagnostic
+            .labels()
+            .map(|iter| {
+                iter.map(|label| Label {
+                    label: label.label().map(ToOwned::to_owned).unwrap_or_default(),
+                    span: Span {
+                        offset: label.offset(),
+                        length: label.len(),
+                        start: line_span_from_label(src, label.inner()),
+                        // Because miette doesn't just give us the ending line + column for
+                        // some reason.
+                        end: line_span_from_label(src, &{
+                            let label = label.inner();
+                            SourceSpan::from(label.len() + label.offset())
+                        }),
+                    },
+                })
+                .collect()
+            })
+            .unwrap_or_default(),
+        related: diagnostic
+            .related()
+            .map(|iter| {
+                iter.map(|diagnostic| report_from_diagnostic(diagnostic, src))
                     .collect()
-                })
-                .unwrap_or_default(),
-            related: diagnostic
-                .related()
-                .map(|iter| {
-                    iter.map(|diagnostic| JsonReport::from_diagnostic(diagnostic, src))
-                        .collect()
-                })
-                .unwrap_or_default(),
-        }
+            })
+            .unwrap_or_default(),
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub enum Severity {
-    Advice,
-    Warning,
-    Error,
-}
-
-impl From<miette::Severity> for Severity {
-    fn from(value: miette::Severity) -> Self {
-        match value {
-            miette::Severity::Advice => Self::Advice,
-            miette::Severity::Warning => Self::Warning,
-            miette::Severity::Error => Self::Error,
-        }
+fn convert_severity(value: miette::Severity) -> Severity {
+    match value {
+        miette::Severity::Advice => Severity::Advice,
+        miette::Severity::Warning => Severity::Warning,
+        miette::Severity::Error => Severity::Error,
     }
 }
 
-#[derive(Serialize)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct Label {
-    pub label: String,
-    pub span: Span,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct Span {
-    pub offset: usize,
-    pub length: usize,
-    pub start: Option<LineSpan>,
-    pub end: Option<LineSpan>,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct LineSpan {
-    /// 0-indexed line into the file
-    line: usize,
-    /// 0-indexed column into the file
-    col: usize,
-}
-
-impl LineSpan {
-    fn from_label<S: SourceCode + ?Sized>(code: Option<&S>, span: &SourceSpan) -> Option<Self> {
-        let code = code?;
-        let content = code.read_span(span, 0, 0).ok()?;
-        Some(Self {
-            line: content.line(),
-            col: content.column(),
-        })
-    }
+fn line_span_from_label<S: SourceCode + ?Sized>(
+    code: Option<&S>,
+    span: &SourceSpan,
+) -> Option<LineSpan> {
+    let code = code?;
+    let content = code.read_span(span, 0, 0).ok()?;
+    Some(LineSpan {
+        line: content.line(),
+        col: content.column(),
+    })
 }
