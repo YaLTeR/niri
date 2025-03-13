@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 
 use niri_ipc::PositionChange;
-use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
+use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
@@ -22,8 +22,8 @@ use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
 use crate::layout::{ActivateWindow, AddWindowTarget};
 use crate::niri::{ClientState, State};
-use crate::utils::send_scale_transform;
 use crate::utils::transaction::Transaction;
+use crate::utils::{is_mapped, send_scale_transform};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
 impl CompositorHandler for State {
@@ -78,14 +78,7 @@ impl CompositorHandler for State {
         if surface == &root_surface {
             // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
             if let Entry::Occupied(entry) = self.niri.unmapped_windows.entry(surface.clone()) {
-                let is_mapped =
-                    with_renderer_surface_state(surface, |state| state.buffer().is_some())
-                        .unwrap_or_else(|| {
-                            error!("no renderer surface state even though we use commit handler");
-                            false
-                        });
-
-                if is_mapped {
+                if is_mapped(surface) {
                     // The toplevel got mapped.
                     let Unmapped {
                         window,
@@ -231,12 +224,7 @@ impl CompositorHandler for State {
                 let id = mapped.id();
 
                 // This is a commit of a previously-mapped toplevel.
-                let is_mapped =
-                    with_renderer_surface_state(surface, |state| state.buffer().is_some())
-                        .unwrap_or_else(|| {
-                            error!("no renderer surface state even though we use commit handler");
-                            false
-                        });
+                let is_mapped = is_mapped(surface);
 
                 // Must start the close animation before window.on_commit().
                 let transaction = Transaction::new();

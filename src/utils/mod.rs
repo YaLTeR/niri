@@ -12,6 +12,7 @@ use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
 use niri_config::{Config, OutputName};
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::input::pointer::CursorIcon;
 use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
@@ -179,6 +180,11 @@ pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
         niri_ipc::Transform::Flipped180 => Transform::Flipped180,
         niri_ipc::Transform::Flipped270 => Transform::Flipped270,
     }
+}
+
+pub fn is_mapped(surface: &WlSurface) -> bool {
+    // None if the surface hadn't committed yet.
+    with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false)
 }
 
 pub fn send_scale_transform(
