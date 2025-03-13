@@ -64,6 +64,7 @@ input {
         // accel-profile "flat"
         // scroll-method "on-button-down"
         // scroll-button 273
+        // left-handed
         // middle-emulation
     }
 
@@ -180,6 +181,7 @@ A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackb
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
 - `scroll-button`: <sup>Since: 0.1.10</sup> the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
+- `left-handed`: if set, changes the device to left-handed mode.
 - `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
 Settings specific to `touchpad`s:
@@ -196,10 +198,6 @@ Settings specific to `touchpad`s:
 Settings specific to `touchpad` and `mouse`:
 
 - `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
-
-Settings specific to `touchpad`, `mouse` and `tablet`:
-
-- `left-handed`: if set, changes the device to left-handed mode.
 
 Settings specific to `tablet`s:
 
