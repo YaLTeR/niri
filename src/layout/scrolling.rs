@@ -1491,6 +1491,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.activate_column(self.columns.len() - 1);
     }
 
+    pub fn focus_column(&mut self, index: usize) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.activate_column(index.saturating_sub(1).min(self.columns.len() - 1));
+    }
+
     pub fn focus_window_in_column(&mut self, index: u8) {
         if self.columns.is_empty() {
             return;

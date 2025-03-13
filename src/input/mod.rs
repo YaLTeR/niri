@@ -882,6 +882,13 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusColumn(index) => {
+                self.niri.layout.focus_column(index);
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWindowOrMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
                     if self.niri.layout.focus_window_up_or_output(&output)
