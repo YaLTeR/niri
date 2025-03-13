@@ -1167,6 +1167,12 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::MoveColumnToIndex(idx) => {
+                self.niri.layout.move_column_to_index(idx);
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWorkspaceDown => {
                 self.niri.layout.switch_workspace_down();
                 self.maybe_warp_cursor_to_focus();

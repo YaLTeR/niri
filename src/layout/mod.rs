@@ -1830,6 +1830,13 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn move_column_to_index(&mut self, index: usize) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.move_column_to_index(index);
+    }
+
     pub fn move_down(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
