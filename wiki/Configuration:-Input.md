@@ -243,11 +243,26 @@ input {
 
 Makes the mouse warp to newly focused windows.
 
-X and Y coordinates are computed separately, i.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then it will move only horizontally.
+Does not make the cursor visible if it had been hidden.
 
 ```kdl
 input {
     warp-mouse-to-focus
+}
+```
+
+By default, the cursor warps *separately* horizontally and vertically.
+I.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then the mouse will move only horizontally, and not vertically.
+
+<sup>Since: next release</sup> You can customize this with the `mode` property.
+
+- `mode="center-xy"`: warps by both X and Y coordinates together.
+So if the mouse was anywhere outside the newly focused window, it will warp to the center of the window.
+- `mode="center-xy-always"`: warps by both X and Y coordinates together, even if the mouse was already somewhere inside the newly focused window.
+
+```kdl
+input {
+    warp-mouse-to-focus mode="center-xy"
 }
 ```
 
