@@ -1353,6 +1353,17 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows_mut().find(|win| win.is_wl_surface(wl_surface))
     }
 
+    pub fn tiles_with_workspace_positions(
+        &self,
+    ) -> impl Iterator<Item = (&Tile<W>, Option<(usize, usize)>)> {
+        let scrolling = self.scrolling.tiles_with_workspace_positions();
+
+        let floating = self.floating.tiles_with_render_positions();
+        let floating = floating.map(move |(tile, _pos)| (tile, None));
+
+        floating.chain(scrolling)
+    }
+
     pub fn tiles_with_render_positions(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
