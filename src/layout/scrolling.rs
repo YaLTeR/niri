@@ -1711,8 +1711,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             if source_tile_was_active {
                 // Make sure the previous (target) column is activated so the animation looks right.
-                self.activate_prev_column_on_removal =
-                    Some(self.view_offset.stationary() + offset.x);
+                //
+                // However, if it was already going to be activated, leave the offset as is. This
+                // improves the workflow that has become common with tabbed columns: open a new
+                // window, then immediately consume it left as a new tab.
+                self.activate_prev_column_on_removal
+                    .get_or_insert(self.view_offset.stationary() + offset.x);
             }
 
             offset.x += self.columns[source_col_idx].render_offset().x;
