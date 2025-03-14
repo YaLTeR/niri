@@ -5,17 +5,22 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
 use std::{io, thread};
+use std::env;
+use std::collections::HashMap;
 
 use atomic::Atomic;
 use libc::{getrlimit, rlim_t, rlimit, setrlimit, RLIMIT_NOFILE};
 use niri_config::Environment;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use smithay::wayland::xdg_activation::XdgActivationToken;
 
 use crate::utils::expand_home;
 
 pub static REMOVE_ENV_RUST_BACKTRACE: AtomicBool = AtomicBool::new(false);
 pub static REMOVE_ENV_RUST_LIB_BACKTRACE: AtomicBool = AtomicBool::new(false);
-pub static CHILD_ENV: RwLock<Environment> = RwLock::new(Environment(Vec::new()));
+static CHILD_ENV: RwLock<Environment> = RwLock::new(Environment(Vec::new()));
+static ENV_VAR_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$([A-Za-z0-9_]+)").unwrap());
 
 static ORIGINAL_NOFILE_RLIMIT_CUR: Atomic<rlim_t> = Atomic::new(0);
 static ORIGINAL_NOFILE_RLIMIT_MAX: Atomic<rlim_t> = Atomic::new(0);
@@ -59,6 +64,32 @@ pub fn restore_nofile_rlimit() {
 
     let rlim = rlimit { rlim_cur, rlim_max };
     unsafe { setrlimit(RLIMIT_NOFILE, &rlim) };
+}
+
+/// Updates the child environment with new assignments and resolves nested variable references.
+/// Each variable value is interpolated using previously defined variables, with undefined
+/// variables replaced by an empty string.
+pub fn resolve_environment(mut env: Environment) {
+    let mut resolved_env_map = HashMap::new();
+
+    for var in &mut env.0 {
+        if let Some(value) = &mut var.value {
+            *value = expand_env_vars(value, &resolved_env_map);
+            resolved_env_map.insert(var.name.clone(), value.clone());
+        }
+    }
+
+    *CHILD_ENV.write().unwrap() = env;
+}
+
+fn expand_env_vars(value: &str, env_map: &HashMap<String, String>) -> String {
+    ENV_VAR_REGEX.replace_all(value, |caps: &regex::Captures| {
+        let var_name = &caps[1];
+        env_map.get(var_name)
+            .cloned()
+            .or_else(|| env::var(var_name).ok())
+            .unwrap_or_else(|| String::new())
+    }).to_string()
 }
 
 /// Spawns the command to run independently of the compositor.

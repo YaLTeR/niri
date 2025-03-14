@@ -17,8 +17,8 @@ use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
 use niri::utils::spawning::{
-    spawn, store_and_increase_nofile_rlimit, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
-    REMOVE_ENV_RUST_LIB_BACKTRACE,
+    spawn, store_and_increase_nofile_rlimit, resolve_environment,
+    REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
-    *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
+    resolve_environment(mem::take(&mut config.environment));
 
     store_and_increase_nofile_rlimit();
 

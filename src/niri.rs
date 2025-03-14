@@ -153,7 +153,7 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
-use crate::utils::spawning::CHILD_ENV;
+use crate::utils::spawning::resolve_environment;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
     logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
@@ -1181,7 +1181,7 @@ impl State {
             .clock
             .set_complete_instantly(config.animations.off);
 
-        *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
+        resolve_environment(mem::take(&mut config.environment));
 
         let mut reload_xkb = None;
         let mut libinput_config_changed = false;
