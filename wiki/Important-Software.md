@@ -14,7 +14,7 @@ Portals **require** [running niri as a session](./Getting-Started.md), which mea
 * `xdg-desktop-portal-gnome`: required for screencasting support.
 * `gnome-keyring`: implements the Secret portal, required for certain apps to work.
 
-Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](https://github.com/YaLTeR/niri/wiki/Getting-Started#installation) in the correct location.
+Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](./Getting-Started.md#manual-installation) in the correct location.
 
 Since we're using `xdg-desktop-portal-gnome`, Flatpak apps will read the GNOME UI settings. For example, to enable the dark style, run:
 
@@ -24,7 +24,7 @@ dconf write /org/gnome/desktop/interface/color-scheme '"prefer-dark"'
 
 ### Authentication Agent
 
-Required when apps need to ask for root permissions. Something like `plasma-polkit-agent` works fine. Start it [with systemd](./Example-systemd-Setup.md) or with `spawn-at-startup`.
+Required when apps need to ask for root permissions. Something like `plasma-polkit-agent` works fine. Start it [with systemd](./Example-systemd-Setup.md) or with [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup).
 
 Note that to start `plasma-polkit-agent` with systemd on Fedora, you'll need to override its systemd service to add the correct dependency. Run:
 

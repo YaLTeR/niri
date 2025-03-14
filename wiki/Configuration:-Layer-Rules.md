@@ -79,7 +79,7 @@ They will be replaced with solid black rectangles.
 This can be useful for notifications.
 
 The same caveats and instructions apply as for the `block-out-from` window rule.
-Please read the `block-out-from` section in the [window rules](./Configuration:-Window-Rules.md) wiki page for more details.
+Please read the `block-out-from` section in the [window rules](./Configuration:-Window-Rules.md#block-out-from) wiki page for more details.
 
 ![Screenshot showing a notification visible normally, but blocked out on OBS.](./img/layer-block-out-from-screencast.png)
 
@@ -115,7 +115,7 @@ layer-rule {
 
 Override the shadow options for the surface.
 
-These rules have the same options as the normal shadow config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+These rules have the same options as the normal shadow config in the [layout](./Configuration:-Layout.md#shadow) section, so check the documentation there.
 
 Unlike window shadows, layer surface shadows always need to be enabled with a layer rule.
 That is, enabling shadows in the layout config section won't automatically enable them for layer surfaces.
