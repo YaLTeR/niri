@@ -4265,7 +4265,7 @@ impl Niri {
                 self.render(renderer, output, true, RenderTarget::Screencast)
             });
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, size, scale, &self.config.borrow()) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -4325,7 +4325,7 @@ impl Niri {
             // FIXME: pointer.
             let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale, &self.config.borrow()) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -4409,7 +4409,7 @@ impl Niri {
                     .collect::<Vec<_>>()
             });
 
-            if cast.dequeue_buffer_and_render(renderer, elements, bbox.size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, bbox.size, scale, &self.config.borrow()) {
                 cast.last_frame_time = target_presentation_time;
             }
         }

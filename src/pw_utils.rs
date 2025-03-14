@@ -47,6 +47,7 @@ use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::State;
 use crate::render_helpers::render_to_dmabuf;
 use crate::utils::get_monotonic_time;
+use niri_config::Config;
 
 // Give a 0.1 ms allowance for presentation time errors.
 const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
@@ -822,6 +823,7 @@ impl Cast {
         elements: &[impl RenderElement<GlesRenderer>],
         size: Size<i32, Physical>,
         scale: Scale<f64>,
+        config: &Config
     ) -> bool {
         let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() else {
             error!("cast must be in Ready state to render");
@@ -851,17 +853,24 @@ impl Cast {
 
         let fd = buffer.datas_mut()[0].as_raw().fd;
         let dmabuf = &self.dmabufs.borrow()[&fd];
-
-        if let Err(err) = render_to_dmabuf(
+        
+        match render_to_dmabuf(
             renderer,
             dmabuf.clone(),
             size,
             scale,
             Transform::Normal,
-            elements.iter().rev(),
-        ) {
-            warn!("error rendering to dmabuf: {err:?}");
-            return false;
+            elements.iter().rev()) {
+            Ok(sync_point) => {
+                if config.debug.wait_for_gpu_sync_in_screencasting {
+                    if let Err(err) = sync_point.wait() {
+                        warn!("error waiting for GPU sync point: {err:?}");
+                    }
+                }
+            } Err(err) => {
+                warn!("error rendering to dmabuf: {err:?}");
+                return false;
+            }
         }
 
         for (data, (stride, offset)) in
