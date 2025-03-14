@@ -96,10 +96,13 @@ Override environment variables for processes spawned by niri.
 ```kdl
 environment {
     // Set a variable like this:
-    // QT_QPA_PLATFORM "wayland"
+    QT_QPA_PLATFORM "wayland"
 
     // Remove a variable by using null as the value:
-    // DISPLAY null
+    DISPLAY null
+
+    // Nested variables are expanded
+    XDG_CONFIG_HOME "$HOME/.config"
 }
 ```
 
