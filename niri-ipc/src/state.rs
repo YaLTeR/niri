@@ -141,7 +141,7 @@ impl EventStreamStatePart for WindowsState {
                         continue; // unreachable!()
                     };
 
-                    w.tile_coordinates = Some(((x as i32+change_col) as usize, y));
+                    w.tile_coordinates = Some(((x as i32 + change_col) as usize, y));
                 }
             }
             Event::BatchResizeTiles { id_size_pairs } => {

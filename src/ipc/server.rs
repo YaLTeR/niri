@@ -455,7 +455,7 @@ fn make_ipc_window(
     mapped: &Mapped,
     workspace_id: Option<WorkspaceId>,
     tile_coordinates: Option<(usize, usize)>,
-    tile_size: Option<(f64, f64)>
+    tile_size: Option<(f64, f64)>,
 ) -> niri_ipc::Window {
     with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
         id: mapped.id().get(),
@@ -630,7 +630,6 @@ impl State {
         let mut events = Vec::new();
         let layout = &self.niri.layout;
 
-
         // gather positional information ahead of time, since this has to traverse everything
         struct WindowPositionInfo {
             tile_coordinates: Option<(usize, usize)>,
@@ -641,10 +640,13 @@ impl State {
             for (tile, cell) in ws.tiles_with_workspace_positions() {
                 let k = tile.window().id().get();
                 let size = tile.tile_size();
-                window_positions.insert(k, WindowPositionInfo {
-                    tile_coordinates: cell,
-                    tile_size: Some((size.w, size.h)),
-                });
+                window_positions.insert(
+                    k,
+                    WindowPositionInfo {
+                        tile_coordinates: cell,
+                        tile_size: Some((size.w, size.h)),
+                    },
+                );
             }
         }
 
@@ -662,8 +664,10 @@ impl State {
                 focused_id = Some(id);
             }
 
-            let WindowPositionInfo {tile_coordinates, tile_size} =
-            window_positions.remove(&id).unwrap_or(WindowPositionInfo {
+            let WindowPositionInfo {
+                tile_coordinates,
+                tile_size,
+            } = window_positions.remove(&id).unwrap_or(WindowPositionInfo {
                 tile_coordinates: None,
                 tile_size: None,
             });
@@ -675,8 +679,7 @@ impl State {
             };
 
             let workspace_id = ws_id.map(|id| id.get());
-            let mut changed =
-                ipc_win.workspace_id != workspace_id
+            let mut changed = ipc_win.workspace_id != workspace_id
                 || ipc_win.is_floating != mapped.is_floating()
                 || (ipc_win.tile_size.is_none() != tile_size.is_none())
                 // Create full change event if the y-value (tile index within the column) changed.
@@ -699,7 +702,8 @@ impl State {
             if let (Some((x1, _)), Some((x2, _))) = (ipc_win.tile_coordinates, tile_coordinates) {
                 let change_col = x2 as i32 - x1 as i32;
                 if change_col != 0 {
-                    batch_column_shifts.entry(change_col)
+                    batch_column_shifts
+                        .entry(change_col)
                         .and_modify(|e| e.push(id))
                         .or_insert_with(|| vec![id]);
                 }
@@ -722,7 +726,9 @@ impl State {
             events.push(Event::BatchShiftColumns { ids, change_col });
         }
         if !batch_resizes.is_empty() {
-            events.push(Event::BatchResizeTiles { id_size_pairs: batch_resizes });
+            events.push(Event::BatchResizeTiles {
+                id_size_pairs: batch_resizes,
+            });
         }
 
         // Check for closed windows.

@@ -2209,14 +2209,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn tiles_with_workspace_positions(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Option<(usize, usize)>)> {
-        self.columns.iter()
+        self.columns
+            .iter()
             .enumerate()
             .flat_map(move |(col_i, col)| {
                 col.tiles()
-                .enumerate()
-                    .map(move |(tile_i, (tile, _))| {
-                        (tile, Some((col_i, tile_i)))
-                    })
+                    .enumerate()
+                    .map(move |(tile_i, (tile, _))| (tile, Some((col_i, tile_i))))
             })
     }
 

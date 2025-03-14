@@ -159,9 +159,13 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 bail!("unexpected response: expected Windows, got {response:?}");
             };
 
-            windows.sort_unstable_by_key(|Window { workspace_id, tile_coordinates, .. }| {
-                (*workspace_id, *tile_coordinates)
-            });
+            windows.sort_unstable_by_key(
+                |Window {
+                     workspace_id,
+                     tile_coordinates,
+                     ..
+                 }| { (*workspace_id, *tile_coordinates) },
+            );
 
             // Walk over the windows in sorted order by (workspace, column, row)
             // Accumulate positions/sizes to write the geometry into each window.
@@ -173,8 +177,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             let mut x = 0.0;
             let mut y = 0.0;
             for w in &mut windows {
-                let (Some(wid), Some(cell), Some(size))
-                = (w.workspace_id, w.tile_coordinates, w.tile_size) else {
+                let (Some(wid), Some(cell), Some(size)) =
+                    (w.workspace_id, w.tile_coordinates, w.tile_size)
+                else {
                     continue;
                 };
                 // reset running x position for each workspace
