@@ -65,7 +65,7 @@ impl Element for ExtraDamage {
 impl<R: Renderer> RenderElement<R> for ExtraDamage {
     fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'_>,
+        _frame: &mut R::Frame<'_, '_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],

@@ -1752,10 +1752,16 @@ impl<W: LayoutElement> Workspace<W> {
             assert_abs_diff_eq!(tile_pos.x, rounded_pos.x, epsilon = 1e-5);
             assert_abs_diff_eq!(tile_pos.y, rounded_pos.y, epsilon = 1e-5);
 
-            if let Some(anim) = &tile.alpha_animation {
+            if let Some(alpha) = &tile.alpha_animation {
+                let anim = &alpha.anim;
                 if visible {
                     assert_eq!(anim.to(), 1., "visible tiles can animate alpha only to 1");
                 }
+
+                assert!(
+                    !alpha.hold_after_done,
+                    "tiles in the layout cannot have held alpha animation"
+                );
             }
         }
     }

@@ -185,6 +185,8 @@ pub struct Touchpad {
     pub dwt: bool,
     #[knuffel(child)]
     pub dwtp: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub drag: Option<bool>,
     #[knuffel(child)]
     pub drag_lock: bool,
     #[knuffel(child)]
@@ -247,6 +249,8 @@ pub struct Trackpoint {
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
+    #[knuffel(child)]
+    pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
 }
@@ -1230,6 +1234,8 @@ pub struct WindowRule {
     pub default_floating_position: Option<FloatingPosition>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub tiled_state: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -1452,8 +1458,11 @@ pub enum Action {
     CancelScreenshot,
     #[knuffel(skip)]
     ScreenshotTogglePointer,
-    Screenshot,
-    ScreenshotScreen(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
+    Screenshot(#[knuffel(property(name = "show-pointer"), default = true)] bool),
+    ScreenshotScreen(
+        #[knuffel(property(name = "write-to-disk"), default = true)] bool,
+        #[knuffel(property(name = "show-pointer"), default = true)] bool,
+    ),
     ScreenshotWindow(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
     #[knuffel(skip)]
     ScreenshotWindowById {
@@ -1563,18 +1572,26 @@ pub enum Action {
     FocusMonitorUp,
     FocusMonitorPrevious,
     FocusMonitorNext,
+    FocusMonitor(#[knuffel(argument)] String),
     MoveWindowToMonitorLeft,
     MoveWindowToMonitorRight,
     MoveWindowToMonitorDown,
     MoveWindowToMonitorUp,
     MoveWindowToMonitorPrevious,
     MoveWindowToMonitorNext,
+    MoveWindowToMonitor(#[knuffel(argument)] String),
+    #[knuffel(skip)]
+    MoveWindowToMonitorById {
+        id: u64,
+        output: String,
+    },
     MoveColumnToMonitorLeft,
     MoveColumnToMonitorRight,
     MoveColumnToMonitorDown,
     MoveColumnToMonitorUp,
     MoveColumnToMonitorPrevious,
     MoveColumnToMonitorNext,
+    MoveColumnToMonitor(#[knuffel(argument)] String),
     SetWindowWidth(#[knuffel(argument, str)] SizeChange),
     #[knuffel(skip)]
     SetWindowWidthById {
@@ -1639,10 +1656,11 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
-            niri_ipc::Action::Screenshot {} => Self::Screenshot,
-            niri_ipc::Action::ScreenshotScreen { write_to_disk } => {
-                Self::ScreenshotScreen(write_to_disk)
-            }
+            niri_ipc::Action::Screenshot { show_pointer } => Self::Screenshot(show_pointer),
+            niri_ipc::Action::ScreenshotScreen {
+                write_to_disk,
+                show_pointer,
+            } => Self::ScreenshotScreen(write_to_disk, show_pointer),
             niri_ipc::Action::ScreenshotWindow {
                 id: None,
                 write_to_disk,
@@ -1764,18 +1782,27 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusMonitorUp {} => Self::FocusMonitorUp,
             niri_ipc::Action::FocusMonitorPrevious {} => Self::FocusMonitorPrevious,
             niri_ipc::Action::FocusMonitorNext {} => Self::FocusMonitorNext,
+            niri_ipc::Action::FocusMonitor { output } => Self::FocusMonitor(output),
             niri_ipc::Action::MoveWindowToMonitorLeft {} => Self::MoveWindowToMonitorLeft,
             niri_ipc::Action::MoveWindowToMonitorRight {} => Self::MoveWindowToMonitorRight,
             niri_ipc::Action::MoveWindowToMonitorDown {} => Self::MoveWindowToMonitorDown,
             niri_ipc::Action::MoveWindowToMonitorUp {} => Self::MoveWindowToMonitorUp,
             niri_ipc::Action::MoveWindowToMonitorPrevious {} => Self::MoveWindowToMonitorPrevious,
             niri_ipc::Action::MoveWindowToMonitorNext {} => Self::MoveWindowToMonitorNext,
+            niri_ipc::Action::MoveWindowToMonitor { id: None, output } => {
+                Self::MoveWindowToMonitor(output)
+            }
+            niri_ipc::Action::MoveWindowToMonitor {
+                id: Some(id),
+                output,
+            } => Self::MoveWindowToMonitorById { id, output },
             niri_ipc::Action::MoveColumnToMonitorLeft {} => Self::MoveColumnToMonitorLeft,
             niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
             niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
             niri_ipc::Action::MoveColumnToMonitorUp {} => Self::MoveColumnToMonitorUp,
             niri_ipc::Action::MoveColumnToMonitorPrevious {} => Self::MoveColumnToMonitorPrevious,
             niri_ipc::Action::MoveColumnToMonitorNext {} => Self::MoveColumnToMonitorNext,
+            niri_ipc::Action::MoveColumnToMonitor { output } => Self::MoveColumnToMonitor(output),
             niri_ipc::Action::SetWindowWidth { id: None, change } => Self::SetWindowWidth(change),
             niri_ipc::Action::SetWindowWidth {
                 id: Some(id),
@@ -3553,6 +3580,7 @@ mod tests {
                     tap
                     dwt
                     dwtp
+                    drag true
                     click-method "clickfinger"
                     accel-speed 0.2
                     accel-profile "flat"
@@ -3763,7 +3791,10 @@ mod tests {
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
                 Mod+Q hotkey-overlay-title=null { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
+                Mod+Shift+O { focus-monitor "eDP-1"; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
+                Mod+Ctrl+Alt+O { move-window-to-monitor "eDP-1"; }
+                Mod+Ctrl+Alt+P { move-column-to-monitor "DP-1"; }
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
                 Mod+Shift+1 { focus-workspace "workspace-1"; }
@@ -3811,6 +3842,9 @@ mod tests {
                     tap: true,
                     dwt: true,
                     dwtp: true,
+                    drag: Some(
+                        true,
+                    ),
                     drag_lock: false,
                     natural_scroll: false,
                     click_method: Some(
@@ -3872,6 +3906,7 @@ mod tests {
                     scroll_button: Some(
                         274,
                     ),
+                    left_handed: false,
                     middle_emulation: false,
                 },
                 trackball: Trackball {
@@ -4470,6 +4505,7 @@ mod tests {
                         },
                     ),
                     scroll_factor: None,
+                    tiled_state: None,
                 },
             ],
             layer_rules: [
@@ -4599,6 +4635,24 @@ mod tests {
                     Bind {
                         key: Key {
                             trigger: Keysym(
+                                XK_o,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
+                        },
+                        action: FocusMonitor(
+                            "eDP-1",
+                        ),
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
                                 XK_l,
                             ),
                             modifiers: Modifiers(
@@ -4606,6 +4660,42 @@ mod tests {
                             ),
                         },
                         action: MoveWindowToMonitorRight,
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_o,
+                            ),
+                            modifiers: Modifiers(
+                                CTRL | ALT | COMPOSITOR,
+                            ),
+                        },
+                        action: MoveWindowToMonitor(
+                            "eDP-1",
+                        ),
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_p,
+                            ),
+                            modifiers: Modifiers(
+                                CTRL | ALT | COMPOSITOR,
+                            ),
+                        },
+                        action: MoveColumnToMonitor(
+                            "DP-1",
+                        ),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,

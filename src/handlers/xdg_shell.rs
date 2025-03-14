@@ -45,7 +45,9 @@ use crate::input::touch_resize_grab::TouchResizeGrab;
 use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
 use crate::niri::{PopupGrabState, State};
 use crate::utils::transaction::Transaction;
-use crate::utils::{get_monotonic_time, output_matches_name, send_scale_transform, ResizeEdge};
+use crate::utils::{
+    get_monotonic_time, output_matches_name, send_scale_transform, update_tiled_state, ResizeEdge,
+};
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
 impl XdgShellHandler for State {
@@ -773,7 +775,7 @@ impl XdgDecorationHandler for State {
 delegate_xdg_decoration!(State);
 
 /// Whether KDE server decorations are in use.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct KdeDecorationsModeState {
     server: Cell<bool>,
 }
@@ -946,16 +948,8 @@ impl State {
             );
         }
 
-        // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
-        // rid of the various client-side rounded corners also by using the tiled state.
-        if config.prefer_no_csd {
-            toplevel.with_pending_state(|state| {
-                state.states.set(xdg_toplevel::State::TiledLeft);
-                state.states.set(xdg_toplevel::State::TiledRight);
-                state.states.set(xdg_toplevel::State::TiledTop);
-                state.states.set(xdg_toplevel::State::TiledBottom);
-            });
-        }
+        // Set the tiled state for the initial configure.
+        update_tiled_state(toplevel, config.prefer_no_csd, rules.tiled_state);
 
         // Set the configured settings.
         *state = InitialConfigureState::Configured {

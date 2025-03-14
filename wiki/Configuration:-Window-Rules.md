@@ -91,6 +91,7 @@ window-rule {
 
     geometry-corner-radius 12
     clip-to-geometry true
+    tiled-state true
 
     min-width 100
     max-width 200
@@ -822,6 +823,26 @@ layout {
 window-rule {
     geometry-corner-radius 12
     clip-to-geometry true
+}
+```
+
+#### `tiled-state`
+
+<sup>Since: next release</sup>
+
+Informs the window that it is tiled.
+Usually, windows will react by becoming rectangular and hiding their client-side shadows.
+Windows that snap their size to a grid (e.g. terminals like [foot](https://codeberg.org/dnkl/foot)) will usually disable this snapping when they are tiled.
+
+By default, niri will set the tiled state to `true` together with [`prefer-no-csd`](./Configuration:-Miscellaneous.md) in order to improve behavior for apps that don't support server-side decorations.
+You can use this window rule to override this, for example to get rectangular windows with CSD.
+
+```kdl
+// Make tiled windows rectangular while using CSD.
+window-rule {
+    match is-floating=false
+
+    tiled-state true
 }
 ```
 

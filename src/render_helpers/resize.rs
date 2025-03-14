@@ -5,6 +5,7 @@ use niri_config::CornerRadius;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
+use smithay::backend::renderer::Texture as _;
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
 use super::renderer::{AsGlesFrame, NiriRenderer};
@@ -56,10 +57,10 @@ impl ResizeRenderElement {
         let curr_geo_size = Vec2::new(curr_geo.size.w as f32, curr_geo.size.h as f32);
 
         let tex_prev_geo_loc = Vec2::new(tex_prev_geo.loc.x as f32, tex_prev_geo.loc.y as f32);
-        let tex_prev_geo_size = Vec2::new(tex_prev_geo.size.w as f32, tex_prev_geo.size.h as f32);
+        let tex_prev_size = Vec2::new(texture_prev.width() as f32, texture_prev.height() as f32);
 
         let tex_next_geo_loc = Vec2::new(tex_next_geo.loc.x as f32, tex_next_geo.loc.y as f32);
-        let tex_next_geo_size = Vec2::new(tex_next_geo.size.w as f32, tex_next_geo.size.h as f32);
+        let tex_next_size = Vec2::new(texture_next.width() as f32, texture_next.height() as f32);
 
         let size_prev = Vec2::new(size_prev.w as f32, size_prev.h as f32);
         let size_next = Vec2::new(size_next.w as f32, size_next.h as f32);
@@ -73,10 +74,10 @@ impl ResizeRenderElement {
         let curr_geo_to_prev_geo = Mat3::from_scale(curr_geo_size / size_prev);
         let curr_geo_to_next_geo = Mat3::from_scale(curr_geo_size / size_next);
 
-        let geo_to_tex_prev = Mat3::from_translation(-tex_prev_geo_loc / tex_prev_geo_size)
-            * Mat3::from_scale(size_prev / tex_prev_geo_size * scale);
-        let geo_to_tex_next = Mat3::from_translation(-tex_next_geo_loc / tex_next_geo_size)
-            * Mat3::from_scale(size_next / tex_next_geo_size * scale);
+        let geo_to_tex_prev = Mat3::from_translation(-tex_prev_geo_loc / tex_prev_size)
+            * Mat3::from_scale(size_prev / tex_prev_size * scale);
+        let geo_to_tex_next = Mat3::from_translation(-tex_next_geo_loc / tex_next_size)
+            * Mat3::from_scale(size_next / tex_next_size * scale);
 
         let corner_radius = corner_radius.fit_to(curr_geo_size.x, curr_geo_size.y);
         let clip_to_geometry = if clip_to_geometry { 1. } else { 0. };
@@ -163,7 +164,7 @@ impl Element for ResizeRenderElement {
 impl RenderElement<GlesRenderer> for ResizeRenderElement {
     fn draw(
         &self,
-        frame: &mut GlesFrame<'_>,
+        frame: &mut GlesFrame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -181,7 +182,7 @@ impl RenderElement<GlesRenderer> for ResizeRenderElement {
 impl<'render> RenderElement<TtyRenderer<'render>> for ResizeRenderElement {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'_, '_>,
+        frame: &mut TtyFrame<'_, '_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

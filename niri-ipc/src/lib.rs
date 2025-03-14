@@ -169,7 +169,11 @@ pub enum Action {
         delay_ms: Option<u16>,
     },
     /// Open the screenshot UI.
-    Screenshot {},
+    Screenshot {
+        ///  Whether to show the mouse pointer by default in the screenshot UI.
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
+        show_pointer: bool,
+    },
     /// Screenshot the focused screen.
     ScreenshotScreen {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
@@ -177,6 +181,10 @@ pub enum Action {
         /// The screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
+
+        /// Whether to include the mouse pointer in the screenshot.
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
+        show_pointer: bool,
     },
     /// Screenshot a window.
     #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
@@ -449,6 +457,12 @@ pub enum Action {
     FocusMonitorPrevious {},
     /// Focus the next monitor.
     FocusMonitorNext {},
+    /// Focus a monitor by name.
+    FocusMonitor {
+        /// Name of the output to focus.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Move the focused window to the monitor to the left.
     MoveWindowToMonitorLeft {},
     /// Move the focused window to the monitor to the right.
@@ -461,6 +475,22 @@ pub enum Action {
     MoveWindowToMonitorPrevious {},
     /// Move the focused window to the next monitor.
     MoveWindowToMonitorNext {},
+    /// Move a window to a specific monitor.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move the focused window to a specific monitor")
+    )]
+    MoveWindowToMonitor {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
+        /// The target output name.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Move the focused column to the monitor to the left.
     MoveColumnToMonitorLeft {},
     /// Move the focused column to the monitor to the right.
@@ -473,6 +503,12 @@ pub enum Action {
     MoveColumnToMonitorPrevious {},
     /// Move the focused column to the next monitor.
     MoveColumnToMonitorNext {},
+    /// Move the focused column to a specific monitor.
+    MoveColumnToMonitor {
+        /// The target output name.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Change the width of a window.
     #[cfg_attr(
         feature = "clap",

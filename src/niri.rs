@@ -33,7 +33,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Color32F, Unbind};
+use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -155,8 +155,9 @@ use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRende
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, logical_output,
-    make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
+    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
+    logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
+    write_png_rgba8,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -474,10 +475,14 @@ pub struct PointContents {
     pub layer: Option<LayerSurface>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub enum LockState {
     #[default]
     Unlocked,
+    WaitingForSurfaces {
+        confirmation: SessionLocker,
+        deadline_token: RegistrationToken,
+    },
     Locking(SessionLocker),
     Locked(ExtSessionLockV1),
 }
@@ -502,9 +507,6 @@ pub enum CenterCoords {
     Separately,
     Both,
 }
-
-#[derive(Default)]
-pub struct WindowOffscreenId(pub RefCell<Option<Id>>);
 
 impl RedrawState {
     fn queue_redraw(self) -> Self {
@@ -648,6 +650,10 @@ impl State {
         self.niri.popups.cleanup();
         self.refresh_popup_grab();
         self.update_keyboard_focus();
+
+        // Should be called before refresh_layout() because that one will refresh other window
+        // states and then send a pending configure.
+        self.niri.refresh_window_states();
 
         // Needs to be called after updating the keyboard focus.
         self.niri.refresh_layout();
@@ -1541,7 +1547,7 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self) {
+    pub fn open_screenshot_ui(&mut self, show_pointer: bool) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
         }
@@ -1573,7 +1579,7 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .screenshot_ui
-                .open(renderer, screenshots, default_output)
+                .open(renderer, screenshots, default_output, show_pointer)
         });
 
         self.niri
@@ -1959,12 +1965,23 @@ impl Niri {
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
-        seat.add_keyboard(
+        if let Err(err) = seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
             config_.input.keyboard.repeat_delay.into(),
             config_.input.keyboard.repeat_rate.into(),
-        )
-        .unwrap();
+        ) {
+            if let smithay::input::keyboard::Error::BadKeymap = err {
+                warn!("error loading the configured xkb keymap, trying default");
+            } else {
+                warn!("error adding keyboard: {err:?}");
+            }
+            seat.add_keyboard(
+                Default::default(),
+                config_.input.keyboard.repeat_delay.into(),
+                config_.input.keyboard.repeat_rate.into(),
+            )
+            .unwrap();
+        }
         seat.add_pointer();
 
         let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
@@ -2504,7 +2521,10 @@ impl Niri {
                     self.lock_state = LockState::Locking(confirmation);
                 }
             }
-            lock_state => self.lock_state = lock_state,
+            lock_state => {
+                self.lock_state = lock_state;
+                self.maybe_continue_to_locking();
+            }
         }
 
         if self.screenshot_ui.close() {
@@ -2518,7 +2538,6 @@ impl Niri {
         let output_size = output_size(output).to_i32_round();
         let scale = output.current_scale();
         let transform = output.current_transform();
-        let is_locked = self.is_locked();
 
         {
             let mut layer_map = layer_map_for_output(output);
@@ -2536,10 +2555,8 @@ impl Niri {
             state.background_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
-            if is_locked {
-                if let Some(lock_surface) = &state.lock_surface {
-                    configure_lock_surface(lock_surface, output);
-                }
+            if let Some(lock_surface) = &state.lock_surface {
+                configure_lock_surface(lock_surface, output);
             }
         }
 
@@ -3258,6 +3275,16 @@ impl Niri {
         self.idle_notifier_state.set_is_inhibited(is_inhibited);
     }
 
+    pub fn refresh_window_states(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_window_states");
+
+        let config = self.config.borrow();
+        self.layout.with_windows_mut(|mapped, _output| {
+            mapped.update_tiled_state(config.prefer_no_csd);
+        });
+        drop(config);
+    }
+
     pub fn refresh_window_rules(&mut self) {
         let _span = tracy_client::span!("Niri::refresh_window_rules");
 
@@ -3273,6 +3300,11 @@ impl Niri {
                 if let Some(output) = output {
                     outputs.insert(output.clone());
                 }
+
+                // Since refresh_window_rules() is called after refresh_layout(), we need to update
+                // the tiled state right here, so that it's picked up by the following
+                // send_pending_configure().
+                mapped.update_tiled_state(config.prefer_no_csd);
             }
         });
         drop(config);
@@ -3796,26 +3828,49 @@ impl Niri {
 
         for mapped in self.layout.windows_for_output(output) {
             let win = &mapped.window;
-            let offscreen_id = win
-                .user_data()
-                .get_or_insert(WindowOffscreenId::default)
-                .0
-                .borrow();
-            let offscreen_id = offscreen_id.as_ref();
+            let offscreen_data = mapped.offscreen_data();
+            let offscreen_data = offscreen_data.as_ref();
 
             win.with_surfaces(|surface, states| {
-                let surface_primary_scanout_output = states
+                let primary_scanout_output = states
                     .data_map
                     .get_or_insert_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
-                surface_primary_scanout_output
-                    .lock()
-                    .unwrap()
-                    .update_from_render_element_states(
-                        offscreen_id.cloned().unwrap_or_else(|| surface.into()),
-                        output,
-                        render_element_states,
-                        |_, _, output, _| output,
-                    );
+                let mut primary_scanout_output = primary_scanout_output.lock().unwrap();
+
+                let mut id = Id::from_wayland_resource(surface);
+
+                if let Some(data) = offscreen_data {
+                    // We have offscreen data; it's likely that all surfaces are on it.
+                    if data.states.element_was_presented(id.clone()) {
+                        // If the surface was presented to the offscreen, use the offscreen's id.
+                        id = data.id.clone();
+                    }
+
+                    // If we the surface wasn't presented to the offscreen it can mean:
+                    //
+                    // - The surface was invisible. For example, it's obscured by another surface on
+                    //   the offscreen, or simply isn't mapped.
+                    // - The surface is rendered separately from the offscreen, for example: popups
+                    //   during the window resize animation.
+                    //
+                    // In both of these cases, using the original surface element id and the
+                    // original states is the correct thing to do. We may find the surface in the
+                    // original states (in the second case). Either way, we definitely know it is
+                    // *not* in the offscreen, and we won't miss it.
+                    //
+                    // There's one edge case: if the surface is both in the offscreen and separate,
+                    // and the offscreen itself is invisible, while the separate surface is
+                    // visible. In this case we'll currently mark the surface as invisible. We
+                    // don't really use offscreens like that however, and if we start, it's easy
+                    // enough to fix (need an extra check).
+                }
+
+                primary_scanout_output.update_from_render_element_states(
+                    id,
+                    output,
+                    render_element_states,
+                    |_, _, output, _| output,
+                );
             });
         }
 
@@ -4536,10 +4591,6 @@ impl Niri {
             }
         };
 
-        if let Err(err) = renderer.unbind() {
-            warn!("error unbinding after rendering for screencopy: {err:?}");
-        }
-
         Ok((sync, damages))
     }
 
@@ -4685,6 +4736,7 @@ impl Niri {
         renderer: &mut GlesRenderer,
         output: &Output,
         write_to_disk: bool,
+        include_pointer: bool,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
@@ -4695,8 +4747,12 @@ impl Niri {
         let size = transform.transform_size(size);
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let elements =
-            self.render::<GlesRenderer>(renderer, output, true, RenderTarget::ScreenCapture);
+        let elements = self.render::<GlesRenderer>(
+            renderer,
+            output,
+            include_pointer,
+            RenderTarget::ScreenCapture,
+        );
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -4905,12 +4961,18 @@ impl Niri {
     }
 
     pub fn is_locked(&self) -> bool {
-        !matches!(self.lock_state, LockState::Unlocked)
+        match self.lock_state {
+            LockState::Unlocked | LockState::WaitingForSurfaces { .. } => false,
+            LockState::Locking(_) | LockState::Locked(_) => true,
+        }
     }
 
     pub fn lock(&mut self, confirmation: SessionLocker) {
         // Check if another client is in the process of locking.
-        if matches!(self.lock_state, LockState::Locking(_)) {
+        if matches!(
+            self.lock_state,
+            LockState::WaitingForSurfaces { .. } | LockState::Locking(_)
+        ) {
             info!("refusing lock as another client is currently locking");
             return;
         }
@@ -4923,30 +4985,111 @@ impl Niri {
             }
 
             // If the client had died, continue with the new lock.
+            info!("locking session (replacing existing dead lock)");
+
+            // Since the session was already locked, we know that the outputs are blanked, and
+            // can lock right away.
+            let lock = confirmation.ext_session_lock().clone();
+            confirmation.lock();
+            self.lock_state = LockState::Locked(lock);
+
+            return;
         }
 
         info!("locking session");
 
-        self.screenshot_ui.close();
-        self.cursor_manager
-            .set_cursor_image(CursorImageStatus::default_named());
-
         if self.output_state.is_empty() {
             // There are no outputs, lock the session right away.
+            self.screenshot_ui.close();
+            self.cursor_manager
+                .set_cursor_image(CursorImageStatus::default_named());
+
             let lock = confirmation.ext_session_lock().clone();
             confirmation.lock();
             self.lock_state = LockState::Locked(lock);
         } else {
-            // There are outputs, which we need to redraw before locking.
-            self.lock_state = LockState::Locking(confirmation);
-            self.queue_redraw_all();
+            // There are outputs which we need to redraw before locking. But before we do that,
+            // let's wait for the lock surfaces.
+            //
+            // Give them a second; swaylock can take its time to paint a big enough image.
+            let timer = Timer::from_duration(Duration::from_millis(1000));
+            let deadline_token = self
+                .event_loop
+                .insert_source(timer, |_, _, state| {
+                    trace!("lock deadline expired, continuing");
+                    state.niri.continue_to_locking();
+                    TimeoutAction::Drop
+                })
+                .unwrap();
+
+            self.lock_state = LockState::WaitingForSurfaces {
+                confirmation,
+                deadline_token,
+            };
+        }
+    }
+
+    pub fn maybe_continue_to_locking(&mut self) {
+        if !matches!(self.lock_state, LockState::WaitingForSurfaces { .. }) {
+            // Not waiting.
+            return;
+        }
+
+        // Check if there are any outputs whose lock surfaces had not had a commit yet.
+        for state in self.output_state.values() {
+            let Some(surface) = &state.lock_surface else {
+                // Surface not created yet.
+                return;
+            };
+
+            if !is_mapped(surface.wl_surface()) {
+                return;
+            }
+        }
+
+        // All good.
+        trace!("lock surfaces are ready, continuing");
+        self.continue_to_locking();
+    }
+
+    fn continue_to_locking(&mut self) {
+        match mem::take(&mut self.lock_state) {
+            LockState::WaitingForSurfaces {
+                confirmation,
+                deadline_token,
+            } => {
+                self.event_loop.remove(deadline_token);
+
+                self.screenshot_ui.close();
+                self.cursor_manager
+                    .set_cursor_image(CursorImageStatus::default_named());
+
+                if self.output_state.is_empty() {
+                    // There are no outputs, lock the session right away.
+                    let lock = confirmation.ext_session_lock().clone();
+                    confirmation.lock();
+                    self.lock_state = LockState::Locked(lock);
+                } else {
+                    // There are outputs which we need to redraw before locking.
+                    self.lock_state = LockState::Locking(confirmation);
+                    self.queue_redraw_all();
+                }
+            }
+            other => {
+                error!("continue_to_locking() called with wrong lock state: {other:?}",);
+                self.lock_state = other;
+            }
         }
     }
 
     pub fn unlock(&mut self) {
         info!("unlocking session");
 
-        self.lock_state = LockState::Unlocked;
+        let prev = mem::take(&mut self.lock_state);
+        if let LockState::WaitingForSurfaces { deadline_token, .. } = prev {
+            self.event_loop.remove(deadline_token);
+        }
+
         for output_state in self.output_state.values_mut() {
             output_state.lock_surface = None;
         }
@@ -4954,7 +5097,7 @@ impl Niri {
     }
 
     pub fn new_lock_surface(&mut self, surface: LockSurface, output: &Output) {
-        if !self.is_locked() {
+        if matches!(self.lock_state, LockState::Unlocked) {
             error!("tried to add a lock surface on an unlocked session");
             return;
         }

@@ -565,11 +565,14 @@ impl State {
                     self.niri.do_screen_transition(renderer, delay_ms);
                 });
             }
-            Action::ScreenshotScreen(write_to_disk) => {
+            Action::ScreenshotScreen(write_to_disk, show_pointer) => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) = self.niri.screenshot(renderer, &active, write_to_disk) {
+                        if let Err(err) =
+                            self.niri
+                                .screenshot(renderer, &active, write_to_disk, show_pointer)
+                        {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
@@ -615,8 +618,8 @@ impl State {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();
             }
-            Action::Screenshot => {
-                self.open_screenshot_ui();
+            Action::Screenshot(show_cursor) => {
+                self.open_screenshot_ui(show_cursor);
             }
             Action::ScreenshotWindow(write_to_disk) => {
                 let focus = self.niri.layout.focus_with_output();
@@ -1383,6 +1386,15 @@ impl State {
                     self.niri.layer_shell_on_demand_focus = None;
                 }
             }
+            Action::FocusMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                    self.niri.layer_shell_on_demand_focus = None;
+                }
+            }
             Action::MoveWindowToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_to_output(None, &output, None);
@@ -1437,6 +1449,41 @@ impl State {
                     }
                 }
             }
+            Action::MoveWindowToMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                }
+            }
+            Action::MoveWindowToMonitorById { id, output } => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                    let window = window.map(|(_, m)| m.window.clone());
+
+                    if let Some(window) = window {
+                        let target_was_active = self
+                            .niri
+                            .layout
+                            .active_output()
+                            .is_some_and(|active| output == *active);
+
+                        self.niri
+                            .layout
+                            .move_to_output(Some(&window), &output, None);
+
+                        // If the active output changed (window was moved and focused).
+                        #[allow(clippy::collapsible_if)]
+                        if !target_was_active && self.niri.layout.active_output() == Some(&output) {
+                            if !self.maybe_warp_cursor_to_focus_centered() {
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                    }
+                }
+            }
             Action::MoveColumnToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output);
@@ -1484,6 +1531,15 @@ impl State {
             }
             Action::MoveColumnToMonitorNext => {
                 if let Some(output) = self.niri.output_next() {
+                    self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                }
+            }
+            Action::MoveColumnToMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
                     self.niri.layout.move_column_to_output(&output);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -3334,6 +3390,13 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
+        if let Some(drag) = c.drag {
+            let _ = device.config_tap_set_drag_enabled(drag);
+        } else {
+            let default = device.config_tap_default_drag_enabled();
+            let _ = device.config_tap_set_drag_enabled(default);
+        }
+
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
         } else if let Some(default) = device.config_accel_default_profile() {
@@ -3473,6 +3536,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
         if let Some(accel_profile) = c.accel_profile {

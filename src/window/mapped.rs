@@ -1,9 +1,9 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
-use smithay::backend::renderer::element::{Id, Kind};
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
 use smithay::desktop::{PopupManager, Window};
@@ -24,9 +24,9 @@ use crate::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
     LayoutElementRenderSnapshot,
 };
-use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
+use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -35,7 +35,8 @@ use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
-    get_credentials_for_surface, send_scale_transform, with_toplevel_role, ResizeEdge,
+    get_credentials_for_surface, send_scale_transform, update_tiled_state, with_toplevel_role,
+    ResizeEdge,
 };
 
 #[derive(Debug)]
@@ -71,6 +72,11 @@ pub struct Mapped {
     /// resizes immediately, without waiting for a 1 second throttled callback.
     needs_frame_callback: bool,
 
+    /// Data of the offscreen element rendered in place of this window.
+    ///
+    /// If `None`, then the window is not offscreened.
+    offscreen_data: RefCell<Option<OffscreenData>>,
+
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
@@ -95,7 +101,7 @@ pub struct Mapped {
     /// Serials of commits that should be animated.
     animate_serials: Vec<Serial>,
 
-    /// Snapshot right before an animated commit.
+    /// Snapshot right before an animated commit, without popups.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
 
     /// State for the logic to request a size once (for floating windows).
@@ -188,6 +194,7 @@ impl Mapped {
             need_to_recompute_rules: false,
             needs_configure: false,
             needs_frame_callback: false,
+            offscreen_data: RefCell::new(None),
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
@@ -252,6 +259,10 @@ impl Mapped {
         self.credentials.as_ref()
     }
 
+    pub fn offscreen_data(&self) -> Ref<Option<OffscreenData>> {
+        self.offscreen_data.borrow()
+    }
+
     pub fn is_focused(&self) -> bool {
         self.is_focused
     }
@@ -290,6 +301,7 @@ impl Mapped {
         self.need_to_recompute_rules = true;
     }
 
+    /// Renders a snapshot of the window without popups.
     fn render_snapshot(&self, renderer: &mut GlesRenderer) -> LayoutElementRenderSnapshot {
         let _span = tracy_client::span!("Mapped::render_snapshot");
 
@@ -309,17 +321,6 @@ impl Mapped {
         let mut contents = vec![];
 
         let surface = self.toplevel().wl_surface();
-        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-            let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
-
-            render_snapshot_from_surface_tree(
-                renderer,
-                popup.wl_surface(),
-                buf_pos + offset.to_f64(),
-                &mut contents,
-            );
-        }
-
         render_snapshot_from_surface_tree(renderer, surface, buf_pos, &mut contents);
 
         RenderSnapshot {
@@ -461,6 +462,10 @@ impl Mapped {
             needs_frame_callback.then(|| output.clone())
         };
         self.window.send_frame(output, time, throttle, should_send);
+    }
+
+    pub fn update_tiled_state(&self, prefer_no_csd: bool) {
+        update_tiled_state(self.toplevel(), prefer_no_csd, self.rules.tiled_state);
     }
 }
 
@@ -752,12 +757,24 @@ impl LayoutElement for Mapped {
         self.window.output_leave(output)
     }
 
-    fn set_offscreen_element_id(&self, id: Option<Id>) {
-        let data = self
-            .window
-            .user_data()
-            .get_or_insert(WindowOffscreenId::default);
-        data.0.replace(id);
+    fn set_offscreen_data(&self, data: Option<OffscreenData>) {
+        let Some(data) = data else {
+            self.offscreen_data.replace(None);
+            return;
+        };
+
+        let mut offscreen_data = self.offscreen_data.borrow_mut();
+        match &mut *offscreen_data {
+            None => {
+                *offscreen_data = Some(data);
+            }
+            Some(existing) => {
+                // Replace the id, amend existing element states. This is necessary to handle
+                // multiple layers of offscreen (e.g. resize animation + alpha animation).
+                existing.id = data.id;
+                existing.states.states.extend(data.states.states);
+            }
+        }
     }
 
     fn set_activated(&mut self, active: bool) {

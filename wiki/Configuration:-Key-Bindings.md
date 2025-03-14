@@ -295,6 +295,8 @@ niri msg action do-screen-transition --delay-ms 100
 
 #### `toggle-window-rule-opacity`
 
+<sup>Since: 25.02</sup>
+
 Toggle the opacity window rule of the focused window.
 This only has an effect if the window's opacity window rule is already set to semitransparent.
 
@@ -304,9 +306,13 @@ binds {
 }
 ```
 
-#### `screenshot-screen`, `screenshot-window`
+#### `screenshot`, `screenshot-screen`, `screenshot-window`
 
-Take a screenshot of the focused screen or window respectively.
+Actions for taking screenshots.
+
+- `screenshot`: opens the built-in interactive screenshot UI.
+- `screenshot-screen`, `screenshow-window`: takes a screenshot of the focused screen or window respectively.
+
 The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md).
 
 <sup>Since: 25.02</sup> You can disable saving to disk for a specific bind with the `write-to-disk=false` property:
@@ -315,5 +321,44 @@ The screenshot is both stored to the clipboard and saved to disk, according to t
 binds {
     Ctrl+Print { screenshot-screen write-to-disk=false; }
     Alt+Print { screenshot-window write-to-disk=false; }
+}
+```
+
+In the interactive screenshot UI, pressing <kbd>Ctrl</kbd><kbd>C</kbd> will copy the screenshot to the clipboard without writing it to disk.
+
+<sup>Since: next release</sup> You can hide the mouse pointer in screenshots with the `show-pointer=false` property:
+
+```kdl
+binds {
+    // The pointer will be hidden by default
+    // (you can still show it by pressing P).
+    Print { screenshot show-pointer=false; }
+
+    // The pointer will be hidden on the screenshot.
+    Ctrl+Print { screenshot-screen show-pointer=false; }
+}
+```
+
+#### `toggle-keyboard-shortcuts-inhibit`
+
+<sup>Since: 25.02</sup>
+
+Applications such as remote-desktop clients and software KVM switches may request that niri stops processing its keyboard shortcuts so that they may, for example, forward the key presses as-is to a remote machine.
+`toggle-keyboard-shortcuts-inhibit` is an escape hatch that toggles the inhibitor.
+It's a good idea to bind it, so a buggy application can't hold your session hostage.
+
+```kdl
+binds {
+    Mod+Escape { toggle-keyboard-shortcuts-inhibit; }
+}
+```
+
+You can also make certain binds ignore inhibiting with the `allow-inhibiting=false` property.
+They will always be handled by niri and never passed to the window.
+
+```kdl
+binds {
+    // This bind will always work, even when using a virtual machine.
+    Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```

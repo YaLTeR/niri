@@ -2,10 +2,9 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
-use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
@@ -19,12 +18,13 @@ use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
+use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
+use crate::render_helpers::RenderTarget;
 use crate::utils::round_logical_in_physical;
 use crate::utils::transaction::Transaction;
 
@@ -87,7 +87,7 @@ pub struct Tile<W: LayoutElement> {
     move_y_animation: Option<MoveAnimation>,
 
     /// The animation of the tile's opacity.
-    pub(super) alpha_animation: Option<Animation>,
+    pub(super) alpha_animation: Option<AlphaAnimation>,
 
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
@@ -123,6 +123,7 @@ niri_render_elements! {
         Border = BorderRenderElement,
         Shadow = ShadowRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
+        Offscreen = OffscreenRenderElement,
         ExtraDamage = ExtraDamage,
     }
 }
@@ -135,12 +136,25 @@ struct ResizeAnimation {
     anim: Animation,
     size_from: Size<f64, Logical>,
     snapshot: LayoutElementRenderSnapshot,
+    offscreen: OffscreenBuffer,
 }
 
 #[derive(Debug)]
 struct MoveAnimation {
     anim: Animation,
     from: f64,
+}
+
+#[derive(Debug)]
+pub(super) struct AlphaAnimation {
+    pub(super) anim: Animation,
+    /// Whether the animation should persist after it's done.
+    ///
+    /// This is used by things like interactive move which need to animate alpha to
+    /// semitransparent, then hold it at semitransparent for a while, until the operation
+    /// completes.
+    pub(super) hold_after_done: bool,
+    offscreen: OffscreenBuffer,
 }
 
 impl<W: LayoutElement> Tile<W> {
@@ -228,7 +242,7 @@ impl<W: LayoutElement> Tile<W> {
         self.is_fullscreen = self.window.is_fullscreen();
 
         if let Some(animate_from) = self.window.take_animation_snapshot() {
-            let size_from = if let Some(resize) = self.resize_animation.take() {
+            let (size_from, offscreen) = if let Some(resize) = self.resize_animation.take() {
                 // Compute like in animated_window_size(), but using the snapshot geometry (since
                 // the current one is already overwritten).
                 let mut size = animate_from.size;
@@ -239,9 +253,10 @@ impl<W: LayoutElement> Tile<W> {
                 size.w = size_from.w + (size.w - size_from.w) * val;
                 size.h = size_from.h + (size.h - size_from.h) * val;
 
-                size
+                // Also try to reuse the existing offscreen buffer if we have one.
+                (size, resize.offscreen)
             } else {
-                animate_from.size
+                (animate_from.size, OffscreenBuffer::default())
             };
 
             let change = self.window.size().to_f64().to_point() - size_from.to_point();
@@ -258,6 +273,7 @@ impl<W: LayoutElement> Tile<W> {
                     anim,
                     size_from,
                     snapshot: animate_from,
+                    offscreen,
                 });
             } else {
                 self.resize_animation = None;
@@ -309,7 +325,7 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if let Some(alpha) = &mut self.alpha_animation {
-            if alpha.is_done() {
+            if !alpha.hold_after_done && alpha.anim.is_done() {
                 self.alpha_animation = None;
             }
         }
@@ -324,12 +340,14 @@ impl<W: LayoutElement> Tile<W> {
             || self.resize_animation.is_some()
             || self.move_x_animation.is_some()
             || self.move_y_animation.is_some()
-            || self.alpha_animation.is_some()
+            || self
+                .alpha_animation
+                .as_ref()
+                .is_some_and(|alpha| !alpha.anim.is_done())
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
-        let alpha = self.tile_alpha();
 
         let draw_border_with_background = rules
             .draw_border_with_background
@@ -354,7 +372,7 @@ impl<W: LayoutElement> Tile<W> {
             ),
             radius,
             self.scale,
-            alpha,
+            1.,
         );
 
         let radius = if self.is_fullscreen {
@@ -369,7 +387,7 @@ impl<W: LayoutElement> Tile<W> {
             is_active,
             radius,
             self.scale,
-            alpha,
+            1.,
         );
 
         let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
@@ -385,7 +403,7 @@ impl<W: LayoutElement> Tile<W> {
             view_rect,
             radius,
             self.scale,
-            alpha,
+            1.,
         );
     }
 
@@ -473,14 +491,23 @@ impl<W: LayoutElement> Tile<W> {
     pub fn animate_alpha(&mut self, from: f64, to: f64, config: niri_config::Animation) {
         let from = from.clamp(0., 1.);
         let to = to.clamp(0., 1.);
-        let current = self.alpha_animation.take().map(|anim| anim.clamped_value());
-        let current = current.unwrap_or(from);
-        self.alpha_animation = Some(Animation::new(self.clock.clone(), current, to, 0., config));
+
+        let (current, offscreen) = if let Some(alpha) = self.alpha_animation.take() {
+            (alpha.anim.clamped_value(), alpha.offscreen)
+        } else {
+            (from, OffscreenBuffer::default())
+        };
+
+        self.alpha_animation = Some(AlphaAnimation {
+            anim: Animation::new(self.clock.clone(), current, to, 0., config),
+            hold_after_done: false,
+            offscreen,
+        });
     }
 
     pub fn ensure_alpha_animates_to_1(&mut self) {
-        if let Some(anim) = &self.alpha_animation {
-            if anim.to() != 1. {
+        if let Some(alpha) = &self.alpha_animation {
+            if alpha.anim.to() != 1. {
                 // Cancel animation instead of starting a new one because the user likely wants to
                 // see the tile right away.
                 self.alpha_animation = None;
@@ -488,11 +515,10 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    /// Opacity that applies to both window and decorations.
-    fn tile_alpha(&self) -> f32 {
-        self.alpha_animation
-            .as_ref()
-            .map_or(1., |anim| anim.clamped_value()) as f32
+    pub fn hold_alpha_animation_after_done(&mut self) {
+        if let Some(alpha) = &mut self.alpha_animation {
+            alpha.hold_after_done = true;
+        }
     }
 
     pub fn window(&self) -> &W {
@@ -800,9 +826,6 @@ impl<W: LayoutElement> Tile<W> {
             self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)
         };
 
-        let tile_alpha = self.tile_alpha();
-        let win_alpha = win_alpha * tile_alpha;
-
         // This is here rather than in render_offset() because render_offset() is currently assumed
         // by the code to be temporary. So, for example, interactive move will try to "grab" the
         // tile at its current render offset and reset the render offset to zero by cancelling the
@@ -848,15 +871,11 @@ impl<W: LayoutElement> Tile<W> {
                         target,
                     );
 
-                    let current = render_to_encompassing_texture(
-                        gles_renderer,
-                        scale,
-                        Transform::Normal,
-                        Fourcc::Abgr8888,
-                        &window_elements,
-                    )
-                    .map_err(|err| warn!("error rendering window to texture: {err:?}"))
-                    .ok();
+                    let current = resize
+                        .offscreen
+                        .render(gles_renderer, scale, &window_elements)
+                        .map_err(|err| warn!("error rendering window to texture: {err:?}"))
+                        .ok();
 
                     // Clip blocked-out resizes unconditionally because they use solid color render
                     // elements.
@@ -869,7 +888,13 @@ impl<W: LayoutElement> Tile<W> {
                         clip_to_geometry
                     };
 
-                    if let Some((texture_current, _sync_point, texture_current_geo)) = current {
+                    if let Some((elem_current, _sync_point, mut data)) = current {
+                        let texture_current = elem_current.texture().clone();
+                        // The offset and size are computed in physical pixels and converted to
+                        // logical with the same `scale`, so converting them back with rounding
+                        // inside the geometry() call gives us the same physical result back.
+                        let texture_current_geo = elem_current.geometry(scale);
+
                         let elem = ResizeRenderElement::new(
                             area,
                             scale,
@@ -883,10 +908,13 @@ impl<W: LayoutElement> Tile<W> {
                             clip_to_geometry,
                             win_alpha,
                         );
-                        // FIXME: with split popups, this will use the resize element ID for
-                        // popups, but we want the real IDs.
-                        self.window
-                            .set_offscreen_element_id(Some(elem.id().clone()));
+
+                        // We're drawing the resize shader, not the offscreen directly.
+                        data.id = elem.id().clone();
+
+                        // This is not a problem for split popups as the code will look for them by
+                        // original id when it doesn't find them on the offscreen.
+                        self.window.set_offscreen_data(Some(data));
                         resize_shader = Some(elem.into());
                     }
                 }
@@ -903,7 +931,6 @@ impl<W: LayoutElement> Tile<W> {
                     )
                     .into(),
                 );
-                self.window.set_offscreen_element_id(None);
             }
         }
 
@@ -994,7 +1021,7 @@ impl<W: LayoutElement> Tile<W> {
             SolidColorRenderElement::from_buffer(
                 &self.fullscreen_backdrop,
                 location,
-                tile_alpha,
+                1.,
                 Kind::Unspecified,
             )
             .into()
@@ -1024,33 +1051,64 @@ impl<W: LayoutElement> Tile<W> {
     ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render");
 
+        let tile_alpha = self
+            .alpha_animation
+            .as_ref()
+            .map_or(1., |alpha| alpha.anim.clamped_value()) as f32;
+
         let mut open_anim_elem = None;
+        let mut alpha_anim_elem = None;
         let mut window_elems = None;
+
+        self.window().set_offscreen_data(None);
 
         if let Some(open) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
             let elements =
                 self.render_inner(renderer, Point::from((0., 0.)), scale, focus_ring, target);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
-            match open.render(renderer, &elements, self.tile_size(), location, scale) {
-                Ok(elem) => {
-                    self.window()
-                        .set_offscreen_element_id(Some(elem.id().clone()));
+            match open.render(
+                renderer,
+                &elements,
+                self.animated_tile_size(),
+                location,
+                scale,
+                tile_alpha,
+            ) {
+                Ok((elem, data)) => {
+                    self.window().set_offscreen_data(Some(data));
                     open_anim_elem = Some(elem.into());
                 }
                 Err(err) => {
                     warn!("error rendering window opening animation: {err:?}");
                 }
             }
+        } else if let Some(alpha) = &self.alpha_animation {
+            let renderer = renderer.as_gles_renderer();
+            let elements =
+                self.render_inner(renderer, Point::from((0., 0.)), scale, focus_ring, target);
+            let elements = elements.collect::<Vec<TileRenderElement<_>>>();
+            match alpha.offscreen.render(renderer, scale, &elements) {
+                Ok((elem, _sync, data)) => {
+                    let offset = elem.offset();
+                    let elem = elem.with_alpha(tile_alpha).with_offset(location + offset);
+
+                    self.window().set_offscreen_data(Some(data));
+                    alpha_anim_elem = Some(elem.into());
+                }
+                Err(err) => {
+                    warn!("error rendering tile to offscreen for alpha animation: {err:?}");
+                }
+            }
         }
 
-        if open_anim_elem.is_none() {
-            self.window().set_offscreen_element_id(None);
+        if open_anim_elem.is_none() && alpha_anim_elem.is_none() {
             window_elems = Some(self.render_inner(renderer, location, scale, focus_ring, target));
         }
 
         open_anim_elem
             .into_iter()
+            .chain(alpha_anim_elem)
             .chain(window_elems.into_iter().flatten())
     }
 

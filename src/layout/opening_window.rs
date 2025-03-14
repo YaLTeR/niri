@@ -2,32 +2,30 @@ use std::collections::HashMap;
 
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
-use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::{Kind, RenderElement};
+use smithay::backend::renderer::element::{Element as _, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, Uniform};
 use smithay::backend::renderer::Texture;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use crate::animation::Animation;
 use crate::niri_render_elements;
-use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use crate::render_helpers::render_to_encompassing_texture;
+use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenData, OffscreenRenderElement};
 use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
-use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 
 #[derive(Debug)]
 pub struct OpenAnimation {
     anim: Animation,
     random_seed: f32,
+    buffer: OffscreenBuffer,
 }
 
 niri_render_elements! {
     OpeningWindowRenderElement => {
-        Texture = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
+        Offscreen = RelocateRenderElement<RescaleRenderElement<OffscreenRenderElement>>,
         Shader = ShaderRenderElement,
     }
 }
@@ -37,6 +35,7 @@ impl OpenAnimation {
         Self {
             anim,
             random_seed: fastrand::f32(),
+            buffer: OffscreenBuffer::default(),
         }
     }
 
@@ -55,23 +54,23 @@ impl OpenAnimation {
         geo_size: Size<f64, Logical>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
-    ) -> anyhow::Result<OpeningWindowRenderElement> {
+        alpha: f32,
+    ) -> anyhow::Result<(OpeningWindowRenderElement, OffscreenData)> {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
-        let (texture, _sync_point, geo) = render_to_encompassing_texture(
-            renderer,
-            scale,
-            Transform::Normal,
-            Fourcc::Abgr8888,
-            elements,
-        )
-        .context("error rendering to texture")?;
-
-        let offset = geo.loc.to_f64().to_logical(scale);
-        let texture_size = geo.size.to_f64().to_logical(scale);
+        let (elem, _sync_point, mut data) = self
+            .buffer
+            .render(renderer, scale, elements)
+            .context("error rendering to offscreen buffer")?;
 
         if Shaders::get(renderer).program(ProgramType::Open).is_some() {
+            // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we
+            // can assume that below.
+            let offset = elem.offset();
+            let texture = elem.texture();
+            let texture_size = elem.logical_size();
+
             let mut area = Rectangle::new(location + offset, texture_size);
 
             // Expand the area a bit to allow for more varied effects.
@@ -99,12 +98,12 @@ impl OpenAnimation {
             let geo_to_tex =
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
-            return Ok(ShaderRenderElement::new(
+            let elem = ShaderRenderElement::new(
                 ProgramType::Open,
                 area.size,
                 None,
                 scale.x as f32,
-                1.,
+                alpha,
                 vec![
                     mat3_uniform("niri_input_to_geo", input_to_geo),
                     Uniform::new("niri_geo_size", geo_size.to_array()),
@@ -116,36 +115,29 @@ impl OpenAnimation {
                 HashMap::from([(String::from("niri_tex"), texture.clone())]),
                 Kind::Unspecified,
             )
-            .with_location(area.loc)
-            .into());
+            .with_location(area.loc);
+
+            // We're drawing the shader, not the offscreen itself.
+            data.id = elem.id().clone();
+
+            return Ok((elem.into(), data));
         }
 
-        let buffer =
-            TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, Vec::new());
-        let elem = TextureRenderElement::from_texture_buffer(
-            buffer,
-            Point::from((0., 0.)),
-            clamped_progress as f32,
-            None,
-            None,
-            Kind::Unspecified,
-        );
-
-        let elem = PrimaryGpuTextureRenderElement(elem);
+        let elem = elem.with_alpha(clamped_progress as f32 * alpha);
 
         let center = geo_size.to_point().downscale(2.);
         let elem = RescaleRenderElement::from_element(
             elem,
-            (center - offset).to_physical_precise_round(scale),
+            center.to_physical_precise_round(scale),
             (progress / 2. + 0.5).max(0.),
         );
 
         let elem = RelocateRenderElement::from_element(
             elem,
-            (location + offset).to_physical_precise_round(scale),
+            location.to_physical_precise_round(scale),
             Relocate::Relative,
         );
 
-        Ok(elem.into())
+        Ok((elem.into(), data))
     }
 }

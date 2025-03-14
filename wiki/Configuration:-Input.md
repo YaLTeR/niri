@@ -30,6 +30,7 @@ input {
         tap
         // dwt
         // dwtp
+        // drag false
         // drag-lock
         natural-scroll
         // accel-speed 0.2
@@ -63,6 +64,7 @@ input {
         // accel-profile "flat"
         // scroll-method "on-button-down"
         // scroll-button 273
+        // left-handed
         // middle-emulation
     }
 
@@ -179,6 +181,7 @@ A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackb
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
 - `scroll-button`: <sup>Since: 0.1.10</sup> the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
+- `left-handed`: if set, changes the device to left-handed mode.
 - `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
 Settings specific to `touchpad`s:
@@ -186,6 +189,7 @@ Settings specific to `touchpad`s:
 - `tap`: tap-to-click.
 - `dwt`: disable-when-typing.
 - `dwtp`: disable-when-trackpointing.
+- `drag`: can be `true` or `false`, controls if tap-and-drag is enabled.
 - `drag-lock`: <sup>Since: 25.02</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
@@ -194,10 +198,6 @@ Settings specific to `touchpad`s:
 Settings specific to `touchpad` and `mouse`:
 
 - `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
-
-Settings specific to `touchpad`, `mouse` and `tablet`:
-
-- `left-handed`: if set, changes the device to left-handed mode.
 
 Settings specific to `tablet`s:
 
