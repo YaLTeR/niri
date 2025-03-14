@@ -2,7 +2,7 @@ When starting niri from a display manager like GDM, or otherwise through the `ni
 This provides the necessary systemd integration to run programs like `mako` and services like `xdg-desktop-portal` bound to the graphical session.
 
 Here's an example on how you might set up [`mako`](https://github.com/emersion/mako), [`waybar`](https://github.com/Alexays/Waybar), [`swaybg`](https://github.com/swaywm/swaybg) and [`swayidle`](https://github.com/swaywm/swayidle) to run as systemd services with niri.
-In contrast to the `spawn-at-startup` config option, this lets you easily monitor their status and output, and restart or reload them.
+In contrast to the [`spawn-at-startup`](./Configuration:-Miscellaneous#spawn-at-startup) config option, this lets you easily monitor their status and output, and restart or reload them.
 
 1. Install them, i.e. `sudo dnf install mako waybar swaybg swayidle`
 2. Create a `niri.service.wants` folder: `mkdir -p ~/.config/systemd/user/niri.service.wants`
