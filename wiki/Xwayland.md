@@ -31,7 +31,7 @@ environment {
 
 > [!NOTE]
 > If the `:0` DISPLAY is already taken (for example, by some other Xwayland server like `xwayland-run`), `xwayland-satellite` will try the next DISPLAY numbers in order: `:1`, `:2`, etc. and tell you which one it used in its output.
-> Then, you will need to use that DISPLAY number for the `env` command or for the niri [`environment`](./Configuration:-Miscellaneous.md#environment) block.
+> Then, you will need to use that DISPLAY number for the `env` command or for the niri [`environment`](./Configuration:-Miscellaneous.md#environment) section.
 >
 > You can also force a specific DISPLAY number like so: `xwayland-satellite :12` will start on `DISPLAY=:12`.
 

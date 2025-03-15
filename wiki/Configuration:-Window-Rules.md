@@ -481,7 +481,7 @@ You can block out windows from xdg-desktop-portal screencasts.
 They will be replaced with solid black rectangles.
 
 This can be useful for password managers or messenger windows, etc.
-For layer-shell notification pop-ups and the like, you can use a `block-out-from` [layer rule](./Configuration:-Layer-Rules.md#block-out-from).
+For layer-shell notification pop-ups and the like, you can use a [`block-out-from` layer rule](./Configuration:-Layer-Rules.md#block-out-from).
 
 ![Screenshot showing a window visible normally, but blocked out on OBS.](./img/block-out-from-screencast.png)
 
@@ -657,7 +657,7 @@ window-rule {
 
 Set a scroll factor for all scroll events sent to a window.
 
-This will be multiplied with the scroll factor set for your input device in the [input](/wiki/Configuration:-Input.md#pointing-devices) section.
+This will be multiplied with the scroll factor set for your input device in the [input section](/wiki/Configuration:-Input.md#pointing-devices).
 
 ```kdl
 // Make scrolling in Firefox a bit slower.
@@ -693,7 +693,7 @@ window-rule {
 
 Override the focus ring and border options for the window.
 
-These rules have the same options as the normal focus ring and border config in the [layout](./Configuration:-Layout.md#focus-ring-and-border) section, so check the documentation there.
+These rules have the same options as the normal [`focus-ring` and `border` config in the layout section](./Configuration:-Layout.md#focus-ring-and-border), so check the documentation there.
 
 However, in addition to `off` to disable the border/focus ring, this window rule has an `on` flag that enables the border/focus ring for the window even if it was otherwise disabled.
 The `on` flag has precedence over the `off` flag, in case both are set.
@@ -720,7 +720,7 @@ window-rule {
 
 Override the shadow options for the window.
 
-This rule has the same options as the normal shadow config in the [layout](./Configuration:-Layout.md#shadow) section, so check the documentation there.
+This rule has the same options as the normal [`shadow` config in the layout section](./Configuration:-Layout.md#shadow), so check the documentation there.
 
 However, in addition to `on` to enable the shadow, this window rule has an `off` flag that disables the shadow for the window even if it was otherwise enabled.
 The `on` flag has precedence over the `off` flag, in case both are set.
@@ -742,7 +742,7 @@ window-rule {
 
 Override the tab indicator options for the window.
 
-Options in this rule match the same options as the normal tab indicator config in the [layout](./Configuration:-Layout.md#tab-indicator) section, so check the documentation there.
+Options in this rule match the same options as the normal [`tab-indicator` config in the layout section](./Configuration:-Layout.md#tab-indicator), so check the documentation there.
 
 ```kdl
 // Make KeePassXC tab have a dark red inactive color.
@@ -762,7 +762,7 @@ window-rule {
 Set the corner radius of the window.
 
 On its own, this setting will only affect the border and the focus ring—they will round their corners to match the geometry corner radius.
-If you'd like to force-round the corners of the window itself, set `clip-to-geometry true` in addition to this setting.
+If you'd like to force-round the corners of the window itself, set [`clip-to-geometry true`](#clip-to-geometry) in addition to this setting.
 
 ```kdl
 window-rule {
@@ -803,7 +803,7 @@ window-rule {
 }
 ```
 
-Enable border, set `geometry-corner-radius` and `clip-to-geometry`, and you've got a classic setup:
+Enable border, set [`geometry-corner-radius`](#geometry-corner-radius) and `clip-to-geometry`, and you've got a classic setup:
 
 ![](./img/border-radius-clip.png)
 

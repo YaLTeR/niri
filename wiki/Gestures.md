@@ -12,7 +12,7 @@ Also see the [gestures configuration](./Configuration:-Gestures.md) wiki page.
 
 You can move windows by holding <kbd>Mod</kbd> and the left mouse button.
 
-You can customize the look of the window insertion preview in the `insert-hint` [layout config](./Configuration:-Layout.md#insert-hint) section.
+You can customize the look of the window insertion preview in the [`insert-hint` layout config](./Configuration:-Layout.md#insert-hint).
 
 <sup>Since: 25.01</sup> Right click while moving to toggle between floating and tiling layout to put the window into.
 
