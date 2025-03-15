@@ -28,7 +28,7 @@ window-rule {
 }
 ```
 
-For more information, check [this wiki section](./Configuration:-Window-Rules.md#geometry-corner-radius).
+For more information, check the [`geometry-corner-radius`](./Configuration:-Window-Rules.md#geometry-corner-radius) section.
 
 ### How to hide the "Important Hotkeys" pop-up at the start?
 

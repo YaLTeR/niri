@@ -834,7 +834,7 @@ Informs the window that it is tiled.
 Usually, windows will react by becoming rectangular and hiding their client-side shadows.
 Windows that snap their size to a grid (e.g. terminals like [foot](https://codeberg.org/dnkl/foot)) will usually disable this snapping when they are tiled.
 
-By default, niri will set the tiled state to `true` together with [`prefer-no-csd`](./Configuration:-Miscellaneous.md) in order to improve behavior for apps that don't support server-side decorations.
+By default, niri will set the tiled state to `true` together with [`prefer-no-csd`](./Configuration:-Miscellaneous.md#prefer-no-csd) in order to improve behavior for apps that don't support server-side decorations.
 You can use this window rule to override this, for example to get rectangular windows with CSD.
 
 ```kdl
