@@ -2288,6 +2288,7 @@ dependencies = [
  "niri-ipc",
  "pretty_assertions",
  "regex",
+ "serde",
  "smithay",
  "tracing",
  "tracy-client 0.18.0",

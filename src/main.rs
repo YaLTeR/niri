@@ -3,7 +3,7 @@ extern crate tracing;
 
 use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,7 +22,7 @@ use niri::utils::spawning::{
 };
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
-use niri_config::Config;
+use niri_config::{json_report, Config};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -52,6 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env_filter = EnvFilter::builder().parse_lossy(directives);
     tracing_subscriber::fmt()
         .compact()
+        .with_writer(io::stderr)
         .with_env_filter(env_filter)
         .init();
 
@@ -93,13 +94,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
         match subcommand {
-            Sub::Validate { config } => {
+            Sub::Validate { config, json } => {
                 tracy_client::Client::start();
-
                 let (path, _, _) = config_path(config);
-                Config::load(&path)?;
-                info!("config is valid");
-                return Ok(());
+                let Err(report) = Config::load(&path) else {
+                    info!("config is valid");
+                    return Ok(());
+                };
+                if json {
+                    let json = json_report::convert_to_json(&report);
+                    serde_json::to_writer(BufWriter::new(io::stdout()), &json)?;
+                }
+                return Err(report.into());
             }
             Sub::Msg { msg, json } => {
                 handle_msg(msg, json)?;

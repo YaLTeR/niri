@@ -40,6 +40,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+pub mod json_report;
 pub mod socket;
 pub mod state;
 
