@@ -94,8 +94,8 @@ pub struct Input {
     pub touch: Touch,
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
-    #[knuffel(child)]
-    pub warp_mouse_to_focus: bool,
+    #[knuffel(child, unwrap(argument), default)]
+    pub warp_mouse_to_focus: WarpMouseToFocus,
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
@@ -363,6 +363,15 @@ pub struct Touch {
 pub struct FocusFollowsMouse {
     #[knuffel(property, str)]
     pub max_scroll_amount: Option<Percent>,
+}
+
+#[derive(knuffel::Decode, knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum WarpMouseToFocus {
+    #[default]
+    Off,
+    Separately,
+    Both,
+    BothAlways,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

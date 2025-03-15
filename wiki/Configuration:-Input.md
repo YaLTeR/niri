@@ -240,11 +240,14 @@ input {
 
 Makes the mouse warp to newly focused windows.
 
-X and Y coordinates are computed separately, i.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then it will move only horizontally.
+ - "off": do not warp (default)
+ - "separately": warp X and Y coordinates to the window's center separately, i.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then it will move only horizontally and vice versa. Only warps if the mouse was outside of the newly focused window.
+ - "both":  warp both X and Y coordinates to the window's center. Only warps if the mouse was outside of the newly focused window.
+ - "both-always": warp both X and Y coordinates to the window's center. Always warps, even if the mouse was already inside the newly focused window.
 
 ```kdl
 input {
-    warp-mouse-to-focus
+    warp-mouse-to-focus "separately"
 }
 ```
 

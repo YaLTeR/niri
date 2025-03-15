@@ -506,6 +506,7 @@ struct SurfaceFrameThrottlingState {
 pub enum CenterCoords {
     Separately,
     Both,
+    BothAlways, // Force centering even if the cursor is already in the rectangle.
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -747,6 +748,7 @@ impl State {
                     center_f64(rect)
                 }
             }
+            CenterCoords::BothAlways => center_f64(rect),
         };
 
         self.move_cursor(p);
@@ -802,19 +804,23 @@ impl State {
     }
 
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
-        if !self.niri.config.borrow().input.warp_mouse_to_focus {
-            return false;
-        }
-
-        self.move_cursor_to_focused_tile(CenterCoords::Separately)
+        let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
+            niri_config::WarpMouseToFocus::Separately => CenterCoords::Separately,
+            niri_config::WarpMouseToFocus::Both => CenterCoords::Both,
+            niri_config::WarpMouseToFocus::BothAlways => CenterCoords::BothAlways,
+            niri_config::WarpMouseToFocus::Off => return false,
+        };
+        self.move_cursor_to_focused_tile(focused)
     }
 
     pub fn maybe_warp_cursor_to_focus_centered(&mut self) -> bool {
-        if !self.niri.config.borrow().input.warp_mouse_to_focus {
-            return false;
-        }
-
-        self.move_cursor_to_focused_tile(CenterCoords::Both)
+        let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
+            niri_config::WarpMouseToFocus::Separately => CenterCoords::Both,
+            niri_config::WarpMouseToFocus::Both => CenterCoords::Both,
+            niri_config::WarpMouseToFocus::BothAlways => CenterCoords::BothAlways,
+            niri_config::WarpMouseToFocus::Off => return false,
+        };
+        self.move_cursor_to_focused_tile(focused)
     }
 
     pub fn refresh_pointer_contents(&mut self) {
