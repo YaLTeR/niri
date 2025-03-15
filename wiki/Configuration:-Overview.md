@@ -131,7 +131,7 @@ output "eDP-1" {
 ### Defaults
 
 Omitting most of the sections of the config file will leave you with the default values for that section.
-A notable exception is `binds {}`: they do not get filled with defaults, so make sure you do not erase this section.
+A notable exception is [`binds {}`](./Configuration:-Key-Bindings.md): they do not get filled with defaults, so make sure you do not erase this section.
 
 ### Breaking Change Policy
 
