@@ -47,7 +47,7 @@ use smithay::desktop::{
 use smithay::input::keyboard::Layout as KeyboardLayout;
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData, MotionEvent};
 use smithay::input::{Seat, SeatState};
-use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel};
+use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel, WeakOutput};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
@@ -138,7 +138,7 @@ use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManag
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
-use crate::pw_utils::{CastSizeChange, CastTarget, PwToNiri};
+use crate::pw_utils::{CastSizeChange, PwToNiri};
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -506,6 +506,12 @@ struct SurfaceFrameThrottlingState {
 pub enum CenterCoords {
     Separately,
     Both,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum CastTarget {
+    Output(WeakOutput),
+    Window { id: u64 },
 }
 
 impl RedrawState {
@@ -4583,6 +4589,9 @@ impl Niri {
             });
         }
     }
+
+    #[cfg(not(feature = "xdp-gnome-screencast"))]
+    pub fn stop_casts_for_target(&mut self, _target: CastTarget) {}
 
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn stop_casts_for_target(&mut self, target: CastTarget) {

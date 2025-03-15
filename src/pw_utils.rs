@@ -36,7 +36,7 @@ use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::output::{Output, OutputModeSource, WeakOutput};
+use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
@@ -44,7 +44,7 @@ use smithay::utils::{Physical, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
-use crate::niri::State;
+use crate::niri::{CastTarget, State};
 use crate::render_helpers::render_to_dmabuf;
 use crate::utils::get_monotonic_time;
 
@@ -107,12 +107,6 @@ pub enum CastState {
 pub enum CastSizeChange {
     Ready,
     Pending,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub enum CastTarget {
-    Output(WeakOutput),
-    Window { id: u64 },
 }
 
 macro_rules! make_params {
