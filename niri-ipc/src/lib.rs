@@ -704,6 +704,32 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Set the dynamic cast target to a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the dynamic cast target to the focused window")
+    )]
+    SetDynamicCastWindow {
+        /// Id of the window to target.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Set the dynamic cast target to a monitor.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the dynamic cast target to the focused monitor")
+    )]
+    SetDynamicCastMonitor {
+        /// Name of the output to target.
+        ///
+        /// If `None`, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Clear the dynamic cast target, making it show nothing.
+    ClearDynamicCastTarget {},
 }
 
 /// Change in window or column size.
