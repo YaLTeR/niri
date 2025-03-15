@@ -60,12 +60,13 @@ pub struct PipeWire {
 
 pub enum PwToNiri {
     StopCast { session_id: usize },
-    Redraw(CastTarget),
+    Redraw { stream_id: usize },
     FatalError,
 }
 
 pub struct Cast {
     pub session_id: usize,
+    pub stream_id: usize,
     pub stream: Stream,
     _listener: StreamListener<()>,
     pub is_active: Rc<Cell<bool>>,
@@ -189,6 +190,7 @@ impl PipeWire {
         gbm: GbmDevice<DrmDeviceFd>,
         formats: FormatSet,
         session_id: usize,
+        stream_id: usize,
         target: CastTarget,
         size: Size<i32, Physical>,
         refresh: u32,
@@ -204,10 +206,9 @@ impl PipeWire {
                 warn!("error sending StopCast to niri: {err:?}");
             }
         };
-        let target_ = target.clone();
         let to_niri_ = self.to_niri.clone();
         let redraw = move || {
-            if let Err(err) = to_niri_.send(PwToNiri::Redraw(target_.clone())) {
+            if let Err(err) = to_niri_.send(PwToNiri::Redraw { stream_id }) {
                 warn!("error sending Redraw to niri: {err:?}");
             }
         };
@@ -651,6 +652,7 @@ impl PipeWire {
 
         let cast = Cast {
             session_id,
+            stream_id,
             stream,
             _listener: listener,
             is_active,
