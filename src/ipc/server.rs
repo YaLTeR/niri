@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -451,7 +451,12 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
     Ok(())
 }
 
-fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_ipc::Window {
+fn make_ipc_window(
+    mapped: &Mapped,
+    workspace_id: Option<WorkspaceId>,
+    tile_coordinates: Option<(usize, usize)>,
+    tile_size: Option<(f64, f64)>,
+) -> niri_ipc::Window {
     with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
         id: mapped.id().get(),
         title: role.title.clone(),
@@ -460,6 +465,9 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
+        tile_coordinates,
+        tile_size,
+        geometry: None,
     })
 }
 
@@ -622,6 +630,29 @@ impl State {
         let mut events = Vec::new();
         let layout = &self.niri.layout;
 
+        // gather positional information ahead of time, since this has to traverse everything
+        struct WindowPositionInfo {
+            tile_coordinates: Option<(usize, usize)>,
+            tile_size: Option<(f64, f64)>,
+        }
+        let mut window_positions = HashMap::new();
+        for (_, _, ws) in layout.workspaces() {
+            for (tile, cell) in ws.tiles_with_workspace_positions() {
+                let k = tile.window().id().get();
+                let size = tile.tile_size();
+                window_positions.insert(
+                    k,
+                    WindowPositionInfo {
+                        tile_coordinates: cell,
+                        tile_size: Some((size.w, size.h)),
+                    },
+                );
+            }
+        }
+
+        let mut batch_column_shifts: HashMap<i32, Vec<u64>> = HashMap::new();
+        let mut batch_resizes: Vec<(u64, (f64, f64))> = Vec::new();
+
         // Check for window changes.
         let mut seen = HashSet::new();
         let mut focused_id = None;
@@ -633,30 +664,72 @@ impl State {
                 focused_id = Some(id);
             }
 
+            let WindowPositionInfo {
+                tile_coordinates,
+                tile_size,
+            } = window_positions.remove(&id).unwrap_or(WindowPositionInfo {
+                tile_coordinates: None,
+                tile_size: None,
+            });
+
             let Some(ipc_win) = state.windows.get(&id) else {
-                let window = make_ipc_window(mapped, ws_id);
+                let window = make_ipc_window(mapped, ws_id, tile_coordinates, tile_size);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             };
 
             let workspace_id = ws_id.map(|id| id.get());
-            let mut changed =
-                ipc_win.workspace_id != workspace_id || ipc_win.is_floating != mapped.is_floating();
+            let mut changed = ipc_win.workspace_id != workspace_id
+                || ipc_win.is_floating != mapped.is_floating()
+                || (ipc_win.tile_size.is_none() != tile_size.is_none())
+                // Create full change event if the y-value (tile index within the column) changed.
+                // If the x-value (column index) changes, use the bulk ShiftColumns event instead.
+                || ipc_win.tile_coordinates.map(|(_, y)| y) != tile_coordinates.map(|(_, y)| y);
 
             changed |= with_toplevel_role(mapped.toplevel(), |role| {
                 ipc_win.title != role.title || ipc_win.app_id != role.app_id
             });
 
             if changed {
-                let window = make_ipc_window(mapped, ws_id);
+                let window = make_ipc_window(mapped, ws_id, tile_coordinates, tile_size);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
+            }
+
+            // This corresponds to a cell changing columns but staying in the same row.
+            // Previous checks of the y values should have already handled case(s) where
+            // the y values may change.
+            if let (Some((x1, _)), Some((x2, _))) = (ipc_win.tile_coordinates, tile_coordinates) {
+                let change_col = x2 as i32 - x1 as i32;
+                if change_col != 0 {
+                    batch_column_shifts
+                        .entry(change_col)
+                        .and_modify(|e| e.push(id))
+                        .or_insert_with(|| vec![id]);
+                }
+            }
+
+            if let (Some(old_size), Some(new_size)) = (ipc_win.tile_size, tile_size) {
+                if new_size != old_size {
+                    batch_resizes.push((id, new_size));
+                }
             }
 
             if mapped.is_focused() && !ipc_win.is_focused {
                 events.push(Event::WindowFocusChanged { id: Some(id) });
             }
         });
+
+        // the ids in this set must not have also been altered with WindowOpenedOrChanged,
+        // or it would set the window state and then subsequently shift it (incorrectly).
+        for (change_col, ids) in batch_column_shifts {
+            events.push(Event::BatchShiftColumns { ids, change_col });
+        }
+        if !batch_resizes.is_empty() {
+            events.push(Event::BatchResizeTiles {
+                id_size_pairs: batch_resizes,
+            });
+        }
 
         // Check for closed windows.
         let mut ipc_focused_id = None;

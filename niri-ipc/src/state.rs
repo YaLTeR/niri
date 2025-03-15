@@ -132,6 +132,29 @@ impl EventStreamStatePart for WindowsState {
             Event::WindowsChanged { windows } => {
                 self.windows = windows.into_iter().map(|win| (win.id, win)).collect();
             }
+            Event::BatchShiftColumns { ids, change_col } => {
+                for id in ids {
+                    let Some(w) = self.windows.get_mut(&id) else {
+                        continue; // unreachable!()
+                    };
+                    let Some((x, y)) = w.tile_coordinates else {
+                        continue; // unreachable!()
+                    };
+
+                    w.tile_coordinates = Some(((x as i32 + change_col) as usize, y));
+                }
+            }
+            Event::BatchResizeTiles { id_size_pairs } => {
+                for (id, size) in id_size_pairs {
+                    let Some(w) = self.windows.get_mut(&id) else {
+                        continue; // unreachable!()
+                    };
+
+                    // resize should only change, and never put a new size when it was None
+                    // assert!(w.tile_size.is_some());
+                    w.tile_size = Some(size);
+                }
+            }
             Event::WindowOpenedOrChanged { window } => {
                 let (id, is_focused) = match self.windows.entry(window.id) {
                     Entry::Occupied(mut entry) => {

@@ -159,6 +159,51 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 bail!("unexpected response: expected Windows, got {response:?}");
             };
 
+            windows.sort_unstable_by_key(
+                |Window {
+                     workspace_id,
+                     tile_coordinates,
+                     ..
+                 }| { (*workspace_id, *tile_coordinates) },
+            );
+
+            // Walk over the windows in sorted order by (workspace, column, row)
+            // Accumulate positions/sizes to write the geometry into each window.
+            // TODO: This can definitely be written better, but it's
+            //       hard to make something better still be simple/readable.
+            let mut last_column_index = None;
+            let mut last_workspace_id = None;
+            let mut column_width = 0.0;
+            let mut x = 0.0;
+            let mut y = 0.0;
+            for w in &mut windows {
+                let (Some(wid), Some(cell), Some(size)) =
+                    (w.workspace_id, w.tile_coordinates, w.tile_size)
+                else {
+                    continue;
+                };
+                // reset running x position for each workspace
+                if Some(wid) != last_workspace_id {
+                    x = 0.0;
+                    y = 0.0;
+                    column_width = 0.0;
+                }
+                // when found a new column
+                if Some(cell.0) != last_column_index {
+                    y = 0.0;
+                    x += column_width;
+                    column_width = 0.0;
+                }
+
+                w.geometry = Some([x, y, size.0, size.1]);
+
+                column_width = column_width.max(size.0);
+                y += size.1;
+
+                last_workspace_id = Some(wid);
+                last_column_index = Some(cell.0);
+            }
+
             if json {
                 let windows =
                     serde_json::to_string(&windows).context("error formatting response")?;
@@ -407,6 +452,12 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     }
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
+                    }
+                    Event::BatchShiftColumns { ids, change_col } => {
+                        println!("Tile columns shifted by {change_col}: {ids:?}");
+                    }
+                    Event::BatchResizeTiles { id_size_pairs } => {
+                        println!("Tiles resized: {id_size_pairs:?}");
                     }
                     Event::KeyboardLayoutsChanged { keyboard_layouts } => {
                         println!("Keyboard layouts changed: {keyboard_layouts:?}");
