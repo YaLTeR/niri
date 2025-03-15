@@ -1723,16 +1723,9 @@ impl State {
                         (CastTarget::Output(output.downgrade()), size, refresh, false)
                     }
                     StreamTargetId::Window { id } => {
-                        let mut window = None;
-                        self.niri.layout.with_windows(|mapped, _, _| {
-                            if mapped.id().get() != id {
-                                return;
-                            }
-
-                            window = Some(mapped.window.clone());
-                        });
-
-                        let Some(window) = window else {
+                        let Some(window) = self.niri.layout.windows().find_map(|(_, mapped)| {
+                            (mapped.id().get() == id).then_some(&mapped.window)
+                        }) else {
                             warn!("error starting screencast: requested window is missing");
                             self.niri.stop_cast(session_id);
                             return;
@@ -1740,7 +1733,7 @@ impl State {
 
                         // Use the cached output since it will be present even if the output was
                         // currently disconnected.
-                        let Some(output) = self.niri.mapped_cast_output.get(&window) else {
+                        let Some(output) = self.niri.mapped_cast_output.get(window) else {
                             warn!("error starting screencast: requested window is missing");
                             self.niri.stop_cast(session_id);
                             return;
